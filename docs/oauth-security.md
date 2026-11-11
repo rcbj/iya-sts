@@ -42,7 +42,9 @@ runs. On, the authorization flow is held to the whole of RFC 9700 section 2:
   requires one, in every mode, for the implicit flow and for the hybrid
   `code id_token` and `code id_token token` — and
   no response type that issues an access token from the authorization endpoint
-  (the implicit grant) is accepted.
+  (the implicit grant) is accepted — unless an administrator waived that one
+  requirement in the realm with `oauth2.allowImplicitTokenResponses` (see
+  *The implicit grant*, below).
 * **Authorization codes**: a repeated redemption is refused, and everything the
   code bought is revoked (section 4.5).
 * **Refresh tokens rotate** with replay detection. A replay revokes the whole
@@ -69,7 +71,7 @@ met.
 **Every refusal names RFC 9700 and the section.** `GET /oauth2/rfc9700`
 publishes the whole model: every requirement, its section and level, and
 whether it is *enforced*, only *detected*, *always* true here, a property of the
-*deployment*, or *not* enforced, with the reason. Read it rather than a copy.
+*deployment*, *waived* by an administrator, or *not* enforced, with the reason. Read it rather than a copy.
 
 Some requirements belong to the client, so they are **observed rather than
 refused**: a reused challenge, an unbound access token, a client using a
@@ -401,8 +403,10 @@ It has no setting of its own.
 
 The `htu` a proof is checked against comes from the request URL.
 `X-Forwarded-Proto` and `X-Forwarded-Host` are believed only while
-`global.trustProxy` is on. Behind a TLS-terminating proxy, turn it on, or every
-proof naming the public URL is refused (the refusal names the setting). With
+`global.trustProxy` is on, and in product mode only from a peer listed in
+`global.trustedProxies`. Behind a TLS-terminating proxy, turn it on and list the
+proxy, or every proof naming the public URL is refused (the refusal names the
+setting). With
 no proxy, leave it off, or a client could choose the `htu` its own proof is
 checked against.
 
@@ -467,6 +471,14 @@ response where the realm offers no other response mode. They are not
 required to sign their request objects, because a public client in a browser
 holds no registered key; an explicit `oauth2.requireSignedRequestObject`
 still applies to them.
+
+**The browser applications check what comes back**, the report application
+included. The discovery document they read must name, as its `issuer`, the
+server it was fetched from (RFC 8414 section 3.3), or it is ignored as if none
+had answered. An authorization response's `iss` (RFC 9207), where one is sent,
+must be that issuer. The ID Token must carry the application's own `client_id`
+in `aud`, the `nonce` it asked for and, where the document was read, that issuer
+in `iss`. A sign-in that fails one of these does not complete.
 
 ### Requiring a sender constraint — five settings
 
@@ -711,8 +723,12 @@ confidential.** A client is confidential only when its entry declares a
 member is confidential, since RFC 7591 section 2 makes `client_secret_basic` the
 default. Everything else, including a `client_id` never registered, is public
 and must send a `code_challenge`. For a confidential client PKCE is a *SHOULD*:
-the request is answered and the omission logged, because a server a client is
-calibrated against should not be stricter than the specification.
+in development mode the request is answered and the omission logged, because a
+server a client is calibrated against should not be stricter than the
+specification. **In product mode a confidential client is refused too**
+(`invalid_request`, ASVS 5.0.0 10.4.6), unless
+`oauth2.allowConfidentialWithoutPkce` is on. OAuth 2.1 mode keeps its own rule,
+below.
 
 `code_challenge_method=plain` is refused and `code_challenge_methods_supported`
 drops to `S256` alone, so the document and the endpoint agree. An `S256`
@@ -815,15 +831,19 @@ section points at.
 
 ### Authorization code protection (section 4.5)
 
-Outside the compliance modes an **identical** repeat of a token request gets back
-the tokens it already got (see
-[Grants](oauth-oidc.md#grants-at-the-token-endpoint)). RFC 6749 section 4.1.2
-says a real server refuses that, so **in this mode it does**, and does the
-SHOULD beside it (section 10.5): the access, refresh and ID Tokens the code bought
-are revoked through the same set `/oauth2/revoke` writes to, so they report
-`active: false` at introspection at once. A code presented twice means two
-holders, and nothing can tell which is the client. The refusal says how long
-ago the code was redeemed, by which client, and how many tokens went with it.
+A repeated redemption is refused **in every mode** (RFC 6749 section 4.1.2).
+Outside the compliance modes, `oauth2.codeReplayIdempotent`, off by default,
+answers an **identical** repeat with the tokens it already got instead (see
+[Grants](oauth-oidc.md#grants-at-the-token-endpoint)); this mode ignores it. The
+refusal does the SHOULD beside it (section 10.5): the access, refresh and ID
+Tokens the code bought are revoked through the same set `/oauth2/revoke` writes
+to, so they report `active: false` at introspection at once, and so is the
+refresh family the code began, with every access token refreshed from it since.
+Each revocation is reported as a replay, so a Shared Signals stream for the grant
+is sent CAEP `session-revoked` and `risk-level-change`. A code presented twice
+means two holders, and nothing can tell which is the client. The refusal says
+how long ago the code was redeemed, by which client, and how many tokens went
+with it.
 
 Two more specific refusals stay ahead of it in every mode: a repeat that
 **differs** names the field that differed, and an expired code says so and
@@ -886,8 +906,78 @@ it on is refused (`STS-CORE-0103`).
 
 Any `response_type` naming `token` (`token`, `code token`, `id_token token`,
 `code id_token token`) is refused `unsupported_response_type`, and the metadata
-drops all four and the `implicit` grant type. `id_token` and `code id_token`
-remain, because they issue no access token from the authorization endpoint.
+drops all four. `id_token` and `code id_token` remain, because they issue no
+access token from the authorization endpoint — and so does the `implicit` grant
+type, which RFC 7591 section 2.1 and OpenID Connect Registration pair them with.
+Registration accepts `grant_types: ["implicit"]` beside `id_token` or
+`code id_token` and refuses it otherwise (#1295).
+
+**An administrator may waive this one requirement per realm.** Section 2.1.2 is
+a SHOULD NOT, and the OpenID Connect Implicit, Hybrid and Dynamic OP profiles
+need `id_token token`, `code token` and `code id_token token` — which product
+mode, implying this mode in every realm, otherwise refuses.
+`oauth2.allowImplicitTokenResponses` (off by default, runtime, settable on a
+trust realm) turns the four response types back on in that realm: accepted at
+the authorization endpoint and at registration, and advertised in both
+discovery documents with the `implicit` grant. **Nothing else changes** — PKCE,
+exact redirect matching, the nonce, no password grant, refresh rotation and the
+rest of product mode stay in force — and `GET /oauth2/rfc9700` reports the row
+`enforced: waived` with the setting named (its `waived` member lists it), as
+`/admin/mode` does under the BCP row. **It has no effect under OAuth 2.1 mode or
+a FAPI profile**: OAuth 2.1 removes the implicit grant outright, and a FAPI
+profile is a stricter profile the setting does not loosen.
+
+**The waiver makes the flows possible; each application still has to have
+them enabled (#1296).** An application uses one of the four only when its
+`oauthAllowedTokenResponseTypes` lists that exact response type — empty by
+default, and empty means none. Anything else is refused
+`unauthorized_client` (RFC 6749 sections 4.1.2.1 and 4.2.2.1, `STS-OAUTH-0998`)
+where the realm waives the section, and `unsupported_response_type`
+(`STS-OAUTH-0126`) where it does not. The same holds for a pushed
+authorization request and a request object. Three doors write the list:
+
+* **an administrator**, on the application's page in the console (the
+  OAuth 2.0 / OpenID Connect sub-tab, where the enabled types are shown with
+  section 2.1.2's warning beside them) or with
+  `POST /admin-api/applications/add` (`attribute`
+  `oauthAllowedTokenResponseTypes`) or `/update-fields`;
+* **the application's owner**, through the same `/admin-api` operations with
+  an `owner:write` token, or on the user portal's page for an application they
+  own — the access-control template's default `ownerApplicationAttributes`
+  lists the attribute;
+* **a client registering itself** at `POST /oauth2/register`, for the types
+  `oauth2.dynamicRegistrationTokenResponseTypes` names (empty by default): a
+  registration asking for a listed type has it recorded on the attribute, and
+  one asking for any other is refused `invalid_client_metadata`
+  (`STS-OAUTH-0999`). An RFC 7592 update is held to the same list.
+
+A console or `/admin-api` write that adds a value while the realm does not
+allow these types is refused, naming the attribute and the setting
+(`STS-REG-0364`) — a permission the realm would refuse is not recorded. A
+remove is always allowed. Discovery still advertises what the REALM allows,
+because the metadata describes the server rather than one client. A realm
+meant for open self-registration of these flows (the OpenID Connect Dynamic
+OP profile) lists them in the setting:
+
+```bash
+curl -s -X POST https://sts.example/realm/certification/admin-api/config/set \
+  -H 'content-type: application/json' \
+  -d '{"key":"oauth2.dynamicRegistrationTokenResponseTypes",
+       "value":"token,id_token token,code token,code id_token token"}'
+```
+
+Outside RFC 9700 mode (development mode with the mode off) section 2.1.2 is
+not enforced and the attribute narrows nothing.
+
+It is set like any setting — on the realm's `/admin/oauth2` page, or through
+the management API with an administrator's `/admin-api` token, inside the realm
+(see [Changing one at runtime](configuration.md#changing-one-at-runtime)):
+
+```bash
+curl -s -X POST https://sts.example/realm/certification/admin-api/config/set \
+  -H 'content-type: application/json' \
+  -d '{"key":"oauth2.allowImplicitTokenResponses","value":true}'
+```
 
 ### Refresh tokens (section 2.2.2)
 
@@ -915,6 +1005,12 @@ a **subset** of what was granted. The refresh token also carries its
 with the default audience; asking for a resource the grant does not carry is
 `invalid_target`.
 
+**A chain has an absolute limit**, `oauth2.refreshTokenMaxChainS`, counted
+from its first refresh token: a renewed token never expires past it, so the
+person signs in again however often the client refreshed. It is 30 days in
+product mode and `0` (no limit) in development, and it applies whether or not
+this mode is on.
+
 **An idle chain expires** after `oauth2.refreshIdleSeconds`, measured from the
 last redemption anywhere in the chain, so a client that refreshes regularly
 keeps its grant. It **refuses** rather than revoking the family, because an idle
@@ -941,7 +1037,10 @@ and cannot carry a second factor. In this mode `grant_type=password` is
 documents, and **`POST /oauth2/register` refuses to register a client for it**
 (`invalid_client_metadata`, RFC 7591 section 3.2.2), so the client learns when it
 registers rather than at its first token request. The same registration check
-refuses `grant_types: ["implicit"]`, any `response_types` naming `token`, and an
+refuses `grant_types: ["implicit"]` unless `id_token` or `code id_token` is
+what it is for, any `response_types` naming `token` (both unless an
+administrator waived section 2.1.2, above — and then a type outside
+`oauth2.dynamicRegistrationTokenResponseTypes`), and an
 `http://` redirect URI off the loopback. Returning metadata silently different
 from what was asked, which RFC 7591 permits, would make a client compare the
 two documents field by field to notice.
@@ -1082,7 +1181,8 @@ another endpoint. With it off, `X-Forwarded-Host: attacker.example` changes
 nothing; with it on, `X-Forwarded-Host: sts.example.com` produces
 `issuer: https://sts.example.com` and every endpoint with it. A DPoP proof
 made against a proxy's URL while it is off is refused, and the refusal names the
-setting.
+setting. In product mode the headers are believed only from a peer listed in
+`global.trustedProxies`, so set that too.
 
 **No client certificate is ever read from a header** (`X-Client-Cert`,
 `X-Forwarded-Client-Cert`, `X-SSL-Client-Cert` or any vendor spelling): a header
@@ -1172,6 +1272,29 @@ The device authorization grant's `user_code` page, `/portal/device` (RFC 8628,
 off by default behind `oauth2.deviceAuthorization` — see
 [Signing in a device](oauth-oidc.md#signing-in-a-device-rfc-8628)), relaxes
 nothing, so it carries the same framing clauses as every other page.
+
+### The other response headers
+
+- **`Permissions-Policy`** on every response. It allows WebAuthn, the
+  Digital Credentials API, the clipboard and full screen for this origin
+  only, and denies the camera, microphone, geolocation, payment, USB, serial,
+  HID, Bluetooth, MIDI, screen capture, motion sensors and Topics to
+  everybody. A page this service frames inherits the same list.
+- **A response that is not a page** (JSON, XML other than SVG, and plain
+  text) carries a narrower policy: no `style-src` and no `img-src`, with
+  `frame-ancestors` and `base-uri` kept. Only HTML pages keep the base
+  policy's inline styles and `data:` images, which some of them use.
+- **The console, the user portal and the reports application** answer
+  `Cross-Origin-Opener-Policy: same-origin-allow-popups` and
+  `Cross-Origin-Resource-Policy: same-origin`.
+  - `same-origin-allow-popups` rather than `same-origin`, so the console's
+    re-authentication window keeps working.
+  - The sign-in screens carry neither header, because a relying party may
+    open one in a popup.
+- **No page of the console, the user portal or the reports application
+  allows an inline style:** their policy is `style-src 'self'`. Their styles
+  are stylesheet rules, and their charts are SVG, so a `style=""` attribute
+  injected into their markup is not applied.
 
 ### In-browser communication (section 4.17)
 
@@ -1310,6 +1433,12 @@ curl -k -X POST https://localhost:8081/admin-api/realms/create \
   a realm cannot turn it off. A public client is allowed in return. It is held
   to PKCE with `S256`, an exactly matched registered redirect URI, rotating
   refresh tokens, and the authorization code and refresh grants only.
+* **Product mode adds three things of its own**: PKCE of confidential clients
+  too (`oauth2.allowConfidentialWithoutPkce` opts out), a refusal of a repeated
+  parameter at the authorization and token endpoints, as OAuth 2.1 mode refuses
+  one, and a 30-day limit on a chain of refresh tokens
+  (`oauth2.refreshTokenMaxChainS`). See
+  [Security in product mode](product-security.md#clients-and-grants).
 * OAuth 2.1 mode, FAPI and the five sender-constraint settings are **not**
   implied by product mode. Turn them on explicitly.
 * `oauth2.dpopNonceRequired` is changed only through `/admin/oauth2` or
@@ -1341,6 +1470,7 @@ headers) are described on [Configuration](configuration.md) and
 | `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In every mode, revoke the refresh tokens issued on a browser session without `offline_access` when that session ends (Back-Channel Logout section 2.7). |
 | `oauth2.maxPendingTransactions` | `STS_OAUTH2_MAX_PENDING_TRANSACTIONS` | `500` | yes | How many authorization transactions RFC 9700 mode remembers to refuse a reused PKCE challenge or nonce. |
 | `oauth2.maxRefreshTokenFamilies` | `STS_OAUTH2_MAX_REFRESH_TOKEN_FAMILIES` | `2000` | yes | How many refresh tokens are tracked for rotation and replay detection. |
+| `oauth2.allowConfidentialWithoutPkce` | `STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE` | `false` | yes | Product mode only. On, a confidential client may omit `code_challenge` and the request is only logged, as in development. Off, every client must send it. ASVS 5.0.0 10.4.6 is then not met. |
 | `oauth2.breakIdTokenNonce` | `STS_OAUTH2_BREAK_ID_TOKEN_NONCE` | `false` | yes | Put a deliberately wrong `nonce` in every ID Token, to find out whether a client checks it. Development mode only. |
 
 ### DPoP

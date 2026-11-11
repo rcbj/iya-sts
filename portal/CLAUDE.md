@@ -52,6 +52,53 @@ same link in `drawView()` before `PortalShell.bare()`. A problem page and
 "not a page" do not: `bare()` stays path-agnostic.
 
 
+### A realm's sign-in appearance (#717, 2026-11-04)
+
+rcbj's D4 on #717 puts the portal among the surfaces that take a realm's
+appearance (`common/branding.ts`; `common/CLAUDE.md` has the design). The
+portal does not link the card's stylesheet, so it takes it in three places
+of its own:
+
+* **The shell says `branded: true`** (`Portal.shellDocument()`), so
+  `ShellDocument` links the realm's `/web/theme.css` after `/portal/portal.css`
+  and puts the brand facts on `<html>` — and, for a realm that set nothing,
+  neither: the shell is the bytes it was (`tests/web_foundation.js` A).
+* **The stylesheet reads the custom properties** (`PortalKit.themed()` over
+  the rules as written, `STYLE_AS_WRITTEN`): every colour a realm may set
+  becomes `var(--sts-…, <the literal it replaced>)`, so with no theme linked
+  the portal draws what it did. Its accent's fallback is the PORTAL'S blue
+  (`#2c5cc5`), not the card's indigo, because that is what it always drew.
+  **A realm's `theme.css` carries only the properties it changed**
+  (`common/branding.ts`, `DEFAULT_PROPERTIES`), so a realm that only
+  uploaded a logo, or changed only its page colour, keeps the portal's own
+  blue; a realm that set an accent draws it here as on the sign-in screen. The semantic colours (an error's red, a
+  success's green) and the mid greys stay literal. The two buttons that are
+  NOT in the accent (`button.danger`, `.secondary`) write their white
+  `#ffffff`, which `themed()` skips, so a light accent's black button text
+  never lands on dark red. The tints (a hover, a tag, a just-generated row,
+  a code's ground) were written for a white card; under a realm's theme
+  they are mixed from its colours (`BRAND_CSS`, `color-mix()`, at
+  `:where()` specificity), and a browser without `color-mix()` keeps the
+  literal.
+* **The runtime draws the header**: `PortalRuntime.put()` — the one place
+  every page, framed or bare, is put in the document — draws
+  `WebSurface.brandHeader()` from `WebSurface.brandOf(<html>)` above the
+  page and ends the title with the realm's display name instead of
+  `IYA STS`. One copy of the header's markup and escaping: the portal
+  imports the public runtime for its two static methods rather than drawing
+  its own.
+
+**THE LAYOUT: `centered` is the header above the page; `banner` AND `split`
+are both a band in the accent colour across the top.** The portal is not a
+card: it is a column of navigation beside a column of cards, and the split
+panel beside that would be a third column, which leaves a phone nothing. So
+the portal draws the split layout as the band. The form-preserving promise
+holds trivially: nothing in a page changes, only what is above it.
+
+`tests/branding_surfaces.js` holds all of it: the shell with and without an
+appearance, the stylesheet's properties and the two white buttons, and the
+runtime's header and title.
+
 ## THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE PERSON LOOKING AT IT (2026-09-06)
 
 Every browser-facing surface here until now was for somebody else. The sign-in
@@ -123,6 +170,38 @@ Drawing a page is reading. That distinction is the reason the portal has an
 action of its own at all — see `common/access_gate.ts`'s `ACTION` — and a
 deployment that later lets a helpdesk role READ an account without changing it
 needs the two to have been kept apart from the beginning.
+
+## THE REALM'S CUSTOM ATTRIBUTES ON THE OVERVIEW (#700, 2026-11-04)
+
+rcbj's ticket: the portal's account page shows a realm's custom attributes,
+"with a per-attribute flag for whether the person sees each one and whether
+they may edit it themselves (off by default)". The flags are the definition's
+(`common/CLAUDE.md` 3co: `portalVisible`, `portalEditable`, editable implying
+visible).
+
+* **`GET /account-api/overview`'s `customAttributes`**:
+  `[{ name, label, description, syntax, multi, values, editable }]`, one per
+  definition with `portalVisible`, empty where the person has no entry. Drawn
+  from the REGISTER and never by iterating the entry, the inetOrgPerson
+  table's rule. `web_overview.ts`'s *More about you* card, not drawn when the
+  list is empty.
+* **`POST /account-api/attributes`** (mirrors `POST /portal/attributes`),
+  `{ attribute, values }`: the values the attribute is to hold AFTERWARDS,
+  so none clears it. The person is the token's subject; no username is
+  taken. Refused for an undefined attribute (STS-PORTAL-0626), a hidden one
+  (0627, 403) and a read-only one (0628, 403); values checked by the person
+  editor's `checkCreateValues()` (0629 for a value or a count it refuses).
+* **Written through the person editor**, `setLanguage()`'s way, one edit at
+  a time with `via: 'the user portal'`, so its audit row, syntax check and
+  the attribute policy's `editRefusal()` hold. **Adds before removes** for a
+  multi-valued attribute, so replacing a required value is never an empty
+  moment; emptying one outright is asked of `editRefusal()` before anything
+  is written (STS-LDAP-0164, nothing changed). A single-valued one is one
+  `set`. A refusal part-way records the editor's own code.
+* **The form**: one box per held value, plus one empty box for a
+  multi-valued attribute; a cleared box is no value. `tests/account_api.js`
+  2c/2d hold that the form has its operation and sends only its fields;
+  `tests/portal_custom_attributes.js` holds the rest.
 
 ## `/portal/applications`: THE ISSUANCE POLICY, ASKED ON SOMEBODY'S BEHALF (2026-09-06)
 
@@ -1290,6 +1369,23 @@ verifies exactly like a SAML one — the certificate's subjectAltName is the onl
 place the difference shows; five mutants, all caught, that one only after the
 check was added.
 
+**WHAT A GENERATE ANSWERS IS DRAWN IN THE CARD WHOSE BUTTON MADE IT, AND THE
+FILES IN THE CERTIFICATE'S ROW (#671, 2026-11-03).** It was a card of its own
+at the top of the page, three cards above the TLS client certificate's
+Generate: rcbj pressed Generate, saw the bottom of the page drawn again with
+nothing new on it, and reported that nothing was downloaded. Now all three
+cards answer the SAME TWO FILES (`view.fresh.files.key`, the private key as
+unencrypted PKCS#8 PEM, and `.chain`, the leaf and its issuers), drawn as
+download links in the certificate's row — a signing key's *Certificate* row,
+the TLS certificate's row in the list — tinted (`tr.fresh-row`), with what to
+do with them in a `.fresh` block under the table. The runtime scrolls that
+row's table to the top of the window (`showFresh()`). **No private key is
+printed on the page any more**, and **the TLS card asks for no file password
+and answers no `.p12`** (rcbj's decision, the same day): a browser cannot
+import what the portal hands out, and that was accepted for three cards that
+work alike. The console's issue still answers a password-protected `.p12`
+(`tlsClient.bundle()`); the portal's is `tlsClient.pemFiles()`.
+
 **IT IS THE SAME ACT AND NOT A SECOND IMPLEMENTATION**, which is the whole
 reason this page requires `common/pki.js` and `common/person_assertions.js`
 rather than calling `/admin-api`. One write path onto a person's entry, whoever
@@ -1312,7 +1408,7 @@ in a token as every other person — which is why the rule is enforced in the
 grant rather than on the page: a check the page performed would be a check the
 `/admin-api` door did not.
 
-### The private key is shown once, and `generate` therefore RENDERS
+### The private key is offered once, and `generate` therefore RENDERS
 
 Every other write here answers 303 with a message on the query string. This one
 cannot, for the reason `generate-codes` on `/portal/mfa` cannot: **a redirect
@@ -1322,11 +1418,12 @@ and the person.
 
 **AND THERE IS NO SECOND CHANCE AT IT.** The key is sealed on the entry and
 nothing in this service opens it again — not this page, not `/admin/pki`, not
-`/admin-api`. The page says so at the moment it shows it, and *generate again*
+`/admin-api`. The page says so at the moment it offers it, and *generate again*
 is the only answer to having lost it. That is the same position the recovery
 codes reached from the other direction, and `tests/protocol/sts_portal_signing_key.js`
-asserts it by fetching the page a second time and looking for a PEM block that
-must not be there.
+asserts it by fetching the page a second time and looking for a PEM block, or a
+key download, that must not be there. **Since #671 it is a download, not a
+printed block** (above).
 
 ### What it deliberately does not ask
 
@@ -1375,25 +1472,42 @@ considered and refused: it is an argument about the section's TITLE rather than
 about what the section holds, and moving the heading's meaning to fit one page
 would misfile the other three.
 
+### SEVERAL KEY PAIRS PER CARD, REVOKED ROW BY ROW (#1290, 2026-11-03)
+
+rcbj asked for the two signing-key cards to work like the TLS card. Each now
+LISTS every key pair the person holds (`view.profiles[].held.keys`, newest
+first, each with its `handle`, label, state and certificate), with a *Revoke*
+form on each valid row (`action: 'revoke'`, `handle`, `reason`
+`cessationOfOperation` or `keyCompromise`) and a *Generate* that ADDS one under
+an optional label. **Take off and its `remove` act are gone**: revoking puts
+the certificate on the CRL, which take-off never did. At
+`pki.personSigningKeyMax` valid key pairs (`profiles[].atCap`) the Generate form
+is replaced by a folded note, and the act is refused before a key is generated
+(`STS-PKI-0223`). The new key pair's row carries the two downloads
+(`view.fresh.handle` names it), as the TLS card's new row does.
+`common/CLAUDE.md` 3ab, continued, argues the storage.
+
 ## A TLS CLIENT CERTIFICATE, THE THIRD CARD ON `/portal/signing-key` (2026-09-13)
 
 Asked for by rcbj beside the RFC 7523 and RFC 7522 key pairs: a person generates
-a TLS client certificate that maps to their identity and installs it in their
-browser. `common/tls_client_certificates.js` issues, packages and revokes;
+a TLS client certificate that maps to their identity. Since #671 (2026-11-03)
+the portal hands out PEM files only, which a browser cannot import; the
+console's issue still answers a `.p12`. `common/tls_client_certificates.js` issues, packages and revokes;
 `common/CLAUDE.md` 3ag argues the gate that makes trusting the
 service Root safe, and `tls/CLAUDE.md` what a presented certificate is worth.
 What is this page's:
 
-* **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` renders a
-  one-time card with three `data:` links carrying `download` — the `.p12`, an
-  encrypted `-key.pem`, the `-chain.pem` — which is the console keytab page's
-  arrangement and was the only way a file left a page with `script-src 'none'`;
-  the static portal (#568) kept it, the links drawn by the renderer.
-  Nothing keeps the private key; the page says so, and the install steps
-  (Windows, macOS, Firefox, Linux Chrome, curl) are folds on the same card.
-* **THE FILE PASSWORD IS TYPED TWICE, CHECKED, USED ONCE AND NOT KEPT** — not
-  audited, not logged. A mismatch is 400 `STS-PORTAL-0040` before any key is
-  generated.
+* **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` answers
+  two `data:` links carrying `download`, the unencrypted `-key.pem` and the
+  `-chain.pem`, drawn in the new certificate's row (#671) — the console keytab
+  page's arrangement, which was the only way a file left a page with
+  `script-src 'none'`; the static portal (#568) kept it. Nothing keeps the
+  private key; the page says so, and a `curl` line under the list says how to
+  present the files.
+* **NO FILE PASSWORD AND NO `.p12` SINCE #671** (rcbj, 2026-11-03). The
+  password was typed twice and a mismatch was 400 `STS-PORTAL-0040`, now
+  retired with the field: a body still carrying `p12_password` is refused at
+  the form's shape.
 * **IT SHARES THE PAGE'S SAFEGUARDS RATHER THAN GROWING ITS OWN**:
   `pki.personSelfService`, the two self-service rate limits (an RSA key
   generation costs the same CPU whatever it certifies), the CSRF token. The one
@@ -1405,9 +1519,10 @@ What is this page's:
   revocation (the CRL, OCSP, and every door that reads a certificate refusing
   it), with two reasons a person
   can honestly give: `cessationOfOperation` and `keyCompromise`.
-* **A PACKAGING FAILURE REVOKES THE CERTIFICATE AT ONCE** (`STS-PORTAL-0042`): its
-  key is gone, and a valid certificate nobody can present or knows to revoke is
-  worse than a line on a list.
+* **NOTHING IS PACKAGED, SO NOTHING CAN FAIL BETWEEN THE ISSUE AND THE
+  ANSWER** (#671). A packaging failure used to revoke the certificate at once
+  (`STS-PORTAL-0042`, now retired): the key and the chain are answered as the
+  issue handed them over (`tlsClient.pemFiles()`).
 * **WHERE IT WORKS IS ONE ADDRESS SINCE 2026-09-16**, and the card says so:
   `GET /tls/sign-in` on the host the page was reached at. It named two — the
   8443 and 9443 listeners, built from `tls.port` and `tls.mutualPort`, because
@@ -1754,6 +1869,48 @@ the directory holds no entry for the token's person, and the view read that as
 `portal.siop.view`) and the page draws its heading and no list under the
 runtime's message; an entry with nothing enrolled is still the empty list.
 `tests/portal_list_refusals.js` holds both.
+
+**OFF SAYS HOW TO TURN IT ON** (#655). With `oid4vp.signInSelfIssued` off
+the view carries `turnOn`: the setting, its environment variable, and
+whether the person holds **Admin Write in the realm the request is in**
+(`admin_rbac.rolesOf()`, required lazily — the roster is the console's, at
+18). Write, because changing a setting is a write; that realm's roster,
+because it is that realm's setting, and a realm administrator may write it
+(`admin_scope.ts` keeps only per-process rows from them). An administrator
+gets the setting named and a link to `/admin/vc#vc-tab-oid4vp`, the tab
+`SETTING_HOMES` puts the OID4VP group on — not `/admin/config`, which is the
+index and has no form for it. Anybody else is told to ask an administrator,
+and gets no link to a console that would refuse them. The roster is asked
+only when the sign-in is off, and one that throws reads as "may not".
+`tests/self_issued_off_note.js`.
+
+### A DID THIS REALM PUBLISHES FOR THE PERSON (#1291, 2026-11-03)
+
+The same page carries *DIDs this realm publishes for you* where
+`did.personPublishing` is on (or the person still holds one): the custody,
+the cap, *Publish a DID*, and each DID's document link, custody, versions and
+state, with *Add key*, *Rotate key* and *Deactivate*. `oid4vc/person_did.ts`
+and `oid4vc/CLAUDE.md` (*A PERSON'S PUBLISHED did:web*) are the design; what
+is the portal's:
+
+* **A WALLET ACT IS A LINK, NOT A FORM** — Publish in `wallet` custody, and
+  both proofs of a change (`authorize-add.<rid>` / `authorize-rotate.<rid>`,
+  then *Prove the new key*, `key.<rid>`) — to
+  `/authn/wallet?siop=1&enrol=1&did_act=…&login_hint=…`, for *Enrol a
+  wallet*'s reason: it is a sign-in round trip. It comes back with
+  `?did=published|authorized|changed&rid=…`, which the GET's `did` query
+  turns into the notice.
+* **THE REALM'S OWN ACTS ARE `POST /account-api/self-issued/dids`**
+  (mirrors `POST /portal/self-issued/dids`): `publish` in `realm` or
+  `download` custody, `add-key` / `rotate-key` of a `realm`-custody DID, and
+  `deactivate` of any. The identity is the token's; the body names only the
+  DID's `rid`. Refusals carry the library's code (`STS-VC-0167` to `0176`).
+* **A DOWNLOADED KEY IS ANSWERED ONCE**, as `view.fresh` (`kind: 'did-key'`,
+  a `data:` file), drawn in a `.fresh` pane by `freshPane()`, #671's
+  pattern; no GET ever carries it again.
+* **REMOVING A PUBLISHED DID FROM THE SUBJECT LIST DEACTIVATES IT** (the
+  POST's `remove` routes to `didAct('deactivate')`): its address is kept, so
+  a removal that left the document published would say something false.
 
 ## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
 
@@ -2304,3 +2461,14 @@ everywhere**: the owner is the token's subject, a resource named in the form
 must be theirs and a share named for removal must be in their document
 (`tests/portal_shared.js` D1). The section is always in the column; the page
 says when UMA is off.
+
+## THE OVERVIEW'S PROFILE PHOTO (#719, 2026-11-05)
+
+`web_photo.ts` turns a chosen file into a centered square of at most 720 pixels
+on a canvas, and that one result is both the preview and the hidden field Save
+sends, so Save stays disabled until there is one. **Everything goes through
+`data:` URLs** because the portal's `img-src` is `'self' data:`; a `blob:` URL
+would need the policy widened, and nothing else wants it. The limits arrive on
+the Overview's `photo.limits` and are the server's to enforce:
+`common/CLAUDE.md` (3db).
+

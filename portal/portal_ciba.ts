@@ -60,6 +60,7 @@ import stepUp = require('../oauth-oidc/step_up');
 // #432 phase 5: a waiting right's limits, drawn and read back as the approval
 // page does. A static utility class that loads nothing of GNAP's engine.
 import LimitsForm = require('../common/limits_form');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -100,14 +101,7 @@ const FORM = vz.object({
   subject: vt.opt(vt.oneOf(['yes']))
 });
 
-const QUERY = vz.object({
-  stepup: vz.string().max(256).optional()
-    .describe('A CIBA request id: answered `stepUp`, the sign-in again its ' +
-              'acr values need.'),
-  gnapstepup: vz.string().max(256).optional()
-    .describe('A waiting GNAP request id: answered `stepUp`, the sign-in ' +
-              'again its rights need.')
-});
+const QUERY = ModelZod.query('account', 'getSignInRequests');
 
 /**
  * `/portal/ciba`'s account API operations: where a person approves or
@@ -485,50 +479,13 @@ class PortalCiba {
     log.debug("Entering PortalCiba.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/ciba',
-        operationId: 'getSignInRequests', tag: 'Sign-in requests',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/ciba',
-        summary: 'The sign-in requests waiting for you, and your user code',
-        description: 'The CIBA requests a client made to sign you in ' +
-          'elsewhere (each with its binding message, scopes, requested ' +
-          'acr values and expiry), whether you have a CIBA user code, and ' +
-          'the GNAP grants waiting for you as their owner — each right with ' +
-          '`field` (the checkbox value) and `limitsHtml` (its limit ' +
-          'controls). With `stepup` or `gnapstepup` the answer is only ' +
-          '`stepUp`: sign in again with `acrValues`, `prompt=login`.',
-        query: QUERY,
+        operationId: 'getSignInRequests', access: 'person', query: QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.getView(ctx, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/ciba',
-        operationId: 'answerSignInRequest', tag: 'Sign-in requests',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/ciba',
-        summary: 'Sets your user code, or answers a request',
-        description: 'A JSON body: `action` — `set-code` (with `code`), ' +
-          '`clear-code`, `approve` / `deny` (with the CIBA request\'s ' +
-          '`id`), or `gnap-approve` / `gnap-deny` (with the GNAP request\'s ' +
-          '`id`, the ticked `right` values, `subject: "yes"`, and any ' +
-          '`lim_t<k>r<r>_<member>` limit controls lowered). An approval ' +
-          'stronger than the sign-on session proved is refused 403 with ' +
-          '`stepUp`.',
-        statuses: { 403: 'A stronger sign-in is needed (`stepUp`).' },
-        // DOCUMENTED, NOT CHECKED BY THE WRAPPER: the handler checks the body
-        // itself after `LimitsForm.strip()`, because a GNAP right's limit
-        // controls are named per right and may repeat (#568).
-        bodyDoc: { type: 'object', required: ['action'],
-          properties: {
-            action: { type: 'string', enum: ['set-code', 'clear-code',
-              'approve', 'deny', 'gnap-approve', 'gnap-deny'] },
-            id: { type: 'string', description: 'The request\'s id.' },
-            code: { type: 'string', description: 'Your user code.' },
-            right: { oneOf: [{ type: 'string' },
-                             { type: 'array', items: { type: 'string' } }],
-                     description: 'The GNAP rights ticked.' },
-            subject: { type: 'string', enum: ['yes'],
-                       description: 'Release your identity (GNAP).' } },
-          patternProperties: { '^lim_t[0-9]+r[0-9]+_[A-Za-z]+$': {
-            description: 'A limit control lowered on one right.' } } },
-        handler: function (req: Json, res: Json,
+        operationId: 'answerSignInRequest', access: 'person', handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return self.answer(ctx, req, res, caller);
         } }

@@ -98,6 +98,18 @@ const RESERVE_BYTES = StagingDirectory.RESERVE_BYTES;
 // The fields an upload may carry, whichever door it came through. The
 // console's form adds `csrf_token`, which the door checks.
 /** The fields an upload may carry, whichever door it came through. */
+// The extensions a console upload of each format may carry (#1480). '' is no
+// extension: FIDO and the Tor Project publish theirs under names with none.
+const EXTENSIONS: Record<string, string[]> = {
+  'dbip-city-csv': ['csv'],
+  'dbip-country-csv': ['csv'],
+  'dbip-asn-csv': ['csv'],
+  'ipinfo-lite-csv': ['csv'],
+  'fido-mds3-jwt': ['jwt', 'jws', 'txt', ''],
+  'android-attestation-status-json': ['json'],
+  'ip-list': ['txt', 'list', 'lst', 'netset', 'ipset', '']
+};
+
 const FIELDS = ['dataset', 'format', 'realm', 'version', 'sha256',
                 'publishedAt', 'provider', 'licence', 'attribution',
                 'activate', 'acceptTerms', 'overrideSignature'];
@@ -329,6 +341,41 @@ class RiskUpload {
     return null;
   }
 
+  // THE FILE'S NAME AGAINST ITS FORMAT (#1480, ASVS 5.0.0 5.2.2). Asked of
+  // the console's form, which is the door that has a name; the API's body is
+  // the file and has none. One compression suffix is set aside, since the
+  // contents decide that. The two formats whose publishers serve them under
+  // no extension at all may have none.
+  /**
+   * The refusal for a file name that does not fit the format, or null.
+   *
+   * @param format - the format the upload names
+   * @param filename - the file name the form sent, if any
+   * @returns the refusal, or null
+   */
+  static nameRefusal(format: unknown, filename: unknown): Json {
+    log.debug("Entering RiskUpload.nameRefusal().");
+    const allowed = EXTENSIONS[String(format || '')];
+    const name = String(filename || '').trim().toLowerCase()
+      .replace(/^.*[\\/]/, '').replace(/\.(?:gz|gzip|zip)$/, '');
+    if (!allowed || !name) {
+      log.debug("Leaving RiskUpload.nameRefusal(). Nothing to compare.");
+      return null;
+    }
+    const cut = name.lastIndexOf('.');
+    const extension = cut < 0 ? '' : name.slice(cut + 1);
+    if (allowed.indexOf(extension) >= 0) {
+      log.debug("Leaving RiskUpload.nameRefusal(). It fits.");
+      return null;
+    }
+    log.debug("Leaving RiskUpload.nameRefusal(). It does not fit.");
+    return RiskUpload.refusal(400, 'STS-RISK-0055', 'A file of the format ' +
+      String(format) + ' is named ' + allowed.filter(Boolean).map(
+        function (one: string): string {
+          return '.' + one;
+        }).join(', ') + ', optionally compressed. Nothing was stored.', true);
+  }
+
   // The fields as the importer takes them: strings, trimmed, the three flags
   // as the console's checkbox (`on`) or the API's `true`.
   private static importFields(fields: Json): Json {
@@ -516,6 +563,32 @@ class RiskUpload {
   }
 
   // -------------------------------------------------------------------------
+  // THE MALWARE SCAN, BEFORE ANYTHING READS THE FILE (ASVS 5.0.0 5.4.3, #1501).
+  // A refused file is removed here, for both doors.
+  // -------------------------------------------------------------------------
+  private async scannedImport(target: string, stored: Json, fields: Json,
+                              door: UploadDoor): Promise<UploadAnswer> {
+    const { log } = this.deps;
+    log.debug("Entering RiskUpload.scannedImport().");
+    const refused = await require('../common/malware_scan').fileRefusal(
+      target, Number(stored.bytes) || 0);
+    if (!refused) {
+      log.debug("Leaving RiskUpload.scannedImport(). On to the import.");
+      return this.importStored(target, stored, fields, door);
+    }
+    this.held.delete(target);
+    await fs.promises.rm(target, { force: true }).catch(function (e: Json) {
+      log.debug("Caught removing a refused upload: " +
+                ((e && e.message) || e));
+      // The clean-up job removes what is left.
+    });
+    log.debug("Leaving RiskUpload.scannedImport(). Refused.");
+    // error-code: none — the scanner's own, STS-CORE-0168 or STS-CORE-0169
+    return RiskUpload.refusal(refused.status, refused.code,
+                              refused.error + ' Nothing was stored.', true);
+  }
+
+  // -------------------------------------------------------------------------
   // THE STORED FILE, IMPORTED (rule 4): `importVersion()` on its path, with
   // the digest already computed. Resolves when the version is recorded
   // `loading` — the upload's answer — or, if it ends first, with how it
@@ -597,7 +670,7 @@ class RiskUpload {
                   f.dataset + ' failed to import: ' +
                   ((e && e.stack) || e));
         answer(RiskUpload.refusal(500, 'STS-RISK-0037', 'The import failed: ' +
-          ((e && e.message) || e) + '.'));
+          String((e && e.message) || e).replace(/\.+$/, '') + '.'));
       }).then(function (): Promise<void> {
         return self.release(target);
       });
@@ -686,7 +759,7 @@ class RiskUpload {
       return RiskUpload.refusal(400, 'STS-RISK-0031', 'The upload is empty. ' +
                                 'Nothing was stored.');
     }
-    const answer = await this.importStored(target, stored, q, door);
+    const answer = await this.scannedImport(target, stored, q, door);
     log.debug("Leaving RiskUpload.receiveRaw(). " + answer.status);
     return answer;
   }
@@ -799,7 +872,7 @@ class RiskUpload {
                                         'empty. Nothing was stored.');
             });
           }
-          return self.importStored(target, s, fields, door);
+          return self.scannedImport(target, s, fields, door);
         }).then(function (a: UploadAnswer | null): void {
           if (a) {
             finish(a);
@@ -829,7 +902,8 @@ class RiskUpload {
         }
         fields[name] = value;
       });
-      parser.on('file', function (name: string, file: stream.Readable): void {
+      parser.on('file', function (name: string, file: stream.Readable,
+                                  info: Json): void {
         if (fileSeen || done) {
           file.resume();
           refuse(400, 'STS-RISK-0031', 'An upload carries one file. ' +
@@ -841,7 +915,9 @@ class RiskUpload {
         // the request while this stream is not consumed.
         file.pause();
         target = self.newTarget();
-        self.fieldsRefusal(fields, door, target).then(function (wrong: Json) {
+        self.fieldsRefusal(fields, door, target).then(function (asked: Json) {
+          const wrong = asked || RiskUpload.nameRefusal(fields.format,
+                                                        info && info.filename);
           if (wrong) {
             file.resume();
             finish(wrong);
@@ -871,7 +947,8 @@ class RiskUpload {
                     'fields could not be checked: ' + ((e && e.stack) || e));
           file.resume();
           finish(RiskUpload.refusal(500, 'STS-RISK-0037', 'The upload ' +
-            'could not be checked: ' + ((e && e.message) || e) + '.', true));
+            'could not be checked: ' +
+            String((e && e.message) || e).replace(/\.+$/, '') + '.', true));
         });
       });
       parser.on('filesLimit', function (): void {

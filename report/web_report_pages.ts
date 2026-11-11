@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 
 import SpaClient = require('../common/web_spa_client');
+import WebSafeDom = require('../common/web_safe_dom');
 import WebI18n = require('../common/web_i18n');
 import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
@@ -1030,6 +1031,8 @@ class ReportRuntime extends SpaClient {
   private username: string;
   // The announcement banner's poller (#1086), once the tab holds a token.
   private announcements: WebAnnouncements | null = null;
+  // The path of the reader's own photo, for the user menu (#719).
+  photo = '';
   private i18n: any;
   private t: any;
   private accountsListening: boolean;
@@ -1439,7 +1442,7 @@ class ReportRuntime extends SpaClient {
    */
   async finishSignIn(): Promise<void> {
     const query = await this.openAuthorizationResponse(
-      SpaClient.queryOf(this.env.location.search));
+      this.callbackParameters());
     let saved: any = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) ||
@@ -1453,7 +1456,8 @@ class ReportRuntime extends SpaClient {
         String(query.error_description || query.error)));
       return;
     }
-    if (!saved || !query.code || query.state !== saved.state) {
+    if (!saved || !query.code || query.state !== saved.state ||
+        !await this.issuerMatches(query)) {
       this.env.history.replaceState(null, '', this.prefix + BASE);
       await this.beginSignIn(BASE);
       return;
@@ -1692,7 +1696,8 @@ class ReportRuntime extends SpaClient {
       body + footerHtml(this.t, chrome.version);
     const main = this.env.document.getElementById('report');
     if (main) {
-      main.innerHTML = html;
+      WebSafeDom.render(main,
+        html);
     }
   }
 
@@ -1765,11 +1770,28 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
+   * Reads the reader's own profile photo for the user menu (#719). A menu
+   * without a picture is still a menu, so a failure changes nothing.
+   *
+   * @returns nothing
+   */
+  async readPhoto(): Promise<void> {
+    try {
+      const res = await this.sendOnce('GET', this.url('/report-api/me'));
+      const answer = res && res.status === 200 ? await res.json() : null;
+      this.photo = String((answer && answer.photo) || '');
+    } catch (e) {
+      this.photo = '';
+    }
+  }
+
+  /**
    * Remembers the signed-in accounts and hears later changes once.
    *
    * @returns nothing
    */
   async hearAccounts(): Promise<void> {
+    await this.readPhoto();
     await this.readAccounts(this.username);
     if (this.accountsListening) {
       return;
@@ -1820,6 +1842,8 @@ class ReportRuntime extends SpaClient {
     return '<details class="usermenu"><summary title="' +
       esc(several ? t.text('report.accounts.summaryTitle', { user: name })
         : name) + '">' +
+      (page.photo
+        ? '<img class="menuphoto" alt="" src="' + esc(page.photo) + '">' : '') +
       esc(name) + '</summary><div class="usermenupanel">' +
       '<p class="usermenuwho">' +
       t.html('report.accounts.who', { user: name }) + '</p>' +
@@ -1828,7 +1852,8 @@ class ReportRuntime extends SpaClient {
           ReportRuntime.accountItems(page) + '</div>'
         : '') +
       '<div class="usermenuaccounts usermenusignout">' +
-      '<a class="linklike" href="' + esc(page.prefix + '/logout') + '">' +
+      '<a class="linklike" data-sign-out="1" href="' +
+      esc(page.prefix + '/logout') + '">' +
       esc(t.text('report.signOut')) + '</a></div></div></details>';
   }
 
@@ -1878,7 +1903,8 @@ class ReportRuntime extends SpaClient {
     const el = doc && doc.getElementById
       ? doc.getElementById(ACCOUNTS_ID) : null;
     if (el) {
-      el.innerHTML = ReportRuntime.accountItems(this);
+      WebSafeDom.render(el,
+        ReportRuntime.accountItems(this));
     }
   }
 
@@ -2112,7 +2138,8 @@ class ReportRuntime extends SpaClient {
     const template = form.querySelector('template[data-field-options]');
     const fieldSel = next.querySelector('select[name^="filterField"]');
     if (template && fieldSel) {
-      fieldSel.innerHTML = template.innerHTML;
+      WebSafeDom.render(fieldSel,
+        template.innerHTML);
       fieldSel.removeAttribute('title');
     }
     const controls = next.querySelectorAll('select, input');
@@ -2131,7 +2158,8 @@ class ReportRuntime extends SpaClient {
     // values.
     const valueEl = next.querySelector('[name="filterValue' + n + '"]');
     if (valueEl && valueEl.tagName === 'SELECT') {
-      valueEl.outerHTML = filterValueHtml(n, [], '', '', '');
+      WebSafeDom.replace(valueEl,
+        filterValueHtml(n, [], '', '', ''));
     }
     const plus = row.querySelector('.addfilter');
     if (plus && plus.parentNode) {
@@ -2169,7 +2197,8 @@ class ReportRuntime extends SpaClient {
       }
       const valueEl = row.querySelector('[name="filterValue0"]');
       if (valueEl && valueEl.tagName === 'SELECT') {
-        valueEl.outerHTML = filterValueHtml(0, [], '', '', '');
+        WebSafeDom.replace(valueEl,
+          filterValueHtml(0, [], '', '', ''));
       }
       return;
     }
@@ -2188,7 +2217,7 @@ class ReportRuntime extends SpaClient {
     if (hadPlus && rows.length) {
       const last = rows[rows.length - 1];
       if (!last.querySelector('.addfilter')) {
-        last.insertAdjacentHTML('beforeend', addFilterButtonHtml(this.t));
+        WebSafeDom.insert(last, 'beforeend', addFilterButtonHtml(this.t));
       }
     }
   }
@@ -2234,7 +2263,8 @@ class ReportRuntime extends SpaClient {
       if (ops.indexOf(op) < 0) {
         op = '';
       }
-      opEl.outerHTML = opSelectHtml(this.t, n, ops, op);
+      WebSafeDom.replace(opEl,
+        opSelectHtml(this.t, n, ops, op));
     }
     const html = filterValueHtml(n, fields, fieldId, op,
       String(valueEl.value || ''), anchored && n === 0);
@@ -2245,7 +2275,8 @@ class ReportRuntime extends SpaClient {
     if (wasPlain && html.indexOf('<input name=') === 0) {
       return;
     }
-    valueEl.outerHTML = html;
+    WebSafeDom.replace(valueEl,
+      html);
   }
 
   /**
@@ -2331,8 +2362,9 @@ class ReportRuntime extends SpaClient {
       // empty, as the New Query page starts.
       const block = el.closest('form').querySelector('[data-query-block]');
       if (block) {
-        block.innerHTML = queryFormHtml(this.t, this.catalogSources,
-          { source: String(el.value || '') });
+        WebSafeDom.render(block,
+          queryFormHtml(this.t, this.catalogSources,
+          { source: String(el.value || '') }));
       }
       return;
     }
@@ -2500,7 +2532,8 @@ class ReportRuntime extends SpaClient {
     for (let i = 0; i < held.length; i++) {
       chosen.push(String(held[i].getAttribute('data-dn') || ''));
     }
-    pane.innerHTML = groupResultsHtml(this.t, answer && answer.json, chosen);
+    WebSafeDom.render(pane,
+      groupResultsHtml(this.t, answer && answer.json, chosen));
   }
 
   /**
@@ -2523,7 +2556,7 @@ class ReportRuntime extends SpaClient {
         return;
       }
     }
-    list.insertAdjacentHTML('beforeend', chosenGroupHtml(this.t, {
+    WebSafeDom.insert(list, 'beforeend', chosenGroupHtml(this.t, {
       dn: dn,
       name: String(button.getAttribute('data-name') || dn),
       mail: String(button.getAttribute('data-mail') || '')
@@ -2756,7 +2789,7 @@ class ReportRuntime extends SpaClient {
     if (old && old.parentNode) {
       old.parentNode.removeChild(old);
     }
-    main.insertAdjacentHTML('afterbegin', flashHtml(this.t, kind, text));
+    WebSafeDom.insert(main, 'afterbegin', flashHtml(this.t, kind, text));
   }
 
   /**
@@ -3102,6 +3135,17 @@ class ReportRuntime extends SpaClient {
   async start(): Promise<void> {
     const self = this;
     this.env.document.addEventListener('click', function (event: any): void {
+      // THE TAB'S OWN STORAGE GOES FIRST (#1440, ASVS 5.0.0 14.3.1): the
+      // link then navigates as it always did.
+      const leaving = event.target && event.target.closest &&
+        event.target.closest('[data-sign-out]');
+      if (leaving) {
+        try {
+          event.view.sessionStorage.clear();
+        } catch (e) {
+          // Storage refused (a private window): nothing is held in it.
+        }
+      }
       self.onClick(event);
     });
     this.env.document.addEventListener('submit', function (event: any):

@@ -31,6 +31,7 @@
 //      #693 the proved key is recorded as `proof: wallet` and the
 //      administrator's as `admin`, the page says which, and the enrolment
 //      writes a `portal.siop.enrol` audit row.
+//      Recent sign-ins names section 3's sign-in SIOPv2's door (#667).
 //   6. A REMOVED KEY signs nobody in.
 //   7. THE VERIFIER, started at POST /admin-api/verifications/start
 //      (#587): a by-value SIOPv2 request with response_mode form_post,
@@ -263,8 +264,10 @@ async function startSignIn(who) {
       redirect_uri: REDIRECT_URI, scope: "openid", state: "s-" + STAMP,
       nonce: "n-" + STAMP, code_challenge: pair.challenge,
       code_challenge_method: "S256" }).toString());
-  const authnId = new URL(authorized.location || base, base).searchParams
-    .get("authn") || "";
+  // The step id is in the query in development and in the fragment in
+  // product (`mode.hidesStepIds()`, `#authn=`), so it is read from either.
+  const authnId = decodeURIComponent((/[?&#]authn=([^&#]+)/
+    .exec(String(authorized.location || "")) || [])[1] || "");
   const screen = await hop(who, "GET", authorized.location);
   const screenView = authnId ? await hop(who, "GET", base +
     "/authn-api/pending/" + encodeURIComponent(authnId)) : null;
@@ -302,8 +305,9 @@ async function finish(who, location, pair) {
   log.debug("Entering finish().");
   let at = location;
   // THE WALLET SENDS THE PERSON BACK TO THE WAIT PAGE, whose runtime
-  // collects the sign-in (#574): the collection names where to go on.
-  if (/\/authn\/wallet\/wait\?/.test(String(at || ""))) {
+  // collects the sign-in (#574): the collection names where to go on. The
+  // step's ids are in the fragment in product (#1454), the query otherwise.
+  if (/\/authn\/wallet\/wait[?#]/.test(String(at || ""))) {
     at = (await walletSignin.collect(base, who, at)).location;
   }
   for (let n = 0; n < 6 && at && at.indexOf(root) === 0 &&
@@ -538,6 +542,19 @@ async function test() {
     assert.ok(page.html.indexOf("Proved with your wallet") >= 0 &&
               page.html.indexOf("Added by an administrator") >= 0,
               "the page does not say how each key was enrolled");
+  });
+  // THE SIGN-IN SAYS WHAT IT WAS (#667): section 3's sign-in was a
+  // self-issued ID Token, and Recent sign-ins names it SIOPv2's door rather
+  // than OpenID4VP's, which both kinds of wallet sign-in answered until then.
+  const signIns = await portal.draw("/portal/sign-ins", {});
+  check("Recent sign-ins lists the self-issued sign-in as SIOPv2, not as " +
+        "an OpenID4VP presentation", function () {
+    assert.strictEqual(signIns.status, 200, JSON.stringify(signIns.json)
+      .slice(0, 300));
+    assert.ok(signIns.html.indexOf("SIOPv2 (a self-issued ID)") >= 0,
+              "no SIOPv2 sign-in listed: " + signIns.html.slice(0, 600));
+    assert.ok(signIns.html.indexOf("OpenID4VP (a wallet)") < 0,
+              "a self-issued sign-in is listed as OpenID4VP (a wallet)");
   });
   const gone = await portal.act("/portal/self-issued",
                                 { action: "remove", subject: secondUri });

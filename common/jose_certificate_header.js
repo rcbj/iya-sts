@@ -625,6 +625,48 @@ function headerFor(useCaseId, signer) {
 }
 
 // ---------------------------------------------------------------------------
+// DOES THIS SIGNATURE WANT A HEADER THAT THE KEY HAS NO CERTIFICATE FOR YET
+// (2026-11-04)? True where the use case asks for `x5c`, `x5u` or both, the key
+// has a certificate slot, and this process holds no certificate over that key
+// in it — what `helpers.certificateHeaderForAsync()` asks before it reads the
+// store and asks for one, so a signer that can wait does not take "not here
+// yet" for "not certified". False wherever `headerFor()` would answer from a
+// certificate, and wherever there is no certificate authority here at all.
+// ---------------------------------------------------------------------------
+/**
+ * Answers whether a signature's use case asks for a certificate header that
+ * the signing key has no certificate for in this process.
+ *
+ * @param useCaseId - the use case the signature belongs to
+ * @param signer - what `helpers.certificateHeaderFor()` resolves
+ * @returns true when a certificate is wanted and not held
+ */
+function awaitsCertificate(useCaseId, signer) {
+  log.debug("Entering awaitsCertificate(). use=" + useCaseId);
+  if (!useCase(useCaseId) || modeFor(useCaseId) === 'none' || !signer ||
+      !signer.slot) {
+    log.debug("Leaving awaitsCertificate(). No header is asked for.");
+    return false;
+  }
+  const pki = pkiModule();
+  if (!pki) {
+    log.debug("Leaving awaitsCertificate(). No certificate authority.");
+    return false;
+  }
+  try {
+    const record = pki.certificateFor(signer.realm, 'jose', signer.slot);
+    const held = !!(record && record.certificatePem &&
+                    holdsKey(pki, record, signer));
+    log.debug("Leaving awaitsCertificate(). " + !held);
+    return !held;
+  } catch (e) {
+    log.debug("Caught in awaitsCertificate(): " + ((e && e.message) || e));
+    log.debug("Leaving awaitsCertificate(). Unreadable; nothing to wait for.");
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // THE `x5u` RESOURCE: the PEM chain of the JOSE certificate with this SHA-256,
 // in this scope, or null. Only the `jose` use case is searched — it is the only
 // one an `x5u` this module wrote can name — and the thumbprint is matched
@@ -678,6 +720,51 @@ function chainPemFor(scopeId, thumbprint) {
   }).join('');
 }
 
+// ---------------------------------------------------------------------------
+// A JWK SET'S CHAINS AS ADDRESSES (#1351, 2026-11-05, rcbj):
+// `keys.jwksCertificateUrl`, OFF BY DEFAULT. RFC 7517 section 4.6's `x5u` is
+// section 4.1.5's for a token: the same document at the same address. The
+// conformance suite records the JWK Set several times in every test, and a
+// four-certificate `x5c` was nearly all of each RSA key.
+//
+// **A KEY KEEPS ITS `x5c` WHERE THE ADDRESS WOULD NOT ANSWER**: no request and
+// no pinned base to build it from, or a certificate `chainPemFor()` does not
+// serve (a signer group's). A dead link would lose the chain altogether, where
+// an inline one only costs bytes.
+// ---------------------------------------------------------------------------
+/**
+ * A JWK Set's keys with `x5c` replaced by `x5u` while
+ * `keys.jwksCertificateUrl` is on in the ambient realm.
+ *
+ * @param keys - the public JWKs
+ * @returns the keys to publish; a changed key is a copy
+ */
+function withCertificateUrls(keys) {
+  log.debug("Entering withCertificateUrls().");
+  if (config.value('keys.jwksCertificateUrl') !== true) {
+    log.debug("Leaving withCertificateUrls(). Off.");
+    return keys;
+  }
+  const realmId = realms.currentId();
+  const out = (keys || []).map(function (jwk) {
+    if (!jwk || !Array.isArray(jwk.x5c) || !jwk.x5c.length) {
+      return jwk;
+    }
+    const thumbprint = crypto.certificateThumbprint(jwk.x5c[0],
+                                                    { format: 'hex' });
+    const url = chainPemFor(realmId, thumbprint)
+      ? chainUrlFor(realmId, thumbprint) : '';
+    if (!url) {
+      return jwk;
+    }
+    const copy = Object.assign({}, jwk, { x5u: url });
+    delete copy.x5c;
+    return copy;
+  });
+  log.debug("Leaving withCertificateUrls().");
+  return out;
+}
+
 // What every use case is set to in the ambient realm — for a reader that wants
 // the whole picture rather than one row of it.
 /**
@@ -712,6 +799,8 @@ module.exports = {
   enterRequest: enterRequest,
   currentRequest: currentRequest,
   headerFor: headerFor,
+  awaitsCertificate: awaitsCertificate,
   chainPemFor: chainPemFor,
+  withCertificateUrls: withCertificateUrls,
   report: report
 };

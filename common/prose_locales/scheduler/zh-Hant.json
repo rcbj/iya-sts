@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "從每個已到排程間隔的屬性來源讀取此領域人員的下一頁資料，寫入其項目（#94）。每次執行每個來源處理 attributeSources.refreshBatch 位人員。"
   },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "稽核匯出"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "在每個程序中、針對每個領域：將此程序自己的新稽核事件投遞到該領域已啟用的目的地。一個目的地失敗不會阻擋其他目的地。投遞至少一次。"
+  },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",
     "text": "帳號集到期"
@@ -95,6 +103,14 @@
     "en": "c8990a4ca5b5163e",
     "text": "在 federation.encryptionKeyGraceS 過後，從每個聯盟關係中移除被輪替取代的加密金鑰。該金鑰在那一刻就已停止解密；此作業只是將它從項目上移除。"
   },
+  "sched.jobs.federation.partner-refresh.title": {
+    "en": "5354cb5ed3b1e58f",
+    "text": "聯盟工作階段的夥伴更新"
+  },
+  "sched.jobs.federation.partner-refresh.describe": {
+    "en": "6fc466ab1fe4b653",
+    "text": "對於開啟了 fedRefreshTokens 的 OpenID Connect 關係：於到期時更新每個持有夥伴權杖之工作階段的權杖，檢查新的 ID Token 與 UserInfo 是否仍指向此人，並在夥伴拒絕或回應不再指向此人時結束工作階段（#930）。"
+  },
   "sched.jobs.federation.provision-idle.title": {
     "en": "20200542bb3c76b9",
     "text": "聯盟佈建閒置清理"
@@ -174,6 +190,14 @@
   "sched.jobs.krb5.krbtgt-rotate-now.describe": {
     "en": "6fffa44535aa160d",
     "text": "立即輪替此領域的 krbtgt 金鑰。若使用 invalidate，則不保留先前版本：在此之前核發的每個 TGT 都會被拒絕，並由一個 Shared Signals 事件通告。"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "LDAP 連線鏡像維護"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "刪除已不再是成員的節點的鏡像 LDAP 連線，以及已超過有效期限的登出指令。"
   },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
@@ -311,21 +335,53 @@
     "en": "049675db215c0863",
     "text": "為 監控 → 密碼金鑰 統計領域的密碼金鑰（#942）：依演算法和通道，統計僅持有後量子、僅持有傳統或兩者皆有的人員，以及哪些驗證器型號持有哪些演算法。只讀取持有密碼金鑰的人員，每次一頁；之後發生的變更會在寫入時計入。"
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "授權群組索引回填"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "為 #1306 之前寫入的每個目錄條目補上其授權屬性的 grantinggroup 索引鍵，每次處理儲存區中的一頁，使聯合佈建向儲存區提出的問題能找到此類條目所指名的群組；只將儲存區標記為完成一次，此後即處於關閉狀態（#1311）。"
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "過期產生資料列清除"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "從共用儲存區中，以每批 5000 筆、每次執行每種類別最多 20 批的方式，刪除任何啟動都不會再讀取的產生資料列：已超過其自身到期時間者、屬於已不再定義之領域者（寫入超過一小時），以及短期儲存區中沒有到期時間且早於 persistence.mintedRetention 的資料列。"
+    "en": "51b75ecbc03ac6ba",
+    "text": "從此叢集的儲存區（在以單元方式部署的服務中，為此單元自己的資料庫）中，以每批 5000 筆、每次執行每種類別最多 20 批的方式，刪除任何啟動都不會再讀取的產生資料列：已超過其自身到期時間者、屬於已不再定義之領域者（寫入超過一小時），以及短期儲存區中沒有到期時間且早於 persistence.mintedRetention 的資料列。"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "過期產生資料列清除（全域層）"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "在以單元方式部署的服務中，以相同的批次從全域層的資料庫中刪除同樣三類產生資料列；其執行在全域層中認領，因此每個時段只有一個單元執行。在只有一個資料庫的服務中關閉，由另一項清除涵蓋。"
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",
     "text": "過期墓碑清理"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "d5b8faad6c0c24c4",
-    "text": "從共用儲存區刪除已結束之產生資料列中早於 persistence.mintedRetention 的墓碑。"
+    "en": "56aed2e95604a1b4",
+    "text": "從此叢集的儲存區中刪除已結束之產生資料列中早於 persistence.mintedRetention 的墓碑，每批 5000 筆、每次執行最多 20 批（在以單元方式部署的服務中，為此單元自己的資料庫）。"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.title": {
+    "en": "15e3f193cfee5337",
+    "text": "過期墓碑清理（全域層）"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.describe": {
+    "en": "98370fb755b4ba95",
+    "text": "在以單元方式部署的服務中，以相同的批次從全域層的資料庫中刪除早於 persistence.mintedRetention 的已結束產生資料列的墓碑；其執行在全域層中認領，因此每個時段只有一個單元執行。在只有一個資料庫的服務中關閉，由另一項清理涵蓋。"
+  },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "已釘選憑證稽核"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "將此領域每一張已釘選的憑證與每一筆簽署者信任存放區項目，依偏執 PKI 模式的檢查進行審查，保存 /admin/pki/trust 所繪製的結果，並記錄與寄送變更內容的郵件。"
   },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
@@ -340,8 +396,8 @@
     "text": "記憶體報告"
   },
   "sched.jobs.process.memory-report.describe": {
-    "en": "4f2c054a1405a843",
-    "text": "在此程序中記錄一行，包含其角色與記憶體：常駐大小、已使用與總計的堆積、堆積上限、外部記憶體與陣列緩衝區（#341）。"
+    "en": "d4a21d654747ddc9",
+    "text": "在此程序中記錄本次執行的摘要，包含其角色與記憶體：常駐大小、已使用與總計的堆積、堆積上限、外部記憶體與陣列緩衝區。該記錄行為偵錯層級（#341）。"
   },
   "sched.jobs.report.build-cleanup.title": {
     "en": "e5bd8efc07f0b31b",
@@ -454,6 +510,14 @@
   "sched.jobs.risk.upload-cleanup.describe": {
     "en": "758dfacad5326b05",
     "text": "在每個程序中：讓此程序正在匯入的資料集上傳保持新鮮，並從 risk.uploadDirectory 刪除已有 risk.importStallMinutes 沒有任何存活程序觸及的上傳——即中途停止匯入的程序所遺留的檔案。"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "SAML 服務提供者中繼資料更新"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "重新取得每個已超過其 cacheDuration 的服務提供者中繼資料，來源為其 samlSpMetadataUrl 或 MDQ 回應者；已超過其 validUntil 的文件會被拒絕。"
   },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",

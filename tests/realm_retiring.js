@@ -417,12 +417,11 @@ function storeChild() {
       }
       return rows([]);
     }
-    if (/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
-          .test(text)) {
+    if ((/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
+          .test(text) || /sts:(latestChangeSeq|changeCeiling) /.test(text))) {
       return rows([{ seq: db.log.length }]);
     }
-    if (/^SELECT seq, origin, kind, realm, key FROM sts_changes WHERE seq > /
-          .test(text)) {
+    if (/sts:changesSince /.test(text)) {
       return rows(db.log.filter(function (row) {
         return row.seq > Number(p[0]);
       }).slice(0, Number(p[1]) || 500));

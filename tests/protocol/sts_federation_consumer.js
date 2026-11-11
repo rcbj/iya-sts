@@ -118,8 +118,13 @@ function realmBase(realm) {
 function squash(text) {
   log.debug("Entering squash().");
   log.debug("Leaving squash().");
+  // THE SHARED ERROR PAGE (#1326, #1327) opens with the language chooser
+  // and keeps the English what and why in its diagnostics, below the
+  // translated sentence: the chooser is dropped and the window is wide
+  // enough to hold both.
   return String(text || "").replace(/<style[\s\S]*?<\/style>/g, " ")
-    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+    .replace(/<details class="language-row">[\s\S]*?<\/details>/g, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
 function htmlDecode(text) {
@@ -255,7 +260,7 @@ async function federatedSignIn(idpUser, opts) {
       const next = new URL(r.location, r.url).toString();
       // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
       // its view is what it offers, and its acts are the API's.
-      if (/\/authn\/login\?authn=/.test(next)) {
+      if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(next)) {
         const at = new URL(next);
         const screenBase = at.origin +
           at.pathname.replace(/\/authn\/login$/, "");
@@ -393,7 +398,7 @@ async function federatedSignIn(idpUser) {
   for (let step = 0; step < 24; step += 1) {
     if (r.status >= 300 && r.status < 400 && r.location) {
       const next = new URL(r.location, r.url).toString();
-      if (/\/authn\/login\?authn=/.test(next)) {
+      if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(next)) {
         const at = new URL(next);
         const screenBase = at.origin +
           at.pathname.replace(/\/authn\/login$/, "");

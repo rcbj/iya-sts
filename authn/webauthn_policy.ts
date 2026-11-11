@@ -17,18 +17,13 @@
 // ---------------------------------------------------------------------------
 // WHY IT IS NOT IN `authn/webauthn.js` NEXT DOOR, WHICH IS THE OBVIOUS PLACE.
 //
-// That file is deliberately loadable ON ITS OWN. The debugger's
-// `tests/webauthn_cross_impl.js` copies it — one file, beside its own scripts —
-// and runs it against the same real ceremonies its browser-side implementation
-// verifies, because two independent readings of one specification that agree is
-// a real result and one implementation agreeing with itself is none. Its own
-// header says so, and its `require('../common/helpers')` is inside a try/catch
-// for exactly that reason.
-//
-// A `require('../common/config')` in there would end that. Not loudly: the same
-// try/catch would swallow it and the module would go on verifying, with a
-// settings function that silently answered defaults in the one place a reader
-// would trust it. So the settings live here and the verifier stays a verifier.
+// That file was deliberately loadable ON ITS OWN until #1280: the debugger's
+// `tests/webauthn_cross_impl.js` copied it beside its own scripts and ran it
+// against the ceremonies its browser-side implementation verifies, so its
+// requires sat inside a try/catch and a `require('../common/config')` there
+// would have been swallowed, answering defaults silently. That staging is no
+// longer kept, and the settings still live here: the verifier stays a
+// verifier, and the policy is a different job.
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS NOT IN `authn/authn.ts`, WHICH IS THE OTHER OBVIOUS PLACE.
@@ -71,7 +66,7 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `WebauthnPolicy` takes `config`, the logger, the verifier's tables
-// (`./webauthn`, which stays JavaScript: the parent project copies it) and
+// (`./webauthn`, still JavaScript; #50 may convert it since #1280) and
 // the error codes through its constructor. The two tables stay module-level
 // data, and `ALG_IDS` is still filled at load from the verifier's table.
 // Since #50's R2 the composition root builds the instance; every old name is

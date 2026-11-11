@@ -138,8 +138,11 @@ const LIST_PARAMS = {
                    'requiringPage'],
   '/admin/policies': ['per', 'page'],
   '/admin/applications': ['q', 'kind', 'per', 'page'],
-  '/admin/saml2': ['q', 'per', 'page'],
-  '/admin/saml11': ['q', 'per', 'page'],
+  // `idpInitiatedPage` is the IdP-Initiated SSO tab's list on the combined
+  // SAML page (#749). A drill-down from either identity-provider table
+  // carries it, so the way back is still that page of the tab.
+  '/admin/saml2': ['q', 'per', 'page', 'idpInitiatedPage'],
+  '/admin/saml11': ['q', 'per', 'page', 'idpInitiatedPage'],
   '/admin/authorization-servers': ['per', 'page'],
   // GNAP's two lists and the grant state filter (gnap/gnap_admin.ts).
   '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage',
@@ -249,6 +252,8 @@ const LIST_PARAMS = {
   // `back`, so removing the last row on page 3 lands on page 3 — clamped to the
   // last page there is — rather than on page 1.
   '/admin/tls/trust': ['per', 'page'],
+  // The inventory of what a realm pins (#1360).
+  '/admin/pki/trust': ['per', 'pinsPage'],
   // The Kerberos principals' two lists (2026-09-12), paged separately and
   // sharing one `per`. Spent by every row button's `back`.
   '/admin/kerberos/principals': ['per', 'peoplePage', 'servicesPage'],
@@ -1016,7 +1021,8 @@ class WebKit {
    * Submitting it resets every table's page to the first.
    *
    * @param path - the page the form submits to
-   * @param key - the name of the hidden parameter that selects the drill-down
+   * @param key - the name of the hidden parameter that selects the drill-down,
+   *   or '' for a list with no drill-down to select
    * @param value - that parameter's value
    * @param perPage - the page size in use
    * @param extraNote - optional; a sentence added to the form's note
@@ -1026,14 +1032,20 @@ class WebKit {
    */
   static perPageForm(path, key, value, perPage, extraNote?, carry?,
                      t = webMessages.WebTranslator.fallback()) {
-    const carried = Object.keys(carry || {}).map(function (name) {
+    // ONE FIELD TO A NAME. The select below IS `per`, so a `per` handed in
+    // (a list view carries one, and /admin/realms named it as its key) is
+    // dropped here rather than drawn beside it: two controls of one name
+    // reach the address as `per=300,300`, which is no number, and the page's
+    // operation refuses it (#1476). A key also in `carry` is the key.
+    const hidden = Object.assign({}, carry || {},
+                                 key ? { [key]: value } : {});
+    delete hidden.per;
+    const carried = Object.keys(hidden).map(function (name) {
       return '<input type="hidden" name="' + WebKit.esc(name) + '" value="' +
-             WebKit.esc(carry[name]) + '">';
+             WebKit.esc(hidden[name]) + '">';
     }).join('');
     const html = '<form method="get" action="' + WebKit.esc(path) + '"><div ' +
-      'class="formrow"><input type="hidden" ' +
-      'name="' + WebKit.esc(key) + '" value="' + WebKit.esc(value) + '">' +
-      carried +
+      'class="formrow">' + carried +
       '<label for="per"' + WebKit.tip(t.text('consoleKit.perPage.tip')) +
       '>' + t.html('consoleKit.perPage.label') + '</label>' +
       '<select id="per" name="per"' +
@@ -1345,7 +1357,9 @@ class WebKit {
   //   slice       optional, { matched, from }: `entries` is then the pane's
   //               results already searched and paged — by the view, for a
   //               catalogue too big to send whole (#446) — and these say how
-  //               many matched and where the page starts
+  //               many matched and where the page starts; `countCapped`
+  //               true when MORE than `matched` matched (#1308, a count
+  //               that stopped at its cap), which the count line says
   /**
    * Draws a search box and a paged, scrolling pane of matching entries,
    * shared by every chooser on the console.
@@ -1468,10 +1482,16 @@ class WebKit {
     const counted = { n: matchedCount, from: from + 1,
                       to: from + shown.length,
                       searched: wanted ? 'yes' : 'no' };
+    // A COUNT THAT STOPPED AT ITS CAP IS NOT A NUMBER OF MATCHES (#1308):
+    // "of 100000" would be a number the store never counted to, so the
+    // line says "more than". The pager still stops at `matched`.
+    const countCapped = Boolean(sliced && sliced.countCapped);
     const count = matchedCount
-      ? (matchedCount > WebKit.CHOOSER_HITS
-          ? t.html('consoleKit.chooser.showing', counted)
-          : t.html('consoleKit.chooser.count', counted))
+      ? (countCapped
+          ? t.html('consoleKit.chooser.showingMore', counted)
+          : (matchedCount > WebKit.CHOOSER_HITS
+              ? t.html('consoleKit.chooser.showing', counted)
+              : t.html('consoleKit.chooser.count', counted)))
       : '';
     const more = [];
     if (from > 0) {
@@ -2567,14 +2587,17 @@ class WebKit {
    * @param t - the page's translator (#539 phase 5): the runtime's, built
    *   from `GET /admin-api/console`'s `locale`; without one, the default
    *   (English in node, set by `common/i18n.ts`; key-drawing in a browser)
-   * @returns `{ query, write, t }`, the query copied and `write` a boolean
+   * @param security - whether the reader holds the Security Administrator's
+   *   role (#645), which a policy page asks before it offers a Save
+   * @returns `{ query, write, security, t }`, the query copied and the two
+   *   flags booleans
    */
-  static context(query?, write?, t?) {
+  static context(query?, write?, t?, security?) {
     const copy = {};
     Object.keys(query || {}).forEach(function (name) {
       copy[name] = query[name];
     });
-    return { query: copy, write: write === true,
+    return { query: copy, write: write === true, security: security === true,
              t: t || webMessages.WebTranslator.fallback() };
   }
 

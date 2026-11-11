@@ -85,6 +85,13 @@ var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");
 base = String(base).replace(/\/+$/, "");
 var api = base + "/admin-api";
 
+// WHAT THE OPERATOR SAYS THEY DID TO VERIFY THE PERSON, sent with every clear
+// of a second factor. Product mode refuses a clear without it (#1504, ASVS
+// 5.0.0 6.4.4: STS-ADMIN-0916, at least eight characters, recorded in the
+// audit log); development mode accepts and records it, so it is sent in both.
+const CLEAR_EVIDENCE = "Protocol job: identity checked against the " +
+  "fixture this job created";
+
 // THE ORIGIN AND THE RP ID ARE COMPUTED FROM THE SERVICE'S OWN BASE, not
 // written down. A `clientDataJSON.origin` is compared byte for byte and an RP
 // ID hash is compared byte for byte, so a fixture with `localhost` in it passes
@@ -354,7 +361,7 @@ async function reachTheSignInScreen(b) {
       code_challenge: challenge.challenge,
       code_challenge_method: challenge.method
     }));
-  assert.ok(/\/authn\/login\?authn=/.test(started.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(started.location),
     "the authorization endpoint did not send us to the sign-in screen: " +
     started.status + " " + started.location);
   log.debug("Leaving reachTheSignInScreen().");
@@ -715,7 +722,8 @@ async function anOperatorCanClearItAndTheDemandStops(authenticator) {
   log.debug("Entering anOperatorCanClearItAndTheDemandStops().");
   log.info("=== an operator clears it and the demand stops ===");
   const r = await post("/users/clear-key",
-    { user: PERSON, credentialId: authenticator.idB64 });
+    { user: PERSON, credentialId: authenticator.idB64,
+      evidence: CLEAR_EVIDENCE });
   check("POST /admin-api/users/clear-key removes a key that really exists — " +
         "the console's Clear button could only ever answer `no security key " +
         "of that id is enrolled`, because none could", function () {

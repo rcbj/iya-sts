@@ -287,7 +287,7 @@ class SettingsForms {
         '<td><input type="number" name="' +
         kit.esc(key + '.rank.' + value) + '" value="' + (n + 1) +
         '" min="1" max="' + setting.csvValues.length + '" step="1" ' +
-        'style="width:4.5em"' + off + ' aria-label="' +
+        'class="rank"' + off + ' aria-label="' +
         kit.esc(t.text('consoleSettings.ordered.preferenceOf',
           { value: value })) + '"></td>' +
         '<td><code>' + kit.esc(value) + '</code></td>' +

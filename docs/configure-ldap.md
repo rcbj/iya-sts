@@ -47,7 +47,7 @@ succeeds (any DN, any password, anonymous, on 389 and 636), except the
 password `invalid` and a disabled account. Any connection may read and write
 anything. Product mode does none of this:
 * A bind is verified against the entry's `userPassword`, and only an entry under `ou=users` may bind.
-* An anonymous bind is refused (48), and so is any bind on 389 (13, `confidentialityRequired`). Use LDAPS on 636.
+* An anonymous bind is refused (48). Port 389 is not opened unless `ldap.plainListener` is set on, and then any bind there is refused (13, `confidentialityRequired`). Use LDAPS on 636.
 * A read needs a bind (50). The root DSE is the one exception.
 * A person reads their own entry and nothing of anybody else's, unless `ldap.directoryReadableAttributes` says otherwise.
 * Only Admin Write writes. A person may change only the attributes in `ldap.selfWritableAttributes`, on their own entry.
@@ -141,10 +141,11 @@ ldapsearch ... -b "uid=ldaps-run1,ou=users,dc=example,dc=com" -s base '(objectCl
 
 ## Turn off the plain listener
 
-A verified bind on 389 would send a real password in the clear, so product
-mode refuses every bind there, answers only the root DSE, and logs a warning
-at startup while 389 is on. Turn it off. `ldap.plainListener` takes effect at
-the next restart.
+A verified bind on 389 would send a real password in the clear. Product mode
+therefore does not start the plain listener unless `ldap.plainListener` is set
+on. If it is set on, product mode refuses every bind there, answers only the
+root DSE, and logs a warning at startup. Development mode starts it unless the
+setting is off. `ldap.plainListener` takes effect at the next restart.
 
 **Console:** on **Protocols → LDAP / LDAPS**, set **Plain LDAP listener** to
 off, click **Save LDAP**, and restart the service.
@@ -244,7 +245,7 @@ which is how a directory moves between two instances. Product mode refuses one.
 In product mode a person bound as themselves may modify only the attributes
 in `ldap.selfWritableAttributes`, on their own entry. The default list is
 `telephoneNumber`, `mobile`, `homePhone`, `displayName`, `preferredLanguage`,
-`postalAddress`, `street`, `l`, `st`, `postalCode` and `userPassword`.
+`postalAddress`, `street`, `l`, `st` and `postalCode`. `userPassword` is not on it, because an LDAP modify doesn't prove the current password. Adding it lets a connection change its own password unproved, so people should use the portal instead.
 Taken from the in-process test `tests/directory_write_authorization.js`.
 
 ```bash
@@ -271,7 +272,7 @@ change on their own entry** and click **Save LDAP**.
 
 **API:**
 ```bash
-api config/set '{"key":"ldap.selfWritableAttributes","value":"telephoneNumber,mobile,userPassword"}'
+api config/set '{"key":"ldap.selfWritableAttributes","value":"telephoneNumber,mobile"}'
 ```
 
 Think before adding an attribute a token carries (`mail`, `cn`, `givenName`,
@@ -394,8 +395,8 @@ password over LDAP.
 
 **API:**
 ```bash
-api policies/save-password-policy '{"minLength":8,"history":1,"minSymbols":0,
-  "requireUppercase":false,"requireDigit":true,"generatedLength":16}'
+api policies/save-password-policy '{"minLength":8,"history":1,
+  "generatedLength":16}'
 api policies/reset-password-policy '{}'    # delete the entry; the built-in defaults apply
 ```
 
@@ -417,18 +418,20 @@ fields are optional in a save: one left out keeps the value in force.
 | `argon2Parallelism` | `stsPwdArgon2Parallelism` | 1 | 1 to 16 |
 | `scryptLogN` | `stsPwdScryptLogN` | 15 (N=32768) | 13 to 20 |
 | `scryptBlockSize` | `stsPwdScryptBlockSize` | 8 | 8 to 16 |
-| `scryptParallelism` | `stsPwdScryptParallelism` | 1 | 1 to 16 |
+| `scryptParallelism` | `stsPwdScryptParallelism` | 1 (at least 3 is used in product mode) | 1 to 16 |
 
 The default is scrypt at N=2^15, r=8, p=1, the parameters every password
-stored before 2026-10-22 already has. argon2id can be chosen instead; its
+stored before 2026-10-22 already has. **Product mode hashes at a parallelism of
+at least 3**, whatever the profile says, so its default is N=2^15, r=8, p=3,
+one of OWASP's pairs. argon2id can be chosen instead; its
 bounds start at the OWASP Password Storage Cheat Sheet's minimum.
 
-The scrypt default is below OWASP's scrypt table (2^17 with p=1, 2^16 with
-p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10). Until
+OWASP's scrypt table is 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with
+p=5, or 2^13 with p=10. Development mode's default, p=1, is below it, and in
+development the parallelism asked for is the one used. Until
 [#872](https://github.com/rcbj/iya-sts/issues/872) makes one of OWASP's pairs
-the default, neither the policy nor the hashing code enforces the table: a
-policy with a scrypt cost and parallelism below it is saved, and the
-parallelism asked for is the one used.
+the default everywhere, neither mode enforces the table beyond product's floor
+of p=3: a policy with a lower cost, such as 2^13, is saved and used.
 
 An argon2id hash is stored as the PHC string
 `$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>`, and a scrypt one as
@@ -438,8 +441,9 @@ verifies and its stored hash is not the policy's algorithm and parameters, it
 is hashed again and written back. A change of parameters within one algorithm
 counts too. The rule is "different from the policy", not "weaker than the
 policy": a person whose stored hash is argon2id is hashed again with scrypt at
-their next sign-in when the policy says scrypt. That costs one scrypt hash at
-2^15, r=8, p=1 (about 100 ms) once per person. The person's password history
+their next sign-in when the policy says scrypt, and a person whose hash was
+stored at p=1 is hashed again at p=3 when product mode raises it. That costs one
+scrypt hash once per person. The person's password history
 and `pwdChangedTime` are not touched, because the password did not change.
 Development mode verifies no password, so the upgrade happens in product mode
 only.
@@ -543,8 +547,9 @@ The client has to manage without these. [LDAP](ldap.md) says why for each.
 * **StartTLS.** Use `ldaps://` on 636.
 * **SASL**, including EXTERNAL and GSSAPI. Only a simple bind.
 * **Controls and extended operations.** No paged results, no Who am I? (so
-  `ldapwhoami` does not work), and no Password Modify (`ldappasswd`). Change
-  a password with an `ldapmodify` of `userPassword`.
+  `ldapwhoami` does not work), and no Password Modify (`ldappasswd`). An
+  administrator changes a password with an `ldapmodify` of `userPassword`; a
+  person changes their own on the portal, which asks for the current one.
 * **A schema.** No object class or syntax is checked.
 * **Referential integrity.** Deleting a person leaves their DN in every group.
 * **Replication.** There is no LDAP replication protocol. Several nodes share

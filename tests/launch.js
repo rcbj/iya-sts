@@ -252,6 +252,28 @@ function childMain() {
     note(r.status === 409 && await refusedWith('STS-LAUNCH-0006'),
          'c1. no registered assertion consumer service is 409 (0006)',
          r.status);
+    // THE REFUSAL IS THE SHARED ERROR PAGE (#1327): the sentence in the box,
+    // the start-over note and the portal, the diagnostics with an incident
+    // ID and the English detail as data, and no key drawn as its name.
+    note(/<div class="warn" role="alert">/.test(r.text) &&
+         /has no address registered to send you to/.test(r.text) &&
+         /href="[^"]*\/portal"/.test(r.text) &&
+         /<h2 id="diagnostics-heading">Diagnostics<\/h2>/.test(r.text) &&
+         /<dt>Incident ID<\/dt><dd><code>\d+<\/code>/.test(r.text) &&
+         /<dt>Detail<\/dt><dd><code>The application has no registered/
+           .test(r.text) &&
+         r.text.indexOf('launchErrors.') < 0,
+         'c2. the refusal is the shared error page, with its diagnostics',
+         r.text.slice(0, 400));
+    // Every word follows the language chosen; the detail stays as sent.
+    const french = browser(port);
+    french.jar.sts_lang = 'fr';
+    r = await french.go('GET', link(SP2_NOACS));
+    note(r.status === 409 && /<html lang="fr"/.test(r.text) &&
+         /Cette connexion n’a pas pu être lancée/.test(r.text) &&
+         /The application has no registered/.test(r.text),
+         'c3. in French when French is chosen, the detail still as sent',
+         r.text.slice(0, 400));
 
     // --- d. more than one protocol -------------------------------------------
     r = await anon.go('GET', link(BOTH));

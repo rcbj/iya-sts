@@ -45,15 +45,26 @@ function fakeResponse() {
 }
 
 // The page for one error, as a person not signed in would get it.
+// The request the page answers (#1326): a browser's GET, nobody signed in.
+function fakeRequest() {
+  log.debug("Entering fakeRequest().");
+  log.debug("Leaving fakeRequest().");
+  return { method: 'GET', headers: { accept: 'text/html' }, query: {},
+           originalUrl: '/oauth2/authorize?client_id=a-client', cookies: {} };
+}
+
 function render(form) {
   log.debug("Entering render().");
   const res = fakeResponse();
-  oauth2.sendRedirectInterstitial(res, {
+  oauth2.sendRedirectInterstitial(fakeRequest(), res, {
     error: 'invalid_request', description: 'something was wrong',
     why: 'because', clientId: 'a-client',
     redirectUri: 'https://rp.example/cb', state: 's1',
     target: 'https://rp.example/cb?error=invalid_request&state=s1',
-    form: form ? { error: 'invalid_request', state: 's1' } : undefined
+    form: form ? { error: 'invalid_request', state: 's1' } : undefined,
+    requirement: 'authenticate-before-redirect',
+    q: { client_id: 'a-client', redirect_uri: 'https://rp.example/cb',
+         state: 's1', nonce: 'n1', response_type: 'code' }
   });
   log.debug("Leaving render().");
   return res.body;
@@ -67,6 +78,21 @@ async function run(t) {
           plain.indexOf('automatically in') < 0 &&
           plain.indexOf('Continue to https://rp.example/cb') >= 0,
           '1. the default page has its link and no timed continue');
+  // #1326: the shared page — the box first, the background collapsed, the
+  // portal, the diagnostics with an incident ID, the chooser, no script.
+  const box = plain.indexOf('<div class="warn" role="alert">');
+  const more = plain.indexOf('<details class="prose">');
+  const portal = plain.indexOf('href="/portal"');
+  const diag = plain.indexOf('<section class="diagnostics"');
+  t.check(box > 0 && more > box && portal > more && diag > portal &&
+          /<form class="language-chooser"/.test(plain) &&
+          /<code>s1<\/code>/.test(plain) && /<code>n1<\/code>/.test(plain) &&
+          /<code>a-client<\/code>/.test(plain) &&
+          /RFC 9700 section 4\.11\.2/.test(plain.slice(more, portal)) &&
+          plain.indexOf('<script') < 0,
+          '1b. the shared error page: the error, the RFC 9700 background ' +
+          'collapsed, the portal, and the request\'s values among the ' +
+          'diagnostics');
 
   t.log.info('=== 2. set to five seconds ===');
   config.setOverride('oauth2.errorPageAutoRedirectS', 5);
@@ -83,7 +109,8 @@ async function run(t) {
     t.log.info('=== 3. form_post keeps its button ===');
     const posted = render(true);
     t.check(posted.indexOf('http-equiv="refresh"') < 0 &&
-            posted.indexOf('<form method="post"') >= 0,
+            posted.indexOf('<form method="post"') >= 0 &&
+            posted.indexOf('class="as-link"') >= 0,
             '3. the form_post page never continues by itself');
   } finally {
     config.clearOverride('oauth2.errorPageAutoRedirectS');

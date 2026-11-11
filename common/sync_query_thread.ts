@@ -72,6 +72,9 @@ function databaseBackend(connection: Record<string, unknown>,
   const queries = require(queriesModule ||
                           '../persistence/directory_queries');
   const knexStore = require('../persistence/knex_store');
+  // A thread has a `tls` module of its own, so the host check, the path rules
+  // and the outbound gate are installed here too (#1360).
+  require('./outbound_tls').installProcessWide();
   // sslmode=verify-ca verifies the chain and not the host name, which takes
   // a `checkServerIdentity` that checks nothing — a function, which cannot
   // be posted here, so the driver's `bridgeConnection()` says it as

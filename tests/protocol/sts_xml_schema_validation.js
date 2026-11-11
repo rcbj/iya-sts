@@ -150,6 +150,7 @@ const BINDING = {
   simpleSign: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign"
 };
 const SIG_ALG = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
+const NS_ALG = "urn:oasis:names:tc:SAML:metadata:algsupport";
 
 let checks = 0;
 const failures = [];
@@ -605,7 +606,7 @@ async function browse(cookies, startUrl, username, stopAt) {
       }
       // THE SIGN-IN SCREEN, A STATIC PAGE OVER `/authn-api` SINCE #571:
       // answered through the one helper, its answer read as the form's 303.
-      if (username && /\/authn\/login\?authn=/.test(next)) {
+      if (username && /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(next)) {
         const at = new URL(next);
         const answer = await authnSignin.submit(at.origin +
           at.pathname.replace(/\/authn\/login$/, ""), next,
@@ -901,6 +902,15 @@ async function metadata(w) {
     const r = await hop(null, w.rb + p);
     await validate(w.mode + " " + what + " (HTTP " + r.status + ")",
                    r.status === 200 ? r.body : "", p);
+    // The Algorithm Support profile's elements (#1368): every view carries
+    // them, so the validation above always has something of theirs to check.
+    await check(w.mode + " " + what + " carries the Algorithm Support elements",
+                async function () {
+      if (!/<alg:SigningMethod /.test(r.body) ||
+          !/<alg:DigestMethod /.test(r.body)) {
+        throw new Error("they are missing");
+      }
+    });
   }
   log.debug("Leaving metadata().");
 }
@@ -1222,9 +1232,9 @@ function rst(o) {
     ? "<wsse:Security xmlns:wsse=\"" + NS.wsse + "\"><wsse:UsernameToken>" +
       "<wsse:Username>" + o.username + "</wsse:Username><wsse:Password>" +
       o.password + "</wsse:Password></wsse:UsernameToken>" +
-      // The certificate `?encrypt=1` encrypts to: the endpoint takes the
-      // first X509Certificate in the request (a WS-Security signature's
-      // KeyInfo in a real client).
+      // The certificate `?encrypt=1` encrypts to: the endpoint takes one from
+      // the requester's own Security header, outside any assertion (a
+      // WS-Security signature's KeyInfo in a real client, #747).
       (o.recipientCertB64 ? "<ds:X509Data xmlns:ds=\"http://www.w3.org/" +
         "2000/09/xmldsig#\"><ds:X509Certificate>" + o.recipientCertB64 +
         "</ds:X509Certificate></ds:X509Data>" : "") + "</wsse:Security>"
@@ -1599,6 +1609,43 @@ async function selfTest() {
     }
     if (!coverageProblems(doc).length) {
       throw new Error("coverage found nothing");
+    }
+  });
+  // THE ALGORITHM SUPPORT PROFILE'S OWN SCHEMA IS LOADED (#1368). md:Extensions
+  // holds it through a lax wildcard, so without that schema an invalid element
+  // passes xmllint unexamined.
+  const algDoc = function (attributes) {
+    log.debug("Entering algDoc().");
+    log.debug("Leaving algDoc().");
+    return "<md:EntityDescriptor xmlns:md=\"urn:oasis:names:tc:SAML:2.0:" +
+      "metadata\" entityID=\"urn:xsd:self-test\"><md:Extensions>" +
+      "<alg:SigningMethod xmlns:alg=\"" + NS_ALG + "\"" + attributes + "/>" +
+      "</md:Extensions><md:IDPSSODescriptor protocolSupportEnumeration=\"" +
+      "urn:oasis:names:tc:SAML:2.0:protocol\"><md:SingleSignOnService " +
+      "Binding=\"urn:xsd:self-test\" Location=\"https://example.net/\"/>" +
+      "</md:IDPSSODescriptor></md:EntityDescriptor>";
+  };
+  await check("an alg:SigningMethod with no Algorithm is refused by xmllint",
+              async function () {
+    const r = xmllint(algDoc(""));
+    if (r.ok || !/Algorithm/.test(r.errors.join(" "))) {
+      throw new Error("accepted, or refused for another reason: " +
+                      r.errors.join(" | "));
+    }
+  });
+  await check("as is one with a MinKeySize of zero", async function () {
+    const r = xmllint(algDoc(" Algorithm=\"urn:a\" MinKeySize=\"0\""));
+    if (r.ok || !/MinKeySize/.test(r.errors.join(" "))) {
+      throw new Error("accepted, or refused for another reason: " +
+                      r.errors.join(" | "));
+    }
+  });
+  await check("the same element with an Algorithm is accepted (the control)",
+              async function () {
+    const doc = algDoc(" Algorithm=\"urn:a\"");
+    const r = xmllint(doc);
+    if (!r.ok || coverageProblems(doc).length) {
+      throw new Error(r.errors.concat(coverageProblems(doc)).join(" | "));
     }
   });
   log.debug("Leaving selfTest().");

@@ -85,6 +85,8 @@ import codec = require('./vc_status_codec');
 // List credential (#197). A library that requires nothing in this directory
 // but `vc_jsonld.ts`.
 import vcDataIntegrity = require('./vc_data_integrity');
+// The wallet compatibility mode (#657).
+import VcAlgorithms = require('./vc_algorithms');
 
 type RouteApp = typeof app;
 
@@ -512,9 +514,8 @@ class VcStatus {
     const { log, config, STS, signingKeyForAsync, publishedKidFor } =
       this.deps;
     log.debug("Entering VcStatus.signerAsync().");
-    const alg = String(chosen ||
-                       config.value('oid4vci.credentialSigningAlgorithm') ||
-                       'RS256');
+    const alg = stsCrypto.signaturePolicy.underPqcOnly(String(chosen ||
+      config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
     // THE CREDENTIALS GROUP'S KEY in a hybrid-groups realm (#68) — the list
     // and the credentials it describes are both `vci-credential`, so they
     // still sign with one key — else the per-algorithm key.
@@ -650,6 +651,30 @@ class VcStatus {
     }
     log.debug("Leaving VcStatus.statusOf(). Valid.");
     return VALID;
+  }
+
+  // WHEN AND BY WHAT AN ENTRY WAS LAST SET (#653), for a refusal that has to
+  // say why a credential of this realm's stopped being good: `{ status,
+  // changedAt, via }`, or null for an entry nobody ever set (one that reads
+  // INVALID because it expired, or because this realm never had it).
+  /**
+   * Returns when and by what an entry's explicit status was last set.
+   *
+   * @param key - the entry's key
+   * @returns `{ status, changedAt, via }`, or null
+   */
+  changeOf(key: unknown): { status: number; changedAt: number;
+                            via: string } | null {
+    const { log, entries } = this.deps;
+    log.debug("Entering VcStatus.changeOf().");
+    const row = entries.get(String(key));
+    if (!row || !row.changedAt) {
+      log.debug("Leaving VcStatus.changeOf(). Never set.");
+      return null;
+    }
+    log.debug("Leaving VcStatus.changeOf().");
+    return { status: Number(row.status), changedAt: Number(row.changedAt),
+             via: String(row.via || 'unstated') };
   }
 
   // Sets an entry's explicit status. INVALID is final (the draft's "revoked,
@@ -1139,6 +1164,12 @@ class VcStatus {
   // issuer by certificate; one THIS REALM signed is refused unless the realm
   // is in development with the rule `off`, because every credential this
   // issuer mints carries a reference and its absence means it was removed.
+  //
+  // AN mdoc'S REFERENCE (#935) is a COSE one, read from its Mobile Security
+  // Object by `vc_mdoc.ts` and passed as `coseReference`. Its list is a
+  // Status List Token in CWT form, signed by a certificate in the token's
+  // own `x5chain` that chains to the mdoc's anchors, so the key is not known
+  // until the token is in hand: `cwtKeyFor` finds it.
   // ---------------------------------------------------------------------------
   /**
    * Checks a presented credential's status: this realm's own from its store, a
@@ -1146,13 +1177,19 @@ class VcStatus {
    * reference is decided by policy. Never rejects.
    *
    * @param opts - `own`, `format`, `claims`, `credentialStatus`, `key`, `algs`,
-   *   `policy` (`all`, `own-only` or `off`) and `exempt`
+   *   `policy` (`all`, `own-only` or `off`) and `exempt`; for an mdoc,
+   *   `coseReference` (`{ idx, uri }`) and `cwtKeyFor`, which answers the
+   *   key a fetched CWT is verified with
    * @returns `{ checked, ok, status, detail, errorCode }`
    */
   async checkPresented(opts: { own: boolean; format: string; claims?: any;
                                credentialStatus?: any[]; key?: any;
                                algs?: string[]; policy?: string;
-                               exempt?: boolean }): Promise<any> {
+                               exempt?: boolean;
+                               coseReference?: { idx: number; uri: string }
+                                 | null;
+                               cwtKeyFor?: (cwt: Buffer) => Promise<any>
+                             }): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcStatus.checkPresented(). own=" + opts.own +
               ", format=" + opts.format);
@@ -1172,7 +1209,8 @@ class VcStatus {
       .filter(function (one: any) {
         return !!one && one.type === 'BitstringStatusListEntry';
       });
-    if (!tsl && !bitstrings.length) {
+    const cose = opts.coseReference || null;
+    if (!tsl && !bitstrings.length && !cose) {
       const answer = this.noReference(opts);
       log.debug("Leaving VcStatus.checkPresented(). No reference: " +
                 (answer.ok ? "accepted." : "refused."));
@@ -1182,6 +1220,9 @@ class VcStatus {
     if (tsl) {
       answers.push(opts.own ? this.ownTsl(tsl)
                             : await this.foreignTsl(tsl, opts));
+    }
+    if (cose) {
+      answers.push(await this.foreignCwt(cose, opts));
     }
     for (let i = 0; i < bitstrings.length; i++) {
       answers.push(opts.own ? this.ownBitstring(bitstrings[i])
@@ -1312,7 +1353,7 @@ class VcStatus {
   // A fetched list, from the cache or the network. `accept` names the form.
   private async fetchList(uri: string, accept: string,
                           parse: (body: Buffer, contentType: string)
-                            => any): Promise<any> {
+                            => any | Promise<any>): Promise<any> {
     const { log, fetchPublished, now } = this.deps;
     log.debug("Entering VcStatus.fetchList().");
     const cacheKey = accept + ' ' + uri;
@@ -1330,7 +1371,9 @@ class VcStatus {
               until: now() + NEGATIVE_CACHE_MS };
     } else {
       try {
-        const parsed = parse(got.body, got.contentType);
+        // AWAITED SINCE #657: a list signed with a post-quantum key is
+        // verified on libuv's thread pool.
+        const parsed = await parse(got.body, got.contentType);
         const ttlMs = Math.max(0, Number(parsed.ttlMs) || 0);
         let until = now() + Math.min(ttlMs || this.maxCacheMs(),
                                      this.maxCacheMs());
@@ -1357,8 +1400,17 @@ class VcStatus {
     const { log, stsCrypto, now } = this.deps;
     log.debug("Entering VcStatus.foreignTsl().");
     const list = await this.fetchList(ref.uri, JWT_TYPE,
-      function (body: Buffer): any {
-        const verified = stsCrypto.verifyCompactJws(body.toString('ascii'),
+      async function (body: Buffer): Promise<any> {
+        const text = body.toString('ascii');
+        // Not an algorithm the wallet compatibility mode turns off (#657).
+        const refused = VcAlgorithms.acceptanceRefusal(
+          VcAlgorithms.algOf(text), 'the Token Status List');
+        if (refused) {
+          throw refused;
+        }
+        // Asynchronously (#657): a trusted issuer certificate with an
+        // ML-DSA, SLH-DSA or composite key signs its list with it.
+        const verified = await stsCrypto.verifyCompactJwsAsync(text,
           opts.key, { algorithms: opts.algs });
         const read = codec.readStatusListJwtPayload(verified.header,
           verified.claims, { now: Math.floor(now() / 1000) });
@@ -1391,6 +1443,52 @@ class VcStatus {
                      ' is ' + name };
   }
 
+  // An mdoc's Token Status List, in CWT form (#935): fetched as
+  // `application/statuslist+cwt`, its key the leaf of its own `x5chain`
+  // once that chains to the mdoc's anchors (`opts.cwtKeyFor`), and read as
+  // the JWT form is — `sub` the URI, the expiry, the index.
+  private async foreignCwt(ref: any, opts: any): Promise<any> {
+    const { log, now } = this.deps;
+    log.debug("Entering VcStatus.foreignCwt().");
+    const list = await this.fetchList(ref.uri, CWT_TYPE,
+      async function (body: Buffer): Promise<any> {
+        if (typeof opts.cwtKeyFor !== 'function') {
+          throw new Error('nothing can name the key a CWT status list is ' +
+                          'signed with here');
+        }
+        const key = await opts.cwtKeyFor(body);
+        const read = await codec.readStatusListCwtAsync(body, key,
+          { algorithms: Object.keys(codec.COSE_ALGS),
+            now: Math.floor(now() / 1000) });
+        if (read.sub !== ref.uri) {
+          throw new Error('the list\'s sub is "' + read.sub + '", not "' +
+                          ref.uri + '"');
+        }
+        return { bits: read.bits, bytes: read.bytes,
+                 ttlMs: (read.ttl || 0) * 1000,
+                 expMs: read.exp ? read.exp * 1000 : 0 };
+      });
+    if (!list.ok) {
+      log.debug("Leaving VcStatus.foreignCwt(). " + list.why);
+      return { ok: false, status: '', detail: 'no statement about its ' +
+               'status can be made: the Token Status List "' + ref.uri +
+               '" could not be used (' + list.why + ')' };
+    }
+    let value = -1;
+    try {
+      value = codec.unpackTslValue(list.bytes, list.bits, ref.idx);
+    } catch (e) {
+      log.debug("Caught in VcStatus.foreignCwt(): " + ((e && e.message) || e));
+      value = -1;
+    }
+    const name = value < 0 ? 'out of bounds' :
+                 (STATUS_NAMES[value] || 'status ' + value);
+    log.debug("Leaving VcStatus.foreignCwt(). " + name);
+    return { ok: value === VALID, status: name,
+             detail: 'the issuer\'s Token Status List says index ' + ref.idx +
+                     ' is ' + name };
+  }
+
   private async foreignBitstring(entry: any, opts: any): Promise<any> {
     const { log, stsCrypto, now } = this.deps;
     log.debug("Entering VcStatus.foreignBitstring().");
@@ -1405,8 +1503,15 @@ class VcStatus {
                'malformed: ' + e.message };
     }
     const list = await this.fetchList(read.credential,
-      VC_JWT_TYPE, function (body: Buffer): any {
-        const verified = stsCrypto.verifyCompactJws(body.toString('ascii'),
+      VC_JWT_TYPE, async function (body: Buffer): Promise<any> {
+        const text = body.toString('ascii');
+        // See foreignTsl() (#657).
+        const refused = VcAlgorithms.acceptanceRefusal(
+          VcAlgorithms.algOf(text), 'the status list credential');
+        if (refused) {
+          throw refused;
+        }
+        const verified = await stsCrypto.verifyCompactJwsAsync(text,
           opts.key, { algorithms: opts.algs });
         const vc = verified.claims.vc || verified.claims;
         const subject = vc.credentialSubject || {};
@@ -1654,6 +1759,7 @@ export = {
   attach: slot.forward('attach'),
   statusOf: slot.forward('statusOf'),
   setStatus: slot.forward('setStatus'),
+  changeOf: slot.forward('changeOf'),
   rows: slot.forward('rows'),
   summary: slot.forward('summary'),
   counts: slot.forward('counts'),

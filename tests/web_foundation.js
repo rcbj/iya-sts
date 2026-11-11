@@ -177,11 +177,12 @@ function childMain() {
     const consoleBefore = app.contentSecurityPolicy({
       'script-src': "'self'",
       'connect-src': "'self' https://as.example",
-      'style-src': "'self' 'unsafe-inline'" });
+      // No 'unsafe-inline' since 2026-11-10 (shell_document.ts).
+      'style-src': "'self'" });
     const portalPolicy = app.contentSecurityPolicy({
       'script-src': "'self'",
       'connect-src': "'self' https://as.example",
-      'style-src': "'self' 'unsafe-inline'",
+      'style-src': "'self'",
       'img-src': "'self' data:" });
     const tried = ShellDocument.policy(app, {
       connect: ShellDocument.originsOf(['https://as.example/realm/a',
@@ -259,7 +260,10 @@ function childMain() {
          'chooser, the browser, a populated preferredLanguage last — the ' +
          'same from a request and from a browser\'s inputs',
          JSON.stringify(order));
-    // THE CHOOSER AS `PageLocale.chooser()` DREW IT BEFORE #570.
+    // THE CHOOSER AS `PageLocale.chooser()` DREW IT BEFORE #570, and since
+    // #1289 (2026-11-03) inside the collapsed row: a `<details>` whose
+    // summary is *Language* and the selected locale's own name. Written out
+    // here rather than through `WebLocale.row()`, so the two must agree.
     const chooserBefore = function (t, returnTo) {
       const esc = function (value) {
         return String(value == null ? '' : value)
@@ -275,20 +279,25 @@ function childMain() {
       const sameCatalog = offered.filter(function (one) {
         return i18n.negotiate([one.tag]).catalog === t.negotiated.catalog;
       })[0];
-      const selected = (exact || sameCatalog || offered[0] || { tag: '' }).tag;
+      const chosen = exact || sameCatalog || offered[0];
+      const selected = (chosen || { tag: '' }).tag;
       const drawn = offered.map(function (one) {
         return '<option value="' + esc(one.tag) + '" lang="' +
           esc(one.tag) + '"' +
           (one.tag === selected ? ' selected' : '') + '>' +
           esc(one.name) + '</option>';
       }).join('');
-      return '<form class="language-chooser" method="post" action="' +
+      return '<details class="language-row"><summary>' +
+        '<span class="lr-label">' + t.html('chooser.label') + '</span>' +
+        (chosen ? ' <span class="lr-current" lang="' + esc(chosen.tag) +
+                  '">' + esc(chosen.name) + '</span>' : '') + '</summary>' +
+        '<form class="language-chooser" method="post" action="' +
         esc('/authn/language') + '">' +
         '<input type="hidden" name="return" value="' + esc(here) +
         '"><label for="sts-language">' + t.html('chooser.label') +
         '</label> <select id="sts-language" name="lang">' + drawn +
         '</select> <button type="submit">' + t.html('chooser.change') +
-        '</button></form>';
+        '</button></form></details>';
     };
     const chooserDiffers = [];
     ['en', 'fr', 'fr-CA', 'es-AR', 'zh-TW', 'de'].forEach(function (tag) {
@@ -311,11 +320,13 @@ function childMain() {
       { headers: { cookie: 'sts_lang=FR-ca' } }, 'no-such-application');
     note(JSON.stringify(attrs) === JSON.stringify([
            ['data-sts-version', String(version.load().version)],
-           ['data-sts-lang', 'fr-CA'], ['data-sts-locale-default', 'en']]) &&
+           ['data-sts-lang', 'fr-CA'], ['data-sts-locale-default', 'en'],
+           ['data-sts-build', String(version.buildId())]]) &&
          PageLocale.shellAttributes({ headers: { cookie:
            'sts_lang="><script>' } }, '')[1][1] === '',
-         'B4. a shell carries the build, the chooser\'s choice canonical ' +
-         '(never as the request sent it), and the policy\'s default',
+         'B4. a shell carries the version, the chooser\'s choice canonical ' +
+         '(never as the request sent it), the policy\'s default, and the ' +
+         'build its catalogs are keyed by (#1298)',
          JSON.stringify(attrs));
 
     // --- C. the shared files, over HTTP ------------------------------------
@@ -336,10 +347,33 @@ function childMain() {
                encoding: res.headers.get('content-encoding') || '',
                type: res.headers.get('content-type') || '' };
     };
-    const v = encodeURIComponent(String(version.load().version));
+    // THE ICON: its type, and a real ICO holding the small sizes a tab draws.
+    // `common/favicon.ico` is read as the service reads it, so a build that
+    // left it out fails here rather than showing no icon in a browser.
+    const iconRes = await fetch(base + '/favicon.ico');
+    const icon = Buffer.from(await iconRes.arrayBuffer());
+    const iconSizes = [];
+    if (icon.length > 6 && icon.readUInt16LE(0) === 0 &&
+        icon.readUInt16LE(2) === 1) {
+      for (let i = 0; i < icon.readUInt16LE(4); i++) {
+        iconSizes.push(icon[6 + i * 16] || 256);
+      }
+    }
+    note(iconRes.status === 200 &&
+         /^image\/x-icon/.test(iconRes.headers.get('content-type') || '') &&
+         /max-age=86400/.test(iconRes.headers.get('cache-control') || '') &&
+         iconSizes.indexOf(16) >= 0 && iconSizes.indexOf(32) >= 0,
+         'GET /favicon.ico answers an ICO with the sizes a tab draws, kept ' +
+         'for a day', JSON.stringify([iconRes.status, iconSizes]));
+    // KEYED BY THE BUILD, NOT THE VERSION (#1298): every build of a release
+    // reports the same version, so `?v=<version>` is revalidated like any
+    // other address and only this build's identifier is kept for good.
+    const v = encodeURIComponent(String(version.buildId()));
     const idx = await get('/web/locales/catalogs.json');
     const idxV = await get('/web/locales/catalogs.json?v=' + v);
     const idxOld = await get('/web/locales/catalogs.json?v=0.0.1');
+    const idxRelease = await get('/web/locales/catalogs.json?v=' +
+      encodeURIComponent(String(version.load().version)));
     let idxJson = null;
     try {
       idxJson = JSON.parse(idx.text);
@@ -350,10 +384,13 @@ function childMain() {
          idxJson.catalogs.length === i18n.catalogs().length &&
          idxJson.offered.length === i18n.offered().length &&
          idx.cache === 'no-cache' && idxOld.cache === 'no-cache' &&
+         idxRelease.cache === 'no-cache' &&
          idxV.cache === 'public, max-age=31536000, immutable',
          'C1. the index is the catalogs and the chooser\'s locales, ' +
-         'cached for good only under this build\'s version',
-         JSON.stringify([idx.status, idx.cache, idxV.cache, idxOld.cache]));
+         'cached for good only under this build\'s identifier — not under ' +
+         'the release, which every build of it shares',
+         JSON.stringify([idx.status, idx.cache, idxV.cache, idxOld.cache,
+                         idxRelease.cache]));
     const en = await get('/web/locales/authn/en.json?v=' + v,
                          { 'accept-encoding': 'gzip' });
     const overlay = await get('/web/locales/consoleKit/fr-CA.json');
@@ -385,6 +422,9 @@ function childMain() {
          'C4. /web/card.css is the card', JSON.stringify([card.status,
                                                          card.type]));
     listener.close();
+    note(hosted.classify('/favicon.ico') === hosted.EVERYWHERE,
+         'the icon is answered on every listener, since a browser asks for it ' +
+         'on whichever one its page came from');
     note(hosted.classify('/web/card.css') === hosted.EVERYWHERE &&
          hosted.classify('/web/locales/authn/en.json') === hosted.EVERYWHERE &&
          hosted.classify('/webx') !== hosted.EVERYWHERE &&
@@ -394,8 +434,11 @@ function childMain() {
          'C5. /web is answered on every listener and in every cell');
 
     // --- D. the card is one stylesheet -------------------------------------
+    // The chooser's rules as the card carries them: each colour a realm may
+    // set read through its custom property (#717, `themed()`).
     note(WebCardCss.CARD_CSS === authn.CARD_CSS &&
-         WebCardCss.CARD_CSS.indexOf(WebCardCss.CHOOSER_CSS) > 0,
+         WebCardCss.CARD_CSS.indexOf(
+           WebCardCss.themed(WebCardCss.CHOOSER_CSS)) > 0,
          'D1. the card is the sign-in screen\'s stylesheet, chooser rules ' +
          'included');
 
@@ -522,11 +565,12 @@ function childMain() {
     const sv = i18n.translator(['sv']);
     const one = await drive('/demo?ui_locales=fr',
                             { 'data-sts-version': String(version.load()
-                                                         .version) });
+                                                         .version),
+                              'data-sts-build': String(version.buildId()) });
     const body1 = one.env.document.body.innerHTML;
     note(body1.indexOf('<p>' + fr.html('chooser.change') +
                        ' &lt;b&gt;x&lt;/b&gt;</p>') >= 0 &&
-         body1.indexOf('<form class="language-chooser"') === 0 &&
+         body1.indexOf('<details class="language-row">') === 0 &&
          one.attrs.lang === 'fr' && one.env.document.title ===
            'Demo — IYA STS',
          'E1. a surface draws its page from the operation\'s JSON in the ' +

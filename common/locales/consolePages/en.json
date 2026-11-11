@@ -21,6 +21,7 @@
   "title.commands": "OpenID Provider Commands",
   "title.claims": "Custom claims",
   "title.config": "Configuration",
+  "title.config-dump": "Configuration dump",
   "title.consent": "Consent",
   "title.crypto-metadata": "Cryptography",
   "title.home": "Admin console",
@@ -68,6 +69,7 @@
   "title.ldap-roles": "Role entries",
   "title.ldap-spiffe": "SPIFFE entries",
   "title.listeners": "Listeners",
+  "title.malwareScanning": "Malware scanning",
   "title.logout": "Sign-out",
   "title.mail": "Mail",
   "title.mail-outbox": "Mail outbox",
@@ -107,6 +109,7 @@
   "title.ssf-dead-letters": "Dead letters",
   "title.ssf-transmitters": "Signals from partners",
   "title.tls-connection": "TLS connection",
+  "title.pki-trust": "PKI trust",
   "title.tls-trust": "Client-certificate truststore",
   "title.token-lifetimes": "Token lifetimes",
   "title.tokens-credential": "Tokens — one credential",
@@ -140,5 +143,6 @@
   "title.vc-verifier-config": "Verifier request",
   "title.worker-pools": "Worker pools",
   "title.broadcast": "Broadcast Announcement",
+  "title.sign-in-appearance": "Sign-in appearance",
   "title.post-login-activities": "Post-login activities"
 }

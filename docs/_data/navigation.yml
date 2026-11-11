@@ -12,20 +12,36 @@
   items:
     - { title: Overview, url: / }
     - { title: Getting started, url: /getting-started.html }
+    - { title: Release notes, url: /release-notes.html }
+    - { title: Certifications, url: /certifications.html }
     - { title: Architecture, url: /architecture.html }
     - { title: Where a request waits, url: /request-path.html }
     - { title: Configuration, url: /configuration.html }
+    - { title: Configuration dump, url: /configuration-dump.html }
     - { title: Endpoints, url: /endpoints.html }
     - { title: Trust realms, url: /trust-realms.html }
     - { title: Listeners and hosted applications, url: /listeners.html }
+    - { title: Malware scanning, url: /malware-scanning.html }
+    - { title: Words a password may not contain, url: /password-words.html }
     - { title: Languages and regions, url: /languages.html }
     - { title: User-facing pages, url: /user-facing-pages.html }
     - { title: What is not checked, url: /what-is-not-checked.html }
+    - { title: Security in product mode, url: /product-security.html }
+    - { title: Input validation, url: /validation.html }
+    - { title: Data classification, url: /data-classification.html }
+    - { title: Logging inventory, url: /logging-inventory.html }
+    - { title: Key management, url: /key-management.html }
+    - { title: Field-level access, url: /field-access.html }
+    - { title: Communication inventory, url: /communications.html }
+    - { title: File uploads, url: /file-uploads.html }
+    - { title: Authentication pathways, url: /authentication-pathways.html }
+    - { title: Availability and resource limits, url: /availability.html }
     - { title: Conformance suites, url: /conformance.html }
     - { title: Departures from the specifications, url: /spec-departures.html }
     - { title: Accepted tokens, url: /accepted-tokens.html }
     - { title: Token samples, url: /token-samples.html }
     - { title: Error codes, url: /error-codes.html }
+    - { title: OpenAPI reference, url: /openapi/ }
     - { title: API reference (generated from the source), url: /api/ }
 
 - section: OAuth 2.0 and OpenID Connect
@@ -67,6 +83,7 @@
     - { title: Sessions, url: /sessions.html }
     - { title: Identity-provider-initiated sign-in, url: /idp-initiated-sso.html }
     - { title: Several accounts in one browser, url: /multiple-accounts.html }
+    - { title: Sign-in appearance, url: /sign-in-appearance.html }
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
     - { title: Devices, url: /devices.html }
@@ -82,6 +99,7 @@
     - { title: "Configuring OpenID4VCI", url: /configure-oid4vci.html }
     - { title: OpenID4VP and wallet sign-in, url: /oid4vp.html }
     - { title: "Configuring OpenID4VP and wallet sign-in", url: /configure-oid4vp.html }
+    - { title: Published DIDs for people, url: /person-dids.html }
     - { title: W3C VC API, url: /vc-api.html }
 
 # DIRECTORY IS A USER AND AN APPLICATION, protocol-independent, then the
@@ -101,6 +119,9 @@
     - { title: Service accounts, url: /service-accounts.html }
     - { title: LDAP, url: /ldap.html }
     - { title: LDAP schema, url: /ldap-schema.html }
+    - { title: Abstract data model, url: /data-model.html }
+    - { title: Directory models, url: /data-model-directory.html }
+    - { title: Persistence models, url: /data-model-persistence.html }
     - { title: "Configuring LDAP", url: /configure-ldap.html }
     - { title: SCIM 2.0, url: /scim.html }
     - { title: "Configuring SCIM 2.0", url: /configure-scim.html }
@@ -149,6 +170,8 @@
 - section: Certificates and workloads
   items:
     - { title: PKI, url: /pki.html }
+    - { title: Signer truststore, url: /signer-truststore.html }
+    - { title: PKI use cases, url: /pki-use-cases.html }
     - { title: ACME, url: /acme.html }
     - { title: EST, url: /est.html }
     - { title: SCEP, url: /scep.html }
@@ -170,6 +193,7 @@
     - { title: PostgreSQL schema, url: /postgres-schema.html }
     - { title: Encryption at rest, url: /encryption-at-rest.html }
     - { title: Caches, url: /caches.html }
+    - { title: How the cluster works, url: /cluster-concepts.html }
     - { title: A cluster in AWS, url: /aws-cluster.html }
     - { title: Several regions (cells), url: /cells.html }
     - { title: How cells work, url: /cells-concepts.html }

@@ -82,6 +82,22 @@
 // * **REMOVED ONLY WHILE NOBODY HOLDS A VALUE**, and not while this realm's
 //   own profile requires it: a definition gone from under its values would
 //   leave data no door offers again.
+// * **ON THE USER PORTAL ONLY WHERE ITS DEFINITION SAYS SO (#700)**: two
+//   flags, `stsAttributePortalVisible` (the person sees their own values on
+//   the portal's Overview) and `stsAttributePortalEditable` (they may change
+//   them there, through `POST /account-api/attributes`), both FALSE by
+//   default, because what an administrator defined for the directory is not
+//   thereby the person's to read or write. **EDITABLE IMPLIES VISIBLE, AND
+//   IS NORMALISED RATHER THAN REFUSED**: a definition made or changed to be
+//   editable is stored visible as well, and one changed to be hidden is
+//   stored not editable — a person cannot be asked to edit a value the page
+//   does not show them, and refusing the combination would only make a
+//   caller send a second flag the first already implies.
+// * **CHANGED IN PLACE BY `update-person-attribute` (#700)**: the label, the
+//   description and the two flags. The syntax and the cardinality are
+//   FIXED (STS-LDAP-0208) — values already stored were checked against
+//   them, and a changed syntax would leave values no door accepts again;
+//   remove and define again, which is refused while anybody holds a value.
 //
 // ---------------------------------------------------------------------------
 // NAMED POLICIES, NAMED BY THE PERSON AND BY THEIR GROUPS (#1241, part of
@@ -132,7 +148,9 @@
 // and the universe asks the names, so a read from the choices never returns.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
+import Classes = require('./domain_classes');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
@@ -161,6 +179,10 @@ interface Definition {
   syntax: string;
   multi: boolean;
   description: string;
+  // #700: whether the person sees it on the portal, and may edit it there.
+  // Editable implies visible (the header says how that is kept).
+  portalVisible: boolean;
+  portalEditable: boolean;
   dn: string;
 }
 
@@ -333,11 +355,7 @@ const REFERENCES = Object.freeze({ group: 'stsAttributePolicy',
 /**
  * A named profile's one selector: its precedence. What it covers names it.
  */
-const SELECTORS = [
-  { key: 'precedence', attribute: 'stsAttributePolicyPrecedence',
-    what: 'Which named attribute policy applies where the person and their ' +
-          'groups name several: the lowest, from 1 to 1000.' }
-];
+const SELECTORS = ModelTables.selectors('policy.attributes');
 
 // An RFC 4512 section 1.4 `descr`: a letter, then letters, digits and
 // hyphens. At most 64 here.
@@ -364,6 +382,9 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   noCustom: 'this realm defines no custom attribute',
   defined: 'The custom attribute {{name}} is defined in this realm at ' +
     '{{dn}}. It may now be set on a person and required by this policy.',
+  // #700: an existing definition's label, description or portal flags.
+  updated: 'The custom attribute {{name}} is changed. Its syntax and ' +
+    'whether it holds several values are as they were.',
   undefined: 'The custom attribute {{name}} is no longer defined in this ' +
     'realm.',
   // #1241: said of a named profile only.
@@ -376,18 +397,10 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
  * The policy's fields: one table read as the schema, the console form, the
  * API body, the validation of a save and the parse of an entry.
  */
-const FIELDS: PolicyField[] = [
-  { key: 'requiredAttributes', attribute: 'stsAttributeRequired',
-    type: 'attributeList', dflt: 'givenName, sn, mail',
-    label: 'Required attributes',
-    what: 'The attributes every person in this realm must hold a value of, ' +
-          'besides uid, cn and sn, which are always required. A list, or ' +
-          'comma-separated. Any attribute a person may be given a value ' +
-          'for: the inetOrgPerson schema, the credential catalogue, mail, ' +
-          'and this realm\'s custom attributes. Enforced in product mode: a ' +
-          'create without one is refused at every door, and an edit may not ' +
-          'take one away. Default givenName, sn and mail.' }
-];
+const FIELDS: PolicyField[] =
+  // Written in models/directory/policy_attributes.tsp (#1390). What is passed here is
+  // what the code computes, so it has no second writing there.
+  ModelTables.fields('policy.attributes');
 
 /**
  * The fields, by key.
@@ -410,43 +423,8 @@ const DEFAULTS: Readonly<Record<string, string>> =
  * The directory schema of `ou=attributePolicies` and
  * `ou=attributeDefinitions`: their containers, object classes and attributes.
  */
-const SCHEMA = {
-  container: 'ou=attributePolicies',
-  definitionContainer: 'ou=attributeDefinitions',
-  objectClasses: [
-    { name: 'stsAttributePolicy',
-      what: 'This service\'s class for an attribute policy: the attributes ' +
-            'every person in a realm must hold. Named by the PROFILE ' +
-            '(`cn=default`, or a named profile of the realm\'s own).' },
-    { name: 'stsAttributeDefinition',
-      what: 'This service\'s class for a custom attribute of a realm, in ' +
-            'ou=attributeDefinitions, named by the attribute (`cn=<name>`).' }
-  ],
-  attributes: [
-    { name: 'stsAttributeRequired',
-      what: FIELDS[0].what },
-    { name: 'description',
-      what: 'What the profile or the custom attribute is for, for the ' +
-            'next person.' },
-    { name: 'stsAttributeLabel',
-      what: 'A custom attribute\'s label, drawn beside its name.' },
-    { name: 'stsAttributeSyntax',
-      what: 'A custom attribute\'s syntax: string, integer, boolean, date, ' +
-            'email, uri or dn. Its values are checked against it.' },
-    { name: 'stsAttributeSingleValued',
-      what: 'TRUE where a custom attribute holds one value, FALSE where it ' +
-            'holds several.' },
-    { name: 'stsAttributePolicyPrecedence',
-      what: SELECTORS[0].what }
-  ],
-  // THE REFERENCE (#1241): on a person's entry and on a group's, the
-  // profile it names. The directory is schemaless; listed for the reader.
-  personAttributes: [
-    { name: 'stsAttributePolicy',
-      what: 'On a person or a group: the attribute policy it names, ' +
-            '`default` or a named profile of the realm. One value.' }
-  ]
-};
+// The table is written in models/directory/policy_attributes.tsp (#1390).
+const SCHEMA = ModelTables.schema('policy.attributes');
 
 /**
  * The attribute policy: the attributes every person in a realm must hold,
@@ -659,6 +637,37 @@ class AttributePolicy {
     return items;
   }
 
+  // A stored TRUE/FALSE flag (#700): TRUE only where it says so.
+  // A yes/no as sent (#700): a boolean, or a form's or a caller's text.
+  // Absent is `undefined`, so an update can tell "unchanged" from "off";
+  // anything else is `null`, a value refused by the caller.
+  private parseFlag(raw: unknown): boolean | null | undefined {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.parseFlag().");
+    if (raw === undefined || raw === null) {
+      log.debug("Leaving AttributePolicy.parseFlag(). Absent.");
+      return undefined;
+    }
+    if (typeof raw === 'boolean') {
+      log.debug("Leaving AttributePolicy.parseFlag(). " + raw);
+      return raw;
+    }
+    // A REPEATED FORM FIELD: a hidden `false` before a ticked box. The last
+    // one stands, as a form's last value does.
+    const text = String(Array.isArray(raw) ? raw[raw.length - 1] : raw)
+      .trim().toLowerCase();
+    if (['true', 'on', '1', 'yes'].indexOf(text) >= 0) {
+      log.debug("Leaving AttributePolicy.parseFlag(). true");
+      return true;
+    }
+    if (['false', 'off', '0', 'no', ''].indexOf(text) >= 0) {
+      log.debug("Leaving AttributePolicy.parseFlag(). false");
+      return false;
+    }
+    log.debug("Leaving AttributePolicy.parseFlag(). Neither.");
+    return null;
+  }
+
   /**
    * Lists every attribute a person in this realm may be given a value for,
    * which is what the policy may require: the person editor's universe, `uid`
@@ -797,7 +806,8 @@ class AttributePolicy {
     const at = entry ? (entry.attributes || {}) : {};
     const offered = this.offeredNames();
     const problems: string[] = [];
-    const stored = entry ? this.valuesOf(at, 'stsAttributeRequired') : null;
+    const concept = Classes.AttributePolicy.fromEntry(at);
+    const stored = entry ? (concept.required || []).filter(Boolean) : null;
     const listed = stored === null ? this.listOf(DEFAULTS.requiredAttributes)
                                    : stored;
     const kept: string[] = [];
@@ -834,7 +844,7 @@ class AttributePolicy {
       inherited: found.from === 'default-realm',
       from: found.from,
       dn: entry ? entry.dn : '',
-      description: entry ? (this.valuesOf(at, 'description')[0] || '') : '',
+      description: (concept.description || []).filter(Boolean)[0] || '',
       sources: { requiredAttributes: found.from === 'realm' ? 'directory'
         : found.from === 'default-realm' ? 'default realm' : 'built-in' },
       problems: problems,
@@ -919,7 +929,7 @@ class AttributePolicy {
       out.attributes = attributes || {};
     }
     if (out.uid === undefined) {
-      out.uid = PolicySelection.valuesOf(out.attributes, 'uid')[0] || '';
+      out.uid = Classes.User.fromEntry(out.attributes).username || '';
     }
     log.debug("Leaving AttributePolicy.subjectOf().");
     return out;
@@ -1515,7 +1525,17 @@ class AttributePolicy {
       attributes[SELECTION.precedenceAttribute] =
         String(selectors.precedence);
     }
-    const written = this.directory.writeAttributePolicy(which, attributes);
+    // `{ ok: false }` is truthy. putEntry() answers it for a description
+    // that carries an operator code and writes nothing (#1416); `false`
+    // is still the directory being full.
+    const written = this.directory.writeAttributePolicy(which, attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug('Leaving AttributePolicy.save(). A description carries an ' +
+                'operator code.');
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
     if (!written) {
       log.debug('Leaving AttributePolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,
@@ -1651,18 +1671,26 @@ class AttributePolicy {
     try {
       rows = this.directory.allAttributeDefinitions().map((entry) => {
         const at = entry.attributes || {};
-        const syntax = (this.valuesOf(at, 'stsAttributeSyntax')[0] ||
-                        'string').toLowerCase();
+        const concept = Classes.AttributePolicy.fromEntry(at);
+        const syntax = (concept.syntax || 'string').toLowerCase();
         return {
           name: String(entry.name || ''),
-          label: this.valuesOf(at, 'stsAttributeLabel')[0] ||
-                 String(entry.name || ''),
+          label: concept.label || String(entry.name || ''),
           syntax: SYNTAXES.some(function (one) {
             return one.id === syntax;
           }) ? syntax : 'string',
+          // By name, not `concept.singleValued`: a value that is neither
+          // TRUE nor FALSE reads as multi-valued here, and the concept
+          // leaves it out, which could not be told from absent.
           multi: String(this.valuesOf(at, 'stsAttributeSingleValued')[0] ||
                         'TRUE').toUpperCase() !== 'TRUE',
-          description: this.valuesOf(at, 'description')[0] || '',
+          description: (concept.description || []).filter(Boolean)[0] || '',
+          // #700: absent is FALSE. Editable implies visible, also on read,
+          // so an entry an LDAP client wrote with only the second flag is
+          // answered as every door here writes it.
+          portalVisible: concept.portalVisible === true ||
+                         concept.portalEditable === true,
+          portalEditable: concept.portalEditable === true,
           dn: entry.dn
         };
       }).filter(function (one) {
@@ -1702,7 +1730,9 @@ class AttributePolicy {
    * Defines a custom attribute in this realm.
    *
    * @param body - `name`, `label`, `syntax`, `multiValued` (or `values`:
-   *   `single` or `multiple`) and an optional `description`
+   *   `single` or `multiple`), an optional `description`, and the portal
+   *   flags `portalVisible` and `portalEditable` (#700), both off unless
+   *   sent
    * @returns `{ ok: true, definition, message }`, or a refusal with a code
    */
   define(body?: Record<string, any> | null) {
@@ -1753,6 +1783,16 @@ class AttributePolicy {
       problems.push('A description is at most 1024 characters with no ' +
                     'control character.');
     }
+    // THE PORTAL FLAGS (#700), both off unless sent; editable implies
+    // visible, normalised (the header says why).
+    const visibleRaw = this.parseFlag(given.portalVisible);
+    const editableRaw = this.parseFlag(given.portalEditable);
+    if (visibleRaw === null || editableRaw === null) {
+      problems.push('portalVisible and portalEditable are each true or ' +
+                    'false.');
+    }
+    const portalEditable = editableRaw === true;
+    const portalVisible = visibleRaw === true || portalEditable;
     if (problems.length) {
       log.debug("Leaving AttributePolicy.define(). Refused.");
       return errorCodes.mark({ ok: false, errors: problems },
@@ -1798,12 +1838,25 @@ class AttributePolicy {
       objectClass: ['top', 'stsAttributeDefinition'],
       stsAttributeLabel: label,
       stsAttributeSyntax: syntax,
-      stsAttributeSingleValued: multi ? 'FALSE' : 'TRUE'
+      stsAttributeSingleValued: multi ? 'FALSE' : 'TRUE',
+      stsAttributePortalVisible: portalVisible ? 'TRUE' : 'FALSE',
+      stsAttributePortalEditable: portalEditable ? 'TRUE' : 'FALSE'
     };
     if (description) {
       attributes.description = description;
     }
-    if (!this.directory.writeAttributeDefinition(name, attributes)) {
+    // See save(): a truthy `{ ok: false }` is a description refusal, and
+    // `false` is the directory being full (#1416).
+    const defined = this.directory.writeAttributeDefinition(name,
+                                                            attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (defined && typeof defined === 'object' && defined.ok === false) {
+      log.debug("Leaving AttributePolicy.define(). A description carries " +
+                "an operator code.");
+      return errorCodes.mark({ ok: false, errors: defined.errors || [] },
+        defined.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
+    if (!defined) {
       log.debug("Leaving AttributePolicy.define(). The directory refused.");
       return errorCodes.mark({ ok: false,
                errors: ['The directory would not store the definition — it ' +
@@ -1816,6 +1869,138 @@ class AttributePolicy {
              message: serverProse.fill(SENTENCES.defined,
                                        { name: name,
                                          dn: made ? made.dn : '' }) };
+  }
+
+  /**
+   * Changes an existing custom attribute of this realm (#700): its label,
+   * its description and its two portal flags. What is not sent is kept.
+   * The syntax and the cardinality are fixed: a body that would change
+   * either is refused (STS-LDAP-0208).
+   *
+   * @param body - `name`, and any of `label`, `description`,
+   *   `portalVisible`, `portalEditable`; `syntax` and `multiValued` only
+   *   as they already are
+   * @returns `{ ok: true, definition, message }`, or a refusal with a code
+   */
+  redefine(body?: Record<string, any> | null) {
+    const { log, errorCodes } = this.deps;
+    const given = body || {};
+    const wanted = String(given.name === undefined || given.name === null
+      ? '' : given.name).trim();
+    log.debug("Entering AttributePolicy.redefine(). " + wanted);
+    if (!this.haveDirectory()) {
+      log.debug("Leaving AttributePolicy.redefine(). No directory.");
+      return errorCodes.mark({ ok: false,
+               errors: ['There is no embedded directory in this process, so ' +
+                        'there is no custom attribute to change.'] },
+                             'STS-LDAP-0167');
+    }
+    const found = this.definition(wanted);
+    if (!found) {
+      log.debug("Leaving AttributePolicy.redefine(). Not defined.");
+      return errorCodes.mark({ ok: false,
+               errors: ['This realm defines no custom attribute called "' +
+                        wanted.slice(0, 64) + '", so there is nothing to ' +
+                        'change. Define it instead.'] }, 'STS-LDAP-0206');
+    }
+    // THE SYNTAX AND THE CARDINALITY ARE FIXED: sent as they are, they
+    // change nothing and are accepted (the console's form may carry them).
+    const fixed: string[] = [];
+    if (given.syntax !== undefined && given.syntax !== null &&
+        String(given.syntax).trim() !== '' &&
+        String(given.syntax).trim().toLowerCase() !== found.syntax) {
+      fixed.push('syntax');
+    }
+    const multiRaw = given.multiValued !== undefined ? given.multiValued
+      : given.values;
+    if (multiRaw !== undefined && multiRaw !== null &&
+        String(multiRaw).trim() !== '') {
+      const text = String(multiRaw).trim().toLowerCase();
+      const several = ['true', 'on', '1', 'yes', 'multiple']
+        .indexOf(text) >= 0;
+      const one = ['false', 'off', '0', 'no', 'single'].indexOf(text) >= 0;
+      if ((!several && !one) || several !== found.multi) {
+        fixed.push('multiValued');
+      }
+    }
+    if (fixed.length) {
+      log.debug("Leaving AttributePolicy.redefine(). A fixed property.");
+      return errorCodes.mark({ ok: false,
+               errors: [found.name + '\'s ' + fixed.join(' and ') + ' cannot ' +
+                        'be changed: the values people already hold were ' +
+                        'checked against ' + (fixed.length > 1 ? 'them'
+                                                               : 'it') +
+                        '. Remove the attribute and define it again, which ' +
+                        'is refused while anybody holds a value.'] },
+                             'STS-LDAP-0208');
+    }
+    const problems: string[] = [];
+    const label = given.label === undefined || given.label === null
+      ? found.label : String(given.label).trim();
+    if (!label || label.length > 128 || CONTROL.test(label)) {
+      problems.push('A custom attribute needs a label of at most 128 ' +
+                    'characters with no control character: it is what the ' +
+                    'pages draw beside the name.');
+    }
+    const description = given.description === undefined ||
+      given.description === null ? found.description
+      : String(given.description).trim();
+    if (description.length > 1024 || CONTROL.test(description)) {
+      problems.push('A description is at most 1024 characters with no ' +
+                    'control character.');
+    }
+    const visibleRaw = this.parseFlag(given.portalVisible);
+    const editableRaw = this.parseFlag(given.portalEditable);
+    if (visibleRaw === null || editableRaw === null) {
+      problems.push('portalVisible and portalEditable are each true or ' +
+                    'false.');
+    }
+    if (problems.length) {
+      log.debug("Leaving AttributePolicy.redefine(). Refused.");
+      return errorCodes.mark({ ok: false, errors: problems },
+                             'STS-LDAP-0207');
+    }
+    // EDITABLE IMPLIES VISIBLE (the header): hiding it alone ends the
+    // editing too, and making it editable shows it.
+    const portalEditable = editableRaw !== undefined ? !!editableRaw
+      : (visibleRaw === false ? false : found.portalEditable);
+    const portalVisible = (visibleRaw !== undefined ? !!visibleRaw
+      : found.portalVisible) || portalEditable;
+    const attributes: Record<string, unknown> = {
+      objectClass: ['top', 'stsAttributeDefinition'],
+      stsAttributeLabel: label,
+      stsAttributeSyntax: found.syntax,
+      stsAttributeSingleValued: found.multi ? 'FALSE' : 'TRUE',
+      stsAttributePortalVisible: portalVisible ? 'TRUE' : 'FALSE',
+      stsAttributePortalEditable: portalEditable ? 'TRUE' : 'FALSE'
+    };
+    if (description) {
+      attributes.description = description;
+    }
+    // See save(): a truthy `{ ok: false }` is a description refusal, and
+    // `false` is the directory being full (#1416).
+    const redefined = this.directory.writeAttributeDefinition(found.name,
+                                                              attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (redefined && typeof redefined === 'object' &&
+        redefined.ok === false) {
+      log.debug("Leaving AttributePolicy.redefine(). A description " +
+                "carries an operator code.");
+      return errorCodes.mark({ ok: false, errors: redefined.errors || [] },
+        redefined.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
+    if (!redefined) {
+      log.debug("Leaving AttributePolicy.redefine(). The directory refused.");
+      return errorCodes.mark({ ok: false,
+               errors: ['The directory would not store the change to ' +
+                        found.name + '.'] }, 'STS-LDAP-0209');
+    }
+    const made = this.definition(found.name);
+    log.debug("Leaving AttributePolicy.redefine(). Changed.");
+    return { ok: true, definition: made, name: found.name,
+             dn: made ? made.dn : found.dn,
+             message: serverProse.fill(SENTENCES.updated,
+                                       { name: found.name }) };
   }
 
   /**
@@ -1883,13 +2068,14 @@ class AttributePolicy {
   }
 
   /**
-   * Answers one of this kind's two acts beside save and reset
+   * Answers one of this kind's three acts beside save and reset
    * (`admin-core/policy_kinds.ts`'s `extraActions`): a custom attribute
-   * defined or removed.
+   * defined, changed (#700) or removed.
    *
-   * @param action - `define-person-attribute` or `remove-person-attribute`
+   * @param action - `define-person-attribute`, `update-person-attribute` or
+   *   `remove-person-attribute`
    * @param body - the act's body
-   * @returns the act's answer, or a refusal naming the two acts
+   * @returns the act's answer, or a refusal naming the three acts
    */
   act(action: string, body: Record<string, any>) {
     const { log, errorCodes } = this.deps;
@@ -1897,6 +2083,11 @@ class AttributePolicy {
     if (action === 'define-person-attribute') {
       const out = this.define(body);
       log.debug("Leaving AttributePolicy.act(). define " + out.ok);
+      return out;
+    }
+    if (action === 'update-person-attribute') {
+      const out = this.redefine(body);
+      log.debug("Leaving AttributePolicy.act(). update " + out.ok);
       return out;
     }
     if (action === 'remove-person-attribute') {
@@ -1907,8 +2098,9 @@ class AttributePolicy {
     log.debug("Leaving AttributePolicy.act(). Not an act.");
     return errorCodes.mark({ ok: false,
              errors: ['"' + String(action).slice(0, 64) + '" is not an act ' +
-                      'of the attribute policy; its two are ' +
-                      'define-person-attribute and remove-person-attribute.'] },
+                      'of the attribute policy; its three are ' +
+                      'define-person-attribute, update-person-attribute ' +
+                      'and remove-person-attribute.'] },
                            'STS-ADMIN-0500');
   }
 }
@@ -2004,6 +2196,7 @@ export = {
   definitions: slot.forward('definitions'),
   definition: slot.forward('definition'),
   define: slot.forward('define'),
+  redefine: slot.forward('redefine'),
   undefine: slot.forward('undefine'),
   act: slot.forward('act')
 };

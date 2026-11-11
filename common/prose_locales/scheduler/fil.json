@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "Binabasa ang susunod na page ng mga tao ng realm mula sa bawat attribute source na dapat nang i-refresh ayon sa nakaiskedyul na interval nito, papunta sa kanilang mga entry (#94). attributeSources.refreshBatch na tao bawat source bawat run."
   },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "Audit export"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "Sa bawat process, para sa bawat realm: inihahatid ang sariling bagong audit event ng process na ito sa mga naka-enable na destinasyon ng realm na iyon. Hindi pinipigilan ng pagkabigo ng isang destinasyon ang iba. Ang paghahatid ay hindi bababa sa isang beses."
+  },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",
     "text": "Pag-expire ng mga account set"
@@ -95,6 +103,14 @@
     "en": "c8990a4ca5b5163e",
     "text": "Inaalis sa bawat federation relationship ang encryption key na pinalitan ng isang rotation, kapag lumipas na ang federation.encryptionKeyGraceS. Tumigil na itong mag-decrypt sa sandaling iyon; inaalis lang ito nito sa entry."
   },
+  "sched.jobs.federation.partner-refresh.title": {
+    "en": "5354cb5ed3b1e58f",
+    "text": "Partner refresh ng mga federated session"
+  },
+  "sched.jobs.federation.partner-refresh.describe": {
+    "en": "6fc466ab1fe4b653",
+    "text": "Para sa isang OpenID Connect na ugnayan na naka-on ang fedRefreshTokens: nire-refresh sa takdang oras ang mga token ng partner ng bawat session na may hawak nito, sinusuri kung pinapangalanan pa rin ng bagong ID Token at ng UserInfo ang tao, at tinatapos ang session kapag tumanggi ang partner o hindi ito pinangalanan ng sagot (#930)."
+  },
   "sched.jobs.federation.provision-idle.title": {
     "en": "20200542bb3c76b9",
     "text": "Idle sweep ng federated provisioning"
@@ -174,6 +190,14 @@
   "sched.jobs.krb5.krbtgt-rotate-now.describe": {
     "en": "6fffa44535aa160d",
     "text": "Nire-rotate ngayon ang krbtgt key ng realm. Kapag may invalidate, walang itinatagong naunang bersyon: tinatanggihan ang bawat TGT na na-issue bago nito at may Shared Signals event na nagsasabi nito."
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "Pagpapanatili ng salamin ng mga koneksiyong LDAP"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "Binubura ang mga nakasalaming koneksiyong LDAP ng mga node na hindi na kasapi, at ang mga tagubilin sa pag-sign out na lampas na sa kanilang bisa."
   },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
@@ -311,21 +335,53 @@
     "en": "049675db215c0863",
     "text": "Binibilang ang mga passkey ng realm para sa Monitoring → Mga passkey (#942): ayon sa algorithm at lane, ang mga taong may hawak na post-quantum lang, classical lang o pareho, at kung aling mga modelo ng authenticator ang may hawak ng aling mga algorithm. Binabasa lang ang mga taong may hawak ng passkey, isang page sa bawat pagkakataon; idinadagdag ang mga pagbabagong ginawa pagkatapos nito habang isinusulat ang mga ito."
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "Backfill ng index ng mga grupong nagbibigay"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "Ibinibigay sa bawat entry ng direktoryo na isinulat bago ang #1306 ang mga grantinggroup index key ng mga katangian nitong nagbibigay, isang pahina ng store sa bawat pagkakataon, upang mahanap ng tanong sa store ng federated provisioning ang isang grupong pinangangalanan ng naturang entry; minamarkahang kumpleto ang store nang isang beses, at naka-off na mula noon (#1311)."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Pag-purge ng mga expired na minted row"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "Binubura mula sa shared store, nang tig-5000 bawat batch at hanggang 20 batch ng bawat uri bawat run, ang mga minted row na hindi na babasahin ng anumang start: lampas na sa sarili nilang expiry, ng realm na hindi na naka-define (isinulat mahigit isang oras na ang nakalipas), at ang mga row ng short-lived na store na walang expiry na mas matanda kaysa sa persistence.mintedRetention."
+    "en": "51b75ecbc03ac6ba",
+    "text": "Binubura mula sa store ng cluster na ito (sa isang serbisyong naka-deploy bilang mga cell, ang sariling database ng cell na ito), nang tig-5000 bawat batch at hanggang 20 batch ng bawat uri bawat run, ang mga minted row na hindi na babasahin ng anumang start: lampas na sa sarili nilang expiry, ng realm na hindi na naka-define (isinulat mahigit isang oras na ang nakalipas), at ang mga row ng short-lived na store na walang expiry na mas matanda kaysa sa persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "Pag-purge ng mga expired na minted row, global tier"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "Sa isang serbisyong naka-deploy bilang mga cell, binubura mula sa database ng global tier ang parehong tatlong uri ng minted row, sa parehong mga batch; kine-claim ang run nito sa global tier, kaya iisang cell lang ang nagpapatakbo ng bawat slot. Naka-off sa serbisyong may iisang database, kung saan sakop ito ng isa pang purge."
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",
     "text": "Pagwalis ng mga expired na tombstone"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "d5b8faad6c0c24c4",
-    "text": "Binubura mula sa shared store ang mga tombstone ng mga natapos na minted row na mas matanda kaysa sa persistence.mintedRetention."
+    "en": "56aed2e95604a1b4",
+    "text": "Binubura mula sa store ng cluster na ito ang mga tombstone ng mga natapos na minted row na mas matanda kaysa sa persistence.mintedRetention, sa mga batch na 5000 at hindi hihigit sa 20 batch bawat run (sa isang serbisyong naka-deploy bilang mga cell, ang sariling database ng cell na ito)."
+  },
+  "sched.jobs.persistence.tombstone-purge-global.title": {
+    "en": "15e3f193cfee5337",
+    "text": "Pagwalis ng mga expired na tombstone, global tier"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.describe": {
+    "en": "98370fb755b4ba95",
+    "text": "Sa isang serbisyong naka-deploy bilang mga cell, binubura mula sa database ng global tier ang mga tombstone ng mga natapos na minted row na mas matanda kaysa sa persistence.mintedRetention, sa parehong mga batch; kine-claim ang run nito sa global tier, kaya iisang cell lang ang nagpapatakbo ng bawat slot. Naka-off sa serbisyong may iisang database, kung saan sakop ito ng isa pang pagwalis."
+  },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "Audit ng mga naka-pin na certificate"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "Isinasailalim ang bawat naka-pin na certificate at bawat entry ng signer truststore ng realm sa mga pagsusuri ng paranoid PKI mode, iniingatan ang resultang iginuguhit ng /admin/pki/trust, at nilolog at ime-mail ang nagbago."
   },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
@@ -340,8 +396,8 @@
     "text": "Ulat ng memory"
   },
   "sched.jobs.process.memory-report.describe": {
-    "en": "4f2c054a1405a843",
-    "text": "Nagla-log, sa process na ito, ng isang linya na may role at memory nito: resident size, heap na nagamit at kabuuan, ang heap limit, external memory at array buffers (#341)."
+    "en": "d4a21d654747ddc9",
+    "text": "Itinatala, sa process na ito, ang buod ng run kasama ang role at memory nito: resident size, heap na nagamit at kabuuan, ang heap limit, external memory at array buffers. Debug ang log line (#341)."
   },
   "sched.jobs.report.build-cleanup.title": {
     "en": "e5bd8efc07f0b31b",
@@ -454,6 +510,14 @@
   "sched.jobs.risk.upload-cleanup.describe": {
     "en": "758dfacad5326b05",
     "text": "Sa bawat process: pinananatiling sariwa ang mga dataset upload na ini-import ng process na ito, at binubura mula sa risk.uploadDirectory ang upload na hindi nagalaw ng anumang live na process sa loob ng risk.importStallMinutes — ang iniwan ng process na tumigil sa kalagitnaan ng import."
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "Tagapag-refresh ng metadata ng SAML service provider"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "Kinukuha muli ang metadata ng bawat service provider na lampas na sa cacheDuration nito, mula sa samlSpMetadataUrl nito o sa MDQ responder; tinatanggihan ang dokumentong lampas na sa validUntil nito."
   },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",

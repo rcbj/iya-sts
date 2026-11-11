@@ -13,6 +13,17 @@
 // allowed to look at would be a trap rather than a permission, and somebody
 // would eventually be granted it on purpose.
 //
+// **AND A THIRD SINCE #645 (2026-11-02): SECURITY ADMINISTRATOR.** It implies
+// Admin Read and NOT Admin Write, and it is what changes security: a
+// Directory → Policies policy, a policy named on an application, group or
+// person, a grant of this role, and the account of a person who holds it
+// (`common/security_operations.ts` says which requests, and the management
+// API's gate asks `admin:security` for them instead of `admin:write`). It is
+// a role of its own so that managing security can be a separate duty from
+// administering the service. The default realm's bootstrap administrator
+// holds it; a realm's own bootstrap administrator does NOT (rcbj's decision
+// on #645) — a Security Administrator grants it in a realm explicitly.
+//
 // ---------------------------------------------------------------------------
 // THE ROLES ARE TWO ORDINARY GROUPS IN THE EMBEDDED DIRECTORY.
 //
@@ -178,8 +189,9 @@ import InstanceSlot = require('../common/instance_slot');
 // an `if` somewhere: `rolesOf()` expands it, so a page asking "may this person
 // read" gets the same answer wherever it asks from.
 /**
- * The two console roles, Admin Read and Admin Write, each with its setting,
- * label and the roles it implies (write implies read).
+ * The three console roles, Admin Read, Admin Write and Security
+ * Administrator, each with its setting, label and the roles it implies (write
+ * and security each imply read).
  */
 const ROLES = [
   { id: 'read', label: 'Admin Read', setting: 'admin.readGroup',
@@ -190,9 +202,20 @@ const ROLES = [
   { id: 'write', label: 'Admin Write', setting: 'admin.writeGroup',
     implies: ['read'],
     what: 'Post every form on this console — revoke a token, add a custom ' +
-          'claim, change a setting, create a person, grant a role. IT ' +
-          'INCLUDES READ, so a member of this role alone can use the whole ' +
-          'console.' }
+          'claim, change a setting, create a person, grant a role — except ' +
+          'the ones that change security, which are the Security ' +
+          'Administrator\'s. IT INCLUDES READ, so a member of this role ' +
+          'alone can use the rest of the console.' },
+  // #645. Implies read and NOT write: see the header.
+  { id: 'security', label: 'Security Administrator',
+    setting: 'admin.securityGroup',
+    implies: ['read'],
+    what: 'Change security: save or reset a policy on Directory → ' +
+          'Policies, name a policy on an application, group or person, ' +
+          'grant or revoke this role, and act on the account of a person ' +
+          'who holds it. Admin Write cannot do any of these. IT INCLUDES ' +
+          'READ AND NOT WRITE, so it can be held by somebody who is not ' +
+          'otherwise an administrator.' }
 ];
 
 /**
@@ -390,7 +413,9 @@ class AdminRbac {
     directory = given;
     log.debug("Leaving AdminRbac.setDirectory(). Installed.");
     log.info('admin_rbac: the admin console roles are the directory groups ' +
-             self.groupCnFor(ROLES[0]) + ' and ' + self.groupCnFor(ROLES[1]) +
+             ROLES.map(function (role) {
+               return self.groupCnFor(role);
+             }).join(', ') +
              ' under ' + given.groupsDn + '. An ldapmodify, a SCIM PATCH, ' +
              '/admin/rbac and ' +
              'POST /admin-api/rbac are four doors onto the same membership.');
@@ -709,7 +734,7 @@ class AdminRbac {
     const { log, config } = this.deps;
     log.debug("Entering AdminRbac.bootstrapName().");
     log.debug("Leaving AdminRbac.bootstrapName().");
-    return String(config.value('admin.bootstrapUsername') || '').trim();
+    return require('../common/bootstrap_name').current();
   }
 
   /**
@@ -794,10 +819,14 @@ class AdminRbac {
     }
     let flags = directory.readPersonFlags(name);
     if (flags && flags.bootstrapAdministrator && flags.consoleClaimedAt) {
+      // #645: an existing deployment gets its Security Administrator here,
+      // whose window closed long ago.
+      const security = self.seedSecurityAdministrator(name);
       log.debug("Leaving AdminRbac.seedBootstrapAdministrator(). Already " +
                 "claimed.");
       return { ran: false, why: 'the bootstrap administrator has already ' +
-                                'signed in to the console', username: name };
+                                'signed in to the console', username: name,
+               securitySeeded: security };
     }
     const administeredBy = self.roster().reduce(function (names, row) {
       row.members.concat(row.claimed || []).forEach(function (member) {
@@ -831,7 +860,10 @@ class AdminRbac {
     if (created) {
       directory.writePersonFlag(name, 'pwdReset', true);
     }
-    const granted = ROLE_IDS.map(function (id) {
+    // Admin Read and Admin Write in every realm; the Security
+    // Administrator's role only in the default realm, and only where its
+    // group does not exist yet (`seedSecurityAdministrator()`).
+    const granted = ['read', 'write'].map(function (id) {
       return self.grant(name, id, { via: 'bootstrap', actor: 'bootstrap' });
     });
     const failed = granted.filter(function (one) { return !one.ok; });
@@ -842,16 +874,28 @@ class AdminRbac {
                   return (one.errors || []).join(' ');
                 }).join(' '));
     }
+    const security = self.seedSecurityAdministrator(name);
     const closedAtOnce = administeredBy.length > 0;
     if (closedAtOnce) {
       directory.writePersonFlag(name, 'stsConsoleClaimedAt',
                                 self.nowGeneralized());
     }
+    // WHAT HAPPENED, NOT WHAT WAS MEANT (ASVS 5.0.0 2.3.3): a role grant
+    // that failed makes the row an error naming the roles missing, so the
+    // audit log never says an administrator holds what they do not.
     audit.record({
-      action: 'admin.console.bootstrap', outcome: 'success', actor: 'bootstrap',
+      action: 'admin.console.bootstrap',
+      outcome: failed.length ? 'error' : 'success',
+      errorCode: failed.length ? 'STS-ADMIN-0706' : '',
+      // Logged once already, just above.
+      summarised: true,
+      actor: 'bootstrap',
       target: flags.dn, channel: 'internal',
       summary: 'The bootstrap administrator "' + name + '" was ' +
-               (created ? 'created and ' : '') + 'given both console roles' +
+               (created ? 'created and ' : '') +
+               (failed.length
+                 ? 'given ' + (2 - failed.length) + ' of the 2 console roles'
+                 : 'given both console roles') +
                (closedAtOnce
                  ? '; the console was already administered, so it ' +
                    'is not opened to everybody' : ''),
@@ -872,7 +916,70 @@ class AdminRbac {
                  'person may use the console.'));
     log.debug("Leaving AdminRbac.seedBootstrapAdministrator().");
     return { ran: true, username: name, created: created,
-             realm: self.boundRealmId(), windowClosed: closedAtOnce };
+             realm: self.boundRealmId(), windowClosed: closedAtOnce,
+             securitySeeded: security };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SECURITY ADMINISTRATOR'S FIRST MEMBER (#645, 2026-11-02).
+  //
+  // rcbj's decisions: the global administrator — the DEFAULT realm's bootstrap
+  // account — holds the role by default, a trust realm's bootstrap account
+  // does not, and an existing deployment gets the bootstrap account and
+  // nobody else (no migration of the Admin Write roster). So this grants the
+  // role to the bootstrap account in the default realm, and ONLY WHILE THE
+  // GROUP DOES NOT EXIST: a group that exists, members or none, is somebody's
+  // decision — a revoke of the last member leaves it empty, and re-seeding it
+  // on the next start would undo that operator. It runs whether or not the
+  // console has been claimed, which is what reaches a deployment that was
+  // administered before the role existed.
+  // ---------------------------------------------------------------------------
+  private seedSecurityAdministrator(name) {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering AdminRbac.seedSecurityAdministrator().");
+    if (!self.isServiceRealm(self.boundRealmId())) {
+      log.debug("Leaving AdminRbac.seedSecurityAdministrator(). Not the " +
+                "default realm.");
+      return false;
+    }
+    const role = self.roleFor('security');
+    if (!self.groupCnFor(role) ||
+        directory.readGroupEntry(self.dnForRole(role))) {
+      log.debug("Leaving AdminRbac.seedSecurityAdministrator(). The group " +
+                "exists, or is named nothing.");
+      return false;
+    }
+    const granted = self.grant(name, 'security', { via: 'bootstrap',
+                                                   actor: 'bootstrap' });
+    if (!granted.ok) {
+      log.error(errorCodes.tag('STS-ADMIN-0706') + 'admin_rbac: the ' +
+                'bootstrap administrator "' + name + '" could not be made ' +
+                'the Security Administrator: ' +
+                (granted.errors || []).join(' '));
+      log.debug("Leaving AdminRbac.seedSecurityAdministrator(). Refused.");
+      return false;
+    }
+    log.info('admin_rbac: "' + name + '" is the Security Administrator: the ' +
+             'group ' + self.groupCnFor(role) + ' did not exist, so it was ' +
+             'created with the bootstrap administrator in it. Only its ' +
+             'members may change a policy or grant the role.');
+    log.debug("Leaving AdminRbac.seedSecurityAdministrator(). Granted.");
+    return true;
+  }
+
+  // The roles the open window hands everybody in the bound realm (#645): all
+  // three in the default realm, where the bootstrap account holds all three,
+  // and Admin Read and Admin Write in a trust realm, whose bootstrap account
+  // is not its Security Administrator. The window gives what the account it
+  // waits for would have, and no more.
+  private windowRoleIds() {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminRbac.windowRoleIds().");
+    log.debug("Leaving AdminRbac.windowRoleIds().");
+    return self.isServiceRealm(self.boundRealmId()) ? ROLE_IDS.slice(0)
+                                                    : ['read', 'write'];
   }
 
   // ---------------------------------------------------------------------------
@@ -1075,7 +1182,8 @@ class AdminRbac {
    * Membership is asked of the directory in both directions: the group listing
    * the person, and the person's own `memberOf` naming the group.
    * @param username - a local name, a certificate subject DN or a `did:`
-   * @returns the roles held, `read` and `write` flags, the groups, and whether
+   * @returns the roles held, `read`, `write` and `security` flags, the groups,
+   * and whether
    * the console is open to them because the roster is unclaimed
    */
   rolesOf(username) {
@@ -1085,6 +1193,7 @@ class AdminRbac {
     const name = String(username == null ? '' : username).trim();
     const held : Record<string, any> = {};
     const out: any = { username: name, roles: [], read: false, write: false,
+                  security: false,
                   groups: [], open: false, openable: false,
                   available: !!directory, empty: false };
     if (!directory || !name) {
@@ -1143,7 +1252,7 @@ class AdminRbac {
       out.openable = true;
       if (opens && config.value('admin.openWhenEmpty')) {
         out.open = true;
-        ROLE_IDS.forEach(function (id) { held[id] = true; });
+        self.windowRoleIds().forEach(function (id) { held[id] = true; });
       }
     }
     // THE BOOTSTRAP ACCOUNT BEFORE ITS CLAIM, IN PRODUCT (#103). It holds its
@@ -1166,6 +1275,7 @@ class AdminRbac {
     out.roles = ROLE_IDS.filter(function (id) { return !!held[id]; });
     out.read = !!held.read;
     out.write = !!held.write;
+    out.security = !!held.security;
     // Asked on every console and API request (#627): the join is built only
     // when the line will be written.
     if (log.debug()) {
@@ -1174,6 +1284,81 @@ class AdminRbac {
                 (out.open ? " (empty roster)." : "."));
     }
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT `common/security_operations.ts` ASKS, IN THE BOUND REALM (#645).
+  //
+  // Whether somebody holds the Security Administrator's role BY MEMBERSHIP —
+  // never through the open window, for `ldap_server.js`'s reason: a window
+  // that hands everybody every role would make every account a holder's —
+  // and one attribute of a person or a group, read through the same slot the
+  // roster is read through. They are here because this module already holds
+  // the directory's view for a realm (`forRealm()`); a second slot for the
+  // same functions would be one by analogy.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers whether a person holds the Security Administrator's role by
+   * membership, in the bound realm.
+   *
+   * @param username - the person
+   * @returns true when they hold it, not counting the open window
+   */
+  holdsSecurity(username) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminRbac.holdsSecurity().");
+    const held = self.rolesOf(username);
+    const answer = held.security === true && held.open !== true;
+    log.debug("Leaving AdminRbac.holdsSecurity(). " + answer);
+    return answer;
+  }
+
+  // One attribute's values off a stored entry, its name in any case.
+  private valuesOn(entry, attribute) {
+    const { log } = this.deps;
+    log.debug("Entering AdminRbac.valuesOn().");
+    const attributes = (entry && entry.attributes) || {};
+    const wanted = String(attribute || '').toLowerCase();
+    const key = Object.keys(attributes).filter(function (name) {
+      return name.toLowerCase() === wanted;
+    })[0];
+    log.debug("Leaving AdminRbac.valuesOn().");
+    return key ? [].concat(attributes[key]).map(String) : [];
+  }
+
+  /**
+   * Reads one attribute of a person's entry in the bound realm.
+   *
+   * @param username - the person
+   * @param attribute - the attribute, any case
+   * @returns its values; [] for no such person or attribute
+   */
+  personValues(username, attribute) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminRbac.personValues().");
+    const entry = directory && username
+      ? directory.existingUserEntry(String(username)) : null;
+    log.debug("Leaving AdminRbac.personValues().");
+    return self.valuesOn(entry, attribute);
+  }
+
+  /**
+   * Reads one attribute of a group's entry in the bound realm.
+   *
+   * @param group - the group's cn
+   * @param attribute - the attribute, any case
+   * @returns its values; [] for no such group or attribute
+   */
+  groupValues(group, attribute) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminRbac.groupValues().");
+    const entry = directory && group
+      ? directory.readGroupEntry(directory.groupDnFor(String(group))) : null;
+    log.debug("Leaving AdminRbac.groupValues().");
+    return self.valuesOn(entry, attribute);
   }
 
   // ---------------------------------------------------------------------------
@@ -1317,8 +1502,8 @@ class AdminRbac {
       log.debug("Leaving AdminRbac.grant(). No such role.");
       return self.refused('STS-ADMIN-0582',
                      { ok: false, errors: ['Unknown role "' + roleId + '". ' +
-          'There are two: ' +
-                                   ROLE_IDS.join(' and ') + '.'] });
+          'There are ' + ROLE_IDS.length + ': ' +
+                                   ROLE_IDS.join(', ') + '.'] });
     }
     const problem = self.nameProblem(name);
     if (problem) {
@@ -1435,8 +1620,8 @@ class AdminRbac {
       log.debug("Leaving AdminRbac.revoke(). No such role.");
       return self.refused('STS-ADMIN-0582',
                      { ok: false, errors: ['Unknown role "' + roleId + '". ' +
-          'There are two: ' +
-                                   ROLE_IDS.join(' and ') + '.'] });
+          'There are ' + ROLE_IDS.length + ': ' +
+                                   ROLE_IDS.join(', ') + '.'] });
     }
     if (!name) {
       log.debug("Leaving AdminRbac.revoke(). No name.");
@@ -1876,6 +2061,9 @@ class AdminRbac {
       bootstrapState: this.bound(this.bootstrapState, 0),
       reportClosedConsole: this.bound(this.reportClosedConsole, 0),
       rolesOf: this.bound(this.rolesOf, 1),
+      holdsSecurity: this.bound(this.holdsSecurity, 1),
+      personValues: this.bound(this.personValues, 2),
+      groupValues: this.bound(this.groupValues, 2),
       grant: this.inContextRealm(this.grant),
       revoke: this.inContextRealm(this.revoke),
       candidates: this.bound(this.candidates, 1),
@@ -1929,8 +2117,9 @@ slot.buildNowUnlessDeferred();
 /**
  * Who may use the admin console, and what they may do on it.
  *
- * Two roles, Admin Read and Admin Write (write implies read), held as ordinary
- * groups in the embedded directory. The functions forward to the instance the
+ * Three roles, Admin Read, Admin Write and Security Administrator (write and
+ * security each imply read), held as ordinary groups in the embedded
+ * directory. The functions forward to the instance the
  * composition root installs, and each takes the realm it answers about.
  * @namespace
  */
@@ -1965,6 +2154,10 @@ export = {
   passwordSignIn: slot.forward('passwordSignIn'),
   reportClosedConsole: wrapped('reportClosedConsole'),
   rolesOf: wrapped('rolesOf'),
+  // #645: what `common/security_operations.ts` asks, each taking the realm.
+  holdsSecurity: wrapped('holdsSecurity'),
+  personValues: wrapped('personValues'),
+  groupValues: wrapped('groupValues'),
   grant: wrapped('grant'),
   revoke: wrapped('revoke'),
   candidates: wrapped('candidates'),

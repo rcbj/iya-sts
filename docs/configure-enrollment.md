@@ -611,7 +611,7 @@ API. The serial is named differently in each:
 
 ```bash
 api acme/revoke-certificate '{"serial":"<serial>","reason":"superseded"}'          # sts_acme_enrollment.js
-api est/revoke-certificate  '{"serialHex":"<serial>","reason":"keyCompromise"}'   # sts_est_enrollment.js
+api est/revoke-certificate  '{"serial":"<serial>","reason":"keyCompromise"}'   # sts_est_enrollment.js
 api scep/revoke-certificate '{"serial":"<serial>","reason":"keyCompromise"}'      # sts_scep_enrollment.js
 ```
 

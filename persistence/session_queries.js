@@ -31,9 +31,12 @@ const OLDEST = 'SELECT key, last_seen_at, started_at FROM sts_sessions ' +
   'WHERE realm = $1 AND subject_key = $2 AND chosen ORDER BY ' +
   'last_seen_at, started_at';
 
+// `last_seen_at < $3` BEFORE `$3 > 0`: PostgreSQL types a parameter at its
+// first use, and against the literal 0 that is int4, which a millisecond time
+// does not fit once an idle timeout is set (STS-AUTHN-0338).
 const EXPIRED = 'SELECT key FROM sts_sessions WHERE realm = $1 AND (' +
   '(expires_at IS NOT NULL AND expires_at <= $2) OR ' +
-  '(chosen AND $3 > 0 AND last_seen_at < $3))';
+  '(chosen AND last_seen_at < $3 AND $3 > 0))';
 
 const SUBJECT_ROWS = 'SELECT key, subject_key, last_seen_at, started_at ' +
   'FROM sts_sessions WHERE realm = $1 AND chosen AND subject_key <> \'\' ' +
@@ -114,15 +117,116 @@ const LIVE_TOTALS = 'SELECT count(*) FILTER (WHERE authenticated)::bigint ' +
 const LIVE_PAGE = 'SELECT key FROM sts_sessions WHERE ' + LIVE_ROWS +
   ' ORDER BY started_at DESC, key LIMIT $7 OFFSET $8';
 
+// ---------------------------------------------------------------------------
+// THE SAME QUESTIONS IN MARIADB'S SPELLING (#677, phase 3b). The texts above
+// are PostgreSQL's and stay what they were (`tests/console_sessions_index.js`
+// and others pin them); each twin here asks the same of the MariaDB schema,
+// written with the same `$n` so it takes the same values, and is made `?`
+// text by `minted_queries.positional()` (a parameter used twice is bound
+// twice; `liveByUsername`'s array is one placeholder per digest). Where the
+// spelling differs, and why it is the same question:
+//
+//   * `key` is back-quoted (a reserved word) and a count has no cast.
+//   * `count(*) FILTER (WHERE x)` is `SUM(CASE WHEN x THEN 1 ELSE 0 END)`:
+//     the same number, and NULL (read as 0) for no row, as before.
+//   * `= ANY($2::text[])` is `IN ($2)`.
+//   * `session.overCapRows`' subquery carries a LIMIT, which MariaDB refuses
+//     inside `IN (...)`; it is wrapped in a derived table, which is the same
+//     set of subjects.
+//   * `$6::int` is `$6`: the value is a number already.
+//   * the epoch of `written_at` is UNIX_TIMESTAMP's, in the session's UTC.
+//
+// Asked only on the driver's read pool (`sessionIndexQuery()`): the bridge's
+// thread speaks `pg` alone, and on MariaDB the session window has no bridge.
+// ---------------------------------------------------------------------------
+const MARIADB_LIVE_ROWS = 'realm = $1 AND chosen AND (expires_at IS NULL OR ' +
+  'expires_at > $2) AND ($3 = \'\' OR username_key = $3 OR ' +
+  'subject_key = $4 OR `key` = $5) AND ($6 < 0 OR authenticated = ' +
+  '($6 = 1))';
+
+const MARIADB = {
+  'session.read': 'SELECT handle, realm, `key`, body, ' +
+    'CAST(ROUND(UNIX_TIMESTAMP(written_at) * 1000) AS SIGNED) AS written_ms ' +
+    'FROM sts_minted WHERE handle = $1 AND realm = $2 AND `key` = $3',
+  'session.count': 'SELECT count(*) AS n FROM sts_sessions WHERE realm = $1',
+  'session.exists': 'SELECT 1 AS hit FROM sts_sessions WHERE realm = $1 ' +
+    'AND `key` = $2 LIMIT 1',
+  'session.oldest': 'SELECT `key`, last_seen_at, started_at FROM ' +
+    'sts_sessions WHERE realm = $1 AND subject_key = $2 AND chosen ORDER BY ' +
+    'last_seen_at, started_at',
+  'session.expired': 'SELECT `key` FROM sts_sessions WHERE realm = $1 AND (' +
+    '(expires_at IS NOT NULL AND expires_at <= $2) OR ' +
+    '(chosen AND last_seen_at < $3 AND $3 > 0))',
+  'session.subjectRows': 'SELECT `key`, subject_key, last_seen_at, ' +
+    'started_at FROM sts_sessions WHERE realm = $1 AND chosen AND ' +
+    'subject_key <> \'\' AND (subject_key, `key`) > ($2, $3) ORDER BY ' +
+    'subject_key, `key` LIMIT 500',
+  'session.overCapRows': 'SELECT `key`, subject_key, last_seen_at, ' +
+    'started_at FROM sts_sessions WHERE realm = $1 AND chosen AND ' +
+    'subject_key <> \'\' AND subject_key IN (SELECT over_cap.subject_key ' +
+    'FROM (SELECT subject_key FROM sts_sessions WHERE realm = $1 AND ' +
+    'chosen AND subject_key <> \'\' GROUP BY subject_key HAVING ' +
+    'count(*) > $2 ORDER BY subject_key LIMIT $3) AS over_cap) ' +
+    'ORDER BY subject_key, `key`',
+  'session.children': 'SELECT `key` FROM sts_sessions WHERE realm = $1 AND ' +
+    'parent_key = $2',
+  'session.credential': 'SELECT `key` FROM sts_sessions WHERE realm = $1 ' +
+    'AND credential_key = $2 LIMIT 5',
+  'session.username': 'SELECT `key` FROM sts_sessions WHERE realm = $1 AND ' +
+    'username_key = $2',
+  'session.subject': 'SELECT `key` FROM sts_sessions WHERE realm = $1 AND ' +
+    'chosen AND subject_key <> \'\' AND subject_key = $2',
+  'session.page': 'SELECT `key` FROM sts_sessions WHERE realm = $1 AND ' +
+    '`key` > $2 ORDER BY `key` LIMIT $3',
+  'session.surface': 'SELECT `key` FROM sts_sessions WHERE realm = $1 AND ' +
+    'rp_surface = $2',
+  'session.partner': 'SELECT `key` FROM sts_sessions WHERE realm = $1 AND ' +
+    'partner_relationship = $2',
+  'session.liveSubjects': 'SELECT count(DISTINCT subject_key) AS n FROM ' +
+    'sts_sessions WHERE realm = $1 AND ' + LIVE_KINDS + ' AND ' +
+    '(expires_at IS NULL OR expires_at > $2)',
+  'session.liveByUsername': 'SELECT username_key, count(*) AS n FROM ' +
+    'sts_sessions WHERE realm = $1 AND username_key IN ($2) AND ' +
+    LIVE_KINDS + ' AND (expires_at IS NULL OR expires_at > $3) ' +
+    'GROUP BY username_key',
+  'session.liveTotals': 'SELECT SUM(CASE WHEN authenticated THEN 1 ELSE 0 ' +
+    'END) AS a, SUM(CASE WHEN NOT authenticated THEN 1 ELSE 0 END) AS u ' +
+    'FROM sts_sessions WHERE ' + MARIADB_LIVE_ROWS,
+  'session.livePage': 'SELECT `key` FROM sts_sessions WHERE ' +
+    MARIADB_LIVE_ROWS + ' ORDER BY started_at DESC, `key` LIMIT $7 ' +
+    'OFFSET $8'
+};
+
 /**
- * Builds one named statement.
+ * Builds one named statement, for PostgreSQL unless `engine` says MariaDB.
+ *
+ * @param {string} name
+ * @param {unknown[]} args
+ * @param {string} [engine] - 'mariadb' for MariaDB's spelling; anything
+ *   else (the bridge's thread passes nothing) is PostgreSQL's
+ * @returns {{ text: string, values: unknown[] }}
+ */
+function build(name, args, engine) {
+  log.debug("Entering build().");
+  if (engine === 'mariadb') {
+    const native = buildPostgres(name, args);
+    log.debug("Leaving build(). MariaDB.");
+    return require('./minted_queries').positional(MARIADB[name],
+                                                  native.values);
+  }
+  log.debug("Leaving build().");
+  return buildPostgres(name, args);
+}
+
+/**
+ * PostgreSQL's statement for one name: what `build()` always answered.
  *
  * @param {string} name
  * @param {unknown[]} args
  * @returns {{ text: string, values: unknown[] }}
  */
-function build(name, args) {
-  log.debug("Entering build().");
+function buildPostgres(name, args) {
+  log.debug("Entering buildPostgres().");
   const a = Array.isArray(args) ? args : [];
   let text = '';
   let values = [];
@@ -181,10 +285,10 @@ function build(name, args) {
     text = LIVE_PAGE;
     values = [a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]];
   } else {
-    log.debug("Leaving build().");
+    log.debug("Leaving buildPostgres().");
     throw new Error('session_queries: unknown query "' + name + '"');
   }
-  log.debug("Leaving build().");
+  log.debug("Leaving buildPostgres().");
   return { text: text, values: values };
 }
 

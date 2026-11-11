@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
 // File: jose_jwe.js
 //
 // ---------------------------------------------------------------------------
@@ -52,16 +54,22 @@
 var bunyan = require("bunyan");
 // A node consumer (the tests load this module directly) may have no
 // CONFIG_FILE, so fall back to info rather than failing to load.
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "jose_jwe",
   level: (function () {
     try {
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in jose_jwe log level: " + logLevelProblem);
+}
 
 // ---------------------------------------------------------------------------
 // Bytes and base64url — one implementation, in crypto_bytes.js.
@@ -290,17 +298,20 @@ function isCbcHmac(enc) {
   log.debug("Leaving isCbcHmac().");
   return CBC_HMAC[enc] !== undefined;
 }
+
 function isRsa(alg) {
   log.debug("Entering isRsa().");
   log.debug("Leaving isRsa().");
   return JWE_RSA_HASH[alg] !== undefined;
 }
+
 function supportedAlgs() {
   log.debug("Entering supportedAlgs().");
   log.debug("Leaving supportedAlgs().");
   return ['RSA-OAEP', 'RSA-OAEP-256',
           'ECDH-ES'].concat(Object.keys(ECDH_KW_BYTES));
 }
+
 function supportedEncs() {
   log.debug("Entering supportedEncs().");
   log.debug("Leaving supportedEncs().");
@@ -343,6 +354,8 @@ function probeAesSupport() {
             { name: names[n] }, false, usages);
           support[names[n]][sizes[b]] = true;
         } catch (e) {
+          // Refused at this size: that is the answer the probe is asking for.
+          log.debug("Caught in probeAesSupport(): " + ((e && e.message) || e));
           support[names[n]][sizes[b]] = false;
         }
       }
@@ -650,7 +663,10 @@ async function cbcHmacDecrypt(cekBytes, enc, iv, aad, ciphertext, tag) {
 async function deriveCekBytes(alg, enc, protectedHeader, recipientPublicKey) {
   log.debug("Entering deriveCekBytes(). alg=" + alg + ", enc=" + enc);
   var keyBytes = ENC_KEY_BYTES[enc];
-  if (!keyBytes) throw new Error('unsupported content encryption: ' + enc);
+  if (!keyBytes) {
+    log.debug("Leaving deriveCekBytes().");
+    throw new Error('unsupported content encryption: ' + enc);
+  }
 
   if (isEcdh(alg)) {
     var curve = curveOf(recipientPublicKey, ECDH_CURVE);
@@ -683,8 +699,10 @@ async function deriveCekBytes(alg, enc, protectedHeader, recipientPublicKey) {
              encryptedKey: bytesToB64u(await wrapRawBytes(random, kekBytes)) };
   }
 
-  if (!isRsa(alg)) throw new Error('unsupported key management algorithm: ' +
-      alg);
+  if (!isRsa(alg)) {
+    log.debug("Leaving deriveCekBytes().");
+    throw new Error('unsupported key management algorithm: ' + alg);
+  }
   // RSA-OAEP / RSA-OAEP-256: a random CEK wrapped with the recipient's key.
   var cek = randomCekBytes(keyBytes);
   var rsaPub = await importKey(recipientPublicKey, 'spki',
@@ -826,11 +844,16 @@ async function unwrapCekBytes(alg, enc, protectedHeader, encryptedKey,
                               recipientPrivateKey) {
   log.debug("Entering unwrapCekBytes(). alg=" + alg + ", enc=" + enc);
   var keyBytes = ENC_KEY_BYTES[enc];
-  if (!keyBytes) throw new Error('unsupported content encryption: ' + enc);
+  if (!keyBytes) {
+    log.debug("Leaving unwrapCekBytes().");
+    throw new Error('unsupported content encryption: ' + enc);
+  }
 
   if (isEcdh(alg)) {
-    if (!protectedHeader.epk) throw new Error('an ECDH-ES JWE must carry an ' +
-        '"epk" header.');
+    if (!protectedHeader.epk) {
+      log.debug("Leaving unwrapCekBytes().");
+      throw new Error('an ECDH-ES JWE must carry an "epk" header.');
+    }
     var curve = protectedHeader.epk.crv || ECDH_CURVE;
     var recipientPriv = await importKey(recipientPrivateKey, 'pkcs8',
       { name: 'ECDH', namedCurve: curve }, ['deriveBits']);
@@ -849,8 +872,10 @@ async function unwrapCekBytes(alg, enc, protectedHeader, encryptedKey,
     return unwrapRawBytes(b64uToBytes(encryptedKey), kekBytes);
   }
 
-  if (!isRsa(alg)) throw new Error('unsupported key management algorithm: ' +
-      alg);
+  if (!isRsa(alg)) {
+    log.debug("Leaving unwrapCekBytes().");
+    throw new Error('unsupported key management algorithm: ' + alg);
+  }
   var rsaPriv = await importKey(recipientPrivateKey, 'pkcs8',
     { name: 'RSA-OAEP', hash: JWE_RSA_HASH[alg] }, ['decrypt']);
   var cek = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, rsaPriv,
@@ -927,8 +952,10 @@ async function encryptCompact(options) {
             options.enc);
   var alg = options.alg;
   var enc = options.enc;
-  if (!ENC_KEY_BYTES[enc]) throw new Error('unsupported content encryption: ' +
-      enc);
+  if (!ENC_KEY_BYTES[enc]) {
+    log.debug("Leaving encryptCompact().");
+    throw new Error('unsupported content encryption: ' + enc);
+  }
 
   var protectedHeader = {};
   Object.keys(options.header || {}).forEach(function (k) {
@@ -998,8 +1025,10 @@ async function decryptCompact(options) {
   var parsed = parseCompact(options.jwe);
   var header = parsed.header;
   var parts = parsed.parts;
-  if (!ENC_KEY_BYTES[header.enc]) throw new Error('unsupported content ' +
-      'encryption: ' + header.enc);
+  if (!ENC_KEY_BYTES[header.enc]) {
+    log.debug("Leaving decryptCompact().");
+    throw new Error('unsupported content encryption: ' + header.enc);
+  }
 
   var cekBytes = await unwrapCekBytes(header.alg, header.enc, header, parts[1],
       options.key);
@@ -1028,16 +1057,29 @@ async function decryptCompact(options) {
 // key_material.js, and both key-pair panes on the Digital Signature and
 // Encryption pages. It was written twice before it was written here.
 //
-// PBES2-HS256+A128KW over A256GCM, 100,000 iterations. Note the salt Web
-// Crypto is given is not p2s: RFC 7518 says the PBKDF2 salt is the alg name,
-// a zero octet, and then p2s — get that wrong and the output is a JWE that
-// only this code can open.
+// PBES2-HS256+A128KW over A256GCM, `PBKDF2_EXPORT_ITERATIONS` (600,000)
+// iterations. Note the salt Web Crypto is given is not p2s: RFC 7518 says the
+// PBKDF2 salt is the alg name, a zero octet, and then p2s — get that wrong and
+// the output is a JWE that only this code can open.
 // ---------------------------------------------------------------------------
+// THE ITERATION COUNT (#1512, ASVS 5.0.0 11.4.4; #1577). OWASP's Password
+// Storage Cheat Sheet's figure for PBKDF2-HMAC-SHA256 is 600,000, which #1512
+// adopted for PBES2 and PKCS#12 export alike, in either mode. This function
+// still fixed 100,000 until #1577, so a password-protected JWK downloaded from
+// the console was stretched a sixth as far as the PKCS#12 file beside it.
+// `key_material.js`'s `buildPkcs12()` reads the same constant, so the two
+// exports cannot drift again. `common/crypto.js`'s `PBES2_DEFAULT_ITERATIONS`
+// is the same figure for the JWEs it encrypts; it cannot be read from here,
+// because this file is a leaf `crypto.js` rests on, and its minimum of 1000
+// (RFC 7518 section 4.8.1.2) is what a JWE made here must also clear to be
+// opened there.
+var PBKDF2_EXPORT_ITERATIONS = 600000;
+
 async function pbes2JweEncrypt(plaintext, password) {
   log.debug("Entering pbes2JweEncrypt().");
   var alg = 'PBES2-HS256+A128KW', enc = 'A256GCM';
   var p2s = crypto.getRandomValues(new Uint8Array(16));
-  var p2c = 100000;
+  var p2c = PBKDF2_EXPORT_ITERATIONS;
   var pwKey = await crypto.subtle.importKey('raw',
       bytes.strBytes(password), 'PBKDF2', false, ['deriveKey']);
   var saltInput = concatBytes(bytes.strBytes(alg), new Uint8Array([0]), p2s);
@@ -1106,6 +1148,7 @@ module.exports = {
   cbcHmacDecrypt: cbcHmacDecrypt,
   // password-based key wrapping
   pbes2JweEncrypt: pbes2JweEncrypt,
+  PBKDF2_EXPORT_ITERATIONS: PBKDF2_EXPORT_ITERATIONS,
   // and the whole thing
   encryptCompact: encryptCompact,
   parseCompact: parseCompact,

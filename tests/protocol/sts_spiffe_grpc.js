@@ -57,9 +57,14 @@
 // agent attests with a join token from
 // `/admin-api/spiffe/agents/join-token` and serves the Workload API on a
 // Unix socket. W and A are parented on that agent and select the unix uid
-// and gid this process is seen as. Section 0 asserts the /admin-api refusal
-// and section 10 the SPIRE Server API's (INVALID_ARGUMENT per item)
-// wherever the realm is in product.
+// and gid this process is seen as. **ON AWS THE AGENT IS A SIDECAR (#695)**:
+// where STS_SPIFFE_AGENT_DIR is set, the suite task's `spiffe-agent`
+// container — the service's own image — is handed the token through that
+// shared directory and serves the socket there, so the agent this job calls
+// is the one a workload would run, in another container, seen across it by
+// SO_PEERCRED (`sidecarAgent()`, below). Section 0 asserts the /admin-api
+// refusal and section 10 the SPIRE Server API's (INVALID_ARGUMENT per
+// item) wherever the realm is in product.
 //
 // **THE WORKLOAD API AUTHENTICATES NOBODY AND ATTESTS NOTHING, BY DESIGN**
 // (`spiffe/CLAUDE.md`): any TCP caller of the port matches W and A while they
@@ -598,6 +603,80 @@ function localAddressToward(target) {
 // ---------------------------------------------------------------------------
 // test()
 // ---------------------------------------------------------------------------
+// THE SIDECAR AGENT (#695): where STS_SPIFFE_AGENT_DIR names a directory a
+// workload agent in ANOTHER CONTAINER of this task watches — the AWS suite
+// task's `spiffe-agent` container (deploy/aws/suite-callbacks/main.tf), run
+// from the service's own image — this job hands it what it would have
+// handed the in-process agent and waits for it, rather than starting one.
+//
+//   bundle.pem   the x509-svid anchors, read from the HTTPS bundle
+//   agent-args   one --name=value per line: the Server API address, the
+//                trust domain and the realm's two Workload API switches
+//   join-token   the token, written LAST and renamed into place, because
+//                its appearing is what the container waits for
+//
+// and the agent answers with `ready` (its SPIFFE ID, `--ready-file`) beside
+// `api.sock`. The directory is made 0777 here: the agent runs as the
+// service image's own user, and binds its socket and writes `ready` in it.
+// One sidecar attests once per task, so a `ready` already there is a
+// failure, not an agent to reuse: the job deletes its agent at the end.
+// ---------------------------------------------------------------------------
+const SIDECAR_WAIT_MS = 180000;
+
+async function sidecarAgent(dir, given) {
+  log.debug("Entering sidecarAgent().");
+  const ready = path.join(dir, "ready");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.chmodSync(dir, 0o777);
+  assert.ok(!fs.existsSync(ready), "the sidecar agent in " + dir + " has " +
+            "already attested once in this task (" + ready + " exists); " +
+            "it serves one run of this job");
+  fs.writeFileSync(path.join(dir, "bundle.pem"), given.bundlePem,
+                   { mode: 0o644 });
+  fs.writeFileSync(path.join(dir, "agent-args"), [
+    "--server=" + given.server,
+    "--trust-domain=" + given.trustDomain,
+    "--require-security-header=" + String(!!given.requireHeader),
+    "--attest-workloads=" + String(!!given.attestWorkloads)
+  ].join("\n") + "\n", { mode: 0o644 });
+  const temporary = path.join(dir, ".join-token." + process.pid);
+  fs.writeFileSync(temporary, given.joinToken + "\n", { mode: 0o644 });
+  fs.renameSync(temporary, path.join(dir, "join-token"));
+  log.info("Handed the sidecar workload agent a join token in " + dir +
+           "; waiting up to " + (SIDECAR_WAIT_MS / 1000) + " s for " +
+           ready + ".");
+  const deadline = Date.now() + SIDECAR_WAIT_MS;
+  let id = "";
+  while (Date.now() < deadline) {
+    try {
+      id = fs.readFileSync(ready, "utf8").trim();
+    } catch (e) {
+      // Not written yet: the container is still waiting, starting or
+      // attesting. Asked again after a pause, up to the deadline.
+      log.debug("Caught in sidecarAgent(): " + ((e && e.message) || e));
+      id = "";
+    }
+    if (id) {
+      break;
+    }
+    await sleep(1000);
+  }
+  try {
+    fs.unlinkSync(path.join(dir, "join-token"));
+  } catch (e) {
+    // Spent, or never to be spent: either way it has no further use, and a
+    // file already gone is the state wanted.
+    log.debug("Caught in sidecarAgent(): " + ((e && e.message) || e));
+  }
+  assert.ok(id.indexOf("spiffe://") === 0, "the sidecar workload agent " +
+            "wrote no SPIFFE ID to " + ready + " within " +
+            (SIDECAR_WAIT_MS / 1000) + " s; its own log (the task's " +
+            "spiffe-agent container) says why — STS-SPIFFE-0148 or 0152, " +
+            "or an image that predates --ready-file");
+  log.debug("Leaving sidecarAgent().");
+  return { id: id, socketPath: path.join(dir, "api.sock") };
+}
+
 function parseAddress(text) {
   log.debug("Entering parseAddress().");
   const t = String(text || "").trim().replace(/^[a-z]+:\/\//i, "")
@@ -896,31 +975,54 @@ async function test() {
         return pemFromX5c(key.x5c[0]);
       }).join("");
       assert.ok(pem, "the HTTPS bundle has no x509-svid certificate");
-      agentDir = fs.mkdtempSync(path.join(os.tmpdir(),
-                                          "sts-spiffe-agent-"));
-      const socketPath = path.join(agentDir, "api.sock");
-      workloadAgent = new WorkloadAgent({
-        server: serverTarget,
-        socketPath: socketPath,
-        trustDomain: trustDomain,
-        joinToken: minted.json.token,
-        trustBundlePem: pem,
-        requireSecurityHeader: requireHeader,
-        attestWorkloads: narrowing,
-        attestAttempts: ATTEMPTS,
-        attestPauseMs: PAUSE_MS,
-        log: log
-      });
-      await workloadAgent.start();
-      workloadAgentId = String(workloadAgent.agentSpiffeId || "");
+      let socketPath = "";
+      const sidecarDir = String(process.env.STS_SPIFFE_AGENT_DIR || "")
+        .trim();
+      if (sidecarDir) {
+        const sidecar = await sidecarAgent(sidecarDir, {
+          server: serverTarget,
+          trustDomain: trustDomain,
+          joinToken: minted.json.token,
+          bundlePem: pem,
+          requireHeader: requireHeader,
+          attestWorkloads: narrowing
+        });
+        workloadAgentId = sidecar.id;
+        socketPath = sidecar.socketPath;
+      } else {
+        agentDir = fs.mkdtempSync(path.join(os.tmpdir(),
+                                            "sts-spiffe-agent-"));
+        socketPath = path.join(agentDir, "api.sock");
+        workloadAgent = new WorkloadAgent({
+          server: serverTarget,
+          socketPath: socketPath,
+          trustDomain: trustDomain,
+          joinToken: minted.json.token,
+          trustBundlePem: pem,
+          requireSecurityHeader: requireHeader,
+          attestWorkloads: narrowing,
+          attestAttempts: ATTEMPTS,
+          attestPauseMs: PAUSE_MS,
+          log: log
+        });
+        await workloadAgent.start();
+        workloadAgentId = String(workloadAgent.agentSpiffeId || "");
+      }
       assert.ok(workloadAgentId.indexOf("spiffe://") === 0,
                 "the workload agent attested no SPIFFE ID");
+      check("the minted join token attested the workload agent as the " +
+            "agent it was minted for", function () {
+        assert.ok(!minted.json.agentSpiffeId ||
+                  minted.json.agentSpiffeId === workloadAgentId,
+                  workloadAgentId + " is not " + minted.json.agentSpiffeId);
+      });
       entryParent = workloadAgentId;
       workloadTarget = "unix://" + socketPath;
       identitySelectors = WorkloadAgent.selectorsText(process.getuid(),
                                                       process.getgid());
-      log.info("Workload API through the local agent " + workloadAgentId +
-               " at " + workloadTarget + ".");
+      log.info("Workload API through the " +
+               (sidecarDir ? "sidecar" : "local") + " agent " +
+               workloadAgentId + " at " + workloadTarget + ".");
     }
     const parent = viaAgent ? { parentId: entryParent } : {};
     // =======================================================================

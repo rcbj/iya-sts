@@ -100,7 +100,7 @@ class WebPage {
    * One attribute of the shell's `<html>` element.
    *
    * @param env - the browser's objects
-   * @param name - the attribute, `data-sts-version`
+   * @param name - the attribute, `data-sts-build`
    * @returns its value, or '' where it is absent
    */
   static attribute(env: Json, name: string): string {
@@ -157,6 +157,53 @@ class WebPage {
   }
 
   /**
+   * Moves a sign-in step's id from a link's query to its fragment (#1454).
+   * `/authn/spnego` stays: RFC 4559's exchange has no script to read one.
+   *
+   * @param href - the link
+   * @returns the link to use
+   */
+  static stepToFragment(href: string): string {
+    return String(href).replace(
+      /(\/authn\/(?!spnego)[a-z0-9/-]+|\/oauth2\/consent)\?((?:authn|mfa|change|consent)=[^#]*)$/,
+      '$1#$2');
+  }
+
+  /**
+   * Takes a step's id off an API address, for a header (#1454).
+   *
+   * @param path - the operation's address
+   * @returns the address, and the headers that carry what left it
+   */
+  static stepToHeaders(path: string): Json {
+    let out = String(path);
+    const headers: Json = {};
+    const inPath = /(\/authn-api\/(?:mfa|pending|password-change|consent)\/)([^/?]+)/
+      .exec(out);
+    if (inPath) {
+      headers['X-Step-Id'] = decodeURIComponent(inPath[2]);
+      out = out.replace(inPath[0], inPath[1] + '-');
+    }
+    const query = out.indexOf('?');
+    if (query >= 0 && out.indexOf('/authn-api/') >= 0) {
+      const kept = new URLSearchParams(out.slice(query + 1));
+      const moved = new URLSearchParams();
+      ['authn', 'mfa', 'enrol'].forEach(function (name: string): void {
+        if (kept.has(name)) {
+          moved.set(name, String(kept.get(name)));
+          kept.delete(name);
+        }
+      });
+      if (moved.toString()) {
+        headers['X-Step-Query'] = moved.toString();
+        const rest = kept.toString();
+        out = out.slice(0, query) + (rest ? '?' + rest : '');
+      }
+    }
+    return { path: out, headers: headers };
+  }
+
+  /**
    * Calls an operation that takes no token, sending an object as JSON, and
    * reads its JSON.
    *
@@ -166,11 +213,13 @@ class WebPage {
    * @returns `{ status, json, res }`, `json` null where the body was not
    *   JSON
    */
-  async publicJson(method: string, path: string, body?: Json): Promise<Json> {
+  async publicJson(method: string, path: string, body?: Json,
+                   headers?: Json): Promise<Json> {
     const res = await this.env.fetch(this.url(path), {
       method: method,
       headers: Object.assign({ 'Accept': 'application/json' },
-        body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        body !== undefined ? { 'Content-Type': 'application/json' } : {},
+        headers || {}),
       body: body !== undefined ? JSON.stringify(body) : undefined });
     const json = await res.json().catch(function () {
       return null;
@@ -193,8 +242,17 @@ class WebPage {
     if (!prefix) {
       return html;
     }
+    // THE PREFIX GOES INSIDE AN ATTRIBUTE, so it is escaped as one (Qualys
+    // QID 150938, 2026-11-10). It comes from the shell's own
+    // `data-sts-prefix` or from `location.pathname`, which a browser has
+    // already percent-encoded, so nothing could break out of the quotes; the
+    // escape makes that a property of this function rather than of its
+    // callers. `$` is doubled because the replacement is a pattern.
+    const safe = String(prefix).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\$/g, '$$$$');
     return String(html).replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
-                                '$1="' + prefix + '/');
+                                '$1="' + safe + '/');
   }
 
   /**
@@ -258,7 +316,30 @@ class WebPage {
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
-    const href = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    this.saveBlob(name, new Blob([bytes], { type: mime }));
+  }
+
+  /**
+   * Saves text as a file.
+   *
+   * @param name - the file's name
+   * @param mime - its media type
+   * @param text - its contents
+   * @returns nothing
+   */
+  saveText(name: string, mime: string, text: string): void {
+    this.saveBlob(name, new Blob([text], { type: mime }));
+  }
+
+  /**
+   * Hands a blob to the browser as a download.
+   *
+   * @param name - the file's name
+   * @param blob - its contents
+   * @returns nothing
+   */
+  saveBlob(name: string, blob: Blob): void {
+    const href = URL.createObjectURL(blob);
     const a = this.env.document.createElement('a');
     a.href = href;
     a.download = name.replace(/[\/\\]/g, '_');

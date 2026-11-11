@@ -154,11 +154,14 @@ curl -sk -X POST "$STS/admin-api/pki/issue" -H "Authorization: Bearer $TOKEN" \
 jq -r .privateKeyPem issued.json > alice.pem
 ```
 
-The public half lands on alice's own directory entry as `stsAssertionJwks`,
-`stsAssertionCertificate`, `stsAssertionCertificateChain`, `stsAssertionKid` and
-`stsAssertionExpiresAt`; the private half is there too as
-`stsAssertionPrivateKey`, sealed under the key-encryption key wherever that key
-outlives the process. **It is handed over once and there is no read door for it
+The key pair is ADDED to alice's own directory entry: one `stsAssertionKeyPair`
+record (the `kid`, the public JWK with its `x5c` chain, the certificate, its
+expiry, where it came from and an optional `label`), and the private half as a
+value of `stsAssertionPrivateKey`, sealed under the key-encryption key wherever
+that key outlives the process. **A person may hold several** — up to
+`pki.personSigningKeyMax` (5) valid ones per profile, one per script or service
+that acts as them — and an assertion signed with any of them is accepted, the
+key found by its `kid`. Past the cap an issue is refused (`STS-PKI-0223`). **It is handed over once and there is no read door for it
 afterwards** — an application's is readable through `/admin-api/applications`,
 and nothing draws a person's entry through a module that would open the seal, so
 the alternatives were a page that prints somebody's private key on every visit
@@ -171,13 +174,36 @@ accepted as their `iss` for the reason a client's own `client_id` is. Write
 `stsAssertionIssuer` on the entry (or pass `issuer` to the issue call) if they
 should assert under some other name.
 
+### Revoking one
+
+A person's key pair is removed by **revoking** it, one at a time. Name it by its
+`kid`:
+
+```bash
+curl -sk -X POST https://localhost:8081/admin-api/pki/revoke \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"identifier":"alice","target":"person","handle":"person-…","reason":"keyCompromise"}'
+```
+
+Its certificate goes on the realm's CRL and the OCSP responder answers
+`revoked`; this service refuses an assertion signed with it from then on, by
+`kid` or with the certificate in `x5c`, and drops the private half. The person's
+other key pairs keep working. The reason is `cessationOfOperation` (the default)
+or `keyCompromise`, which also sends a RISC credential-compromise event.
+Revoking the last valid key pair clears the person's `stsAssertionIssuer`
+declaration with it.
+
 ### A person can do it themselves
 
 They do not need you. **`/portal/signing-key`** in the user
 portal is the same act, performed by the person the key is for: they sign in,
-press *Generate my RFC 7523 signing key*, and the private half is shown once on
-the page that comes back — with the claims, the `kid` and the algorithm printed
-beside it, and a `curl` line to spend it with. The same page issues the RFC 7522
+optionally name it after what will use it, press *Generate my RFC 7523 signing
+key*, and the page that comes back offers the private key and the certificate
+chain once, as two downloads in the new key pair's row of the card's list —
+with the claims, the `kid` and the algorithm printed under the table, and a
+`curl` line to spend it with. Generating again adds another key pair; each row
+has its own *Revoke*, with the two reasons above, and at the cap the
+*Generate* control is replaced by a note. The same page issues the RFC 7522
 (SAML) key pair on a card of its own; see
 [SAML assertions](saml-assertions.md#a-person-can-be-the-issuer-too).
 
@@ -225,6 +251,8 @@ through `/admin-api/pki/upload-certificate` with `target=person`. The rule above
 holds for an uploaded key exactly as for an issued one. [PKI](pki.md) has the
 section.
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a registered key's `x5c` is completed from the realm's [signer truststore](signer-truststore.md) when its chain stops short, its leaf's keyUsage is asked, and a self-signed `x5c[0]` is refused. See the `jose-signer` row of the [use cases](pki-use-cases.md).
+
 ## The one thing that is not permissive
 
 Almost everything in this service is a turnstile. This is not, and the reason is
@@ -260,19 +288,21 @@ was arranged deliberately:
 |---|---|---|
 | Registered by value | `oauthJwks` | RFC 7591's member. What a party with a key of its own uses. |
 | Issued by this service | `oauthAssertionJwks` | What `/admin/pki` wrote, public half only, carrying `x5c` and `x5t#S256`. |
-| Presented with the signature | the JWS `x5c` header | Used **only after** the chain has been shown to reach this realm's Root CA. |
+| Presented with the signature | the JWS `x5c` header | Used **only after** the chain has been shown to reach this realm's Root CA, and only for the party its leaf names: the client authenticating, or the assertion's issuer at the grant (`STS-OAUTH-1000`, `STS-OAUTH-1001`). |
 
 **A certificate that arrives WITH the signature is not evidence on its own.**
 Taking a public key out of an unchecked `x5c` would be verifying a signature
 against a key the signature came with, which proves nothing at all — so it is
-used only when this service can see that it issued it. That is the point of
-holding a certificate authority.
+used only when this service can see that it issued it, and to the party
+presenting it. A certificate this realm issued to one application does not
+verify another application's assertion. That is the point of holding a
+certificate authority.
 
 ### The certificate's whole chain is validated every time the key is used
 
 In both modes, for both halves of RFC 7523. When the key that
 verified an assertion carries a certificate — a JWK with `x5c` in `oauthJwks`,
-`oauthAssertionJwks` or a person's `stsAssertionJwks`, or the JWS `x5c` header —
+`oauthAssertionJwks` or a person's valid `stsAssertionKeyPair` records, or the JWS `x5c` header —
 the signature counts only if that certificate's trust chain holds **at that
 moment**:
 
@@ -353,7 +383,9 @@ Which key opens it depends on what the sender could possibly have had:
 | `A128KW` … `A256GCMKW`, `dir`, the three `PBES2` forms | the **client secret**, which is the only shared key that exists between this service and a client | a client that has one |
 
 Six content encryption algorithms against all sixteen: `A128GCM`, `A192GCM`,
-`A256GCM`, `A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512`.
+`A256GCM`, `A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512`. In product mode
+the three CBC-HMAC ones are refused unless `crypto.allowCbcJwe` is on, and
+`RSA-OAEP`, which is OAEP over SHA-1, unless `crypto.allowLegacyHashes` is on.
 
 **`RSA1_5` is deliberately absent and the refusal names it.** RFC 8017
 deprecated PKCS#1 v1.5 encryption, and implementing it safely means making an
@@ -401,6 +433,7 @@ exchanged, nor the reverse. What it may be addressed to is
 | `oauth2.clientAssertionSkewS` | `STS_OAUTH2_CLIENT_ASSERTION_SKEW_S` | `60` | yes | How far out somebody else's clock may be for `exp`, `nbf` and `iat`, and how long past its expiry a `jti` is remembered. It answers one question, so it applies to both halves of the profile. |
 | `oauth2.assertionReplayCacheSize` | `STS_OAUTH2_ASSERTION_REPLAY_CACHE_SIZE` | `1000` | yes | Unexpired rows the used-assertion history holds per realm, for RFC 7523 and RFC 7522 together; a full history refuses the next assertion rather than forgetting a live one. |
 | `pki.personSelfService` | `STS_PKI_PERSON_SELF_SERVICE` | `true` | yes | Whether `/portal/signing-key` lets a person issue their own key pair; off takes away no key already held. |
+| `pki.personSigningKeyMax` | `STS_PKI_PERSON_SIGNING_KEY_MAX` | `5` | yes | Valid key pairs one person may hold per profile; past it an issue or upload is refused (`STS-PKI-0223`). |
 | `pki.personSelfServicePerIdentity` | `STS_PKI_PERSON_SELF_SERVICE_PER_IDENTITY` | `5` | yes | How often one person may press Generate there in a `security.rateLimitWindowS` window. |
 | `pki.personSelfServicePerAddress` | `STS_PKI_PERSON_SELF_SERVICE_PER_ADDRESS` | `5` | yes | The same limit counted per client address. |
 

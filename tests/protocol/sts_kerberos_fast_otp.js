@@ -175,14 +175,17 @@ function stepNow() {
   return Math.floor(Date.now() / 30000);
 }
 
-// A code for a step AFTER `used`: the next one if it is inside the verifier's
-// window already, else waiting for the clock to reach it.
+// A code for a step AFTER `used`, always the CURRENT step's: wait for the
+// clock to pass `used` rather than computing a future step's code. Product
+// mode's `totp.window` is 0 (strongerInProduct(0, 1) in common/config.js), so
+// a future step's code is refused there; the wait is at most thirty seconds
+// and is right in both modes.
 async function codeAfter(secret, used) {
   log.debug("Entering codeAfter(). used=" + used);
-  while (stepNow() + 1 <= used) {
+  while (stepNow() <= used) {
     await pause(1000);
   }
-  const step = Math.max(used + 1, stepNow());
+  const step = stepNow();
   log.debug("Leaving codeAfter(). step=" + step);
   return { step: step, code: codeAtStep(secret, step) };
 }
@@ -251,6 +254,16 @@ async function enrolAuthenticator(who) {
     .replace(/\s+/g, "");
   assert.ok(secret.length >= 32, "no secret on /portal/mfa: " +
             String(page.text).slice(0, 400));
+  // THE CONFIRMATION SPENDS A STEP THAT SECTION 5 REPLAYS AT THE KDC, and
+  // the replay can only be refused as "already been used" while that step
+  // is still the current one: product's `totp.window` is 0, so a step the
+  // clock has left is refused as a wrong code instead. Cluster mode on
+  // 2026-11-10 confirmed at :29.858 and replayed at :30.5. So the
+  // confirmation starts with at least fifteen seconds of its step left, which
+  // sections 3 to 5 (about a second) fit inside.
+  while (30000 - (Date.now() % 30000) < 15000) {
+    await pause(1000);
+  }
   const step = stepNow();
   r = await p.act("/portal/mfa", { action: "confirm",
                                    code: codeAtStep(secret, step) });
@@ -584,8 +597,8 @@ async function spnegoCountsIt(tcp, otpTgt) {
   const body = await r.text();
   const cookie = ((r.headers.getSetCookie ? r.headers.getSetCookie() : [])
     .filter(function (one) {
-      return /^sts_session=/.test(one);
-    })[0] || "").replace(/^sts_session=([^;.]*).*$/, "$1");
+      return /^(?:__Host-)?sts_session=/.test(one);
+    })[0] || "").replace(/^(?:__Host-)?sts_session=([^;.]*).*$/, "$1");
   check("the SPNEGO sign-in succeeds and the page says two factors: amr " +
         "pwd and otp, acr mfa", function () {
           assert.strictEqual(r.status, 200, body.slice(0, 300));

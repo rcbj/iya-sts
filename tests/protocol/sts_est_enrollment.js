@@ -155,6 +155,17 @@ async function post(url, body) {
   return r;
 }
 
+// A person who authenticates during this job, so the job chooses the password:
+// one the service generates must be changed at first use in product (#1446).
+async function createWithPassword(url, body, what) {
+  log.debug("Entering createWithPassword().");
+  const password = "Est-" + nodeCrypto.randomBytes(18).toString("base64url");
+  const made = await ok(url, Object.assign({}, body,
+    { credential: "password", password: password }), what);
+  log.debug("Leaving createWithPassword().");
+  return Object.assign({}, made, { password: password });
+}
+
 async function ok(url, body, what) {
   log.debug("Entering ok().");
   const r = await post(url, body);
@@ -335,13 +346,13 @@ async function test() {
   // product-mode target verifies it against userPassword, as section 15 does
   // in its own realm. The realm's attribute policy (#396) requires givenName,
   // sn and mail of every person in product mode.
-  const personCreated = await ok(realmApi + "/users/create",
-           { username: PERSON, invent: false, credential: "generate",
+  const personCreated = await createWithPassword(realmApi + "/users/create",
+           { username: PERSON, invent: false,
              attributes: { cn: "EST Alice", givenName: "EST", sn: PERSON,
                            mail: MAIL } },
            "created the person");
-  const otherCreated = await ok(realmApi + "/users/create",
-           { username: OTHER, invent: false, credential: "generate",
+  const otherCreated = await createWithPassword(realmApi + "/users/create",
+           { username: OTHER, invent: false,
              attributes: { cn: "EST Bob", givenName: "EST", sn: OTHER,
                            mail: OTHER + "@est.example.test" } },
            "created a second person");
@@ -547,8 +558,8 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 6. an administrator, for somebody else ===");
-  const adminCreated = await ok(api + "/users/create",
-           { username: ADMIN, invent: false, credential: "generate",
+  const adminCreated = await createWithPassword(api + "/users/create",
+           { username: ADMIN, invent: false,
              attributes: { cn: "EST Admin", givenName: "EST", sn: ADMIN,
                            mail: ADMIN + "@est.example.test" } },
            "created the administrator in the DEFAULT realm");
@@ -719,7 +730,7 @@ async function test() {
     assert.ok(before.indexOf(serials["code-signing"]) < 0);
   });
   await ok(realmApi + "/est/revoke-certificate",
-           { serialHex: serials["code-signing"], reason: "keyCompromise" },
+           { serial: serials["code-signing"], reason: "keyCompromise" },
            "revoked the code-signing certificate");
   const after = est.crlSerials((await est.send({ method: "GET",
     url: base + "/pki/crl/" + REALM + "/est" })).body);
@@ -959,11 +970,11 @@ async function test() {
   log.info("=== 15. product mode ===");
   const productApi = base + "/realm/" + REALM_P + "/admin-api";
   const productEst = base + "/realm/" + REALM_P + "/.well-known/est";
-  const productPerson = await ok(productApi + "/users/create",
-    { username: PERSON, invent: false, credential: "generate",
+  const productPerson = await createWithPassword(productApi + "/users/create",
+    { username: PERSON, invent: false,
       attributes: { cn: "EST Product", givenName: "EST", sn: PERSON,
                     mail: MAIL } },
-    "created a person with a generated password in the product realm");
+    "created a person with a password in the product realm");
   const productSecret = nodeCrypto.randomBytes(18).toString("base64url");
   await ok(productApi + "/applications/create",
            { identifier: APP, protocols: ["oauth2", "est"],

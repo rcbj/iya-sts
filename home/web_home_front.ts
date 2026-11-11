@@ -149,7 +149,7 @@ class WebHomeFront {
       '<p class="sub">' + t.html('home.sub') + '</p>' +
       // THE VERSION, WITH ITS PROVENANCE IN THE TOOLTIP: the number is what
       // a bug report quotes, the build instant and commit what somebody
-      // needs when two instances of the same M.N differ.
+      // needs when two builds of the same release differ (#1298).
       '<p class="ver" title="' + WebHomeFront.esc(v.build) + '">' +
       t.html('home.version', { version: String(v.version || '') }) +
       '</p>' +

@@ -59,16 +59,21 @@
 // ---------------------------------------------------------------------------
 
 import SpaClient = require('../common/web_spa_client');
+import WebSafeDom = require('../common/web_safe_dom');
 import WebMessages = require('../common/web_messages');
 import kit = require('./web_portal_kit');
 import PortalShell = require('./web_portal_shell');
 import PortalPages = require('./web_portal_pages');
 import PortalWebAuthn = require('./web_portal_webauthn');
 import DelegatePages = require('./web_delegate');
+import PhotoPicker = require('./web_photo');
 import WebAccounts = require('../common/web_accounts');
 import DocLinks = require('../common/web_doc_links');
 import WebNavSections = require('../common/web_nav_sections');
 import WebAnnouncements = require('../common/web_announcements');
+// The realm's brand header and its facts (#717): the one copy the public
+// surfaces draw, read off the shell's `<html>` here as there.
+import WebSurface = require('../common/web_surface');
 
 type Json = any;
 
@@ -109,6 +114,10 @@ class PortalRuntime extends SpaClient {
   private nobody: Json;
   private t: Json;
   private formTable: Json;
+  // Each GET operation's declared query names (#1483), read with the table
+  // above: a page's address holds names only it means, and this API refuses
+  // a query name its operation does not declare.
+  private queryNames: Json;
   private view: Json;
   // The announcement banner's poller (#1086), once the person is known.
   private announcements: WebAnnouncements | null = null;
@@ -154,6 +163,7 @@ class PortalRuntime extends SpaClient {
     this.nobody = null;
     this.t = WebMessages.WebTranslator.fromData(null);
     this.formTable = null;
+    this.queryNames = null;
     this.view = null;
     this.flash = null;
     this.drawnAt = '';
@@ -292,7 +302,7 @@ class PortalRuntime extends SpaClient {
   async finishSignIn(): Promise<void> {
     // A JARM answer is opened and checked first (`SpaClient`).
     const query = await this.openAuthorizationResponse(
-      SpaClient.queryOf(this.env.location.search));
+      this.callbackParameters());
     let saved: Json = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) ||
@@ -307,7 +317,8 @@ class PortalRuntime extends SpaClient {
                        String(query.error_description || query.error));
       return;
     }
-    if (!saved || !query.code || query.state !== saved.state) {
+    if (!saved || !query.code || query.state !== saved.state ||
+        !await this.issuerMatches(query)) {
       // THE RETURN TAB of a same-device wallet holds no PKCE record. The
       // tab that opened the portal still does, and it redeems the code.
       if (query.code && query.state &&
@@ -637,13 +648,45 @@ class PortalRuntime extends SpaClient {
       return false;
     }
     const table: Json = {};
+    const queries: Json = {};
     (index.json.operations || []).forEach(function (op: Json) {
       if (op.mirrors) {
         table[op.mirrors] = op;
       }
+      if (op.method === 'GET' && Array.isArray(op.query)) {
+        queries[op.path] = op.query;
+      }
     });
     this.formTable = table;
+    this.queryNames = queries;
     return true;
+  }
+
+  /**
+   * The part of a page's query its operation takes (#1483): the operation
+   * refuses a name it does not declare, and an address holds others. With
+   * no table in hand, everything: the API says what it will not take.
+   *
+   * @param operation - the GET operation's path
+   * @param query - the page's query
+   * @returns the query to send
+   */
+  async operationQuery(operation: string, query: Json): Promise<Json> {
+    if (!Object.keys(query || {}).length) {
+      return query;
+    }
+    await this.ensureFormTable();
+    const declared = this.queryNames && this.queryNames[operation];
+    if (!declared) {
+      return query;
+    }
+    const kept: Json = {};
+    Object.keys(query).forEach(function (name) {
+      if (declared.indexOf(name) >= 0) {
+        kept[name] = query[name];
+      }
+    });
+    return kept;
   }
 
   // --- drawing -------------------------------------------------------------
@@ -676,8 +719,16 @@ class PortalRuntime extends SpaClient {
    */
   put(title: string, html: string): void {
     const doc = this.env.document;
-    doc.title = title + ' — IYA STS';
-    doc.body.innerHTML = PortalRuntime.realmLinks(html, this.prefix);
+    // THE REALM'S BRAND (#717, `common/branding.ts`): its name ends the
+    // title in place of the service's, and its header — the logo and the
+    // name — goes above the page, drawn on every page because the body is
+    // replaced on each. Nothing where the shell carries no brand, which is
+    // every shell of a realm that set nothing.
+    const brand = WebSurface.brandOf(doc.documentElement);
+    doc.title = title + ' — ' + (brand.name || 'IYA STS');
+    WebSafeDom.render(doc.body,
+      PortalRuntime.realmLinks(
+      WebSurface.brandHeader(brand) + html, this.prefix));
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
     this.drawnAt = this.env.location.pathname + this.env.location.search;
@@ -842,10 +893,17 @@ class PortalRuntime extends SpaClient {
       this.drawView();
       return;
     }
-    const qs = new URLSearchParams(query).toString();
+    const qs = new URLSearchParams(await this.operationQuery(page.operation,
+                                                             query)).toString();
     const target = page.operation + (qs ? '?' + qs : '');
-    const answer = forNobody ? await this.publicJson('GET', target)
-                             : await this.apiJson('GET', target);
+    // AN EMAILED LINK'S TOKEN IS IN THE FRAGMENT (#1454, ASVS 5.0.0 14.2.1), so
+    // it is in no address a server or a log sees: it goes in a header.
+    const linkToken = new URLSearchParams(
+      String(this.env.location.hash || '').replace(/^#/, '')).get('token');
+    const answer = forNobody
+      ? await this.publicJson('GET', target, undefined,
+                              linkToken ? { 'X-Link-Token': linkToken } : {})
+      : await this.apiJson('GET', target);
     if (!answer) {
       return;
     }
@@ -937,6 +995,13 @@ class PortalRuntime extends SpaClient {
                              : await this.apiJson('POST', op.path, fields);
     if (!answer) {
       return;
+    }
+    // THE FRAME'S PHOTO (#719). `me` is read once per sign-in, so a photo saved
+    // or removed would not show beside the name until a reload; the operation
+    // says what it now is. Reading `me` again would start its listeners again.
+    if (answer.json && typeof answer.json.photo === 'string' && this.me &&
+        this.me.user) {
+      this.me.user.photo = answer.json.photo;
     }
     await this.answered(path, answer);
   }
@@ -1116,6 +1181,7 @@ class PortalRuntime extends SpaClient {
           ? this.view.query : {}, json: json.view };
         this.flash = said;
         this.drawView();
+        this.showFresh();
         return;
       }
     }
@@ -1125,6 +1191,32 @@ class PortalRuntime extends SpaClient {
       return;
     }
     await this.route();
+  }
+
+  // WHAT AN ACT ANSWERED ONCE IS BROUGHT INTO VIEW (#671). A page drawn
+  // again keeps the window where it was, which is right for everything but
+  // what a Generate just answered: the person is looking at the button, and
+  // the files are the one thing on the page that will not come back. Their
+  // downloads sit in the certificate's row (`tr.fresh-row`), so the TABLE
+  // holding that row is scrolled to the top of the window — its header says
+  // what the row is — and a `.fresh` block alone is scrolled to where there
+  // is no row. A page with neither is left where it was.
+  /**
+   * Scrolls what an act answered once into view, if anything was drawn.
+   *
+   * @returns nothing
+   */
+  showFresh(): void {
+    const doc = this.env.document;
+    if (!doc || !doc.querySelector) {
+      return;
+    }
+    const row = doc.querySelector('tr.fresh-row');
+    const target = (row && row.closest ? row.closest('table') : row) ||
+                   doc.querySelector('.fresh');
+    if (target && target.scrollIntoView) {
+      target.scrollIntoView({ block: 'start' });
+    }
   }
 
   // `saveBase64()` is `WebPage`'s (#570), inherited.
@@ -1254,6 +1346,17 @@ class PortalRuntime extends SpaClient {
     this.accessToken = '';
     this.refreshToken = '';
     this.ownerToken = '';
+    // THE TAB'S OWN STORAGE GOES FIRST (#1440, ASVS 5.0.0 14.3.1), so a
+    // sign-out that never answers still leaves nothing behind.
+    try {
+      this.env.sessionStorage.clear();
+    } catch (e) {
+      // Storage refused (a private window): there is nothing held in it.
+    }
+    // EXCEPT WHOSE TAB IT WAS (#561): a name and no credential. Without it
+    // the next visit sends no login_hint and, with one other account still
+    // signed in, the tab silently becomes that account's.
+    this.keepAccount(kept);
     this.env.location.assign(this.url('/logout') +
       (kept && kept.username
         ? '?login_hint=' + encodeURIComponent(kept.username) : ''));
@@ -1297,6 +1400,7 @@ class PortalRuntime extends SpaClient {
     this.me = null;
     this.nobody = null;
     this.formTable = null;
+    this.queryNames = null;
     this.view = null;
     this.flash = null;
     this.ownerToken = '';
@@ -1370,9 +1474,10 @@ class PortalRuntime extends SpaClient {
     const el = doc && doc.getElementById
       ? doc.getElementById(PortalShell.ACCOUNTS_ID) : null;
     if (el) {
-      el.innerHTML = PortalRuntime.realmLinks(
+      WebSafeDom.render(el,
+        PortalRuntime.realmLinks(
         PortalShell.accountItems(this.accounts, this.subject, this.t),
-        this.prefix);
+        this.prefix));
     }
   }
 
@@ -1426,6 +1531,8 @@ class PortalRuntime extends SpaClient {
       }
     });
     PortalRuntime.wireDependentSelects(doc);
+    // The Overview's profile photo (#719): choosing a file draws the preview.
+    PhotoPicker.wire(doc, this.env.window || {}, this.t);
     // `/portal/delegate`'s search (2026-10-20): asked through this
     // runtime's own token, its answers drawn in place.
     DelegatePages.wire(doc, this.env.window || {}, function (path: string) {

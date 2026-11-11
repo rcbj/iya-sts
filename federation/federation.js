@@ -165,6 +165,10 @@
 // between this service and the hole described at the top of this file.
 // ===========================================================================
 
+const ModelTables = require('../common/model_tables');
+
+// Closed lists written once, in models/directory/federation_relationship.tsp.
+const LISTS = ModelTables.facts('federationRelationship').lists;
 const config = require('./../common/config');
 const { log, nowSec, randomId } = require('./../common/helpers');
 // The release index below is per trust realm. A LEAF requiring only `config`,
@@ -267,6 +271,23 @@ const PATHS = {
   // An OpenID Connect relationship's encryption key as a JWKS (#168), what
   // the partner registers to encrypt its ID Token to.
   jwks: '/federation/jwks',
+  // A Bluesky relationship's client id (#746): the AT Protocol's OAuth profile
+  // has no registration, and this document's address is the client.
+  atprotoClient: '/federation/atproto/client',
+  // An OpenID Connect relationship's login initiation endpoint (#930,
+  // OpenID Connect Core 1.0 section 4): what the partner registers as the
+  // client's `initiate_login_uri`, answered only where the relationship
+  // accepts a sign-in its partner starts (fedInitiateLogin).
+  initiateLogin: '/federation/initiate-login',
+  // The one script of the assertion consumer service (#930): the page that
+  // carries a fragment-encoded OpenID Connect response to the server, which
+  // never sees a URL fragment otherwise.
+  fragmentScript: '/federation/fragment.js',
+  // A Request Object by reference (#930), fetched once by the partner.
+  requestObject: '/federation/request',
+  // Where a person types an identifier to find their OpenID Provider by
+  // WebFinger (#930), for a relationship with fedWebFinger on.
+  webfinger: '/federation/webfinger',
   // Where a partner PUSHES its Security Event Tokens (RFC 8935, #373), the
   // relationship's id after it. ssf/ssf_transmitters.ts registers it.
   signals: '/federation/signals'
@@ -536,9 +557,7 @@ const MECHANISMS = [
 /**
  * The mechanism names, in `MECHANISMS` order.
  */
-const MECHANISM_IDS = MECHANISMS.map(function (one) {
-  return one.mechanism;
-});
+const MECHANISM_IDS = LISTS.mechanisms;
 
 // ---------------------------------------------------------------------------
 // WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): `fedSubjectPolicy`'s
@@ -577,9 +596,7 @@ const SUBJECT_POLICIES = [
 /**
  * The subject policy names, in `SUBJECT_POLICIES` order.
  */
-const SUBJECT_POLICY_IDS = SUBJECT_POLICIES.map(function (one) {
-  return one.policy;
-});
+const SUBJECT_POLICY_IDS = LISTS.subjectPolicies;
 
 /**
  * The subject policy an empty `fedSubjectPolicy` means.
@@ -863,30 +880,28 @@ const ENCRYPTING_PROTOCOLS = ['saml2', 'wsfed', 'oidc'];
  * The post-quantum key types, for an OpenID Connect relationship only
  * (#82).
  */
-const JOSE_ONLY_KEY_TYPES = ['x-wing', 'ml-kem-768'];
+const JOSE_ONLY_KEY_TYPES = LISTS.joseOnlyKeyTypes;
 /**
  * The encryption key types a relationship may hold.
  */
-const ENCRYPTION_KEY_TYPES = ['rsa-3072', 'ec-p256'].concat(
+const ENCRYPTION_KEY_TYPES = LISTS.classicalKeyTypes.concat(
   JOSE_ONLY_KEY_TYPES);
 /**
  * The XML Encryption key-management algorithms a relationship may accept.
  */
-const XML_KEY_MANAGEMENT = ['rsa-oaep', 'ecdh-es'];
+const XML_KEY_MANAGEMENT = LISTS.xmlKeyManagement;
 /**
  * The JWE key-management algorithms a relationship may accept.
  */
-const JOSE_KEY_MANAGEMENT = ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES',
-                             'ECDH-ES+A128KW', 'ECDH-ES+A256KW',
-                             'HPKE-10-KE', 'ML-KEM-768'];
+const JOSE_KEY_MANAGEMENT = LISTS.joseKeyManagement;
 /**
  * The XML Encryption content-encryption algorithms a relationship may accept.
  */
-const XML_CONTENT_ENCRYPTION = ['aes256-gcm', 'aes128-gcm'];
+const XML_CONTENT_ENCRYPTION = LISTS.xmlContentEncryption;
 /**
  * The JWE content-encryption algorithms a relationship may accept.
  */
-const JOSE_CONTENT_ENCRYPTION = ['A256GCM', 'A128GCM'];
+const JOSE_CONTENT_ENCRYPTION = LISTS.joseContentEncryption;
 /**
  * The encryption algorithms refused in every mode: AES-CBC and
  * RSAES-PKCS1-v1_5, in either family.
@@ -909,695 +924,8 @@ const MANAGEMENT_FOR_KEY = {
  * The `ou=federations` entry schema: one row per attribute, the whole
  * definition of what a relationship holds.
  */
-const SCHEMA = {
-  objectClasses: [
-    { name: 'top', where: 'RFC 4512', standard: true,
-      what: 'The abstract class every entry carries.' },
-    { name: 'applicationProcess', where: 'RFC 4519 section 3.3', standard: true,
-      what: 'The same registered class ou=applications uses, and for the ' +
-            'same reason: it is the one that fits a party in a protocol at ' +
-            'all, and it brings cn, description, seeAlso, ou and l with it.' },
-    { name: 'stsFederation', where: 'this service', standard: false,
-      what: 'INVENTED. No registered LDAP schema has a federation partner, ' +
-            'because every product that stores one (AD FS, Shibboleth, ' +
-            'Keycloak, Ping) keeps it in its own database. These are this ' +
-            'service\'s own names in the way stsApplication\'s already are.' }
-  ],
-  attributes: [
-    // --- identity ---------------------------------------------------------
-    { name: 'fedId', kind: 'single', role: 'both', from: 'this register',
-      what: 'THE KEY: a short name an operator chose, unique across both ' +
-            'roles. It is the RDN as well, unlike an application\'s, because ' +
-            'this register is CONFIGURED rather than observed — nobody has ' +
-            'to accept whatever a protocol presented, so the id can simply ' +
-            'be required to be RDN-safe and short.' },
-    { name: 'cn', kind: 'single', role: 'both', standard: true,
-      from: 'this register',
-      what: 'The RDN value, equal to fedId. Unlike an application entry ' +
-            'there is no digest case here: an id that would not fit is ' +
-            'refused at creation rather than hashed.' },
-    { name: 'fedName', kind: 'single', role: 'both', from: 'this register',
-      what: 'What to call the partner on a page. The id is the name when ' +
-            'none is given, because inventing a friendly name would be ' +
-            'inventing a fact.' },
-    { name: 'fedRole', kind: 'single', role: 'both', from: 'this register',
-      what: 'WHICH END THIS SERVICE IS: service-provider (it consumes) or ' +
-            'identity-provider (it asserts). One relationship is one ' +
-            'direction — see the header.' },
-    { name: 'fedProtocol', kind: 'single', role: 'both', from: 'this register',
-      what: 'One of saml2, saml11, wsfed, oidc, oauth2 — the five ' +
-            'sign-in protocols — or ssf, a partner that only sends Shared ' +
-            'Signals and signs nobody in.' },
-    // A CONSUMER PROVIDER (#565): the profile this relationship was made
-    // from, and so its category. See consumer_providers.ts.
-    { name: 'fedProvider', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'THE CONSUMER OR SOCIAL PROVIDER THIS RELATIONSHIP IS (google, ' +
-            'discord, github, generic-oidc, generic-oauth2), or empty for ' +
-            'an enterprise partner. Set when the relationship is created and ' +
-            'never changed: the provider\'s profile wrote its endpoints onto ' +
-            'this entry then, and supplies at every sign-in where the ' +
-            'subject, the address and its verification come from. A ' +
-            'relationship naming a provider is in the consumer category, ' +
-            'which a realm turns on with federation.consumerProviders.' },
-    { name: 'fedPeer', kind: 'single', role: 'both', from: 'this register',
-      what: 'THE PARTNER\'S OWN IDENTIFIER, in whatever its protocol calls ' +
-            'it: a SAML entityID, an OpenID Connect issuer, a WS-Federation ' +
-            'wtrealm. On a service-provider-side relationship it is CHECKED ' +
-            '— an assertion whose Issuer is not this string is refused — ' +
-            'which is why it is not merely documentation, and since ' +
-            '2026-09-12 it is REQUIRED there: a relationship without it is ' +
-            'not fully configured.' },
-    { name: 'fedLocalEntityId', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'WHAT THIS SERVICE IS CALLED TO THIS PARTNER, when that is not ' +
-            'the name this service derives. Empty — the default — derives it ' +
-            'from the base URL the browser reached this service at ' +
-            '(<base>/federation/acs/<id>, which global.publicBaseUrl pins). ' +
-            'Set it to the entityID the partner was configured with: it ' +
-            'becomes the Issuer of the outbound AuthnRequest, the ' +
-            'WS-Federation wtrealm, the SAML 1.1 providerId, this ' +
-            'relationship\'s SP metadata entityID, and the audience an ' +
-            'inbound assertion must name — which is a REFUSAL since ' +
-            '2026-09-12, so a partner that knows this service by another ' +
-            'name needs this set. The assertion consumer URL stays derived, ' +
-            'because it is an address a browser must be able to reach.' },
-    { name: 'fedEnabled', kind: 'single', role: 'both', from: 'this register',
-      what: 'TRUE/FALSE. A relationship is created DISABLED and nothing ' +
-            'about it does anything until it is turned on: a half-configured ' +
-            'partner that silently accepted assertions would be the failure ' +
-            'this whole register exists to prevent.' },
-    { name: 'description', kind: 'multi', role: 'both', standard: true,
-      from: 'this register',
-      what: 'One line per thing that has happened to this relationship.' },
-
-    // --- the service provider half: what this service CONSUMES ------------
-    { name: 'fedSsoUrl', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'WHERE THE BROWSER IS SENT. The partner\'s SAML Single Sign-On ' +
-            'service, its SAML 1.1 inter-site transfer service, its ' +
-            'WS-Federation passive endpoint, or its OAuth 2.0 authorization ' +
-            'endpoint. Required in every protocol, because a relationship ' +
-            'with nowhere to send anybody cannot begin.' },
-    { name: 'fedTokenUrl', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'The partner\'s token endpoint, for the authorization code flow. ' +
-            'THIS IS ONE OF THE TWO URLS THIS SERVICE WILL ACTUALLY DIAL — ' +
-            'see federation_http.js, which is the only outbound request in ' +
-            'this repository and argues why a configured URL is a different ' +
-            'thing from a registered one.' },
-    { name: 'fedUserinfoUrl', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'The partner\'s UserInfo endpoint, or any endpoint that answers ' +
-            'JSON about the bearer of an access token. OPTIONAL for OIDC, ' +
-            'where the ID Token usually carries enough, and the ONLY source ' +
-            'of attributes for a plain OAuth 2.0 partner whose access token ' +
-            'is opaque. The second URL this service will dial.' },
-    { name: 'fedJwksUri', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'The partner\'s JWKS. FETCHED — which is the exact opposite of ' +
-            'what oauthJwksUri on an application entry does, and the ' +
-            'difference is the whole argument in federation_http.js: that ' +
-            'one is a URL an unauthenticated caller REGISTERED, this one is ' +
-            'a URL an administrator CONFIGURED. Leave it empty and paste the ' +
-            'keys into fedJwks instead if this service is not to make the ' +
-            'call.' },
-    { name: 'fedEmailsUrl', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'A SECOND PROFILE ENDPOINT, for a provider that publishes a ' +
-            'person\'s verified address apart from the rest (GitHub\'s ' +
-            '/user/emails). Dialled with the same access token and under the ' +
-            'same policy as fedUserinfoUrl, and only for a relationship whose ' +
-            'provider profile reads it. Its failure costs the address, never ' +
-            'the sign-in.' },
-    { name: 'fedJwks', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'The partner\'s public keys as a JWKS document, verbatim. Read ' +
-            'BEFORE fedJwksUri and never refreshed, so a relationship ' +
-            'carrying this makes no outbound request for keys at all.' },
-    // OPENID FEDERATION (#134, 2026-09-23): an `oidc` relationship whose OP
-    // is DISCOVERED through its Trust Chain rather than configured by hand.
-    // See oidfed/oidfed_rp.ts, and federation/CLAUDE.md for why this is
-    // still a relationship whose trust is a configured key.
-    { name: 'fedTrustAnchor', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'OPENID CONNECT ONLY. The Entity Identifier of one of this ' +
-            'realm\'s Trust Anchors (/admin/oidfed). Set, the OP named by ' +
-            'fedPeer is resolved through its Trust Chain to that anchor, ' +
-            'its endpoints and keys are the openid_provider metadata the ' +
-            'chain vouches for, and this service registers with it ' +
-            'AUTOMATICALLY under its own Entity Identifier, signing its ' +
-            'requests and token-endpoint authentication with its ES256 ' +
-            'key — so fedSsoUrl, fedTokenUrl, fedJwks, fedJwksUri, ' +
-            'fedClientId and fedClientSecret are not read. Empty, the ' +
-            'relationship is configured by hand as always.' },
-    { name: 'fedSigningCertificate', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'THE PARTNER\'S SIGNING CERTIFICATE, base64 DER — the same ' +
-            'spelling a ds:X509Certificate carries and the same one ' +
-            'samlSigningCertificate uses on an application entry, so one ' +
-            'certificate has one spelling across this service. It is what ' +
-            'every SAML and WS-Federation assertion is verified against, and ' +
-            'it is the single attribute standing between this service and an ' +
-            'endpoint anybody could assert anything at.' },
-    { name: 'fedClientId', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'THIS SERVICE\'S client_id AT THE PARTNER. Ours, issued by them ' +
-            '— not to be confused with an oauthClientId on an application ' +
-            'entry, which is a client\'s id here.' },
-    { name: 'fedClientSecret', kind: 'single', role: 'service-provider',
-      sensitive: true, from: 'this register',
-      what: 'THIS SERVICE\'S SECRET AT THE PARTNER, in the clear, in a ' +
-            'directory where every bind succeeds. It is a REAL credential at ' +
-            'a REAL foreign service, which is a stronger statement than ' +
-            'anything else in this directory — see the header. Never written ' +
-            'to the audit log and never printed on a page.' },
-    // SIGN IN WITH APPLE (#565): a client secret that is a JWT this service
-    // signs, and an authorization code returned by form_post.
-    { name: 'fedResponseMode', kind: 'single', role: 'service-provider',
-      from: 'this register', enum: ['query', 'form_post'],
-      what: 'HOW THE AUTHORIZATION CODE COMES BACK: query (the default, the ' +
-            'code on the redirect) or form_post (OAuth 2.0 Form Post ' +
-            'Response Mode), which Sign in with Apple requires whenever a ' +
-            'name or an address is asked for. form_post arrives as a ' +
-            'cross-site POST, so a browser sends it no SameSite=Lax cookie.' },
-    { name: 'fedAllowedTenants', kind: 'multi', role: 'service-provider',
-      from: 'this register',
-      what: 'MICROSOFT, ANY TENANT ONLY: the tenant ids whose people may sign ' +
-            'in, one per value. fedPeer then holds {tenantid}, filled from ' +
-            'each token\'s tid, and a token from a tenant not listed is ' +
-            'refused. Empty refuses every tenant.' },
-    { name: 'fedTeamId', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'APPLE ONLY: the Apple Developer team id, the iss of the client ' +
-            'secret this service signs for every token request.' },
-    { name: 'fedKeyId', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'APPLE ONLY: the id of the Sign in with Apple key, the kid of ' +
-            'the client secret this service signs.' },
-    { name: 'fedClientSigningKey', kind: 'single', role: 'service-provider',
-      sensitive: true, from: 'this register',
-      what: 'APPLE ONLY: THE PRIVATE KEY this service signs its client ' +
-            'secret with (the .p8 file Apple issued, a P-256 key in PKCS ' +
-            '#8 PEM). It is a credential at Apple. It is sealed under the ' +
-            'key-encryption key wherever keys persist, never shown and ' +
-            'never written to the audit log. A client secret signed with it ' +
-            'lives five minutes and is minted per token request.' },
-    { name: 'fedAuthorizeParams', kind: 'multi', role: 'service-provider',
-      from: 'this register',
-      what: 'EXTRA AUTHORIZATION REQUEST PARAMETERS, one per value, written ' +
-            '`<name>=<value>`, for a provider that needs one (Twitch\'s ' +
-            '`claims`, to be sent an address). OpenID Connect and OAuth 2.0 ' +
-            'only. The parameters this service sets itself — response_type, ' +
-            'client_id, redirect_uri, state, scope, nonce, code_challenge, ' +
-            'code_challenge_method, response_mode, request and request_uri ' +
-            '— are refused here, because one of them changed here would ' +
-            'undo a check this service makes.' },
-    { name: 'fedTokenAuth', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      enum: ['client_secret_basic', 'client_secret_post'],
-      what: 'HOW THIS SERVICE AUTHENTICATES AT THE PARTNER\'S TOKEN ' +
-            'ENDPOINT: client_secret_basic (the default, which RFC 6749 ' +
-            'section 2.3.1 says a server MUST support) or client_secret_post, ' +
-            'for a partner that reads the secret only from the body. With no ' +
-            'fedClientSecret this service is a public client and neither ' +
-            'applies.' },
-    { name: 'fedScope', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'The scope asked of the partner. `openid profile email` is the ' +
-            'default for an OIDC relationship and there is no default for an ' +
-            'OAuth 2.0 one, because what an OAuth 2.0 authorization server ' +
-            'will give you is entirely local to it.' },
-    { name: 'fedResponseType', kind: 'single', role: 'service-provider',
-      from: 'this register', enum: ['code', 'id_token'],
-      what: 'code (the default) or id_token. `id_token` with form_post is ' +
-            'the shape that needs NO back channel and therefore no token ' +
-            'endpoint, no client secret and no outbound request — which is ' +
-            'the only way to federate with an OIDC partner from a deployment ' +
-            'that has no egress at all.' },
-    { name: 'fedBinding', kind: 'single', role: 'service-provider',
-      from: 'this register', enum: ['HTTP-Redirect', 'HTTP-POST'],
-      what: 'Which binding the outbound SAML AuthnRequest goes on: ' +
-            'HTTP-Redirect (the default, and what every identity provider ' +
-            'supports) or HTTP-POST. It says nothing about the response, ' +
-            'which arrives on whatever binding the partner sends it on and ' +
-            'is accepted on all of them.' },
-    { name: 'fedSignRequest', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'Sign the outbound AuthnRequest with THIS service\'s key. OFF by ' +
-            'default: most identity providers do not require it, and a ' +
-            'partner that does will refuse the request in a way that names ' +
-            'the problem. When it is on, the certificate to configure at the ' +
-            'partner is the one on this service\'s own SAML metadata.' },
-    { name: 'fedUsernameSource', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'WHICH INCOMING VALUE IS LOOKED UP AT LINK-AT-FIRST-SIGN-IN, ' +
-            'and matched under any-existing — a claim name for OIDC/OAuth ' +
-            '2.0, a SAML Attribute Name for the others. Empty means the ' +
-            'subject itself: the NameID, or `sub`. It does not name an ' +
-            'entry this sign-in CREATES: that name is the relationship and ' +
-            'the partner\'s stable subject (#358).' },
-    { name: 'fedSubjectClaim', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'PLAIN OAUTH 2.0 ONLY: the member of the profile endpoint\'s ' +
-            'answer that is the partner\'s stable identifier for the ' +
-            'person, as a dotted path (id, data.id). Empty keeps what this ' +
-            'service has always done — sub, then id, then user_id. It is the ' +
-            'SUBJECT, the half of a federation link that must never change, ' +
-            'which is not the username (fedUsernameSource). An OpenID ' +
-            'Connect partner\'s subject is the ID Token\'s sub, which OpenID ' +
-            'Connect Core section 5.7 makes the only stable one, and a ' +
-            'consumer provider\'s is its profile\'s.' },
-    { name: 'fedAttributeMap', kind: 'multi', role: 'service-provider',
-      from: 'this register',
-      what: 'ONE VALUE PER MAPPING, written `<incoming name>=<LDAP ' +
-            'attribute>`. What is NOT listed here still arrives — ' +
-            'federation_map.js has a default table covering the ordinary ' +
-            'OIDC claims, the SAML urn:oid: names and the WS-Federation ' +
-            'claim URIs — so this is for the partner\'s own inventions ' +
-            'rather than for the names everybody uses.' },
-    { name: 'fedAutocreateUsers', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'DYNAMIC PROVISIONING: create a directory entry the first time ' +
-            'this partner signs somebody in. Written TRUE when a ' +
-            'relationship is created in development and FALSE in product ' +
-            '(mode.defaultsFederatedAutocreate()); a relationship that ' +
-            'stores neither reads the same way. OFF means the person must ' +
-            'ALREADY have an entry here — provisioned ahead of time, by ' +
-            'SCIM or by hand — and a sign-in for somebody who does not is ' +
-            'refused, because a session needs an entry to be the subject ' +
-            'of. (Until 2026-09-14 OFF gave a session and no entry; a ' +
-            'stable subject made that state impossible.)' },
-    { name: 'fedUpdateUserAttributes', kind: 'single',
-      role: 'service-provider', from: 'this register',
-      what: 'Update the person\'s directory attributes on EVERY sign-in from ' +
-            'the latest assertion or token. ON by default, which is what ' +
-            'this service always did. OFF writes the partner\'s attributes ' +
-            'only when this sign-in CREATED the entry, so a pre-provisioned ' +
-            'person — or one somebody has since edited — keeps what the ' +
-            'directory says. Which relationship and issuer a person came ' +
-            'through is recorded either way.' },
-    { name: 'fedProvisionGroups', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'BUILD GROUP MEMBERSHIPS FROM THE PARTNER\'S TOKEN (#358). OFF ' +
-            'by default, and a missing value is off. On, each group name ' +
-            'the assertion carries becomes a membership of the person this ' +
-            'sign-in provisioned, on every successful sign-in. A group ' +
-            'created this way is marked with this relationship. A name ' +
-            'that already exists and is not marked as this relationship\'s ' +
-            'is ignored, audited (STS-FED-0161) and the sign-in continues. ' +
-            'A group that grants something by being held — a console ' +
-            'group, a role\'s member group, an owner group, a group a ' +
-            'policy names — is never created or joined (STS-FED-0164). It ' +
-            'does not satisfy fedSubjectGroup: that rule runs before ' +
-            'anybody is added.' },
-    { name: 'fedProvisionCap', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'HOW MANY PEOPLE THIS RELATIONSHIP MAY CREATE. 0 is ' +
-            'unlimited. Empty is unlimited for an enterprise partner; a ' +
-            'CONSUMER or social provider\'s relationship is never ' +
-            'unlimited by default: it is created with ' +
-            'federation.consumerProvisionCap (10000 unless the realm says ' +
-            'otherwise) written here, and an empty value means that ' +
-            'setting. At the cap a new subject is refused STS-FED-0090; ' +
-            'a person already linked still signs in. ldap.maxEntries ' +
-            'remains the realm ceiling. Not a count of sign-ins — ' +
-            'fedUsers is that.' },
-    { name: 'fedProvisionIdleMinutes', kind: 'single',
-      role: 'service-provider', from: 'this register',
-      what: 'DISABLE A PERSON THIS RELATIONSHIP IS THE ONLY SIGN-IN PATH ' +
-            'FOR, once federationLastSeen is older than this many minutes. ' +
-            'Empty or 0 is off: nobody is disabled for being idle. The ' +
-            'entry and the link are kept. A person with a local ' +
-            'userPassword, or a link through another relationship, is ' +
-            'left alone. A partner\'s account-disabled signal is separate ' +
-            '(STS-FED-0156) and blocks only that partner\'s sign-ins.' },
-    // --- WHICH PEOPLE THE PARTNER MAY ASSERT (#109, 2026-09-22) ----------
-    // The gate used to be on the SIGNER only: any person a verified assertion
-    // named was signed in, matched onto a local entry by NAME. These five say
-    // which local person a partner's subject may become — see
-    // federation/CLAUDE.md, *WHICH PEOPLE A PARTNER MAY ASSERT*.
-    { name: 'fedSubjectPolicy', kind: 'single', role: 'service-provider',
-      from: 'this register', enum: SUBJECT_POLICY_IDS,
-      what: 'HOW THE PARTNER\'S SUBJECT BECOMES A LOCAL PERSON. The subject ' +
-            'is the partner\'s own stable identifier — iss + sub, a ' +
-            'persistent NameID and the partner\'s entity ID — and a person ' +
-            'carries it as a federationLink. link-at-first-sign-in (the ' +
-            'default; empty means it): a linked subject signs in; an ' +
-            'unlinked one naming an existing person must first sign in HERE ' +
-            'as that person — password, and a second factor where one is ' +
-            'held or required — and only then is the link recorded and the ' +
-            'partner\'s attributes written; one naming nobody gets a new ' +
-            'entry namespaced to this relationship where provisioning is on. ' +
-            'pre-linked: only a link signs anybody in. jit-namespaced: an ' +
-            'unlinked subject always gets a NEW entry, ' +
-            '<relationship>~<subject>, ' +
-            'never an existing person. The subject is the partner\'s stable ' +
-            'identifier, with a urn:uuid: folded to sub-<uuid>; it is not ' +
-            'the mapped username. any-existing: the name the partner sent ' +
-            'is matched straight onto a local person, as this service did ' +
-            'before #109 — DEVELOPMENT ONLY, refused in product, and it ' +
-            'lets this partner sign in any account it can name.' },
-    { name: 'fedSubjectGroup', kind: 'multi', role: 'service-provider',
-      from: 'this register',
-      what: 'A RULE ON TOP OF THE POLICY: the person must be a member of one ' +
-            'of these groups, each a cn or a DN. An entry this sign-in would ' +
-            'CREATE is in no group, so with this set nobody is created. ' +
-            'Empty: no group rule.' },
-    { name: 'fedSubjectDomain', kind: 'multi', role: 'service-provider',
-      from: 'this register',
-      what: 'A RULE ON TOP OF THE POLICY: the mail domain the partner SENT ' +
-            '(the mapped mail, or the mapped username where it is an ' +
-            'address) must be one of these, and so must the local entry\'s ' +
-            'mail where it has one. Compared case-insensitively and ' +
-            'exactly: example.com does not admit sub.example.com. Empty: no ' +
-            'domain rule.' },
-    { name: 'fedHomeRealmDomain', kind: 'multi', role: 'service-provider',
-      from: 'this register',
-      what: 'HOME-REALM DISCOVERY (#148): an authorization request whose ' +
-            'OpenID Connect Enterprise Extensions `domain_hint` is one of ' +
-            'these goes straight to this partner\'s sign-in, unless the ' +
-            'application names a partner of its own. Compared ' +
-            'case-insensitively and exactly. A routing hint only — who is ' +
-            'ADMITTED is fedSubjectDomain\'s.' },
-    { name: 'fedSubjectPattern', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'A RULE ON TOP OF THE POLICY: a regular expression the local ' +
-            'entry\'s DN must match WHOLE (it is anchored for you), such as ' +
-            'uid=[^,]+,ou=users,.* — for an entry this sign-in would create, ' +
-            'the DN it would be created at. At most 256 characters, no ' +
-            'backreference and no quantifier applied to a group that is ' +
-            'itself quantified, and it is tested against at most 1024 ' +
-            'characters, so a pattern cannot be made to backtrack for ' +
-            'minutes. Empty: no pattern.' },
-    { name: 'fedMayAssertAdministrators', kind: 'single',
-      role: 'service-provider', from: 'this register',
-      what: 'LET THIS PARTNER SIGN IN A CONSOLE ADMINISTRATOR. OFF by ' +
-            'default, and off means a person in the Admin Read or Admin ' +
-            'Write roster — or holding REMOTE_PEPS — is refused whatever ' +
-            'else is true, a valid link included (STS-FED-0093). Turning it ' +
-            'on makes this partner\'s signing key a key to the console for ' +
-            'every administrator linked to it.' },
-    // --- A PARTNER'S SHARED SIGNALS (#153) ----------------------------------
-    { name: 'fedSignalEmailMatch', kind: 'single',
-      role: 'service-provider', from: 'this register',
-      what: 'LET THIS PARTNER\'S SHARED SIGNALS NAME A PERSON BY MAIL. OFF ' +
-            'by default: a Security Event Token from a transmitter with ' +
-            'this partner\'s issuer names a person by `iss_sub`, through ' +
-            'the person\'s federationLink. On, an `email` subject matches ' +
-            'the one person with that mail address as well — an address ' +
-            'is not an identifier (OpenID Connect Core section 5.7), so ' +
-            'only for a partner whose addresses this realm trusts.' },
-    // THE PARTNER AS A SHARED SIGNALS TRANSMITTER (#373, #374): the stream's
-    // CONFIGURATION, on the relationship that says who the partner is. What
-    // the stream IS at the far end — its id, audience, push secret digest,
-    // verification — is minted, and lives in ssf/ssf_transmitters.ts's
-    // store keyed by fedId. ssf/CLAUDE.md, *A PARTNER'S SHARED SIGNALS*.
-    { name: 'fedSignalsEnabled', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'RECEIVE THIS PARTNER\'S SHARED SIGNALS. OFF by default on a ' +
-            'sign-in relationship, and the whole point of an `ssf` one, ' +
-            'where it is written ON at creation. Off, no push is accepted ' +
-            'for this relationship and the poll job skips it; fedEnabled ' +
-            'must be on as well.' },
-    { name: 'fedSignalsIssuer', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'THE PARTNER\'S SSF ISSUER, when it is not fedPeer. Empty — the ' +
-            'default — uses fedPeer, which is right for an OpenID Connect ' +
-            'partner whose transmitter shares its issuer. A SAML 2.0 or ' +
-            'WS-Federation partner\'s entityID is usually NOT its SSF ' +
-            'issuer URL, so set it there. The configuration document is ' +
-            'fetched from /.well-known/ssf-configuration under it (SSF 1.0 ' +
-            'section 7) and must name it, and every SET\'s iss must be it.' },
-    { name: 'fedSignalsDelivery', kind: 'single', role: 'service-provider',
-      from: 'this register', enum: ['poll', 'push'],
-      what: 'HOW THE PARTNER\'S EVENTS ARRIVE: poll (RFC 8936, the ' +
-            'ssf.foreign-poll job, the default) or push (RFC 8935, to ' +
-            '/federation/signals/{id} with an authorization header only ' +
-            'this realm and the partner know). Read when the stream is ' +
-            'created; delete and create it again to change it.' },
-    { name: 'fedSignalsEvents', kind: 'multi', role: 'service-provider',
-      from: 'this register',
-      what: 'THE EVENT TYPE URIS THE STREAM ASKS FOR (events_requested). ' +
-            'None asks for whatever the partner supports.' },
-    { name: 'fedSignalsTokenUrl', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'WHERE THIS REALM GETS AN ACCESS TOKEN FOR THE PARTNER\'S ' +
-            'STREAM MANAGEMENT, by client credentials. Empty uses ' +
-            'fedTokenUrl — the same authorization server the sign-in ' +
-            'relationship already dials.' },
-    { name: 'fedSignalsClientId', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'THIS SERVICE\'S client_id FOR THE PARTNER\'S STREAM ' +
-            'MANAGEMENT. Empty uses fedClientId.' },
-    { name: 'fedSignalsClientSecret', kind: 'single',
-      role: 'service-provider', sensitive: true, from: 'this register',
-      what: 'THE SECRET FOR fedSignalsClientId, SEALED under the ' +
-            'key-encryption key wherever keys persist and never shown. ' +
-            'Empty uses fedClientSecret, sealed the same way.' },
-    { name: 'fedSignalsScope', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'The scope asked for with client credentials. Empty asks for ' +
-            '`ssf.manage`, which includes read.' },
-    { name: 'fedSignalsBearer', kind: 'single', role: 'service-provider',
-      sensitive: true, from: 'this register',
-      what: 'A BEARER TOKEN THE PARTNER ISSUED, instead of client ' +
-            'credentials. Sealed like fedSignalsClientSecret, and used ' +
-            'whenever it is set.' },
-    // --- A PARTNER'S SIGN-OUT (#167) ---------------------------------------
-    // federation/federation_slo.ts is what reads these, in both directions:
-    // the partner telling this service a session ended, and this service
-    // telling the partner. federation/CLAUDE.md, *A PARTNER'S SIGN-OUT*.
-    { name: 'fedSloUrl', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'THE PARTNER\'S SAML 2.0 SingleLogoutService — where this ' +
-            'service sends a signed <LogoutRequest> when a person signs out ' +
-            'HERE (/logout), and where the <LogoutResponse> to the ' +
-            'partner\'s own LogoutRequest goes. From the partner\'s ' +
-            'metadata. Empty: the partner is never told of a sign-out here, ' +
-            'and a LogoutRequest from it is still honoured but answered with ' +
-            'nothing, because there is nowhere to send the answer. SAML 2.0 ' +
-            'only: SAML 1.1 defines no logout at all.' },
-    { name: 'fedSloBinding', kind: 'single', role: 'service-provider',
-      from: 'this register', enum: ['HTTP-Redirect', 'HTTP-POST'],
-      what: 'Which binding a LogoutRequest or LogoutResponse this service ' +
-            'sends the partner goes on: HTTP-Redirect (the default; the ' +
-            'signature is over the query string) or HTTP-POST (an enveloped ' +
-            'signature, on a real form with a real button — no script). A ' +
-            'message FROM the partner is accepted on either.' },
-    { name: 'fedEndSessionUrl', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'THE PARTNER\'S OpenID Connect end_session_endpoint ' +
-            '(RP-Initiated Logout 1.0), from its discovery document. When a ' +
-            'person signs out HERE, the sign-out page offers to send them ' +
-            'there with the partner\'s own ID Token as id_token_hint, this ' +
-            'relationship\'s client_id, and this relationship\'s single ' +
-            'logout endpoint as post_logout_redirect_uri — which the partner ' +
-            'must have registered. The ID Token is kept on the session only ' +
-            'while this is set. Empty: the partner is not told.' },
-    { name: 'fedAcceptSignout', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'HONOUR THE PARTNER\'S SIGN-OUT: a SAML LogoutRequest, an ' +
-            'OpenID Connect Back-Channel or Front-Channel logout, a ' +
-            'WS-Federation cleanup. ON by default — the partner is the ' +
-            'authority on the person\'s sign-on, and when it ends a session ' +
-            'or disables an account there, this is the only signal that ' +
-            'reaches here. Off, every one of them is refused ' +
-            '(STS-FED-0123) and the session here lives its whole lifetime.' },
-    { name: 'fedRequireSignedLogout', kind: 'single',
-      role: 'service-provider', from: 'this register',
-      what: 'REQUIRE THE PARTNER\'S SAML LogoutRequest AND LogoutResponse TO ' +
-            'BE SIGNED, as saml-profiles-2.0-os section 4.4.4.1 says they ' +
-            'MUST be. ON by default and ALWAYS on in product mode, where ' +
-            'turning it off is refused (STS-FED-0132). Off — development ' +
-            'only — accepts an UNSIGNED logout message, which lets anybody ' +
-            'who can name a person\'s partner session end it: a partner ' +
-            'under test that cannot sign yet is the only reason to. A ' +
-            'signature that IS present is verified either way.' },
-    // --- WHAT A PARTNER ENCRYPTS TO (#168) ------------------------------
-    // federation/federation_encryption.ts issues, rotates, publishes and
-    // decrypts with the key; federation/CLAUDE.md, *A PARTNER'S ENCRYPTED
-    // ASSERTION*. SAML 2.0, WS-Federation and OpenID Connect only: SAML 1.1
-    // has no encryption construct and a plain OAuth 2.0 relationship reads
-    // no ID Token.
-    { name: 'fedEncryptionKeyType', kind: 'single', role: 'service-provider',
-      from: 'this register', enum: ENCRYPTION_KEY_TYPES,
-      what: 'THE KIND OF KEY A PARTNER ENCRYPTS TO: rsa-3072 (the default ' +
-            'for SAML 2.0 and WS-Federation) or ec-p256 (the default for ' +
-            'OpenID Connect) — or, for OpenID Connect only, a post-quantum ' +
-            'one (#82): x-wing (HPKE-10-KE, ML-KEM-768 + X25519) or ' +
-            'ml-kem-768 (ML-KEM-768), an AKP key published in the ' +
-            'relationship\'s JWKS with no certificate, from Internet-Drafts ' +
-            'few partners implement yet. Changing it issues a new key of ' +
-            'that kind at ' +
-            'once and keeps the old one for federation.encryptionKeyGraceS, ' +
-            'as a rotation does.' },
-    { name: 'fedKeyManagementAlgorithm', kind: 'single',
-      role: 'service-provider', from: 'this register',
-      enum: XML_KEY_MANAGEMENT.concat(JOSE_KEY_MANAGEMENT),
-      what: 'HOW THE PARTNER WRAPS OR AGREES THE CONTENT KEY, and the only ' +
-            'one accepted. XML (SAML 2.0, WS-Federation): rsa-oaep — XML ' +
-            'Encryption 1.1\'s RSA-OAEP with SHA-256 and MGF1-SHA-256 — for ' +
-            'an RSA key, ecdh-es (ConcatKDF, kw-aes256) for an EC one. JOSE ' +
-            '(an OpenID Connect ID Token): RSA-OAEP-256 or RSA-OAEP for an ' +
-            'RSA key, ECDH-ES, ECDH-ES+A128KW or ECDH-ES+A256KW for an EC ' +
-            'one. WARNING: RSA-OAEP is OAEP over SHA-1, offered for a ' +
-            'partner that has nothing newer; RSA-OAEP-256 is the one to ' +
-            'use. rsa-1_5 and ' +
-            'RSA1_5 are refused in every mode (Bleichenbacher). Empty means ' +
-            'the default for the key type.' },
-    { name: 'fedContentEncryptionAlgorithm', kind: 'single',
-      role: 'service-provider', from: 'this register',
-      enum: XML_CONTENT_ENCRYPTION.concat(JOSE_CONTENT_ENCRYPTION),
-      what: 'THE CIPHER OVER THE ASSERTION OR THE ID TOKEN, and the only one ' +
-            'accepted: aes256-gcm (the default) or aes128-gcm for XML, ' +
-            'A256GCM (the default) or A128GCM for JOSE. AES-CBC — XML ' +
-            'Encryption\'s aes*-cbc and JOSE\'s A*CBC-HS* — is refused in ' +
-            'every mode: the XML form is the padding oracle of Jager and ' +
-            'Somorovsky (2011), and a partner that can do GCM in one can in ' +
-            'the other.' },
-    { name: 'fedAllowUnencrypted', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'ACCEPT A PLAINTEXT ASSERTION IN PRODUCT MODE. OFF by default, ' +
-            'and off means a SAML 2.0 or WS-Federation assertion, or an ' +
-            'OpenID Connect id_token by form_post, that is NOT encrypted to ' +
-            'this relationship\'s key is refused (STS-FED-0140). WARNING: ' +
-            'turning it on lets the partner send the person\'s NameID, mail, ' +
-            'groups and every other attribute IN CLEAR through their ' +
-            'browser — its history, its extensions and every TLS-terminating ' +
-            'proxy on the way. Turn it on only for a partner that cannot ' +
-            'encrypt, and prefer asking it to. Development mode accepts ' +
-            'plaintext whatever this says.' },
-    { name: 'fedEncryptionKey', kind: 'multi', role: 'service-provider',
-      from: 'this register', sensitive: true,
-      what: 'THE KEY TABLE: one JSON row per key this relationship decrypts ' +
-            'with — its kid, its key type, `current` or `previous`, its ' +
-            'certificate and chain under this realm\'s Intermediate, and the ' +
-            'private key, SEALED under the key-encryption key wherever keys ' +
-            'persist. A `previous` row is kept until its retiresAt and then ' +
-            'removed by the scheduler job federation.encryption-key-retire. ' +
-            'Written only by create, rotate and that job; WITHHELD from ' +
-            'every LDAP search in product and from every page and ' +
-            '/admin-api reply, which publish the public half. The key type ' +
-            'is a column so a ' +
-            'hybrid post-quantum key can be a row beside the classical one ' +
-            'once one is registered.' },
-    { name: 'fedAllowUnsolicited', kind: 'single', role: 'service-provider',
-      from: 'this register',
-      what: 'Accept a response this service did not ask for — SAML 2.0\'s ' +
-            'unsolicited Response, and SAML 1.1\'s ONLY mode of operation. ' +
-            'OFF by default for SAML 2.0 and forced ON for SAML 1.1, because ' +
-            'that profile has no request to be in response to. Turning it on ' +
-            'for SAML 2.0 removes the InResponseTo check, which is worth ' +
-            'knowing rather than worth hiding.' },
-
-    // --- the identity provider half: what this service ASSERTS ------------
-    { name: 'fedApplication', kind: 'single', role: 'identity-provider',
-      from: 'this register',
-      what: 'THE POINTER, and the whole of what this side stores about the ' +
-            'partner: the identifier of its entry in ou=applications. Its ' +
-            'entityID, its assertion consumer service, its redirect URIs and ' +
-            'its certificate live THERE, where every protocol module already ' +
-            'reads them. Copying any of them here would be the two-stores ' +
-            'failure this repository is arranged to avoid.' },
-    { name: 'fedAuthnMechanism', kind: 'single', role: 'identity-provider',
-      from: 'this register', enum: MECHANISM_IDS,
-      what: 'HOW THIS SERVICE AUTHENTICATES THE PERSON when this partner ' +
-            'asks it to: password, password-mfa, webauthn, spnego — a ' +
-            'Kerberos ticket the browser already holds, with no screen at ' +
-            'all — wallet — a credential this realm issued, presented from ' +
-            'the person\'s wallet — or federation, ' +
-            'which sends them on to another relationship and is what makes ' +
-            'this service an identity BRIDGE between two protocols. EMPTY ' +
-            'MEANS THIS RELATIONSHIP SAYS NOTHING, which is not the same as ' +
-            'password: it falls through to appFederationRelationship on the ' +
-            'application entry and then to the sign-in screen, which is ' +
-            'exactly what every relationship did before this attribute ' +
-            'existed.' },
-    { name: 'fedAuthnRelationship', kind: 'single',
-      role: 'identity-provider', from: 'this register',
-      what: 'WHICH RELATIONSHIP THE PERSON IS SENT TO, when the mechanism is ' +
-            '`federation`. It names a SERVICE-PROVIDER-side relationship in ' +
-            'THIS realm — the register is per realm, so an id from another ' +
-            'one names nothing here — and it is checked when it is USED ' +
-            'rather than when it is written, because the relationship it ' +
-            'names can be disabled or deleted afterwards by somebody who ' +
-            'never looked at this entry. Ignored by every other mechanism, ' +
-            'and required by this one: readinessOf() names it.' },
-    { name: 'fedRelease', kind: 'multi', role: 'identity-provider',
-      from: 'this register',
-      what: 'WHICH ATTRIBUTES ARE RELEASED TO THIS PARTNER, by claim or ' +
-            'attribute name. It FILTERS what /admin/claims, ' +
-            '/admin/saml-attributes and the groups claim would otherwise put ' +
-            'in an artifact for this audience, and it can touch nothing else ' +
-            '— not sub, not iss, not exp, not a NameID. NO VALUES HERE MEANS ' +
-            'NO POLICY, not release nothing; see the header, where the ' +
-            'difference is argued.' },
-
-    // --- what has happened ------------------------------------------------
-    { name: 'fedFirstSeen', kind: 'single', role: 'both', from: 'this register',
-      what: 'GeneralizedTime: when this relationship was first USED, which ' +
-            'is not when it was created.' },
-    { name: 'fedLastSeen', kind: 'single', role: 'both', from: 'this register',
-      what: 'GeneralizedTime, the most recent use.' },
-    { name: 'fedAuthentications', kind: 'single', role: 'both',
-      from: 'this register',
-      what: 'How many credentials have crossed this relationship. ASSIGNED ' +
-            'on every change — a counter that accumulated values would be ' +
-            'nonsense — and it is a live number in a directory entry, which ' +
-            'a real directory would not hold.' },
-    { name: 'fedUsers', kind: 'single', role: 'both', from: 'this register',
-      what: 'How many distinct identities have crossed it. Counted against ' +
-            'fedLastUser, so it counts a CHANGE of user rather than a set: ' +
-            'right for the ordinary case and an undercount for somebody ' +
-            'alternating between two partners. Stated here because it is a ' +
-            'number on a page.' },
-    { name: 'fedLastUser', kind: 'single', role: 'both', from: 'this register',
-      what: 'The most recent identity. On the entry rather than in memory ' +
-            'because the entry is the store.' },
-    { name: 'fedApplicationUse', kind: 'multi', role: 'service-provider',
-      from: 'this register',
-      what: 'THE SAME TWO COUNTS, SPLIT BY THE APPLICATION THE SIGN-IN WAS ' +
-            'FOR — one value per application, packed as ' +
-            '`application|authentications|users|lastUser|lastSeen`. It ' +
-            'exists because fedAuthentications answers "how much has crossed ' +
-            'this relationship" and the map at /admin/federation/map has to ' +
-            'answer "how much has crossed it FOR EACH of the applications ' +
-            'configured to use it", which is a different question the moment ' +
-            'a second application names the same partner.\n\nIT IS ' +
-            'SERVICE-PROVIDER SIDE ONLY, and that is not an omission. An ' +
-            'identity-provider-side relationship names exactly ONE ' +
-            'application (fedApplication), so its per-application count IS ' +
-            'fedAuthentications and a second attribute holding the same ' +
-            'number under another name is the copy that comes to ' +
-            'disagree.\n\nA VALUE IS WRITTEN ONLY FOR A PAIR THIS SERVICE IS ' +
-            'CONFIGURED FOR, checked against the live configuration at the ' +
-            'moment of the write rather than trusted from the request — see ' +
-            'applicationConfiguredFor(). Without that check this attribute ' +
-            'would be an unbounded list of strings anybody who can reach ' +
-            '/federation/login/{id} chose, on the one entry in this ' +
-            'directory whose contents decide whether an assertion is ' +
-            'refused.\n\n`|` IN EITHER FREE-TEXT FIELD IS REPLACED BY `~` ON ' +
-            'THE WAY IN, which is the trade this format makes and it is ' +
-            'stated rather than discovered: this is a packed counter drawn ' +
-            'on a picture, not an identifier anything joins on. The ' +
-            'application a row is FILED under is compared in the same packed ' +
-            'spelling throughout, so a pair round-trips to itself whatever ' +
-            'it is called.' },
-    { name: 'fedLastError', kind: 'single', role: 'both', from: 'this register',
-      what: 'WHY THE LAST ATTEMPT FAILED, in this service\'s own words. It ' +
-            'is the most useful attribute here and it is why refusals are ' +
-            'recorded rather than only logged: a federation that does not ' +
-            'work fails at somebody else\'s service, and "the signature did ' +
-            'not verify against the configured certificate" is the sentence ' +
-            'that ends the argument about whose end is broken.' },
-    { name: 'fedLastErrorAt', kind: 'single', role: 'both', from: 'this ' +
-        'register',
-      what: 'GeneralizedTime for the line above. Separate, so that an old ' +
-            'error beside a recent success reads as history rather than as ' +
-            'the current state.' }
-  ]
-};
+// The table is written in models/directory/federation_relationship.tsp (#1390).
+const SCHEMA = ModelTables.schema('federationRelationship');
 
 // ---------------------------------------------------------------------------
 // WHAT A CONSOLE MAY CHANGE, which is a different question from what an entry
@@ -1645,6 +973,17 @@ const EDITABLE = {
   fedClientSigningKey: 'set',
   fedScope: 'set',
   fedResponseType: 'set',
+  fedIdTokenSignedResponseAlg: 'set',
+  fedUserinfoSignedResponseAlg: 'set',
+  fedRefreshTokens: 'set',
+  fedRefreshEverySeconds: 'set',
+  fedRegister: 'set',
+  fedRegisteredIssuer: 'set',
+  fedRequestObject: 'set',
+  fedRequestObjectSigningAlg: 'set',
+  fedWebFinger: 'set',
+  fedDiscovery: 'set',
+  fedInitiateLogin: 'set',
   fedBinding: 'set',
   fedSignRequest: 'set',
   fedUsernameSource: 'set',
@@ -2255,20 +1594,22 @@ function provisionIdleMinutesOf(record) {
 
 /**
  * Applies group names from a partner's assertion to one person, through
- * the directory. A missing directory answers that nothing was done.
+ * the directory. A missing directory answers that nothing was done. A
+ * promise (#1306): in a windowed process the directory asks the store
+ * whether a name grants something before it creates or joins the group.
  *
  * @param fedId - the relationship id
  * @param username - the local person
  * @param names - the group names
- * @returns `{ joined, ignored, created }`
+ * @returns a promise of `{ joined, ignored, created }`
  */
-function applyFederatedGroups(fedId, username, names) {
+async function applyFederatedGroups(fedId, username, names) {
   log.debug("Entering applyFederatedGroups().");
   if (!directoryHas('applyFederatedGroups')) {
     log.debug("Leaving applyFederatedGroups(). No directory.");
     return { joined: [], ignored: [], created: [] };
   }
-  const applied = directory.applyFederatedGroups(String(fedId || ''),
+  const applied = await directory.applyFederatedGroups(String(fedId || ''),
     String(username || ''), names || []);
   log.debug("Leaving applyFederatedGroups().");
   return applied || { joined: [], ignored: [], created: [] };
@@ -2383,7 +1724,16 @@ function readinessOf(record) {
   } else if (record.fedRole === 'service-provider') {
     const row = protocolRow(record.fedProtocol);
     const needs = row ? row.needs : [];
+    // A PARTNER READ FROM ITS DISCOVERY DOCUMENT (#930) has its endpoints
+    // filled at each sign-in, so they are not asked of the entry.
+    const discovered = discovers(record)
+      ? DISCOVERED_FIELDS.concat(registers(record) ? ['fedClientId'] : [])
+      : [];
+    // DISCOURSECONNECT (#746) redeems nothing, so it has no token endpoint.
+    const excused = consumerProviders.adapts(record, 'discourse-connect')
+      ? ['fedTokenUrl'] : [];
     needs.forEach(function (name) {
+      if (discovered.indexOf(name) >= 0 || excused.indexOf(name) >= 0) return;
       if (!String(record[name] || '').trim()) missing.push(name);
     });
     // A CONSUMER PROVIDER (#565): its profile's fields, and the realm's
@@ -2418,21 +1768,36 @@ function readinessOf(record) {
     // The two OIDC shapes need different things and the difference is exactly
     // what fedResponseType selects, so it cannot be a static list on the
     // protocol row. `code` needs somewhere to redeem the code; `id_token`
-    // needs a key to verify it with and needs no back channel at all.
+    // needs a key to verify it with and needs no back channel at all; the
+    // hybrid types (#930) need both. A partner read from its discovery
+    // document supplies all of them at the sign-in.
     if (record.fedProtocol === 'oidc') {
-      if (String(record.fedResponseType || 'code') === 'code') {
-        if (!String(record.fedTokenUrl || '').trim()) missing.push(
-            'fedTokenUrl');
-      } else if (!String(record.fedJwks || '').trim() &&
-                 !String(record.fedJwksUri || '').trim()) {
+      const parts = responseTypeParts(record);
+      if (parts.code && !discovers(record) &&
+          !String(record.fedTokenUrl || '').trim()) {
+        missing.push('fedTokenUrl');
+      }
+      if (parts.idToken && !discovers(record) &&
+          !String(record.fedJwks || '').trim() &&
+          !String(record.fedJwksUri || '').trim()) {
         missing.push('fedJwks or fedJwksUri');
+      }
+      // OAuth 2.0 Multiple Response Type Encoding Practices section 5: the
+      // query encoding MUST NOT be used for a response carrying an ID Token
+      // or an access token.
+      if ((parts.idToken || parts.token) &&
+          String(record.fedResponseMode || '') === 'query') {
+        missing.push('fedResponseMode other than query (' +
+                     responseTypeOf(record) + ' cannot come back on a ' +
+                     'query string)');
       }
     }
     // A JWT from an OAuth 2.0 partner is verified against a key like any
     // other, and an OPAQUE one cannot be read at all — so a plain OAuth 2.0
     // relationship needs either keys or a userinfo endpoint, and the message
     // says which two rather than naming one and leaving the other to be found.
-    if (record.fedProtocol === 'oauth2' &&
+    if (excused.indexOf('fedTokenUrl') < 0 &&
+        record.fedProtocol === 'oauth2' &&
         !String(record.fedJwks || '').trim() &&
         !String(record.fedJwksUri || '').trim() &&
         !String(record.fedUserinfoUrl || '').trim()) {
@@ -2654,11 +2019,99 @@ function encryptionRequired(record) {
     log.debug("Leaving encryptionRequired(). Not an encrypting protocol.");
     return false;
   }
+  // An OpenID Connect ID Token crosses the browser when the response type
+  // asks the authorization endpoint for one (#930: the hybrid types too);
+  // `code token` sends only an access token there, and its ID Token comes
+  // from the token endpoint.
   const frontChannel = record.fedProtocol !== 'oidc' ||
-    String(record.fedResponseType || 'code') !== 'code';
+    responseTypeParts(record).idToken;
   log.debug("Leaving encryptionRequired().");
   return frontChannel && !mode.acceptsUnencryptedFederatedAssertions() &&
          !boolOf(record.fedAllowUnencrypted, false);
+}
+
+// ---------------------------------------------------------------------------
+// THE OPENID CONNECT RESPONSE TYPE, IN ITS PARTS (#930). A response type is a
+// space-separated set (OAuth 2.0 Multiple Response Type Encoding Practices
+// section 3), so `code id_token` and `id_token code` are one type; the
+// register stores the spelling its enum lists, and everything that acts on
+// it asks which of the three members it has.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a relationship's response type as written, `code` when unset.
+ *
+ * @param record - the federation relationship
+ * @returns the response type
+ */
+function responseTypeOf(record) {
+  log.debug("Entering responseTypeOf().");
+  log.debug("Leaving responseTypeOf().");
+  return String((record && record.fedResponseType) || 'code').trim() ||
+         'code';
+}
+
+/**
+ * Returns which of `code`, `id_token` and `token` a relationship's response
+ * type asks the authorization endpoint for.
+ *
+ * @param record - the federation relationship
+ * @returns `{ code, idToken, token }`
+ */
+function responseTypeParts(record) {
+  log.debug("Entering responseTypeParts().");
+  const words = responseTypeOf(record).split(/\s+/);
+  log.debug("Leaving responseTypeParts().");
+  return { code: words.indexOf('code') >= 0,
+           idToken: words.indexOf('id_token') >= 0,
+           token: words.indexOf('token') >= 0 };
+}
+
+// The endpoint attributes a partner's discovery document supplies (#930):
+// with fedDiscovery on they are filled at each sign-in and not read from the
+// entry.
+const DISCOVERED_FIELDS = ['fedSsoUrl', 'fedTokenUrl', 'fedUserinfoUrl',
+                           'fedJwksUri'];
+
+/**
+ * Says whether an OpenID Connect relationship registers itself at its
+ * partner (`fedRegister`, #930); only with discovery, which names the
+ * registration endpoint.
+ *
+ * @param record - the federation relationship
+ * @returns whether it does
+ */
+function registers(record) {
+  log.debug("Entering registers().");
+  log.debug("Leaving registers().");
+  return discovers(record) && boolOf(record.fedRegister, false);
+}
+
+/**
+ * Says whether an OpenID Connect relationship answers a person's WebFinger
+ * discovery (`fedWebFinger`, #930); only with discovery.
+ *
+ * @param record - the federation relationship
+ * @returns whether it does
+ */
+function webFingers(record) {
+  log.debug("Entering webFingers().");
+  log.debug("Leaving webFingers().");
+  return discovers(record) && boolOf(record.fedWebFinger, false);
+}
+
+/**
+ * Says whether an OpenID Connect relationship reads its partner's endpoints
+ * from the partner's discovery document (`fedDiscovery`, #930).
+ *
+ * @param record - the federation relationship
+ * @returns whether it does
+ */
+function discovers(record) {
+  log.debug("Entering discovers().");
+  log.debug("Leaving discovers().");
+  return !!record && record.fedProtocol === 'oidc' &&
+         !String(record.fedTrustAnchor || '').trim() &&
+         boolOf(record.fedDiscovery, false);
 }
 
 // The authorization request parameters this service sets itself (#565):
@@ -3070,6 +2523,81 @@ function clientSecretOf(record) {
   return opened ? String(opened) : '';
 }
 
+// A PARTNER'S REFRESH TOKEN (#930), sealed as the client secret is — under a
+// durable key-encryption key, with a label of its own — while it is held for
+// the session it came with.
+const PARTNER_REFRESH_SEAL_LABEL = 'federation-partner-refresh-token';
+
+/**
+ * Seals a partner's refresh token where the process holds a durable
+ * key-encryption key; returns it as given where it does not.
+ *
+ * @param value - the refresh token
+ * @returns `{ ok, value }`
+ */
+function sealPartnerToken(value) {
+  log.debug("Entering sealPartnerToken().");
+  log.debug("Leaving sealPartnerToken().");
+  return sealClientSecret(value, PARTNER_REFRESH_SEAL_LABEL);
+}
+
+/**
+ * Opens a partner's refresh token sealed by `sealPartnerToken()`.
+ *
+ * @param stored - what was stored
+ * @returns the token, or empty when it will not open
+ */
+function openPartnerToken(stored) {
+  log.debug("Entering openPartnerToken().");
+  const text = String(stored || '');
+  if (text.indexOf(SEALED_PREFIX) !== 0) {
+    log.debug("Leaving openPartnerToken(). In clear.");
+    return text;
+  }
+  const keystore = require('../common/keystore');
+  const opened = keystore.open(text.slice(SEALED_PREFIX.length),
+                               PARTNER_REFRESH_SEAL_LABEL);
+  log.debug("Leaving openPartnerToken(). " + (opened ? 'Opened.' :
+                                                       'Will not open.'));
+  return opened ? String(opened) : '';
+}
+
+/**
+ * Says whether an OpenID Connect relationship keeps the partner's refresh
+ * token to keep its sessions' identity current (`fedRefreshTokens`, #930).
+ *
+ * @param record - the relationship
+ * @returns whether it does
+ */
+function refreshesTokens(record) {
+  log.debug("Entering refreshesTokens().");
+  log.debug("Leaving refreshesTokens().");
+  return !!record && record.fedProtocol === 'oidc' &&
+         boolOf(record.fedRefreshTokens, false);
+}
+
+/**
+ * Returns how many seconds after a refresh the next one is due: the
+ * relationship's fedRefreshEverySeconds, else the access token's expires_in,
+ * else an hour.
+ *
+ * @param record - the relationship
+ * @param expiresIn - the access token's expires_in, if the partner sent one
+ * @returns the seconds
+ */
+function refreshAfterSeconds(record, expiresIn) {
+  log.debug("Entering refreshAfterSeconds().");
+  const every = parseInt(String((record && record.fedRefreshEverySeconds) ||
+                                ''), 10);
+  if (every > 0) {
+    log.debug("Leaving refreshAfterSeconds(). Configured.");
+    return every;
+  }
+  const expiry = Number(expiresIn);
+  log.debug("Leaving refreshAfterSeconds().");
+  return expiry > 0 ? expiry : 3600;
+}
+
 /**
  * Returns how this realm authenticates to the partner's stream management:
  * a bearer token, or client credentials, the token endpoint, client and
@@ -3099,7 +2627,15 @@ function signalsCredentialOf(record) {
     clientSecret: own ? openSignalsSecret(r.fedSignalsClientSecret)
       : (openSignalsSecret(r.fedSignalsClientSecret) ||
          clientSecretOf(r)),
-    scope: String(r.fedSignalsScope || '').trim() || 'ssf.manage'
+    // BOTH OF THE CAEP INTEROPERABILITY PROFILE'S SCOPES (#932; section
+    // 2.7.3): `ssf.read` for reading the stream and its status and for
+    // polling, `ssf.manage` for creating, changing and verifying it — every
+    // act this realm takes at the partner. It was `ssf.manage` alone, which
+    // the profile says includes read; but a transmitter that checks each
+    // scope by name (the conformance suite's does) then refused the first
+    // read and the first poll, and asking for what is used is the
+    // straightforward reading of RFC 6749 section 3.3.
+    scope: String(r.fedSignalsScope || '').trim() || 'ssf.read ssf.manage'
   };
 }
 
@@ -4337,6 +3873,17 @@ function update(id, change) {
                       'relationship. GET /admin/ldap/federations publishes ' +
                       'the whole schema.'] };
   }
+  // ADDING TO OR REMOVING FROM A LIST TAKES A LIST (#747). A single-valued
+  // field took the assignment below, so asking to take a value off fedSsoUrl
+  // answered 200 and SET it to that value.
+  if (info.valueOfList && row.editable && row.editable !== 'multi') {
+    log.debug('Leaving update(). Not a list.');
+    actionRefused('STS-FED-0234', id, '"' + field + '" holds one value');
+    return { ok: false,
+             errors: ['"' + field + '" holds one value, so there is no list ' +
+                      'to add to or remove from. Nothing was changed. Use ' +
+                      '`set`.'] };
+  }
   if (!row.editable) {
     log.debug('Leaving update(). Not editable.');
     actionRefused('STS-FED-0067', id, '"' + field + '" is not editable');
@@ -4468,6 +4015,17 @@ function update(id, change) {
   if (field === 'fedSigningCertificate') {
     record[field] = String(record[field]).replace(/-----[^-]+-----/g, '')
                                          .replace(/\s+/g, '');
+    // Its fields, at the door, under paranoid PKI mode (#1360): its chain and
+    // revocation are asked at the use. Lazily: the door reaches the authority.
+    const paranoid = record[field] && require('../common/certificate_trust')
+      .registrationProblem('federation-partner',
+                           Buffer.from(record[field], 'base64'));
+    if (paranoid) {
+      log.debug('Leaving update(). Paranoid: ' + paranoid.code);
+      return errorCodes.mark({ ok: false, errors: ['fedSigningCertificate is ' +
+                               'refused: ' + paranoid.why + '.'] },
+                             paranoid.code);
+    }
   }
   // And the two booleans, so that `on`, `true`, `1` and a ticked checkbox all
   // reach the entry as the same string. Without this the entry holds whatever
@@ -5172,6 +4730,10 @@ module.exports = {
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
   clientSecretOf: clientSecretOf,
+  sealPartnerToken: sealPartnerToken,
+  openPartnerToken: openPartnerToken,
+  refreshesTokens: refreshesTokens,
+  refreshAfterSeconds: refreshAfterSeconds,
   clientSigningKeyOf: clientSigningKeyOf,
   // The authorization request parameters fedAuthorizeParams may not name
   // (#565), for federation_sp.ts's request builder.
@@ -5278,6 +4840,12 @@ module.exports = {
   encryptionKeyView: encryptionKeyView,
   currentEncryptionKeyOf: currentEncryptionKeyOf,
   encryptionRequired: encryptionRequired,
+  responseTypeOf: responseTypeOf,
+  responseTypeParts: responseTypeParts,
+  discovers: discovers,
+  registers: registers,
+  webFingers: webFingers,
+  DISCOVERED_FIELDS: DISCOVERED_FIELDS,
   writeEncryptionKeys: writeEncryptionKeys,
   remove: remove,
   recordUse: recordUse,

@@ -10,9 +10,10 @@
 //
 // A Windows user reported that across fresh installs the Issuing CA and the
 // Intermediate differed and "the Root was the same". It never was: every
-// install builds its own Root, and every Root is called `CN=sts Root CA,
-// O=sts`. The TLS listeners sent the leaf, the Issuing CA and the Intermediate
-// and left the Root out (RFC 8446 section 4.4.2 allows that), so a client
+// install builds its own Root, and every Root is called `CN=iya-sts Root CA,
+// O=iya-sts` (`CN=sts Root CA, O=sts` before #1294). The TLS listeners sent
+// the leaf, the Issuing CA and the Intermediate and left the Root out
+// (RFC 8446 section 4.4.2 allows that), so a client
 // never handed the current Root saw only a NAME and matched it to an older
 // Root of that name. Since #1064 every reported chain ends with the Root,
 // completed in one place, `common/pki.js` `chainThroughRoot()`.
@@ -28,10 +29,11 @@
 //      never one chosen by name; a chain under somebody else's Root is
 //      answered as it came; a leaf alone is answered alone; HAIP's
 //      `withoutRoot` leaves it off; bare base64 is taken as well as PEM.
-//   C. JOSE and XML: a published `x5c` and an XML `ds:X509Data` end with the
-//      Root, the leaf first; an XML signature carrying the chain in KeyInfo
-//      still verifies under this service's verifier and under xml-crypto
-//      reading the signer's certificate from KeyInfo, which takes the FIRST.
+//   C. JOSE and XML: a published `x5c` ends with the Root, the leaf first.
+//      An XML `ds:X509Data` carries that chain and then the leaf again, so
+//      a reader that keeps one certificate keeps the signer. An XML
+//      signature carrying that KeyInfo still verifies under this service's
+//      verifier and under xml-crypto, which takes the FIRST certificate.
 //   D. The listeners that build a context of their own take their bundle
 //      from `presentedBundlePem()` rather than joining a chain themselves.
 //
@@ -185,11 +187,12 @@ function sectionB(t) {
   const foreignLeaf = stsCrypto.selfSignedRsaCertificate(
     { commonName: 'foreign-leaf' });
   const foreignTop = stsCrypto.selfSignedRsaCertificate(
-    { commonName: 'sts Root CA' });
+    { commonName: 'iya-sts Root CA' });
   t.equal(pki.chainThroughRoot(foreignLeaf.certPem,
                                [foreignTop.certPem]).length, 2,
-          'a chain under somebody else\'s Root — even one CALLED "sts Root ' +
-          'CA" — is answered as it came: the Root is matched by signature');
+          'a chain under somebody else\'s Root — even one CALLED "iya-sts ' +
+          'Root CA" — is answered as it came: the Root is matched by ' +
+          'signature');
   const b64 = listener.chainPem.map(stsCrypto.stripPem);
   const fromB64 = pki.chainThroughRoot(stsCrypto.stripPem(listener.certPem),
                                        b64);
@@ -216,14 +219,16 @@ function sectionC(t) {
   const data = helpers.xmlSignerKeyInfo(signer);
   const certs = data.match(/<ds:X509Certificate>([^<]+)<\/ds:X509Certificate>/g)
     || [];
-  t.equal(certs.length, x5c.length,
-          'X509Data: one X509Certificate per member of the chain');
-  t.check(data.indexOf('<ds:X509Certificate>' +
-                       stsCrypto.stripPem(signer.certPem)) ===
+  const leafB64 = stsCrypto.stripPem(signer.certPem);
+  t.equal(certs.length, x5c.length + 1,
+          'X509Data: the chain, then the signer\'s certificate again');
+  t.check(data.indexOf('<ds:X509Certificate>' + leafB64) ===
           '<ds:X509Data>'.length,
           'X509Data: the signer\'s own certificate FIRST');
-  t.check(certs[certs.length - 1].indexOf(rootB64) > 0,
-          'X509Data: the Root last');
+  t.check(certs[certs.length - 2].indexOf(rootB64) > 0,
+          'X509Data: the Root immediately before the repeated leaf');
+  t.check(certs[certs.length - 1].indexOf(leafB64) > 0,
+          'X509Data: the signer\'s certificate LAST');
 
   const xml = '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:' +
     'assertion" ID="_root1064" Version="2.0" IssueInstant="' +
@@ -239,8 +244,9 @@ function sectionC(t) {
   });
   const keyInfoCerts = (signed.split('<ds:KeyInfo')[1] || '')
     .match(/<ds:X509Certificate>/g) || [];
-  t.equal(keyInfoCerts.length, x5c.length,
-          'a signed assertion\'s KeyInfo carries the whole chain');
+  t.equal(keyInfoCerts.length, x5c.length + 1,
+          'a signed assertion\'s KeyInfo carries the chain and the leaf ' +
+          'again');
   const ours = stsCrypto.verifyXmlSignature(signed, {
     element: 'Assertion', certPem: signer.certPem });
   t.check(ours && ours.ok, 'and it verifies under this service\'s verifier',
@@ -323,7 +329,7 @@ async function run(t) {
 module.exports = {
   name: 'tls presented root',
   describe: 'every chain this service reports ends with the service Root — ' +
-            'the TLS listeners\' handshake, x5c and XML X509Data — completed ' +
-            'in one place (#1064)',
+            'the TLS handshake and x5c — and an XML X509Data repeats the ' +
+            'signer after that Root, completed in one place (#1064)',
   run: run
 };

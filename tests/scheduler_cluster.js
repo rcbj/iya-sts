@@ -408,6 +408,75 @@ async function run(t) {
                              b: [rb.leader.node, jb.nextRunAt,
                                  jb.nextRunInMs] }));
   }
+
+  // -------------------------------------------------------------------------
+  // I. A RUN LEFT RUNNING IN A SLOT THAT PASSES (2026-11-03). C's hourly job
+  // keeps its slot past the dead node's claim, so the next tick takes the
+  // row over. A job due every minute with a two-minute timeout does not: by
+  // the time A's claim lapses its slot is three slots old, no tick attempts
+  // that row again, and before `abandonOrphans()` it stayed `running` for
+  // good. The live crash takeover (`tests/tools/scheduler-takeover.js`,
+  // step 4) waited its whole bound for its `abandoned` on 2026-11-03.
+  t.log.info('=== I. a run left running in a slot that passes ===');
+  {
+    const w = kit.world();
+    const pending = [];
+    const nodes = ['a', 'b'].map(function (name, i) {
+      const node = w.node(name, { skewMs: i ? 20000 : 0 });
+      node.scheduler.register(job({
+        id: 'test.quick', timeoutS: 120,
+        everyMs: function () { return MINUTE; },
+        run: function (ctx) {
+          node.invoked.push({ at: w.db, runId: ctx.runId });
+          if (name !== 'a') {
+            return { by: name };
+          }
+          return new Promise(function (resolve) {
+            pending.push({ resolve: resolve, ctx: ctx });
+          });
+        }
+      }));
+      return node;
+    });
+    nodes[0].scheduler.start('front');
+    await w.advance(2000);
+    nodes[1].scheduler.start('front');
+    await w.advance(2000);
+    t.check(nodes[0].scheduler.isLeading() && pending.length === 1,
+            'I. A leads, and its run of the minutely job is hanging',
+            JSON.stringify({ a: nodes[0].scheduler.isLeading(),
+                             pending: pending.length }));
+    const orphanId = pending[0].ctx.runId;
+    nodes[0].kill();
+    // Past the lease, the run's timeout and its claim, and a few ticks.
+    await w.advance(3 * w.leaseTtlMs + 125000 + 3 * MINUTE);
+    const rows = w.runRows().filter(function (r) {
+      return r.jobId === 'test.quick';
+    });
+    const orphan = rows.filter(function (r) {
+      return r.runId === orphanId;
+    })[0];
+    t.check(orphan && orphan.state === 'abandoned' &&
+            orphan.errorCode === 'STS-SCHED-0011' &&
+            orphan.abandonedOf === orphanId && orphan.nodeName === 'a',
+            'I. A\'s run, whose slot has passed, is recorded ABANDONED, ' +
+            'STS-SCHED-0011, rather than left running',
+            JSON.stringify(orphan && { state: orphan.state,
+                                       code: orphan.errorCode,
+                                       of: orphan.abandonedOf }));
+    t.check(!rows.some(function (r) {
+      return r.state === 'running' && r.nodeName === 'a';
+    }), 'I. and no run of A\'s is left running',
+            JSON.stringify(rows.map(function (r) {
+              return [r.nodeName, r.state];
+            })));
+    t.check(rows.some(function (r) {
+      return r.state === 'succeeded' && r.nodeName === 'b';
+    }) && nodes[1].invoked.every(function (one) {
+      return one.runId !== orphanId;
+    }), 'I. while B runs the later slots, and never re-runs the passed one',
+            JSON.stringify(nodes[1].invoked.length));
+  }
   log.debug('Leaving run().');
 }
 
@@ -416,6 +485,7 @@ module.exports = {
   describe: 'the scheduler across nodes: one leader, once per slot over a ' +
             'hundred slots and ten handovers, takeover and the fence, ' +
             'catch-up, manual runs across nodes, per-process jobs, standby ' +
-            'and step-down, the same report from every node',
+            'and step-down, the same report from every node, and a run ' +
+            'left running in a slot that passes recorded abandoned',
   run: run
 };

@@ -16,7 +16,7 @@ the running Express router and cannot go stale, `GET /oauth2/rfc9700` publishes
 every requirement with what is and is not enforced, `GET /spiffe` publishes the
 forty-two SPIRE methods with a reason for each of the six that are unimplemented,
 `GET /admin/ldap/service` says the directory is schemaless, and `GET /admin-api/openapi.json`
-is generated from the operation table. A page that copies any of those lists is a
+is generated from the model in `models/api/` (#1390). A page that copies any of those lists is a
 second copy that will be wrong within a month — LINK to them and say what a
 reader should look for.
 
@@ -34,6 +34,25 @@ to a client), and a hand-kept copy of several hundred rows beside the table
 they come from is the second copy that is wrong within a week. The page is
 committed, so it still reads in the repository and on the site with no build
 step here; what the generator replaces is the typing, not the file.
+
+**AND `openapi/` IS THE SECOND (rcbj, 2026-11-06).** Each published API's OpenAPI
+document as pages to read, written by `tests/tools/regenerate-openapi-pages.sh`
+and held by `tests/openapi_pages.js`. It is a copy of what the service publishes,
+which the rule above refuses; rcbj asked for it because a reader of this site
+has no running service to ask, and generating it removes the reason for the rule.
+A changed operation or model owes a regeneration in the same commit.
+
+**AND THE MODEL READING PAGES ARE THE THIRD (#1390).**
+`data-model-directory.md` and `data-model-persistence.md` are written by
+`node common/model_emit.js --docs` from the directory catalogue and the
+PostgreSQL model, the same model the TypeSpec emitter writes. A host
+runs that as `tests/tools/regenerate-model-docs.sh`, because the emitter
+is compiled only in an image. They must not be edited by hand.
+`tests/model_directory.js` and `tests/model_postgres.js` fail when they
+differ. The API models are not another copy of this kind: their reading
+form is `openapi/`, above. `postgres-schema.md` stays the explanation of
+the tables and is not regenerated. `ldap-schema.md` stays the explanation
+of the names.
 
 Adding a page: write the markdown, add it to the right section of
 `_data/navigation.yml` so it appears in the sidebar, and link it from
@@ -55,8 +74,8 @@ reader at the top of a long page.
 
 **The sidebar is four small overrides of minima 2.5.1, the version GitHub
 Pages ships**: `_layouts/default.html` (minima's, with the sidebar
-beside the content), `_includes/header.html` (the title only, and the menu
-button a narrow screen needs), `_includes/sidebar.html` and `assets/main.scss`
+beside the content), `_includes/header.html` (the logo, `docs/logo.png`, as the title, and the
+menu button a narrow screen needs), `_includes/sidebar.html` and `assets/main.scss`
 (minima's stylesheet imported, then the layout). No script — the narrow-screen
 menu is a checkbox, as minima's own header was. `header_pages` is gone: it put
 every page across the top, and at twenty-six pages that was not navigation.

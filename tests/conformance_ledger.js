@@ -7,18 +7,23 @@
 //
 // ===========================================================================
 // THE CONFORMANCE LEDGER ARGUES ONE MESSAGE WITHOUT ARGUING THE CONDITION
-// (2026-10-26).
+// (2026-10-26), AND SINCE #1292 IT ARGUES NO OKP MESSAGE AT ALL.
 //
 // sts_oidcc_conformance.js starts the OpenID conformance suite when it is
 // loaded, so this file does not require it. It reads that driver's ledger
-// as text and asks conformance_suite.js's judge() and ledgerFor() with the
-// same key. A classical twin of oidcc-server-rotate-keys fails because
-// nimbus throws on kty OKP (Ed25519 and Ed448) before it looks for a new
-// signing key. That one message is argued. A different message from the
-// same condition, the same message from another module, and a second
-// failure beside it stay findings. The post-quantum plan keeps the AKP
-// sentence, which argues any message, and PQ_ONLY still removes that
-// sentence from the twin.
+// as text, and asks conformance_suite.js's judge() and ledgerFor() about a
+// table of its own with the shape the driver used:
+//   * THE DRIVER: the classical twin's `unknown key type 'OKP'` entry on
+//     oidcc-server-rotate-keys is GONE (#1292: `keys.eddsaSigning` is off by
+//     default, so no realm publishes an Ed25519 or Ed448 key), and so are
+//     the two `profile` scope warnings and
+//     EnsureIdTokenDoesNotContainNonRequestedClaims; the AKP sentences stay
+//     and PQ_ONLY still names them.
+//   * THE JUDGE: an entry keyed by module and condition with a `msg`
+//     argues that message only — a different message from the condition,
+//     the same message from another module and a second failure beside it
+//     stay findings — and a plan judged with the driver's own ledger finds
+//     an OKP failure, since nothing argues it now.
 // ===========================================================================
 
 const fs = require('fs');
@@ -91,16 +96,35 @@ function unexplained(label, plan, result) {
 async function run(t) {
   log.debug('Entering run().');
   const src = driverText();
-  t.check(src.indexOf('["' + OKP_KEY + '"]') >= 0,
-           'the OpenID Connect driver argues the OKP message by module');
-  t.check(src.indexOf("msg: /unknown key type 'OKP'/") >= 0,
-           'that entry matches only the unknown-OKP message');
+  t.check(src.indexOf('["' + OKP_KEY + '"]') < 0 &&
+          src.indexOf("msg: /unknown key type 'OKP'/") < 0,
+          'the OpenID Connect driver no longer argues the OKP message ' +
+          '(#1292: no EdDSA key is published by default)');
+  ['VerifyScopesReturnedInUserInfoClaims:',
+   'VerifyScopesReturnedInAuthorizationEndpointIdToken:',
+   'EnsureIdTokenDoesNotContainNonRequestedClaims:'].forEach(function (key) {
+    t.check(src.indexOf(key) < 0,
+            'the driver no longer argues ' + key.slice(0, -1) + ' (#1292)');
+  });
+  t.check(src.indexOf('WarnOnUnusableJwksKeys:') >= 0 &&
+          src.indexOf('VerifyNewJwksHasNewSigningKey:') >= 0,
+          'the two post-quantum sentences stay');
   const pq = /const PQ_ONLY = (\[[^\]]+\])/.exec(src);
   t.check(!!pq, 'the driver names the entries a twin loses');
   t.check(pq && pq[1].indexOf('"' + COND + '"') >= 0,
            'PQ_ONLY still drops the AKP condition');
-  t.check(pq && pq[1].indexOf('oidcc-server-rotate-keys') < 0,
-           'PQ_ONLY does not drop the OKP message entry');
+  t.check(pq && pq[1].indexOf('"WarnOnUnusableJwksKeys"') >= 0,
+           'PQ_ONLY still drops the AKP warning');
+  // The driver's own failure ledger, as text: with the OKP entry gone, a
+  // classical rotate-keys OKP failure is unexplained.
+  const driverFailures = {};
+  driverFailures[COND] = 'nimbus cannot parse kty AKP';
+  const driverTwin = oidf.ledgerFor({ key: 'dynamic-cl', base: 'dynamic',
+                                      classical: true },
+                                    driverFailures, PQ_ONLY);
+  t.equal(oidf.judge('dynamic-cl', { results: [one(MODULE, COND, OKP_MSG)] },
+                     {}, {}, driverTwin).unexplained.length, 1,
+          'with the driver\'s ledger an OKP failure on the twin is a finding');
 
   const classical = { key: 'dynamic-cl', base: 'dynamic', classical: true };
   const postQuantum = { key: 'dynamic' };
@@ -160,8 +184,8 @@ async function run(t) {
 module.exports = {
   name: 'conformance_ledger',
   describe: 'The conformance ledger argues one message of one module ' +
-            'without arguing every failure of that condition: the ' +
-            'classical twin\'s unknown key type OKP on ' +
-            'oidcc-server-rotate-keys, and nothing else',
+            'without arguing every failure of that condition, and the ' +
+            'OpenID Connect driver argues no OKP message, profile-scope ' +
+            'warning or unrequested ID Token claim since #1292',
   run: run
 };

@@ -75,6 +75,33 @@ resource "random_password" "bootstrap_admin" {
   override_special = "!#%*+-=?@^_~"
 }
 
+# THE BOOTSTRAP ADMINISTRATOR'S NAME (rcbj, 2026-11-10; AWS's secrets.tf
+# argues it): product mode replaces a default name with one derived from a key
+# in the database (#1447), which was then in one log line and nowhere else.
+# Generated here, `admin-` and sixteen hex digits, stored beside the password
+# and handed to the node as STS_ADMIN_BOOTSTRAP_USERNAME. Read once and kept
+# (`ignore_changes`): the account is created once and cannot be renamed.
+# TF_VAR_bootstrap_admin_username names an account that already exists, on
+# the apply that first creates the secret.
+resource "random_id" "bootstrap_admin_username" {
+  count       = local.product && !local.multi ? 1 : 0
+  byte_length = 8
+}
+
+resource "terraform_data" "bootstrap_admin_username" {
+  count = local.product && !local.multi ? 1 : 0
+  input = sensitive(trimspace(var.bootstrap_admin_username) != "" ? trimspace(var.bootstrap_admin_username) :
+  "admin-${random_id.bootstrap_admin_username[0].hex}")
+
+  lifecycle {
+    ignore_changes = [input]
+    precondition {
+      condition     = !contains(["admin", "root", "sa", "administrator"], lower(trimspace(var.bootstrap_admin_username)))
+      error_message = "bootstrap_admin_username is a default account name, which product mode replaces (common/bootstrap_name.ts); name the account the service actually created."
+    }
+  }
+}
+
 resource "random_password" "krb5_krbtgt" {
   count   = local.product && !local.multi ? 1 : 0
   length  = 40
@@ -106,6 +133,7 @@ locals {
       admin-api-client-secret = random_password.admin_api_client_secret[0].result
       }, local.product ? {
       bootstrap-admin-password = random_password.bootstrap_admin[0].result
+      bootstrap-admin-username = terraform_data.bootstrap_admin_username[0].output
       krb5-krbtgt-password     = random_password.krb5_krbtgt[0].result
       krb5-service-password    = random_password.krb5_service[0].result
   } : {})
@@ -119,6 +147,7 @@ locals {
     ADMIN_API_CLIENT_SECRET = "admin-api-client-secret"
     }, local.product ? {
     STS_ADMIN_BOOTSTRAP_PASSWORD = "bootstrap-admin-password"
+    STS_ADMIN_BOOTSTRAP_USERNAME = "bootstrap-admin-username"
     KRB5_KRBTGT_PASSWORD         = "krb5-krbtgt-password"
     KRB5_SERVICE_PASSWORD        = "krb5-service-password"
   } : {})

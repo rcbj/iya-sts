@@ -27,6 +27,7 @@
 //   SSF receiver (push)          /ssf/receive                   peer_ssf.js
 //   OP Commands relying party    /oauth2/commands/mock-rp       peer_commands.js
 //   Back-Channel Logout RP       (none: in process only, #293)  peer_bcl.js
+//   did:web host                 (none: in process only, #693)  peer_did.js
 //
 // ---------------------------------------------------------------------------
 // TENANTS. A job starts from a known state (#586): it creates a realm,
@@ -71,13 +72,14 @@ const gnap = require("./peer_gnap.js");
 const ssf = require("./peer_ssf.js");
 const commands = require("./peer_commands.js");
 const bcl = require("./peer_bcl.js");
+const did = require("./peer_did.js");
 
 const log = util.logger("sts-test-peer");
 
 const MAX_TENANTS = 500;
 const MAX_EVENTS = 2000;
 const ROLES = ["saml2", "saml11", "wsfed", "step-up", "gnap", "ssf",
-               "commands", "bcl"];
+               "commands", "bcl", "did"];
 
 // ---------------------------------------------------------------------------
 // TENANTS.
@@ -140,6 +142,11 @@ function viewOf(state, tenant) {
     commands: { endpoint: secure + "/commands" },
     bcl: { endpoint: secure + "/bcl",
            clientId: tenant.bcl.clientId || null },
+    // A did:web document published as `<name>` is at `documents +
+    // <name> + "/did.json"` and its DID is `prefix + <name>`.
+    did: { documents: secure + "/did/",
+           prefix: did.didFor(new URL(state.secureBase).host, tenant.id,
+                              "") },
     caPem: state.ca.certPem,
     caFile: state.caFile
   };
@@ -194,6 +201,7 @@ function configureTenant(state, id, asked) {
   }
   commands.configure(tenant);
   bcl.configure(tenant, body.bcl);
+  did.configure(tenant);
   tenant.metadataCache = {};
   log.info("peer: tenant " + id + " configured for " + tenant.realmBase);
   log.debug("Leaving configureTenant().");
@@ -319,6 +327,12 @@ async function route(state, request) {
       log.debug("Leaving route(). Back-channel logout.");
       return bcl.logout(tenant, request);
     }
+    const dd = /^did\/([^/]+)\/did\.json$/.exec(rest);
+    if (dd) {
+      log.debug("Leaving route(). did:web document.");
+      return did.document(tenant, request, decodeURIComponent(dd[1]),
+                          new URL(state.secureBase).host);
+    }
   }
   log.debug("Leaving route(). Not found.");
   return { status: 404, body: { ok: false, error: "no route " +
@@ -328,7 +342,7 @@ async function route(state, request) {
 // Which role a path belongs to, for recording a failure that escaped it.
 function roleOf(p) {
   log.debug("Entering roleOf().");
-  const m = /^\/t\/[^/]+\/(saml2|saml11|wsfed|step-up|gnap|ssf|commands|bcl)\b/
+  const m = /^\/t\/[^/]+\/(saml2|saml11|wsfed|step-up|gnap|ssf|commands|bcl|did)\b/
     .exec(p);
   log.debug("Leaving roleOf().");
   return m ? m[1] : null;

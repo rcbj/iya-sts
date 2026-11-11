@@ -222,6 +222,7 @@ const SCIMMY: any = scimmyModule;
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 
 // The input validator. A LEAF (rule 3): it registers no route and closes no
@@ -265,11 +266,21 @@ import mode = require('../common/mode');
 // What every person in the realm must hold (#396): a create is held to it
 // before the entry exists, and an update may not take one of them away.
 import attributePolicy = require('../common/attribute_policy');
+// THE REALM'S HALF OF THE SCHEMAS (#699): its custom attributes as an
+// extension whose members are the ambient realm's, and the policy's
+// required attributes on the documents /Schemas and /ResourceTypes answer.
+// A library that registers nothing; its header argues the design.
+import ScimRealmSchema = require('./scim_realm_schema');
 // WHICH CELL ANSWERS (#98): asked by handle() before the caller is
 // authenticated, and by the User ingress before a person is written. A
 // library that registers nothing; `scim_cells.ts` argues every operation.
 import scimCells = require('./scim_cells');
 import realms = require('../common/realms');
+// THE SECURITY ADMINISTRATOR'S ROLE (#645): who holds it, a person on the
+// roster or an application that is a member of SECURITY_ADMIN.
+import adminRbac = require('../admin-ui/admin_rbac');
+import roles = require('../common/roles');
+import SecurityOperations = require('../common/security_operations');
 import cells = require('../common/cells');
 // THE CONSOLE PROSE IN THE READER'S LANGUAGE (#543): `fill()` makes the
 // templated sentences of `description()`, and `harvest()` collects this
@@ -326,6 +337,8 @@ interface ScimDeps {
   };
   // The console, for its reader slot only.
   adminConsole: { setScimReader?: Fn };
+  // The realm's custom attributes and required attributes (#699).
+  realmSchema: ScimRealmSchema;
 }
 
 // An express request as this module reads it, with the two members the gate
@@ -477,11 +490,9 @@ const DOES_NOT_DO = Object.freeze({
     'one-second resolution would be a concurrency control a client trusts ' +
     'and that is wrong; and no password in this service is checked, so ' +
     'there is none to change.',
-  member: 'A MEMBER THAT NAMES NOTHING IS ACCEPTED. This directory does no ' +
-    'referential integrity on purpose — deleting a user leaves their DN in ' +
-    'every group that listed them — so refusing a dangling member here ' +
-    'would make that state impossible to reproduce. /admin/groups reports ' +
-    'them.'
+  member: 'A MEMBER THAT NAMES NOTHING IS REFUSED (400 invalidValue). A ' +
+    'group lists only people, groups and applications that are there, and ' +
+    'deleting one takes it out of every group that listed it.'
 });
 
 // What each endpoint is, keyed by a name of this table's own (the methods
@@ -693,7 +704,8 @@ class Scim {
       fedLinks: fedLinks,
       parseBody: helpers.parseBody,
       errorCodes: errorCodes,
-      adminConsole: adminConsole
+      adminConsole: adminConsole,
+      realmSchema: new ScimRealmSchema(ScimRealmSchema.defaultDeps(SCIMMY))
     };
   }
 
@@ -868,6 +880,97 @@ class Scim {
     return errorCodes.mark(error, code);
   };
 
+  // ---------------------------------------------------------------------------
+  // A SECURITY ADMINISTRATOR'S WRITE OVER SCIM (#645, 2026-11-02). SCIM is a
+  // door onto the same directory the management API and the LDAP socket
+  // guard (`common/security_operations.ts`, `ldap_server.js`'s
+  // `securityNeedOf()`), and it reaches two of the things only a Security
+  // Administrator may change: the role's GROUP (a PATCH adding a member is a
+  // grant) and the User of a person who HOLDS the role (a password, an
+  // `active: false`, a delete). The caller passes when it holds the role — a
+  // person on the roster of the realm, an application that is a member of
+  // SECURITY_ADMIN — and is refused 403 otherwise. An unauthenticated caller
+  // (development's permissive SCIM) is asked nothing, as it is asked nothing
+  // anywhere else on this surface.
+  // ---------------------------------------------------------------------------
+  private securityRefusal(req: ScimRequest, what: string): any {
+    const { log, SCIMMY } = this.deps;
+    const { coded } = this;
+    log.debug("Entering Scim.securityRefusal().");
+    const decision: any = (req && (req as any).scimAuth) || null;
+    if (!decision || decision.anonymous || !decision.principal) {
+      log.debug("Leaving Scim.securityRefusal(). Nobody to ask.");
+      return null;
+    }
+    const name = String(decision.principal);
+    let holds = false;
+    try {
+      holds = decision.isClient
+        ? roles.rolesOf({ kind: 'application', name: name,
+                          authenticated: true })
+            .indexOf(SecurityOperations.REGISTER_ROLE) >= 0
+        : adminRbac.holdsSecurity(name, realms.currentId());
+    } catch (e) {
+      // A roster that cannot be read holds nobody: this is a refusal, and
+      // it does not open because the directory failed.
+      log.debug("Caught in Scim.securityRefusal(): " +
+                ((e && e.message) || e));
+      holds = false;
+    }
+    if (holds) {
+      log.debug("Leaving Scim.securityRefusal(). A Security Administrator.");
+      return null;
+    }
+    log.info('scim: refusing ' + name + ': ' + what + ' is a Security ' +
+             'Administrator\'s change.');
+    log.debug("Leaving Scim.securityRefusal(). Refused.");
+    return coded('STS-SCIM-0086', new SCIMMY.Types.Error(403, null,
+      'Only a Security Administrator may ' + what + '. "' + name + '" does ' +
+      'not hold SECURITY_ADMIN: a person is granted it on /admin/rbac, an ' +
+      'application is made a member of the role on /admin/roles.'));
+  }
+
+  // Whether a person's entry holds the Security Administrator's role, in the
+  // realm being served.
+  private entryHoldsSecurity(entry: any): boolean {
+    const { log, directory } = this.deps;
+    log.debug("Entering Scim.entryHoldsSecurity().");
+    let holds = false;
+    try {
+      holds = !!entry && adminRbac.holdsSecurity(
+        String(directory.usernameOfEntry(entry) || ''), realms.currentId());
+    } catch (e) {
+      // Not knowing whether they hold it treats them as holding it: the
+      // refusal is the safe answer about somebody's account.
+      log.debug("Caught in Scim.entryHoldsSecurity(): " +
+                ((e && e.message) || e));
+      holds = !!entry;
+    }
+    log.debug("Leaving Scim.entryHoldsSecurity(). " + holds);
+    return holds;
+  }
+
+  // Whether a group name is the Security Administrator's group.
+  private isSecurityGroup(name: unknown): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering Scim.isSecurityGroup().");
+    const wanted = String(config.value(
+      SecurityOperations.SECURITY_GROUP_SETTING) || '').trim().toLowerCase();
+    log.debug("Leaving Scim.isSecurityGroup().");
+    return !!wanted && String(name || '').trim().toLowerCase() === wanted;
+  }
+
+  // The cn of a group entry, or the first RDN's value.
+  private groupCnOf(entry: any, dn: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Scim.groupCnOf().");
+    const group = Classes.Group.fromEntry((entry && entry.attributes) || {});
+    const rdn = String(dn || '').split(',')[0] || '';
+    log.debug("Leaving Scim.groupCnOf().");
+    return group.name !== undefined ? group.name
+                                    : rdn.slice(rdn.indexOf('=') + 1);
+  }
+
   private sendScimError(req: ScimRequest, res: any, info: CallInfo,
                        ex: any): void {
     const { log, stats, errorCodes, SCIMMY } = this.deps;
@@ -1004,6 +1107,13 @@ class Scim {
   // than the count that was asked. A startIndex on the last result is
   // that one row, and ListResponse already sliced it. Users, Groups and
   // every .search leave through forTheWire(), so this is the one place.
+  //
+  // AND EVERY PAGE'S itemsPerPage IS WHAT IT RETURNED (rcbj on #695,
+  // 2026-11-04). scimmy echoes the `count` that was asked, so a short page
+  // inside the match — four names, count 10, startIndex 3 — said 10 while
+  // it carried two. RFC 7644 section 3.4.2 defines it as "the number of
+  // resources returned in a list response page"; it was pinned as the echo
+  // until then.
   // ---------------------------------------------------------------------------
   private emptyPagePastTheEnd(plain: any): void {
     const { log } = this.deps;
@@ -1016,6 +1126,9 @@ class Scim {
       plain.itemsPerPage = 0;
       log.debug("Leaving Scim.emptyPagePastTheEnd(). Past " + total + ".");
       return;
+    }
+    if (Array.isArray(plain.Resources) && plain.itemsPerPage !== undefined) {
+      plain.itemsPerPage = plain.Resources.length;
     }
     log.debug("Leaving Scim.emptyPagePastTheEnd().");
   }
@@ -1091,7 +1204,11 @@ class Scim {
     const { coded } = this;
     log.debug("Entering Scim.handle().");
     log.debug("Leaving Scim.handle().");
-    return (req, res) => {
+    // THE REALM'S REGISTER OF CUSTOM ATTRIBUTES IS READ ONCE PER REQUEST
+    // (#699): everything the request does, its continuations included, runs
+    // inside `inRequest()`. See `scim_realm_schema.ts`.
+    const realmSchema = this.deps.realmSchema;
+    const inner: ScimHandler = (req, res) => {
       log.debug("Entering the SCIM " + info.operation + " handler for " +
                 info.resourceType + ".");
       // WHEN THIS REQUEST STARTED, stamped here because this is the one place
@@ -1220,6 +1337,11 @@ class Scim {
           return res.headersSent ? undefined : authenticateAndRun();
         });
       log.debug("Leaving the SCIM handler (the answer is on its way).");
+    };
+    return (req, res) => {
+      return realmSchema.inRequest(function () {
+        return inner(req, res);
+      });
     };
   }
 
@@ -1843,6 +1965,42 @@ class Scim {
     return values;
   }
 
+  // The realm's custom values a User write asks for (#699), checked, or null
+  // where the write leaves them as they are. A value the person editor's
+  // check refuses is 400 invalidValue (`STS-SCIM-0087`), before anything is
+  // written. The verb is the RESOURCE's: a create has no id, and an update
+  // is a PATCH only when the request is one — a PUT or PATCH inside a
+  // BulkRequest arrives on a POST, and is read by the PUT rule, which
+  // leaves the values alone unless the resource carries them.
+  private customValuesFrom(data: any, resource: any, req: any): any {
+    const { log, SCIMMY, realmSchema, parseBody } = this.deps;
+    const { coded } = this;
+    log.debug("Entering Scim.customValuesFrom().");
+    const method = String((req && req.method) || '').toUpperCase();
+    const verb = !(resource && resource.id) ? 'POST'
+      : method === 'PATCH' ? 'PATCH' : 'PUT';
+    let raw: any = null;
+    if (verb === 'PUT' && method === 'PUT') {
+      try {
+        raw = parseBody(req);
+      } catch (e) {
+        log.debug("Caught in Scim.customValuesFrom(): " +
+                  ((e && e.message) || e));
+        // An unreadable body names nothing: the resource scimmy coerced is
+        // what is read.
+        raw = null;
+      }
+    }
+    const answer = realmSchema.fromScim(data, verb, raw);
+    if (answer && 'error' in answer) {
+      throw coded('STS-SCIM-0087', new SCIMMY.Types.Error(400,
+        'invalidValue', answer.error));
+    }
+    log.debug("Leaving Scim.customValuesFrom(). " +
+              (answer ? 'Said.' : 'Not said.'));
+    return answer;
+  }
+
   private userResourceFor(entry: any, req: ScimRequest): any {
     const { log, directory, scimMap } = this.deps;
     log.debug("Entering Scim.userResourceFor().");
@@ -1866,13 +2024,11 @@ class Scim {
     // namespaced one scim_map.ts's egressPath() writes for the enterprise
     // members: scimmy's coercion of a multi-valued COMPLEX member keeps it
     // only there, and nothing here filters on it.
-    // The entry object carries canonical attribute names, so the member is
-    // found case-insensitively rather than by one spelling.
+    // The entry object carries canonical attribute names; the concept finds
+    // the member whatever its spelling (#1390).
     const attributes = entry.attributes || {};
-    const linkKey = Object.keys(attributes).filter(function (name) {
-      return name.toLowerCase() === 'federationlink';
-    })[0];
-    const links = [].concat(linkKey ? attributes[linkKey] : [])
+    const links = (Classes.PersonRecord.fromEntry(attributes).federationLink ||
+                   [])
       .map((value) => { return this.deps.fedLinks.parse(value); })
       .filter(Boolean)
       .map(function (one) {
@@ -1885,6 +2041,18 @@ class Scim {
       resource[scimMap.IYA_STS_USER_SCHEMA] = Object.assign(
         resource[scimMap.IYA_STS_USER_SCHEMA] || {},
         { federationLinks: links });
+    }
+    // THE REALM'S CUSTOM ATTRIBUTES (#699), only where the person holds one,
+    // and in the NAMESPACED form `scim_map.ts`'s egressPath() writes for the
+    // enterprise members: the filter matcher below finds an extension member
+    // only there (an object-form member matched nobody), and scimmy's
+    // coercion folds it into the object form on the wire. Never both forms:
+    // the coercion would concatenate a multi-valued member's two copies.
+    const custom = this.deps.realmSchema.toScim(attributes);
+    if (custom) {
+      Object.keys(custom).forEach(function (name) {
+        resource[ScimRealmSchema.CUSTOM_SCHEMA + ':' + name] = custom[name];
+      });
     }
     // The manager as a SCIM id, where the directory holds the DN (2026-09-14).
     //
@@ -1955,6 +2123,10 @@ class Scim {
       const held = await directory.claimCreate(type === 'User'
         ? { username: String(given.userName || '').trim() }
         : { group: String(given.displayName || '').trim() });
+      if (!held.ok && held.reason === 'name') {
+        throw coded('STS-LDAP-0210', new SCIMMY.Types.Error(400,
+          'invalidValue', createClaims.refusalMessage(held)));
+      }
       if (!held.ok && held.reason === 'store') {
         throw coded('STS-LDAP-0093', new SCIMMY.Types.Error(500, null,
           createClaims.refusalMessage(held)));
@@ -2096,7 +2268,8 @@ class Scim {
    * make the directory their store. Called once, when the instance is wired.
    */
   declareResources(): void {
-    const { log, directory, scimMap, errorCodes, SCIMMY } = this.deps;
+    const { log, directory, scimMap, errorCodes, SCIMMY,
+            realmSchema } = this.deps;
     const { coded } = this;
     log.debug("Entering Scim.declareResources().");
     this.narrowSchemas();
@@ -2120,6 +2293,11 @@ class Scim {
       // extension's reason: an attribute scimmy's definition does not know is
       // dropped by its coercion. One member, `federationLinks`.
       .extend(this.iyaStsUserExtension())
+      // AND THE REALM'S CUSTOM ATTRIBUTES (#699): one extension for the
+      // process whose members are the ambient realm's. Not required as
+      // declared; /ResourceTypes says it is where the realm requires one of
+      // them (`scim_realm_schema.ts`).
+      .extend(this.deps.realmSchema.extension())
       .egress((resource, ctx) => {
         log.debug("Entering the SCIM User egress handler. id=" +
                   (resource.id || '(a list)'));
@@ -2198,12 +2376,27 @@ class Scim {
             'There is no entry at ' + resource.id + ' under ' +
             directory.usersDn() + '.'));
         }
+        // A HOLDER'S ACCOUNT (#645): see securityRefusal().
+        if (existing && this.entryHoldsSecurity(existing)) {
+          const refusedHere = this.securityRefusal(req,
+            'change the User of a person who holds the Security ' +
+            'Administrator\'s role');
+          if (refusedHere) {
+            throw refusedHere;
+          }
+        }
 
         // THE FEDERATION LINKS, CHECKED BEFORE ANYTHING IS WRITTEN (#109): a
         // create refused for a bad link must not leave a person behind. null
         // where the resource does not say `federationLinks`, which leaves the
         // entry's links as they are.
         const linkValues = this.federationLinksFrom(data, existing, req);
+        // THE REALM'S CUSTOM ATTRIBUTES (#699), checked here for the same
+        // reason: a refused value leaves nobody behind. null where the
+        // resource leaves them as they are (`scim_realm_schema.ts` says when).
+        // The verb is the resource's, not the request's: inside a
+        // BulkRequest every operation arrives on a POST.
+        const customValues = this.customValuesFrom(data, resource, req);
 
         // ---------------------------------------------------------------------
         // A CREATE GOES THROUGH `createUser()`, WHICH IS THE DIRECTORY'S OWN
@@ -2240,6 +2433,25 @@ class Scim {
         // — one decides, the other says it in its own protocol.
         // ---------------------------------------------------------------------
         let dn;
+        // ALL OR NOTHING (ASVS 5.0.0 2.3.3): createUser() writes the entry
+        // before the resource is merged over it, so a refusal after that
+        // point would leave a bare entry nobody asked for, and a retry would
+        // meet its own name as a conflict. Each refusal below the create goes
+        // through undoCreate(), which deletes what this request made.
+        let createdHere = '';
+        const undoCreate = (err: any): any => {
+          if (createdHere) {
+            const undone = directory.deletePerson(createdHere,
+              { door: 'a SCIM create that was refused' });
+            if (!undone.ok) {
+              log.warn(errorCodes.tag('STS-SCIM-0090') + 'scim: a refused ' +
+                       'create left ' + createdHere + ' behind: ' +
+                       (undone.reason || 'not deleted') + '.');
+            }
+            createdHere = '';
+          }
+          return err;
+        };
         if (existing) {
           // An update keeps the DN it has. A rename is an LDAP modrdn rather
           // than a PUT — and since 2026-09-14 it would not change the SCIM id
@@ -2274,6 +2486,9 @@ class Scim {
           if (!preview.errors.length) {
             const prospective = Object.assign({ uid: [userName] },
                                               preview.attributes);
+            if (customValues) {
+              realmSchema.applyTo(prospective, customValues);
+            }
             attributePolicy.deriveCommonName(prospective);
             // WHOSE PROFILE (#1241): the newcomer's — the uid's groups
             // (any already listing the DN they will have) and their own
@@ -2327,6 +2542,7 @@ class Scim {
                 (made.errors || []).join(' ')));
           }
           dn = made.dn;
+          createdHere = made.dn;
         }
 
         // Read back rather than reusing what came in, because on a create the
@@ -2352,9 +2568,12 @@ class Scim {
           }
         }
         if (converted.errors.length) {
-          throw coded('STS-SCIM-0010',
+          throw undoCreate(coded('STS-SCIM-0010',
             new SCIMMY.Types.Error(400, 'invalidValue',
-                                   converted.errors.join(' ')));
+                                   converted.errors.join(' '))));
+        }
+        if (customValues) {
+          realmSchema.applyTo(converted.attributes, customValues);
         }
         // A `cn` FROM THE NAMES where the resource gives no displayName
         // (#396), as every other door does; and on an update, no required
@@ -2379,10 +2598,16 @@ class Scim {
         // `manager` holds (2026-09-14); a value naming no entry is kept as
         // sent.
         if (converted.attributes.manager) {
-          converted.attributes.manager = [].concat(converted.attributes.manager)
-            .map((value) => {
-              return directory.dnForResourceId(value);
-            });
+          try {
+            converted.attributes.manager =
+              [].concat(converted.attributes.manager).map((value) => {
+                return directory.dnForResourceId(value);
+              });
+          } catch (e) {
+            log.debug("Caught in the SCIM User ingress handler: " +
+                      ((e && e.message) || e));
+            throw undoCreate(e);
+          }
         }
         // The links, where the resource said them: REPLACED, whatever the
         // entry carried — a removal among them ends that partner's sessions
@@ -2404,7 +2629,8 @@ class Scim {
         if (!written.ok) {
           // 500 and not 507 for a full directory: RFC 7644 section 3.12 lists
           // no 507, and scimmy refuses to build an error it does not list.
-          throw coded(errorCodes.codeOf(written) || 'STS-SCIM-0011',
+          throw undoCreate(coded(
+            errorCodes.codeOf(written) || 'STS-SCIM-0011',
             new SCIMMY.Types.Error(written.reason === 'full' ? 500 : 400,
               written.reason === 'full' ? null : 'invalidValue',
               written.reason === 'full'
@@ -2412,8 +2638,9 @@ class Scim {
                   directory.maxEntries() +
                   ' entries (ldap.maxEntries). Nothing was written.'
                 : 'The entry could not be written at ' + dn + ' (' +
-                  written.reason + ').'));
+                  written.reason + ').')));
         }
+        createdHere = '';
 
         // The credential-claim fill, FOR THE PERSON THIS REQUEST CREATED.
         // createUser() already ran applyVcAttributes() on the entry it made —
@@ -2455,6 +2682,15 @@ class Scim {
       }))
       .degress(async (resource, ctx) => {
         log.debug("Entering the SCIM User degress handler. id=" + resource.id);
+        // A HOLDER'S ACCOUNT (#645): see securityRefusal().
+        if (this.entryHoldsSecurity(directory.readPerson(resource.id))) {
+          const refusedHere = this.securityRefusal((ctx || {}).req,
+            'delete the User of a person who holds the Security ' +
+            'Administrator\'s role');
+          if (refusedHere) {
+            throw refusedHere;
+          }
+        }
         const removed = directory.deletePerson(resource.id);
         if (!removed.ok && removed.reason === 'protected') {
           // THE DEFAULT REALM'S BOOTSTRAP ADMINISTRATOR (2026-09-13), which no
@@ -2539,6 +2775,15 @@ class Scim {
                                    'There is no group at ' + resource.id +
                                    '.'));
         }
+        // THE ROLE'S GROUP (#645): see securityRefusal().
+        if (this.isSecurityGroup(existing
+              ? this.groupCnOf(existing, resource.id) : displayName)) {
+          const refusedHere = this.securityRefusal(req,
+            'change the Security Administrator\'s group');
+          if (refusedHere) {
+            throw refusedHere;
+          }
+        }
 
         const converted = scimMap.fromScimGroup(data,
                                                 existing ? existing.attributes :
@@ -2575,34 +2820,23 @@ class Scim {
             'There is already a group at ' + dn + '.'));
         }
 
-        // A MEMBER THAT NAMES NOTHING IS NOT REFUSED, and that is deliberate
-        // rather than an omission. This directory does no referential integrity
-        // — a delete leaves the DN behind in every group that listed it — so
-        // refusing a member here would make it impossible to reproduce the
-        // dangling-member state that /admin/groups exists to report, and would
-        // be this service enforcing in one direction what it explicitly does
-        // not enforce in the other. Logged, so it is visible rather than
-        // silent. A MEMBER ARRIVES AS A SCIM ID AND IS STORED AS A DN
+        // A MEMBER THAT NAMES NOTHING IS REFUSED since 2026-11-10 (rcbj): a
+        // group lists only what is there, and a delete takes a DN out of every
+        // group (`ldap_server.js` membersNamingNothing() and
+        // forgetGroupMemberships()). writeGroupEntry() is where it is refused,
+        // answered below as 400 invalidValue naming what is not there. Until
+        // then one was accepted, so the state /admin/groups reports could be
+        // produced. A MEMBER ARRIVES AS A SCIM ID AND IS STORED AS A DN
         // (2026-09-14): a `member` value is a DN in LDAP, and every reader of a
         // group here — the groups claim, /admin/groups, an ldapsearch — reads
-        // it as one. A value that names no entry is kept as it was sent, for
-        // the reason below.
+        // it as one. A value that names no entry is kept as it was sent, and
+        // so refused by name.
         if (converted.attributes.member) {
           converted.attributes.member = converted.attributes.member
             .map((value) => {
               return directory.dnForResourceId(value);
             });
         }
-        (converted.attributes.member || []).forEach((value) => {
-          if (!directory.readPerson(value) &&
-              !directory.readGroupEntry(value)) {
-            log.info('scim: ' + dn + ' lists ' + value + ' as a member and ' +
-                     'nothing is stored there. It is written anyway — this ' +
-                     'directory does no referential integrity, and a ' +
-                     'dangling member is a state worth being able to produce.');
-          }
-        });
-
         const written = directory.writeGroupEntry(dn, converted.attributes);
         if (!written.ok) {
           // 500 and not 507 for a full directory: RFC 7644 section 3.12 lists
@@ -2614,6 +2848,12 @@ class Scim {
                 ? 'The directory holds its maximum of ' +
                   directory.maxEntries() +
                   ' entries (ldap.maxEntries). Nothing was written.'
+                : written.reason === 'danglingMember'
+                ? 'Nothing is stored at ' +
+                  (written.members || []).join(', ') + ', so it cannot be a ' +
+                  'member of this group. A group lists only people, groups ' +
+                  'and applications that are there: create them first. ' +
+                  'Nothing was written.'
                 : 'The entry could not be written at ' + dn + ' (' +
                   written.reason + ').'));
         }
@@ -2628,6 +2868,16 @@ class Scim {
       }))
       .degress((resource, ctx) => {
         log.debug("Entering the SCIM Group degress handler. id=" + resource.id);
+        // THE ROLE'S GROUP (#645): see securityRefusal().
+        const doomed = directory.readGroupEntry(resource.id);
+        if (doomed && this.isSecurityGroup(this.groupCnOf(doomed,
+                                                          resource.id))) {
+          const refusedHere = this.securityRefusal((ctx || {}).req,
+            'delete the Security Administrator\'s group');
+          if (refusedHere) {
+            throw refusedHere;
+          }
+        }
         const removed = directory.deleteGroupEntry(resource.id);
         if (!removed.ok) {
           throw coded(errorCodes.codeOf(removed) || 'STS-SCIM-0012',
@@ -2826,6 +3076,12 @@ class Scim {
       const given = (body && typeof body === 'object') ? body : {};
       const held = await directory.claimCreate(type === 'User'
         ? { username: given.userName } : { group: given.displayName });
+      if (!held.ok && held.reason === 'name') {
+        // 400 invalidValue: the name cannot be stored, and a retry will not
+        // shorten it (#1402). RFC 7644 section 3.12 lists no 503.
+        throw coded('STS-LDAP-0210', new SCIMMY.Types.Error(400,
+          'invalidValue', createClaims.refusalMessage(held)));
+      }
       if (!held.ok && held.reason === 'store') {
         // 500 and not 503: RFC 7644 section 3.12 lists no 503, which is the
         // same reading `scim_auth.ts` makes of its own store failure.
@@ -3207,9 +3463,11 @@ class Scim {
       async (req, res) => {
         const list = await new SCIMMY.Resources.ResourceType(
             this.queryParams(req)).read();
+        // The custom-attribute extension REQUIRED where the realm requires
+        // one of its attributes (#699).
         this.sendScim(req, res,
                       { operation: 'discovery', resourceType: 'ResourceType' },
-                      200, list);
+                      200, this.deps.realmSchema.publishResourceTypes(list));
       }));
 
     app.get(BASE + '/ResourceTypes/:id', this.handle(
@@ -3219,7 +3477,7 @@ class Scim {
             String(req.params.id)).read();
         this.sendScim(req, res,
                       { operation: 'discovery', resourceType: 'ResourceType' },
-                      200, one);
+                      200, this.deps.realmSchema.publishResourceTypes(one));
       }));
 
     app.get(BASE + '/Schemas', this.handle(
@@ -3227,9 +3485,12 @@ class Scim {
       async (req, res) => {
         const list =
           await new SCIMMY.Resources.Schema(this.queryParams(req)).read();
+        // `required` FROM THE REALM'S ATTRIBUTE POLICY (#699, RFC 7643
+        // section 7), on a copy of what scimmy drew: its definitions are the
+        // process's, and it would enforce a `required` on the way out too.
         this.sendScim(req, res,
                       { operation: 'discovery', resourceType: 'Schema' }, 200,
-                      list);
+                      this.deps.realmSchema.publishSchemas(list));
       }));
 
     app.get(BASE + '/Schemas/:id', this.handle(
@@ -3239,7 +3500,7 @@ class Scim {
           await new SCIMMY.Resources.Schema(String(req.params.id)).read();
         this.sendScim(req, res,
                       { operation: 'discovery', resourceType: 'Schema' }, 200,
-                      one);
+                      this.deps.realmSchema.publishSchemas(one));
       }));
 
     app.get(BASE + '/Me', this.handle(

@@ -137,6 +137,34 @@ async function run(t_) {
            }), 'query', MANY).value.fallback.length === 2,
            'and `.default([])` wraps it differently again, and is also found');
 
+  // The portal share form (portal/portal_shared.ts): one checkbox is a
+  // string, two are an array, and a JSON body posts a list of one. opt()
+  // hides the array inside a union, so the union has to count.
+  const SHARE = z.object({
+    scope: z.union([z.literal(''), z.union([
+      z.string().min(1), z.array(z.string().min(1))
+    ])]).optional()
+  });
+  const listed = validation.check(request({ body: { scope: ['view'] } }),
+                                  'body', SHARE);
+  t_.check(listed.ok && listed.value.scope.length === 1 &&
+           listed.value.scope[0] === 'view',
+           'a union of a name and a repeatable name keeps a list of one',
+           listed.ok ? JSON.stringify(listed.value.scope) : listed.code);
+  const posted = validation.check(request({ body: { scope: 'view' } }),
+                                  'body', SHARE);
+  t_.check(posted.ok && posted.value.scope.length === 1 &&
+           posted.value.scope[0] === 'view',
+           'and one occurrence of that union is a list of one',
+           posted.ok ? JSON.stringify(posted.value.scope) : posted.code);
+  const either = z.object({
+    pick: z.union([z.literal('a'), z.literal('b')]).optional()
+  });
+  const twice = validation.check(request({ query: { pick: ['a', 'b'] } }),
+                                 'query', either);
+  t_.check(!twice.ok && twice.code === 'repeated',
+           'a union of two scalars is still taken once', twice.code);
+
   // -----------------------------------------------------------------------
   // 3. CONTROL CHARACTERS, AND WHY THE RULE IS NOT THE SAME IN BOTH GROUPS.
   // -----------------------------------------------------------------------
@@ -516,14 +544,33 @@ async function run(t_) {
     '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM ' +
     '"file:///etc/passwd">]><r>&x;</r>',
     'request');
-  t_.check(!xxe.ok ||
-           xxe.value.documentElement.textContent.indexOf('root:') < 0,
-           'AN EXTERNAL ENTITY IS NOT RESOLVED — measured on @xmldom/xmldom ' +
-           '0.9.10 rather than assumed. It leaves `&x;` as literal text, and ' +
-           'a billion-laughs document expands to three characters. If this ' +
-           'service ever moves to a parser that DOES resolve entities, this ' +
-           'is the assertion that goes red and `parseXml()` is the one place ' +
-           'that has to refuse a DOCTYPE');
+  t_.check(!xxe.ok && /DOCTYPE/.test(xxe.detail || ''),
+           'A DOCUMENT TYPE DECLARATION IS REFUSED before the parser sees ' +
+           'it (common/xml_parser.js, ASVS 5.0.0 1.5.2): no external entity ' +
+           'can be resolved and no internal one expanded, whatever the ' +
+           'parser underneath would have done', xxe.detail);
+  const xmlParser = require('../common/xml_parser');
+  const refusedText = function (text) {
+    const seen = [];
+    try {
+      new xmlParser.DOMParser({ onError: function (level, message) {
+        seen.push(level + ':' + message);
+      } }).parseFromString(text, 'text/xml');
+      return 'parsed';
+    } catch (e) {
+      return require('../common/error_codes').codeOf(e) + ' ' +
+        seen.length;
+    }
+  };
+  t_.equal(refusedText('<!DOCTYPE r><r/>'), 'STS-CORE-0174 1',
+           'the shared parser refuses a DOCTYPE, reports it as a fatal ' +
+           'error to the caller\'s handler, and throws');
+  t_.equal(refusedText('<r><![CDATA[<!ENTITY x "y">]]></r>'),
+           'STS-CORE-0174 1',
+           'and an ENTITY declaration wherever it appears');
+  t_.equal(refusedText('<r a="1">text</r>'), 'parsed',
+           'and parses a document with neither');
+
 
   // -----------------------------------------------------------------------
   // 9e. THE DECOMPRESSION BOMB.

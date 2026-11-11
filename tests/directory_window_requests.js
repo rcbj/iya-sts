@@ -64,6 +64,11 @@
 //      once: `short`), a name a DN cannot hold (`unusable`), a page past
 //      the walk's cap (`capped`, nothing asked) — and a store that
 //      rejects the page's question is coded STS-LDAP-0139.
+//      G16–G20 (#1308): a needle's count is capped at the walk's cap — under
+//      it exact, at it the cap, over it MORE THAN the cap (`countCapped`,
+//      kept across the page's questions, on `/admin-api/rbac`'s
+//      `candidateSearch` and pane), and the console's pane says "more
+//      than".
 //
 // A and the parent's checks run here; B–G run in a child that loads the
 // directory as a windowed request worker (`tests/directory_window.js`'s
@@ -194,13 +199,21 @@ function countingBridge(rows, opts) {
       });
     }
     if (name === 'rdnCount') {
+      // CAPPED AS THE SQL IS (#1308): at most the cap and one more, the cap
+      // clamped by the store's own `rdnCountCap()`. `bridge.countAnswer`,
+      // when set, stands for a store holding more people than this one.
+      bridge.countArgs = args;
+      if (typeof bridge.countAnswer === 'number') {
+        return bridge.countAnswer;
+      }
       const needle = String(args[2] || '').toLowerCase();
       const parent = String(args[1] || '').toLowerCase();
-      return sorted(args[0]).filter(function (r) {
-        const rdn = rdnOf(r.dn_key);
-        return parentOf(r.dn_key) === parent &&
-          (!needle || rdn.indexOf(needle) >= 0);
-      }).length;
+      return Math.min(queries.rdnCountCap(args[3]) + 1,
+        sorted(args[0]).filter(function (r) {
+          const rdn = rdnOf(r.dn_key);
+          return parentOf(r.dn_key) === parent &&
+            (!needle || rdn.indexOf(needle) >= 0);
+        }).length);
     }
     if (name === 'containerPage') {
       const skip = Math.max(0, Math.min(100000,
@@ -1256,6 +1269,82 @@ async function consolePages(t, ldap, rows, users, bridge) {
           'G15. a store that rejects the page\'s question is coded ' +
           'STS-LDAP-0139, which the handler answers 503',
           String(refused && errorCodes.codeOf(refused)));
+
+  // A NEEDLE'S COUNT IS CAPPED (#1308). Under the cap: G7's count, exact,
+  // asked with the walk's cap. At it and over it: `countAnswer` stands for
+  // a store holding more than this one, answering what the SQL's LIMIT
+  // lets it (the cap, or the cap and one more).
+  const cap = ldap.CANDIDATE_COUNT_CAP;
+  bridge.reset();
+  const under = await ldap.candidatePageAsync(0, 20, 'p00001');
+  t.check(cap === 100000 && under.countCapped === false &&
+          under.matched === narrowed.matched &&
+          bridge.countArgs && bridge.countArgs[3] === cap &&
+          under.incomplete === null,
+          'G16. under the cap the count is exact, asked with the cap, and ' +
+          'not capped', JSON.stringify({ matched: under.matched,
+                                         countCapped: under.countCapped,
+                                         args: bridge.countArgs }));
+  bridge.countAnswer = cap;
+  const at = await ldap.candidatePageAsync(0, 0, 'p0');
+  t.check(at.matched === cap && at.countCapped === false &&
+          at.complete === true,
+          'G17. at the cap the count is the cap, and not capped',
+          JSON.stringify(at));
+  bridge.countAnswer = cap + 1;
+  const over = await ldap.candidatePageAsync(0, 0, 'p0');
+  const overPage = await ldap.candidatePageAsync(0, 20, 'p0',
+    { total: over.total, matched: over.matched,
+      countCapped: over.countCapped });
+  t.check(over.matched === cap && over.countCapped === true &&
+          over.complete === false && over.incomplete &&
+          over.incomplete.capped === true && over.incomplete.cap === cap &&
+          overPage.countCapped === true && overPage.rows.length > 0,
+          'G18. over the cap the count is MORE THAN the cap: matched is ' +
+          'the cap, countCapped is true and kept on the next page',
+          JSON.stringify({ over: over, page: overPage.countCapped }));
+  const overList = await Promise.resolve(adminViews.rbacListJson({
+    query: { personq: 'p0' }, headers: {}
+  }));
+  const search = overList.json.candidateSearch;
+  t.check(search.countCapped === true && search.countCap === cap &&
+          search.matched === cap &&
+          overList.json.candidatePane.countCapped === true &&
+          overList.json.candidatesPaging.total === cap,
+          'G19. /admin-api/rbac says so: candidateSearch.countCapped and ' +
+          'countCap, the pane\'s countCapped, paging stopping at the cap',
+          JSON.stringify({ search: search,
+                           paging: overList.json.candidatesPaging }));
+  bridge.countAnswer = null;
+  const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'common',
+    'locales', 'consoleKit', 'en.json'), 'utf8'));
+  const flat = {};
+  Object.keys(en).forEach(function (key) {
+    flat['consoleKit.' + key] = en[key];
+  });
+  const WebKit = require('../admin-ui/web_kit');
+  const tr = require('../common/web_messages').WebTranslator.fromData({
+    negotiated: { locale: 'en', chain: ['en'], catalog: 'en',
+                  direction: 'ltr', matched: true },
+    catalogs: { en: flat } });
+  const paneOf = function (countCapped) {
+    return WebKit.chooserPane({
+      here: { path: '/admin/rbac', query: { personq: 'p0' } },
+      param: 'personq', fromParam: 'personfrom', label: 'Find',
+      placeholder: '', nothing: 'nobody',
+      slice: { matched: cap, from: 0, countCapped: countCapped },
+      entries: [{ key: 'p000001', names: ['p000001'], label: 'p000001',
+                  detail: '', href: '/admin/rbac?person=p000001' }]
+    }, tr);
+  };
+  const saysMore = paneOf(true);
+  const saysOf = paneOf(false);
+  t.check(saysMore.indexOf('of more than ' + cap + ' matches') >= 0 &&
+          saysOf.indexOf('of more than') < 0 &&
+          saysOf.indexOf('of ' + cap + ' matches') >= 0,
+          'G20. the console\'s pane says "of more than 100000 matches" ' +
+          'for a capped count, and "of 100000" only for an exact one',
+          saysMore.slice(-300));
   log.debug('Leaving consolePages().');
 }
 

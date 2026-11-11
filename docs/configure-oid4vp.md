@@ -44,8 +44,9 @@ Identifiers, its chain and its trust anchor.
 
 **What the Verifier supports.** A request is a DCQL query (`dcql_query`, with
 `credential_sets`); DIF Presentation Exchange (`presentation_definition`) is
-not supported. It asks for `dc+sd-jwt`, `jwt_vc_json` or `ldp_vc`, and not
-`mso_mdoc`. The response modes are `direct_post`, `direct_post.jwt`
+not supported. It asks for `dc+sd-jwt`, `jwt_vc_json`, `ldp_vc` or an ISO
+mdoc (`mso_mdoc`, which it verifies and this service does not issue; see
+[Accept an ISO mdoc](#accept-an-iso-mdoc)). The response modes are `direct_post`, `direct_post.jwt`
 (encrypted) and, for SIOPv2, `form_post`; over the Digital Credentials API
 they are `dc_api.jwt` and `dc_api`.
 
@@ -199,6 +200,37 @@ rotation, or when `oid4vp.x509SigningAlgorithm` (default `ES256`) changes.
 | `verifier_attestation` | `oid4vp.verifierAttestation`: a Verifier Attestation JWT an attestation issuer signed. Empty, the realm attests itself, which only a wallet that already trusts it accepts. |
 | `openid_federation` | nothing: the realm's Entity Configuration; see [OpenID Federation](oidfed.md) |
 
+Requests under these prefixes are signed with
+`oid4vp.requestObjectSigningAlgorithm` (RS256 by default). The x509 prefixes
+use `oid4vp.x509SigningAlgorithm`.
+
+### Sign requests with a post-quantum algorithm
+
+Either setting may name ML-DSA, SLH-DSA or a composite ML-DSA algorithm. Only
+a wallet that reads that algorithm can verify the request.
+
+**API:**
+```bash
+api config/set '{"key":"oid4vp.x509SigningAlgorithm","value":"ML-DSA-65"}'
+api config/set '{"key":"oid4vp.requestObjectSigningAlgorithm","value":"ML-DSA-65"}'
+```
+
+The x509 certificate is then issued over the realm's ML-DSA-65 key the next
+time a request needs it.
+
+### Wallet compatibility mode
+
+To turn every post-quantum and composite algorithm off in OpenID4VCI and
+OpenID4VP for a realm, set `oid4vc.walletCompatibility`:
+
+```bash
+api config/set '{"key":"oid4vc.walletCompatibility","value":true}'
+```
+
+A setting that still names one of those algorithms then refuses to sign
+(`STS-VC-0152`) until a classical one is chosen. See
+[Wallet compatibility mode](oid4vp.md#wallet-compatibility-mode).
+
 ## Trust another issuer, and the status rules
 
 By default the Verifier trusts only this realm's own issuer. Taken from
@@ -229,6 +261,66 @@ api config/set '{"key":"oid4vp.requireStatusReference","value":"own-only"}'
 refused in product mode (`STS-CORE-0103`). A foreign issuer's status list is
 fetched, verified against the certificate that verified the credential, and
 kept no longer than `oid4vp.statusListMaxCacheS` (3600 s).
+
+## Accept an ISO mdoc
+
+The Verifier verifies an ISO/IEC 18013-5 mdoc, such as a mobile driving
+licence, presented through OpenID4VP (Appendix B.2). This service issues no
+mdoc, so every mdoc it accepts comes from an issuer you trust. Taken from
+`tests/vc_mdoc.js` and `sts_oid4vp_conformance.js`.
+
+1. Trust the issuer's Issuing Authority CA (IACA) certificate. The
+   document signer certificate inside each mdoc must chain to one of these
+   certificates. With the setting empty, which is the default, every mdoc is
+   refused:
+   ```bash
+   api config/set '{"key":"oid4vp.mdocTrustAnchors",
+     "value":"-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"}'
+   ```
+2. Say which document and namespace to ask for, if not the mobile driving
+   licence (`oid4vp.expectedDoctype`, default `org.iso.18013.5.1.mDL`, and
+   `oid4vp.mdocNamespace`, default `org.iso.18013.5.1`). Each requested claim
+   is asked for as the data element with the same name. `birthdate` is asked
+   for as `birth_date`, and `address` as `resident_address`.
+3. Start a verification for the format:
+   ```bash
+   api verifications/start '{"format":"mso_mdoc","client_id_prefix":"x509_hash",
+     "response_mode":"direct_post.jwt"}'
+   ```
+
+The Verifier checks the document signer's chain and revocation, the issuer's
+signature, the Mobile Security Object's document type and validity, each
+disclosed element's digest, and the device signature over the session
+transcript. The session transcript binds the request's Client Identifier,
+nonce, Response URI and, for `direct_post.jwt`, the encryption key. An mdoc
+that authenticates its device by MAC (`deviceMac`) is refused. Without a
+status reference, an mdoc is refused under `oid4vp.requireStatusReference` =
+`all`. You can exempt the issuer by the thumbprint of its IACA certificate in
+`oid4vp.statusOptionalIssuers`. The refusals are `STS-VC-0156` to
+`STS-VC-0160`.
+
+An mdoc is not accepted for a wallet sign-in or through the Digital
+Credentials API.
+
+## A Verifier for OpenID4VC HAIP
+
+OpenID4VC HAIP 1.0 constrains a Verifier's request. To meet it, use these
+choices on a start or in the realm's settings:
+
+* The `x509_hash` Client Identifier Prefix with a signed request by
+  reference: `"client_id_prefix":"x509_hash"`.
+* An encrypted response: `"response_mode":"direct_post.jwt"`. The request
+  offers both `A128GCM` and `A256GCM`, and a P-256 `ECDH-ES` key while
+  `oid4vp.responseEncryptionKeyAlgs` names `ECDH-ES`, which it does by
+  default. Each request has keys of its own.
+* A `redirect_uri` on the start (section 5.1 requires the Response Endpoint
+  to answer one).
+* `oid4vp.walletInvocation` = `haip-vp`, so a wallet app is handed
+  `haip-vp://`.
+* `dc+sd-jwt` or `mso_mdoc`.
+
+The OpenID Foundation's HAIP verifier plan runs with exactly these choices;
+see [Conformance](conformance.md).
 
 ## Sign in with a wallet
 
@@ -345,8 +437,8 @@ issuance is offered here too. For the embedded debugger's web wallet the path
 is `/vc-presentation-1.html`. In product mode a verification start may name
 another `wallet` only if it is in `oid4vp.allowedWalletUrls`.
 
-The eudi-dev hand run in `tests/eudi-wallet-poc/README.md` (a hand run, not a
-test job; see [Configuring OpenID4VCI](configure-oid4vci.md#a-worked-example-the-eudi-dev-wallet-a-hand-run))
+The eudi-dev hand run in `tests/eudi-wallet-poc/README.md` (a hand run; the
+suite runs the same flow as `tests/protocol/sts_eudi_wallet_portal.js`; see [Configuring OpenID4VCI](configure-oid4vci.md#a-worked-example-the-eudi-dev-wallet-a-hand-run))
 signs in this way: it chooses **Sign in with a wallet** on the screen,
 follows **Open your web wallet** to the wallet on port 8085, and approves the
 wallet's consent dialog.
@@ -369,6 +461,12 @@ api config/set '{"key":"oid4vp.signInSelfIssued","value":true}'
 
 The sign-in screen then offers **Sign in with a self-issued ID**, and the
 portal's `/portal/self-issued` page lets a person enrol a key.
+
+While it is off, `/portal/self-issued` says so and says how to change it. A
+person who holds Admin Write in the realm sees the setting
+(`oid4vp.signInSelfIssued`, or `OID4VP_SIGN_IN_SELF_ISSUED` at start) and a
+link to **Protocols → Verifiable Credentials → OpenID4VP settings**. Anybody
+else is told to ask an administrator to turn that setting on.
 
 **2. Enrol a key**, one of two ways:
 

@@ -63,6 +63,7 @@ const stats = require('./admin_stats');
 // requires this file — so the require closes no cycle and moves no route.
 // Below the realm module because the registry it reads is the ambient realm's.
 const corsPolicy = require('./cors');
+const cookieWire = require('./cookie_wire');
 // The service's account of WHAT HAPPENED, as against how much of it. Required
 // here for the same reason admin_stats.js is and with the same consequence: the
 // call log below is the single place every answered request passes through, so
@@ -156,6 +157,10 @@ app.disable('x-powered-by');
 // function and applies it once more after catching up, to a request it had not
 // placed in a realm. It wraps `res.location` and `res.send` only on a match, so
 // asking twice cannot wrap them twice.
+// What a response carries before anything has decided what it is.
+const EARLY_POLICY = "default-src 'none'; frame-ancestors 'none'; " +
+                     "base-uri 'none'; object-src 'none'";
+
 /**
  * Enters the realm a request's path names: strips the `/realm/<id>` prefix,
  * runs the rest of the request in that realm, and puts the prefix back on
@@ -170,6 +175,13 @@ app.disable('x-powered-by');
  */
 function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
+  // THE FIRST THING THAT HAPPENS TO A RESPONSE (ASVS 5.0.0 3.4.3, 3.4.4, 3.4.6).
+  // This is the first middleware, so a refusal written before the
+  // security-headers middleware below still carries them, and that middleware
+  // replaces them for everything else.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', EARLY_POLICY);
   const pathname = String(req.url || '').split('?')[0];
   const match = realms.matchPath(pathname);
   // A REALM'S OWN LISTENER ANSWERS THAT REALM AND NOTHING ELSE (#99,
@@ -317,6 +329,10 @@ function enterMatchedRealm(req, res, next, match) {
 
 app.use(enterRealm);
 
+// HSTS AND COOKIE NAMES, in the process holding the socket, before anything
+// routes on a cookie's name (#1438, #1441): `common/cookie_wire.ts`.
+app.use(cookieWire.middleware());
+
 // ---------------------------------------------------------------------------
 // WHICH HOSTED APPLICATION A LISTENER ANSWERS (#472, 2026-10-07).
 //
@@ -424,6 +440,26 @@ function enterListener(req, res, next) {
 }
 
 app.use(enterListener);
+
+// A CDN EDGE WITHOUT THIS DEPLOYMENT'S SECRET (#1336, common/client_address.js)
+// is answered here, in the front process and before dispatch, so it costs no
+// worker and reaches nothing. Below the realm middleware, which nothing may be
+// registered above. Above the security headers, so it sets its own policy.
+app.use(function refuseForeignEdge(req, res, next) {
+  log.debug("Entering refuseForeignEdge().");
+  if (!require('./client_address').edgeRefused(req)) {
+    log.debug("Leaving refuseForeignEdge().");
+    return next();
+  }
+  require('./error_codes').mark(res, 'STS-CORE-0165');
+  res.status(403).type('text/plain').set({
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy':
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+  });
+  log.debug("Leaving refuseForeignEdge().");
+  return res.send('Forbidden\n');
+});
 
 // ---------------------------------------------------------------------------
 // THE AMBIENT REQUEST, for the one thing a signer needs a request for and
@@ -620,6 +656,8 @@ app.use(function awaitResumedChainLazily(req, res, next) {
   resumedChainWait(req, res, next);
 });
 
+app.use(require('./request_budget').middleware());
+app.use(require('./protocol_repeats').middleware());
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------
@@ -750,7 +788,8 @@ const CSP_DIRECTIVES = {
   'style-src': "'unsafe-inline'",
   'img-src': "'self' data:",
   'base-uri': "'none'",
-  'frame-ancestors': "'none'"
+  'frame-ancestors': "'none'",
+  'object-src': "'none'"
 };
 
 // ---------------------------------------------------------------------------
@@ -810,6 +849,42 @@ function contentSecurityPolicy(overrides) {
 const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 
 // ---------------------------------------------------------------------------
+// A RESPONSE THAT IS NOT A PAGE NEEDS NO STYLE AND NO IMAGE (Qualys QID
+// 150207, 2026-11-10). The base policy keeps `style-src 'unsafe-inline'` and
+// `img-src data:` for the server-drawn pages that carry an inline <style> or
+// a QR code, and until now a JSON answer, a metadata document or a plain-text
+// refusal carried them too, where they permit nothing anybody wanted. So at
+// the flush (`writeHead()` below) a response still holding the base policy
+// whose type is JSON, XML or plain text gets this one instead. An SVG keeps
+// the base policy: it is XML, and it may style itself. A route that set its
+// own policy is left alone.
+// ---------------------------------------------------------------------------
+const NOT_A_PAGE_POLICY = contentSecurityPolicy({
+  'style-src': null,
+  'img-src': null
+});
+const NOT_A_PAGE_TYPES =
+  /^\s*(?:application\/(?:[^\s;]+\+)?(?:json|xml)|text\/(?:plain|xml))\s*(?:;|$)/i;
+
+// ---------------------------------------------------------------------------
+// THE BROWSER FEATURES A PAGE OF THIS SERVICE MAY USE (Qualys QID 150248,
+// 2026-11-10): WebAuthn (the sign-in, the portal's passkeys, the console's
+// re-authentication), the Digital Credentials API (the wallet sign-in), the
+// clipboard (the console's copy buttons) and full screen, each for this
+// origin only, and nothing else for anybody. A page this service frames
+// (the OP iframe) inherits the same list. The geolocation page is a map drawn
+// on the server and never asks the browser where it is.
+// ---------------------------------------------------------------------------
+const PERMISSIONS_POLICY = [
+  'publickey-credentials-get=(self)', 'publickey-credentials-create=(self)',
+  'digital-credentials-get=(self)', 'clipboard-write=(self)',
+  'fullscreen=(self)', 'camera=()', 'microphone=()', 'geolocation=()',
+  'payment=()', 'usb=()', 'serial=()', 'hid=()', 'bluetooth=()', 'midi=()',
+  'display-capture=()', 'accelerometer=()', 'gyroscope=()',
+  'magnetometer=()', 'browsing-topics=()'
+].join(', ');
+
+// ---------------------------------------------------------------------------
 // THE ONE PAGE THAT MAY BE FRAMED, AND ONLY BY NAMED ORIGINS (#121).
 //
 // OpenID Connect Session Management 1.0's OP iframe exists to be loaded in a
@@ -822,14 +897,51 @@ const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 // `contentSecurityPolicy()` above keeps its rule unchanged: this is a second,
 // named door, so that a relaxation cannot grow into a framing permission by
 // accident.
+//
+// **ITS `script-src` NAMES SCRIPTS EXACTLY, OR NOT AT ALL** (#1297). The OP
+// iframe carries its script inline under the SHA-256 of that text (rcbj's
+// option A, `oauth-oidc/CLAUDE.md` 3ax), so this door must take a hash
+// source — and a framed page is exactly where `'unsafe-inline'` would hurt
+// most. So the only tokens it passes in `script-src` are `'none'`, `'self'`
+// and `'sha256-…'` / `'sha384-…'` / `'sha512-…'`; anything else
+// (`'unsafe-inline'`, `'unsafe-eval'`, `*`, a host, a scheme, a nonce) is
+// dropped, and nothing left is `'none'`. Nothing calls it with one today;
+// the rule is here so nothing can.
 // ---------------------------------------------------------------------------
+const FRAMED_SCRIPT_SOURCE =
+  /^'(?:none|self|sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2})'$/;
+
+/**
+ * Narrows a `script-src` value to the sources that name a script exactly.
+ *
+ * @param value - the value asked for, or null/undefined for the base's
+ * @returns the value with every other token dropped, `'none'` when empty
+ */
+function exactScriptSources(value) {
+  log.debug("Entering exactScriptSources().");
+  const kept = String(value === null || value === undefined
+    ? CSP_DIRECTIVES['script-src'] : value)
+    .split(/\s+/)
+    .filter(function (one) {
+      return FRAMED_SCRIPT_SOURCE.test(one);
+    });
+  // `'none'` beside a source is meaningless (CSP3 section 2.3.1), so it
+  // goes when anything else is kept.
+  const sources = kept.filter(function (one) {
+    return one !== "'none'";
+  });
+  log.debug("Leaving exactScriptSources(). " + sources.length + " kept.");
+  return sources.length ? sources.join(' ') : "'none'";
+}
+
 /**
  * Builds the policy for the one page that may be framed (the OpenID Connect
  * Session Management OP iframe), with `frame-ancestors` narrowed to named
  * origins.
  *
  * Anything that is not an http or https origin is dropped, and an empty list is
- * `'none'`.
+ * `'none'`. `script-src` keeps only `'self'` and hash sources (#1297): never
+ * `'unsafe-inline'`.
  *
  * @param origins - the origins that may frame the page
  * @param overrides - directive names to values, as for
@@ -845,6 +957,7 @@ function framedContentSecurityPolicy(origins, overrides) {
     });
   const merged = Object.assign({}, CSP_DIRECTIVES, overrides || {});
   merged['base-uri'] = CSP_DIRECTIVES['base-uri'];
+  merged['script-src'] = exactScriptSources(merged['script-src']);
   merged['frame-ancestors'] = allowed.length ? allowed.join(' ')
                                              : CSP_DIRECTIVES['frame-ancestors'];
   log.debug("Leaving framedContentSecurityPolicy(). " + allowed.length +
@@ -856,12 +969,19 @@ function framedContentSecurityPolicy(origins, overrides) {
   }).join('; ');
 }
 
+// THE TYPES ASVS 5.0.0 4.1.1 NAMES (#1439): `text/*`, `application/xml` and
+// `*/*+xml`. JSON is left out on purpose: RFC 8259 section 11 registers no
+// charset parameter for it, and `application/jrd+json` is a JSON type.
+const CHARSET_TYPES =
+  /^\s*(?:text\/[^\s;]+|application\/xml|[^\s;/]+\/[^\s;]+\+xml)\s*(?:;|$)/i;
+
 app.use(function (req, res, next) {
   log.debug("Entering the security-headers middleware.");
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', PERMISSIONS_POLICY);
   // ---------------------------------------------------------------------
   // NO RESPONSE LEAVES THIS SERVICE WITHOUT `frame-ancestors`, INCLUDING THE
   // ONES THIS SERVICE DID NOT WRITE.
@@ -897,6 +1017,33 @@ app.use(function (req, res, next) {
     if (current.indexOf('frame-ancestors') < 0) {
       res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
       res.setHeader('X-Frame-Options', 'DENY');
+    }
+    // NOT A PAGE (`NOT_A_PAGE_POLICY` above): read after the line above, so
+    // a policy just put back is narrowed too.
+    const shown = String(res.getHeader('Content-Type') || '');
+    if (String(res.getHeader('Content-Security-Policy') || '') ===
+        CONTENT_SECURITY_POLICY && NOT_A_PAGE_TYPES.test(shown)) {
+      res.setHeader('Content-Security-Policy', NOT_A_PAGE_POLICY);
+    }
+    // A SIGN-IN STEP'S ID LEAVES THE ADDRESS (#1454): `common/step_address.ts`.
+    const location = res.getHeader('Location');
+    if (typeof location === 'string' && location.indexOf('?') > 0) {
+      const authn = require('../authn/authn');
+      const stepAddress = require('./step_address');
+      // SPNEGO's has no script to read a fragment (#1487).
+      const spnego = stepAddress.spnegoStep(location);
+      if (spnego) {
+        res.append('Set-Cookie', stepAddress.stepCookie(spnego.id));
+        res.setHeader('Location', spnego.location);
+      } else {
+        res.setHeader('Location', stepAddress.hide(location,
+          authn.stepApplication));
+      }
+    }
+    const type = res.getHeader('Content-Type');
+    if (typeof type === 'string' && CHARSET_TYPES.test(type) &&
+        !/;\s*charset=/i.test(type)) {
+      res.setHeader('Content-Type', type + '; charset=utf-8');
     }
     log.debug("Leaving writeHead().");
     return writeHead.apply(res, arguments);

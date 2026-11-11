@@ -34,20 +34,15 @@
 // a default at load.
 // ---------------------------------------------------------------------------
 
-import forge = require('node-forge');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
-import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
 type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
-  function () {
-    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
-  }, helpers.log);
+const bbs2023: Bbs2023 = stsCrypto.bbs;
 import InstanceSlot = require('../common/instance_slot');
 // The identity registry, for ONE call at the generator endpoint below: a DID
 // this service mints is an identity it has created, and this is the funnel the
@@ -64,6 +59,8 @@ import config = require('../common/config');
 // is marked on the response object and never written into a response.
 import errorCodes = require('../common/error_codes');
 import vcConfigs = require('./vc_configs');
+// The wallet compatibility mode (#657).
+import VcAlgorithms = require('./vc_algorithms');
 
 interface VcDidDeps {
   log: typeof helpers.log;
@@ -553,8 +550,8 @@ class VcDid {
   private didSigner(): { alg: string; key: any; kid: string } {
     const { log, config, STS, signingKeyFor } = this.deps;
     log.debug("Entering VcDid.didSigner().");
-    const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
-                       'RS256');
+    const alg = stsCrypto.signaturePolicy.underPqcOnly(String(
+      config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
     if (alg === 'RS256') {
       log.debug("Leaving VcDid.didSigner(). RS256.");
       return { alg: 'RS256', key: STS.privateKey, kid: STS.kid };
@@ -571,8 +568,8 @@ class VcDid {
                                             kid: string }> {
     const { log, config, STS, signingKeyForAsync } = this.deps;
     log.debug("Entering VcDid.didSignerAsync().");
-    const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
-                       'RS256');
+    const alg = stsCrypto.signaturePolicy.underPqcOnly(String(
+      config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
     if (alg === 'RS256') {
       log.debug("Leaving VcDid.didSignerAsync(). RS256.");
       return { alg: 'RS256', key: STS.privateKey, kid: STS.kid };
@@ -604,21 +601,14 @@ class VcDid {
     // The same RSA public key the JWKS publishes, read out of the certificate
     // the same way — one source of truth for what this issuer signs with, so a
     // DID document and a JWKS can never describe different keys.
-    const pub: any = forge.pki.certificateFromPem(STS.certPem).publicKey;
-    const b64uHex = function (hex) {
-      log.debug("Entering b64uHex().");
-      log.debug("Leaving b64uHex().");
-      return Buffer.from(hex.length % 2 ? '0' + hex : hex, 'hex')
-                   .toString('base64')
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    };
+    const pub = stsCrypto.rsaPublicJwkOf(STS.certPem);
     const methods: any[] = [{
       id: did + '#' + STS.kid,
       type: 'JsonWebKey2020',
       controller: did,
       publicKeyJwk: {
         kty: 'RSA', use: 'sig', alg: 'RS256', kid: STS.kid,
-        n: b64uHex(pub.n.toString(16)), e: b64uHex(pub.e.toString(16))
+        n: pub.n, e: pub.e
       }
     }];
     // THE CREDENTIAL KEY, WHERE IT IS NOT THE RSA ONE (2026-09-12). A realm
@@ -647,8 +637,8 @@ class VcDid {
     // (2026-10-23): the realm then signs nothing with it — didSignerAsync()
     // would be refused (STS-KEYS-0158) — and publishes it nowhere, so the
     // document is the RSA key's and the rest below.
-    const credentialAlg = String(this.deps.config.value(
-      'oid4vci.credentialSigningAlgorithm') || 'RS256');
+    const credentialAlg = stsCrypto.signaturePolicy.underPqcOnly(String(
+      this.deps.config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
     const pqOff = stsCrypto.isPqJwsAlg(credentialAlg) &&
       !stsCrypto.postQuantumSigningOn();
     const signer = pqOff ? { alg: 'RS256', key: STS.privateKey, kid: STS.kid }
@@ -678,6 +668,35 @@ class VcDid {
                   'the ' + signer.alg + ' key credentials are signed with ' +
                   'is not in this realm\'s key set, so the DID document ' +
                   'cannot publish it.');
+      }
+    }
+    // THE KEY A SIGNED OPENID4VP REQUEST IS SIGNED WITH (#657), where it is
+    // not one already listed: under the decentralized_identifier prefix the
+    // request names its key as `<this DID>#<kid>`, so a wallet resolving this
+    // document must find it — `oid4vp.requestObjectSigningAlgorithm`'s key,
+    // which may be a curve or post-quantum one. Not one the wallet
+    // compatibility mode or keys.postQuantumSigning turns off: no request is
+    // signed with it then.
+    const requestAlg = String(this.deps.config.value(
+      'oid4vp.requestObjectSigningAlgorithm') || 'RS256');
+    if (requestAlg !== 'RS256' && !VcAlgorithms.turnedOff(requestAlg) &&
+        !(stsCrypto.isPqJwsAlg(requestAlg) &&
+          !stsCrypto.postQuantumSigningOn())) {
+      try {
+        const own = await helpers.ownPublicJwkForAsync(requestAlg,
+                                                      'vp-request-object');
+        const id = did + '#' + own.kid;
+        if (!methods.some(function (m: any) { return m.id === id; })) {
+          methods.push({ id: id, type: 'JsonWebKey2020', controller: did,
+                         publicKeyJwk: own.publicJwk });
+        }
+      } catch (e) {
+        log.debug("Caught in VcDid.stsDidDocument(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-VC-0155') + 'the ' + requestAlg +
+                  ' key OpenID4VP requests are signed with could not be ' +
+                  'published in the DID document: ' +
+                  ((e && e.message) || e));
       }
     }
     try {
@@ -829,11 +848,14 @@ class VcDid {
     // still a DID URL into this DID's own document, which is what the DIF
     // specification requires of the JWT form.
     const signer = this.didSigner();
+    // On libuv's thread pool (#1368): a post-quantum signature took seconds of
+    // this thread when made here synchronously.
     // certificate-header: none — the DIF specification allows exactly `alg`
     // and `kid` in this header, so an x5c or x5u would make the linkage
     // non-conformant (common/jose_certificate_header.js).
-    const token = stsCrypto.signJws({ iss: did, sub: did, nbf: now, exp: exp,
-                                      vc: vc }, signer.key, {
+    const token = await stsCrypto.signJwsAsync({ iss: did, sub: did, nbf: now,
+                                                 exp: exp, vc: vc },
+                                               signer.key, {
       algorithm: signer.alg,
       noTimestamp: true,
       header: { alg: signer.alg, kid: did + '#' + signer.kid,

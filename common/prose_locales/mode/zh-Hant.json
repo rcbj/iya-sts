@@ -215,6 +215,30 @@
     "en": "f2869db882e1f25d",
     "text": "該登入會被拒絕（STS-VC-0127）並記入稽核，當事人須在 /portal/self-issued 上證明該 DID 以重新登記。在兩種模式下，固定紀錄未列出的金鑰都會被拒絕（STS-VC-0126）。"
   },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "個人資料相片的位址依已固定的公開基礎 URL 建立"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "未固定公開基礎 URL 時，在 /portal 設定或從聯合夥伴複製的相片會以請求到達的主機為位址，權杖會攜帶該位址。"
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "在 global.publicBaseUrl 固定基礎位址之前，設定相片會遭拒絕（STS-PORTAL-0635），夥伴的相片也不會被複製（STS-FED-0220）：Host 標頭絕不會成為權杖所攜帶位址的一部分。"
+  },
+  "mode.requirements.person-did-base.what": {
+    "en": "58a07bbd2f445d15",
+    "text": "個人發布的 did:web 以已固定的公開基礎 URL 產生"
+  },
+  "mode.requirements.person-did-base.development": {
+    "en": "11156d2823005717",
+    "text": "未固定公開基礎 URL 時，從 /portal/self-issued 發布的 DID 以請求到達的位址建構，且該位址永久成為 DID 的一部分。"
+  },
+  "mode.requirements.person-did-base.product": {
+    "en": "b7878f2f5c762598",
+    "text": "在 global.publicBaseUrl（或可驗證憑證應用程式所公布的監聽器）固定基礎位址之前，發布會遭拒（STS-VC-0168）：Host 標頭絕不會成為已儲存識別碼的一部分。"
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "安全金鑰的證明聲明會在金鑰註冊前驗證"
@@ -344,8 +368,8 @@
     "text": "saml.signatureAlgorithm rsa-sha1 會以 SHA-1 簽署每個 XML 簽章，saml2.keyTransportAlgorithm rsa-1_5（或應用程式的 saml2KeyTransportAlgorithm）會以 RSAES-PKCS1-v1_5 包裝加密斷言的金鑰，開啟 saml.allowSha1Signatures 會在本服務驗證的簽章中接受 SHA-1，pki.signatureAlgorithm sha1-rsa 或 sha1-ecdsa（或指名其中之一的建置表單）會讓憑證授權單位以 SHA-1 簽署，以 rsa-1_5 加密給本服務的 XML 元素會被解開，而開啟 scim.digestMd5 會在 SCIM 的 HTTP Digest 中提供並接受 MD5。除非設定，否則每一項都是關閉的。"
   },
   "mode.requirements.broken-algorithms.product": {
-    "en": "8e22d816464c845c",
-    "text": "每個弱值在讀取時都會被「忽略」（記錄一次，STS-CORE-0106），並在寫入時被拒絕（STS-CORE-0103，應用程式上為 STS-REG-0193）：XML 以預設的 rsa-sha256 簽署，金鑰以 rsa-oaep-mgf1p 包裝，SHA-1 簽章會被拒絕，指名 SHA-1 的 CA 建置或金鑰對會被拒絕（STS-PKI-0191），而從在開發模式下建置之分支繼承的 SHA-1 會被替換為該金鑰的預設值，rsa-1_5 EncryptedKey 則會在解開之前被拒絕（STS-KEYS-0070）——XML Encryption 1.1 第 6.1.2 節。scim.digestMd5 無關緊要，因為產品模式完全不提供 Digest（STS-SCIM-0056）。每項設定中較強的值仍可使用。JOSE RSA1_5 在兩種模式下都會被拒絕。"
+    "en": "173ed3ea10d31cc3",
+    "text": "每個弱值在讀取時都會被「忽略」（記錄一次，STS-CORE-0106），並在寫入時被拒絕（STS-CORE-0103，應用程式上為 STS-REG-0193）：XML 以預設的 rsa-sha256 簽署，金鑰以 rsa-oaep 包裝（只有在 crypto.allowLegacyHashes 開啟時才以 rsa-oaep-mgf1p 包裝），SHA-1 簽章會被拒絕，指名 SHA-1 的 CA 建置或金鑰對會被拒絕（STS-PKI-0191），而從在開發模式下建置之分支繼承的 SHA-1 會被替換為該金鑰的預設值，rsa-1_5 EncryptedKey 則會在解開之前被拒絕（STS-KEYS-0070）——XML Encryption 1.1 第 6.1.2 節。scim.digestMd5 無關緊要，因為產品模式完全不提供 Digest（STS-SCIM-0056）。每項設定中較強的值仍可使用。JOSE RSA1_5 在兩種模式下都會被拒絕。"
   },
   "mode.requirements.jose-key-sizes.what": {
     "en": "73495c403f54e4f5",
@@ -359,6 +383,18 @@
     "en": "d1fb3763f55efbde",
     "text": "兩者都會在簽章檢查時被拒絕，包括共用驗證程式、verifyJws() 中，以及（RSA）WebAuthn 金鑰。產生的 client_secret 預設為 48 個隨機位元組（oauth2.registeredSecretBytes），長度足以用於 HS512。在「兩種」模式下，空的 HMAC 金鑰、小於 3 或為偶數的 RSA 指數（這是偽造，而非弱金鑰）、帶有 ROCA 指紋的 RSA 模數（CVE-2017-15361）、use 不是 \"sig\" 或 key_ops 缺少 \"verify\" 的 JWK，以及不是標準 base64url 的區段，都會被拒絕。"
   },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "只有清單列出時才使用 secp256k1"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "ES256K 像其他任何演算法一樣用於簽章、被提供並被接受。"
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "除非 keys.signingAlgorithms 列出 ES256K，否則不用它簽章也不提供它；除非 keys.acceptedSigningAlgorithms 或 keys.signingAlgorithms 列出它（COSE 為 cose.acceptedAlgorithms），否則拒絕使用它的簽章。發佈的演算法清單（包括 DPoP 的）不包含它。"
+  },
   "mode.requirements.xml-ecdsa-curves.what": {
     "en": "858a80a68d7c0582",
     "text": "XML ECDSA 簽章只在至少 256 位元的曲線上驗證"
@@ -368,8 +404,8 @@
     "text": "node 能讀取的任何曲線上的金鑰都能通過驗證——包括 secp160、secp192、secp224——因此可以測試使用此類曲線的夥伴。對其中最小者而言「比 NIST SP 800-57 的 112 位元下限寬鬆」。"
   },
   "mode.requirements.xml-ecdsa-curves.product": {
-    "en": "cdb3f7be9fda1083",
-    "text": "只有 P-256、P-384、P-521、secp256k1 以及 brainpoolP256r1 或更大的曲線能通過驗證；其他任何曲線都會被拒絕（STS-KEYS-0077），使用此類曲線的憑證不會被註冊。"
+    "en": "83ca2ed6f0591c63",
+    "text": "只有 P-256、P-384、P-521 以及 brainpoolP256r1 及更大的曲線可以驗證，secp256k1 僅在 keys.acceptedSigningAlgorithms 或 keys.signingAlgorithms 列出 ES256K 時可以；其他任何曲線都會被拒絕（STS-KEYS-0077），使用這類曲線的憑證不會被登記。"
   },
   "mode.requirements.kerberos-deprecated-enctypes.what": {
     "en": "d0088e020fb9a13e",
@@ -380,8 +416,152 @@
     "text": "krb5.enctypes 預設為 18,17,20,19,23：每個帳戶在其 AES 金鑰旁都有一把 rc4-hmac 金鑰，rc4only 測試帳戶只有這一把，而只提供 23 的用戶端也能取得票證——因此可以測試 RC4 用戶端。"
   },
   "mode.requirements.kerberos-deprecated-enctypes.product": {
-    "en": "f781591fe2d565a1",
-    "text": "讀取清單時「不含」23（記錄一次，STS-CORE-0106），指名它的寫入會被拒絕（STS-CORE-0103）。不會為 krbtgt、服務或人員推導、儲存或放入 keytab 任何 RC4 金鑰；絕不使用該 enctype 的金鑰或票證；只提供該 enctype 的 AS-REQ 或 TGS-REQ 會以 KDC_ERR_ETYPE_NOSUPP 拒絕（STS-KRB-0156）；TGS-REQ、AP-REQ 或 FAST armor 中的 RC4 工作階段金鑰或子金鑰會被拒絕（STS-KRB-0157、0158、0159）。剩下的是 AES（17、18、19、20）。"
+    "en": "7bb2840e2f96210a",
+    "text": "讀取清單時「不含」23（記錄一次，STS-CORE-0106），指名它的寫入會被拒絕（STS-CORE-0103）。不會為 krbtgt、服務或人員推導、儲存或放入 keytab 任何 RC4 金鑰；絕不使用該 enctype 的金鑰或票證；只提供該 enctype 的 AS-REQ 或 TGS-REQ 會以 KDC_ERR_ETYPE_NOSUPP 拒絕（STS-KRB-0156）；TGS-REQ、AP-REQ 或 FAST armor 中的 RC4 工作階段金鑰或子金鑰會被拒絕（STS-KRB-0157、0158、0159）。剩下的是 AES。"
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "存取 SCIM 與 Shared Signals 需要角色"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "任何已通過驗證的人員都可讀寫，無論使用哪種配置。"
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "不帶範圍的配置需要 Admin Read 才能讀取、Admin Write 才能寫入，除非開啟 security.allowUnscopedPeople。OAuth 範圍與應用程式憑證照常運作。"
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "指定的檔案必須位於允許的目錄中"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "管理員指定的檔案依其給定的路徑讀取。"
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "僅當檔案的實際路徑位於 security.fileRoots 列出的目錄內時才讀取，且回應不說明路徑失敗的原因。"
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "JWE 內容加密僅使用 AES-GCM"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "提供並接受 A128CBC-HS256、A192CBC-HS384 與 A256CBC-HS512，預設值為 A128CBC-HS256。"
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "僅提供或接受 AES-GCM，用戶端未指定 enc 時也使用它，除非開啟 crypto.allowCbcJwe。"
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "不使用遭禁止的雜湊函式"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "可使用基於 SHA-1 的 OAEP、SHA-1 PKINIT 金鑰衍生與 S4U2Self 的 HMAC-MD5 總和檢查碼。"
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "除非開啟 crypto.allowLegacyHashes，否則它們處於關閉狀態。為相容驗證器應用程式，TOTP 預設仍為 HMAC-SHA-1；PKINIT 保留 RFC 4556 定義的 SHA-1 paChecksum。"
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "沒有帳戶使用預設管理員名稱"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "啟動管理員為 admin，所有測試與逐步操作都以此登入。"
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "名為 admin、root、sa 或 administrator 或沒有名稱的啟動管理員會取得一個無法預測的產生名稱，並在首次啟動時與其密碼一併顯示，除非開啟 admin.allowDefaultUsername。"
+  },
+  "mode.requirements.main-port-https.what": {
+    "en": "6469fbe1118f7dc7",
+    "text": "主要連接埠使用 HTTPS"
+  },
+  "mode.requirements.main-port-https.development": {
+    "en": "87bcf933b05d0ab4",
+    "text": "STS_HTTPS=false 會讓主要連接埠以明文執行。"
+  },
+  "mode.requirements.main-port-https.product": {
+    "en": "064bd0e9c6300f83",
+    "text": "global.https 關閉的程序不會啟動（STS-CORE-0167）。明文 HTTP 的撤銷與 SCEP 接聽程式保留，符合 RFC 5280、RFC 5019 與 RFC 8894 的預期。"
+  },
+  "mode.requirements.public-certificate.what": {
+    "en": "5a7a979998d1c228",
+    "text": "接聽程式憑證受公眾信任"
+  },
+  "mode.requirements.public-certificate.development": {
+    "en": "306ab4dd61adc58f",
+    "text": "由本服務自己的憑證授權單位簽發。"
+  },
+  "mode.requirements.public-certificate.product": {
+    "en": "6071a82728577fff",
+    "text": "請將 tls.certificateFile 設定為受公眾信任的憑證鏈。本服務簽發的憑證不會阻止啟動，並顯示在此列。"
+  },
+  "mode.requirements.legacy-ciphers.what": {
+    "en": "8afeedbfdbbba221",
+    "text": "SCEP、XML 加密與 Kerberos 避免使用舊式密碼"
+  },
+  "mode.requirements.legacy-ciphers.development": {
+    "en": "66885aac9214f230",
+    "text": "SCEP 會回應，XML 加密可使用 AES-CBC，Kerberos 提供 enctype 17 與 18。"
+  },
+  "mode.requirements.legacy-ciphers.product": {
+    "en": "0515d1605d6ccd1f",
+    "text": "僅在 scep.allowInProduct 開啟時 SCEP 才回應（STS-SCEP-0067）。XML 加密只選擇並接受 AES-GCM（STS-KEYS-0195）。除非開啟 krb5.allowSha1Enctypes，否則 Kerberos 使用 19 與 20。"
+  },
+  "mode.requirements.declared-grants.what": {
+    "en": "cd33b5ef6c585827",
+    "text": "用戶端只使用其所需的授權類型"
+  },
+  "mode.requirements.declared-grants.development": {
+    "en": "77b6bd6b92513433",
+    "text": "未宣告授權類型的用戶端可使用任何授權類型。"
+  },
+  "mode.requirements.declared-grants.product": {
+    "en": "636b38aec05ad6d5",
+    "text": "未宣告授權類型的用戶端只能使用 authorization_code 與 refresh_token，除非開啟 oauth2.allowUndeclaredGrants（STS-OAUTH-0598）。"
+  },
+  "mode.requirements.prefixed-cookies.what": {
+    "en": "d3919ebba2136f69",
+    "text": "每個 Cookie 都帶有 __Host- 或 __Secure- 前置詞"
+  },
+  "mode.requirements.prefixed-cookies.development": {
+    "en": "0dd3f83e4dc57f69",
+    "text": "Cookie 保留其一般名稱（sts_session 等），便於在瀏覽器工具中檢視。"
+  },
+  "mode.requirements.prefixed-cookies.product": {
+    "en": "48f9c0318f104300",
+    "text": "透過 TLS 時，每個 Cookie 都帶 __Host- 前置詞，帶 Domain 者則帶 __Secure- 前置詞，沒有前置詞的 Cookie 會遭忽略。前置詞由持有通訊端的程序統一套用一次。"
+  },
+  "mode.requirements.access-decisions-fail-closed.what": {
+    "en": "e0e941b53824cae6",
+    "text": "無法作出的存取決定視為拒絕"
+  },
+  "mode.requirements.access-decisions-fail-closed.development": {
+    "en": "7e18ee029324d928",
+    "text": "決策器擲回例外、傳回空回應，或檢查未指明資源或動作時，要求會被允許並記錄，讓部分載入的開發程序仍能回應。"
+  },
+  "mode.requirements.access-decisions-fail-closed.product": {
+    "en": "905a335779a6c533",
+    "text": "上述每種情況都會遭拒絕（STS-XACML-0051、0181、0182）。xacml.enforceAccess 與 roles.enforceIssuance 仍可用於從阻止自身修復的原則中復原，其中任一項關閉時都會顯示在此列。"
+  },
+  "mode.requirements.strict-transport-security.what": {
+    "en": "161b93a2d80010e9",
+    "text": "透過 TLS 的每個回應都告知瀏覽器只使用 HTTPS（Strict-Transport-Security）"
+  },
+  "mode.requirements.strict-transport-security.development": {
+    "en": "915a47de70ff3589",
+    "text": "不傳送此標頭：HSTS 會綁定主機名稱的所有連接埠，並取消對不受信任憑證的手動放行；在 localhost 上，這項影響會在容器結束後仍然存在。"
+  },
+  "mode.requirements.strict-transport-security.product": {
+    "en": "c36ea27a011458e7",
+    "text": "透過 TLS 抵達的每個回應都帶有 Strict-Transport-Security: max-age=31536000（RFC 6797）。明文 HTTP 的撤銷與 SCEP 接聽程式上的回應絕不帶此標頭。"
   },
   "mode.requirements.signed-assertions.what": {
     "en": "61c90b75f7b0a5e3",
@@ -536,8 +716,8 @@
     "text": "以 `none` 簽署的請求物件（OpenID Connect Core 6.1）會被接受，除非要求已簽署的請求物件——由 oauth2.requireSignedRequestObject、用戶端的項目或授權伺服器的設定檔要求。已註冊的 request_uri 可以是純 http，且可回應任何媒體類型；兩者皆會記錄。"
   },
   "mode.requirements.request-objects.product": {
-    "en": "b2ec3d6648490690",
-    "text": "請求物件必須經過簽署（RFC 9101 第 4 節），否則以 invalid_request_object 拒絕。已註冊的 request_uri 必須是 https，且必須回應 application/oauth-authz-req+jwt 或 application/jwt，否則請求以 invalid_request_uri 拒絕。在兩種模式下，只有在用戶端註冊了 request_uri 時才會擷取它。"
+    "en": "247799ea9e0595ef",
+    "text": "請求物件必須經過簽署（RFC 9101 第 4 節），否則以 invalid_request_object 拒絕。已註冊的 request_uri 必須是 https，且必須回應 application/oauth-authz-req+jwt 或 application/jwt，否則請求以 invalid_request_uri 拒絕；其主機解析為迴路、私有、鏈路本地或保留位址時同樣拒絕。在兩種模式下，只有在用戶端註冊了 request_uri 時才會擷取它。"
   },
   "mode.requirements.management-api.what": {
     "en": "7e9bb52b567f5c3c",
@@ -911,6 +1091,18 @@
     "en": "68f6ce868376fbc6",
     "text": "在硬性失敗下「拒絕」（pki.revocationRequireDistributionPoint=auto，STS-PKI-0190）：由 CA 簽發——而非自我簽署——且未指名發布點也未指名回應程式的憑證永遠無法撤銷，因此其下被竊的金鑰在到期之前都有效。帶有 RFC 9608 noRevAvail 的憑證會被接受，因為其簽發者已宣告不存在撤銷資訊（第 4 節略過此檢查）。將此設定設為 off 會接受其餘的憑證，並發出警告。"
   },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "所依賴的每一張 X.509 憑證都透過同一道門接受完整檢查（路徑、有效期、撤銷、用途欄位）"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "關閉（pki.paranoid=auto）：每個使用情境的行為與 #1360 之前相同 — 已釘選的憑證不檢查有效期，對外部對等端、證明者或夥伴的簽署者不查詢撤銷，且只有在某處以手動方式要求時才檢查 extendedKeyUsage。將 pki.paranoid=on 即可在此演練這些檢查。"
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "開啟（pki.paranoid=auto）：common/certificate_trust.ts 要求每一張憑證 — 無論是任一方向的 TLS 交握、簽章之下、作為加密收件者，或在證明中 — 都必須具備通往本服務已知信任錨（用戶端或簽署者信任存放區、領域的 CA、某個系列自己的設定）的路徑、此刻有效、未被撤銷，並符合其使用情境所要求的 basicConstraints、keyUsage 與 extendedKeyUsage；使用情境從未執行的檢查視為拒絕。每個使用情境有一列 pki.paranoid<UseCase>，關閉時會恢復該使用情境先前的行為，並在 /admin/pki/trust 上以紅色顯示（STS-PKI-0239）。"
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "以相互 TLS 證明的 GNAP 金鑰，是受信任授權單位簽發給用戶端的憑證"
@@ -1082,5 +1274,137 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "此設定僅適用於開發模式。"
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "要求所有人使用第二因素"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "由驗證原則決定，預設僅要求持有第二因素的人員提供。"
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "無論原則如何，所有人都需要第二因素，除非開啟 authn.allowOptionalSecondFactor。"
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "工作階段與 RSA 金鑰採用更嚴格的預設值"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "工作階段沒有閒置逾時，新 RSA 金鑰為 2048 位元。"
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "工作階段閒置 30 分鐘後結束，新 RSA 金鑰為 3072 位元，除非設定另有規定。"
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "引導密碼不寫入日誌"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "產生的密碼寫入服務日誌。"
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "寫入僅此服務可讀的檔案，日誌說明位置，除非開啟 admin.logBootstrapPassword。"
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "每個用戶端都必須使用 PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "未傳送 code_challenge 的機密用戶端僅被記錄。"
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "除非開啟 oauth2.allowConfidentialWithoutPkce，否則拒絕。"
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "檔案以加密方式到達惡意軟體掃描器"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "可使用 icap:// 或 icaps:// 位址。"
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "僅使用 icaps:// 位址，除非開啟 malwareScan.allowCleartext。"
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "清除第二因素需要說明身分證明"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "管理員只需指定使用者即可清除因素。"
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "管理員必須說明如何驗證此人的身分。該說明會記錄於稽核日誌。"
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "嚴格解讀通訊協定輸入"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "重複的權杖參數取最後一個值，合作夥伴的登出權杖無需明確類型，開啟 global.trustProxy 且無清單時相信任何人轉送的位址，內部錯誤文字會傳回給呼叫端。"
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "重複的權杖參數會被拒絕，合作夥伴的登出權杖必須為 logout+jwt 類型（除非開啟 federation.allowUntypedLogoutToken），轉送位址需要 global.trustedProxies，內部錯誤文字只保留在日誌中。"
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "日誌和資料庫中沒有眾所周知的密鑰"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "偵錯層級下，日誌包含完整的要求和回應，資料庫可以使用示範密碼。"
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "9dc455e8deb093a6",
+    "text": "要求日誌在任何層級都不包含認證資料和本文；已簽署的權杖或斷言只按其大小和摘要記錄；預設的資料庫密碼會使服務停止，除非開啟 persistence.allowDefaultDatabasePassword。"
+  },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "後端密鑰來自密鑰儲存區"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "金鑰加密金鑰可以是檔案，資料庫密碼可以在檔案中或連線字串中。"
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "金鑰加密金鑰來自密鑰儲存區或金鑰管理服務，資料庫密碼來自密鑰儲存區。檔案或連線字串中的密碼會使服務停止，除非開啟 secrets.allowLocalSecrets。先前的金鑰加密金鑰仍可以是檔案，以便部署能夠遷移出去。"
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "稽核日誌應傳送至此服務之外"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "不提示稽核匯出。"
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "請新增稽核匯出目的地，使日誌副本在此服務遭入侵時不受影響。在新增之前，服務會為該信任領域記錄警告。"
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "單一登入在讓使用者登入某個應用程式前先詢問"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0、SAML 1.1 和 WS-Federation 直接以使用者的工作階段讓其登入，不作詢問。"
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "在 SAML 2.0、SAML 1.1 或 WS-Federation 讓使用者登入某個應用程式前，每個應用程式詢問一次，並保存回答。saml2.ssoConsent、saml11.ssoConsent 和 wsfed.ssoConsent 可按協定關閉此功能，應用程式自身的值優先於它們。"
   }
 }

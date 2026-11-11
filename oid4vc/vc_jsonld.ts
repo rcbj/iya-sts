@@ -51,7 +51,7 @@
 //                        status_list_2021_v1.json       6dd06a52…870e4
 //   https://w3id.org/citizenship/v4rc1
 //                        citizenship_v4rc1.json         5038c738…cf2279d7c
-//   https://idptools.com/contexts/identity/v1
+//   https://iyasec.io/contexts/identity/v1
 //                        common/crypto_impl/contexts/, this issuer's own
 //
 // The W3C documents are under the W3C Software and Document Licence; the
@@ -101,8 +101,8 @@ const CONTEXT_FILES: Record<string, [string, string]> = {
   'https://www.w3.org/ns/credentials/v2': [VENDORED, 'credentials_v2.json'],
   'https://www.w3.org/2018/credentials/v1': [VENDORED,
                                              'credentials_v1.json'],
-  'https://idptools.com/contexts/identity/v1': [VENDORED,
-                                                'idptools_identity_v1.json'],
+  'https://iyasec.io/contexts/identity/v1': [VENDORED,
+                                             'iya_identity_v1.json'],
   'https://www.w3.org/ns/credentials/examples/v2': [OWN,
     'credentials_examples_v2.json'],
   'https://w3id.org/security/data-integrity/v1': [OWN,

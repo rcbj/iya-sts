@@ -41,7 +41,7 @@
 //      missing a required attribute and a modify taking one away are
 //      objectClassViolation (65) under 0162 and 0164.
 //   I. The policies view and the API's action rows carry the kind, its
-//      two acts and the catalogue.
+//      three acts (update since #700) and the catalogue.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -224,6 +224,18 @@ function checks(t, product, dev, tag) {
             'save with no list are refused under their codes',
             JSON.stringify([password.errors, member.errors, other.errors,
                             none.errors]));
+    const codedDesc = attributePolicy.save('default', {
+      requiredAttributes: ['mail'],
+      description: 'kept for the operator (STS-LDAP-0001).'
+    });
+    const afterCoded = attributePolicy.read('default');
+    t.check(!codedDesc.ok && codeOf(codedDesc) === 'STS-LDAP-0211' &&
+            (codedDesc.errors || []).join(' ').indexOf('STS-') < 0 &&
+            afterCoded.description.indexOf('STS-LDAP-0001') < 0 &&
+            afterCoded.required.indexOf('telephoneNumber') >= 0,
+            'B. a description carrying an operator code is refused and not ' +
+            'stored',
+            JSON.stringify(codedDesc.errors || codedDesc));
     const ticked = attributePolicy.save('default', { form: 'console' });
     t.check(ticked.ok && JSON.stringify(ticked.profile.required) ===
               JSON.stringify(['uid', 'cn', 'sn']) &&
@@ -485,7 +497,7 @@ function view(t, product) {
             /^\(\|\(!\(uid=\*\)\)/.test(member.missingFilter) &&
             answer.kinds.filter(function (one) {
               return one.id === 'attributes';
-            })[0].actions.length === 4,
+            })[0].actions.length === 5,
             'I. the policies view carries the catalogue, the acts and the ' +
             'filter that finds the people who lack one',
             JSON.stringify(member && { filter: member.missingFilter,

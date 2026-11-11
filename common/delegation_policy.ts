@@ -770,7 +770,9 @@ class DelegationPolicy {
               decision.refusal);
     const actor = '"' + facts.actor.id + '"';
     const subject = '"' + facts.subject.id + '"';
-    const target = '"' + (facts.target.id || '') + '"';
+    // A target with no name is called that, rather than quoted as "".
+    const target = facts.target.id ? '"' + facts.target.id + '"'
+      : 'the unnamed target';
     const what = decision.semantics || 'act';
     const noTarget = question.protocol === 'WS-Trust' ? 'no AppliesTo'
       : question.protocol === 'Kerberos' ? 'no service'

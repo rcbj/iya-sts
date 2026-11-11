@@ -96,12 +96,16 @@
     "text": "Isang MAY-ARI (#607), gaya ng OWNER_READ. Pinahihintulutan ang permission na owner:write: pagbabago, sa pamamagitan ng /admin-api, ng mga object na pag-aari niya, sa loob ng mga aksiyong pinapayagan ng owner rule ng access-control policy sa bawat uri — hindi kailanman paggawa, pagbura o pagpapalit ng pangalan ng isa, at hindi kailanman isang object na protektado mula sa mga may-ari nito."
   },
   "roles.native.ADMIN_READ.what": {
-    "en": "7d6481dffa0d517c",
-    "text": "Admin Read: bawat READ sa /admin-api. Hawak ng mga Admin Read at Admin Write group ng console (nagpapahiwatig ng Admin Read ang Admin Write) at ng mga application na nakalista rito. Nag-a-authorize ng admin:read permission."
+    "en": "a2f5894dfa0c0db6",
+    "text": "Admin Read: bawat PAGBASA sa /admin-api. Hawak ng mga grupong Admin Read, Admin Write at Security Administrator ng console (kasama sa dalawa pa ang Admin Read) at ng mga application na nakalista rito. Pinahihintulutan ang permission na admin:read."
   },
   "roles.native.ADMIN_WRITE.what": {
     "en": "ecff5f0bc1a5a16a",
     "text": "Admin Write: bawat /admin-api operation na may BINABAGO. Hawak ng Admin Write group ng console at ng mga application na nakalista rito. Nag-a-authorize ng admin:write permission. Hindi nito ipinapahiwatig ang Admin Read sa isang token: puwedeng dalhin ng token ang alinmang scope, at hinihingi ng policy ang kailangan ng operation."
+  },
+  "roles.native.SECURITY_ADMIN.what": {
+    "en": "78a47eddc95e9db3",
+    "text": "Security Administrator: ang mga operasyon ng /admin-api na nagbabago ng seguridad — isang patakaran sa Directory → Policies, isang patakarang itinakda sa isang application, grupo o tao, ang pagbibigay ng role na ito, at ang account ng taong may hawak nito. Hindi ito naaabot ng Admin Write. Hawak ng grupong Security Administrator ng console at ng mga application na nakalista rito. Pinahihintulutan ang permission na admin:security."
   },
   "roles.native.ADMIN_CONSOLE.what": {
     "en": "5661913dba04f59a",
@@ -164,7 +168,15 @@
     "text": "Admin Write"
   },
   "roles.console.write.what": {
-    "en": "476b1b61c16b02e4",
-    "text": "I-post ang bawat form sa console na ito — mag-revoke ng token, magdagdag ng custom claim, magbago ng setting, gumawa ng tao, magbigay ng role. KASAMA NITO ANG READ, kaya kayang gamitin ng miyembro ng role na ito lang ang buong console."
+    "en": "933448e4b37b9349",
+    "text": "I-post ang bawat form sa console na ito — bawiin ang isang token, magdagdag ng custom claim, baguhin ang isang setting, gumawa ng tao, magbigay ng role — maliban sa mga nagbabago ng seguridad, na sa Security Administrator. KASAMA ANG PAGBASA, kaya magagamit ng miyembro ng role na ito lamang ang natitirang bahagi ng console."
+  },
+  "roles.console.security.label": {
+    "en": "eb026fe212244f20",
+    "text": "Security Administrator"
+  },
+  "roles.console.security.what": {
+    "en": "238007ebd246b860",
+    "text": "Baguhin ang seguridad: i-save o i-reset ang isang patakaran sa Directory → Policies, magtakda ng patakaran sa isang application, grupo o tao, ibigay o bawiin ang role na ito, at kumilos sa account ng taong may hawak nito. Wala sa mga ito ang magagawa ng Admin Write. KASAMA ANG PAGBASA AT HINDI ANG PAGSULAT, kaya maaari itong hawakan ng taong hindi naman administrator."
   }
 }

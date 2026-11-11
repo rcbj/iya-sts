@@ -44,6 +44,7 @@
   "noneOnEntry": "nada en la entrada: sin claim",
   "wouldBeGenerated": "se generaría",
   "entrysOwn": "la de la entrada",
+  "customDefinedBy": "atributo personalizado de este dominio ({syntax})",
   "carries": "Lleva {n} atributo(s) de directorio: ",
   "carriesNone": "No lleva ningún atributo de directorio. Marque algunos y pulse Actualizar.",
   "colIn": "Incluido",

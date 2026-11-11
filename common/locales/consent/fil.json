@@ -7,6 +7,7 @@
   "scope.permissionNamed": "ang permiso na “{name}”",
   "scope.ordinary": "isang karaniwang scope: walang ibinibigay na kahulugan dito ang serbisyong ito at ilalagay ito sa scope claim ng token nang walang pagbabago",
   "scope.did": "ang iyong gustong DID — ang decentralized identifier na pinatunayan mo gamit ang iyong wallet at minarkahang gusto sa iyong pahina ng mga self-issued ID. Pareho ang halaga nito para sa bawat application na pagsasabihan mo, kaya maaari ka nilang makilala bilang iisang tao",
+  "scope.signIn": "i-sign in ka sa application na ito. Malalaman nito kung sino ka, sa sign-in response ng protocol nito, sa tuwing bubuksan mo ito.",
   "detail.understood": "naiintindihan ng <code>{resource}</code>, at ipapadala ang access token sa <code>{audience}</code>",
   "detail.described": "{description} — naiintindihan ng <code>{resource}</code>, at ipapadala ang access token sa <code>{audience}</code>",
   "detailsNote": "May dalang <strong>{count, plural, one {# authorization detail} other {# authorization detail}}</strong> ang request na ito (RFC 9396). Tatanungin ka tungkol sa mga ito sa bawat pagkakataon: ang Payagan ay pagsang-ayon sa eksaktong nakalista, para sa iisang request na ito lang.",
@@ -18,5 +19,10 @@
   "deny": "Tanggihan",
   "meta.allow": "Ang Payagan ay nagsusulat ng isang <code>{attribute}</code> na value bawat scope sa iyong entry sa ilalim ng <code>ou=users</code>, para hindi ka na tanungin ulit tungkol sa mga ito. Ang Tanggihan ay nagbabalik ng <code>access_denied</code> sa application at walang itinatala.",
   "meta.nothingIssued": "Wala pang naibibigay. Ang screen na ito ay <code>oauth2.consentRequired</code>, na naka-on bilang default; sa /admin/consent mababasa at mababawi ang bawat sagot na ibinigay dito.",
-  "meta.consentingFor": "Pumapayag para sa: <code>{protocol}</code>"
+  "meta.consentingFor": "Pumapayag para sa: <code>{protocol}</code>",
+  "client.policy": "Patakaran sa privacy",
+  "client.tos": "Mga tuntunin ng serbisyo",
+  "resources": "Gagamitin ito sa:",
+  "duration": "Tatagal ito hanggang bawiin mo sa iyong account.",
+  "lifetime": "Sa bawat pagkakataon, maaari nitong panatilihin ang access nang hanggang {hours} oras."
 }

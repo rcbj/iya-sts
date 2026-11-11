@@ -36,7 +36,21 @@ name: Build container
 on:
   push:
     branches: [main, develop]
+  # A RELEASE BUILD (#1317) is started by hand: tick `release` and name the
+  # build number. Every push, and a run started without the tick, is an
+  # ordinary build numbered by its UTC build instant. The Dockerfiles' stamp
+  # refuses a release with no valid number, so a typo fails the build rather
+  # than publishing a dated "release".
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'A release build: name its build number below'
+        type: boolean
+        default: false
+      build_number:
+        description: 'The release build number (e.g. 0 for 1.0.0.0)'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -99,13 +113,16 @@ jobs:
       # image in its own cache and `docker run rcbj/sts` would pull from Docker
       # Hub instead — a stale published image passing for the one just built.
       #
-      # THE IMAGE NUMBERS ITSELF (M.N.O). The Dockerfile's
-      # `node common/version.js --stamp` fixes the build number while the
-      # image is built — the UTC build instant, the number every console page
-      # shows at its foot — so no BUILD_NUMBER is passed (it was the workflow's
-      # run number until 2026-10-02), and the publish step below reads the
-      # version back out of the image. The XACML PEP image is stamped by its
-      # own build, a moment later, so its number is its own.
+      # THE IMAGE NUMBERS ITSELF (#1317). The version is the repo-root
+      # VERSION file's M.N.O followed by a build number, which the
+      # Dockerfile's `node common/version.js --stamp` fixes while the image
+      # is built: the UTC build instant, unless the run was started as a
+      # RELEASE, when it is the number the run names. Both inputs are passed
+      # on every build; outside a release STS_RELEASE is false and the stamp
+      # ignores BUILD_NUMBER. The publish step below reads the version back
+      # out of the image. The XACML PEP image is stamped by its own build, a
+      # moment later, so an ordinary build's number is its own; a release
+      # names the same number for both.
       # GIT_COMMIT has to be passed because `.dockerignore` excludes
       # `.git`, so the build context carries no history for `git rev-parse` to
       # read.
@@ -118,6 +135,8 @@ jobs:
           push: false
           build-args: |
             GIT_COMMIT=${{ github.sha }}
+            STS_RELEASE=${{ inputs.release && 'true' || 'false' }}
+            BUILD_NUMBER=${{ inputs.build_number }}
           # Every FROM from the ghcr.io mirror, as docker-compose-run-tests.yml's
           # x-mirror-contexts does (`ubuntu`, not `ubuntu:latest`: BuildKit
           # drops `:latest` when it looks a name up).
@@ -128,8 +147,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # THE REMOTE XACML PEP (2026-10-02), with the same build number and
-      # commit, so the two images published from one run carry one version.
+      # THE REMOTE XACML PEP (2026-10-02), with the same commit and the same
+      # release inputs, so the two images published from one run carry one
+      # release (VERSION's), name one commit, and — for a release — one
+      # build number.
       # Its one FROM comes from the mirror, as the service's do.
       - name: Build the XACML PEP image
         uses: docker/build-push-action@v6
@@ -141,6 +162,8 @@ jobs:
           push: false
           build-args: |
             GIT_COMMIT=${{ github.sha }}
+            STS_RELEASE=${{ inputs.release && 'true' || 'false' }}
+            BUILD_NUMBER=${{ inputs.build_number }}
           build-contexts: |
             rust:1.97-bookworm=docker-image://ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
             debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
@@ -252,17 +275,19 @@ jobs:
       # THE IMAGE REPORTS THE BUILD IT WAS STAMPED WITH, which is the only
       # place that claim can be checked at all: the stamp is written during the
       # image build, and every other test in this repository runs against a
-      # service started from a checkout, where there IS no stamp and the number
-      # is computed at startup. So `stamped: true` and the build number reaching
-      # the version are exactly what no other test can see.
+      # service started from a checkout, where there IS no stamp and the record
+      # is computed at startup. So `stamped: true` and the stamped build
+      # number, release flag and instant reaching `/admin-api` are exactly
+      # what no other test can see. And the version is VERSION's release
+      # followed by that build number (#1317).
       #
       # It also catches the specific way this goes quietly wrong: a `--stamp`
       # that failed, or a `version.json` that ended up in the wrong directory,
-      # leaves a container computing its version at startup and reporting a
-      # perfectly plausible number that changes on every restart.
+      # leaves a container computing its record at startup and reporting a
+      # perfectly plausible build instant that changes on every restart.
       #
       # `/admin-api` rather than the front page: it answers JSON and carries
-      # `build` and `stamped` as fields rather than as something to be parsed
+      # `builtAt` and `stamped` as fields rather than as something to be parsed
       # out of HTML. It is gated since 2026-09-09, so the request carries the
       # token minted above.
       - name: Check the image reports the build it was stamped with
@@ -270,16 +295,43 @@ jobs:
           body=$(curl -fsSk -H "Authorization: Bearer ${STS_ADMIN_API_TOKEN}" \
             https://localhost:8081/admin-api)
           echo "${body}" | head -8
-          stamped="$(docker run --rm --entrypoint cat rcbj/sts:ci \
-                     version.json | jq -r .build)"
-          echo "${body}" | grep -q "\"build\": \"${stamped}\"" || {
-            echo "The service did not report the build number its image" >&2
-            echo "was stamped with (${stamped})." >&2
+          stamp="$(docker run --rm --entrypoint cat rcbj/sts:ci version.json)"
+          echo "${stamp}"
+          for field in version build release builtAt; do
+            want="$(echo "${stamp}" | jq -c ".${field}")"
+            echo "${body}" | jq -e --argjson want "${want}" \
+              ".${field} == \$want" > /dev/null || {
+              echo "The service did not report the ${field} its image was" >&2
+              echo "stamped with (${want})." >&2
+              exit 1
+            }
+          done
+          release="$(tr -d '[:space:]' < VERSION)"
+          build="$(echo "${stamp}" | jq -r .build)"
+          echo "${body}" | jq -e --arg v "${release}.${build}" \
+            '.version == $v' > /dev/null || {
+            echo "The service's version is not VERSION's ${release}" >&2
+            echo "followed by its build number ${build} (#1317)." >&2
             exit 1
           }
+          if [ "${{ inputs.release && 'true' || 'false' }}" = true ]; then
+            test "${build}" = "${{ inputs.build_number }}" &&
+              echo "${stamp}" | jq -e '.release == true' > /dev/null || {
+              echo "A release run must stamp release true and build" >&2
+              echo "${{ inputs.build_number }}; it stamped ${build}." >&2
+              exit 1
+            }
+          else
+            echo "${build}" | grep -Eq '^[0-9]{14}$' &&
+              echo "${stamp}" | jq -e '.release == false' > /dev/null || {
+              echo "An ordinary build is numbered by its UTC build instant" >&2
+              echo "(YYYYMMDDHHMMSS) and is not a release; it is ${build}." >&2
+              exit 1
+            }
+          fi
           echo "${body}" | grep -q '"stamped": true' || {
             echo "The container computed its version at startup rather than" >&2
-            echo "reading a stamp, so its build number would change on every" >&2
+            echo "reading a stamp, so its build instant would change on every" >&2
             echo "restart." >&2
             exit 1
           }
@@ -310,9 +362,13 @@ jobs:
       # so nothing published failed to start, register its routes or report
       # its stamp.
       #
-      # Tagged M.N.O, the version the image itself reports (read out of its
-      # version.json, so the tag and the stamp cannot disagree), and a
-      # floating `latest`. From main ONLY (rcbj, 2026-10-02): develop
+      # Tagged with the FULL version the image itself reports, M.N.O.<build>
+      # (read out of its version.json, so the tag and the stamp cannot
+      # disagree), and a floating `latest`. A RELEASE build (#1317) is also
+      # tagged with the bare release, `M.N.O` (`:1.0.0`); an ordinary build
+      # no longer touches that tag, so `:1.0.0` names the release that was
+      # cut and is not overwritten by every later merge. From main ONLY
+      # (rcbj, 2026-10-02): develop
       # published a `develop` tag for a day, and too much went out that was
       # not ready. A develop build, and a run started by hand from any branch
       # but main, publishes nothing. The image's
@@ -353,13 +409,26 @@ jobs:
           for v in "${VERSION}" "${PEP_VERSION}"; do
             test -n "${v}" && test "${v}" != null
           done
+          # The bare M.N.O tag, for a release build only (#1317).
+          RELEASE_TAG=""
+          if [ "$(docker run --rm --entrypoint cat rcbj/sts:ci \
+                  version.json | jq -r .release)" = true ]; then
+            RELEASE_TAG="$(tr -d '[:space:]' < VERSION)"
+            test "${PEP_VERSION}" = "${VERSION}" || {
+              echo "A release must number both images alike:" >&2
+              echo "${VERSION} against PEP ${PEP_VERSION}." >&2
+              exit 1
+            }
+          fi
           echo "float=${FLOAT}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "pep_version=${PEP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           if [ -z "${FLOAT}" ]; then
             echo "Not main: nothing is published."
           else
-            echo "Publishing ${VERSION} (PEP ${PEP_VERSION}) and ${FLOAT}."
+            echo "Publishing ${VERSION} (PEP ${PEP_VERSION})," \
+                 "${RELEASE_TAG:-no release tag} and ${FLOAT}."
           fi
 
       - name: Log in to Docker Hub
@@ -383,6 +452,7 @@ jobs:
           VERSION: ${{ steps.publish-plan.outputs.version }}
           PEP_VERSION: ${{ steps.publish-plan.outputs.pep_version }}
           FLOAT: ${{ steps.publish-plan.outputs.float }}
+          RELEASE_TAG: ${{ steps.publish-plan.outputs.release_tag }}
         run: |
           set -euo pipefail
           rows=""
@@ -390,7 +460,9 @@ jobs:
           while read -r src name version; do
             for registry in ghcr.io/rcbj docker.io/iyasec; do
               dst="${registry}/${name}"
-              for tag in "${version}" "${FLOAT}"; do
+              # RELEASE_TAG is empty for an ordinary build, and the word
+              # splitting drops it.
+              for tag in "${version}" "${FLOAT}" ${RELEASE_TAG}; do
                 docker tag "${src}" "${dst}:${tag}"
                 docker push "${dst}:${tag}"
               done
@@ -407,7 +479,7 @@ jobs:
           rcbj/xacml-pep:ci iya-sts-xacml-pep ${PEP_VERSION}
           EOF
           {
-            echo "### Published images (also \`${FLOAT}\`)"
+            echo "### Published images (also \`${FLOAT}\`${RELEASE_TAG:+ and \`${RELEASE_TAG}\`})"
             echo ""
             echo "| Image | Digest |"
             echo "|---|---|"

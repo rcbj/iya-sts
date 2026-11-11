@@ -21,6 +21,7 @@
   "title.commands": "OpenID Provider Commands",
   "title.claims": "Claims personalizados",
   "title.config": "Configuración",
+  "title.config-dump": "Volcado de la configuración",
   "title.consent": "Consentimiento",
   "title.crypto-metadata": "Criptografía",
   "title.home": "Consola de administración",
@@ -68,6 +69,7 @@
   "title.ldap-roles": "Entradas de roles",
   "title.ldap-spiffe": "Entradas de SPIFFE",
   "title.listeners": "Escuchas",
+  "title.malwareScanning": "Análisis de malware",
   "title.logout": "Cierre de sesión",
   "title.mail": "Correo",
   "title.mail-outbox": "Bandeja de salida de correo",
@@ -107,6 +109,7 @@
   "title.ssf-dead-letters": "Mensajes fallidos",
   "title.ssf-transmitters": "Señales de socios",
   "title.tls-connection": "Conexión TLS",
+  "title.pki-trust": "Confianza de PKI",
   "title.tls-trust": "Almacén de confianza de certificados de cliente",
   "title.token-lifetimes": "Duración de los tokens",
   "title.tokens-credential": "Tokens — una credencial",
@@ -140,5 +143,6 @@
   "title.vc-verifier-config": "Solicitud del verificador",
   "title.worker-pools": "Grupos de workers",
   "title.broadcast": "Difundir un anuncio",
+  "title.sign-in-appearance": "Apariencia del inicio de sesión",
   "title.post-login-activities": "Actividades posteriores al inicio de sesión"
 }

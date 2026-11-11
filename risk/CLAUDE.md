@@ -662,6 +662,35 @@ requester's and, since #499, the `OnBehalfOf` / `ActAs` subject's).
 **A standing held per process is a known gap**: a node that did not see the
 sign-in or read the store holds none, and decides that ticket on roles.
 
+**#666 (found 2026-10-17 on 8081, two request workers): A HELD STANDING WAS
+STALE, AND A PRE-AUTHORIZED CODE READ IT.** A sign-in refused on risk
+(HIGH, `automated-client`) left the person HIGH in the worker that assessed
+it; their next sign-in, UNSCORED, was assessed in the OTHER worker and wrote
+UNSCORED to the store — so "This was me" found nothing to lower and was
+right not to. The first worker went on holding HIGH for
+`risk.standingValidMinutes` (720), and the wallet's token request for an
+offer made on `/portal/wallet` named no session, so the gate read that
+standing and refused every credential for twelve hours. Two changes:
+
+* **A pre-authorized code is judged on the session its offer was made on.**
+  `vc_offers.ts` records the offer's `sessionId` on the code;
+  `oauth2.ts` passes it to the issuance check as `decided_on_session_id`
+  (warmed into the session window first) — not `session_id`, so the tokens
+  are not made the session's own (no `sid`, not ended with it). An offer
+  made on no session, or on one that has ended, still reads the standing.
+* **A change of LEVEL is a `risk-standing` change row** (the postgres
+  driver's `riskUpsertSubject()`, from `RETURNING previous_level`), and
+  `persistence.js`'s applier calls `noteStandingMoved()`: the standing this
+  process holds is dropped at once and read back from the store
+  (`loadStanding()`). `standingNames` maps realm and `sub` to the held key,
+  since the row names the `sub` and the standing is held by name. Only a
+  change of level is recorded, and not a person's first standing, so a
+  sign-in that leaves the level alone writes nothing more. A row that cannot
+  be recorded is `STS-RISK-0054`; the standing is still written. On the
+  memory store there is nothing to announce: processes do not share it.
+
+`tests/portal_wallet.js` 2f, 3b, 3c and `tests/risk_decisions.js` D3, D4.
+
 **WS-TRUST AND THE KDC DECIDE AT THE DOOR (#499, rcbj's decision 2,
 2026-10-06).** Until then both decided on the STANDING an earlier sign-in
 left — WS-Trust read it from the store, then assessed the sign-in after its
@@ -682,8 +711,8 @@ their score would have moved. Now:
   ambient audit source), RECORDS it — so the TGS-REQs after it decide on it
   — and asks the gate with no application, so only a Deny about risk
   refuses: `KDC_ERR_POLICY` with `STS-RISK-0016` / `0017`. An OTP meets a
-  second-factor step-up, a hardware PKINIT key a security-key one. No new
-  require reaches the parent project's COPY set (`kerberos/CLAUDE.md`).
+  second-factor step-up, a hardware PKINIT key a security-key one. (No new
+  require reached the parent project's COPY set, owed until #1280.)
 
 The evidence signals refuse exactly as before: they are in the assessment the
 door now decides on. `tests/risk_decisions.js` M1–M3 hold both doors: a

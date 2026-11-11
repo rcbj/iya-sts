@@ -169,6 +169,7 @@ interface SsfAuthDeps {
   config: { value(key: string): any };
   mode: {
     gatesSharedSignals(): boolean;
+    restrictsUnscopedPeople(): boolean;
     verifiesCredentials(): boolean;
   };
   credentials: {
@@ -464,13 +465,18 @@ class SsfAuth {
    * offered and a request is given (its `as_uri` needs the request's base).
    *
    * @param req - the request, when there is one
+   * @param need - on a 403, the permission the operation needs: the Bearer
+   *   challenge's `scope` then names the scopes that grant it (RFC 6750
+   *   section 3.1), not every published scope (#695)
    * @returns the challenge strings
    */
-  challenges(req?: AuthRequest | null): string[] {
+  challenges(req?: AuthRequest | null, need?: string): string[] {
     const { helpers: { log, baseUrlOf }, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.challenges().");
+    const named = need && need !== 'none'
+      ? this.acceptedFor(need) : ssfScopes.published();
     const list = ['Bearer realm="' + this.realm() + '", scope="' +
-      ssfScopes.published().join(' ') + '"'];
+      named.join(' ') + '"'];
     if (this.basicOffered()) {
       list.push('Basic realm="' + this.realm() + '", charset="UTF-8"');
     }
@@ -575,10 +581,12 @@ class SsfAuth {
         ' and this operation needs one of "' + accepted.join('", "') +
         '". Write includes read. A read scope reads a stream, its status ' +
         'and its poll queue, and a write scope ' +
-        'changes what this transmitter delivers and to whom. Ask for the ' +
+        'changes what this transmitter delivers and to whom, including ' +
+        'acknowledging polled events (ack, setErrs). Ask for the ' +
         'one you need, as a client whose oauthAllowedScope declares that ' +
         'permission.',
-        { 'WWW-Authenticate': this.challenges() }, 'access_denied');
+        { 'WWW-Authenticate': this.challenges(null, need) },
+        'access_denied');
     }
     const withdrawn = this.undeclaredRefusal(String(claims.client_id || ''),
                                              need, scopes);
@@ -635,7 +643,7 @@ class SsfAuth {
       'includes read; a write stays honoured while a write scope stays ' +
       'declared. Removing the declaration from the application cuts off ' +
       'tokens already issued.',
-      { 'WWW-Authenticate': this.challenges() }, 'access_denied');
+      { 'WWW-Authenticate': this.challenges(null, need) }, 'access_denied');
   }
 
   // The names an operation accepts: every published name that grants the
@@ -844,7 +852,8 @@ class SsfAuth {
         '". Write includes read. Ask for one as ' +
         'a reference string, or as an object of type "ssf" with the "' +
         need + '" action.',
-        { 'WWW-Authenticate': this.challenges(req) }, 'access_denied');
+        { 'WWW-Authenticate': this.challenges(req, need) },
+        'access_denied');
     }
     const held = this.gnapHeldScopes(record.access);
     const instanceId = String(record.instanceId || '');
@@ -937,9 +946,16 @@ class SsfAuth {
         { 'WWW-Authenticate': this.challenges() });
     }
     // `door: 'ssf'` (#101): a password-only door — see credentials.ts.
+    const websecurity = require('../common/websecurity');
+    if (websecurity.doorBlocked('ssf-basic', req, user)) {
+      log.debug("Leaving SsfAuth.attemptBasic(). Too many failures.");
+      return this.refusal('STS-SSF-0156', 401, 'Too many failed attempts. Wait and ' +
+        'try again.', { 'WWW-Authenticate': this.challenges() });
+    }
     const checked = credentials.verify(user, password,
                                        { via: 'SSF HTTP Basic', door: 'ssf' });
     if (!checked.ok) {
+      websecurity.doorFailed('ssf-basic', req, user);
       log.debug("Leaving SsfAuth.attemptBasic(). Refused: " + checked.reason);
       return this.refusal(checked.reason === 'reserved-refusal'
         ? 'STS-SSF-0008' : 'STS-SSF-0009', 401,
@@ -956,6 +972,21 @@ class SsfAuth {
           'directory entry, and a person with none cannot authenticate at ' +
           'all.',
         { 'WWW-Authenticate': this.challenges() });
+    }
+    websecurity.doorSucceeded('ssf-basic', req, user);
+    // A PASSWORD CARRIES NO SCOPE (#1473, ASVS 5.0.0 8.2.1): both scopes are
+    // granted below, so in product the person must hold Admin Write.
+    if (mode.restrictsUnscopedPeople()) {
+      const held = (require('../admin-ui/admin_rbac').rolesOf(user) || {}).groups;
+      const writes = Array.isArray(held) && held.some(function (one: any) {
+        return one.role === 'write';
+      });
+      if (!writes) {
+        log.debug("Leaving SsfAuth.attemptBasic(). No console role.");
+        return this.refusal('STS-SSF-0157', 403, 'This credential carries no scope, ' +
+          'and the person it names does not hold Admin Write. Use an OAuth ' +
+          'access token.', {});
+      }
     }
     log.debug("Leaving SsfAuth.attemptBasic(). Accepted " + user + '.');
     return { ok: true, status: 200, scheme: 'basic', principal: user,
@@ -1184,7 +1215,8 @@ class SsfAuth {
           'the application would be issued: the scope declared on the ' +
           'application, and the application a member of SSF_READ or ' +
           'SSF_MANAGE.',
-          { 'WWW-Authenticate': this.challenges(req) }, 'access_denied');
+          { 'WWW-Authenticate': this.challenges(req, need) },
+          'access_denied');
       }
     }
     log.debug("Leaving SsfAuth.attemptClientCertificate(). Accepted " +

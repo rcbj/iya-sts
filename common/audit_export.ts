@@ -59,7 +59,6 @@
 // ===========================================================================
 
 import bunyan = require('bunyan');
-import crypto = require('crypto');
 import dgram = require('dgram');
 import dns = require('dns');
 import fs = require('fs');
@@ -68,6 +67,8 @@ import https = require('https');
 import net = require('net');
 import os = require('os');
 import path = require('path');
+// Every random value is crypto.js's (`tests/crypto_centralised.js`).
+import stsCrypto = require('./crypto');
 import tls = require('tls');
 import audit = require('./audit');
 import config = require('./config');
@@ -158,6 +159,9 @@ const VERBS: Json = {
  * The composition root builds one instance. The facades forward to it.
  */
 class AuditExport {
+  // The realms already warned about having no destination.
+  private readonly warnedNoDestination = new Set<string>();
+
   // Open file handles, keyed by realm and destination. A socket is not a
   // row, so it lives on the process (`CLAUDE.md`, *One front process*).
   private readonly files = new Map<string, Json>();
@@ -208,7 +212,7 @@ class AuditExport {
       tls: tls,
       path: path,
       os: os,
-      crypto: crypto
+      crypto: stsCrypto
     };
     log.debug("Leaving AuditExport.defaultDeps().");
     return deps;
@@ -277,6 +281,16 @@ class AuditExport {
     const why = realmBook.run(realm, function (): string {
       return self.offHere();
     });
+    // A COPY OF THE LOG LEAVES THIS SERVICE ONLY IF SOMEBODY SAYS WHERE TO (ASVS
+    // 5.0.0 16.4.3). Said once per realm per process, as the state it is.
+    if (why && !self.warnedNoDestination.has(realmId) &&
+        require('./mode').warnsWithoutAuditDestination()) {
+      self.warnedNoDestination.add(realmId);
+      logger.warn(require('./error_codes').tag('STS-AUDIT-0017') + 'audit ' +
+        'export: realm "' + realmId + '" sends its audit log nowhere (' + why +
+        ') A compromise of this service could alter it. Add a destination ' +
+        'under Audit export.');
+    }
     logger.debug("Leaving AuditExport.offIn(). " + (why || 'on'));
     return why;
   }
@@ -473,7 +487,7 @@ class AuditExport {
         if (result.kind === 'ack-wait') {
           cursor.ackId = result.ackId;
           cursor.ackChannel = cursor.ackChannel ||
-            this.deps.crypto.randomUUID();
+            this.deps.crypto.randomUuid();
           cursor.inFlightId = event.id;
           cursor.inFlightSeq = Number(row.seq);
           cursor.lastDisposition = 'accepted';
@@ -1152,7 +1166,7 @@ class AuditExport {
                why: screened.why, retryAfterMs: 0 };
     }
     if (!cursor.ackChannel) {
-      cursor.ackChannel = this.deps.crypto.randomUUID();
+      cursor.ackChannel = this.deps.crypto.randomUuid();
     }
     const headers: Json = {
       Authorization: 'Splunk ' + token,
@@ -2002,8 +2016,14 @@ class AuditExport {
     } else if (action === 'test') {
       result = await this.testDestination(asked);
     } else {
+      // THE SENTENCE NAMES THE ACTIONS, in the "Unknown action" shape every
+      // other resource writes: `sts_admin_api_operations` compares it with
+      // the OpenAPI document, and `tests/admin_api.js`'s parity check reads
+      // it. "The action is not known." turned both checks off for this
+      // resource (2026-11-02).
       result = this.refusal('STS-AUDIT-0001',
-        'The action is not known.');
+        'Unknown action "' + action + '". The six are: add, update, ' +
+        'remove, enable, disable, test.');
     }
     logger.debug("Leaving AuditExport.act(). ok=" + result.ok);
     return result;
@@ -2297,6 +2317,13 @@ class AuditExport {
         logger.debug("Leaving AuditExport.fillTyped(). Bad transport.");
         return this.refusal('STS-AUDIT-0001',
           'The transport must be udp, tcp or tls.');
+      }
+      // ASVS 5.0.0 12.3.1: the audit log leaves encrypted in product (#1527).
+      if (dest.transport !== 'tls' &&
+          require('./mode').refusesPlainSyslog()) {
+        logger.debug("Leaving AuditExport.fillTyped(). Plain syslog.");
+        return this.refusal('STS-AUDIT-0016', 'Product mode sends syslog ' +
+          'over tls only, unless audit.allowPlainSyslog is on.');
       }
       const facility = Number(dest.facility);
       if (!isFinite(facility) || facility < 0 || facility > 23) {

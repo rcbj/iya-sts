@@ -64,9 +64,10 @@
 -- and a service that cannot add it — a failure that would arrive as a
 -- permission error naming nothing.
 --
--- **SO: EDIT BOTH, IN ONE CHANGE.** The comments explaining WHY each column is
--- the shape it is live in the driver, beside the code that reads them, and are
--- deliberately not repeated here.
+-- **THE TABLES AND INDEXES HERE ARE GENERATED (#1390)**, from
+-- models/persistence/persistence.tsp, as the driver's are. Everything else in
+-- this file is models/persistence/schema.template.sql. Edit those, and run
+-- tests/tools/regenerate-model-docs.sh.
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
@@ -159,23 +160,24 @@ END $ext$;
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS sts_ldap_entries (
-  realm       text        NOT NULL,
-  dn_key      text        NOT NULL,
-  dn          text        NOT NULL,
-  attrs       jsonb       NOT NULL,
+  realm       text  NOT NULL,
+  dn_key      text  NOT NULL,
+  dn          text  NOT NULL,
+  attrs       jsonb NOT NULL,
   origin      text,
   created_at  text,
   modified_at text,
-  parent_key text GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED,
-  rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED,
-  name_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
-  mail_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
-  uuid_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
-  class_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
-  value_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
-  attr_names jsonb NOT NULL DEFAULT '[]'::jsonb,
-  dek_keys jsonb,
-  PRIMARY KEY (realm, dn_key));
+  parent_key  text  GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED,
+  rdn_value   text  GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED,
+  name_keys   jsonb NOT NULL DEFAULT '[]'::jsonb,
+  mail_keys   jsonb NOT NULL DEFAULT '[]'::jsonb,
+  uuid_keys   jsonb NOT NULL DEFAULT '[]'::jsonb,
+  class_keys  jsonb NOT NULL DEFAULT '[]'::jsonb,
+  value_keys  jsonb NOT NULL DEFAULT '[]'::jsonb,
+  attr_names  jsonb NOT NULL DEFAULT '[]'::jsonb,
+  dek_keys    jsonb,
+  PRIMARY KEY (realm, dn_key)
+);
 
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
 
@@ -290,13 +292,15 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin
 -- THE ASKED NAMES GREW (#1024 then #1028, schema versions 27 and 28):
 -- `stsbackupcodes` and `pwdaccountlockedtime` joined them, so an index
 -- built before answers "nobody" for those names through
--- the index. It is dropped here and built again by the CREATE below, which
--- is the driver's advisory upgrade step `sts_ldap_entries_asked_names_v27`
+-- the index. AND CHANGED (#1290, schema version 31): a person's signing key
+-- pairs are `stsassertionkeypair` and `stssamlassertionkeypair`, in place
+-- of `stsassertionjwks` and `stssamlassertioncertificate`. It is dropped here and built again by the CREATE below, which
+-- is the driver's advisory upgrade step `sts_ldap_entries_asked_names_v31`
 -- for a role that owns the table. On a large store the build takes minutes
 -- and locks writes; `CREATE INDEX CONCURRENTLY` under another name, a
 -- DROP and a RENAME do the same without the lock, outside a transaction.
 DROP INDEX IF EXISTS sts_ldap_entries_asked_names;
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "pwdaccountlockedtime" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionjwks" || @ == "stsbackupcodes" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertioncertificate" || @ == "stssamlassertionissuer" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WITH (fastupdate = off) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'pwdaccountlockedtime', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionjwks', 'stsbackupcodes', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate', 'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "pwdaccountlockedtime" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionkeypair" || @ == "stsbackupcodes" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertionissuer" || @ == "stssamlassertionkeypair" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WITH (fastupdate = off) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'pwdaccountlockedtime', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionkeypair', 'stsbackupcodes', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertionissuer', 'stssamlassertionkeypair', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON sts_ldap_entries USING gin (class_keys) WITH (fastupdate = off) WHERE class_keys <> '[]'::jsonb;
 DROP INDEX IF EXISTS sts_ldap_entries_attr_names;
 DROP INDEX IF EXISTS sts_ldap_entries_classes;
@@ -341,7 +345,8 @@ CREATE TABLE IF NOT EXISTS sts_ldap_counts (
   attribute text     NOT NULL,
   shard     smallint NOT NULL DEFAULT 0,
   n         bigint   NOT NULL DEFAULT 0,
-  PRIMARY KEY (realm, base_key, attribute, shard));
+  PRIMARY KEY (realm, base_key, attribute, shard)
+);
 
 -- SHARDED (#630, schema version 19): `shard` in the key, so two commits of
 -- one realm fold into different rows unless their server process ids fall
@@ -360,7 +365,8 @@ CREATE TABLE IF NOT EXISTS sts_ldap_count_deltas (
   parent_key text    NOT NULL,
   n          bigint  NOT NULL,
   holding    bigint  NOT NULL,
-  fold       boolean NOT NULL DEFAULT false);
+  fold       boolean NOT NULL DEFAULT false
+);
 
 CREATE INDEX IF NOT EXISTS sts_ldap_count_deltas_txid ON sts_ldap_count_deltas (txid);
 
@@ -373,7 +379,8 @@ CREATE TABLE IF NOT EXISTS sts_ldap_dek_counts (
   dek_id text     NOT NULL,
   shard  smallint NOT NULL DEFAULT 0,
   n      bigint   NOT NULL DEFAULT 0,
-  PRIMARY KEY (dek_id, shard));
+  PRIMARY KEY (dek_id, shard)
+);
 
 -- Sharded as `sts_ldap_counts` is (#630, schema version 19).
 ALTER TABLE sts_ldap_dek_counts ADD COLUMN IF NOT EXISTS shard smallint NOT NULL DEFAULT 0;
@@ -386,7 +393,8 @@ CREATE TABLE IF NOT EXISTS sts_ldap_dek_deltas (
   txid   xid8    NOT NULL DEFAULT pg_current_xact_id(),
   dek_id text    NOT NULL,
   n      bigint  NOT NULL,
-  fold   boolean NOT NULL DEFAULT false);
+  fold   boolean NOT NULL DEFAULT false
+);
 
 CREATE INDEX IF NOT EXISTS sts_ldap_dek_deltas_txid ON sts_ldap_dek_deltas (txid);
 
@@ -532,13 +540,14 @@ WHERE NOT EXISTS (SELECT 1 FROM sts_ldap_dek_counts)
 GROUP BY d.key;
 
 CREATE TABLE IF NOT EXISTS sts_realms (
-  id          text PRIMARY KEY,
+  id          text   PRIMARY KEY,
   name        text,
   description text,
   created_at  bigint,
-  overrides   jsonb NOT NULL DEFAULT '{}'::jsonb,
+  overrides   jsonb  NOT NULL DEFAULT '{}'::jsonb,
   domain      text,
-  retiring_at bigint);
+  retiring_at bigint
+);
 
 -- A realm's DNS domain (2026-09-18, schema version 6). Added separately as
 -- well, because `CREATE TABLE IF NOT EXISTS` leaves a table built by an older
@@ -551,13 +560,15 @@ ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text;
 ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS retiring_at bigint;
 
 CREATE TABLE IF NOT EXISTS sts_appconfig (
-  key   text PRIMARY KEY,
-  value jsonb NOT NULL);
+  key   text  PRIMARY KEY,
+  value jsonb NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS sts_keys (
-  realm      text PRIMARY KEY,
-  material   text NOT NULL,
-  written_at timestamptz NOT NULL DEFAULT now());
+  realm      text        PRIMARY KEY,
+  material   text        NOT NULL,
+  written_at timestamptz NOT NULL DEFAULT now()
+);
 
 -- ---------------------------------------------------------------------------
 -- WHAT THE PROCESS MINTED (2026-09-06). ONE TABLE FOR ALL OF IT: sessions,
@@ -613,7 +624,8 @@ CREATE TABLE IF NOT EXISTS sts_minted (
   written_at timestamptz NOT NULL DEFAULT now(),
   expires_at bigint,
   key_sealed text        NOT NULL DEFAULT '',
-  PRIMARY KEY (handle, realm, key));
+  PRIMARY KEY (handle, realm, key)
+);
 
 -- Added separately as well, for `sts_realms.domain`'s reason: a table built by
 -- an older version of this file has no such column. Existing rows get NULL.
@@ -656,7 +668,8 @@ CREATE TABLE IF NOT EXISTS sts_sessions (
   backs_console        boolean NOT NULL DEFAULT false,
   credential_key       text    NOT NULL DEFAULT '',
   partner_relationship text    NOT NULL DEFAULT '',
-  PRIMARY KEY (realm, key));
+  PRIMARY KEY (realm, key)
+);
 
 CREATE INDEX IF NOT EXISTS sts_sessions_subject ON sts_sessions (realm, subject_key, last_seen_at) WHERE chosen AND subject_key <> '';
 CREATE INDEX IF NOT EXISTS sts_sessions_username ON sts_sessions (realm, username_key) WHERE username_key <> '';
@@ -673,12 +686,13 @@ CREATE INDEX IF NOT EXISTS sts_sessions_surface ON sts_sessions (realm, rp_surfa
 -- is filed here, the keyed digest of the index value beside the row's key,
 -- written in the same transaction as the body.
 CREATE TABLE IF NOT EXISTS sts_minted_index (
-  handle    text NOT NULL,
-  realm     text NOT NULL,
-  index_key text NOT NULL,
-  key       text NOT NULL,
+  handle    text   NOT NULL,
+  realm     text   NOT NULL,
+  index_key text   NOT NULL,
+  key       text   NOT NULL,
   sort_at   bigint,
-  PRIMARY KEY (handle, realm, index_key, key));
+  PRIMARY KEY (handle, realm, index_key, key)
+);
 CREATE INDEX IF NOT EXISTS sts_minted_index_key ON sts_minted_index (handle, realm, key);
 -- Schema version 25 (#820, 2026-10-22): a store's `sortBy` value on one
 -- more index row per stored row, and the partial index `minted.newest`
@@ -716,12 +730,13 @@ CREATE INDEX IF NOT EXISTS sts_minted_index_sort ON sts_minted_index (handle, re
 -- everything committed before N".
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sts_changes (
-  seq    bigserial PRIMARY KEY,
+  seq    bigserial   PRIMARY KEY,
   origin text        NOT NULL,
   kind   text        NOT NULL,
   realm  text        NOT NULL DEFAULT '',
   key    text        NOT NULL DEFAULT '',
-  at     timestamptz NOT NULL DEFAULT now());
+  at     timestamptz NOT NULL DEFAULT now()
+);
 
 CREATE INDEX IF NOT EXISTS sts_changes_at ON sts_changes (at);
 
@@ -764,7 +779,8 @@ CREATE TABLE IF NOT EXISTS sts_used_assertions (
   used_at     bigint NOT NULL,
   spent_at    bigint NOT NULL DEFAULT 0,
   expires_at  bigint NOT NULL,
-  PRIMARY KEY (realm, key));
+  PRIMARY KEY (realm, key)
+);
 
 CREATE INDEX IF NOT EXISTS sts_used_assertions_expiry ON sts_used_assertions (realm, expires_at);
 
@@ -783,7 +799,8 @@ CREATE TABLE IF NOT EXISTS sts_cluster_nodes (
   heartbeat_at bigint NOT NULL,
   expires_at   bigint NOT NULL,
   left_at      bigint NOT NULL DEFAULT 0,
-  info         jsonb  NOT NULL DEFAULT '{}'::jsonb);
+  info         jsonb  NOT NULL DEFAULT '{}'::jsonb
+);
 
 CREATE INDEX IF NOT EXISTS sts_cluster_nodes_expiry ON sts_cluster_nodes (expires_at);
 
@@ -792,7 +809,8 @@ CREATE TABLE IF NOT EXISTS sts_cluster_leases (
   holder      text   NOT NULL,
   token       bigint NOT NULL,
   acquired_at bigint NOT NULL,
-  expires_at  bigint NOT NULL);
+  expires_at  bigint NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS sts_cluster_claims (
   scope       text   NOT NULL,
@@ -802,7 +820,8 @@ CREATE TABLE IF NOT EXISTS sts_cluster_claims (
   origin      text   NOT NULL DEFAULT '',
   claimed_at  bigint NOT NULL,
   expires_at  bigint NOT NULL,
-  PRIMARY KEY (scope, realm, key));
+  PRIMARY KEY (scope, realm, key)
+);
 
 CREATE INDEX IF NOT EXISTS sts_cluster_claims_expiry ON sts_cluster_claims (expires_at);
 
@@ -810,7 +829,15 @@ CREATE TABLE IF NOT EXISTS sts_cluster_secrets (
   name       text   PRIMARY KEY,
   material   text   NOT NULL,
   created_by text   NOT NULL DEFAULT '',
-  created_at bigint NOT NULL);
+  created_at bigint NOT NULL
+);
+
+-- A NAMED LOCK AS A ROW (#677, schema version 30): the portable cluster
+-- statements lock a row here FOR UPDATE where the native ones take
+-- pg_advisory_xact_lock. `persistence/cluster_portable.js` argues it.
+CREATE TABLE IF NOT EXISTS sts_cluster_locks (
+  name text PRIMARY KEY
+);
 
 -- A VALUE THAT ONLY GOES UP (#46 section 2): a WebAuthn signature counter and
 -- the last RFC 6238 step spent, advanced by one conditional upsert so a lower
@@ -822,7 +849,8 @@ CREATE TABLE IF NOT EXISTS sts_cluster_counters (
   value      bigint NOT NULL,
   origin     text   NOT NULL DEFAULT '',
   updated_at bigint NOT NULL,
-  PRIMARY KEY (scope, realm, key));
+  PRIMARY KEY (scope, realm, key)
+);
 
 -- A COUNT INSIDE A FIXED WINDOW (#46 section 2): the rate limiter's buckets,
 -- counted by every node against one budget with one conditional upsert, so
@@ -835,7 +863,8 @@ CREATE TABLE IF NOT EXISTS sts_cluster_windows (
   count          bigint NOT NULL,
   window_ends_at bigint NOT NULL,
   origin         text   NOT NULL DEFAULT '',
-  PRIMARY KEY (scope, realm, key));
+  PRIMARY KEY (scope, realm, key)
+);
 
 CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON sts_cluster_windows (window_ends_at);
 
@@ -854,7 +883,8 @@ CREATE TABLE IF NOT EXISTS sts_cluster_budgets (
   origin     text   NOT NULL DEFAULT '',
   expires_at bigint NOT NULL,
   updated_at bigint NOT NULL,
-  PRIMARY KEY (scope, realm, key));
+  PRIMARY KEY (scope, realm, key)
+);
 
 CREATE INDEX IF NOT EXISTS sts_cluster_budgets_expiry ON sts_cluster_budgets (expires_at);
 
@@ -867,7 +897,8 @@ CREATE TABLE IF NOT EXISTS sts_node_snapshots (
   name     text   PRIMARY KEY,
   node_id  text   NOT NULL DEFAULT '',
   taken_at bigint NOT NULL,
-  body     jsonb  NOT NULL DEFAULT '{}'::jsonb);
+  body     jsonb  NOT NULL DEFAULT '{}'::jsonb
+);
 
 -- WHERE EVERY PROCESS READING THE CHANGE LOG HAS GOT TO (#46 section 8): the
 -- low-water mark each coordinating process reports, which `sts_changes` is
@@ -877,7 +908,8 @@ CREATE TABLE IF NOT EXISTS sts_change_readers (
   node_id     text   NOT NULL DEFAULT '',
   applied     bigint NOT NULL,
   started_at  bigint NOT NULL,
-  reported_at bigint NOT NULL);
+  reported_at bigint NOT NULL
+);
 
 -- RISK SCORING (#62, 2026-09-22, schema version 7): the external datasets a
 -- score reads, by version, and the history the model keeps. A database built
@@ -892,7 +924,8 @@ CREATE TABLE IF NOT EXISTS sts_risk_datasets (
   previous_version text   NOT NULL DEFAULT '',
   state            text   NOT NULL,
   updated_at       bigint NOT NULL,
-  PRIMARY KEY (realm, dataset));
+  PRIMARY KEY (realm, dataset)
+);
 
 CREATE TABLE IF NOT EXISTS sts_risk_dataset_versions (
   realm           text   NOT NULL DEFAULT '',
@@ -920,7 +953,8 @@ CREATE TABLE IF NOT EXISTS sts_risk_dataset_versions (
   refusal         text   NOT NULL DEFAULT '',
   error_code      text   NOT NULL DEFAULT '',
   origin          text   NOT NULL DEFAULT '',
-  PRIMARY KEY (realm, dataset, version));
+  PRIMARY KEY (realm, dataset, version)
+);
 
 CREATE TABLE IF NOT EXISTS sts_risk_dataset_blobs (
   realm   text    NOT NULL DEFAULT '',
@@ -928,7 +962,8 @@ CREATE TABLE IF NOT EXISTS sts_risk_dataset_blobs (
   version text    NOT NULL,
   part    integer NOT NULL,
   content bytea   NOT NULL,
-  PRIMARY KEY (realm, dataset, version, part));
+  PRIMARY KEY (realm, dataset, version, part)
+);
 
 CREATE TABLE IF NOT EXISTS sts_risk_geo_locations (
   dataset     text   NOT NULL,
@@ -939,7 +974,8 @@ CREATE TABLE IF NOT EXISTS sts_risk_geo_locations (
   subdivision text   NOT NULL DEFAULT '',
   city        text   NOT NULL DEFAULT '',
   time_zone   text   NOT NULL DEFAULT '',
-  PRIMARY KEY (dataset, version, location_id));
+  PRIMARY KEY (dataset, version, location_id)
+);
 
 CREATE TABLE IF NOT EXISTS sts_risk_geo_ranges (
   dataset            text             NOT NULL,
@@ -957,7 +993,8 @@ CREATE TABLE IF NOT EXISTS sts_risk_geo_ranges (
   accuracy_km        integer          NOT NULL DEFAULT 0,
   anonymous_proxy    boolean          NOT NULL DEFAULT false,
   satellite          boolean          NOT NULL DEFAULT false,
-  PRIMARY KEY (dataset, version, range_start));
+  PRIMARY KEY (dataset, version, range_start)
+);
 
 CREATE TABLE IF NOT EXISTS sts_risk_asn_ranges (
   dataset     text   NOT NULL,
@@ -967,7 +1004,8 @@ CREATE TABLE IF NOT EXISTS sts_risk_asn_ranges (
   asn         bigint NOT NULL,
   as_org      text   NOT NULL DEFAULT '',
   as_domain   text   NOT NULL DEFAULT '',
-  PRIMARY KEY (dataset, version, range_start));
+  PRIMARY KEY (dataset, version, range_start)
+);
 
 CREATE TABLE IF NOT EXISTS sts_risk_ip_lists (
   realm       text NOT NULL DEFAULT '',
@@ -977,7 +1015,8 @@ CREATE TABLE IF NOT EXISTS sts_risk_ip_lists (
   range_end   inet NOT NULL,
   category    text NOT NULL,
   note        text NOT NULL DEFAULT '',
-  PRIMARY KEY (realm, dataset, version, range_start));
+  PRIMARY KEY (realm, dataset, version, range_start)
+);
 
 CREATE TABLE IF NOT EXISTS sts_risk_fido_authenticators (
   dataset             text    NOT NULL,
@@ -992,55 +1031,57 @@ CREATE TABLE IF NOT EXISTS sts_risk_fido_authenticators (
   compromised         boolean NOT NULL DEFAULT false,
   status_reports      jsonb   NOT NULL DEFAULT '[]'::jsonb,
   metadata_statement  jsonb   NOT NULL DEFAULT '{}'::jsonb,
-  PRIMARY KEY (dataset, version, key_kind, authenticator_key));
+  PRIMARY KEY (dataset, version, key_kind, authenticator_key)
+);
 
 CREATE INDEX IF NOT EXISTS sts_risk_fido_by_key ON sts_risk_fido_authenticators (key_kind, authenticator_key);
 
 CREATE TABLE IF NOT EXISTS sts_risk_assessments (
-  realm              text    NOT NULL,
-  id                 text    NOT NULL,
-  at                 bigint  NOT NULL,
-  phase              text    NOT NULL,
-  door               text    NOT NULL,
-  subject            text    NOT NULL DEFAULT '',
-  session_id         text    NOT NULL DEFAULT '',
-  client_id          text    NOT NULL DEFAULT '',
-  address_sealed     text    NOT NULL,
-  address_prefix     cidr    NOT NULL,
-  asn                bigint  NOT NULL DEFAULT 0,
-  as_org             text    NOT NULL DEFAULT '',
-  country            text    NOT NULL DEFAULT '',
-  subdivision        text    NOT NULL DEFAULT '',
-  city               text    NOT NULL DEFAULT '',
+  realm              text             NOT NULL,
+  id                 text             NOT NULL,
+  at                 bigint           NOT NULL,
+  phase              text             NOT NULL,
+  door               text             NOT NULL,
+  subject            text             NOT NULL DEFAULT '',
+  session_id         text             NOT NULL DEFAULT '',
+  client_id          text             NOT NULL DEFAULT '',
+  address_sealed     text             NOT NULL,
+  address_prefix     cidr             NOT NULL,
+  asn                bigint           NOT NULL DEFAULT 0,
+  as_org             text             NOT NULL DEFAULT '',
+  country            text             NOT NULL DEFAULT '',
+  subdivision        text             NOT NULL DEFAULT '',
+  city               text             NOT NULL DEFAULT '',
   latitude           double precision,
   longitude          double precision,
-  accuracy_km        integer NOT NULL DEFAULT 0,
-  ip_lists           text[]  NOT NULL DEFAULT '{}',
-  ua_hash            text    NOT NULL DEFAULT '',
-  ua_family          text    NOT NULL DEFAULT '',
-  ua_os              text    NOT NULL DEFAULT '',
-  ua_platform        text    NOT NULL DEFAULT '',
-  bot                boolean NOT NULL DEFAULT false,
-  ja4                text    NOT NULL DEFAULT '',
-  credential_kind    text    NOT NULL DEFAULT '',
-  credential_hash    text    NOT NULL DEFAULT '',
-  aaguid             text    NOT NULL DEFAULT '',
-  authenticator_cert text    NOT NULL DEFAULT '',
+  accuracy_km        integer          NOT NULL DEFAULT 0,
+  ip_lists           text[]           NOT NULL DEFAULT '{}',
+  ua_hash            text             NOT NULL DEFAULT '',
+  ua_family          text             NOT NULL DEFAULT '',
+  ua_os              text             NOT NULL DEFAULT '',
+  ua_platform        text             NOT NULL DEFAULT '',
+  bot                boolean          NOT NULL DEFAULT false,
+  ja4                text             NOT NULL DEFAULT '',
+  credential_kind    text             NOT NULL DEFAULT '',
+  credential_hash    text             NOT NULL DEFAULT '',
+  aaguid             text             NOT NULL DEFAULT '',
+  authenticator_cert text             NOT NULL DEFAULT '',
   backup_eligible    boolean,
   backup_state       boolean,
-  jkt                text    NOT NULL DEFAULT '',
-  cert_fingerprint   text    NOT NULL DEFAULT '',
-  datasets           jsonb   NOT NULL DEFAULT '{}'::jsonb,
-  signals            jsonb   NOT NULL DEFAULT '[]'::jsonb,
-  score              real    NOT NULL,
-  level              text    NOT NULL,
-  decision           text    NOT NULL,
-  policy_id          text    NOT NULL DEFAULT '',
-  error_code         text    NOT NULL DEFAULT '',
-  origin             text    NOT NULL DEFAULT '',
-  feedback           text    NOT NULL DEFAULT '',
-  feedback_at        bigint  NOT NULL DEFAULT 0,
-  PRIMARY KEY (realm, id));
+  jkt                text             NOT NULL DEFAULT '',
+  cert_fingerprint   text             NOT NULL DEFAULT '',
+  datasets           jsonb            NOT NULL DEFAULT '{}'::jsonb,
+  signals            jsonb            NOT NULL DEFAULT '[]'::jsonb,
+  score              real             NOT NULL,
+  level              text             NOT NULL,
+  decision           text             NOT NULL,
+  policy_id          text             NOT NULL DEFAULT '',
+  error_code         text             NOT NULL DEFAULT '',
+  origin             text             NOT NULL DEFAULT '',
+  feedback           text             NOT NULL DEFAULT '',
+  feedback_at        bigint           NOT NULL DEFAULT 0,
+  PRIMARY KEY (realm, id)
+);
 
 -- What the PERSON said about a sign-in (#62 P6, schema version 9): "this was
 -- me" (confirmed) or "this wasn't me" (denied), from /portal/sign-ins. Added
@@ -1062,7 +1103,8 @@ CREATE TABLE IF NOT EXISTS sts_risk_feature_counts (
   count    bigint NOT NULL,
   first_at bigint NOT NULL,
   last_at  bigint NOT NULL,
-  PRIMARY KEY (realm, subject, feature, value));
+  PRIMARY KEY (realm, subject, feature, value)
+);
 
 CREATE INDEX IF NOT EXISTS sts_risk_feature_counts_age ON sts_risk_feature_counts (realm, last_at);
 
@@ -1078,7 +1120,8 @@ CREATE TABLE IF NOT EXISTS sts_risk_failures (
   asn            bigint    NOT NULL DEFAULT 0,
   error_code     text      NOT NULL,
   origin         text      NOT NULL DEFAULT '',
-  PRIMARY KEY (realm, id));
+  PRIMARY KEY (realm, id)
+);
 
 CREATE INDEX IF NOT EXISTS sts_risk_failures_subject ON sts_risk_failures (realm, subject, at);
 
@@ -1101,37 +1144,40 @@ CREATE TABLE IF NOT EXISTS sts_risk_session_context (
   score          real   NOT NULL,
   level          text   NOT NULL,
   updated_at     bigint NOT NULL,
-  PRIMARY KEY (realm, session_id));
+  PRIMARY KEY (realm, session_id)
+);
 
 CREATE TABLE IF NOT EXISTS sts_risk_subjects (
-  realm           text  NOT NULL,
-  subject         text  NOT NULL,
-  score           real  NOT NULL,
-  level           text  NOT NULL,
-  previous_level  text  NOT NULL DEFAULT '',
-  reason          text  NOT NULL DEFAULT '',
-  last_assessment text  NOT NULL DEFAULT '',
+  realm           text   NOT NULL,
+  subject         text   NOT NULL,
+  score           real   NOT NULL,
+  level           text   NOT NULL,
+  previous_level  text   NOT NULL DEFAULT '',
+  reason          text   NOT NULL DEFAULT '',
+  last_assessment text   NOT NULL DEFAULT '',
   crossed_at      bigint NOT NULL DEFAULT 0,
-  actions         jsonb NOT NULL DEFAULT '{}'::jsonb,
-  feedback        text  NOT NULL DEFAULT '',
+  actions         jsonb  NOT NULL DEFAULT '{}'::jsonb,
+  feedback        text   NOT NULL DEFAULT '',
   updated_at      bigint NOT NULL,
-  PRIMARY KEY (realm, subject));
+  PRIMARY KEY (realm, subject)
+);
 
 -- WHO ACCEPTED WHICH DATASET PROVIDER'S TERMS (#62, schema version 8,
 -- 2026-09-23): the audit trail the second licence review asked for. An import
 -- of a provider's data is refused without a row for its current terms.
 CREATE TABLE IF NOT EXISTS sts_risk_terms_acceptances (
-  id            bigserial NOT NULL,
-  provider      text      NOT NULL,
-  terms_digest  text      NOT NULL,
-  terms_text    text      NOT NULL,
-  accepted_by   text      NOT NULL,
-  accepted_via  text      NOT NULL,
-  deployment    text      NOT NULL DEFAULT '',
-  page_digest   text      NOT NULL DEFAULT '',
-  accepted_at   bigint    NOT NULL,
-  origin        text      NOT NULL DEFAULT '',
-  PRIMARY KEY (id));
+  id           bigserial NOT NULL,
+  provider     text      NOT NULL,
+  terms_digest text      NOT NULL,
+  terms_text   text      NOT NULL,
+  accepted_by  text      NOT NULL,
+  accepted_via text      NOT NULL,
+  deployment   text      NOT NULL DEFAULT '',
+  page_digest  text      NOT NULL DEFAULT '',
+  accepted_at  bigint    NOT NULL,
+  origin       text      NOT NULL DEFAULT '',
+  PRIMARY KEY (id)
+);
 
 CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON sts_risk_terms_acceptances (provider, accepted_at);
 
@@ -1146,7 +1192,8 @@ CREATE TABLE IF NOT EXISTS sts_cell_routing (
   digest     text   NOT NULL,
   cell       text   NOT NULL,
   written_at bigint NOT NULL,
-  PRIMARY KEY (realm, kind, digest));
+  PRIMARY KEY (realm, kind, digest)
+);
 
 -- A finished report's bytes (#956, schema version 26). The definition and
 -- the job row stay in the realm maps; this table is only the artifact.
@@ -1157,25 +1204,28 @@ CREATE TABLE IF NOT EXISTS sts_report_artifacts (
   sha256     text   NOT NULL,
   media_type text   NOT NULL,
   created_at bigint NOT NULL,
-  PRIMARY KEY (realm, job_id));
+  PRIMARY KEY (realm, job_id)
+);
 
 -- A finished report's pieces (#1045, schema version 29), each sealed on its
 -- own and numbered from 0; the `sts_report_artifacts` row says how many.
 CREATE TABLE IF NOT EXISTS sts_report_artifact_pieces (
-  realm      text   NOT NULL,
-  job_id     text   NOT NULL,
-  seq        int    NOT NULL,
-  bytes      bytea  NOT NULL,
-  PRIMARY KEY (realm, job_id, seq));
+  realm  text  NOT NULL,
+  job_id text  NOT NULL,
+  seq    int   NOT NULL,
+  bytes  bytea NOT NULL,
+  PRIMARY KEY (realm, job_id, seq)
+);
 
 CREATE TABLE IF NOT EXISTS sts_schema (
-  version int PRIMARY KEY,
-  applied_at timestamptz NOT NULL DEFAULT now());
+  version    int         PRIMARY KEY,
+  applied_at timestamptz NOT NULL DEFAULT now()
+);
 
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (29) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (31) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

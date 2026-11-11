@@ -342,6 +342,7 @@
 // `authn/webauthn_policy.ts` requires it.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
@@ -593,11 +594,7 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
     'where a classical passkey is allowed'
 });
 
-const SELECTORS = [
-  { key: 'precedence', attribute: 'stsPasskeyPrecedence',
-    what: 'Which named passkey policy wins where several match: the lowest, ' +
-          'from 1 to 1000.' }
-];
+const SELECTORS = ModelTables.selectors('policy.passkey');
 const DEFAULT_PRECEDENCE = PolicySelection.DEFAULT_PRECEDENCE;
 /**
  * How `common/policy_selection.ts` reads a named profile (#1235).
@@ -781,323 +778,26 @@ const RECOVERY_CREDENTIALS: Readonly<Record<string, string>> = Object.freeze({
  * The policy's fields: one table read as the schema, the console form, the API
  * body, the validation of a save and the parse of an entry.
  */
-const FIELDS: PolicyField[] = [
-  { key: 'allowUsernameless', attribute: 'stsPasskeyAllowUsernameless',
-    type: 'bool', dflt: true,
-    label: 'Allow a passkey sign-in with no username',
-    what: 'ON BY DEFAULT. On, the sign-in screen offers *Sign in with a ' +
-          'passkey* and the username field\'s autofill, which ask the ' +
-          'browser for any discoverable credential of this realm (WebAuthn ' +
-          'Level 3 section 5.4, `allowCredentials` empty) and sign in the ' +
-          'account its user handle names, with user verification required ' +
-          'and checked. Off, neither is offered and a sign-in always names ' +
-          'the person first. Replaces the setting webauthn.usernameless.' },
-  { key: 'requireUsernameless', attribute: 'stsPasskeyRequireUsernameless',
-    type: 'bool', dflt: false,
-    label: 'Require a passkey sign-in with no username',
-    what: 'OFF BY DEFAULT. On, an application whose authentication ' +
-          'mechanism is a passkey and nothing else (the authentication ' +
-          'policy it names, appAuthnPolicy, lists `webauthn` alone) gets ' +
-          'a sign-in screen with no username field: *Sign in with a ' +
-          'passkey* is the way in, and a sign-in that names a person is ' +
-          'refused. It needs the row above. The realm\'s ' +
-          '`default` profile does not apply it to the admin console, the ' +
-          'debugger or the user portal; a named profile selecting that ' +
-          'application does.' },
-  { key: 'securityKeyResidentKey',
-    attribute: 'stsPasskeySecurityKeyResidentKey', type: 'enum',
-    values: RESIDENT_KEY_VALUES.slice(), dflt: 'required',
-    label: 'What "Use a security key" asks for while usernameless sign-in ' +
-           'is on',
-    what: 'The `residentKey` an enrolment through *Use a security key* (or ' +
-          'one that names no kind) sends WHILE usernameless sign-in is ON. ' +
-          'While it is off the button always asks `required`, so it makes ' +
-          'a discoverable credential as *Create a passkey* does (which asks ' +
-          '`required` always). `discouraged` or `preferred` spare a ' +
-          'security key\'s few resident slots, at the cost of a key that ' +
-          'needs the username to sign in. Replaces the setting ' +
-          'webauthn.residentKey.' },
-  { key: 'backupEligibility',
-    attribute: 'stsPasskeyBackupEligibility', type: 'enum',
-    values: BACKUP_ELIGIBILITY_VALUES.slice(), dflt: 'allow',
-    label: 'Synced passkeys (backup eligible)',
-    what: '`allow` (the default) accepts any passkey. `disallow` accepts ' +
-          'only DEVICE-BOUND ones: a passkey whose authenticator says it ' +
-          'may be backed up or synced (the BE flag, WebAuthn Level 3 ' +
-          'section 6.1) is refused when it is registered and when it signs ' +
-          'somebody in, so a synced passkey enrolled before the realm said ' +
-          'no stops working too. BE never changes for a credential.' },
-  { key: 'enforcePinLength', attribute: 'stsPasskeyEnforcePinLength',
-    type: 'bool', dflt: false,
-    label: 'Require a minimum security-key PIN length',
-    what: 'OFF BY DEFAULT. On, registration asks the authenticator for its ' +
-          'minimum PIN length (CTAP 2.1 section 12.4, the minPinLength ' +
-          'extension), records it on the key, and refuses a key whose ' +
-          'minimum is below the next row, at registration and at every ' +
-          'sign-in. A key answers only for relying parties it was ' +
-          'configured to tell (CTAP 2.1 setMinPINLength with this RP ID); ' +
-          'every other key, and every platform or synced passkey, does not ' +
-          'report, and is refused unless the row after next is on.' },
-  { key: 'minPinLength', attribute: 'stsPasskeyMinPinLength',
-    type: 'int', dflt: MIN_PIN_LENGTH, min: MIN_PIN_LENGTH,
-    max: MAX_PIN_LENGTH, unit: 'characters',
-    label: 'Minimum security-key PIN length',
-    what: 'The shortest PIN a security key may be set to accept, as the key ' +
-          'itself reports it, while the row above is on. Between 4 (CTAP ' +
-          '2.1\'s own floor) and 63.' },
-  { key: 'pinLengthOnlyIfSupported',
-    attribute: 'stsPasskeyPinLengthOnlyIfSupported', type: 'bool',
-    dflt: false,
-    label: 'Accept a key that does not report its PIN length',
-    what: 'OFF BY DEFAULT, which is the strict reading: while the PIN ' +
-          'length is enforced, a key that does not report it is refused. ' +
-          'On, such a key is accepted and only a reported minimum is held ' +
-          'to the rule — so the rule then binds only keys configured to ' +
-          'report to this relying party.' },
-  { key: 'enforceAttestationAtSignIn',
-    attribute: 'stsPasskeyEnforceAttestationAtSignIn', type: 'bool',
-    dflt: false,
-    label: 'Hold every sign-in to the attestation rules in force',
-    what: 'OFF BY DEFAULT. The attestation rules (the webauthn.attestation* ' +
-          'settings: the policy, the AAGUID list, the certification level ' +
-          'and FIPS) are checked when a passkey is registered. On, they are ' +
-          'checked again at every sign-in against what was recorded then ' +
-          'and the FIDO Metadata Service as it is now, so a key registered ' +
-          'before a rule was tightened, or whose model was since reported ' +
-          'compromised, stops signing anybody in. A key with no trusted ' +
-          'attestation fails every rule that demands one.' },
-  { key: 'postQuantumRequired', attribute: 'stsPasskeyPostQuantumRequired',
-    type: 'enum', values: POST_QUANTUM_REQUIRED_VALUES.slice(), dflt: 'off',
-    label: 'Require a post-quantum passkey',
-    what: '`off` (the default) accepts a passkey whatever its signature ' +
-          'algorithm. `sign-in` accepts only a POST-QUANTUM passkey, one ' +
-          'whose algorithm is ML-DSA-44, ML-DSA-65 or ML-DSA-87 (RFC 9964), ' +
-          'when it signs somebody in, as the first credential or as the ' +
-          'second factor; a classical one may still be registered. ' +
-          '`registration-and-sign-in` refuses a classical one at ' +
-          'registration too, and enrolment then offers only ML-DSA. The ' +
-          'algorithm decides, not the lane a key was created in. Refused ' +
-          'while the realm offers no ML-DSA (webauthn.algorithms names ' +
-          'none, and neither webauthn.pqcOnly nor ' +
-          'webauthn.pqcAlongsideClassical is on).' },
-  { key: 'postQuantumAllowCredentials',
-    attribute: 'stsPasskeyPostQuantumAllowCredentials', type: 'enum',
-    values: POST_QUANTUM_ALLOW_CREDENTIALS.slice(), dflt: 'realm',
-    optional: true,
-    label: 'Passkeys a sign-in names where a post-quantum one is required',
-    what: '`realm` (the default) follows the realm\'s ' +
-          'webauthn.postQuantumAllowCredentials. Read only while ' +
-          'postQuantumRequired requires a post-quantum passkey at sign-in. ' +
-          '`narrow` names only the person\'s post-quantum (ML-DSA) passkeys ' +
-          'in the passkey step\'s request, so a classical one is never ' +
-          'offered, and a person whose device holds only their classical ' +
-          'one sees the platform\'s own "no passkey found" message. ' +
-          '`list-and-refuse` names every passkey ' +
-          'they hold and refuses a classical one after the ceremony, with a ' +
-          'page saying that this application requires a post-quantum ' +
-          'passkey and where to add one; the person may then pick a ' +
-          'passkey that will be refused. A person holding no post-quantum ' +
-          'passkey is told before any ceremony either way. Left out of a ' +
-          'save, `realm` is kept.' },
-  { key: 'registrationAlgorithms',
-    attribute: 'stsPasskeyRegistrationAlgorithms', type: 'list',
-    values: REGISTRATION_ALGORITHM_VALUES.slice(), dflt: REALM_LIST,
-    empty: REALM_LIST, maxItems: REGISTRATION_ALGORITHM_VALUES.length,
-    optional: true,
-    label: 'Algorithms a passkey registration offers',
-    what: '`realm` (the default) offers the realm\'s webauthn.algorithms. ' +
-          'Otherwise the signature algorithms a passkey registration ' +
-          'offers to this profile\'s people, in order of preference (an ' +
-          'authenticator makes the first it supports), from the ' +
-          'algorithms webauthn.algorithms may name. The next row may ' +
-          'narrow or reorder it, and a passkey whose algorithm is not one ' +
-          'this profile offers is refused when it is registered. Left out ' +
-          'of a save, `realm` is kept.' },
-  { key: 'registrationMode', attribute: 'stsPasskeyRegistrationMode',
-    type: 'enum', values: REGISTRATION_MODES.slice(), dflt: 'realm',
-    optional: true,
-    label: 'Post-quantum algorithms at registration',
-    what: '`realm` (the default) follows webauthn.pqcOnly and ' +
-          'webauthn.pqcAlongsideClassical. `pq-only` offers only ML-DSA, ' +
-          'and refuses a retry with the classical algorithms. `pq-first` ' +
-          'offers ML-DSA first and the classical algorithms after it, even ' +
-          'where the realm requests ML-DSA only. `classical-only` offers no ' +
-          'ML-DSA and no post-quantum passkey beside a classical one, for ' +
-          'people whose devices fail an ML-DSA registration. Refused with ' +
-          'postQuantumRequired other than off or with ' +
-          'attestationAlgorithms set (classical-only), and where the ' +
-          'algorithms offered name no ML-DSA (pq-only, pq-first). Left out ' +
-          'of a save, `realm` is kept.' },
-  // TWO LANES PER POPULATION (#1104): a classical and a post-quantum passkey
-  // side by side (#643) for THIS profile's people, or not, whatever the
-  // realm's `webauthn.pqcAlongsideClassical` says. `webauthn.pqcOnly` and a
-  // `classical-only` mode still leave one lane.
-  { key: 'lanes', attribute: 'stsPasskeyLanes', type: 'enum',
-    values: LANES_VALUES.slice(), dflt: 'realm', optional: true,
-    label: 'A classical and a post-quantum passkey side by side',
-    what: '`realm` (the default) follows webauthn.pqcAlongsideClassical. ' +
-          '`both` gives this profile\'s people a classical and a ' +
-          'post-quantum passkey side by side, each under its own user ' +
-          'handle, wherever the realm\'s setting is off; `one` gives them ' +
-          'one lane wherever it is on. webauthn.pqcOnly still means one ' +
-          'lane. Refused as `both` with registrationMode classical-only. ' +
-          'Left out of a save, `realm` is kept.' },
-  // THE CLIENTS NOT OFFERED ML-DSA (#1112): a registration from a browser
-  // and system a rule names offers the list less ML-DSA, so a platform that
-  // fails the whole ceremony when offered an algorithm it cannot do is not
-  // offered it. Matched against the ceremony row's own client name
-  // (`clientRuleFor()`); never applied where a classical passkey is not
-  // allowed (`common/passkey_clients.ts`).
-  { key: 'clientRules', attribute: 'stsPasskeyClientRules',
-    type: 'clientRules', dflt: '', optional: true,
-    label: 'Clients a registration offers no ML-DSA',
-    what: 'EMPTY BY DEFAULT: every client is offered the list as it ' +
-          'stands. Otherwise up to 20 rules separated by `;`, each ' +
-          '`<browser> on <system>`, where either side is a family as the ' +
-          'passkey ceremony rows name it (`Chrome`, `Firefox`, `macOS`, ' +
-          '`Android`) or `*` for any, optionally followed by a ' +
-          'major-version range (`141`, `130-140`, `130-`, `-140`): ' +
-          '`Firefox 140- on Linux; * on Android 13`. A passkey ' +
-          'registration from a matching client offers the list less ' +
-          'ML-DSA (ES256 and RS256 where that leaves none). Not applied ' +
-          'where a classical passkey is not allowed — registrationMode ' +
-          'pq-only, webauthn.pqcOnly, postQuantumRequired ' +
-          'registration-and-sign-in, or at the sign-in step under ' +
-          'postQuantumRequired sign-in — nor to the post-quantum lane, ' +
-          'and the ceremony row says it was not. Left out of a save, ' +
-          'empty is kept.' },
-  { key: 'passkeyHints', attribute: 'stsPasskeyHintsPasskey', type: 'list',
-    values: HINTS.slice(), dflt: 'client-device,hybrid',
-    label: 'Hints "Create a passkey" sends',
-    what: 'The WebAuthn hints (Level 3 section 5.4.8) the portal\'s *Create ' +
-          'a passkey* sends, in order, from security-key, client-device and ' +
-          'hybrid, or none. They tell the browser which way of making the ' +
-          'passkey to lead with. A hint may not contradict ' +
-          'webauthn.authenticatorAttachment: client-device implies platform, ' +
-          'security-key and hybrid cross-platform.' },
-  { key: 'securityKeyHints', attribute: 'stsPasskeyHintsSecurityKey',
-    type: 'list', values: HINTS.slice(), dflt: 'security-key',
-    label: 'Hints "Use a security key" sends',
-    what: 'The hints *Use a security key* sends, in order, or none. The ' +
-          'button asks for a cross-platform authenticator, so client-device ' +
-          'contradicts it and is refused.' },
-  { key: 'signInHints', attribute: 'stsPasskeyHintsSignIn', type: 'list',
-    values: HINTS.slice(), dflt: NO_HINTS,
-    label: 'Hints a passkey sign-in sends',
-    what: 'The hints a sign-in ceremony sends — the passkey step, the ' +
-          'sign-in with no username and its autofill — in order, or none ' +
-          '(the default: the browser offers every way it knows).' },
-  { key: 'enterpriseSerialAttribute',
-    attribute: 'stsPasskeyEnterpriseSerialAttribute', type: 'attribute',
-    dflt: '',
-    label: 'Directory attribute holding a person\'s security-key serials',
-    what: 'EMPTY BY DEFAULT: no serial is checked. Set to an attribute of ' +
-          'a person\'s entry (for example `serialNumber`, which may hold ' +
-          'several values), a security key registers only with a TRUSTED ' +
-          'enterprise attestation whose certificate names a device serial ' +
-          'that is one of that person\'s values. Needs ' +
-          'webauthn.attestation set to enterprise, and the vendor or ' +
-          'platform configured to release enterprise attestation to this ' +
-          'RP ID; without that the browser sends ordinary attestation and ' +
-          'every registration is refused.' },
-  { key: 'userDisplayName', attribute: 'stsPasskeyUserDisplayName',
-    type: 'attributes', dflt: '',
-    label: 'The name a passkey prompt shows for the person',
-    what: 'EMPTY BY DEFAULT: the name the sign-in knows, else the ' +
-          'username. Otherwise up to six directory attributes in order, ' +
-          'separated by commas; a group of attributes separated by spaces ' +
-          '(givenName sn) joins their values. The first whose every ' +
-          'attribute has a value becomes user.displayName (WebAuthn Level 3 ' +
-          'section 5.4.3), with control and direction-changing characters ' +
-          'removed and at most 64 characters. The username is always ' +
-          'user.name.' },
-  { key: 'rpNameExtras', attribute: 'stsPasskeyRpNameExtras', type: 'enum',
-    values: RP_NAME_EXTRAS.slice(), dflt: 'none',
-    label: 'What a passkey prompt adds to the service\'s name',
-    what: '`none` (the default) shows webauthn.rpName alone. `realm`, ' +
-          '`organisation` or `realm-and-organisation` append the realm\'s ' +
-          'name and/or saml.organizationName, so a person with accounts ' +
-          'in several realms can tell the prompts apart.' },
-  { key: 'credentialLabel', attribute: 'stsPasskeyCredentialLabel',
-    type: 'text', dflt: '',
-    label: 'The name a new passkey is given',
-    what: 'EMPTY BY DEFAULT: the provider\'s name, else "Passkey" or ' +
-          '"Security key". Otherwise this text, with {provider} and {kind} ' +
-          'filled in, at most 60 characters. The person may rename it ' +
-          'afterwards, as always.' },
-  { key: 'aggregateDevices', attribute: 'stsPasskeyAggregateDevices',
-    type: 'bool', dflt: true,
-    label: 'Offer a person\'s passkeys as one sign-in choice',
-    what: 'ON BY DEFAULT: one "Use passkey" step whose request lists every ' +
-          'one of the person\'s passkeys, and the browser offers whichever ' +
-          'is present. Off, a person with more than one is shown a choice ' +
-          'per passkey, by its name, and the request names only that one.' },
-  { key: 'recoveryAssurance', attribute: 'stsPasskeyRecoveryAssurance',
-    type: 'enum', values: RECOVERY_ASSURANCE.slice(), dflt: 'any',
-    optional: true,
-    label: 'Account recovery for a person who holds a passkey',
-    what: '`any` BY DEFAULT IN DEVELOPMENT, `not-weaker` IN PRODUCT. ' +
-          'Whether a way back into the account that asks for no passkey ' +
-          '— a password reset link, an activation link, a recovery code, ' +
-          'an emailed code or link — restores access for a person who ' +
-          'holds one. `any`: at once. `not-weaker`: the first sign-in ' +
-          'after it that is not a passkey sign-in reaches no application; ' +
-          'the person registers a passkey that satisfies this policy and ' +
-          'signs in with it. `operator-only`: as not-weaker, and the ' +
-          'self-service doors (the forgot-password form, a recovery code ' +
-          'or an emailed code or link at sign-in) are refused; only an ' +
-          'administrator\'s reset link, generated password or activation ' +
-          'link remains. Left out of a save, the built-in default is kept.' },
-  { key: 'attestationAlgorithms',
-    attribute: 'stsPasskeyAttestationAlgorithms', type: 'list',
-    values: ATTESTATION_ALGORITHM_VALUES.slice(), dflt: NO_HINTS,
-    optional: true,
-    label: 'Algorithms a passkey\'s attestation must be signed with',
-    what: '`none` BY DEFAULT: an attestation is accepted whatever it is ' +
-          'signed with. Otherwise a list from post-quantum, ml-dsa-44, ' +
-          'ml-dsa-65, ml-dsa-87, slh-dsa and composite-ml-dsa: a passkey ' +
-          'registers only with a TRUSTED attestation that carries a ' +
-          'certificate, whose statement signature and the signature on ' +
-          'every certificate of its chain, from the leaf to the trust ' +
-          'anchor, are each one the list allows (`post-quantum` allows ' +
-          'any ML-DSA, SLH-DSA or composite ML-DSA signature). Self and ' +
-          'none attestation are refused, having no certificate. With ' +
-          'enforceAttestationAtSignIn on, every sign-in holds the passkey ' +
-          'to it by what its registration recorded, so a passkey ' +
-          'registered before the rule stops working. This is the ' +
-          'attestation\'s algorithm, not the passkey\'s own ' +
-          '(postQuantumRequired). Left out of a save, the built-in default ' +
-          'is kept.' },
-  { key: 'adminEnrolment', attribute: 'stsPasskeyAdminEnrolment',
-    type: 'enum', values: ADMIN_ENROLMENT_VALUES.slice(), dflt: 'off',
-    optional: true,
-    label: 'Let an administrator enrol a passkey for a person',
-    what: '`off` BY DEFAULT. `on` lets an administrator holding the Admin ' +
-          'Write console role enrol a passkey for a person this profile ' +
-          'applies to, from the person\'s page on the console or ' +
-          '/admin-api: the registration ceremony runs in the ' +
-          'administrator\'s own browser, against an authenticator they ' +
-          'hold (a security key to be handed over, say), under the ' +
-          'person\'s user handle, and is verified exactly as the person\'s ' +
-          'own registration is — attestation, algorithms and this ' +
-          'policy\'s registration rules. Nothing made elsewhere can be ' +
-          'imported. The key records which administrator enrolled it and ' +
-          'when, and the person is told. Left out of a save, the built-in ' +
-          'default is kept.' },
-  // #740. Optional, so a save written before the row existed keeps the
-  // stored value (or the built-in off) instead of failing as a missing
-  // field. Refused while device-bound sessions are off: see save().
-  { key: 'deviceBoundRequired',
-    attribute: 'stsPasskeyDeviceBoundRequired',
-    type: 'bool', dflt: false, optional: true,
-    label: 'Require a device-bound session',
-    what: 'OFF BY DEFAULT. On, an issuance to an application this ' +
-          'profile covers waits until the sign-on session is bound to ' +
-          'the browser\'s key, and is refused when the browser skipped ' +
-          'that registration or the wait elapsed without a binding. A ' +
-          'session that was never offered registration is not refused ' +
-          'by this row. Refused while authn.deviceBoundSessions is off.' }
-];
+const FIELDS: PolicyField[] =
+  // Written in models/directory/policy_passkey.tsp (#1390). What is passed here is
+  // what the code computes, so it has no second writing there.
+  ModelTables.fields('policy.passkey', {
+  securityKeyResidentKey: { values: RESIDENT_KEY_VALUES.slice() },
+  backupEligibility: { values: BACKUP_ELIGIBILITY_VALUES.slice() },
+  minPinLength: { dflt: MIN_PIN_LENGTH, min: MIN_PIN_LENGTH, max: MAX_PIN_LENGTH },
+  postQuantumRequired: { values: POST_QUANTUM_REQUIRED_VALUES.slice() },
+  postQuantumAllowCredentials: { values: POST_QUANTUM_ALLOW_CREDENTIALS.slice() },
+  registrationAlgorithms: { values: REGISTRATION_ALGORITHM_VALUES.slice(), dflt: REALM_LIST, empty: REALM_LIST, maxItems: REGISTRATION_ALGORITHM_VALUES.length },
+  registrationMode: { values: REGISTRATION_MODES.slice() },
+  lanes: { values: LANES_VALUES.slice() },
+  passkeyHints: { values: HINTS.slice() },
+  securityKeyHints: { values: HINTS.slice() },
+  signInHints: { values: HINTS.slice(), dflt: NO_HINTS },
+  rpNameExtras: { values: RP_NAME_EXTRAS.slice() },
+  recoveryAssurance: { values: RECOVERY_ASSURANCE.slice() },
+  attestationAlgorithms: { values: ATTESTATION_ALGORITHM_VALUES.slice(), dflt: NO_HINTS },
+  adminEnrolment: { values: ADMIN_ENROLMENT_VALUES.slice() }
+});
 
 /**
  * The fields, by key.
@@ -1137,37 +837,8 @@ const DEFAULTS: Readonly<Record<string, boolean | string | number>> =
  * The directory schema of `ou=passkeyPolicies`: its container, object class
  * and attributes.
  */
-const SCHEMA = {
-  container: 'ou=passkeyPolicies',
-  objectClasses: [
-    { name: 'stsPasskeyPolicy',
-      what: 'This service\'s class for a passkey policy: how passkeys behave ' +
-            'in this realm. The entry is named by the PROFILE ' +
-            '(`cn=default`).' }
-  ],
-  attributes: FIELDS.map(function (field) {
-    return { name: field.attribute, what: field.what };
-  }).concat(SELECTORS.map(function (field) {
-    return { name: field.attribute, what: field.what };
-  })).concat([
-    { name: 'description',
-      what: 'What the profile is for, for the next person.' }
-  ]),
-  // #724: what a recovery leaves on a PERSON's entry.
-  personAttributes: [
-    { name: 'stsRecoveryPending',
-      what: 'A recovery restored access to this person, who holds a ' +
-            'passkey, and no passkey has signed them in since: the door ' +
-            'and when, as `<door> <ISO 8601 instant>`. While the passkey ' +
-            'policy\'s recoveryAssurance is not-weaker or operator-only, ' +
-            'a sign-in that is not a passkey reaches no application. ' +
-            'Maintained by this service.' },
-    { name: 'stsPasswordResetSource',
-      what: 'Who issued the password reset link on this entry: `self` (the ' +
-            'forgot-password form) or `operator` (an administrator). ' +
-            'Written and cleared with the link. Maintained by this service.' }
-  ]
-};
+// The table is written in models/directory/policy_passkey.tsp (#1390).
+const SCHEMA = ModelTables.schema('policy.passkey');
 
 /**
  * The passkey policy: how a realm's passkeys behave — whether a sign-in may
@@ -3610,7 +3281,17 @@ class PasskeyPolicy {
     if (selectors) {
       attributes.stsPasskeyPrecedence = String(selectors.precedence);
     }
-    const written = this.directory.writePasskeyPolicy(which, attributes);
+    // `{ ok: false }` is truthy. putEntry() answers it for a description
+    // that carries an operator code and writes nothing (#1416); `false`
+    // is still the directory being full.
+    const written = this.directory.writePasskeyPolicy(which, attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug('Leaving PasskeyPolicy.save(). A description carries an ' +
+                'operator code.');
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
     if (!written) {
       log.debug('Leaving PasskeyPolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,

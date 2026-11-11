@@ -88,5 +88,6 @@
   "accounts.added": "konton tillagda",
   "accounts.switched": "standard bytt",
   "accounts.forgotten": "konton glömda",
-  "accounts.expired": "ihågkomna konton utgångna"
+  "accounts.expired": "ihågkomna konton utgångna",
+  "endAll": "Avsluta alla sessioner i den här sfären"
 }

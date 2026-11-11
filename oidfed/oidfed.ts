@@ -309,8 +309,16 @@ class Oidfed {
   // read inside that realm, whose prefix `baseUrlOf()` then adds.
   private requestIn(req: Req): Req {
     this.deps.log.debug("Entering Oidfed.requestIn().");
-    const out = Object.create(req || {});
-    out.url = PATHS.configuration;
+    // DEFINED, NOT ASSIGNED, and it matters: on an HTTP/2 request `url` is an
+    // accessor on the prototype whose setter writes shared state, so
+    // `out.url = ...` here rewrote the ORIGINAL request's URL for everything
+    // after it (#1353: `GET /admin-api/oidfed` from a browser was judged as
+    // `GET /.well-known/openid-federation`). HTTP/1.1's is a plain member, which
+    // is why no client but a browser ever showed it.
+    const out = Object.create(req || {}, {
+      url: { value: PATHS.configuration, writable: true, configurable: true,
+             enumerable: true }
+    });
     out.originalUrl = PATHS.configuration;
     out.params = {};
     out.query = {};
@@ -789,6 +797,13 @@ class Oidfed {
     // federation's OWN keys and statements are `oidfed.signingAlg`'s and are
     // not touched (the setting's description says so).
     helpers.withoutPqSigningAlgs(out);
+    // The documents inside were narrowed where they were built; this holds what
+    // the federation adds to the same accept list (#1368).
+    cryptoLib.signaturePolicy.narrowAcceptedLists(out,
+      ['id_token_signing_alg_values_supported',
+       'userinfo_signing_alg_values_supported',
+       'introspection_signing_alg_values_supported',
+       'authorization_signing_alg_values_supported']);
     log.debug("Leaving Oidfed.protocolMetadata(). " +
               Object.keys(out).join(', '));
     return out;
@@ -894,6 +909,20 @@ class Oidfed {
     const now = this.nowSec();
     const lifetime = Math.max(60, Number(config.value(
       'oidfed.statementLifetimeS')));
+    // THE VERIFIER'S REQUEST-SIGNING KEY MADE FIRST (#657): its
+    // `openid_credential_verifier` jwks names the key
+    // oid4vp.requestObjectSigningAlgorithm signs with, which may be a
+    // post-quantum key made on libuv's thread pool. A key it cannot use is
+    // refused, and logged, where the metadata is built.
+    const verifier = this.deps.verifier();
+    if (verifier && typeof verifier.prepareRequestSigner === 'function') {
+      try {
+        await verifier.prepareRequestSigner();
+      } catch (e) {
+        log.debug("Caught in Oidfed.configuration(): " +
+                  ((e && e.message) || e));
+      }
+    }
     const metadata = Object.assign({ federation_entity:
                                        this.federationEntity(req) },
                                    this.protocolMetadata(req));
@@ -2424,12 +2453,15 @@ class Oidfed {
       if (!read.ok || read.header.typ !== TYP.TRUST_MARK ||
           read.claims.sub !== self2 ||
           typeof read.claims.trust_mark_type !== 'string' ||
-          !EntityStatement.isEntityId(read.claims.iss)) {
+          !EntityStatement.isEntityId(read.claims.iss) ||
+          (read.claims.exp !== undefined &&
+           EntityStatement.isoOf(Number(read.claims.exp) * 1000) === null)) {
         this.audited(ctx, 'oidfed.held-mark-added', '', 'refused',
                      'STS-OIDFED-0048');
         return this.refused('STS-OIDFED-0048', 'a Trust Mark this realm ' +
                             'carries is a trust-mark+jwt issued TO it (sub ' +
-                            '= ' + self2 + ').');
+                            '= ' + self2 + '), and its exp, if it has one, ' +
+                            'is a time.');
       }
       store.put(KINDS.HELD_MARK, jwt, read.claims.iss, { jwt: jwt,
         type: read.claims.trust_mark_type, sub: read.claims.sub,
@@ -2601,7 +2633,7 @@ class Oidfed {
     this.deps.log.debug("Leaving Oidfed.resolutionView().");
     return {
       subject: r.subject, anchor: r.anchor,
-      expiresAt: new Date(Number(r.exp) * 1000).toISOString(),
+      expiresAt: EntityStatement.isoOf(Number(r.exp) * 1000) || '',
       chain: r.chain.map(function (c: Json): Json {
         return { iss: c.iss, sub: c.sub, exp: c.exp };
       }),
@@ -2701,7 +2733,7 @@ class Oidfed {
     const iso = function (ms: Json): string | null {
       log.debug("Entering iso().");
       log.debug("Leaving iso().");
-      return Number(ms) > 0 ? new Date(Number(ms)).toISOString() : null;
+      return EntityStatement.isoOf(ms);
     };
     const cached: Json[] = [];
     resolutions.forEach(function (v: Json): void {

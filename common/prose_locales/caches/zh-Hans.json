@@ -267,6 +267,22 @@
     "en": "335d6e9891f39e35",
     "text": "构建后 federation.releaseIndexTtlMs（{{ms}} 毫秒），或者在通过本服务写入联合关系时立即失效。"
   },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "CDN 边缘节点范围"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies，解析为 BlockList，这样请求就无需为判断是否来自必须携带本部署密钥的 CDN 边缘节点而重新解析该设置。"
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "结构性：该设置的一份解析副本。"
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "直到 global.edgeProxies 的文本发生变化。"
+  },
   "caches.store.global.trusted-proxies.title": {
     "en": "9c82ac7525550c6d",
     "text": "受信任的代理地址范围"
@@ -1126,6 +1142,22 @@
   "caches.store.persistence.write-shadow.lifetime": {
     "en": "9c59c7826b7934f6",
     "text": "不过期：每次刷写时刷新，每个已写入的目录条目和领域一个条目。在内存模式下为空。"
+  },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "固定证书的吊销"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "针对固定证书最近获取的信息，供偏执 PKI 模式下在一个时钟周期内作答的入口使用。以证书指纹为键。"
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "已强制：1024 条；最早写入的条目被丢弃，需要时重新获取。"
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 分钟"
   },
   "caches.store.revocation.ca-certificates.title": {
     "en": "c65adefa5d027d1a",

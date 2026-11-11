@@ -63,10 +63,10 @@
 // they are not among the mechanisms an application can name, so an
 // application that names any is re-prompted for one of those.
 //
-// A LEAF: it requires bunyan and nothing of this service, so the gate — in
-// the parent project's Kerberos COPY closure — can require it LAZILY without
-// owing a COPY line, and `authn/authn.ts` and the protocols can require it
-// without a cycle.
+// A LEAF: it requires bunyan and nothing of this service, so the gate can
+// require it LAZILY (which kept the gate's share of the parent project's
+// Kerberos COPY closure small, an obligation until #1280), and
+// `authn/authn.ts` and the protocols can require it without a cycle.
 // ---------------------------------------------------------------------------
 
 // This module's own logger, for `common/mode.js`'s reason: a leaf cannot

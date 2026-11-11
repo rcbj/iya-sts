@@ -143,6 +143,9 @@ filtering (#430).
 
 ### SPNEGO over HTTP
 
+In product mode the sign-in step reaches `/authn/spnego` in a short-lived
+HttpOnly cookie rather than in the address.
+
 The negotiation `/authn/spnego` performs, before it signs anybody in:
 
 * **`401 WWW-Authenticate: Negotiate`** to an unauthenticated request and the
@@ -204,6 +207,25 @@ Every refusal draws a page linking back to the sign-in screen, because a bare
 (Chrome's `--auth-server-allowlist`, Firefox's
 `network.negotiate-auth.trusted-uris`, plus a credential cache in the realm).
 With `krb5.spnegoAuthentication` off the door answers 403 naming the setting.
+
+### A ticket as a WS-Trust or token-exchange token (#658)
+
+A Kerberos ticket is also a token in the two exchanges this service runs, in
+the Kerberos Token Profile 1.1's form: an AP-REQ, bare or GSS-wrapped. See
+[WS-Trust](ws-trust.md#kerberos-tokens) and
+[the token exchange](configure-oauth2-grants.md#a-kerberos-ticket-as-the-subject-the-actor-or-the-token-issued).
+
+* **Presented**, it is checked by the acceptor `/authn/spnego` uses, so it must
+  be for `krb5.servicePrincipal`. A delegated one is the ticket the middle
+  tier obtained for this service by S4U2Proxy, or with a TGT the user
+  forwarded to it, never the user's own ticket to the middle tier.
+* **Issued**, it is sealed by this KDC for the subject and the target's SPN,
+  with the PAC every ticket of the realm carries. A delegation names who
+  acted in `S4U_DELEGATION_INFO`. The ticket does not claim
+  pre-authentication, because the KDC did not run an AS exchange for it. A
+  target in another Kerberos realm is reached through the
+  [trusts](#kerberos-trusts), through the KDCs of this service's own trust
+  realms.
 
 ### The demonstration: the companion's Kerberos-protected page and service
 
@@ -905,6 +927,11 @@ holds); the person has no key yet (step 1).
 
 ## Development and product mode
 
+Product mode uses enctypes 19 and 20 (RFC 8009). Enctypes 17 and 18 use
+HMAC-SHA1-96, which ASVS 5.0.0 does not accept, so they are offered only with
+`krb5.allowSha1Enctypes` on. **Many Kerberos clients speak only 17 and 18**, so
+check yours before moving to product mode, and turn this on only for those.
+
 | | Development | Product |
 |---|---|---|
 | User accounts | any name authenticates and **every user shares one password** (`password!`, `krb5.userPassword`), created on first sight | directory people authenticate with **keys derived from their own password**; nobody is created on demand |
@@ -929,6 +956,8 @@ service is not willing to be (`KDC_ERR_S_PRINCIPAL_UNKNOWN`), the names in
 modes**, and a replay is refused in both. See
 [What is not checked](what-is-not-checked.md).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a PKINIT client certificate must also be in date, permit digitalSignature and carry the PKINIT or smart-card extendedKeyUsage. The KDC's own error codes are unchanged, and revocation is still asked by the KDC. `pki.paranoidPkinit` turns this row off.
+
 ## Configuration
 
 | Setting | Environment variable | Default | Runtime? | What it does |
@@ -939,7 +968,8 @@ modes**, and a replay is refused in both. See
 | `krb5.servicePrincipal` | `KRB5_SERVICE_PRINCIPAL` | `HTTP/web.example.com` | no | The acceptor's SPN; a trust realm left at this default derives `HTTP/web.<its domain>`. `docker-compose.yml` sets `HTTP/localhost`. |
 | `krb5.servicePassword` | `KRB5_SERVICE_PASSWORD` | `service-account-password` | no | The acceptor account's password (the keytab equivalent); the default is refused in product mode, which keys the SPN at random instead. |
 | `krb5.serviceSalt` | `KRB5_SERVICE_SALT` | *(empty)* | no | The string-to-key salt for that account; set it to accept tickets from a real Active Directory KDC. |
-| `krb5.enctypes` | `KRB5_ENCTYPES` | `18,17,20,19,23` | no | The RFC 3961 encryption types used, strongest first; an unimplemented number stops startup. **Warning:** 23 (rc4-hmac) is deprecated by RFC 8429 and is used in development mode only — product reads the list without it and refuses a write naming it. |
+| `krb5.enctypes` | `KRB5_ENCTYPES` | `18,17,20,19,23` | no | The RFC 3961 encryption types used, strongest first; an unimplemented number stops startup. **Warning:** 23 (rc4-hmac) is deprecated by RFC 8429 and is used in development mode only — product reads the list without it and refuses a write naming it. Product drops 17 and 18 the same way unless `krb5.allowSha1Enctypes` is on. |
+| `krb5.allowSha1Enctypes` | `KRB5_ALLOW_SHA1_ENCTYPES` | `false` | no | Product mode only. On, the KDC may also use enctypes 17 and 18 (AES with HMAC-SHA1-96, RFC 3962); off, product uses 19 and 20 (RFC 8009) alone. **Warning:** ASVS 5.0.0 11.4.1 does not accept SHA-1 here; turn it on only for clients that speak nothing newer. |
 | `krb5.kvno` | `KRB5_KVNO` | `3` | no | The kvno of every account built from a configured password, and the starting kvno of stored keys. |
 | `krb5.ticketLifetimeSeconds` | `KRB5_TICKET_LIFETIME_S` | `36000` | yes | The longest a ticket is valid. |
 | `krb5.renewLifetimeSeconds` | `KRB5_RENEW_LIFETIME_S` | `604800` | yes | How far `renew-till` reaches for a renewable ticket. |
@@ -1313,6 +1343,9 @@ decoded and never produced.
 
 * [Authentication](authentication.md) — the sign-in screen and its Kerberos
   button
+* [WS-Trust](ws-trust.md#kerberos-tokens) and
+  [the token exchange](configure-oauth2-grants.md#a-kerberos-ticket-as-the-subject-the-actor-or-the-token-issued)
+  — a ticket as a token (#658)
 * [Sessions](sessions.md) and [Signing out](signing-out.md)
 * [Federation](federation.md) — `fedAuthnMechanism: spnego`
 * [Trust realms](trust-realms.md) — a KDC per realm

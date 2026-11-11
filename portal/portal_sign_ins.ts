@@ -39,6 +39,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -70,17 +71,9 @@ const DAYS = 30;
 // rows whatever the person has.
 const PER_PAGE = 20;
 
-const PAGE_QUERY = vz.object({
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('Which page of `rows`, newest first. Clamped to the last.')
-});
+const PAGE_QUERY = ModelZod.query('account', 'getSignIns');
 
-const ANSWER_FORM = vz.object({
-  action: vt.oneOf(['confirm', 'deny'])
-    .describe('`confirm`: this was me. `deny`: this was not me.'),
-  assessment: vz.string().min(1).max(200)
-    .describe('The assessment\'s id, from the list.')
-});
+const ANSWER_FORM = ModelZod.body('account', 'answerSignIn');
 
 /**
  * `/portal/sign-ins`' account API operations: the person's recent sign-ins
@@ -290,18 +283,7 @@ class PortalSignIns {
     log.debug("Entering PortalSignIns.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/sign-ins',
-        operationId: 'getSignIns', tag: 'Recent sign-ins', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/sign-ins',
-        summary: 'Your assessed sign-ins, with the application of each',
-        description: 'One page (`paging`, moved by `page`, newest ' +
-          'first) of the assessments of your sign-ins: when, the city, ' +
-          'country and network, the browser and system, the door, the ' +
-          'application (the client the sign-in named), the risk level, ' +
-          'and your answer if you gave one. `days` is how far back the ' +
-          'list looks (`audit.authenticationHistoryDays`, thirty by ' +
-          'default, set per realm). `paging.total` counts every sign-in ' +
-          'of that window. `thisSession` is the assessment of the ' +
-          'session this token was issued on.',
+        operationId: 'getSignIns', access: 'person',
         query: PAGE_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
@@ -311,15 +293,7 @@ class PortalSignIns {
             });
         } },
       { method: 'POST', path: ctx.BASE + '/sign-ins',
-        operationId: 'answerSignIn', tag: 'Recent sign-ins',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/sign-ins',
-        summary: 'Says whether a sign-in was you',
-        description: '`confirm` is recorded, and lowers your standing only ' +
-          'when said from another, low-risk session. `deny` puts your ' +
-          'standing at HIGH: everything you hold is ended, this session ' +
-          'included, and RISC is told the credential is compromised ' +
-          '(`ended: true`).',
-        body: ANSWER_FORM,
+        operationId: 'answerSignIn', access: 'person', body: ANSWER_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.answer(ctx, res, caller, input.body);

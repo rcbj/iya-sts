@@ -233,6 +233,7 @@ function doubles(people, groupMembers, otherMembers, groupNames) {
 
 async function inProcess(t) {
   log.debug("Entering inProcess().");
+  const errorCodes = require('../common/error_codes');
   const d = doubles(['ann', 'ben', 'cat', 'dan', 'eli'], ['ben', 'dan'],
                     ['dan', 'eli']);
   const c = d.activities;
@@ -240,17 +241,20 @@ async function inProcess(t) {
 
   // Refusals of a start.
   let r = await c.act({ action: 'start', activity: 'nope' }, ctx);
-  t.equal(r.ok === false && r.errorCode, 'STS-AUTHN-0490',
+  t.equal(r.ok === false && errorCodes.codeOf(r), 'STS-AUTHN-0490',
     'an unknown activity is refused');
   r = await c.act({ action: 'start', intervalDays: 0 }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0490', 'an interval of 0 is refused');
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0490',
+          'an interval of 0 is refused');
   r = await c.act({ action: 'start', maxMails: 21 }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0490', 'a maximum past 20 is refused');
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0490',
+          'a maximum past 20 is refused');
   r = await c.act({ action: 'start', perRun: 1.5 }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0490', 'a fraction is refused');
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0490', 'a fraction is refused');
   r = await c.act({ action: 'start', groups: ['staff', 'nobody-here'] },
                   ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0530', 'an unknown group is refused');
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0530',
+          'an unknown group is refused');
   t.check(r.errors && r.errors.length === 1 &&
           /nobody-here/.test(r.errors[0]), 'by name, and only it',
           JSON.stringify(r));
@@ -259,9 +263,11 @@ async function inProcess(t) {
     many.push('g' + i);
   }
   r = await c.act({ action: 'start', groups: many }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0490', 'more than fifty groups refused');
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0490',
+          'more than fifty groups refused');
   r = await c.act({ action: 'frobnicate', id: 'x' }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0491', 'an unknown action is refused');
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0491',
+          'an unknown action is refused');
 
   // A start, and the second one refused.
   r = await c.act({ action: 'start', activity: 'pqc-passkey-migration',
@@ -272,7 +278,7 @@ async function inProcess(t) {
   t.equal(d.audits.length && d.audits[d.audits.length - 1].action,
     'admin.post-login-activity.change', 'the start is audited');
   r = await c.act({ action: 'start' }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0492',
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0492',
     'a second for the same people is refused');
   t.equal(c.offIn('default'), '', 'the job is on with one running');
 
@@ -334,7 +340,7 @@ async function inProcess(t) {
   const r2 = await c.act({ action: 'end', id: id }, ctx);
   t.equal(r2.ok && r2.started.state, 'ended', 'end ends it');
   r = await c.act({ action: 'pause', id: id }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0491', 'an ended one cannot pause');
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0491', 'an ended one cannot pause');
   r = await c.act({ action: 'start', maxMails: 5, perRun: 10 }, ctx);
   const id2 = r.started && r.started.id;
   t.check(r.ok && id2 && id2 !== id, 'a new one once the first ended');
@@ -357,7 +363,8 @@ async function inProcess(t) {
   r = c.move('resume', id2, ctx);
   t.equal(r.ok && r.started.state, 'running', 'resume resumes');
   r = c.move('resume', id2, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0491', 'a running one cannot resume');
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0491',
+          'a running one cannot resume');
   d.mailState.available = false;
   const sentBefore = d.sent.length;
   out = await c.runAsync({});
@@ -388,7 +395,7 @@ async function inProcess(t) {
     'a `;`-separated list is resolved to DNs, in order');
   const uid = r.started && r.started.id;
   r = await c.act({ action: 'start', groups: ['ops', 'staff'] }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0492',
+  t.equal(errorCodes.codeOf(r), 'STS-AUTHN-0492',
     'the same groups in another order are the same people');
   r = await c.act({ action: 'start', groups: ['ops'] }, ctx);
   t.check(r.ok, 'another set of groups is other people', JSON.stringify(r));
@@ -442,10 +449,42 @@ async function chooser(t) {
     return one.dn + ':' + one.found;
   }).join(','), 'cn=team-03:true,cn=team-07:true,cn=nope:false',
     'the list is resolved, a missing group marked');
-  t.equal(require('../common/post_login_activities')
+  const activitiesMod = require('../common/post_login_activities');
+  t.equal(activitiesMod
     .groupNamesOf(['a; b', '', 'cn=c\\;d,ou=x;']).join('|'),
     'a|b|cn=c\\;d,ou=x',
     'groupNamesOf splits on `;`, keeps an escaped one, drops empties');
+  const cap = activitiesMod.GROUPS_QUERY_MAX;
+  t.equal(cap, 4096, 'the groups query cap is 4096 characters');
+  const name = 'cn=' + 'n'.repeat(40) + ',ou=groups,dc=example,dc=test';
+  const fifty = [];
+  for (let i = 0; i < 50; i++) {
+    fifty.push(name);
+  }
+  const joined = fifty.join(';');
+  t.check(joined.length <= cap &&
+    activitiesMod.groupsQueryProblem({ groups: joined }) === null,
+    'fifty ordinary group names fit in the groups query',
+    String(joined.length));
+  const exact = 'e'.repeat(cap);
+  t.equal(activitiesMod.groupsQueryProblem({ groups: exact }), null,
+    'a groups query of exactly the cap is accepted');
+  t.equal(activitiesMod.groupNamesOf(exact).length, 1,
+    'a legal string of the cap is one name');
+  const marker = 'GROUPSQUERYMARKER';
+  const tooLong = marker + 'a'.repeat(cap);
+  const refused = activitiesMod.groupsQueryProblem({ groups: tooLong });
+  const sentence = refused && refused.errors && refused.errors[0];
+  t.check(refused && refused.ok === false &&
+    !/STS-[A-Z]+-[0-9]{4}/.test(String(sentence)) &&
+    String(sentence).indexOf(marker) < 0 &&
+    String(sentence).indexOf(String(cap)) >= 0,
+    'a longer groups query is refused, with no code and without the value',
+    JSON.stringify(refused));
+  const parts = ['aa', 'bbb', 'c'.repeat(cap)];
+  t.check(activitiesMod.groupsQueryProblem({ groups: parts }) &&
+    activitiesMod.groupsQueryProblem({ groups: parts }).ok === false,
+    'repeated groups parameters are summed');
   log.debug("Leaving chooser().");
 }
 
@@ -577,6 +616,15 @@ function childMain() {
          r.json.activities.indexOf('pqc-passkey-migration') >= 0,
          'B2. GET /admin-api/post-login-activities answers the view',
          brief(r));
+    const marker = 'GROUPSQUERYMARKER';
+    const tooLong = marker + 'a'.repeat(activities.GROUPS_QUERY_MAX);
+    r = await call(port, 'GET', '/admin-api/post-login-activities?groups=' +
+                   encodeURIComponent(tooLong), admin);
+    const shown = JSON.stringify(r.json || {});
+    note(r.status === 400 && r.json && r.json.ok === false &&
+         !/STS-[A-Z]+-[0-9]{4}/.test(shown) && shown.indexOf(marker) < 0,
+         'B2a. a groups query longer than one request line can carry is ' +
+         'refused 400, with no code and without the value', brief(r));
     r = await call(port, 'POST', '/admin-api/post-login-activities/start',
                    admin, { activity: 'pqc-passkey-migration',
                             intervalDays: 0 });
@@ -692,11 +740,25 @@ function childMain() {
       r = await call(port, 'POST', '/admin-api/post-login-activities/start',
                      admin, { groups: [GROUP, 'pla-none-' + stamp],
                               intervalDays: 1 });
-      note(r.status === 400 && r.json &&
-           r.json.errorCode === 'STS-AUTHN-0530' &&
+      note(r.status === 400 && r.json && !('errorCode' in r.json) &&
            /pla-none-/.test(JSON.stringify(r.json.errors)),
-           'B14a. a group this realm does not have is refused (0530)',
-           brief(r));
+           'B14a. a group this realm does not have is refused, and the ' +
+           'answer names no code', brief(r));
+      // WHERE THE CODE IS RECORDED (#1355): the audit row, written as the
+      // response finishes, so the read after it may need a moment.
+      let recorded = null;
+      for (let i = 0; i < 20 && !recorded; i += 1) {
+        await new Promise(function (done) {
+          setTimeout(done, 150);
+        });
+        const rows = await call(port, 'GET',
+                                '/admin-api/audit?per=50&code=STS-AUTHN-0530',
+                                admin);
+        recorded = ((rows.json && (rows.json.rows || rows.json.events)) ||
+                    [])[0] || null;
+      }
+      note(!!recorded, 'B14b. the refusal is on the audit row, under 0530',
+           JSON.stringify(recorded));
       r = await call(port, 'POST', '/admin-api/post-login-activities/start',
                      admin, { groups: [GROUP, OTHER], intervalDays: 1 });
       const gid = r.json && r.json.started && r.json.started.id;

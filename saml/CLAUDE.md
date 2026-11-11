@@ -45,6 +45,24 @@ And the spellings differ almost everywhere the two overlap: `AssertionID` not
 `AudienceRestriction`, and a signature that goes LAST in an assertion and FIRST
 in a response.
 
+**BOTH PROFILES' ERROR PAGES ARE `common/error_page.ts`'s SINCE #1327**
+(rcbj's design on #1326). Each `samlError()` keeps its signature, its status
+and its callers' codes, and draws the shared page: the sentence in the yellow
+box in the page's language, chosen by the code the caller marked
+(`samlErrors.refusal.<code>`, a caller's `pageKey`, then
+`samlErrors.refusal.general`), why it is a page and not a Response collapsed
+(`samlErrors.background.saml2` / `saml11`, plus a case's own key — `paos`,
+`authnFailed`, `noAuthnContext`, `policy`), the start-over note and the
+portal, and the Diagnostics: the service provider or `providerId`, the ACS URL
+or `shire`, the binding or profile, `RelayState` or `TARGET`, who is signed
+in, and the caller's English title and detail AS DATA. No error value sits in
+the box: these pages send no protocol error, and the STS code is never shown.
+**A new refusal code here owes a `samlErrors.refusal.<code>` sentence in all
+seven base catalogs**; without one the general sentence is drawn, which says
+less. The text/plain 404 of `refusedUnregistered()` (a scoped path for an
+unregistered service provider, shared with metadata) is not a page and is
+unchanged. `tests/saml_initiation.js` A2b and C1b hold the shape.
+
 What IS shared is shared deliberately and is exactly three things: the
 application registry, the session, and `slugOf()` — which `saml11_sso.ts`
 requires FROM `saml2_sso.ts` rather than reimplementing, because the slug is a
@@ -181,14 +199,12 @@ registry which application has it. That is a scan of a mock's in-memory
 directory, and it is why `/admin/saml2` exists — nobody derives that digest by
 hand.
 
-**AND THE PARENT PROJECT'S LAUNCHERS COMPUTE THAT SEGMENT THEMSELVES, WITH
-`sha256sum`.** The metadata URL carries the digest because the document is
-published per service provider, and three shell scripts over there build it
-rather than guessing it — so **a change to `slugOf()` breaks three files nothing
-in this repository can see**, and it breaks them in the parent's suite rather
-than here. That is the same standing obligation the root `CLAUDE.md`'s last
-section describes for the Kerberos COPY set: this repository moves, and the
-other one has to be moved with it in the same change. Nothing is provisioned for
+**THE PARENT PROJECT'S LAUNCHERS COMPUTE THAT SEGMENT THEMSELVES, WITH
+`sha256sum`**, because the metadata URL carries the digest and the document is
+published per service provider. Until #1280 this file made a change to
+`slugOf()` an obligation to move those three scripts in the same change; rcbj
+ended that with the rest of what this repository owed the parent, so keeping
+them in step is the parent's business. Nothing is provisioned for
 the `sts` side of those jobs — any entityID is accepted, the metadata is minted
 on the ask, and the application entry is created by the first valid AuthnRequest
 — which is why there is no `configureX` step for it anywhere in those launchers,
@@ -583,6 +599,11 @@ metadata validator refused the whole document over it (the Shibboleth SP
 accepted it). rcbj chose "two views, one entity" — one entityID, one signer,
 the WS-Federation view a superset — over one document everywhere.
 
+**Every view carries the Algorithm Support profile's `alg:SigningMethod` and
+`alg:DigestMethod` (#1368).** They sit in the `md:Extensions` of the one
+`md:EntityDescriptor` and describe the entity. `ws-federation/CLAUDE.md` records
+rcbj's decision for the WS-Federation view.
+
 ---
 
 ## FOURTEEN OF THESE SETTINGS ARE PER APPLICATION, AND `settingFor()` IS THE ONLY PLACE THAT IS DECIDED
@@ -694,14 +715,14 @@ skew. That is deliberate and conservative: the envelope describes what was asked
 for, the assertion states what it is actually valid for, and a relying party
 trusting the envelope discards early rather than late.
 
-**ONE CALLER HAD TO BE EDITED ANYWAY**, and it is the exception that proves the
-choke point. `saml2_sso.ts` passes its own
-`SubjectConfirmationData/NotOnOrAfter`, because the Web Browser SSO profile
-requires the bearer confirmation to carry one; it now adds the same skew. Two
-expiries inside one assertion that disagree is a defect a service provider
-reports as *assertion expired* while this console shows a window that has not
-closed. **A future caller that passes its own expiry has to do the same** — that
-is the one thing about this feature that is not automatic.
+**THE CONFIRMATION'S EXPIRY IS THE BUILDER'S.** When `subjectConfirmation` is
+present and `notOnOrAfter` is omitted, `SubjectConfirmationData/NotOnOrAfter`
+is the Conditions instant (`exp`), the same string. Two `iso()` calls are two
+`Date.now()` reads, and they disagreed by a millisecond
+(`tests/wsfed_saml2_token.js`, 2026-11-01). The Web Browser SSO profile and
+WS-Federation both omit it. A caller that passes its own expiry has to be
+that same instant — that is the one thing about this feature that is not
+automatic.
 
 **AND IT IS NOT `oauth2.clockSkewS`.** That one is a TOLERANCE applied wherever
 this service READS a document back, including an inbound partner assertion at
@@ -1239,7 +1260,11 @@ consumption; with none, halfway to validUntil), or **fresh**.
   scheduler*), every `saml2.spMetadataRefreshIntervalS` on the leader, switched
   by `saml2.spMetadataRefresh`. It was a timer `server.js`'s `announce()`
   started in every process until #49; `server.js` still calls
-  `startRefresher()`, which now only registers the job. The `cluster_claims`
+  `startRefresher()`, which now only registers the job — and since #704 the
+  module's wire step registers it first, in every process, so the scheduler
+  may run its body on a request worker. The refresh STATE
+  `refreshStatus()` answers stays per process, as it always was for a
+  worker answering the page. The `cluster_claims`
   claim keyed by realm, entity and the consumption it replaces stays, as the
   guard against a refresh asked for by hand at the same moment. **A failed refresh changes nothing**, so the old
   document works until it expires; the failure is a STATE
@@ -1643,6 +1668,12 @@ needs before changing it:
   is where every metadata-reading TLS engine looks. Last, so a consumer that
   takes the first signing certificate for XML signatures still takes the XML
   key (`tests/protocol/sts_xml_schema_validation.js` is one such consumer).
+  A reader that keeps one certificate per `X509Data` keeps the LAST instead.
+  pysaml2 7.5.5 does (cardinality max 1, and a later element overwrites),
+  which is why `helpers.x509DataXml()` repeats the signer's certificate
+  after the Root: that reader still holds the leaf, and this TLS descriptor
+  stays a separate key the same reader may try and reject. `common/CLAUDE.md`
+  (3w) argues the chain.
 * **In BOTH roles**: the IDPSSODescriptor (artifact resolution) and the
   AttributeAuthorityDescriptor (the attribute query), because a service
   provider looks up the keys of the role whose endpoint it is calling.
@@ -1769,3 +1800,25 @@ design. With `authn.multipleAccounts` off nothing here changes; on:
 ## The description page is a static surface's shell (#584, 2026-10-12)
 
 `GET /saml2` and `GET /saml11` are this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `saml/web_saml_description.ts` from the `describeSaml2` and `describeSaml11` catalogs, with `/saml2/description.js` and `/saml11/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. Neither page had a JSON form before; it is the view, which names no mock service provider or relying party since #592. The bare `GET /saml2/sso`, `/saml2/ars`, `/saml11/sso` and `/saml11/responder` descriptions are a specification's endpoints answering a parameterless GET and stay server-drawn. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+## Under paranoid PKI mode an administrator's act names the anchor (rcbj, #1360)
+
+**`consume()` tells the two kinds of document apart by `this.quiet`**, which is
+true only for the refresher and a lookup a request started. A document an
+administrator gives or asks for, with no anchor yet, is accepted unsigned and
+its first signing certificate is written to
+`samlSpMetadataSigningCertificate`. A quiet fetch never names one: it verifies
+against what is held, a certificate set by hand included, and is otherwise
+refused (`STS-SAML-0118`), or whoever answers for the URL would choose the key.
+A verified quiet fetch may rotate `samlSigningCertificate`, so the anchor is the
+separate field and rotation does not move it; over a hand-set certificate, the
+one it answered to is pinned there. An administrator's unsigned document is taken
+while it keeps a held anchor or names no signing key, because real providers
+publish unsigned metadata and nothing new is trusted (`keptAnchor()`); one naming
+only another key is refused, and replacing an anchor is setting that field. With
+realm anchors configured every document must verify, as it always did.
+`saml2.mdqImportWithoutAnchors` still gates an operator's MDQ import, and the
+import it lets through is an administrator's act like any other. Nothing else
+can write these attributes: no OAuth registration door names them, and a sighting
+goes to the observed attribute, never to the registered one.
+`tests/saml_metadata_lifecycle.js` F1c holds it, against nine mutants.

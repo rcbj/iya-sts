@@ -1,5 +1,10 @@
 # CLAUDE.md — `postgres/`
 
+**`schema.sql` is generated since #1390.** Its tables and indexes come from
+`models/persistence/persistence.tsp` and the rest from
+`models/persistence/schema.template.sql`. Edit those and run
+`tests/tools/regenerate-model-docs.sh`; `tests/model_typespec.js` fails otherwise.
+
 **Four files the database container runs, and nothing else. None of them is
 run by this service**, and nothing in this repository requires them —
 `docker-compose.yml` mounts them into the PostgreSQL image. It was two until
@@ -192,8 +197,10 @@ seconds of index writes inside the script's transaction.
 **VERSION 23 (2026-10-20) ADDS `pg_trgm` AND A TRIGRAM INDEX, AND A LARGE
 STORE SHOULD BUILD IT CONCURRENTLY FIRST.** `sts_ldap_entries_uid_trgm` is a
 GIN over `rdn_value` with `gin_trgm_ops`, partial on the children of each
-realm's `ou=users`. It is what `/portal/delegate`'s search asks
-(`ldap/CLAUDE.md`). `pg_trgm` ships in the official image's contrib and is a
+realm's `ou=users`. It is what `/portal/delegate`'s search asks, and since
+#1310 the role chooser's needle count and page too (`ldap/CLAUDE.md`) —
+with no new schema version and nothing to run: an image with #1310 against
+a version-23-or-later store finds the index there. `pg_trgm` ships in the official image's contrib and is a
 TRUSTED extension (PostgreSQL 13+), so the database owner may create it with
 no superuser. Measured on `postgres:18`: a non-superuser owner created it,
 and it landed in the `sts` schema.
@@ -300,3 +307,13 @@ non-superuser may and **checks** the other three, failing the run if the
 application role holds any of them. `deploy/aws/schema-init/` is how that file
 reaches RDS: an init container that runs it with psql before each node starts.
 
+## The passwords are generated at first start
+
+`db-secrets.sh` is sourced first in the container's command in
+`docker-compose.yml`. It makes the owner's and `sts_app`'s passwords once on the
+`sts-db-secrets` volume, and `openbao/seed-start.sh` reads the second for the
+secret store, because that file defaults to product mode and product mode refuses
+a well-known database password. `docker-compose-run-tests.yml` keeps its fixed
+values and opts out with `STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD`, which
+is why no test stack could show the refusal. `tests/compose_db_passwords.js` holds
+both halves.

@@ -117,7 +117,7 @@ function childMain() {
     const secret = withApp('am-tom');
     let s = await toStep('am-tom');
     note(s.answer.next === 'mfa' && s.answer.step === 'totp' &&
-         /^\/authn\/totp\?mfa=/.test(s.answer.location),
+         /^\/authn\/totp(?:\?app=[^#]*)?[?#]mfa=/.test(s.answer.location),
          '1a. a person holding an app is answered the code page\'s address',
          s.answer.text);
     // Every view a step's page is drawn from, for 11k.
@@ -317,7 +317,7 @@ function childMain() {
          '7b. Ignore is refused on a required step', r.text);
     r = await act(s, 'setup/totp', {});
     note(r.next === 'mfa' && r.step === 'enrol-totp' &&
-         /^\/authn\/mfa-setup\?mfa=/.test(r.location),
+         /^\/authn\/mfa-setup(?:\?app=[^#]*)?[?#]mfa=/.test(r.location),
          '7c. an authenticator app begun answers the set-up page again',
          r.text);
     const enrolling = await screen.openStep({ port: port, jar: s.jar,
@@ -372,7 +372,7 @@ function childMain() {
     r = await act(s, 'totp', { code: totp.codeAt(dSecret,
                                                  Date.now() + 30000) });
     note(r.apiStatus === 400 && r.next === 'refused' &&
-         /^\/authn\/login\?authn=/.test(String(r.json && r.json.location)),
+         /^\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(r.json && r.json.location)),
          '9a. a session refused at the end of the step answers the sign-in ' +
          'screen\'s address', r.text);
     const back = await screen.open({ port: port, jar: s.jar,
@@ -442,7 +442,7 @@ function childMain() {
     s = await toStep('am-sid');
     r = await act(s, 'start-over', {});
     note(s.answer.step === 'enrol' && r.next === 'redirect' &&
-         /^\/authn\/login\?authn=/.test(r.location) &&
+         /^\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location) &&
          !authn.mfaStepFor(s.opened.id),
          '11i. the set-up step starts over too', r.text);
     // The forced password change: nothing changed, the request kept.

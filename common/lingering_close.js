@@ -190,6 +190,7 @@ function arm(req, res) {
  */
 module.exports = {
   arm: arm,
+  lingerOn: lingerOn,
   LINGER_TOTAL_MS: LINGER_TOTAL_MS,
   LINGER_IDLE_MS: LINGER_IDLE_MS
 };

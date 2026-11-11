@@ -2950,13 +2950,12 @@ class XacmlSurface {
         // service reads a body with — so the ceiling is one number in one
         // place.
         //
-        // **ENTITY EXPANSION IS NOT A HAZARD HERE AND THAT IS MEASURED RATHER
-        // THAN ASSUMED.** `@xmldom/xmldom` resolves no entity declared in a
-        // DTD, internal or external: a billion-laughs document and an `<!ENTITY
-        // xxe SYSTEM "file:///etc/passwd">` both come back as *entity not
-        // found*, refused as not well-formed. So there is no expansion limit to
-        // set and no external resolver to disable — and this paragraph is here
-        // so the next person to look does not have to run the probe again.
+        // **ENTITY EXPANSION IS NOT A HAZARD HERE.** `common/xml_parser.js`,
+        // which `validation.parseXml()` parses with, refuses a document that
+        // carries a `<!DOCTYPE>` or an `<!ENTITY>` before the parser sees it
+        // (ASVS 5.0.0 1.5.2), so a billion-laughs document and an `<!ENTITY
+        // xxe SYSTEM "file:///etc/passwd">` are both refused, and there is no
+        // expansion limit to set and no external resolver to disable.
         // ---------------------------------------------------------------------
         const parsed = validation.parseXml(raw, 'PIP query',
                                            { max: validation.CAP.LARGE });

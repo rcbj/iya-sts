@@ -281,7 +281,7 @@ function jar() {
     value: function () {
       log.debug("Entering value().");
       log.debug("Leaving value().");
-      return store.sts_session || "";
+      return (store.sts_session || store["__Host-sts_session"]) || "";
     }
   };
 }
@@ -753,17 +753,19 @@ async function x509(username) {
   const pki = await makeCertificate(username);
 
   // The anchor goes in through `tests/tools/pep-credential.js`'s
-  // `trustAnchor()` (2026-09-18): the GATED door, POST
-  // /admin-api/tls/trust/add, first — the only one a product-mode service
-  // opens, persisted so every node of a cluster applies it, and since #597
-  // the only one.
-  const installed = await anchors.trustAnchor(base, pki.caPem);
+  // `trustAnchor()` (2026-09-18; `trustRecorded()` since #1307): the GATED
+  // door, POST /admin-api/tls/trust/add, first — the only one a
+  // product-mode service opens, persisted so every node of a cluster
+  // applies it, and since #597 the only one.
+  // Recorded before it is posted (#1307): an add applied but answered late
+  // is still removed when the job finishes.
+  const installed = await anchors.trustRecorded(base, pki.caPem,
+                                                addedAnchors);
   assert.ok(installed.ok,
     "the test CA should be accepted as a trust anchor; it answered " +
     (installed.status || "") + " " + String(installed.why ||
                                             installed.body || "")
       .slice(0, 200));
-  addedAnchors.push(pki.caPem);
   // STORED ON THE PERSON'S ENTRY (#1061, rcbj 2026-10-27): an outside
   // authority's certificate signs in only as the one entry storing it in
   // `userCertificate`, never by its CN — which this leaf carries as

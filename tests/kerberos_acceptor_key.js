@@ -265,6 +265,7 @@ function inAChild(t, which, env) {
     env: Object.assign(clean, {
       LOG_LEVEL: 'fatal', AK_ROOT: ROOT, AK_OUT: outFile, AK_CASE: which,
       STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: kekFile
     }, env),
     encoding: 'utf8', timeout: 180000
@@ -295,7 +296,7 @@ function productKeysTheAcceptor(t) {
   log.debug("Entering productKeysTheAcceptor().");
   t.log.info('=== A. product, the published password: a random key ===');
   const r = inAChild(t, 'product-default', {
-    STS_MODE: 'product', KRB5_SERVICE_PRINCIPAL: 'HTTP/localhost',
+    STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true', KRB5_SERVICE_PRINCIPAL: 'HTTP/localhost',
     KRB5_KRBTGT_PASSWORD: 'not-the-published-krbtgt-secret'
   });
   t.check(r.spn === 'HTTP/localhost' && r.before &&
@@ -357,7 +358,7 @@ function anOperatorsPasswordWins(t) {
   t.log.info('=== B. product, a password of the operator\'s own ===');
   const OWN = 'an-operators-own-Passw0rd!';
   const r = inAChild(t, 'product-own', {
-    STS_MODE: 'product', KRB5_SERVICE_PRINCIPAL: 'HTTP/localhost',
+    STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true', KRB5_SERVICE_PRINCIPAL: 'HTTP/localhost',
     KRB5_SERVICE_PASSWORD: OWN,
     KRB5_KRBTGT_PASSWORD: 'not-the-published-krbtgt-secret'
   });

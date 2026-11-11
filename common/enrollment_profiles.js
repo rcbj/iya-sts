@@ -22,22 +22,22 @@
 // `config` and the error-code table; `cert_enrollment.ts` requires realms.js
 // and twenty modules besides. So the list is a LEAF that both require.
 //
-// **IT REQUIRES NOTHING, AND IT MUST NOT.** realms.js is in the parent
-// project's in-process Kerberos COPY closure (`kerberos/CLAUDE.md`), so this
-// file is too — one COPY line owed, and a require here would owe more. It is
-// data only, so it has no function to log the entry of: no logger, which is
-// what lets it require nothing.
+// **IT REQUIRES NOTHING.** realms.js was in the parent project's in-process
+// Kerberos COPY closure, so this file was too, and a require here would have
+// owed more COPY lines (an obligation until #1280; the arrangement stands).
+// It is data only, so it has no function to log the entry of: no logger,
+// which is what lets it require nothing.
 //
 // **AND IT IS JAVASCRIPT, NOT TYPESCRIPT, BECAUSE OF THAT CLOSURE (2026-10-13,
-// #300).** It was written as `enrollment_profiles.ts`, which exists as `.js`
-// only after `tsc` runs inside an image build — so no COPY from a checkout
-// could supply it, and the parent's tests image had to take the compiled file
-// out of a built service image (`COPY --from=mocksts`), the one place it
-// reached into one. A module realms.js requires AT LOAD must be loadable from
-// the checkout, which is the same reason `krb5_kdc.js`, `krb5_service.js` and
-// `spnego.js` are kept JavaScript. A lazy require in realms.js would not have
-// done: `matchPath()` asks `isEstLabel()` on every request's realm middleware,
-// so the closure reaches it anyway. `// @ts-check` keeps it typed.
+// #300; history — nothing is owed since #1280, and it may now be
+// converted).** It was written as `enrollment_profiles.ts`, which exists as
+// `.js` only after `tsc` runs inside an image build — so no COPY from a
+// checkout could supply it, and the parent's tests image had to take the
+// compiled file out of a built service image (`COPY --from=mocksts`), the one
+// place it reached into one. A lazy require in realms.js would not have
+// done: `matchPath()` asks `isEstLabel()` on every request's realm
+// middleware, so the closure reached it anyway. `// @ts-check` keeps it
+// typed.
 // ---------------------------------------------------------------------------
 
 /**

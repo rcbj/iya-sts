@@ -267,6 +267,25 @@ class UsersPage {
          [factorCounts.noCredential,
           t.text('consoleUsers.body.tileNoWayIn')]];
     const unreadable = dc ? dc.unreadable : factorCounts.unreadable;
+    // HOW OLD THE DIRECTORY'S COUNTS ARE (#684). In a windowed process the
+    // directory keeps a count for up to `directoryCountsKeptFor` seconds
+    // against another process's writes, so two loads answered by two
+    // workers can draw two figures, and during a fast delete a tile could
+    // rise on the next load with nothing saying the first figure had an
+    // age. Drawn only where that bound exists: a directory in memory has no
+    // other process to lag. The age is this browser's clock against the
+    // counting process's, floored at nought for a clock that runs behind.
+    const countedAt = json.directoryCountedAt
+      ? Date.parse(json.directoryCountedAt) : NaN;
+    const tilesAge = dc && Number.isFinite(countedAt) &&
+                     json.directoryCountsKeptFor !== null &&
+                     json.directoryCountsKeptFor !== undefined
+      ? kit.note(t.html('consoleUsers.body.tilesAge', {
+        at: String(json.directoryCountedAt).slice(11, 19),
+        age: String(Math.max(0, Math.round((Date.now() - countedAt) /
+                                           1000))),
+        max: String(json.directoryCountsKeptFor) }))
+      : '';
     const inner = '<div class="tiles">' +
         tiles.filter(function (one) {
           return one[0] !== null && one[0] !== undefined;
@@ -289,6 +308,7 @@ class UsersPage {
         ? kit.note(t.html('consoleUsers.body.tilesCountDirectory',
                           { keeps: json.registryKeeps }))
         : '') +
+      tilesAge +
       (json.store
         ? ''
         : kit.warn(t.html('consoleUsers.body.noDirectory'))) +
@@ -461,6 +481,18 @@ class UsersPage {
       kit.note(t.html('consoleUsers.body.matched', {
         matched: json.matched, one: json.matched === 1 ? 'yes' : 'no',
         known: json.known })) +
+      // WHAT THAT TOTAL IS, AND THE DIRECTORY'S COUNT BESIDE IT (#684).
+      // `known` is the length of the list: at most `scanLimit` directory
+      // people united with the register, so past the cap it stays put while
+      // people outside the slice are deleted, and it disagreed with SCIM's
+      // `totalResults` by thousands. Giving `known` the directory's meaning
+      // would undo the cap; the footer says which number is which instead.
+      (json.directoryPeople === null || json.directoryPeople === undefined
+        ? ''
+        : kit.note(t.html(json.capped ? 'consoleUsers.body.knownCapped'
+                                      : 'consoleUsers.body.knownUncapped', {
+          limit: String(json.scanLimit),
+          people: String(json.directoryPeople) }))) +
       kit.note(t.html('consoleUsers.body.inMemory',
                       { keeps: json.registryKeeps }));
 
@@ -1551,14 +1583,41 @@ class UsersPage {
   // what moved it, and a link to the assessments behind it. No script: a
   // styled block, as every tile on this page is.
   // -------------------------------------------------------------------------
+  // The statement a product deployment refuses to clear a factor without
+  // (#1504). `required` is asked in both modes: it is good practice
+  // anywhere, and the server is what enforces it.
+  static evidenceField(t: any): string {
+    return '<div class="formrow"><label>' +
+      t.html('consoleUsers.mfaSection.evidenceLabel') + ' ' +
+      '<input type="text" name="evidence" required minlength="8" ' +
+      'maxlength="500"></label></div>';
+  }
+
+  /**
+   * The risk badge's rules, for the console's stylesheet (2026-11-10).
+   */
+  static readonly CSS = '.risk-badge{display:flex;align-items:center;' +
+    'gap:28px;margin:14px 0 18px;padding:20px 28px;border-radius:14px}' +
+    '.rb-LOW{background:#188038;color:#ffffff}' +
+    '.rb-MEDIUM{background:#f9ab00;color:#202124}' +
+    '.rb-HIGH{background:#d93025;color:#ffffff}' +
+    '.rb-UNSCORED{background:#5f6368;color:#ffffff}' +
+    '.rb-UNKNOWN{background:#dadce0;color:#202124}' +
+    '.rb-level{font-size:3em;font-weight:800;letter-spacing:.05em;' +
+    'line-height:1}' +
+    '.rb-facts{font-size:1.05em;line-height:1.5}' +
+    '.rb-title{font-size:1.3em;font-weight:700}' +
+    '.rb-more{margin-top:6px}' +
+    '.rb-more a{color:inherit;font-weight:600}';
+
   static riskBadge(t: any, standing: any): string {
     const level = standing ? String(standing.level || 'UNSCORED')
                            : 'UNKNOWN';
-    const palette: Record<string, string[]> = {
-      LOW: ['#188038', '#ffffff'], MEDIUM: ['#f9ab00', '#202124'],
-      HIGH: ['#d93025', '#ffffff'], UNSCORED: ['#5f6368', '#ffffff'],
-      UNKNOWN: ['#dadce0', '#202124'] };
-    const colours = palette[level] || palette.UNKNOWN;
+    // The level's colours are `.risk-badge.rb-LOW` and the rest in the
+    // console's stylesheet (`UsersPage.CSS`), not a `style=""`: the policy
+    // allows no inline style (2026-11-10).
+    const known = ['LOW', 'MEDIUM', 'HIGH', 'UNSCORED', 'UNKNOWN'];
+    const tone = known.indexOf(level) >= 0 ? level : 'UNKNOWN';
     const when = function (ms: number): string {
       return ms ? new Date(ms).toISOString().replace('T', ' ').slice(0, 16) +
                   ' UTC' : '';
@@ -1575,15 +1634,12 @@ class UsersPage {
         (standing.reason ? '<br>' + t.html('consoleUsers.riskBadge.because',
                                            { reason: standing.reason }) : '')
       : t.html('consoleUsers.riskBadge.notAssessed');
-    return '<div class="risk-badge" style="display:flex;align-items:center;' +
-      'gap:28px;margin:14px 0 18px;padding:20px 28px;border-radius:14px;' +
-      'background:' + colours[0] + ';color:' + colours[1] + '">' +
-      '<div style="font-size:3em;font-weight:800;letter-spacing:.05em;' +
-      'line-height:1">' + kit.esc(level) + '</div>' +
-      '<div style="font-size:1.05em;line-height:1.5"><div style="font-size:' +
-      '1.3em;font-weight:700">' + t.html('consoleUsers.riskBadge.current') +
+    return '<div class="risk-badge rb-' + tone + '">' +
+      '<div class="rb-level">' + kit.esc(level) + '</div>' +
+      '<div class="rb-facts"><div class="rb-title">' +
+      t.html('consoleUsers.riskBadge.current') +
       '</div>' + facts +
-      '<div style="margin-top:6px"><a style="color:inherit;font-weight:600" ' +
+      '<div class="rb-more"><a ' +
       'href="' + kit.esc(standing && standing.subject
         ? '/admin/risk?subject=' + encodeURIComponent(standing.subject) +
           '#risk-assessments'
@@ -1855,6 +1911,7 @@ class UsersPage {
       (mech.totp && state.write
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="clear-totp">' +
+          UsersPage.evidenceField(t) +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           carryBack +
           '<div class="formrow"><button class="danger" title="' +
@@ -1960,6 +2017,7 @@ class UsersPage {
         '</td><td>' + (state.write
           ? '<form method="post" action="/admin/users">' +
             '<input type="hidden" name="action" value="clear-key">' +
+            UsersPage.evidenceField(t) +
             '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
             '<input type="hidden" name="credentialId" value="' +
             kit.esc(one.credentialId || '') + '">' + carryBack +
@@ -2105,6 +2163,7 @@ class UsersPage {
       (b.present && state.write
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="clear-backup-codes">' +
+          UsersPage.evidenceField(t) +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           carryBack +
           '<div class="formrow"><button class="danger" title="' +
@@ -2585,9 +2644,15 @@ class UsersPage {
         (one.by ? t.html('consoleUsers.mfaSection.by', { who: one.by }) : '') +
         // HOW IT WAS ENROLLED (#693): proved by the person's wallet, or by
         // value from this console or the API, unproven.
+        // A DID this realm published for them with a key it keeps, or
+        // handed over and not yet proved (#1291).
         '</td><td>' + (one.proof === 'wallet'
           ? t.html('consoleUsers.mfaSection.siopProofWallet')
-          : t.html('consoleUsers.mfaSection.siopProofAdmin')) +
+          : one.proof === 'realm'
+            ? t.html('consoleUsers.mfaSection.siopProofRealm')
+            : one.proof === 'issued'
+              ? t.html('consoleUsers.mfaSection.siopProofIssued')
+              : t.html('consoleUsers.mfaSection.siopProofAdmin')) +
         // WHERE THE KEY CAME FROM (2026-10-20), as the portal shows it:
         // one short line, the whole of it on hover.
         '</td><td>' + UsersPage.siopLocationCell(one.location, t) +
@@ -2596,8 +2661,10 @@ class UsersPage {
         '</td><td>' + (one.preferred
           ? '<strong>' + t.html('consoleUsers.mfaSection.siopIsPreferred') +
             '</strong> ' : '') +
-        (state.write && (one.preferred || (one.proof === 'wallet' &&
-                                           /^did:/.test(String(one.subject))))
+        (state.write && (one.preferred ||
+                         ((one.proof === 'wallet' || one.proof === 'realm' ||
+                           one.proof === 'issued') &&
+                          /^did:/.test(String(one.subject))))
           ? '<form method="post" action="/admin/users">' +
             '<input type="hidden" name="action" ' +
             'value="set-preferred-self-issued-subject">' +
@@ -2676,7 +2743,8 @@ class UsersPage {
                                                 carryBack, data.mail) +
       keysBlock + recoveryBlock + appPasswordsBlock +
       devicesBlock + certificatesBlock + signingBlock +
-      selfIssuedBlock +
+      selfIssuedBlock + UsersPage.publishedDidsBlock(t, key, state, back,
+                                                     data.publishedDids) +
       verificationsBlock;
 
     // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,
@@ -2720,6 +2788,76 @@ class UsersPage {
   // refuses to remove the last way in. An operator must not be able to do what
   // the person themselves is stopped from doing.
   // ===========================================================================
+  // ---------------------------------------------------------------------------
+  // THE DIDs THIS REALM PUBLISHES FOR THE PERSON (#1291): each one's DID, a
+  // link to its document, who holds its key, its version and state, and —
+  // for Admin Write — Deactivate, which is `deactivate-published-did`
+  // (rule 7). An administrator never creates or changes one: that is the
+  // person's act on /portal/self-issued. `GET /admin-api/users/
+  // published-dids` is this list.
+  // ---------------------------------------------------------------------------
+  /**
+   * The Published DIDs block of a person's page.
+   *
+   * @param t - the translator
+   * @param key - the person
+   * @param state - the page's state (`write`)
+   * @param back - where a form returns to
+   * @param view - `GET /admin-api/users/published-dids`'s answer
+   * @returns the HTML, or '' where the realm publishes none and they hold
+   *   none
+   */
+  static publishedDidsBlock(t, key, state, back, view) {
+    const dids = (view && view.dids) || [];
+    if (!view || (!view.publishing && !dids.length)) {
+      return '';
+    }
+    const row = function (one) {
+      const custody = one.custody === 'realm'
+        ? t.html('consoleUsers.mfaSection.pubCustodyRealm')
+        : one.custody === 'download'
+          ? t.html('consoleUsers.mfaSection.pubCustodyDownload')
+          : t.html('consoleUsers.mfaSection.pubCustodyWallet');
+      const stateText = one.state === 'active'
+        ? t.html('consoleUsers.mfaSection.pubStateActive')
+        : one.state === 'suspended'
+          ? t.html('consoleUsers.mfaSection.pubStateSuspended')
+          : t.html('consoleUsers.mfaSection.pubStateDeactivated');
+      return '<tr><td><code>' + kit.esc(one.did) + '</code><br><a href="' +
+        kit.esc(one.documentUrl) + '" target="_blank" rel="noopener ' +
+        'noreferrer">' + t.html('consoleUsers.mfaSection.pubDocument') +
+        '</a></td><td>' + custody + '</td><td>' +
+        kit.esc(String(one.currentVersion)) + '</td><td>' +
+        kit.esc(one.createdAt ? kit.whenText(one.createdAt) : '—') +
+        '</td><td>' + stateText + '</td><td>' +
+        (state.write && one.state !== 'deactivated'
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="deactivate-published-did">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) +
+            '"><input type="hidden" name="did" value="' +
+            kit.esc(one.did) + '"><input type="hidden" name="from" ' +
+            'value="user"><input type="hidden" name="back" value="' +
+            kit.esc(back) + '"><button class="danger" type="submit"' +
+            kit.tip(t.text('consoleUsers.mfaSection.pubDeactivateTip')) +
+            '>' + t.html('consoleUsers.mfaSection.pubDeactivate') +
+            '</button></form>'
+          : '') + '</td></tr>';
+    };
+    return '<h3>' + t.html('consoleUsers.mfaSection.pubHeading') + '</h3>' +
+      kit.note(t.html('consoleUsers.mfaSection.pubNote')) +
+      (dids.length
+        ? '<table><tr><th>' + t.html('consoleUsers.mfaSection.pubThDid') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.pubThCustody') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.pubThVersion') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.pubThCreated') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.pubThState') +
+          '</th><th></th></tr>' + dids.map(row).join('') + '</table>'
+        : kit.note(t.html('consoleUsers.mfaSection.pubNone'))) +
+      (state.write ? ''
+        : kit.note(t.html('consoleUsers.mfaSection.pubNeedsWrite')));
+  }
+
   // WHERE A SELF-ISSUED KEY CAME FROM (2026-10-20), the portal's column on
   // this page too (rule 7's list is the same rows): one short line — a web
   // wallet's host, an app's reported name, a short label — and the whole of
@@ -2837,6 +2975,7 @@ class UsersPage {
       (state.write && mf.optedIn
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="clear-email-factor">' +
+          UsersPage.evidenceField(t) +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           carryBack + '<div class="formrow"><button class="danger"' +
           kit.tip(t.text('consoleUsers.emailFactorBlock.turnOffTip')) + '>' +
@@ -3027,16 +3166,17 @@ class UsersPage {
   // A PERSON'S CREDENTIALS: THEIR RFC 7523 AND RFC 7522 KEY PAIRS, ON THEIR OWN
   // PAGE (2026-09-13).
   //
-  // The application page's Credentials section, for a person. Per profile: the
-  // key pair on their entry and where it came from, and the controls that
-  // REPLACE it — issue one from this realm's certificate authority, or upload a
-  // certificate the person already holds (this realm's alone, or another
-  // authority's with its whole chain) — and take it off.
+  // The application page's Credentials section, for a person. Per profile:
+  // every key pair on their entry (several since #1290) with its state and
+  // where it came from, a Revoke form on each valid one, and the controls
+  // that ADD one — issue one from this realm's certificate authority, or
+  // upload a certificate the person already holds (this realm's alone, or
+  // another authority's with its whole chain) — up to the cap.
   //
   // **THE SAME ACTIONS AND NOT NEW ONES.** Issue is `/admin/pki`'s `issue` with
   // `target=person`, posted to `/admin/pki/person` because what comes back is a
   // PRIVATE KEY and that route answers with a page rather than a redirect;
-  // Upload is `upload-certificate` and Take off is `revoke`, both to
+  // Upload is `upload-certificate` and Revoke is `revoke`, both to
   // `/admin/pki`. All three carry `from`, so the handler sends the reader back
   // here through userReturnTo(), and all three are `/admin-api/pki/{action}`
   // with no second operation — moving a form is not moving an action.
@@ -3089,129 +3229,179 @@ class UsersPage {
       return '<option value="' + kit.esc(one.id) + '">' + kit.esc(one.label) +
              '</option>';
     }).join('');
+    const reasons = (state.revocationReasons ||
+                     ['cessationOfOperation', 'keyCompromise'])
+      .map(function (one) {
+        return '<option value="' + kit.esc(one) + '">' +
+               (one === 'keyCompromise'
+                 ? t.html(
+                   'consoleUsers.userCredentialsSection.reasonCompromise')
+                 : t.html(
+                   'consoleUsers.userCredentialsSection.reasonCessation')) +
+               '</option>';
+      }).join('');
+    const stateWord = function (one) {
+      const words = {
+        valid: t.html('consoleUsers.userCredentialsSection.stateValid'),
+        expired: t.html('consoleUsers.userCredentialsSection.stateExpired'),
+        revoked: t.html('consoleUsers.userCredentialsSection.stateRevoked'),
+        superseded:
+          t.html('consoleUsers.userCredentialsSection.stateSuperseded') };
+      return '<span class="state-' + (one.state === 'valid' ? 'valid'
+                                                            : 'none') + '">' +
+             (words[one.state] || kit.esc(one.state)) + '</span>' +
+             (one.reason ? ' <span class="sub">(' + kit.esc(one.reason) +
+                           (one.revokedAt ? ', ' +
+                             kit.esc(one.revokedAt.slice(0, 10)) : '') +
+                           ')</span>' : '');
+    };
+    // SEVERAL KEY PAIRS PER PROFILE (#1290): a table of every one with its
+    // state, a Revoke form on each valid row (Admin Write), and the issue
+    // and upload forms that ADD one — replaced by a note at the cap, as the
+    // portal's TLS card does.
     const purposeHtml = state.purposes.map(function (p) {
       const names = p.attributes;
       const anchor = 'credentials-' + p.id;
-      const chainCells = p.chain.length
-        ? '<ol>' + p.chain.map(function (link) {
-            return '<li>' + ApplicationsPage.certificateCells(link, t) +
-                   '</li>';
-          }).join('') + '</ol>'
-        : (p.held
-          ? '<span class="state-none">' +
+      const revokeForm = function (one) {
+        return '<form method="post" action="/admin/pki">' +
+          hidden('action', 'revoke') + hidden('target', 'person') +
+          hidden('from', '/admin/users') + hidden('back', back) +
+          hidden('identifier', username) + hidden('purpose', p.id) +
+          hidden('handle', one.handle) +
+          '<select name="reason" aria-label="' +
+          kit.esc(t.text('consoleUsers.userCredentialsSection.reason')) +
+          '">' + reasons + '</select> ' +
+          '<button type="submit" class="danger"' +
+          kit.tip(t.text('consoleUsers.userCredentialsSection.revokeTip')) +
+          '>' +
+            t.html('consoleUsers.userCredentialsSection.revoke') +
+            '</button></form>';
+      };
+      const rows = p.keys.map(function (one) {
+        const chain = one.chain.length
+          ? '<ol>' + one.chain.map(function (link) {
+              return '<li>' + ApplicationsPage.certificateCells(link, t) +
+                     '</li>';
+            }).join('') + '</ol>'
+          : '<span class="state-none">' +
             t.html('consoleUsers.userCredentialsSection.noneStored') +
-            '</span>'
-          : '&mdash;');
-      const managed = p.held
-        ? '<table><tr><th>' +
-          t.html('consoleUsers.userCredentialsSection.thFact') + '</th><th>' +
-          t.html('consoleUsers.userCredentialsSection.thValue') +
-          '</th></tr>' +
-          '<tr><td>' + t.html('consoleUsers.mfaSection.thSource') +
-          '<div class="sub"><code>' + kit.esc(names.source) +
-          '</code></div></td><td><code>' + kit.esc(p.source) + '</code>' +
-          '<div class="sub">' + (PERSON_KEY_SOURCE_SENTENCES[p.source] ||
-                                 kit.esc(p.source)) + '</div></td></tr>' +
-          '<tr><td>' +
-          t.html('consoleUsers.userCredentialsSection.certificate') +
-          '<div class="sub"><code>' +
-          kit.esc(names.certificate) +
-          '</code></div></td><td>' +
-          ApplicationsPage.certificateCells(p.certificate, t) +
-          '</td></tr>' +
-          '<tr><td>' + t.html('consoleUsers.userCredentialsSection.chain') +
-          '<div class="sub"><code>' + kit.esc(names.chain) +
-          '</code></div></td><td>' + chainCells + '</td></tr>' +
-          '<tr><td>' + t.html('consoleUsers.userCredentialsSection.handle') +
-          '<div class="sub"><code>' + kit.esc(names.handle) +
-          '</code></div></td><td><code>' + kit.esc(p.handle || '—') +
-          '</code> <span class="sub">(' + kit.esc(p.handleLabel) +
-          ')</span></td></tr>' +
-          '<tr><td>' +
-          t.html('consoleUsers.userCredentialsSection.privateKey') +
-          '<div class="sub"><code>' +
-          kit.esc(names.privateKey) + '</code></div></td><td>' +
-          (p.privateKeyHeld
+            '</span>';
+        return '<tr><td>' + (one.label ? kit.esc(one.label) : '&mdash;') +
+          '</td><td><code>' + kit.esc(one.handle || '—') + '</code>' +
+          '<div class="sub">' + kit.esc(p.handleLabel) + '</div></td><td>' +
+          '<code>' + kit.esc(one.source) + '</code><div class="sub">' +
+          (PERSON_KEY_SOURCE_SENTENCES[one.source] || '') + '</div></td><td>' +
+          stateWord(one) + '</td><td>' +
+          kit.esc(one.notAfter ? one.notAfter.slice(0, 10) : '—') +
+          '</td><td>' + (one.privateKeyHeld
             ? '<span class="state-valid">' +
               t.html('consoleUsers.userCredentialsSection.heldHere') +
               '</span>' +
-              (state.sealsAtRest
-                ? t.html('consoleUsers.userCredentialsSection.sealedAtRest')
-                : '') +
-              '<div class="sub">' +
-              t.html('consoleUsers.userCredentialsSection.shownOnce') +
-              '</div>'
+              (state.sealsAtRest ?
+                t.html('consoleUsers.userCredentialsSection.sealedAtRest') : '')
             : '<span class="state-none">' +
               t.html('consoleUsers.userCredentialsSection.notHeld') +
-              '</span><div class="sub">' +
-              t.html('consoleUsers.userCredentialsSection.theyKeep') +
-              '</div>') +
-          '</td></tr>' +
-          '<tr><td>' +
-          t.html('consoleUsers.userCredentialsSection.assertsAs') +
-          '<div class="sub"><code>' + kit.esc(names.issuer) +
-          '</code></div></td><td>' + p.effectiveIssuers.map(function (iss) {
-            return '<code>' + kit.esc(iss) + '</code>';
-          }).join('<br>') + (p.issuers.length ? ''
-            : ' <span class="sub">' +
-              t.html('consoleUsers.userCredentialsSection.ownName') +
-              '</span>') + '</td></tr></table>'
-        : kit.note(t.html('consoleUsers.userCredentialsSection.noneHeld')) +
-          // The issuers are markup (each in its <code>), so the sentence is
-          // two messages around them.
-          (p.issuers.length
-            ? kit.note(
-                t.html('consoleUsers.userCredentialsSection.declaredBefore') +
-                p.issuers.map(function (iss) {
-                  return '<code>' + kit.esc(iss) + '</code>';
-                }).join(', ') +
-                t.html('consoleUsers.userCredentialsSection.declaredAfter'))
-            : '');
+              '</span>') +
+          '</td><td>' + ApplicationsPage.certificateCells(one.certificate, t) +
+          '<details><summary>' +
+            t.html('consoleUsers.userCredentialsSection.chain') +
+            '</summary>' + chain +
+          '</details></td>' +
+          (gate.write ? '<td>' + (one.state === 'valid' ? revokeForm(one)
+                                                       : '') + '</td>' : '') +
+          '</tr>';
+      }).join('');
+      const table = p.keys.length
+        ? '<table><thead><tr><th>' +
+          t.html('consoleUsers.userCredentialsSection.thLabel') + '</th><th>' +
+          t.html('consoleUsers.userCredentialsSection.handle') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.thSource') + '</th><th>' +
+          t.html('consoleUsers.userCredentialsSection.thState') + '</th><th>' +
+            t.html('consoleUsers.userCredentialsSection.thExpires') +
+            '</th><th>' +
+          t.html('consoleUsers.userCredentialsSection.privateKey') +
+            '</th><th>' +
+            t.html('consoleUsers.userCredentialsSection.certificate') +
+            '</th>' +
+          (gate.write ? '<th></th>' : '') + '</tr></thead><tbody>' + rows +
+          '</tbody></table>' +
+          '<p class="sub"><code>' + kit.esc(names.keys) + '</code>, <code>' +
+          kit.esc(names.privateKey) + '</code></p>'
+        : kit.note(t.html('consoleUsers.userCredentialsSection.noneHeld'));
+      const assertsAs = '<p>' +
+        t.html('consoleUsers.userCredentialsSection.assertsAs') +
+        ' <span class="sub">(<code>' +
+        kit.esc(names.issuer) + '</code>)</span>: ' +
+        p.effectiveIssuers.map(function (iss) {
+          return '<code>' + kit.esc(iss) + '</code>';
+        }).join(', ') + (p.issuers.length ? ''
+          : ' <span class="sub">' +
+            t.html('consoleUsers.userCredentialsSection.ownName') +
+            '</span>') + '</p>' +
+        // The issuers are markup (each in its <code>), so the sentence is
+        // two messages around them.
+        (!p.held && p.issuers.length
+          ? kit.note(
+            t.html('consoleUsers.userCredentialsSection.declaredBefore') +
+            p.issuers.map(function (iss) {
+              return '<code>' + kit.esc(iss) + '</code>';
+            }).join(', ') +
+              t.html('consoleUsers.userCredentialsSection.declaredAfter'))
+          : '');
+      const managed = table + assertsAs;
 
       if (!gate.write) {
         return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
-               managed +
-          kit.note(t.html('consoleUsers.userCredentialsSection.needsWrite'));
+               managed + kit.note(
+                 t.html('consoleUsers.userCredentialsSection.needsWrite'));
       }
+      const labelField = function (suffix) {
+        return '<label for="' + anchor + '-' + suffix + '-label">' +
+          t.html('consoleUsers.userCredentialsSection.labelField') +
+            '</label>' +
+          '<input id="' + anchor + '-' + suffix + '-label" name="label" ' +
+          'maxlength="40" placeholder="' +
+          kit.esc(t.text('consoleUsers.userCredentialsSection.labelHint')) +
+          '">';
+      };
       const issueForm = state.ca.available
         ? '<form method="post" action="/admin/pki/person">' +
           '<div class="formrow">' + hidden('action', 'issue') +
           hidden('target', 'person') + hidden('from', '/admin/users') +
           hidden('back', back) + hidden('identifier', username) +
-          hidden('purpose', p.id) +
+          hidden('purpose', p.id) + labelField('issue') +
           '<label for="' + anchor + '-alg">' +
-          t.html('consoleUsers.userCredentialsSection.keyAlgorithm') +
+            t.html('consoleUsers.userCredentialsSection.keyAlgorithm') +
           '</label>' +
           '<select id="' + anchor + '-alg" name="leafKeyAlg">' +
           '<option value="">' +
-          t.html('consoleUsers.userCredentialsSection.caDefault',
-                 { alg: state.ca.keyAlg }) +
+            t.html('consoleUsers.userCredentialsSection.caDefault',
+                   { alg: state.ca.keyAlg }) +
           '</option>' + algOptions + '</select>' +
           '<label for="' + anchor + '-days">' +
-          t.html('consoleUsers.userCredentialsSection.days') + '</label>' +
+            t.html('consoleUsers.userCredentialsSection.days') + '</label>' +
           '<input type="number" id="' + anchor + '-days" name="days" min="1" ' +
           'value="' + kit.esc(String(state.ca.leafLifetimeDays)) + '">' +
           '<label for="' + anchor + '-issuer">' +
-          t.html('consoleUsers.userCredentialsSection.declaredIssuer') +
+            t.html('consoleUsers.userCredentialsSection.declaredIssuer') +
           '</label>' +
           '<input id="' + anchor + '-issuer" name="issuer" placeholder="' +
           kit.esc(t.text('consoleUsers.userCredentialsSection.issuerHint')) +
           '">' +
-          '<button type="submit">' + (p.held
-            ? t.html('consoleUsers.userCredentialsSection.replaceIssue')
-            : t.html('consoleUsers.userCredentialsSection.issue')) +
-          '</button>' +
+          '<button type="submit">' +
+            t.html('consoleUsers.userCredentialsSection.issue') + '</button>' +
           '</div></form>'
-        : kit.note(t.html('consoleUsers.userCredentialsSection.noCaBefore') +
-                    '<a href="/admin/pki">' +
-                    t.html('consoleUsers.userCredentialsSection.buildOne') +
-                    '</a>' +
-                    t.html('consoleUsers.userCredentialsSection.noCaAfter'));
+        : kit.note(
+          t.html('consoleUsers.userCredentialsSection.noCaBefore') +
+          '<a href="/admin/pki">' +
+          t.html('consoleUsers.userCredentialsSection.buildOne') + '</a>' +
+          t.html('consoleUsers.userCredentialsSection.noCaAfter'));
 
       const uploadForm = '<form method="post" action="/admin/pki">' +
         hidden('action', 'upload-certificate') + hidden('target', 'person') +
         hidden('from', '/admin/users') + hidden('back', back) +
         hidden('identifier', username) + hidden('purpose', p.id) +
+        '<div class="formrow">' + labelField('upload') + '</div>' +
         '<div class="formrow"><label for="' + anchor + '-cert"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.certTip')) + '>' +
         t.html('consoleUsers.userCredentialsSection.certPem') +
@@ -3222,9 +3412,9 @@ class UsersPage {
         'CERTIFICATE-----"></textarea></div><div class="formrow"><label ' +
         'for="' + anchor + '-chain"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.chainTip')) +
-        '>' + t.html('consoleUsers.userCredentialsSection.chainPem') +
-        '</label><textarea id="' +
-        anchor +
+        '>' +
+          t.html('consoleUsers.userCredentialsSection.chainPem') +
+          '</label><textarea id="' + anchor +
         '-chain" name="chain" rows="6"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.chainAreaTip')) +
         ' placeholder="-----BEGIN ' +
@@ -3232,30 +3422,20 @@ class UsersPage {
         'type="submit"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.uploadTip')) +
         '>' +
-        (p.held ? t.html('consoleUsers.userCredentialsSection.replaceUpload')
-                : t.html('consoleUsers.userCredentialsSection.upload')) +
-        '</button></div></form>';
-
-      const takeOff = p.held || p.issuers.length
-        ? '<form method="post" action="/admin/pki">' +
-          '<div class="formrow">' + hidden('action', 'revoke') +
-          hidden('target', 'person') + hidden('from', '/admin/users') +
-          hidden('back', back) + hidden('identifier', username) +
-          hidden('purpose', p.id) +
-          '<button type="submit" class="danger"' +
-          kit.tip(t.text('consoleUsers.userCredentialsSection.takeOffTip')) +
-          '>' + t.html('consoleUsers.userCredentialsSection.takeOff') +
-          '</button><span class="sub">' +
-          t.html('consoleUsers.userCredentialsSection.notRevocation') +
-          '</span></div></form>'
-        : '';
+          t.html('consoleUsers.userCredentialsSection.upload') +
+          '</button></div></form>';
 
       return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
-             managed +
-        '<h4>' + t.html('consoleUsers.userCredentialsSection.replaceHeading') +
-        '</h4>' +
-        kit.note(t.html('consoleUsers.userCredentialsSection.replaceNote')) +
-        issueForm + uploadForm + takeOff;
+             managed + '<h4>' +
+               t.html('consoleUsers.userCredentialsSection.addHeading') +
+               '</h4>' +
+             (p.atCap
+               ? kit.note(
+                 t.html('consoleUsers.userCredentialsSection.atCap',
+                        { max: String(state.maxPerPerson) }))
+               : kit.note(t.html('consoleUsers.userCredentialsSection.addNote',
+                            { max: String(state.maxPerPerson) })) +
+                 issueForm + uploadForm);
     }).join('');
     return heading + purposeHtml +
       (state.selfService
@@ -4223,6 +4403,8 @@ class UsersPage {
         '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
         '<input type="hidden" name="from" value="user">' +
         '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+        (action === 'disable-mfa' || action === 'disable-primary-keys'
+          ? UsersPage.evidenceField(t) : '') +
         (extra || '') +
         '<div class="formrow"><button' + (danger ? ' class="danger"' : '') +
         ' title="' + kit.esc(title) + '">' + label + '</button></div></form>';

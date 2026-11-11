@@ -90,7 +90,7 @@ class SharedPages {
         return '<code>' + kit.esc(s) + '</code>';
       }).join(', ') + (extra.length ? '; ' + extra.join('; ') : '') +
       ' <form method="post" action="' + kit.esc(PATH) + '" ' +
-      'style="display:inline"><input type="hidden" name="action" ' +
+      'class="inline-form"><input type="hidden" name="action" ' +
       'value="unshare"><input type="hidden" name="share" value="' +
       kit.esc(share.id) + '"><input type="hidden" name="page" value="' +
       kit.esc(String(at)) + '"><button type="submit" class="danger">' +
@@ -202,7 +202,7 @@ class SharedPages {
     const answer = function (p: Json, action: string, label: string,
                              cls: string): string {
       return '<form method="post" action="' + kit.esc(PATH) + '" ' +
-        'style="display:inline"><input type="hidden" name="action" value="' +
+        'class="inline-form"><input type="hidden" name="action" value="' +
         action + '"><input type="hidden" name="pending" value="' +
         kit.esc(p.id) + '"><button type="submit"' +
         (cls ? ' class="' + cls + '"' : '') + '>' + label +

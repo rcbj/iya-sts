@@ -7,6 +7,7 @@
   "scope.permissionNamed": "behörigheten ”{name}”",
   "scope.ordinary": "ett vanligt scope: den här tjänsten lägger ingen betydelse i det och lägger det oförändrat i tokens scope-anspråk",
   "scope.did": "ditt föredragna DID — den decentraliserade identifierare du bevisade med din plånbok och markerade som föredragen på sidan med dina självutfärdade ID:n. Det är samma värde för varje applikation du lämnar det till, så de kan känna igen dig som en och samma person",
+  "scope.signIn": "logga in dig i det här programmet. Det får veta vem du är, i inloggningssvaret från dess protokoll, varje gång du öppnar det.",
   "detail.understood": "förstås av <code>{resource}</code>, och åtkomsttoken kommer att adresseras till <code>{audience}</code>",
   "detail.described": "{description} — förstås av <code>{resource}</code>, och åtkomsttoken kommer att adresseras till <code>{audience}</code>",
   "detailsNote": "Den här begäran innehåller <strong>{count, plural, one {# auktoriseringsdetalj} other {# auktoriseringsdetaljer}}</strong> (RFC 9396). Du tillfrågas om dem varje gång: Tillåt godkänner exakt det som listas, för just den här begäran.",
@@ -18,5 +19,10 @@
   "deny": "Neka",
   "meta.allow": "Tillåt skriver ett <code>{attribute}</code>-värde per scope på din post under <code>ou=users</code>, så att du inte tillfrågas om dem igen. Neka returnerar <code>access_denied</code> till programmet och registrerar ingenting.",
   "meta.nothingIssued": "Ingenting har utfärdats än. Den här skärmen är <code>oauth2.consentRequired</code>, som är på som standard; på /admin/consent kan varje svar som ges här läsas och dras tillbaka.",
-  "meta.consentingFor": "Godkänner för: <code>{protocol}</code>"
+  "meta.consentingFor": "Godkänner för: <code>{protocol}</code>",
+  "client.policy": "Integritetspolicy",
+  "client.tos": "Användarvillkor",
+  "resources": "Det kommer att användas på:",
+  "duration": "Detta gäller tills du återkallar det från ditt konto.",
+  "lifetime": "Varje gång kan den behålla åtkomsten i upp till {hours} timmar."
 }

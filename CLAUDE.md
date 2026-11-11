@@ -45,7 +45,7 @@ detail.
 | **2026-09-13** — `/admin-api`'s access token | `mgmt-api/CLAUDE.md` |
 | **2026-09-13** — the per-slot arguments of rule 3e, the second metadata page, the account menu and certificate dialog refusals | `admin-ui/CLAUDE.md` |
 | **2026-09-13** — `portal.setDirectory()`, `/portal/keys`' script | `portal/CLAUDE.md` |
-| **2026-09-13** — the parent project's Kerberos COPY closure, and what it is owed | `kerberos/CLAUDE.md` |
+| **2026-09-13** — the parent project's Kerberos COPY closure, and what it is owed (owed nothing since #1280) | `kerberos/CLAUDE.md` |
 | **2026-09-13** — where a new test goes, the negatives note | `tests/CLAUDE.md` |
 | **2026-09-13** — the prose of every row of *Things this service deliberately does not do* | the file each row names |
 | **2026-10-13** — the eighteen URLs this service dials that a caller's kind of URL could name | `federation/CLAUDE.md` |
@@ -62,7 +62,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | Directory | What is in it |
 |---|---|
 | `common/` | Everything more than one family reads: settings, the express app, `crypto.js` (the one place this service signs, verifies, encrypts and decrypts), realms, the registers, `pki.js`, `mode.js`, the error codes, mail, cells, the hosted applications, the static surfaces' `web_*.ts`. `common/CLAUDE.md`. |
-| `common/crypto_impl/` | Byte-identical copies of the parent project's files. **Do not edit them here** (except `pqc.js`, `pqc_x509.js`, `xmldsig.js`). `common/crypto_impl/CLAUDE.md`. |
+| `common/crypto_impl/` | The crypto engines `common/crypto.js` rests on: X.509, keys, JWE, post-quantum, XML Signature, bbs-2023. Copies of the parent project's files until #1280, this service's own since. `common/crypto_impl/CLAUDE.md`. |
 | `home/` | The front door, `GET /`, and `/home-api`. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `/logout`, and the one model of a live session. `logout/CLAUDE.md`. |
 | `launch/` | `/launch/{app}`, the one identity-provider-initiated sign-in link per application (#426). `launch/CLAUDE.md`. |
@@ -77,8 +77,9 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `pki/` | The certificate authority's PUBLIC surface (CRL, OCSP, chains) and `/crypto/metadata`; no gate. No `CLAUDE.md`: each file's header is its documentation. |
 | `federation/` | Bilateral federation relationships, in either direction. `federation/CLAUDE.md`. |
 | `oidfed/` | OpenID Federation 1.1. `oidfed/CLAUDE.md`. |
-| `kerberos/` | The KDC, the acceptor, SPNEGO, and eight codec modules **VENDORED and not editable here**. `kerberos/CLAUDE.md`. |
+| `kerberos/` | The KDC, the acceptor, SPNEGO, and the eight codec modules (copies of the parent's until #1280). `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory, the store for people, groups and applications. `ldap/CLAUDE.md`. |
+| `models/` | **The abstract model (#1390), in TypeSpec**, with its decorators and the RFC definitions it records. Compiled by `tests/model_typespec.js`. **The whole directory namespace has switched**, a policy's `FIELDS` and the directory's name lists with it: their `models/directory/*.tsp` is the source and the module reads what the image build generates, so a new attribute goes there. `models/CLAUDE.md`. |
 | `cluster/` | Several containers against one postgres store, and the scheduler every periodic job runs on. `cluster/CLAUDE.md`. |
 | `persistence/` | The one place this service writes anything down. `persistence/CLAUDE.md`. |
 | `scim/` | `/scim/v2`, and the outbound SCIM client. `scim/CLAUDE.md`. |
@@ -99,6 +100,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `xacml-pep/` | **Not part of the mock**: the remote XACML PEP container (a Rust binary). `xacml-pep/CLAUDE.md`. |
 | `companion/` | **Not part of the service**: a development-only container for the click-through demonstrations. `companion/CLAUDE.md`. |
 | `openbao/` | **Not part of the mock**: the secret-store container's files. `openbao/CLAUDE.md`. |
+| `icap-clamav/` | **Not part of the service**: a c-icap adapter in front of ClamAV for `common/malware_scan.ts`, off by default. `icap-clamav/CLAUDE.md`. |
 | `deploy/aws/`, `deploy/gcp/`, `deploy/azure/`, `deploy/multicloud/` | **Not part of the mock**: Terraform for the cluster on each cloud (only AWS has been applied). Each directory's `CLAUDE.md`. |
 | `debugger/` | The embedded identity protocol debugger, on a listener of its own. `debugger/embedded/` is build output, never source. `debugger/CLAUDE.md`. |
 | `rust/` | The Rust conversion (#444); `rust/DESIGN.md` is the design. Only the remote PEP runs on it; the Node service runs none of it. |
@@ -254,9 +256,9 @@ holds is the table above; what each module is for is that directory's
    `ProtocolStack`) calls each one against the shared app from `app.js`, at
    the point where requiring that module used to register the routes. **The
    modules still written in JavaScript still register when they are
-   required** — `krb5_kdc`, `krb5_service` and `spnego` (in the parent
-   project's test-image COPY closure; what "locked" means is in
-   `kerberos/CLAUDE.md`), `tls/tls_server.js` and `ldap/ldap_server.js` — and
+   required** — `krb5_kdc`, `krb5_service` and `spnego` (no longer held
+   back for the parent's test image since #1280; `kerberos/CLAUDE.md`),
+   `tls/tls_server.js` and `ldap/ldap_server.js` — and
    `protocol_stack.ts` requires them at their old places, so the two kinds
    interleave exactly as they did (`common/CLAUDE.md`, `protocol_stack.ts`).
    `debugger/debugger_server.ts` registers on an express app of its OWN and is
@@ -316,6 +318,7 @@ holds is the table above; what each module is for is that directory's
 | `common/passkey_report.ts` | `setDirectory` (the holder scan, a group population, the people count), filled by `ldap/ldap_server.js` (#942) | `common/CLAUDE.md` (3cs) |
 | `common/applications.js` | `setFgaLifecycle` (an application's fine-grained policy created and retired with it), filled by `xacml/fga_policies.ts` at 23c (#564) | `common/CLAUDE.md` |
 | `common/fga_gate.ts` | `setDecider` (one RFC 9396 detail of an application that enforces fine-grained authorization; EMPTY REFUSES), filled by `xacml/fga_pep.ts` at 23c (#564 P3) | `common/CLAUDE.md`, `xacml/CLAUDE.md` |
+| `common/signer_truststore.ts` | `setDirectory` (a realm's signer truststore entries listed, written and removed), filled by `ldap/ldap_server.js` (#1360) | `common/CLAUDE.md` (3dd) |
 | `authzen/authzen_admin.ts` | `setDirectory` (an entry located, a group's members, a person's `stsAuthzenApplication` written), filled by `ldap/ldap_server.js` (#563) | `authzen/CLAUDE.md` |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
@@ -493,6 +496,8 @@ preference; this table says what the constraint is and the named file says why.
 | 6 | `common/group_claims` | Same reason, for `setGroupResolver()`. | `common/CLAUDE.md` |
 | 6a | `home/home` | No constraint; first among the route modules, and so the first `register()`. | `home/CLAUDE.md` |
 | 6a-web | `common/public_assets` | No constraint (#570): libraries only, and `/web/*` collides with nothing. | `common/CLAUDE.md` (3cl) |
+| 6a-brand | `common/branding` | Beside 6a-web (#717): a library whose routes are all under `/web`. Its require adds the write rules that hold a realm's colours to WCAG 2.2 AA, so it is above every setting restored. | `common/CLAUDE.md` (*A realm's sign-in appearance*) |
+| 6a-photo | `common/profile_photo` | Beside 6a-brand (#719), a library whose one route is under `/web`. It reaches the directory, the account state and federation's dialer lazily. | `common/CLAUDE.md` (3db) |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
 | 8-api | `authn/authn_api` | Just after `authn` (#571), whose views and acts it reaches through that module's exports; `/authn-api/*` collides with nothing. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
@@ -513,9 +518,9 @@ preference; this table says what the constraint is and the named file says why.
 | 14-vcapi | `oid4vc/vc_api` (and its libraries) | After `vc_verifier`, whose libraries it reads; requires no route module. | `oid4vc/CLAUDE.md` |
 | 14a | `oid4vc/vc_signin` | After `vc_verifier`, whose transactions it reads, and after `authn` (8), whose session it starts; `authn` requires nothing here — `spnego_authn`'s arrangement (#38). | `oid4vc/CLAUDE.md` |
 | 14b | `oidfed/federation_keys`, `oidfed/oidfed` | After `oauth2` and `vc_verifier`, whose metadata the Entity Configuration carries (read lazily). | `oidfed/CLAUDE.md` |
-| 14c | `kerberos/krb5_home` | Just BEFORE `krb5_kdc` (#98): its `POST /KdcProxy` must run first and call `next()` for a request homed here, so the KDC's handler and the parent's COPY closure stay unchanged; `install()` hands it the KDC just after `krb5_kdc` is required. | `kerberos/CLAUDE.md` |
-| 15–16 | `kerberos/krb5_kdc`, `krb5_service` | JavaScript, in the parent's COPY closure (a new require owes the parent a COPY line): the KDC's routes register at this require. Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
-| 17 | `kerberos/spnego` | JavaScript, in the parent's COPY closure: registers nothing since #595. After `krb5_service`, in the order `spnego_exchange.js` needs them. | `kerberos/CLAUDE.md` |
+| 14c | `kerberos/krb5_home` | Just BEFORE `krb5_kdc` (#98): its `POST /KdcProxy` must run first and call `next()` for a request homed here, so the KDC's handler stays unchanged; `install()` hands it the KDC just after `krb5_kdc` is required. | `kerberos/CLAUDE.md` |
+| 15–16 | `kerberos/krb5_kdc`, `krb5_service` | JavaScript: the KDC's routes register at this require. Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
+| 17 | `kerberos/spnego` | JavaScript: registers nothing since #595. After `krb5_service`, in the order `spnego_exchange.js` needs them. | `kerberos/CLAUDE.md` |
 | 17a | `kerberos/spnego_authn` | After `spnego` AND after `authn/authn`; it lives in `kerberos/` so that `authn` never requires it, which would load the JavaScript `spnego` early and drag its routes ahead of `oauth2`. | `kerberos/CLAUDE.md`, `authn/CLAUDE.md` |
 | 17b | `pki/pki_service` | No constraint: it requires only libraries. Here, ahead of the console, so `/admin/sts-metadata` groups the revocation endpoints with the protocols. | `common/protocol_stack.ts` (17b) |
 | 17c | `pki/crypto_metadata_document` | 17b's reason (#42): libraries only, each LAZILY, so it may sit beside the revocation endpoints. | `common/protocol_stack.ts` (17c) |
@@ -535,6 +540,8 @@ preference; this table says what the constraint is and the named file says why.
 | 18j-v | `common/passkey_clients` | After the report (18j-iv), for its reason (#1112): a library whose build registers a scheduler job. The ceremony module and the credential store require it at load and reach its facades only at a ceremony. | `common/CLAUDE.md` 3ch |
 | 18j-vi | `common/post_login_activities` | Beside the passkey report, after the scheduler (#1111): a library that registers its job when built, and no route. Reaches `ldap/ldap_server` (21), the mail uses and the post-login module LAZILY. | `common/CLAUDE.md` (3ct) |
 | 18j-vii | `common/audit_export` | After the scheduler, before the directory (21): a library, no route, per-process job `audit.export`. Its own `AuditExport.defaultDeps`; `realms`, `audit`, `config`, `error_codes`, `version`, `keystore`, `mode`, `outbound_tls`. | `common/CLAUDE.md` (3da) |
+| 18j-viii | `common/signer_truststore`, then `common/certificate_trust` | After the scheduler, whose one job the door registers, and before `ldap/ldap_server` (21), whose require fills the store's slot through its facades (#1360). Libraries, no route; a site that calls the door requires it wherever it stands, which moves nothing. | `common/CLAUDE.md` (3dd) |
+| 18j-ix | `common/certificate_pins` | Just after the door (#1360), which it hands its pin sources; a library, and every owner it reads is reached lazily, at the audit. | `common/CLAUDE.md` (3dd) |
 | 18j-ii | `admin-ui/geo_map`, then `admin-ui/geolocation_admin` | 18a's placement and reason (#255), after the risk libraries whose assessments it counts. | `admin-ui/CLAUDE.md` |
 | 18k | `admin-ui/mode_admin` | 18a's placement and 18a's reason (#181). | `admin-ui/CLAUDE.md` |
 | 18k-iii | `admin-ui/listeners_admin` | 18a's placement and reason (#423); `tls/tls_server` (20) and `tls/listeners` are reached lazily. Its paths are in `NEVER_DISPATCHED`. | `tls/CLAUDE.md` |
@@ -560,6 +567,7 @@ preference; this table says what the constraint is and the named file says why.
 | 23b-vii | `common/cell_sessions` | After `ssf/ssf` and the grant signals, for a reader (#98); `app.js` loads it for its middleware at #2. | `common/cell_sessions.ts` |
 | 23b-ii-b | `common/service_account_rotation` | Beside the two rotations above (#221 P4), for a reader: a library, scheduler jobs, no route, everything reached lazily. | `common/CLAUDE.md` (3cd) |
 | 23b-iii | `kerberos/krb5_krbtgt_rotation` | After `ldap/ldap_server` (21), whose directory slot the krbtgt key is written through (#169). A library: scheduler jobs, no route. | `kerberos/CLAUDE.md` |
+| 23b-iii-b | `persistence/granting_index_backfill` | After `ldap/ldap_server` (21), whose entries it keys, for a reader (#1311): a library, one scheduler job, no route; the store, the scheduler and the keystore reached lazily. | `persistence/CLAUDE.md` |
 | 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require, two `register()` calls — `xacml_admin`, then `xacml`. **This REQUIRE arms every issuance site** (a load-time effect): before it, `issuance_gate.js` answers "allowed". `xacml/fga_policies` is built here too, filling `applications.setFgaLifecycle()` (#564), and then `xacml/fga_pep`, filling `common/fga_gate.ts`'s decider: before it an enforcing application's every detail is refused (#564 P3). | `xacml/CLAUDE.md` |
 | 23c-ii | `authzen/authzen_access_request`, then `authzen/authzen` | The library first (#1180), whose install registers its scheduler job; then the surface after `xacml/xacml` (23c), whose surface's `decide()`, `enforce()` and `callerIdentity()` it calls lazily; requires no route module. `/access/v1/*` collides with nothing. | `authzen/CLAUDE.md` |
 | 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one require for the family, and three `register()` calls — `gnap`, `gnap_interact`, `gnap_admin`. | `gnap/CLAUDE.md` |
@@ -606,7 +614,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3bs | The per-scope `issue-scope` verdict (#304) | `xacml/CLAUDE.md`, `common/CLAUDE.md` |
 | 3bq | `role_permissions.ts` (#302, #303): a scope requested, a role authorizing it | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3w | `pki.js`: the CA hierarchy and path checks | `common/CLAUDE.md` |
-| 3aa | `pki_authoring.js`: the Certificate & Key Configuration pane as a model | `common/CLAUDE.md` |
+| 3aa | `pki_authoring.js`: the Certificate Workbench as a model | `common/CLAUDE.md` |
 | 3x | `assertion_grant.js`: RFC 7521 and RFC 7523 | `oauth-oidc/CLAUDE.md` |
 | 3ab | `person_assertions.js`: a person as an RFC 7523 issuer | `common/CLAUDE.md` |
 | 3ac | `password_policy.js`: the password policy and its generator | `common/CLAUDE.md` |
@@ -690,6 +698,9 @@ in every file, including the ones in the source comments. This is the index.
 | 3cx | `policy_selection.ts` (#1235): what a named policy covers names it — the application, the group, the person — and one ranking by precedence for every policy kind; the recipe a kind follows | `common/CLAUDE.md`, `ldap/CLAUDE.md`, `admin-core/CLAUDE.md` |
 | 3cz | `fga_gate.ts`, `fga_pep.ts` (#564 P3, P4): fine-grained authorization at the authorization, PAR and token endpoints, the token exchange's bound, and AuthZEN deciding against an enforcing application's own policy | `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md`, `authzen/CLAUDE.md` |
 | 3da | `audit_export.ts` (#641): this process delivers its own audit ring to operator-configured destinations, at-least-once | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
+| 3dc | `response_models.ts`, `response_model_kit.ts` (#1353): every answer of a published API held to a closed model, always | `common/CLAUDE.md` |
+| 3dd | `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` section 18 (#1360): one validation door, paranoid PKI mode | `common/CLAUDE.md`, `tls/CLAUDE.md` |
+| 3db | `profile_photo.ts` (#719): a person's photo, kept off the entry, set on the portal or copied from a partner | `common/CLAUDE.md`, `federation/CLAUDE.md`, `ldap/CLAUDE.md`, `portal/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -750,6 +761,11 @@ Two rules come out of it:
   this service set was correct and something else overwrote it. The check is "does it
   still carry the clause", not "is it the value I set", so the relaxations are
   untouched.
+* **The same flush narrows a response that is not a page** (2026-11-10, Qualys
+  QID 150207): JSON, XML other than SVG, and plain text still holding the base
+  policy get it without `style-src` and `img-src`. A route's own policy is
+  left alone. The other headers the scan asked for are in
+  `docs/oauth-security.md`, *The other response headers*.
 
 **THE ONE PAGE THAT MAY BE FRAMED IS THE OP IFRAME (#121, 2026-09-23)**, and
 it narrows the clause rather than dropping it: `app.framedContentSecurityPolicy()`
@@ -774,6 +790,16 @@ own comment: it is what makes the family of reflected-content problems moot rath
 than merely unlikely. Two kinds of page carry a script, and each takes the SAME
 shape of exception — `script-src 'self'` naming this service's own files, never
 `'unsafe-inline'`, the policy set ONLY through `app.contentSecurityPolicy()`.
+
+**THE ONE NAMED EXCEPTION IS THE OP IFRAME (#1297, rcbj's decision,
+2026-11-04)**: its script is INLINE, admitted by `script-src 'sha256-…'` of
+its exact text instead of `'self'`, through `app.framedContentSecurityPolicy()`
+(which passes only `'self'` and hash sources in `script-src`, never
+`'unsafe-inline'`). The OpenID conformance suite posts its single
+`postMessage` 500 ms after its own iframe loads, and a page plus a second
+request for the script lost that race; a hash admits only that one text,
+narrower than `'self'`. No other page may carry an inline script, and "the same
+as the OP iframe" is not an argument — `oauth-oidc/CLAUDE.md` 3ax.
 
 **A STATIC SURFACE** (#446, #568; the rule since #570) is an application drawn
 in the browser from its API: everything it shows comes from an API answer and
@@ -818,9 +844,10 @@ human-facing page outside `/admin` and `/portal` into one, surface by surface**
 | each public surface #569 converts | its own bundle over `common/web_surface.ts`; no token, the `sts_session` cookie | `common/CLAUDE.md` (3cl) |
 
 **A SERVER-DRAWN PAGE WITH ONE NAMED SCRIPT** is the older exception, and each
-but the OP iframe carries a REAL SUBMIT BUTTON as well, because with the
-script blocked the button is the whole mechanism; the OP iframe has no person
-in front of it and nothing to submit. A row leaves this table when its
+but the OP iframe and the fragment page carries a REAL SUBMIT BUTTON as well,
+because with the script blocked the button is the whole mechanism; the OP
+iframe has no person in front of it and nothing to submit, and the fragment
+page has nothing a form could carry without the script. A row leaves this table when its
 surface is converted; the protocol documents never do.
 
 | Page | Script | Argued in |
@@ -829,7 +856,8 @@ surface is converted; the protocol documents never do.
 | `response_mode=form_post` | `/oauth2/autopost.js` | `oauth-oidc/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
-| `/oauth2/check_session` (#121, off by default) | `/oauth2/check_session.js` — no submit button | `oauth-oidc/CLAUDE.md` |
+| `/oauth2/check_session` (#121, off by default) | INLINE, under `script-src 'sha256-…'` of its exact text (#1297, the one named exception above: the suite's single 500 ms `postMessage`) — no submit button | `oauth-oidc/CLAUDE.md` (3ax) |
+| a federation relationship's fragment-encoded response at `/federation/acs/{id}` (#930, only where `fedResponseMode` is `fragment`) | `/federation/fragment.js` — no submit button: no markup can read a URL fragment | `federation/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on
 this origin** (2026-09-13): `debugger/debugger_server.ts` serves them on a
@@ -878,6 +906,14 @@ same test rather than going quietly.
 belong (rule 1): requiring it registers nothing, so without that line its
 routes do not exist, and the drift check below reports every description of
 them as a path that is not registered.
+
+**A new operation on `/admin-api`, `/account-api`, `/authn-api` or `/report-api`
+also owes its entry in `models/api/*.tsp`, and a new member of an answer owes a
+line there in the same commit** (#1353, #1390): every answer is validated against
+that model, always, and one that does not match is a 500 (`common/CLAUDE.md` 3dc;
+`tests/openapi_response_models.js`). **Either one also owes
+`tests/tools/regenerate-openapi-pages.sh`** (`docs/openapi/`, the public
+reference); `tests/openapi_pages.js` fails otherwise.
 
 **So adding a protocol family costs four things**: an entry in `ENDPOINTS`, a
 card in `sts_metadata.ts`'s `PROTOCOLS`, a row in
@@ -931,6 +967,21 @@ it. **The code is an operator's name and is RECORDED, NEVER SENT** — it goes o
 the audit row and at the front of a log line, never in a response, and it
 changes no specification's error.
 
+**The one exception is rcbj's decision of 2026-11-06 (#1355): a code may be shown
+on an administrator's console page that draws it for someone diagnosing a recorded
+failure — the audit log, and the rows `tests/openapi_response_models.js`'s
+`DRAWN_CODE_OPERATIONS` and `DRAWN_PLAIN_CODES` name, each with its page — and
+nowhere else**: not `/account-api`, `/authn-api` or `/report-api`, not an act's
+answer, and not an `/admin-api` member no page draws.
+
+**The second is rcbj's decision of 2026-11-06 (#1357): fixed help text in a
+successful `/admin-api` answer may name a code**, because a sentence telling an
+administrator which code to look for ("refused under hard-fail (STS-PKI-0188)")
+carries no failure and is the same whatever was asked. A setting's description
+and a mode requirement are the usual cases. `tests/schemathesis/code_members.py`
+lists the members by route, and a code in any other member of an answer is a
+fuzz finding.
+
 **A new failure is not finished until it has a code**, and that is enforced:
 a row in the table, a `mark()` / `errorCode:` / `tag()` where the failure is
 detected, and `node common/error_codes.js --docs`. `tests/error_codes.js` fails
@@ -941,9 +992,10 @@ design.
 
 **THESE ARE THE PARENT PROJECT'S RULES SINCE 2026-09-12** — its root
 `CLAUDE.md`'s *Style Notes* — adopted here and swept across the tree that day.
-They bind every `.js` file except `common/crypto_impl/`, the eight Kerberos codec
-copies, the `node-ldapjs` submodule and the non-`local` copies in
-`tests/protocol/`, none of which may be edited here.
+They bind every `.js` file except the `node-ldapjs` submodule and the
+non-`local` copies in `tests/protocol/`, neither of which may be edited here.
+`common/crypto_impl/` and the eight Kerberos codec modules were on that list
+as the parent's copies until #1280, and are bound like the rest since.
 
 * **Every named function is entered and left out loud.** Its first statement
   is `log.debug("Entering NAME().")` and every exit goes through
@@ -990,9 +1042,9 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   and the licence identifier BUSL-1.1 (the Business Source License 1.1 since
   2026-09-30; MIT until then), in the form `LICENSE.md` shows, after a `#!`
   line or `// @ts-check`, in the file's own comment syntax. A file that cannot carry a
-  comment, a vendored copy and third-party material are declared in
-  `REUSE.toml` instead, and never given a header — the parent project's
-  copies stay MIT there. `tests/copyright_notices.js` fails on a missing
+  comment, a vendored copy (the non-`local` jobs in `tests/protocol/`) and
+  third-party material are declared in `REUSE.toml` instead, and never given
+  a header — the parent project's copies stay MIT there. `tests/copyright_notices.js` fails on a missing
   one; `LICENSE.md` says what is not under the BSL, and `reuse lint` is the
   whole-repository check.
 * **The log level is `info` in every appconfig file in `env/`** (2026-09-12),
@@ -1063,16 +1115,24 @@ served `Cache-Control: no-store`.** If you add one, it needs that header too —
 `tests/protocol/sts_metadata_anonymous.js` asks it of every metadata document
 and fails until the row is there.
 
-## Versioning: M.N.O, fixed when an artifact is BUILT
+## Versioning: M.N.O.<build>, fixed when an artifact is BUILT
 
-`VERSION` at the repo root holds M.N; the build number is the UTC build instant,
-stamped into `version.json` by the `Dockerfile` so a restarted container reports
-the same build. **There is one source**, `common/version.js` (a port of the
-parent project's `client/version.js`), and every surface that draws a version
-reads it — `tests/version.js` asserts the source each reads, not the string it
-renders. **A version may never be the thing that stops this service starting.**
-`common/CLAUDE.md` argues it; `xacml-pep/CLAUDE.md` carries the remote PEP's
-copy.
+**`VERSION` at the repo root holds the release, `M.N.O` — `1.0.0` since
+2026-11-04 (rcbj, #1298)** — and `package.json` carries the same string. Every
+surface reports `M.N.O.<build>` (#1317): **the build number is the UTC build
+instant, `YYYYMMDDHHMMSS`, unless the build is flagged as a RELEASE**
+(`STS_RELEASE=true`), when it is the `BUILD_NUMBER` the build names —
+`docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .` is
+`1.0.0.0`. A release flag with no valid number fails the image build
+(`STS-CORE-0164`); without the flag `BUILD_NUMBER` is ignored. The number, the
+commit and the build instant are stamped into `version.json` by the
+`Dockerfile`, so a restarted container reports the same build. Bump a release
+by editing `VERSION` and running `node common/version.js --sync-manifests`.
+**There is one source**, `common/version.js`, and every surface that draws a
+version reads it — `tests/version.js` asserts the source each reads, not the
+string it renders. **A version may never be the thing that stops this service
+starting.** `common/CLAUDE.md` argues it; `xacml-pep/CLAUDE.md` carries the
+remote PEP's copy.
 
 ## Tests
 
@@ -1121,7 +1181,8 @@ the file the row names.
 | Enforce anything by default, **in development mode** — product mode implies RFC 9700 mode | `oauth-oidc/CLAUDE.md`, `common/mode.js` |
 | Federate with anybody it was not CONFIGURED to federate with — the one refusal by default | `federation/CLAUDE.md` |
 | Poll a partner about a person while the session lasts; ~~consume a federated sign-out~~ reversed 2026-09-23 (#167); ~~decrypt a partner's encrypted assertion~~ reversed 2026-09-23 (#168) | `federation/CLAUDE.md` |
-| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty-one argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
+| ~~Keep a partner's refresh token, register itself at a partner, find one by WebFinger or send it request objects~~ — reversed 2026-11-03 (#930) behind `fedRefreshTokens`, `fedRegister`, `fedWebFinger` and `fedRequestObject`, each off by default | `federation/CLAUDE.md`, *THE OPENID CONNECT RELYING PARTY PLANS* |
+| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty-six argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
 | ~~Ask anybody's permission before it issues something~~ — reversed 2026-09-01 (`/oauth2/consent`) | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer, unless it is this service's own or listed in `appCorsOrigin` | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |
@@ -1148,6 +1209,7 @@ the file the row names.
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |
 | ~~Issue a set of recovery codes on request~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `portal/CLAUDE.md` |
 | Offer a self-service reset of a second factor | `admin-ui/CLAUDE.md` |
+| Run paranoid PKI mode in development, by default: `pki.paranoid=auto` is on in product and off there (#1360) | `common/CLAUDE.md` (3dd) |
 | Require a compliant registered device, **by default in either mode** (#164) | `xacml/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Decide who may delegate to whom IN THE ACT~~ — reversed 2026-09-23 (#108), in policy since #186 | `common/CLAUDE.md` (3az), `kerberos/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `ws-trust/CLAUDE.md` |
 | ~~Give every trust realm a certificate authority of its own~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `docs/pki.md` |
@@ -1160,7 +1222,7 @@ the file the row names.
 | Dial its database in the clear (#273); ~~or authenticate that server by default~~ — reversed 2026-10-12 | `persistence/CLAUDE.md` |
 | Send mail to an address a request supplies, through a relay a caller names, or in the clear (#63) | `common/CLAUDE.md` (`mail.ts`) |
 | ~~Coordinate several processes through that store~~ — reversed 2026-09-06 | `persistence/CLAUDE.md`, `common/CLAUDE.md` |
-| Recall anything it has already ISSUED — it DISOWNS them | `logout/CLAUDE.md`, `common/CLAUDE.md` |
+| Recall anything it has already ISSUED — it DISOWNS them, except that in product a sign-out revokes the session's access tokens (#1449) | `logout/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Perform back-channel logout~~ — reversed 2026-09-17 (#36) | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
 | ~~Fake WS-Federation's `wauth`~~ — reversed 2026-09-17 (#36), as a step-up | `ws-federation/CLAUDE.md`, `authn/CLAUDE.md` |
 | Dereference WS-Federation's `wreqptr` | `ws-federation/CLAUDE.md` |
@@ -1169,15 +1231,15 @@ the file the row names.
 | ~~Verify a SAML AuthnRequest's signature, or consume SP metadata~~ — reversed 2026-09-17 (#37) | `saml/CLAUDE.md`, `saml/request_signature.ts`, `saml/sp_metadata.ts` |
 | Encrypt an assertion it holds no certificate for — **product refuses**, development sends it in CLEAR | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |
-| Release a person's DID unless they proved it, preferred it and consented to it themselves — to a pairwise or ephemeral client only by its opt-in, and never in a SAML assertion (#693) | `oauth-oidc/CLAUDE.md` (*The `did` claim*) |
+| Release a person's DID unless they proved it (or had this realm publish it, #1291), preferred it and consented to it themselves — to a pairwise or ephemeral client only by its opt-in, and never in a SAML assertion (#693) | `oauth-oidc/CLAUDE.md` (*The `did` claim*) |
+| Let an administrator create or change a did:web it publishes for a person, or bind a credential to a did:web it does not host (#1291) | `oid4vc/CLAUDE.md` (*A PERSON'S PUBLISHED did:web*) |
 
 ## The parent project's paths into this repository
 
-**The `sts/` COPY set in the parent's `tests/Dockerfile` is the transitive
-closure of what `krb5_kdc.js`, `krb5_service.js` and `spnego.js` require, and it
-moves on THIS repository's schedule.** Add a require reachable from any of them
-and the commit that bumps the `sts/` pin must add the COPY line too, or four
-in-process Kerberos jobs die at load with `Cannot find module`, which names a
-file nobody edited. What is owed now, and why `mockStsModule()`'s callers pass
-bare filenames: `kerberos/CLAUDE.md`. The walk itself:
-`docs/parent-project-migration.md`.
+**Nothing in this repository is vendored to or from the parent project since
+#1280 (2026-11-02)**, the Kerberos test-image COPY closure included. The
+parent's `tests/Dockerfile` may still copy `krb5_kdc.js`, `krb5_service.js`,
+`spnego.js` and what they require, but what it copies is the parent's
+business: a require added here owes it no COPY line, and those three may be
+converted to TypeScript like any other module. `kerberos/CLAUDE.md` says what
+that ended; `docs/parent-project-migration.md` is the history.

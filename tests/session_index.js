@@ -26,6 +26,7 @@ const postgres = require('../persistence/persistence_postgres');
 const replication = require('../persistence/persistence_replication');
 const scheduler = require('../cluster/scheduler');
 const authn = require('../authn/authn');
+const errorCodes = require('../common/error_codes');
 const storeDouble = require('./tools/store_double');
 const flushDouble = require('./tools/minted_flush_double');
 
@@ -819,16 +820,47 @@ async function nullDigestCase(t, handle, captured) {
   log.debug("Leaving nullDigestCase().");
 }
 
+// The codes a call tagged a log line with (#695): `errorCodes.tag()` is the
+// door every tagged line goes through, and it is asked by property, so a
+// stand-in sees each code the backfill records.
+async function taggedDuring(fn) {
+  log.debug("Entering taggedDuring().");
+  const codes = [];
+  const realTag = errorCodes.tag;
+  errorCodes.tag = function (code) {
+    codes.push(String(code));
+    return realTag(code);
+  };
+  try {
+    await fn();
+  } catch (e) {
+    log.debug("Caught in taggedDuring(): " + ((e && e.message) || e));
+    throw e;
+  } finally {
+    errorCodes.tag = realTag;
+  }
+  log.debug("Leaving taggedDuring().");
+  return codes;
+}
+
 async function backfillCases(t, handle) {
   log.debug("Entering backfillCases().");
-  t.log.info('=== backfill opens every body before it writes ===');
+  t.log.info('=== backfill skips a body that will not open, and finishes ' +
+             '(#695) ===');
   const value = sessionValue({ lastSeenAt: 4242 });
   const good = { realm: REALM, key: 'backfill-good', body: sealSession(value) };
   const bad = { realm: REALM, key: 'backfill-bad', body: 'not-a-seal' };
+  // Opens and parses, but is not JSON: the same unreadable body.
+  const garbled = { realm: REALM, key: 'backfill-garbled',
+                    body: keystore.seal('{not json', 'minted-rows',
+                                        tiers.mintedTierOf('authn.sessions'),
+                                        { realm: REALM }) };
+  const after = { realm: REALM, key: 'backfill-later',
+                  body: sealSession(sessionValue({ lastSeenAt: 4343 })) };
   const wrote = [];
   const seen = [];
   const order = [];
-  const pages = [[good, bad]];
+  const pages = [[good, bad, garbled, after]];
   install({
     loadMinted: emptyLoad,
     saveMinted: emptySave,
@@ -852,33 +884,41 @@ async function backfillCases(t, handle) {
       log.debug("Leaving loadSessionBodies().");
       return Promise.resolve(page);
     },
-    writeSessionIndexes: function (rows) {
+    writeSessionIndexes: function (rows, complete) {
       log.debug("Entering writeSessionIndexes().");
-      wrote.push(rows);
+      wrote.push({ rows: rows, complete: complete });
       log.debug("Leaving writeSessionIndexes().");
       return Promise.resolve();
     }
   });
   let failed = null;
-  try {
-    await minted.backfillSessionIndex();
-  } catch (e) {
-    failed = e;
-    log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
-  }
-  t.check(failed && /will not open/.test(failed.message),
-          'a body that will not open throws', failed && failed.message);
-  t.equal(failed && failed.sessionIndexCommitted, undefined,
-          'and a throw before any page commits names nothing written');
-  t.equal(wrote.length, 0, 'and that page writes nothing');
+  const codes = await taggedDuring(function () {
+    return minted.backfillSessionIndex().catch(function (e) {
+      failed = e;
+      log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
+    });
+  });
+  t.equal(failed, null, 'a body that will not open no longer throws',
+          failed && failed.message);
+  t.equal(wrote.length, 1, 'the page is written');
+  t.equal(wrote[0] && wrote[0].complete, true,
+          'and, being the last, it carries the completion row');
+  t.equal(JSON.stringify((wrote[0] ? wrote[0].rows : []).map(function (r) {
+    return r.key;
+  })), JSON.stringify(['backfill-good', 'backfill-later']),
+  'every readable body is migrated, the two unreadable ones are not');
+  t.equal(codes.filter(function (c) {
+    return c === 'STS-STORE-0161';
+  }).length, 3, 'STS-STORE-0161 is recorded per skipped body and once ' +
+          'for the count at the end', JSON.stringify(codes));
   t.equal(seen[0].limit, 500, 'a page asks for 500');
   t.equal(seen[0].afterRealm, '', 'starting from an empty realm');
   t.equal(seen[0].afterKey, '', 'and an empty key');
   t.check(order.indexOf('seq') >= 0 &&
           order.indexOf('seq') < order.indexOf('load'),
           'the change seq is taken before the first page');
-  t.equal(minted.sessionIndexChangeFloor(), null,
-          'a walk that throws publishes no floor');
+  t.equal(minted.sessionIndexChangeFloor(), 17,
+          'a walk that skipped still publishes its floor');
 
   const full = [];
   for (let i = 0; i < 500; i++) {
@@ -920,13 +960,155 @@ async function backfillCases(t, handle) {
     splitFailed = e;
     log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
   }
-  t.check(splitFailed && /will not open/.test(splitFailed.message),
-          'a later page that will not open throws',
+  t.equal(splitFailed, null,
+          'a later page whose only body will not open does not throw',
           splitFailed && splitFailed.message);
-  t.equal(splitWrote.length, 1, 'the page that committed is kept');
+  t.equal(splitWrote.length, 2, 'both pages are written');
   t.equal(splitWrote[0].complete, false,
-          'and it is not marked finished');
-  t.equal(splitFailed.sessionIndexCommitted, true,
+          'the full page is not marked finished');
+  t.equal(splitWrote[0].rows.length, 500, 'and holds all 500 rows');
+  t.equal(splitWrote[1].rows.length, 0,
+          'the last page writes no row for the skipped body');
+  t.equal(splitWrote[1].complete, true,
+          'and still carries the completion row');
+  t.equal(minted.sessionIndexChangeFloor(), 18,
+          'the floor is published once the mark commits');
+
+  // NOT ONE BODY READ (#1312): every stored session unreadable is a key
+  // that is not the store's, not lost sessions, so the walk refuses under
+  // STS-STORE-0163 and writes no completion row, and the next start tries
+  // again.
+  const unreadPages = [[bad, garbled]];
+  const unreadWrote = [];
+  install({
+    loadMinted: emptyLoad,
+    saveMinted: emptySave,
+    origin: testOrigin,
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(19);
+    },
+    loadSessionBodies: function () {
+      log.debug("Entering loadSessionBodies().");
+      const page = unreadPages.shift() || [];
+      log.debug("Leaving loadSessionBodies().");
+      return Promise.resolve(page);
+    },
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      unreadWrote.push({ rows: rows, complete: complete });
+      log.debug("Leaving writeSessionIndexes().");
+      return Promise.resolve();
+    }
+  });
+  let unreadFailed = null;
+  const unreadCodes = await taggedDuring(function () {
+    return minted.backfillSessionIndex().catch(function (e) {
+      unreadFailed = e;
+      log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
+    });
+  });
+  t.check(!!unreadFailed && unreadFailed.errorCode === 'STS-STORE-0163',
+          'a store whose every session body is unreadable refuses under ' +
+          'STS-STORE-0163 (#1312)', unreadFailed && unreadFailed.message);
+  t.check(unreadWrote.every(function (w) {
+    return !w.complete;
+  }), 'and writes no completion row, so the next start walks again',
+          JSON.stringify(unreadWrote));
+  t.check(unreadCodes.indexOf('STS-STORE-0163') >= 0,
+          'the refusal is tagged STS-STORE-0163', JSON.stringify(unreadCodes));
+
+  // An empty store has nothing to read, and finishes (#1312's refusal is
+  // for bodies that exist and cannot be read).
+  const blankWrote = [];
+  install({
+    loadMinted: emptyLoad,
+    saveMinted: emptySave,
+    origin: testOrigin,
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(20);
+    },
+    loadSessionBodies: function () {
+      log.debug("Entering loadSessionBodies().");
+      log.debug("Leaving loadSessionBodies().");
+      return Promise.resolve([]);
+    },
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      blankWrote.push({ rows: rows, complete: complete });
+      log.debug("Leaving writeSessionIndexes().");
+      return Promise.resolve();
+    }
+  });
+  let blankFailed = null;
+  try {
+    await minted.backfillSessionIndex();
+  } catch (e) {
+    blankFailed = e;
+    log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
+  }
+  t.equal(blankFailed, null, 'an empty store still finishes',
+          blankFailed && blankFailed.message);
+  t.check(blankWrote.length === 1 && blankWrote[0].complete === true,
+          'and writes its completion row', JSON.stringify(blankWrote));
+
+  // A write that fails is still a throw, and still the start's failure:
+  // only a body that will not open is skipped.
+  const throwPages = [full, [good]];
+  const throwWrote = [];
+  install({
+    loadMinted: emptyLoad,
+    saveMinted: emptySave,
+    origin: testOrigin,
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(21);
+    },
+    loadSessionBodies: function () {
+      log.debug("Entering loadSessionBodies().");
+      const page = throwPages.shift() || [];
+      log.debug("Leaving loadSessionBodies().");
+      return Promise.resolve(page);
+    },
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      throwWrote.push({ rows: rows, complete: complete });
+      log.debug("Leaving writeSessionIndexes().");
+      return complete
+        ? Promise.reject(new Error('the last page would not commit'))
+        : Promise.resolve();
+    }
+  });
+  let writeFailed = null;
+  try {
+    await minted.backfillSessionIndex();
+  } catch (e) {
+    writeFailed = e;
+    log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
+  }
+  t.check(writeFailed && /would not commit/.test(writeFailed.message),
+          'a page that will not commit still throws',
+          writeFailed && writeFailed.message);
+  t.equal(writeFailed && writeFailed.sessionIndexCommitted, true,
           'the throw says a page has committed');
   t.equal(minted.sessionIndexChangeFloor(), null,
           'a resume head is not the floor until the mark commits');
@@ -1191,6 +1373,7 @@ async function armKeystore(dir) {
                    { encoding: 'utf8', mode: 0o600 });
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   keystore.reset();
   keystore.setStore({
@@ -1218,6 +1401,7 @@ function disarmKeystore() {
   log.debug("Entering disarmKeystore().");
   delete process.env.STS_KEYS_SOURCE;
   delete process.env.STS_KEYS_KEK_PROVIDER;
+  delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
   delete process.env.STS_KEYS_KEK_FILE;
   keystore.reset();
   log.debug("Leaving disarmKeystore().");
@@ -1242,13 +1426,22 @@ async function withTempDir(fn) {
 // written beside every body since schema version 24, so the rows stored
 // before it have none. Such a store is read back whole until the front
 // process has filed every row it holds and committed the mark.
-function indexDriver(complete, filed, marked, filters) {
+// `held` names the stores the store holds a row of: a row written before the
+// index, which is what a backfill is for. One that holds none is live from
+// its first start (`liveIfEmpty()`). The row will not open; only its handle
+// is read.
+function indexDriver(complete, filed, marked, filters, held) {
   log.debug("Entering indexDriver().");
   log.debug("Leaving indexDriver().");
   return {
     loadMinted: function (filter) {
       filters.push((filter.skipHandles || []).slice());
-      return Promise.resolve([]);
+      return Promise.resolve((held || []).filter(function (handle) {
+        return (filter.skipHandles || []).indexOf(handle) < 0;
+      }).map(function (handle) {
+        return { handle: handle, realm: '', key: 'legacy',
+                 body: 'not sealed' };
+      }));
     },
     readMinted: noRead,
     origin: testOrigin,
@@ -1293,14 +1486,19 @@ async function indexBackfillCases(t, realm) {
   let filed = [];
   let marked = [];
   let filters = [];
-  install(indexDriver([], filed, marked, filters));
+  install(indexDriver([], filed, marked, filters,
+                      ['test.session-index.on-demand']));
   await minted.restore();
   for (let i = 0; i < 20; i++) {
     await new Promise(function (resolve) {
       setImmediate(resolve);
     });
   }
-  t.equal(filed.length + marked.length, 0,
+  t.equal(filed.filter(function (one) {
+    return one.handle === 'test.session-index.on-demand';
+  }).length + marked.filter(function (one) {
+    return one === 'test.session-index.on-demand';
+  }).length, 0,
           'the restore files nothing: the backfill is not a step of the ' +
           'start (the first start of #823 ran out of heap)');
   t.check(!!scheduler.job('persistence.minted-index-backfill'),
@@ -1352,6 +1550,28 @@ async function indexBackfillCases(t, realm) {
   }).length + marked.filter(function (one) {
     return one === 'test.session-index.on-demand';
   }).length, 0, 'and nothing is filed again');
+
+  // A NEW INSTALL: the store holds no row of it, no mark yet. It is read on
+  // demand from this start, and the mark is written, so the token register
+  // is never held under its in-memory bound (ASVS 5.0.0 7.4.1).
+  filed = [];
+  marked = [];
+  filters = [];
+  install(indexDriver([], filed, marked, filters, []));
+  await minted.restore();
+  for (let i = 0; i < 20; i++) {
+    await new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+  t.equal(store.onDemandLive(), true,
+          'an indexed store the store holds no row of is on demand from its ' +
+          'first start');
+  t.check(marked.indexOf('test.session-index.on-demand') >= 0 &&
+          (!realms.handleFor('admin_stats.tokens') ||
+           marked.indexOf('admin_stats.tokens') >= 0),
+          'and the front process writes its mark, the token register\'s ' +
+          'among them', JSON.stringify(marked));
   store.realmMap().clear();
   log.debug("Leaving indexBackfillCases().");
 }
@@ -1376,7 +1596,7 @@ async function expiryBackfillCases(t) {
   const filters = [];
   const marked = [];
   const given = [];
-  const driver = indexDriver([], [], marked, filters);
+  const driver = indexDriver([], [], marked, filters, [handle]);
   driver.backfillMintedExpiry = function (name, addMs) {
     given.push({ handle: name, addMs: addMs });
     return Promise.resolve(7);

@@ -1723,7 +1723,18 @@ class SharedSignals {
     const now = Date.now();
     const all = realms.list();
     let chain: Promise<unknown> = Promise.resolve();
-    all.forEach((realm) => {
+    // A TURN OF THE EVENT LOOP BETWEEN REALMS (#704). The chain is
+    // promises, which settle in microtasks: a realm whose sweep had no probe
+    // to await went straight on to the next, so every realm's walk of its
+    // dead letters ran in one turn of the process running the job.
+    all.forEach((realm, i) => {
+      if (i > 0) {
+        chain = chain.then(function (): Promise<void> {
+          return new Promise(function (resolve: () => void): void {
+            setImmediate(resolve);
+          });
+        });
+      }
       chain = chain.then(() => {
         return realms.run(realm, () => {
           try {
@@ -2855,9 +2866,19 @@ class SharedSignals {
         }
         record = internal;
       } else {
-        const decision = this.gate(req, res, 'read');
+        // ACKNOWLEDGING IS A WRITE (rcbj on #695). RFC 8936's `ack` and
+        // `setErrs` delete the events they name from the stream's queue, so
+        // a poll that carries either changes what this transmitter still
+        // holds for the receiver — more than a read scope gives. A poll
+        // that only collects stays a read.
+        const acks = !!early && typeof early === 'object' &&
+          ((Array.isArray(early.ack) && early.ack.length > 0) ||
+           (!!early.setErrs && typeof early.setErrs === 'object' &&
+            Object.keys(early.setErrs).length > 0));
+        const decision = this.gate(req, res, acks ? 'write' : 'read');
         if (!decision) {
-          log.debug('Leaving POST /ssf/poll. Refused.');
+          log.debug('Leaving POST /ssf/poll. Refused' +
+                    (acks ? ' an acknowledgement.' : '.'));
           return;
         }
         if (!body) {
@@ -3745,8 +3766,8 @@ class SharedSignals {
     }
     if (errors.length) {
       log.debug('Leaving SharedSignals.broadcastAnnouncement(). Refused.');
-      return { ok: false, code: 'STS-SSF-0153', errors: errors, sent: 0,
-               streams: 0, realms: [] };
+      return errorCodes.mark({ ok: false, errors: errors, sent: 0,
+                               streams: 0, realms: [] }, 'STS-SSF-0153');
     }
     const uri = events.ANNOUNCEMENT;
     const targets = a.everyRealm ? realms.list() : [realms.current()];
@@ -3828,7 +3849,6 @@ class SharedSignals {
       }
     }
     if (!outcome.sent) {
-      outcome.code = 'STS-SSF-0154';
       log.warn(errorCodes.tag('STS-SSF-0154') + 'ssf: an announcement ' +
                'reached no stream: ' + outcome.why);
     }
@@ -5116,6 +5136,13 @@ class SharedSignals {
     log.debug("Leaving SharedSignals.sendOneRiscEvent().");
     // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
     const txn = this.newTxn();
+    // AN ACT THE ACCOUNT HOLDER MADE (2026-11-03) is noted on the account's
+    // row under this `txn`, before any SET of it is built, so this service's
+    // own receivers can leave a person's own report alone — RISC has no
+    // `initiating_entity` to say it on the wire. See risc.ts's noteOwnAct().
+    if (due.initiatingEntity === 'user') {
+      risc.noteOwnAct(due.row, txn);
+    }
     this.riscBurst.open += 1;
     return Promise.all(candidates.map((record) => {
       return this.transmit(record, { txn: txn, uri: due.uri,

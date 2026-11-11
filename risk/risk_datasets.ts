@@ -202,6 +202,8 @@ const RETENTION_JOB = 'risk.retention';
 // its own nextUpdate.
 /** The id of the FIDO MDS3 download job. */
 const MDS_JOB = 'risk.mds-refresh';
+// BLOB entries made rows between two turns of the loop (#704; importMds()).
+const MDS_ENTRY_SLICE = 100;
 const MDS_OVERDUE_EVERY_MS = 60 * 60 * 1000;
 const RETENTION_EVERY_MS = 60 * 60 * 1000;
 // A VERSION LEFT `loading` BY A PROCESS THAT STOPPED (#215): marked refused
@@ -823,6 +825,19 @@ class RiskDatasets {
                           o.format + ' (' + skipped + ' line(s) were not).',
                           o, version);
     }
+    // A FILE OF THE WRONG KIND (#1480, ASVS 5.0.0 5.2.2): one line that
+    // happens to parse is not a file of this format.
+    const tolerated = Number(config.value('risk.maxSkippedLinesPercent'));
+    if (skipped * 100 > tolerated * (rows + skipped)) {
+      const why = skipped + ' of ' + (rows + skipped) + ' lines are not rows ' +
+        'of ' + o.format + ', more than risk.maxSkippedLinesPercent allows';
+      await this.dropRows(entry.kind, realm, o.dataset, version);
+      await store.finishVersion(realm, o.dataset, version, {
+        state: 'refused', rowCount: rows, loadedAt: now(), refusal: why,
+        errorCode: 'STS-RISK-0056', parameters: counted });
+      log.debug("Leaving RiskDatasets.importVersion(). Not this format.");
+      return this.refused('STS-RISK-0056', why + '.', o, version);
+    }
     const shrink = await this.shrinkRefusal(realm, o.dataset, rows);
     if (shrink) {
       await this.dropRows(entry.kind, realm, o.dataset, version);
@@ -1082,12 +1097,20 @@ class RiskDatasets {
     }
     this.begun(o, { dataset: staged.dataset, realm: '',
                     version: staged.version, sha256: meta.sha256 });
+    // A turn of the loop every MDS_ENTRY_SLICE entries (#704): each entry's
+    // rows are built from its whole metadata statement.
     const rows: Json[] = [];
-    payload.entries.forEach(function (entry: Json): void {
-      RiskDatasets.mdsRowsOf(entry).forEach(function (row: Json): void {
+    const listed: Json[] = payload.entries;
+    for (let i = 0; i < listed.length; i++) {
+      if (i > 0 && i % MDS_ENTRY_SLICE === 0) {
+        await new Promise(function (resolve: (v?: unknown) => void): void {
+          setImmediate(resolve);
+        });
+      }
+      RiskDatasets.mdsRowsOf(listed[i]).forEach(function (row: Json): void {
         rows.push(row);
       });
-    });
+    }
     let written = 0;
     for (let i = 0; i < rows.length; i += BATCH_ROWS) {
       written += await store.insertRows('fido', '', staged.dataset,
@@ -1505,6 +1528,194 @@ class RiskDatasets {
     'USER_KEY_PHYSICAL_COMPROMISE'];
 
   // -------------------------------------------------------------------------
+  // A BLOB'S SERIAL NUMBER WITHOUT PARSING THE BLOB (#704). `refreshMds()`
+  // asks only whether the published BLOB is newer than the active one, and
+  // it answered by base64url-decoding and `JSON.parse()`-ing the whole
+  // payload — every authenticator's metadata statement, megabytes — on the
+  // loop of the process running `risk.mds-refresh`, to read one number.
+  // This decodes the payload a growing PREFIX at a time and reads the
+  // top-level members in order, skipping each value by its brackets, until
+  // `no` is found: FIDO's BLOB carries `legalHeader`, `no` and `nextUpdate`
+  // ahead of `entries`, so the first few kilobytes answer. A payload that
+  // puts `no` after `entries` is still answered, from a longer prefix, and
+  // what is not a JSON object answers NaN, which the import refuses by
+  // name, as before. The import itself still parses the BLOB it verifies.
+  // -------------------------------------------------------------------------
+  /**
+   * Reads the serial number `no` of an MDS3 BLOB (a JWT) from as short a
+   * prefix of its payload as answers it.
+   *
+   * @param jwt - the BLOB
+   * @returns the serial, or NaN when there is none
+   */
+  static mdsSerialOf(jwt: string): number {
+    log.debug("Entering RiskDatasets.mdsSerialOf().");
+    const part = String(jwt || '').split('.')[1] || '';
+    // Whole base64 quanta, so every prefix decodes to whole bytes; a UTF-8
+    // character cut at the end of one is only ever inside a value not yet
+    // reached, and the next prefix is longer.
+    let size = 4096;
+    for (;;) {
+      const end = Math.min(part.length, size);
+      const cut = end >= part.length ? end : end - (end % 4);
+      const text = Buffer.from(part.slice(0, cut), 'base64url')
+                         .toString('utf8');
+      const found = RiskDatasets.topLevelNumber(text, 'no');
+      if (found !== undefined || end >= part.length) {
+        log.debug("Leaving RiskDatasets.mdsSerialOf().");
+        return found === undefined || found === null ? NaN : found;
+      }
+      size *= 4;
+    }
+  }
+
+  /**
+   * Reads one top-level member of a JSON object as a number, skipping every
+   * other member's value unparsed.
+   *
+   * @param text - the object's text, or a prefix of it
+   * @param name - the member
+   * @returns the number; null when the object has no such number member or
+   *   the text is no object; undefined when the prefix ends first
+   */
+  static topLevelNumber(text: string, name: string): number | null |
+    undefined {
+    log.debug("Entering RiskDatasets.topLevelNumber().");
+    const t = text;
+    let i = 0;
+    // `ws()` and `pastString()` are hot paths — called per member and per
+    // character run of a payload of megabytes — so they carry no
+    // Entering/Leaving pair, which would add two log lines a call.
+    const ws = function (): void {
+      while (i < t.length && ' \t\r\n'.indexOf(t[i]) >= 0) {
+        i++;
+      }
+    };
+    // The index just past the string starting at `at`, or -1 when the
+    // prefix ends inside it.
+    const pastString = function (at: number): number {
+      let k = at + 1;
+      while (k < t.length) {
+        if (t[k] === '\\') {
+          k += 2;
+          continue;
+        }
+        if (t[k] === '"') {
+          return k + 1;
+        }
+        k++;
+      }
+      return -1;
+    };
+    ws();
+    if (i >= t.length) {
+      log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+      return undefined;
+    }
+    if (t[i] !== '{') {
+      log.debug("Leaving RiskDatasets.topLevelNumber(). Not an object.");
+      return null;
+    }
+    i++;
+    for (;;) {
+      ws();
+      if (i >= t.length) {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+        return undefined;
+      }
+      if (t[i] === '}') {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Absent.");
+        return null;
+      }
+      if (t[i] === ',') {
+        i++;
+        continue;
+      }
+      if (t[i] !== '"') {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Malformed.");
+        return null;
+      }
+      const keyEnd = pastString(i);
+      if (keyEnd < 0) {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+        return undefined;
+      }
+      let key = '';
+      try {
+        key = JSON.parse(t.slice(i, keyEnd));
+      } catch (e) {
+        log.debug("Caught in RiskDatasets.topLevelNumber(): " +
+                  ((e && e.message) || e));
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Malformed key.");
+        return null;
+      }
+      i = keyEnd;
+      ws();
+      if (i >= t.length) {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+        return undefined;
+      }
+      if (t[i] !== ':') {
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Malformed.");
+        return null;
+      }
+      i++;
+      ws();
+      // The value: a string, a bracketed structure skipped by depth, or a
+      // literal running to the next comma or brace.
+      const start = i;
+      if (t[i] === '"') {
+        i = pastString(i);
+        if (i < 0) {
+          log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+          return undefined;
+        }
+      } else if (t[i] === '{' || t[i] === '[') {
+        let depth = 0;
+        while (i < t.length) {
+          const c = t[i];
+          if (c === '"') {
+            i = pastString(i);
+            if (i < 0) {
+              break;
+            }
+            continue;
+          }
+          if (c === '{' || c === '[') {
+            depth++;
+          } else if (c === '}' || c === ']') {
+            depth--;
+            if (depth === 0) {
+              i++;
+              break;
+            }
+          }
+          i++;
+        }
+        if (i < 0 || depth !== 0) {
+          log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+          return undefined;
+        }
+      } else {
+        while (i < t.length && ',}'.indexOf(t[i]) < 0) {
+          i++;
+        }
+        if (i >= t.length) {
+          log.debug("Leaving RiskDatasets.topLevelNumber(). Too short.");
+          return undefined;
+        }
+      }
+      if (key === name) {
+        const raw = t.slice(start, i).trim();
+        const n = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(raw) ? Number(raw)
+                                                              : NaN;
+        log.debug("Leaving RiskDatasets.topLevelNumber(). Found.");
+        return isFinite(n) ? n : null;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // ONE MDS3 ENTRY AS ROWS: one per key the model is listed under. The
   // latest status report is the one with the latest effective date; the
   // model is COMPROMISED if any report ever said so (a later "update
@@ -1860,15 +2071,10 @@ class RiskDatasets {
                             'STS-RISK-0027');
     }
     const text = Buffer.from(fetched.body).toString('utf8').trim();
-    let offered = NaN;
-    try {
-      offered = Number(JSON.parse(Buffer.from(text.split('.')[1] || '',
-        'base64url').toString('utf8')).no);
-    } catch (e) {
-      log.debug("Caught in RiskDatasets.refreshMds(): " +
-                ((e && e.message) || e));
-      // Left NaN: the import below refuses what is not a BLOB, by name.
-    }
+    // The serial only, from a prefix of the payload (#704,
+    // `mdsSerialOf()`); NaN when there is none, and the import below
+    // refuses what is not a BLOB, by name.
+    const offered = RiskDatasets.mdsSerialOf(text);
     if (isFinite(offered) && offered <= serial) {
       this.mdsDueAt = active ? Number(active.nextUpdateAt || 0) : 0;
       log.debug("Leaving RiskDatasets.refreshMds(). Not newer.");
@@ -2434,8 +2640,13 @@ class RiskDatasets {
         provider: active ? active.provider : entry.provider || '',
         attribution: active ? active.attribution : '',
         attributionUrl: active ? active.attributionUrl : '',
+        // `refusal` is what the page draws. The code stays on the stored
+        // version and its audit row, and leaves the answer here (#1355).
         versions: versions.map(function (v: Json): Json {
-          return Object.assign({}, v, { reloadable: self.reloadable(id, v) });
+          const shown = Object.assign({}, v,
+                                      { reloadable: self.reloadable(id, v) });
+          delete shown.errorCode;
+          return shown;
         })
       });
     }

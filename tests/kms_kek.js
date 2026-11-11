@@ -507,6 +507,7 @@ function childMain() {
     // ------------------------------------------------------------ E
     rows.clear();
     process.env.STS_KEYS_KEK_PROVIDER = 'file';
+    process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
     delete process.env.STS_KEYS_KEK_REF;
     await restart();
     const local = keystore.seal('beta', 'minted-rows', undefined,

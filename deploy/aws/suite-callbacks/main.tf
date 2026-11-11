@@ -43,6 +43,35 @@ locals {
   runner_image = "${local.ecr_url}:runner-${var.image_tag}"
   pep_image    = "${local.ecr_url}:pep-${var.image_tag}"
 
+  # THE WORKLOAD API AGENT IS A SIDECAR, FROM THE SERVICE'S OWN IMAGE (#695,
+  # rcbj's decision 2026-11-04). The tag is the one the nodes run (the
+  # environment's `image_tag` output), not this run's tree tag: run-suite.sh
+  # pushes only runner- and pep- images, and the agent a workload would run
+  # beside it is the one shipped with the service it joins. No new image.
+  service_image = "${local.ecr_url}:${local.env.image_tag}"
+
+  # What the sidecar does, in the service image's bash: wait for the join
+  # token sts_spiffe_grpc.js writes into the shared directory when it runs
+  # (it is written last, after bundle.pem and agent-args), then BECOME the
+  # agent. The job writes the token rather than a container before it,
+  # because the agent does not renew its own SVID and the job may run hours
+  # into a STS_SUITE_IN_AWS task; a token spent at its own start is fresh.
+  # The token is a file, never argv (workload_agent.ts refuses that).
+  spiffe_agent_dir = "/shared/spiffe"
+  spiffe_agent_script = join("; ", [
+    "D=${local.spiffe_agent_dir}",
+    "until [ -s \"$D/join-token\" ]; do sleep 2; done",
+    "mapfile -t A < \"$D/agent-args\"",
+    join(" ", [
+      "exec node /usr/src/sts/spiffe/workload_agent.js",
+      "--socket=\"$D/api.sock\"",
+      "--trust-bundle-file=\"$D/bundle.pem\"",
+      "--join-token-file=\"$D/join-token\"",
+      "--ready-file=\"$D/ready\"",
+      "\"$${A[@]}\"",
+    ]),
+  ])
+
   # Every port the load balancer publishes, admitted from the NAT address, so
   # the jobs reach the service exactly as any client does.
   # And the default realm's SPIRE Server API (environment/spiffe_default.tf),
@@ -53,6 +82,10 @@ locals {
     { for k, p in try(local.env.spiffe_default_ports, {}) : "spiffe-${k}" => p },
   )
   ldap_host = try(local.env.public_hostname, "") != "" ? local.env.public_hostname : local.env.nlb_dns_name
+  ldap_port = try(local.env.load_balancer_ports.ldap.listener, local.env.load_balancer_ports.ldaps.listener)
+  ldap_url = format("%s://%s:%d",
+    can(local.env.load_balancer_ports.ldap) ? "ldap" : "ldaps",
+  local.ldap_host, local.ldap_port)
 
   pep_subject = "CN=remote-pep-1,OU=remote-peps,O=iya-sts"
   pep_name    = "remote-pep-1"
@@ -286,8 +319,9 @@ resource "aws_ecs_task_definition" "callbacks" {
 
   # The same three containers as environment/runner.tf's suite task, argued
   # there. The suite container runs deploy/aws/runner/run-in-task.sh, which
-  # run-suite.sh points at the two callback jobs with STS_SUITE_ONLY and tells
-  # to leave the local run's realms alone with STS_SUITE_KEEP_REALMS.
+  # run-suite.sh points at the callback jobs with STS_SUITE_ONLY and tells
+  # to leave the local run's realms alone with STS_SUITE_KEEP_REALMS. And
+  # since #695 a fourth, `spiffe-agent`, below.
   container_definitions = jsonencode([
     {
       name        = "pep-credential"
@@ -344,6 +378,38 @@ resource "aws_ecs_task_definition" "callbacks" {
       }
       logConfiguration = local.container_log
     },
+    # THE WORKLOAD API AGENT (#695): spiffe/workload_agent.ts, compiled, in
+    # the service image, serving the Workload API on a Unix socket in the
+    # shared volume, which is how sts_spiffe_grpc.js's agent path reaches it
+    # here (STS_SPIFFE_AGENT_DIR on the suite). It attests over the default
+    # realm's SPIRE Server API through the load balancer — the address the
+    # job writes into agent-args, from this task's own network, which the
+    # rules above admit (`spiffe-server`). Across containers the caller is
+    # attested by SO_PEERCRED on uid and gid: this task does not share a pid
+    # namespace, so the agent sees pid 0 and says so (spiffe/CLAUDE.md).
+    #
+    # NOT ESSENTIAL, NOT A DEPENDENCY, NO HEALTH CHECK. It waits for a token
+    # that exists only while the job runs, so a health check would be
+    # unhealthy for most of the task, and a suite that depended on it would
+    # wait on the one job that needs it. A sidecar that fails (an image
+    # older than --ready-file, a refused token) fails that job, which waits
+    # for `ready` and names this container's log; every other job runs. The
+    # agent idles between calls: a quarter vCPU and 256 MiB reserved out of
+    # the task's, no hard limit.
+    {
+      name              = "spiffe-agent"
+      image             = local.service_image
+      essential         = false
+      cpu               = 256
+      memoryReservation = 256
+      mountPoints       = [{ sourceVolume = "shared", containerPath = "/shared" }]
+      entryPoint        = ["bash", "-c"]
+      command           = [local.spiffe_agent_script]
+      environment = [
+        { name = "STS_LOG_LEVEL", value = "info" },
+      ]
+      logConfiguration = local.container_log
+    },
     {
       name        = "suite"
       image       = local.runner_image
@@ -359,8 +425,10 @@ resource "aws_ecs_task_definition" "callbacks" {
         { name = "STS_TEST_CLUSTER_NODES", value = tostring(length(local.env.ecs_services)) },
         # The public name where there is one: LDAPS is verified against the
         # certificate, which names it and not the load balancer (#311).
-        { name = "STS_LDAP_URL", value = "ldap://${local.ldap_host}:${local.env.load_balancer_ports.ldap.listener}" },
-        { name = "STS_LDAP_PORT", value = tostring(local.env.load_balancer_ports.ldap.listener) },
+        # Plain LDAP when the environment publishes it, LDAPS on 636 when it
+        # does not (no AWS environment publishes 389 since 2026-11-10).
+        { name = "STS_LDAP_URL", value = local.ldap_url },
+        { name = "STS_LDAP_PORT", value = tostring(local.ldap_port) },
         # THE BULK LOADS AS ./run-tests.sh RUNS THEM (#311): rcbj's sizes for
         # every mode (1000 people, 10 groups of 100; tests/tools/modes.sh,
         # 2026-09-27) and the bulk lane LAST, as the cluster mode runs it —
@@ -380,6 +448,9 @@ resource "aws_ecs_task_definition" "callbacks" {
         { name = "XACML_PEP_CA_PEM_FILE", value = "/shared/pep/ca.crt" },
         { name = "XACML_PEP_NAME", value = local.pep_name },
         { name = "XACML_PEP_REALM", value = local.pep_realm },
+        # The sidecar's directory (#695): sts_spiffe_grpc.js hands the agent
+        # its token there and calls its socket, instead of starting one.
+        { name = "STS_SPIFFE_AGENT_DIR", value = local.spiffe_agent_dir },
       ]
       secrets = [
         { name = "STS_ADMIN_API_CLIENT_SECRET", valueFrom = local.env.admin_api_client_secret_arn },

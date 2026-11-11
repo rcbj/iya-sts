@@ -245,7 +245,9 @@ class CellsAdmin {
         return { id: peer.id, jurisdiction: peer.jurisdiction,
                  consoleUrl: peer.consoleUrl || '',
                  reachable: true, answeredMs: Date.now() - began,
-                 reportedJurisdiction: answer && answer.jurisdiction };
+                 reportedJurisdiction: answer &&
+                   typeof answer.jurisdiction === 'string'
+                   ? answer.jurisdiction : undefined };
       }, function (err: any) {
         return { id: peer.id, jurisdiction: peer.jurisdiction,
                  consoleUrl: peer.consoleUrl || '',
@@ -359,7 +361,17 @@ class CellsAdmin {
         { realm: realms.currentId(), after: String(after || ''),
           limit: PEOPLE_PAGE });
       log.debug("Leaving CellsAdmin.peopleOf().");
-      return Object.assign({ cell: cellId }, answer);
+      // Only what the answering half names, as text: this is another cell's
+      // word, perhaps another build's, on this cell's page (#1353).
+      const listed = answer && Array.isArray(answer.people)
+        ? answer.people : [];
+      return { cell: cellId,
+               people: listed.map(function (one: Json) {
+                 return { name: String((one && one.name) || ''),
+                          uuid: String((one && one.uuid) || ''),
+                          displayName: String((one && one.displayName) || '') };
+               }),
+               next: String((answer && answer.next) || '') };
     } catch (err) {
       log.debug("Leaving CellsAdmin.peopleOf(). Refused or unreachable.");
       return { cell: cellId, refused: String((err && err.message) || err) };
@@ -433,7 +445,7 @@ class CellsAdmin {
     return answer.ok
       ? { ok: true, message: '"' + username + '" is homed in cell "' +
                              answer.target + '" now.', target: answer.target }
-      : { ok: false, errors: [answer.why], code: answer.code };
+      : errorCodes.mark({ ok: false, errors: [answer.why] }, answer.code);
   }
 
   // -------------------------------------------------------------------------

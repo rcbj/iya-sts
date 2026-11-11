@@ -381,6 +381,24 @@ class SignoutPages {
   }
 
   /**
+   * The page when ending another session needs a recent sign-in (#1577,
+   * ASVS 5.0.0 7.5.2): what to do, in the `logout` catalogs' words, and the
+   * way to do it — a navigation to the sign-in the API began, which comes
+   * back here. The refusal itself is over the page, in English.
+   *
+   * @param view - the view: `signIn`, the address to sign in again at
+   * @param ctx - the render context
+   * @returns the HTML
+   */
+  static reauthenticate(view: Json, ctx: Json): string {
+    const t = ctx.t;
+    return '<h1>' + t.html('logout.heading') + '</h1><p class="sub">' +
+      t.html('logout.reauthenticate.lead') + '</p><p><a href="' +
+      esc(view.signIn || '/logout') + '" data-sts-navigate="1">' +
+      t.html('logout.reauthenticate.signIn') + '</a></p>';
+  }
+
+  /**
    * Draws the page's body from its view, by the view's `state`.
    *
    * @param view - the view
@@ -396,6 +414,9 @@ class SignoutPages {
     }
     if (view.state === 'accounts') {
       return SignoutPages.accounts(view, ctx);
+    }
+    if (view.state === 'reauthenticate') {
+      return SignoutPages.reauthenticate(view, ctx);
     }
     return SignoutPages.refused(view, ctx);
   }

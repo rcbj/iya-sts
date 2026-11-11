@@ -29,7 +29,8 @@
 //   C. NO WAY ROUND. The gate's two shortcuts — no application named,
 //      `roles.enforceIssuance` off — waive the role question only.
 //   D. WHERE THE FACTS COME FROM when a caller names none: the session it
-//      hands the gate, else the person's standing held in this process.
+//      hands the gate, else the person's standing held in this process —
+//      dropped and read again when another process moves the level (#666).
 //   E. DEVELOPMENT OBSERVES: without `risk.enforceInDevelopment` a risk Deny
 //      is recorded as observed and the roles decide.
 //   F. THE SIGN-IN SCREEN, over HTTP, from an address on a Tor list (a
@@ -487,6 +488,35 @@ function childMain() {
          'automated client made them HIGH, and a Kerberos ticket is refused',
          JSON.stringify(standing && standing.level));
 
+    // A CHANGE OF LEVEL MADE IN ANOTHER PROCESS (#666): the store says LOW
+    // (written there, as a later sign-in in another request worker would),
+    // and the `risk-standing` change row's applier drops what this process
+    // holds at once and reads the store's back.
+    const riskStoreD3 = require(ROOT + '/risk/risk_store');
+    await riskStoreD3.upsertSubject({ realm: 'default', subject: unitSub,
+      score: 0.4, level: 'LOW', reason: 'the model',
+      lastAssessment: 'elsewhere', updatedAt: Date.now() }, false);
+    const stale = riskEngine.standingOf('default', 'rd-unit');
+    riskEngine.noteStandingMoved('default', unitSub);
+    const dropped = riskEngine.standingOf('default', 'rd-unit');
+    await new Promise(function (r) { setTimeout(r, 50); });
+    const readBack = riskEngine.standingOf('default', 'rd-unit');
+    const afterMove = gate.check({
+      application: CLIENT, kind: gate.ISSUANCE.KERBEROS_TICKET,
+      subject: { kind: 'user', name: 'rd-unit', authenticated: true },
+      claims: null });
+    note(stale && stale.level === 'HIGH' && dropped === null &&
+         readBack && readBack.level === 'LOW' && afterMove.allowed,
+         'D3. a change of level announced by another process drops the ' +
+         'standing held here and reads it back: HIGH held, LOW in the ' +
+         'store, LOW decides (#666)',
+         JSON.stringify([stale && stale.level, dropped,
+                         readBack && readBack.level, afterMove.allowed]));
+    riskEngine.noteStandingMoved('default', 'urn:uuid:nobody-held');
+    note(riskEngine.standingOf('default', 'rd-unit').level === 'LOW',
+         'D4. a change for a person this process holds nothing for leaves ' +
+         'the standings alone');
+
     // --- E. development observes --------------------------------------------
     config.setOverride('risk.enforceInDevelopment', false);
     const observed = ask(riskEngine.factsOf({ level: 'HIGH', score: 20,
@@ -727,7 +757,7 @@ function childMain() {
                             signals: ['automated-client'],
                             assessmentId: 'rd-g2' };
       const stepUp = await authorize(carol);
-      note(/\/authn\/login\?authn=/.test(String(stepUp.headers.location ||
+      note(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(stepUp.headers.location ||
                                                  '')),
            'G2. a session at MEDIUM with a device signal, holding a code ' +
            'and no key, is sent to sign in again with a security key',

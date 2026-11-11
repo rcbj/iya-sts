@@ -244,8 +244,8 @@
     "text": "DEN HÄR TJÄNSTENS HEMLIGHET HOS PARTNERN, i klartext, i en katalog där varje bind lyckas. Det är en VERKLIG autentiseringsuppgift hos en VERKLIG extern tjänst, vilket är ett starkare påstående än något annat i den här katalogen — se rubriken. Skrivs aldrig till granskningsloggen och skrivs aldrig ut på en sida."
   },
   "fed.schema.attributes.fedResponseMode.what": {
-    "en": "07cfe6e4177873df",
-    "text": "HUR AUKTORISERINGSKODEN KOMMER TILLBAKA: query (standard, koden i omdirigeringen) eller form_post (OAuth 2.0 Form Post Response Mode), som Sign in with Apple kräver när ett namn eller en adress efterfrågas. form_post kommer som en POST mellan webbplatser, så en webbläsare skickar ingen SameSite=Lax-cookie med den."
+    "en": "fdcac3938c7dc0ec",
+    "text": "HUR AUKTORISERINGSSVARET KOMMER TILLBAKA. Tomt, standardvärdet: query för code, och form_post (OAuth 2.0 Form Post Response Mode) för en OpenID Connect-svarstyp som bär en ID-token eller en åtkomsttoken. form_post, som Sign in with Apple kräver när ett namn eller en adress efterfrågas, anländer som en POST mellan webbplatser, så en webbläsare skickar ingen SameSite=Lax-cookie med den. fragment, endast OpenID Connect, är specifikationens standardvärde för de svarstyperna: svaret finns i URL-fragmentet, och en sida med ett skript här skickar det vidare. Det lägger ID-token i webbläsarens historik, vilket form_post inte gör: använd det bara för en partner som inte kan posta. query kan inte bära en ID-token eller en åtkomsttoken."
   },
   "fed.schema.attributes.fedAllowedTenants.what": {
     "en": "1436122fe8c92048",
@@ -276,8 +276,52 @@
     "text": "Det omfång som begärs av partnern. `openid profile email` är standard för en OIDC-relation och det finns ingen standard för en OAuth 2.0-relation, eftersom det en OAuth 2.0-auktoriseringsserver ger dig är helt lokalt för den."
   },
   "fed.schema.attributes.fedResponseType.what": {
-    "en": "b2682d37a527ee98",
-    "text": "code (standard) eller id_token. `id_token` med form_post är den form som INTE behöver någon bakkanal och därför ingen tokenslutpunkt, ingen klienthemlighet och ingen utgående begäran — vilket är det enda sättet att federera med en OIDC-partner från en driftsättning som inte har någon utgående trafik alls."
+    "en": "885dc55158b43f26",
+    "text": "code (standardvärdet), id_token, eller en av OpenID Connects fyra andra: id_token token (implicit), code id_token, code token och code id_token token (hybrid). `id_token` med form_post är formen som INTE behöver någon bakkanal och därför ingen tokenslutpunkt, ingen klienthemlighet och ingen utgående begäran — vilket är det enda sättet att federera med en OIDC-partner från en driftsättning helt utan utgående trafik. En ID-token från auktoriseringsslutpunkten måste bära nonce, och c_hash och at_hash där en kod eller en åtkomsttoken kom med den."
+  },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "ENDAST OPENID CONNECT. DEN ENDA ALGORITM som partnern signerar den här relationens ID-token och utloggningstoken med — det som registrerades hos partnern som id_token_signed_response_alg (OpenID Connect Core 1.0 avsnitt 3.1.3.7 steg 7, Back-Channel Logout 1.0 avsnitt 2.6). En token signerad med någon annan avvisas, även en som partnerns nyckel verifierar. Tomt, standardvärdet: vilken algoritm som helst i den verifierande nyckelns familj som federation.jwtAlgorithms tillåter. Ange den: tomt godtar en token signerad med en annan av partnerns nycklar under en annan algoritm."
+  },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "ENDAST OPENID CONNECT. Den algoritm ett SIGNERAT UserInfo-svar måste vara signerat med — det som registrerades hos partnern som userinfo_signed_response_alg (OpenID Connect Core 1.0 avsnitt 5.3.2). Ett signerat svar verifieras mot partnerns nycklar oavsett om detta är angivet; angivet används inte ett som är signerat med en annan algoritm. Tomt, standardvärdet: ett JSON-svar, eller ett signerat med vilken algoritm som helst i dess nyckels familj."
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "ENDAST OPENID CONNECT. TRUE behåller, förseglad, den uppdateringstoken partnern utfärdar vid inloggning, tillsammans med sessionen den startade, och använder den för att hålla den sessionens identitet aktuell (OpenID Connect Core 1.0 avsnitt 12): var fedRefreshEverySeconds uppdateras sessionens token, en ny ID-token måste namnge samma iss och sub, och UserInfo måste fortfarande svara för den sub. En uppdatering som partnern avvisar, eller ett svar som inte klarar dessa kontroller, AVSLUTAR sessionen. Token dör med sessionen. FALSE, standardvärdet: partnerns token används en gång, vid inloggning, och kastas — inget här håller en autentiseringsuppgift hos en annan tjänst, och partnerns egen utloggning och Shared Signals är det som avslutar sessionen tidigare."
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "Med fedRefreshTokens på: hur ofta, i sekunder, en sessions token uppdateras. Tomt: när åtkomsttoken går ut (dess expires_in), eller varje timme om partnern inte anger någon utgång. Det schemalagda jobbet federation.partner-refresh tittar var femtonde sekund."
+  },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "ENDAST OPENID CONNECT, med fedDiscovery. TRUE gör att den här tjänsten REGISTRERAR SIG SJÄLV hos partnern (OpenID Connect Dynamic Client Registration 1.0, RFC 7591) vid den registration_endpoint som dess upptäcktsdokument namnger, närhelst relationen saknar fedClientId eller har ett registrerat hos en annan utfärdare — i början av en inloggning, eller genom en administratörs register-partner. Det client_id och den hemlighet partnern utfärdar skrivs till fedClientId och fedClientSecret (förseglad). Det som registreras är den här relationen: dess påståendekonsumenttjänst, svarstyp, klientautentisering, algoritmerna som anges här och, för begäranobjekt, den publika nyckel som signerar dem. FALSE, standardvärdet: klienten registreras hos partnern för hand."
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "Den utfärdare som fedClientId registrerades hos genom fedRegister. Skrivs av registreringen; töm den, tillsammans med fedClientId, för att registrera igen vid nästa inloggning."
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "ENDAST OPENID CONNECT. Skicka auktoriseringsbegäran som ett begäranobjekt (OpenID Connect Core 1.0 avsnitt 6, RFC 9101): request (som värde) eller request_uri (som referens — partnern hämtar det, en gång, från /federation/request/{id}/{handle}). Signerat under fedRequestObjectSigningAlg med den här realmens nyckel. Tomt, standardvärdet: en vanlig auktoriseringsbegäran."
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "Den algoritm ett begäranobjekt signeras med: RS256 (standardvärdet), PS256 eller ES256 under den här realmens nyckel, eller none — ett OSIGNERAT, som Core 6.2 bara tillåter som referens över https; en varning: partnern har då bara hämtningens TLS som belägg för att den här tjänsten skrev det."
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "ENDAST OPENID CONNECT, med fedDiscovery. TRUE besvarar /federation/webfinger/{id}, där en PERSON skriver en identifierare (acct:user@host eller en URL) och den här tjänsten frågar den värden vilken personens OpenID-leverantör är (OpenID Connect Discovery 1.0 avsnitt 2, RFC 7033). EN VARNING: värden som anropas har valts av en anropare — tjänstens enda argumenterade undantag av det slaget bland federationsbegäranden, under den utgående policyn (ingen intern adress i produktläge, ingen omdirigering, taket). Den utfärdare som hittas måste börja med fedPeer, vilket begränsar den till den partner en administratör har konfigurerat; personen visas utfärdaren och fortsätter bara genom att trycka på en knapp. FALSE, standardvärdet, avvisar."
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "ENDAST OPENID CONNECT. TRUE läser partnerns slutpunkter och dess jwks_uri från dess upptäcktsdokument, {fedPeer}/.well-known/openid-configuration, i början av varje inloggning (OpenID Connect Discovery 1.0 avsnitt 4), vars issuer måste vara exakt fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl och fedJwksUri läses då inte. Adressen härleds från fedPeer, som en administratör har konfigurerat, och aldrig från en begäran. FALSE, standardvärdet: slutpunkterna konfigureras för hand."
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "ENDAST OPENID CONNECT. TRUE besvarar den här relationens slutpunkt för att initiera inloggning, /federation/initiate-login/{id}, som partnern registrerar som initiate_login_uri (OpenID Connect Core 1.0 avsnitt 4): en inloggning som PARTNERN startar och där den namnger sig själv i iss, som måste vara fedPeer. En login_hint skickas vidare, och en target_link_uri följs endast till en sökväg på den här tjänsten. FALSE, standardvärdet, avvisar den: annars skulle vilken sida som helst kunna starta en inloggning i en persons webbläsare."
   },
   "fed.schema.attributes.fedBinding.what": {
     "en": "a10d4406a67b3b1f",
@@ -376,8 +420,8 @@
     "text": "HEMLIGHETEN FÖR fedSignalsClientId, FÖRSEGLAD under nyckelkrypteringsnyckeln överallt där nycklar är beständiga och visas aldrig. Tomt använder fedClientSecret, förseglad på samma sätt."
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "ed55c437fcd421f1",
-    "text": "Det omfång som begärs med klientautentiseringsuppgifter. Tomt begär `ssf.manage`, som inkluderar läsning."
+    "en": "9a4b1c668a3d1dd5",
+    "text": "Det omfång som begärs med klientuppgifter. Tomt begär `ssf.read ssf.manage`, CAEP-interoperabilitetsprofilens två (avsnitt 2.7.3)."
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

@@ -263,7 +263,7 @@ const REVOCATION_LIST_PARAM =
 // turns two tests off with nothing failing.
 // THE FIRST FOUR ARE THE HIERARCHY AND THE APPLICATION LEAF, which is what
 // this page was when it was written. The eight after `upload-certificate` are
-// the Certificate & Key Configuration pane, which arrived 2026-09-10 — and
+// the Certificate Workbench, which arrived 2026-09-10 — and
 // they are on the SAME list because `/admin-api/pki/{action}` mirrors this
 // list and rule 7 says every control on this console has an operation. A pane
 // action answers with a DRAFT as well as a verdict, which is what the
@@ -317,6 +317,31 @@ const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
  * field and every computation on the server.
  */
 class PkiAdmin {
+  // WHAT AN ISSUE ANSWERS OF THE PRIVATE KEY (#1359, rcbj's decision). A key
+  // this service KEPT does not come back with the certificate: the object's
+  // `hasPrivateKey` says it exists, `use-key` puts it back in the form's boxes
+  // and `export-keys` writes it out, each because somebody asked. An answer is
+  // what ends up in a client's log. A key it did NOT keep stays in the draft,
+  // because the form is the only copy there is and the page says so.
+  private static issuedAnswer(issued: Json): Json {
+    const object = Object.assign({}, issued.object);
+    const kept = !!object.privateKeyPem;
+    delete object.privateKeyPem;
+    delete object.altPrivateKeyPem;
+    object.hasPrivateKey = kept;
+    if (!kept) {
+      return Object.assign({}, issued, { object: object });
+    }
+    return Object.assign({}, issued, {
+      object: object,
+      draft: Object.assign({}, issued.draft, { pki_private_key: '',
+                                               pki_alt_private_key: '' }),
+      why: issued.why + ' Its private key is kept in this service and is not ' +
+           'in this answer: "use-key" puts it back in the key boxes, and ' +
+           '"export-keys" writes it out.'
+    });
+  }
+
   // The table the comments here call PURPOSE_WRITES — see
   // `purposeWritesTable()`.
   private readonly purposeWrites: Record<string, any>;
@@ -406,9 +431,15 @@ class PkiAdmin {
       });
     const people = self.searchRows(q.personsq, json.persons || [],
       function (one: Json) {
+        // Every key pair's handle and label, both profiles (#1290).
+        const jwt = one.jwt || {};
         const saml = one.saml || {};
-        return [one.username, one.kid, saml.thumbprint]
-          .concat(one.issuers || [], saml.issuers || []);
+        const keys = (jwt.keys || []).concat(saml.keys || []);
+        return [one.username].concat(keys.map(function (key: Json) {
+          return key.id;
+        }), keys.map(function (key: Json) {
+          return key.label;
+        }), jwt.issuers || [], saml.issuers || []);
       });
     const out = {
       applications: adminViews.pagedRows(q, applications,
@@ -921,10 +952,15 @@ class PkiAdmin {
       // Each with `pqc`, read off the person's certificate as `issued` above
       // and added by `decorate()` below. `holders()` reads presence off the
       // entries in one walk and opens no private key (#352).
+      // SEVERAL KEY PAIRS PER PROFILE SINCE #1290: `jwt` and `saml`, each
+      // with every key pair (its state, label and handle) and the issuers.
       persons: personAssertions.holders().map(function (one) {
         return Object.assign({}, one, {
+          jwt: Object.assign({}, one.jwt),
           saml: Object.assign({}, one.saml) });
       }),
+      personSigningKeyMax: personAssertions.maxPerPerson(),
+      personRevocationReasons: personAssertions.REVOCATION_REASONS.slice(),
       personsStorable: personAssertions.storable(),
       personAttributes: personAssertions.ATTRIBUTES.slice(),
       personIssuerAttribute: personAssertions.ISSUER_ATTRIBUTE,
@@ -1022,11 +1058,18 @@ class PkiAdmin {
     // objects.
     // ---------------------------------------------------------------------
     const decorate = function (row: Json) {
+      // A person's row carries its key pairs per profile (#1290), and each
+      // key pair is classified on its own certificate.
+      if (row.username !== undefined && (row.jwt || row.saml)) {
+        [row.jwt, row.saml].forEach(function (profile: Json) {
+          ((profile && profile.keys) || []).forEach(function (key: Json) {
+            key.pqc = certificateViews.pqcOf(key.certificatePem);
+          });
+        });
+        return;
+      }
       row.pqc = certificateViews.pqcOf(certificateOf.has(row)
         ? certificateOf.get(row) : row.certificatePem);
-      if (row.saml) {
-        row.saml.pqc = certificateViews.pqcOf(row.saml.certificatePem);
-      }
     };
     const shownOnly = !!(options && options.shownOnly);
     (shownOnly ? paged.applications.shown : json.issued).forEach(decorate);
@@ -1252,6 +1295,24 @@ class PkiAdmin {
                          'thing product mode refuses outright.',
                          'STS-PKI-0109');
     }
+    // THE LABEL AND THE CAP BEFORE A KEY PAIR IS GENERATED (#1290): an issue
+    // ADDS one now, up to `pki.personSigningKeyMax` valid ones per profile,
+    // and one generated only for `write()` to refuse would be a key lost.
+    const label = String(body.label || '').trim();
+    const labelSaid = personAssertions.labelProblem(label);
+    if (labelSaid) {
+      log.debug('Leaving PkiAdmin.issueToPerson(). Label refused.');
+      return self.refuse(labelSaid, 'STS-PKI-0225');
+    }
+    if (personAssertions.atCap(identifier, purpose)) {
+      log.debug('Leaving PkiAdmin.issueToPerson(). At the cap.');
+      return self.refuse('"' + identifier + '" already holds ' +
+                         personAssertions.maxPerPerson() + ' valid ' +
+                         (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') +
+                         ' key pairs, which is pki.personSigningKeyMax. ' +
+                         'Revoke one they no longer use and issue again.',
+                         'STS-PKI-0223');
+    }
     const days = Number(body.days);
     const issued = await pki.issueSigningKeyPair(undefined, {
       identifier: identifier,
@@ -1273,7 +1334,8 @@ class PkiAdmin {
     const record = issued.issued;
     const declared = String(body.issuer || '').trim();
     const written = personAssertions.write(identifier, record,
-      declared ? { issuer: declared, purpose: purpose } : { purpose: purpose });
+      declared ? { issuer: declared, purpose: purpose, label: label }
+               : { purpose: purpose, label: label });
     if (!written.ok) {
       log.debug('Leaving PkiAdmin.issueToPerson(). The write failed.');
       return self.refusedBy(written, 'STS-PKI-0110');
@@ -1286,8 +1348,11 @@ class PkiAdmin {
       purpose: purpose,
       person: identifier,
       attributes: written.written.slice(),
+      label: label,
+      handle: saml ? record.certificateThumbprint : record.kid,
       kid: record.kid,
       thumbprint: record.certificateThumbprint,
+      serialHex: record.serialHex,
       notAfter: record.notAfter,
       jwsAlg: record.jwsAlg,
       issuer: declared || identifier,
@@ -1300,8 +1365,9 @@ class PkiAdmin {
       privateKeyPem: record.privateKeyPem,
       why: 'A ' + record.keyAlg + ' signing key pair was issued to "' +
            identifier + '" — a PERSON — for ' + record.purposeLabel + ', ' +
-           'signed by this realm\'s Issuing CA, and written onto their ' +
-           'directory entry as ' + written.written.join(', ') + '. ' +
+           'signed by this realm\'s Issuing CA, and ADDED to the key pairs ' +
+           'on their directory entry (' + written.written.join(', ') + '); ' +
+           'any they already held still work. ' +
            (saml ? 'thumbprint=' + record.certificateThumbprint
                  : 'kid=' + record.kid) +
            ', valid until ' + record.notAfter + '. They can ' +
@@ -1321,74 +1387,79 @@ class PkiAdmin {
     };
   }
 
-  // Take a person's key pair off. It clears the DECLARATION with it, where an
-  // application's control leaves `oauthAssertionIssuer` alone — because an
-  // application may hold a JWKS it registered itself beside the one this
-  // service issued, and a person may not: everything in `stsAssertion*` was put
-  // there by the issue, so leaving the declaration would leave somebody
-  // declared as an issuer with no key to issue with.
+  // ---------------------------------------------------------------------------
+  // REVOKE ONE OF A PERSON'S KEY PAIRS (#1290), which REPLACED "take it off".
   //
-  // ONE PROFILE's key pair, since 2026-09-13 — a person may hold both, and
-  // taking one off leaves the other working, which is the application arm's
-  // rule.
-  private clearPerson(identifier: Json, purpose: Json) {
+  // rcbj's decision on #1290 is that a person's key pair is removed by
+  // REVOKING it, on the portal row by row, and the console and `/admin-api`
+  // follow (rule 7): the person arm of `revoke` revokes ONE key pair, named
+  // by its `handle` (kid or thumbprint) or `serial`, with one of the TLS
+  // card's two reasons. Its certificate goes on its authority's CRL and the
+  // key stops being accepted; take-off had put nothing on any list, so the
+  // certificate went on verifying for every other relying party. There is no
+  // per-key clear for administrators either — a clear is exactly what the
+  // ticket retired, and an administrator who wants a key pair gone wants it
+  // revoked. `person_assertions.revoke()` does it and argues the details,
+  // including the declaration that goes with the last valid key pair.
+  //
+  // The APPLICATION arm of `revoke` is untouched: it still takes an
+  // application's single key pair off.
+  // ---------------------------------------------------------------------------
+  private revokePerson(identifier: Json, purpose: Json, body: Json) {
     const { log, personAssertions } = this.deps;
     const self = this;
-    log.debug('Entering PkiAdmin.clearPerson(). identifier=' + identifier +
+    log.debug('Entering PkiAdmin.revokePerson(). identifier=' + identifier +
               ' purpose=' + purpose);
     if (!identifier) {
-      log.debug('Leaving PkiAdmin.clearPerson(). No name.');
-      return self.refuse('Name the person to take the key pair off.',
+      log.debug('Leaving PkiAdmin.revokePerson(). No name.');
+      return self.refuse('Name the person whose key pair to revoke.',
                          'STS-PKI-0106');
     }
     if (!personAssertions.storable()) {
-      log.debug('Leaving PkiAdmin.clearPerson(). No directory.');
+      log.debug('Leaving PkiAdmin.revokePerson(). No directory.');
       return self.refuse('This process has no directory, so nobody holds a ' +
-                         'key pair to take off.', 'STS-PKI-0107');
+                         'key pair to revoke.', 'STS-PKI-0107');
     }
-    const done = personAssertions.clear(identifier, purpose);
-    if (done.unknown) {
-      log.debug('Leaving PkiAdmin.clearPerson(). Nobody by that name.');
+    if (!personAssertions.recordFor(identifier)) {
+      log.debug('Leaving PkiAdmin.revokePerson(). Nobody by that name.');
       return self.refuse('There is nobody called "' + identifier +
                          '" in the "' +
                          self.realmLabel() + '" realm.', 'STS-PKI-0109');
     }
+    const handle = String(body.handle || body.kid || body.thumbprint ||
+                          body.serial || '').trim();
+    const done = personAssertions.revoke(identifier, purpose, handle,
+      body.reason, { initiatingEntity: 'admin',
+                     via: String(body.from || '') === '/admin/users'
+                       ? '/admin/users' : '/admin/pki' });
     if (!done.ok) {
-      log.debug('Leaving PkiAdmin.clearPerson(). Nothing to take off.');
-      return self.refuse('Nothing was taken off "' + identifier +
-                         '" — they hold no ' +
-                         (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') +
-                         ' key pair and declare no issuer for it. The other ' +
-                         'profile\'s key pair, if they hold one, is ' +
-                         'untouched either way.',
-                         'STS-PKI-0111');
+      log.debug('Leaving PkiAdmin.revokePerson(). Not revoked.');
+      return self.refusedBy(done, 'STS-PKI-0224');
     }
-    log.debug('Leaving PkiAdmin.clearPerson(). Cleared.');
+    const rfc = purpose === 'saml' ? 'RFC 7522' : 'RFC 7523';
+    log.debug('Leaving PkiAdmin.revokePerson(). Revoked.');
     return { ok: true, target: 'person', person: identifier,
-             purpose: purpose,
-             removed: done.removed,
-             why: 'The ' + (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') +
-                  ' signing key pair was taken off "' + identifier +
-                  '", and the issuer declaration with it — ' + done.removed +
-                  ' attribute(s). **THIS IS NOT REVOCATION.** The ' +
-                  'certificate is still valid, still chains to this realm\'s ' +
-                  'Root and is on no list; what changed is that this service ' +
-                  'will no longer accept an assertion signed with that key, ' +
-                  'because the key is no longer registered against anybody. ' +
-                  'A certificate this service issued to a person is still ' +
-                  'refused as an authority over anybody else, which it was ' +
-                  'before and is a property of the certificate rather than ' +
-                  'of the entry.' };
+             purpose: purpose, handle: done.key.id,
+             serialHex: done.key.serialHex, reason: done.reason,
+             already: !!done.already, onList: !!done.onList,
+             remaining: done.remaining, undeclared: !!done.undeclared,
+             why: 'The ' + rfc + ' key pair ' + done.key.id + ' of "' +
+                  identifier + '" was revoked (' + done.reason + '). ' +
+                  done.why + ' ' + done.remaining + ' valid ' + rfc +
+                  ' key pair(s) of theirs remain' +
+                  (done.undeclared ? ', and with the last one gone their ' +
+                   'issuer declaration for the profile was cleared' : '') +
+                  '.' };
   }
 
   // ---------------------------------------------------------------------------
   // A CERTIFICATE IN PLACE OF A PERSON'S KEY PAIR (2026-09-13). `pki.js`'s
   // `registerCertificate()` decides the chain exactly as it does for an
   // application — with `subjectKind: 'person'`, so a certificate this realm
-  // issued must name THIS person — and `person_assertions.write()` puts the
-  // record on the entry through the set the issue writes, with an empty private
-  // key that clears the one an earlier issue left. No private key comes back,
-  // because none was given: the person holds it.
+  // issued must name THIS person — and `person_assertions.write()` ADDS the
+  // record to the person's key pairs (#1290), under the same cap as an issue,
+  // with no private value: the person holds it. Nothing comes back secret,
+  // because nothing secret was given.
   // ---------------------------------------------------------------------------
   private async uploadForPerson(identifier: Json, body: Json) {
     const { log, pki, personAssertions } = this.deps;
@@ -1419,6 +1490,21 @@ class PkiAdmin {
                          '" realm. Create them on /admin/users first.',
                          'STS-PKI-0109');
     }
+    const label = String(body.label || '').trim();
+    const labelSaid = personAssertions.labelProblem(label);
+    if (labelSaid) {
+      log.debug('Leaving PkiAdmin.uploadForPerson(). Label refused.');
+      return self.refuse(labelSaid, 'STS-PKI-0225');
+    }
+    if (personAssertions.atCap(identifier, purpose)) {
+      log.debug('Leaving PkiAdmin.uploadForPerson(). At the cap.');
+      return self.refuse('"' + identifier + '" already holds ' +
+                         personAssertions.maxPerPerson() + ' valid ' +
+                         (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') +
+                         ' key pairs, which is pki.personSigningKeyMax. ' +
+                         'Revoke one they no longer use and upload again.',
+                         'STS-PKI-0223');
+    }
     const registered = await pki.registerCertificate(undefined, {
       identifier: identifier,
       purpose: purpose,
@@ -1432,7 +1518,7 @@ class PkiAdmin {
     }
     const record = registered.registered;
     const written = personAssertions.write(identifier, record,
-                                           { purpose: purpose });
+                                           { purpose: purpose, label: label });
     if (!written.ok) {
       log.debug('Leaving PkiAdmin.uploadForPerson(). The write failed.');
       return self.refusedBy(written, 'STS-PKI-0110');
@@ -1445,6 +1531,9 @@ class PkiAdmin {
              purpose: purpose,
              source: record.source,
              attributes: written.written.slice(),
+             label: label,
+             handle: purpose === 'saml' ? record.certificateThumbprint
+                                        : record.kid,
              kid: record.kid,
              thumbprint: record.certificateThumbprint,
              subject: record.subject,
@@ -1453,8 +1542,8 @@ class PkiAdmin {
              notAfter: record.notAfter,
              revocation: record.revocation,
              why: 'The certificate "' + record.subject + '", issued by "' +
-                  record.issuer + '", replaced the ' +
-                  pki.purposeFor(purpose).label + ' key pair on "' +
+                  record.issuer + '", was ADDED to the ' +
+                  pki.purposeFor(purpose).label + ' key pairs of "' +
                   identifier + '" — a PERSON — (' +
                   (record.source === 'uploaded-realm-ca'
                     ? 'this realm\'s own certificate authority issued it to ' +
@@ -1467,9 +1556,8 @@ class PkiAdmin {
                                       : record.kid) +
                   ', valid until ' + record.notAfter +
                   '. The person holds the private key and this service holds ' +
-                  'none; any key pair issued to them here before is gone ' +
-                  'from the entry. An assertion signed with it may name ONLY ' +
-                  'them.' };
+                  'none; any key pair they already held still works. An ' +
+                  'assertion signed with it may name ONLY them.' };
   }
 
   /**
@@ -1904,7 +1992,7 @@ class PkiAdmin {
                              'STS-PKI-0011');
         }
         log.debug("Leaving PkiAdmin.pkiAction().");
-        return self.clearPerson(identifier, self.purposeOf(body));
+        return self.revokePerson(identifier, self.purposeOf(body), body);
       }
       if (!identifier) {
         log.debug("Leaving PkiAdmin.pkiAction().");
@@ -2354,7 +2442,7 @@ class PkiAdmin {
       }
       log.debug('Leaving PkiAdmin.pkiAction(). Issued ' + issued.object.id +
                 '.');
-      return issued;
+      return PkiAdmin.issuedAnswer(issued);
     }
 
     if (action === 'use-key') {

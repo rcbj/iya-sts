@@ -17,6 +17,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
+import ResponseModelKit = require('../common/response_model_kit');
 
 type Req = any;
 type Res = any;
@@ -106,7 +107,8 @@ class ProviderCommandsApi {
   sendJson(res: Res, status: number, body: Json): void {
     const { log } = this.deps;
     log.debug("Entering ProviderCommandsApi.sendJson(). status=" + status);
-    const reply = Object.assign({}, body);
+    // Not only at the top: a delivery's row carries one too (#1355).
+    const reply = Object.assign({}, ResponseModelKit.actAnswer(res, body));
     delete reply.errorCode;
     res.status(status).type('application/json')
        .set('Cache-Control', 'no-store')
@@ -229,41 +231,24 @@ class ProviderCommandsApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/commands',
         tag: 'OAuth 2.0 / OIDC', operationId: 'getProviderCommands',
-        summary: 'OpenID Provider Commands: the clients, the account ' +
-                 'register, the tenant runs and the deliveries',
-        description: 'Everything /admin/commands draws: whether commands ' +
-          'and automatic commands are on, the issuer Command Tokens name, ' +
-          'each client with a command_endpoint and what its metadata ' +
-          'answer said it supports, the account-state register (what each ' +
-          'relying party said about each person), the tenant runs, and the ' +
-          'command deliveries. `state` and `q` narrow the deliveries. Never ' +
-          'a token.',
         mirrors: 'GET /admin/commands',
         parameters: ['clients', 'accounts', 'runs', 'deliveries']
           .map(function (name: string): Json {
             return { name: name + 'Page', in: 'query', required: false,
-                     schema: { type: 'integer', minimum: 1 },
+                     schema: { type: 'integer', minimum: 1, examples: [1] },
                      description: 'Which page of `' + name + '`. Each list ' +
                        'moves on its own parameter and they share `per`.' };
           }).concat([
             { name: 'state', in: 'query', required: false,
-              schema: { type: 'string', maxLength: 16 },
+              schema: { type: 'string', maxLength: 16, examples: ['pending'] },
               description: 'Only deliveries in this state: pending, ' +
                            'sent or dead.' },
             { name: 'q', in: 'query', required: false,
-              schema: { type: 'string', maxLength: 256 },
+              schema: { type: 'string', maxLength: 256, examples: ['alice'] },
               description: 'Narrows the deliveries.' },
             { name: 'per', in: 'query', required: false,
-              schema: { type: 'integer', minimum: 1 },
+              schema: { type: 'integer', minimum: 1, examples: [10] },
               description: 'Rows per page of each list, capped.' }]),
-        responseDescription: 'The report.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`enabled`, `automatic`, `issuer`, ' +
-                            '`clients`, `accounts`, `runs` and ' +
-                            '`deliveries` (one page each, `paging.<list>`), ' +
-                            '`listCounts` (each list whole), `clientIds` ' +
-                            '(every client, for the send forms), ' +
-                            '`counts`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API commands endpoint.");
           self.sendJson(res, 200, self.commandsView(req.query || {}));
@@ -292,95 +277,36 @@ class ProviderCommandsApi {
                     result.ok);
         },
         actions: [
-          { action: 'send-account', operationId: 'sendAccountCommand',
-            summary: 'Send an account command about one person',
-            description: 'One of activate, maintain, suspend, reactivate, ' +
-              'archive, restore, delete, audit, invalidate or migrate — or ' +
-              'its _async variant — to the client\'s command_endpoint, ' +
-              'queued on the shared outbound queue. The answer is recorded ' +
-              'in the account register. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                clientId: { type: 'string', maxLength: 512 },
-                username: { type: 'string', maxLength: 256 },
-                command: { type: 'string', enum: ACCOUNT_ENUM }
-              },
-              required: ['clientId', 'username', 'command'],
-              examples: [{ clientId: 'app', username: 'alice',
-                           command: 'audit' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The delivery queued.' },
-          { action: 'send-tenant', operationId: 'sendTenantCommand',
-            summary: 'Send a tenant command',
-            description: 'metadata (a JSON answer, recorded as what the ' +
-              'client supports), or one of audit_tenant, suspend_tenant, ' +
-              'archive_tenant, delete_tenant and invalidate_tenant (a ' +
-              'Server-Sent Events stream, read in the background as a run). ' +
-              'Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                clientId: { type: 'string', maxLength: 512 },
-                command: { type: 'string', enum: TENANT_ENUM }
-              },
-              required: ['clientId', 'command'],
-              examples: [{ clientId: 'app', command: 'metadata' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The delivery or run started.' },
-          { action: 'retry-delivery', operationId: 'retryCommandDelivery',
-            summary: 'Retry a dead command delivery',
-            description: 'A new generation: a fresh attempt budget and the ' +
-              'client\'s current command_endpoint. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { delivery: { type: 'string', maxLength: 64 } },
-              required: ['delivery'], examples: [{ delivery: 'abc123' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The delivery queued again.' }
+          { action: 'send-account', operationId: 'sendAccountCommand' },
+          { action: 'send-tenant', operationId: 'sendTenantCommand' },
+          { action: 'retry-delivery', operationId: 'retryCommandDelivery' }
         ] },
 
       { method: 'GET', path: BASE + '/deliveries',
         tag: 'Monitoring', operationId: 'getOutboundDeliveries',
-        summary: 'Every outbound delivery on the shared queue, by kind',
-        description: 'What /admin/deliveries draws: for each kind — ' +
-          'backchannel-logout, ciba and provider-commands — its counts by ' +
-          'state and its rows, newest first. `state` (pending, sent, dead), ' +
-          '`kind` and `q` narrow. Never a token or a body.',
         mirrors: 'GET /admin/deliveries',
         parameters: [
           { name: 'state', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 16 },
+            schema: { type: 'string', maxLength: 16, examples: ['pending'] },
             description: 'Only deliveries in this state: pending, sent or ' +
                          'dead; empty for every state.' },
           { name: 'kind', in: 'query', required: false,
             schema: { type: 'string', maxLength: 64 },
             description: 'Only this kind.' },
           { name: 'q', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] },
             description: 'Narrows the deliveries.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page of each kind, capped.' }
         ].concat(loadOutbound().KINDS
           .map(ProviderCommandsApi.kindParam)
           .map(function (name: string): Json {
             return { name: name, in: 'query', required: false,
-                     schema: { type: 'integer', minimum: 1 },
+                     schema: { type: 'integer', minimum: 1, examples: [1] },
                      description: 'Which page of one kind\'s rows; each ' +
                        'kind moves on its own parameter, its `paging.param`.' };
           })),
-        responseDescription: 'The kinds.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`kinds` — each with `rows`, one ' +
-                            'page of what `state` and `q` matched, ' +
-                            '`matched` and `paging` — and `states`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API deliveries endpoint.");
           self.sendJson(res, 200, self.deliveriesView(req.query || {}));
@@ -403,24 +329,7 @@ class ProviderCommandsApi {
                     result.ok);
         },
         actions: [
-          { action: 'retry', operationId: 'retryOutboundDelivery',
-            summary: 'Retry a dead letter of any kind',
-            description: 'A new generation of the delivery: a fresh attempt ' +
-              'budget and the client\'s current address. Audited by its ' +
-              'kind.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                kind: { type: 'string', enum: ['backchannel-logout', 'ciba',
-                                               'provider-commands'] },
-                delivery: { type: 'string', maxLength: 64 }
-              },
-              required: ['kind', 'delivery'],
-              examples: [{ kind: 'provider-commands', delivery: 'abc123' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The delivery queued again.' }
+          { action: 'retry', operationId: 'retryOutboundDelivery' }
         ] }
     ];
     log.debug("Leaving ProviderCommandsApi.buildRoutes().");

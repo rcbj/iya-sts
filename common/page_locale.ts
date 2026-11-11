@@ -278,6 +278,31 @@ class PageLocale {
   }
 
   /**
+   * The console's language WITHOUT its catalogs (#1333): the negotiation, the
+   * offered languages, and where each catalog along the chain is. The catalogs
+   * are over a megabyte, the same for everybody, and hold no secret. In an API
+   * answer they could be neither compressed (BREACH) nor cached; as a static
+   * file they are both, at the edge too, under this build's address.
+   *
+   * @param req - the request
+   * @param page - the application and person it is for
+   * @returns `{ negotiated, offered, catalogFiles: { <tag>: <path> } }`
+   */
+  static consoleLanguage(req: any, page: PageFor) {
+    log.debug("Entering PageLocale.consoleLanguage().");
+    const t = PageLocale.translatorFor(req, page);
+    const build = encodeURIComponent(String(version.buildId()));
+    const files: Record<string, string> = {};
+    t.negotiated.chain.forEach(function (tag: string) {
+      files[tag] = '/web/locales/console-all/' + encodeURIComponent(tag) +
+        '.json?v=' + build;
+    });
+    log.debug("Leaving PageLocale.consoleLanguage(). " + t.locale);
+    return { negotiated: t.negotiated, offered: i18n.offered(),
+             catalogFiles: files };
+  }
+
+  /**
    * Holds a return path to a local path: one that starts with a single `/`,
    * names no scheme or host, and carries no control character or backslash.
    * Anything else is `/`.
@@ -346,13 +371,19 @@ class PageLocale {
   }
 
   /**
+   * The collapsed language row's CSS (#1289), for a server-drawn page's own
+   * stylesheet: `WebLocale.ROW_CSS`.
+   */
+  static readonly ROW_CSS = WebLocale.ROW_CSS;
+
+  /**
    * The language attributes a static surface's shell carries on its
    * `<html>` (#570), for its runtime to choose the page's language in the
-   * browser: the build the catalogs are versioned by, the chooser's choice
-   * (the cookie is HttpOnly, so the browser cannot read it), and the locale
-   * policy's default for the surface's application and, where known, its
-   * person. Each value is canonical or the build number, so nothing a
-   * request sent is drawn back as it arrived.
+   * browser: the version, the chooser's choice (the cookie is HttpOnly, so
+   * the browser cannot read it), the locale policy's default for the
+   * surface's application and, where known, its person, and the build the
+   * catalogs are keyed by. Each value is canonical or this build's own, so
+   * nothing a request sent is drawn back as it arrived.
    *
    * @param req - the request for the shell
    * @param application - the surface's application, for the policy
@@ -378,7 +409,13 @@ class PageLocale {
     const out: Array<[string, string]> = [
       ['data-sts-version', String(version.load().version || '')],
       ['data-sts-lang', i18n.canonical(PageLocale.cookieOf(req, COOKIE))],
-      ['data-sts-locale-default', i18n.canonical(lastResort) || 'en']
+      ['data-sts-locale-default', i18n.canonical(lastResort) || 'en'],
+      // WHICH BUILD, for the catalogs' addresses (#1298): two builds may
+      // carry different words under one version — two release builds both
+      // numbered by the same BUILD_NUMBER (#1317) — so `?v=` is keyed by the
+      // build — `version.buildId()`, the commit and the build instant — and
+      // not by the version (`common/public_assets.ts`).
+      ['data-sts-build', String(version.buildId() || '')]
     ];
     log.debug("Leaving PageLocale.shellAttributes().");
     return out;

@@ -267,6 +267,22 @@
     "en": "335d6e9891f39e35",
     "text": "建立後 federation.releaseIndexTtlMs（{{ms}} 毫秒），或透過本服務寫入聯盟關係時立即失效。"
   },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "CDN 邊緣節點範圍"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies，解析為 BlockList，這樣請求就無須為判斷是否來自必須攜帶本部署密鑰的 CDN 邊緣節點而重新解析該設定。"
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "結構性：該設定的一份解析副本。"
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "直到 global.edgeProxies 的文字發生變化。"
+  },
   "caches.store.global.trusted-proxies.title": {
     "en": "9c82ac7525550c6d",
     "text": "受信任的代理範圍"
@@ -1126,6 +1142,22 @@
   "caches.store.persistence.write-shadow.lifetime": {
     "en": "9c59c7826b7934f6",
     "text": "不會過期：每次清空寫入時更新，每個已寫入的目錄項目與領域各一個項目。在記憶體模式下為空。"
+  },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "固定憑證的撤銷"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "針對固定憑證最近取得的資訊，供偏執 PKI 模式下在一個時鐘週期內作答的入口使用。以憑證指紋為鍵。"
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "已強制：1024 筆；最早寫入的項目被捨棄，需要時重新取得。"
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 分鐘"
   },
   "caches.store.revocation.ca-certificates.title": {
     "en": "c65adefa5d027d1a",

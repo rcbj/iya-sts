@@ -3,6 +3,8 @@
   "heading": "Logga ut",
   "startAgain": "Börja om",
   "startAgainEnd": ".",
+  "reauthenticate.lead": "Att avsluta dina andra sessioner kräver en ny inloggning. Logga in igen så kommer du tillbaka till den här sidan, där du kan markera dem igen.",
+  "reauthenticate.signIn": "Logga in igen",
   "inventory.holding": "Allt som den här tjänsten fortfarande håller för <code>{username}</code>, i varje protokollfamilj den talar.",
   "inventory.globalButton": "Global utloggning — avsluta allt nedan",
   "inventory.globalNote": "Standardvalet. En POST till <code>/logout</code> utan något markerat gör exakt detta. Verifierbara intyg, och de DID de är bundna till, förblir giltiga.",

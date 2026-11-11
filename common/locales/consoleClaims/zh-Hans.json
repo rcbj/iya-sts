@@ -44,6 +44,7 @@
   "noneOnEntry": "条目中没有：无声明",
   "wouldBeGenerated": "将会生成",
   "entrysOwn": "条目自身的值",
+  "customDefinedBy": "此领域的自定义属性（{syntax}）",
   "carries": "携带 {n} 个目录属性：",
   "carriesNone": "不携带任何目录属性。请勾选一些并按“更新”。",
   "colIn": "包含",

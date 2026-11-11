@@ -86,9 +86,9 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 COPY package*.json .npmrc ./
 COPY node-ldapjs ./node-ldapjs
-RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY tests/package*.json ./tests/
-RUN npm install --prefix ./tests && npm cache clean --force
+RUN npm ci --prefix ./tests && npm cache clean --force
 COPY . ./
 RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
  && STS_IN_IMAGE_BUILD=1 ./build-native.sh \
@@ -170,7 +170,8 @@ COPY package*.json ./
 # build which loses the .npmrc does not quietly start shipping them.
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
+RUN npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx --sbom-type=application > /usr/src/sts/sbom.cdx.json
 
 
 # THE WHOLE SOURCE TREE IN ONE LINE, and that is deliberate rather than lazy.
@@ -293,6 +294,8 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
       curl -fsSL "${STS_DATABASE_CA_URL}" -o /opt/sts-sdk/database-ca.pem \
       && grep -q 'BEGIN CERTIFICATE' /opt/sts-sdk/database-ca.pem; \
     fi
+RUN cd /opt/sts-sdk && npm sbom --omit=dev --sbom-format=cyclonedx --sbom-type=application > /usr/src/sts/sbom-sdks.cdx.json
+RUN dpkg-query -W -f='${Package} ${Version}\n' > /usr/src/sts/os-packages.txt
 # ---------------------------------------------------------------------------
 # AND THE SUITE BACK OUT AGAIN, WHICH .dockerignore USED TO DO.
 #
@@ -360,7 +363,7 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # container built from its own directory: the click-through demonstrations
 # the service ships none of. It is in the context because that directory is
 # in the repository, and nothing of it may reach this image.
-RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
+RUN rm -rf ./tests ./xacml-pep ./README.md ./SECURITY.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
            ./build-typescript.sh ./rust ./companion
 
@@ -369,40 +372,52 @@ RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
 # `debugger.uiDirectory` and `debugger.apiDirectory` default to.
 COPY --from=debugger /debugger/ ./debugger/embedded/
 # ---------------------------------------------------------------------------
-# FIX THIS IMAGE'S BUILD NUMBER (M.N.O) AND SHIP IT IN version.json.
+# RECORD WHICH BUILD THIS IMAGE IS, AND ITS BUILD NUMBER, IN version.json.
 #
-# The version is M.N from the repo-root VERSION file plus a build number, and
-# the build number is decided HERE — at image build time — rather than at
-# startup. That is the whole reason this line exists: a service that computed
-# its build number when the process started would report a different one every
-# time the container restarted, which makes "which build is this" unanswerable
-# in exactly the situation where it is asked. See common/version.js.
+# The version is M.N.O.<build> (#1317): the repo-root VERSION file's
+# release, then the build number this line decides — the UTC build instant
+# as YYYYMMDDHHMMSS by default, or, for a RELEASE build, the number the build
+# names:
+#
+#   docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .
+#
+# is 1.0.0.0. STS_RELEASE=true without a valid BUILD_NUMBER FAILS THIS RUN
+# (STS-CORE-0164, naming both), so no image is made; WITHOUT STS_RELEASE,
+# BUILD_NUMBER is ignored, so a CI system's own variable of that name cannot
+# make an ordinary build look like a release. Beside the number go the commit
+# and the instant, at image build time rather than at startup. That is the
+# whole reason
+# this line exists: a service that recorded its build when the process
+# started would report a different one every time the container restarted,
+# which makes "which build is this" unanswerable in exactly the situation
+# where it is asked. See common/version.js.
 #
 # It runs AFTER `COPY . ./` because it needs the VERSION file and the module,
 # and after the `rm` above because neither is among what that removes.
 # It is the LAST layer that touches the source, so a rebuild of an unchanged
-# tree still produces a new build number — which is correct: that is a
-# different artifact.
+# tree still records a new build instant — which is correct: that is a
+# different artifact, of the same release.
 #
 # GIT_COMMIT is a build argument because .dockerignore excludes .git, so there
 # is no history in the build context for `git rev-parse` to read. Pass it and
-# the version's provenance names a commit; leave it and the commit is simply
-# absent, which is a missing tooltip and nothing else. BUILD_NUMBER overrides
-# the UTC build instant — a CI run number, say — and it is then the caller's
-# job to keep it unique and increasing.
+# the build names a commit; leave it and the commit is simply absent, which is
+# a missing tooltip and nothing else. STS_RELEASE and BUILD_NUMBER default
+# to empty, which is an ordinary (date and time) build.
 #
 # `cat` afterwards so the record is in the build log: when somebody asks which
 # build an image is, the answer is in the log of the build that made it as well
 # as in the image.
-ARG BUILD_NUMBER=
 ARG GIT_COMMIT=
-RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
+ARG STS_RELEASE=
+ARG BUILD_NUMBER=
+RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
+    BUILD_NUMBER="${BUILD_NUMBER}" \
     node common/version.js --stamp . && cat version.json
 # OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
 # LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by
 # .github/workflows/build-container.yml) to this repository, so it lists under
 # the repository's Packages; `revision` is the commit the image was built
-# from, beside the build number version.json carries. The parent project's
+# from, beside the build instant version.json carries. The parent project's
 # api and client images carry the same five. A LABEL is metadata, not a layer.
 # The io.artifacthub.* labels are what artifacthub.io reads when it indexes
 # the published image; readme-url is the one it refuses the package without.

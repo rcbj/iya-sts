@@ -247,6 +247,7 @@ const cluster = require('../cluster/cluster');
 // the postgres driver applies inside its transaction and this module applies
 // again to a local write that raced a flush or a replicated row (#46 sec. 3).
 const directoryMerge = require('./directory_merge');
+const sqlDialect = require('./sql_dialect');
 // WHICH CELL THIS IS (#98). A LEAF (config, error codes, a logger), so a
 // require from here closes nothing; it is how start() knows the store is two
 // databases.
@@ -267,9 +268,11 @@ config.registerLogger(log);
 // against; this one is what the code branches on, and the two are checked
 // against each other at start() rather than trusted.
 /**
- * The persistence modes this module knows: `memory`, `ldif` and `postgres`.
+ * The persistence modes this module knows: `memory`, `ldif`, `postgres` and,
+ * since #677, `mariadb` — the same database store on a second engine.
  */
-const MODES = ['memory', 'ldif', 'postgres'];
+const storeModes = require('./store_modes');
+const MODES = storeModes.MODES;
 
 // ---------------------------------------------------------------------------
 // THE DIRECTORY SLOT. See the header — it is a slot rather than a require
@@ -472,8 +475,36 @@ let restoredCounts = { realms: 0, entries: 0, overrides: 0 };
 // ---------------------------------------------------------------------------
 
 /**
+ * Whether a store in `storeMode` would refuse an entry at this DN key (#677):
+ * see `dnKeyRefusal()` on the exports.
+ *
+ * @param storeMode - the store's active mode
+ * @param realmId - the realm the entry would be in
+ * @param dnKey - its normalised DN
+ * @returns the refusal's sentence, or null
+ */
+function dnKeyRefusalFor(storeMode, realmId, dnKey) {
+  log.debug("Entering dnKeyRefusalFor().");
+  if (storeMode !== 'mariadb') {
+    log.debug("Leaving dnKeyRefusalFor(). No limit here.");
+    return null;
+  }
+  const limits = require('./schema_mariadb').LIMITS;
+  const keyLength = Array.from(String(dnKey || '')).length;
+  const realmLength = Array.from(String(realmId || '')).length;
+  if (keyLength <= limits.dnKey && realmLength <= limits.realm) {
+    log.debug("Leaving dnKeyRefusalFor(). Within the limits.");
+    return null;
+  }
+  log.debug("Leaving dnKeyRefusalFor(). Too long.");
+  return 'the store is MariaDB, whose directory keys hold at most ' +
+    limits.dnKey + ' characters of DN (this one is ' + keyLength + ')' +
+    (realmLength > limits.realm ? ' and ' + limits.realm + ' of realm' : '');
+}
+
+/**
  * Returns the configured persistence mode (`persistence.mode`).
- * @returns 'memory', 'ldif' or 'postgres'
+ * @returns 'memory', 'ldif', 'postgres' or 'mariadb'
  */
 function mode() {
   log.debug("Entering mode().");
@@ -706,8 +737,8 @@ function retrySucceeded() {
 function answersAfterCommit() {
   log.debug("Entering answersAfterCommit().");
   log.debug("Leaving answersAfterCommit().");
-  return enabled() && activeMode === 'postgres' && !restoring && !stopped &&
-    !!driver;
+  return enabled() && storeModes.isDatabase(activeMode) && !restoring &&
+    !stopped && !!driver;
 }
 
 /**
@@ -926,6 +957,73 @@ function mintedChanged() {
 }
 
 // ---------------------------------------------------------------------------
+// THE POST-MORTEM AUDIT ROW FOR A DROPPED POISON BATCH (#1347).
+//
+// persistence_minted.js drops a minted batch whose commit failed with a
+// permanent data error rather than re-journal it for ever, and hands the
+// descriptor here (it cannot write the row itself: audit.js requires
+// persistence_replication.js, which requires persistence_minted.js, so a
+// require there closes a cycle). rcbj's decision: "retain enough audit
+// information to reliably do post-mortem analysis with the audit log. Beyond
+// that, I don't believe we need to keep anything." So one `error` row per
+// affected realm, naming the error's SQLSTATE/errno, its message (which names
+// the offending VALUE, not a secret), and the stores and row counts — never a
+// journal key, which for several stores IS the credential.
+//
+// audit.js is required LAZILY, at call time, for the same cycle reason, the way
+// audit.js reaches this module. A require that fails, or an audit that throws,
+// is swallowed: the batch is already dropped and logged, and the audit row is
+// the only thing missed.
+// ---------------------------------------------------------------------------
+function auditPoisonDrop(drop) {
+  log.debug("Entering auditPoisonDrop().");
+  if (!drop || !Array.isArray(drop.stores)) {
+    log.debug("Leaving auditPoisonDrop(). Nothing to audit.");
+    return;
+  }
+  let audit;
+  try {
+    audit = require('../common/audit');
+  } catch (e) {
+    log.debug("Caught in auditPoisonDrop(): " + ((e && e.message) || e));
+    log.debug("Leaving auditPoisonDrop(). No audit module.");
+    return;
+  }
+  const byRealm = {};
+  drop.stores.forEach(function (one) {
+    const realmId = String((one && one.realm) || '');
+    if (!byRealm[realmId]) {
+      byRealm[realmId] = [];
+    }
+    byRealm[realmId].push(String((one && one.handle) || '') + ' (' +
+                          Number((one && one.rows) || 0) + ')');
+  });
+  Object.keys(byRealm).forEach(function (realmId) {
+    const stores = byRealm[realmId].join(', ');
+    try {
+      realms.run(realms.get(realmId), function () {
+        audit.record({
+          action: 'persistence.minted-drop',
+          category: 'service',
+          outcome: 'error',
+          errorCode: 'STS-STORE-0092',
+          protocol: 'persistence',
+          channel: 'internal',
+          target: stores,
+          detail: 'A minted batch was dropped because the commit failed with ' +
+            'a permanent data error (' + drop.code + ') that can never ' +
+            'commit: ' + drop.message + '. Stores dropped in this realm: ' +
+            stores + '. The realm kept flushing. #1347.'
+        });
+      });
+    } catch (e) {
+      log.debug("Caught in auditPoisonDrop(): " + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving auditPoisonDrop().");
+}
+
+// ---------------------------------------------------------------------------
 // A FIFTH DOOR, FOR THE DIRECTORY WINDOW (#349): an entry was HANDED OUT, so
 // the next flush must look at it — an entry edited in place is found by
 // comparing it with what it was, and the window holds what it handed out
@@ -1002,7 +1100,7 @@ function schedule() {
     return;
   }
   // 0 for a database, `writeDelay` for a file. The header argues both.
-  const delay = activeMode === 'postgres' ? 0 : writeDelay();
+  const delay = storeModes.isDatabase(activeMode) ? 0 : writeDelay();
   // ARMED OUTSIDE ANY REQUEST'S DIRECTORY BUDGET (#359): the change that
   // schedules a flush is often a console request's, and the flush is
   // background work that must not inherit that request's slot.
@@ -1386,6 +1484,110 @@ function advanceRealmShadow(delta) {
   log.debug("Leaving advanceRealmShadow().");
 }
 
+// ---------------------------------------------------------------------------
+// A REALM OR SETTINGS VALUE THE COLUMN CAN NEVER HOLD (#1463).
+//
+// This save runs ahead of the directory and the minted rows, and a permanent
+// data error here used to be re-sent by every flush, so nothing else ever
+// committed. `isolateDirectory()` and `isolatePermanent()` already deal with
+// that error for their rows; these two are the same answer for these rows.
+// `checkOverride()` and `realmTextErrors()` refuse the known values at the
+// door, so this is a backstop for what reaches a save some other way.
+//
+// Each part is a transaction of its own and a non-permanent error is thrown
+// to the flush's catch, which retries the whole delta: every statement here
+// is an upsert or a delete, so a part already committed may be written again.
+// ---------------------------------------------------------------------------
+function storableRealmChange(change) {
+  log.debug("Entering storableRealmChange().");
+  const dropped = [];
+  const keepStorable = function (from) {
+    const kept = {};
+    Object.keys(from || {}).forEach(function (key) {
+      if (config.unstorableText(from[key])) {
+        if (dropped.indexOf(key) < 0) {
+          dropped.push(key);
+        }
+      } else {
+        kept[key] = from[key];
+      }
+    });
+    return kept;
+  };
+  const row = Object.assign({}, change.row,
+                            { overrides: keepStorable(change.row.overrides) });
+  const clean = Object.assign({}, change,
+                              { row: row, set: keepStorable(change.set) });
+  if (config.unstorableText(row.name)) {
+    row.name = row.id;
+    clean.name = false;
+    dropped.push('name');
+  }
+  if (config.unstorableText(row.description)) {
+    row.description = '';
+    clean.description = false;
+    dropped.push('description');
+  }
+  log.debug("Leaving storableRealmChange(). " + dropped.length);
+  return { change: clean, dropped: dropped };
+}
+
+function reportDropped(what, err) {
+  log.debug("Entering reportDropped().");
+  log.error(errorCodes.tag('STS-STORE-0169') + 'persistence: ' + what +
+            ' was DROPPED because the store can never hold it (' +
+            err.code + ': ' + err.message + '). Everything else in this ' +
+            'flush is still written. #1463.');
+  log.debug("Leaving reportDropped().");
+}
+
+function saveRealmsIsolated(delta, save, cause) {
+  log.debug("Entering saveRealmsIsolated().");
+  let chain = delta.removed.length
+    ? save({ upserts: [], removed: delta.removed }) : Promise.resolve();
+  delta.upserts.forEach(function (change) {
+    chain = chain.then(function () {
+      const part = storableRealmChange(change);
+      part.dropped.forEach(function (field) {
+        reportDropped('"' + field + '" of the realm "' + change.row.id + '"',
+                      cause);
+      });
+      return save({ upserts: [part.change], removed: [] })
+        .catch(function (err) {
+          if (!sqlDialect.isPermanentDataError(err)) {
+            throw err;
+          }
+          reportDropped('the change to the realm "' + change.row.id + '"',
+                        err);
+        });
+    });
+  });
+  log.debug("Leaving saveRealmsIsolated().");
+  return chain;
+}
+
+function saveOverridesIsolated(delta, save, cause) {
+  log.debug("Entering saveOverridesIsolated(). " + cause.code);
+  let chain = delta.cleared.length
+    ? save({ set: {}, cleared: delta.cleared, live: delta.live })
+    : Promise.resolve();
+  Object.keys(delta.set).forEach(function (key) {
+    chain = chain.then(function () {
+      const one = {};
+      one[key] = delta.set[key];
+      return save({ set: one, cleared: [], live: delta.live })
+        .catch(function (err) {
+          if (!sqlDialect.isPermanentDataError(err)) {
+            throw err;
+          }
+          reportDropped('the setting "' + key + '"', err);
+        });
+    });
+  });
+  log.debug("Leaving saveOverridesIsolated().");
+  return chain;
+}
+
 function appconfigDelta() {
   log.debug("Entering appconfigDelta().");
   const live = config.persistableOverrides();
@@ -1698,7 +1900,16 @@ function flush() {
     }
     // The whole list AND the delta: a snapshot driver writes the first, a
     // database the second. See `realmShadow` above.
-    return driver.saveRealms(realmRows(), realmChanges).then(function () {
+    return driver.saveRealms(realmRows(), realmChanges).catch(function (err) {
+      if (!sqlDialect.isPermanentDataError(err)) {
+        throw err;
+      }
+      return saveRealmsIsolated(realmChanges, function (part) {
+        return driver.saveRealms(realmRows(), part);
+      }, err);
+    }).then(function () {
+      // The whole delta, a dropped value included, so that the next flush
+      // does not send it again: `isolateDirectory()`'s rule.
       advanceRealmShadow(realmChanges);
     });
   }).then(function () {
@@ -1706,6 +1917,14 @@ function flush() {
       return null;
     }
     return driver.saveOverrides(configChanges.live, configChanges)
+      .catch(function (err) {
+        if (!sqlDialect.isPermanentDataError(err)) {
+          throw err;
+        }
+        return saveOverridesIsolated(configChanges, function (part) {
+          return driver.saveOverrides(configChanges.live, part);
+        }, err);
+      })
       .then(function () {
         advanceAppconfigShadow(configChanges);
       });
@@ -1768,14 +1987,145 @@ function flush() {
     // transaction or an earlier one — given back by a statement of it.
     carriedReleases = typeof driver.releaseClaims === 'function'
       ? takeClaimReleases(takenAt) : [];
-    return driver.saveDirectory({
+    // ONE ROW THE COLUMN CAN NEVER HOLD used to fail this whole transaction
+    // and the retry put the same batch back, poison included (#1391). The
+    // minted flush already bisects that case (`isolatePermanent()`, #1347).
+    // The directory flush did not, so one NUL from `POST /admin-api/groups/
+    // create` stopped every later store write. A permanent data error is
+    // split into its own transactions down to the single row that cannot
+    // commit. That row is dropped: the shadow records the json that was
+    // refused, so the next flush does not send it again, and the entry
+    // stays in memory until this process restarts. Every other row commits.
+    // A deadlock or any other non-permanent error during the split throws,
+    // and the catch below re-journals the batch; rows a slice already
+    // committed are written again, which an upsert allows.
+    const directoryPayload = {
       upserts: sentUpserts,
       deletes: sentDeletes,
       touched: sentTouched,
       removedRealms: changes.removedRealms,
       releaseClaims: claimReleaseRows(carriedReleases),
       all: live
-    }).then(function (result) {
+    };
+    const commitDirectory = function (payload) {
+      log.debug('Entering commitDirectory().');
+      log.debug('Leaving commitDirectory().');
+      return driver.saveDirectory(payload);
+    };
+    const isolateDirectory = function (err) {
+      log.debug('Entering isolateDirectory().');
+      // One array. `concat` of `{ up }` onto `{ del }` is a type error
+      // under `// @ts-check`: the two element shapes are not the same.
+      // The rows are the untyped directory diff, so the element is `any`.
+      /** @type {Array<{up?: any, del?: any}>} */
+      const tagged = [];
+      sentUpserts.forEach(function (row) {
+        tagged.push({ up: row });
+      });
+      sentDeletes.forEach(function (row) {
+        tagged.push({ del: row });
+      });
+      const dropped = [];
+      const saveSlice = function (slice) {
+        log.debug('Entering saveSlice(). ' + slice.length);
+        const ups = [];
+        const dels = [];
+        slice.forEach(function (row) {
+          if (row.up) {
+            ups.push(row.up);
+          } else {
+            dels.push(row.del);
+          }
+        });
+        log.debug('Leaving saveSlice().');
+        return commitDirectory({
+          upserts: ups, deletes: dels, touched: sentTouched,
+          removedRealms: [], releaseClaims: [], all: null
+        });
+      };
+      const isolateSlice = function (slice) {
+        log.debug('Entering isolateSlice(). ' + slice.length);
+        if (slice.length <= 1) {
+          const row = slice.length ? (slice[0].up || slice[0].del) : null;
+          dropped.push(row);
+          const where = row
+            ? (row.realm + ' ' + String(row.key)
+              .replace(/\u0000/g, '\\0').slice(0, 80))
+            : '(empty)';
+          log.error(errorCodes.tag('STS-STORE-0168') +
+                    'persistence: one directory row was DROPPED because ' +
+                    'the commit failed with a permanent data error that ' +
+                    'can never commit: ' + err.message + '. The realm ' +
+                    'keeps flushing and every other row committed (' +
+                    where + '). #1391.');
+          log.debug('Leaving isolateSlice(). Dropped the poison row.');
+          return Promise.resolve({ done: true });
+        }
+        const mid = Math.floor(slice.length / 2);
+        // A half that COMMITS is saved whole. Bisecting it would walk a
+        // clean half down to single rows and drop them (#1391). Only a
+        // half whose own commit fails permanently is split again.
+        const commitOrSplit = function (half) {
+          log.debug('Entering commitOrSplit(). ' + half.length);
+          return saveSlice(half).then(function () {
+            log.debug('Leaving commitOrSplit(). Committed.');
+            return { done: true };
+          }, function (halfErr) {
+            if (!sqlDialect.isPermanentDataError(halfErr)) {
+              log.debug('Leaving commitOrSplit(). Non-permanent.');
+              return { done: false, err: halfErr };
+            }
+            log.debug('Leaving commitOrSplit(). Splitting.');
+            return isolateSlice(half);
+          });
+        };
+        return saveSlice(slice.slice(0, mid)).then(function () {
+          log.debug('Leaving isolateSlice(). The left half committed.');
+          return commitOrSplit(slice.slice(mid));
+        }, function (leftErr) {
+          if (!sqlDialect.isPermanentDataError(leftErr)) {
+            log.debug('Leaving isolateSlice(). Non-permanent in the ' +
+                      'left half.');
+            return { done: false, err: leftErr };
+          }
+          return isolateSlice(slice.slice(0, mid)).then(function (left) {
+            if (!left.done) {
+              log.debug('Leaving isolateSlice(). The left half stopped.');
+              return left;
+            }
+            log.debug('Leaving isolateSlice(). The left half was split.');
+            return commitOrSplit(slice.slice(mid));
+          });
+        });
+      };
+      const tail = function () {
+        log.debug('Entering tail().');
+        if (!changes.removedRealms.length && !carriedReleases.length) {
+          log.debug('Leaving tail(). Nothing beside the rows.');
+          return Promise.resolve(null);
+        }
+        log.debug('Leaving tail().');
+        return commitDirectory({
+          upserts: [], deletes: [], touched: changes.touched,
+          removedRealms: changes.removedRealms,
+          releaseClaims: claimReleaseRows(carriedReleases),
+          all: live
+        });
+      };
+      log.debug('Leaving isolateDirectory().');
+      return isolateSlice(tagged).then(function (outcome) {
+        if (!outcome.done) {
+          return outcome;
+        }
+        return tail().then(function () {
+          return { done: true, dropped: dropped };
+        }, function (tailErr) {
+          return { done: false, err: tailErr };
+        });
+      });
+    };
+    const directoryWritten = function (result) {
+      log.debug('Entering directoryWritten().');
       settleClaimReleases(carriedReleases, { released: true });
       carriedReleases = [];
       advanceShadow(changes, changes.removedRealms);
@@ -1783,6 +2133,20 @@ function flush() {
         win.committed(windowed, result && result.outcomes);
       }
       applyDirectoryOutcomes(changes, result && result.outcomes);
+      log.debug('Leaving directoryWritten().');
+    };
+    return commitDirectory(directoryPayload).then(function (result) {
+      directoryWritten(result);
+    }, function (err) {
+      if (!sqlDialect.isPermanentDataError(err)) {
+        throw err;
+      }
+      return isolateDirectory(err).then(function (outcome) {
+        if (!outcome.done) {
+          throw outcome.err;
+        }
+        directoryWritten(null);
+      });
     });
   }).then(function () {
     // THE CLAIMS WHOSE WRITES HAVE COMMITTED AND WHICH NO DIRECTORY
@@ -1892,7 +2256,10 @@ function flush() {
               'persistence: could not write to the ' + activeMode +
               ' store: ' + err.message + '. It is retried shortly; a ' +
               'request whose change was in it is answered 503 in postgres ' +
-              'mode (#351), and the change stays in memory until it lands.');
+              'mode (#351), and the change stays in memory until it lands.' +
+              // A driver's message names its own cause. A bug here does not:
+              // "Cannot convert undefined or null to object" names nothing.
+              (err && err instanceof TypeError ? ' ' + err.stack : ''));
     log.debug('Leaving flush(). It failed.');
     return { written: false, error: err.message };
   }).then(function (result) {
@@ -1998,13 +2365,24 @@ function resolveDatabaseUrl() {
   const raw = databaseUrl();
   if (!secrets.configuredFor(secrets.DATABASE_PASSWORD)) {
     log.debug('Leaving resolveDatabaseUrl(). No provider is configured.');
-    return Promise.resolve(raw);
+    return Promise.resolve().then(function () {
+      refuseLocalDatabasePassword(raw, 'persistence.databaseUrl',
+                                  'persistence.databasePasswordProvider');
+      return refuseDefaultDatabasePassword(raw);
+    });
   }
   log.debug("Leaving resolveDatabaseUrl().");
-  return secrets.readDatabasePassword().then(function (password) {
+  return Promise.resolve().then(function () {
+    // Before the read: a `file` provider is refused without being opened.
+    refuseLocalDatabasePassword('', 'persistence.databaseUrl',
+                                'persistence.databasePasswordProvider');
+    return secrets.readDatabasePassword();
+  }).then(function (password) {
     if (!password) {
       log.debug('Leaving resolveDatabaseUrl(). Nothing was read.');
-      return raw;
+      refuseLocalDatabasePassword(raw, 'persistence.databaseUrl',
+                                  'persistence.databasePasswordProvider');
+      return refuseDefaultDatabasePassword(raw);
     }
     let parsed = null;
     try {
@@ -2031,8 +2409,88 @@ function resolveDatabaseUrl() {
                   : '. The connection string carries none, which is the ' +
                     'arrangement to want.'));
     log.debug('Leaving resolveDatabaseUrl(). Injected.');
-    return parsed.toString();
+    return refuseDefaultDatabasePassword(parsed.toString());
   });
+}
+
+// ---------------------------------------------------------------------------
+// A DATABASE PASSWORD COMES FROM A SECRET STORE IN PRODUCT (ASVS 5.0.0 13.3.1),
+// unless secrets.allowLocalSecrets is on. One written into the connection
+// string is in the service's configuration for anyone who can read that, and
+// the `file` provider is a file on the host; both are refused. A connection
+// string with no password, which a database authenticating some other way is
+// dialled with, is not asked about.
+// ---------------------------------------------------------------------------
+/**
+ * Refuses, in product mode, a database password from the connection string
+ * or from the `file` provider.
+ *
+ * @param url - the connection string as configured, or '' when a provider
+ *   supplies the password
+ * @param urlSetting - the setting that holds the connection string
+ * @param providerSetting - the setting that names the password's provider
+ */
+function refuseLocalDatabasePassword(url, urlSetting, providerSetting) {
+  log.debug("Entering refuseLocalDatabasePassword(). " + urlSetting);
+  if (!require('../common/mode').requiresSecretStore()) {
+    log.debug("Leaving refuseLocalDatabasePassword(). Not asked.");
+    return;
+  }
+  let inline = false;
+  try {
+    inline = !!(url && new URL(url).password);
+  } catch (e) {
+    log.debug("Caught in refuseLocalDatabasePassword(): " +
+              ((e && e.message) || e));
+    // libpq's keyword/value form: a `password=` in it is the same thing.
+    inline = /(^|\s)password\s*=/i.test(String(url || ''));
+  }
+  if (inline || String(config.value(providerSetting) || '') === 'file') {
+    log.debug("Leaving refuseLocalDatabasePassword(). Refused.");
+    throw new Error(errorCodes.tag('STS-STORE-0171') +
+                    (inline ? urlSetting + ' carries the database password'
+                            : providerSetting + ' is "file"') +
+                    ', and product mode takes a database password from a ' +
+                    'secret store (vault, aws, gcp or azure). Set ' +
+                    providerSetting + ' and leave the password out of the ' +
+                    'connection string, or turn on ' +
+                    'secrets.allowLocalSecrets to accept it.');
+  }
+  log.debug("Leaving refuseLocalDatabasePassword().");
+}
+
+// The passwords a shipped example or a habit produces (ASVS 5.0.0 13.2.3).
+const DEFAULT_DATABASE_PASSWORDS = ['sts', 'sts_app', 'postgres', 'mysql',
+  'mariadb', 'root', 'admin', 'password', 'changeme', 'secret'];
+
+/**
+ * Stops the service, in product mode, on a connection string whose password is
+ * a well-known one or the user's own name.
+ *
+ * @param url - the connection string
+ * @returns the connection string
+ */
+function refuseDefaultDatabasePassword(url) {
+  log.debug("Entering refuseDefaultDatabasePassword().");
+  let parsed = null;
+  try {
+    parsed = new URL(url);
+  } catch (e) {
+    log.debug("Caught in refuseDefaultDatabasePassword(): " +
+              ((e && e.message) || e));
+  }
+  const password = parsed ? decodeURIComponent(parsed.password) : '';
+  if (password && require('../common/mode').refusesDefaultDatabasePassword() &&
+      (DEFAULT_DATABASE_PASSWORDS.indexOf(password.toLowerCase()) >= 0 ||
+       password === decodeURIComponent(parsed.username))) {
+    throw new Error(errorCodes.tag('STS-STORE-0170') +
+                    'the database password is a default one, which product ' +
+                    'mode refuses. Set STS_DB_APP_PASSWORD to a password of ' +
+                    'your own, or turn on ' +
+                    'persistence.allowDefaultDatabasePassword.');
+  }
+  log.debug("Leaving refuseDefaultDatabasePassword().");
+  return url;
 }
 
 // ---------------------------------------------------------------------------
@@ -2048,7 +2506,10 @@ function resolveDatabaseUrl() {
 function verifiesDatabaseTls() {
   log.debug("Entering verifiesDatabaseTls().");
   log.debug("Leaving verifiesDatabaseTls().");
-  return !!config.value('persistence.databaseTlsRejectUnauthorized');
+  // In force (#1360): this is a skip like every other, development's alone, so
+  // a product deployment with `false` still stored verifies and says so.
+  return !!require('../common/mode')
+    .valueInForce('persistence.databaseTlsRejectUnauthorized');
 }
 
 // ---------------------------------------------------------------------------
@@ -2335,7 +2796,7 @@ function start() {
       return Promise.reject(err);
     }
   }
-  return chosen === 'postgres'
+  return storeModes.isDatabase(chosen)
     ? resolveDatabaseUrl().then(function (url) {
       if (!cells.isMulti()) {
         return openStore(chosen, url, null);
@@ -2429,6 +2890,9 @@ function resolveGlobalUrls() {
   log.debug("Leaving resolveGlobalUrls().");
   return secrets.readGlobalDatabasePassword().then(function (password) {
     const inject = function (raw) {
+      refuseLocalDatabasePassword(password ? '' : raw,
+                                  'persistence.globalDatabaseUrl',
+                                  'persistence.globalDatabasePasswordProvider');
       if (!password) {
         return raw;
       }
@@ -2846,16 +3310,22 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // The database's own trust anchors, read once for both tiers; inside
     // this `try`, so an unusable file is the fatal refusal its message is
     // written for (STS-STORE-0079) rather than an exception from nowhere.
-    const tlsCa = chosen === 'postgres' ? databaseTlsCa() : '';
-    driver = chosen === 'postgres'
+    const tlsCa = storeModes.isDatabase(chosen) ? databaseTlsCa() : '';
+    driver = storeModes.isDatabase(chosen)
       // `verifyTls` is READ HERE AND PASSED IN, rather than read in the
       // driver: that module takes its url and its logger as options and
       // reaches for nothing, which is what lets a test construct one against
       // any database without this file's settings existing at all.
       ? require('./persistence_postgres').create({
+          // The engine is the MODE (#677): one driver, two engines.
+          engine: chosen,
           url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
           tlsCa: tlsCa,
-          poolMax: require('./persistence_postgres').poolMax(workerCount())
+          poolMax: require('./persistence_postgres').poolMax(workerCount()),
+          // Which coordination statements it sends (#677): read here, for
+          // the reason `verifyTls` is.
+          sqlDialect: String(config.value('persistence.sqlDialect') ||
+                             'native')
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
     // A CELL'S STORE IS TWO DATABASES (#98): the one just made is the cell's
@@ -2872,7 +3342,9 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         entryTier: 'service',
         verifyTls: verifiesDatabaseTls(),
         tlsCa: tlsCa,
-        poolMax: require('./persistence_postgres').poolMax(workerCount())
+        poolMax: require('./persistence_postgres').poolMax(workerCount()),
+        sqlDialect: String(config.value('persistence.sqlDialect') ||
+                           'native')
       });
       driver = tiered.create({
         global: globalDriver, cell: driver, cellId: cells.id(),
@@ -3124,6 +3596,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // And the schedule: a minted write alone is a reason to flush. See
     // mintedChanged().
     minted.setScheduler(mintedChanged);
+    // And the post-mortem auditor for a dropped poison batch (#1347). This runs
+    // in every process setDriver() runs in — the front and every request worker
+    // — so a drop is audited wherever the flush happened. See auditPoisonDrop().
+    minted.setPoisonAuditor(auditPoisonDrop);
     // AND A WINDOWED WORKER'S DIRECTORY ITS BRIDGE (#349), before anything is
     // restored: from here a key the window does not hold is asked of this
     // store, through a thread with a connection of its own.
@@ -3227,7 +3703,8 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     return keystore.start();
   }).then(function () {
     // Bodies can be opened now. A throw is fatal, and a page that already
-    // committed is not a finished index (#350).
+    // committed is not a finished index (#350). Since #695 a body that
+    // will not open is skipped (STS-STORE-0161), not thrown.
     return minted.backfillSessionIndex();
   }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;
@@ -3391,7 +3868,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
               // defaults layer. `sourceOf()` is what makes that a fact rather
               // than a guess about what the operator typed.
               // -------------------------------------------------------------
-              (chosen === 'postgres' &&
+              (storeModes.isDatabase(chosen) &&
                config.sourceOf('persistence.databaseUrl') === 'defaults'
                 ? ' NOTE that persistence.databaseUrl was not configured, so ' +
                   'this was the built-in local development default (' +
@@ -4387,6 +4864,23 @@ function coordinate() {
       log.debug("Leaving the risk-dataset applier.");
       return null;
     },
+    // A PERSON'S RISK LEVEL MOVED IN ANOTHER PROCESS (#666): the standing
+    // this process holds for them, if any, is stale, so it is dropped and
+    // read again from the table. The key is the person's `sub`.
+    'risk-standing': function (change) {
+      log.debug("Entering the risk-standing applier.");
+      const engine = require('../risk/risk_engine');
+      // Not before the composition root built the engine: a facade called
+      // then would build a default instance the root's install refuses
+      // (`risk/CLAUDE.md`, the require-order trap), and nothing is held yet.
+      if (engine.instanceOrigin() === 'none') {
+        log.debug("Leaving the risk-standing applier. No engine yet.");
+        return null;
+      }
+      engine.noteStandingMoved(change.realm || '', change.key || '');
+      log.debug("Leaving the risk-standing applier.");
+      return null;
+    },
     // A FUNCTION WITH A `prepare` ON IT. The applier contract is a function —
     // `replication.js` checks `typeof applier === 'function'` — and `prepare`
     // is an optional property it looks for beside it, so this stays one
@@ -4616,8 +5110,9 @@ function status() {
     dataDir: activeMode === 'ldif' ? dataDir() : null,
     // NEVER the URL itself: it carries a password, and this answer is rendered
     // on a console page and returned by an ungated management API.
-    database: activeMode === 'postgres' ? describeDatabase() : null,
-    writeDelayMs: activeMode === 'postgres' ? 0 : writeDelay(),
+    database: storeModes.isDatabase(activeMode) ? describeDatabase() : null,
+    engine: storeModes.isDatabase(activeMode) ? activeMode : null,
+    writeDelayMs: storeModes.isDatabase(activeMode) ? 0 : writeDelay(),
     persistsDirectory: activeMode !== 'memory',
     persistsRealms: activeMode !== 'memory' && persistsRealms(),
     persistsAppconfig: activeMode !== 'memory' && persistsAppconfig(),
@@ -4733,7 +5228,8 @@ function describeDatabase() {
       log.debug("Caught in describeDatabase(): " + ((e && e.message) || e));
       caUsable = false;
     }
-    const dial = require('./persistence_postgres').dialOptions(raw, verify);
+    const dial = require('./persistence_postgres').dialOptions(raw, verify,
+      '', activeMode === 'mariadb' ? 'mariadb' : 'postgres');
     const encrypted = !dial.refused && caUsable;
     const fill = require('../common/server_prose').fill;
     let tls;
@@ -5029,6 +5525,9 @@ function directoryWindowWanted() {
 }
 
 module.exports = {
+  // For tests/unstorable_text.js, which hands them a save that fails (#1463).
+  saveRealmsIsolated: saveRealmsIsolated,
+  saveOverridesIsolated: saveOverridesIsolated,
   directoryWindowWanted: directoryWindowWanted,
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
@@ -5058,7 +5557,7 @@ module.exports = {
   mode: mode,
   /**
    * Returns the mode `start()` actually ran in.
-   * @returns 'memory', 'ldif' or 'postgres'
+   * @returns 'memory', 'ldif', 'postgres' or 'mariadb'
    */
   activeMode: function () {
     log.debug("Entering activeMode().");
@@ -5324,7 +5823,7 @@ module.exports = {
   databaseMetrics: function (options) {
     log.debug('Entering databaseMetrics().');
     const configured = mode();
-    if (configured !== 'postgres') {
+    if (!storeModes.isDatabase(configured)) {
       log.debug('Leaving databaseMetrics(). Not a database mode.');
       return Promise.resolve({
         ok: false, available: false, mode: configured,
@@ -5378,7 +5877,9 @@ module.exports = {
       // that nothing else in this service makes — `tests/postgres_schema.js`
       // compares the driver against `postgres/schema.sql`, and neither of
       // them compares either against a running server.
-      const declared = require('./persistence_postgres');
+      // MariaDB's declared schema is its own module's (#677).
+      const declared = activeMode === 'mariadb'
+        ? require('./schema_mariadb') : require('./persistence_postgres');
       report.schemaVersion = declared.SCHEMA_VERSION;
       report.declaredObjects = declared.SCHEMA_OBJECTS.map(function (one) {
         return one.name;
@@ -5387,6 +5888,28 @@ module.exports = {
       return report;
     });
   },
+
+  /**
+   * Whether the store would refuse an entry at this DN key, BEFORE anything
+   * is created (#677). On MariaDB a DN key holds at most
+   * `schema_mariadb.LIMITS.dnKey` characters and a realm id
+   * `LIMITS.realm` (InnoDB's key limit); an entry over them would be refused
+   * at the flush, after it was already in memory, and every later flush that
+   * carried it with it. PostgreSQL has no such limit: the answer there, and
+   * in memory and ldif mode, is always null.
+   *
+   * @param realmId - the realm the entry would be in
+   * @param dnKey - its normalised DN
+   * @returns the refusal's sentence, or null
+   */
+  dnKeyRefusal: function (realmId, dnKey) {
+    log.debug("Entering dnKeyRefusal().");
+    log.debug("Leaving dnKeyRefusal().");
+    return dnKeyRefusalFor(activeMode, realmId, dnKey);
+  },
+
+  // The same question for a mode named, for `tests/directory_long_dn.js`.
+  dnKeyRefusalFor: dnKeyRefusalFor,
 
   /**
    * Returns how many change-log rows this process has written.

@@ -96,12 +96,16 @@
     "text": "Un PROPRIÉTAIRE (#607), comme OWNER_READ. Autorise la permission owner:write : modifier, via /admin-api, les objets dont il est propriétaire, dans les actions que la règle des propriétaires de la politique access-control permet pour chaque type — sans jamais en créer, en supprimer ni en renommer un, ni toucher un objet protégé de ses propriétaires."
   },
   "roles.native.ADMIN_READ.what": {
-    "en": "7d6481dffa0d517c",
-    "text": "Admin Read : chaque LECTURE sur /admin-api. Détenu par les groupes Admin Read et Admin Write de la console (Admin Write implique Admin Read) et par les applications listées ici. Autorise la permission admin:read."
+    "en": "a2f5894dfa0c0db6",
+    "text": "Admin Read : toute LECTURE sur /admin-api. Détenu par les groupes Admin Read, Admin Write et Administrateur de la sécurité de la console (les deux autres impliquent Admin Read) et par les applications listées ici. Autorise la permission admin:read."
   },
   "roles.native.ADMIN_WRITE.what": {
     "en": "ecff5f0bc1a5a16a",
     "text": "Admin Write : chaque opération de /admin-api qui MODIFIE quelque chose. Détenu par le groupe Admin Write de la console et par les applications listées ici. Autorise la permission admin:write. Il n’implique pas Admin Read sur un jeton : un jeton peut porter l’un ou l’autre scope, et la politique demande celui dont l’opération a besoin."
+  },
+  "roles.native.SECURITY_ADMIN.what": {
+    "en": "78a47eddc95e9db3",
+    "text": "Administrateur de la sécurité : les opérations de /admin-api qui modifient la sécurité — une politique de Annuaire → Politiques, une politique désignée sur une application, un groupe ou une personne, l'attribution de ce rôle, et le compte d'une personne qui le détient. Admin Write n'y a pas accès. Détenu par le groupe Administrateur de la sécurité de la console et par les applications listées ici. Autorise la permission admin:security."
   },
   "roles.native.ADMIN_CONSOLE.what": {
     "en": "5661913dba04f59a",
@@ -164,7 +168,15 @@
     "text": "Admin Write"
   },
   "roles.console.write.what": {
-    "en": "476b1b61c16b02e4",
-    "text": "Soumettre chaque formulaire de cette console — révoquer un jeton, ajouter un claim personnalisé, modifier un paramètre, créer une personne, accorder un rôle. IL INCLUT LA LECTURE, si bien qu’un membre de ce seul rôle peut utiliser toute la console."
+    "en": "933448e4b37b9349",
+    "text": "Envoyer chaque formulaire de cette console — révoquer un jeton, ajouter une revendication personnalisée, modifier un paramètre, créer une personne, attribuer un rôle — sauf ceux qui modifient la sécurité, qui relèvent de l'Administrateur de la sécurité. IL INCLUT LA LECTURE, de sorte qu'un membre de ce seul rôle peut utiliser le reste de la console."
+  },
+  "roles.console.security.label": {
+    "en": "eb026fe212244f20",
+    "text": "Administrateur de la sécurité"
+  },
+  "roles.console.security.what": {
+    "en": "238007ebd246b860",
+    "text": "Modifier la sécurité : enregistrer ou réinitialiser une politique dans Annuaire → Politiques, désigner une politique sur une application, un groupe ou une personne, attribuer ou retirer ce rôle, et agir sur le compte d'une personne qui le détient. Admin Write ne peut faire aucune de ces actions. IL INCLUT LA LECTURE ET NON L'ÉCRITURE, de sorte qu'il peut être détenu par quelqu'un qui n'est pas administrateur par ailleurs."
   }
 }

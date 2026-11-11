@@ -255,6 +255,10 @@
     "en": "cafeffef561dcd9a",
     "text": "partial: Issue, Renew, Validate at Cancel sa SOAP 1.1 at 1.2. Hindi vine-verify ang mga request signature. Ang OnBehalfOf at ActAs ay pinagpapasyahan ng issuance policy (#186, ang mga patakarang pinagsasaluhan ng token exchange at Kerberos S4U) — humihingi ang OnBehalfOf ng impersonation at ang ActAs ng delegation, dapat itong payagan ng delegation semantics ng mga entry, ang AppliesTo ay dapat isang nakarehistrong application na pinapayagan ng mga delegation relationship, at kailangan ng taong requester ang delegation.actorRole — at tinatanggihan ng wst:RequestFailed fault (section 11) sa product mode; wst:InvalidRequest ang dalawang element nang sabay; itinatala ng development ang sana ay tinanggihan. Sa PRODUCT mode (2026-09-12), bawat operation ay nangangailangan ng credential — isang UsernameToken na vine-verify laban sa directory, o isang SAML assertion na sina-sign ng STS na ito at nasa loob ng Conditions nito — at ang OnBehalfOf/ActAs ay nangangailangan ng sariling credential ng requester at ng ganoong assertion sa loob nito; walang tinatanggap ang development, gaya ng dati. Sa parehong mode, nililimitahan ang hinihinging wst:Lifetime (wstrust.maxTokenLifetimeMin) at pinangangalanan ng AuthnContext ng inissue na assertion ang credential sa halip na password. Ang humihiling na walang dalang credential ang wsse:Security ay pinapatunayan, sa parehong mode, ng TLS client certificate sa koneksyon kapag inisyu ito ng realm na ito sa isang tao o isang application (#1046), o kapag galing ito sa isang panlabas na certificate authority at nakaimbak sa userCertificate sa eksaktong isa sa kanilang mga entry (#1061)."
   },
+  "stsmetadata.specs.wss-kerberos.coverage": {
+    "en": "a6d4bfc032b7d23e",
+    "text": "partial: tinatanggap ang lahat ng anim na ValueType ng AP-REQ sa /sts (bilang credential ng humihiling, at sa loob ng OnBehalfOf o ActAs kapag nakuha ang ticket sa pamamagitan ng S4U2Proxy o gamit ang ipinasang TGT) at bilang mga uri ng token ng RFC 8693, para lamang sa sariling SPN ng serbisyong ito, na sinusuri ng acceptor sa parehong mode; ang lagdang gamit ang session key ng token ay isang credential; at kapag naka-on ang wstrust.issueKerberos (naka-off bilang default) sinasagot ang wst:TokenType na humihingi nito ng ticket na inilabas ng KDC ng realm na ito, na ang subkey ang proof token. Hindi pa nagagawa: isang key na hinango mula sa session key (isang DerivedKeyToken) at encryption gamit ito; isang target realm na ang KDC ay hindi isang trust realm ng serbisyong ito."
+  },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",
     "text": "minimal sa development mode: tinatanggap ang UsernameToken kapag naroon ang parehong member at walang password na sinusuri, maliban sa tinatanggihan ang literal na \"invalid\" para mapilit ng negative test ang isang pagkabigo. Sa product mode, vine-verify ang password — ang sa tao laban sa kanilang naka-hash na userPassword, ang sa application laban sa mga client secret nito."
@@ -296,8 +300,8 @@
     "text": "full para sa ini-emit nito: enveloped signature, exclusive canonicalization, RSA-SHA256 bilang default at RSA-SHA384/512 o ang sirang RSA-SHA1 sa pamamagitan ng saml.signatureAlgorithm (2026-09-12; development mode lang mula #181); AES-GCM o AES-CBC content encryption na may RSA-OAEP (rsa-oaep-mgf1p, o ang rsa-oaep ng XML Encryption 1.1 na may SHA-256 at MGF1-SHA-256, #168) o, sa development mode lang, isang RSA-1_5 wrapped key — hindi nagwa-wrap o nag-a-unwrap ng RSA-1_5 ang product (XML Encryption 1.1 section 6.1.2) — at, para sa EC recipient, ECDH-ES key agreement na may ConcatKDF at AES key wrap (section 5.6.4; #168). Dine-decrypt ng isang federation relationship ang EncryptedAssertion, EncryptedID at EncryptedAttribute ng isang partner sa ilalim lang ng mga algorithm na inilalathala nito, at tinatanggihan ang AES-CBC at rsa-1_5 sa bawat mode. Walang nakarehistrong ML-KEM method para sa XML Encryption. NAGVE-VERIFY (mula 2026-09-17) ng bawat SignatureMethod ng RFC 9231 at XMLDSig 1.1 na ipinapatupad ng OpenSSL ng node — RSA PKCS#1 v1.5 at RSASSA-PSS (may RSAPSSParams at wala), ECDSA, EdDSA Ed25519/Ed448, DSA — at ang mga ML-DSA at SLH-DSA identifier ng draft na draft-eastlake-rfc9231bis-xmlsec-uris; mga digest na SHA-224, SHA-2, SHA-3 at RIPEMD-160; SHA-1 lang kapag may saml.allowSha1Signatures, sa development mode. HINDI vine-verify, at tinatanggihan ayon sa pangalan: MD5, ang mga MAC, Whirlpool, ESIGN, pre-hashed EdDSA at ang mga stateful na HSS/LMS at XMSS."
   },
   "stsmetadata.specs.rfc6749.coverage": {
-    "en": "0c6fe743b64b0d08",
-    "text": "partial: authorization_code, implicit, password, client_credentials at refresh_token. Tinatanggap pero hindi vine-verify ang client authentication — MALIBAN sa RFC 9700 mode, kung saan ang client na nakarehistro dito bilang confidential ay dapat magpakita ng client_secret na ini-issue dito ng serbisyong ito (section 2.5, ang nag-iisang credential na sinusuri saanman sa serbisyong ito). Tahasan ding tinatanggihan ng mode na iyon ang password at implicit grant at nire-rotate ang mga refresh token. Section 3.3: nakatali sa client ang isang scope (#110) — ang sariling mga protektadong scope ng serbisyong ito (admin:*, ang mga scope ng SCIM at Shared Signals, ang debugger permission) ay ini-issue lang sa client na idinedeklara ang mga ito sa oauthAllowedScope nito, sa bawat mode, at sa product mode bawat scope ay nakatali sa listahang iyon o sa isang dokumentadong default set; invalid_scope ang request na nasa labas nito."
+    "en": "56137411ddc592b3",
+    "text": "partial: authorization_code, implicit, password, client_credentials at refresh_token. Tinatanggap pero hindi vine-verify ang client authentication — MALIBAN sa RFC 9700 mode, kung saan ang client na nakarehistro dito bilang confidential ay dapat magpakita ng client_secret na ini-issue dito ng serbisyong ito (section 2.5, ang nag-iisang credential na sinusuri saanman sa serbisyong ito). Tahasan ding tinatanggihan ng mode na iyon ang password grant, tinatanggihan ang access token ng implicit grant — bawat response type na naglalabas nito mula sa authorization endpoint — maliban kung iniurong ng isang administrator ang RFC 9700 section 2.1.2 para sa realm, at saka lang ito iginagalang para sa application na naka-enable ang type na iyon (#1295, #1296), at nire-rotate ang mga refresh token. Section 3.3: nakatali sa client ang isang scope (#110) — ang sariling mga protektadong scope ng serbisyong ito (admin:*, ang mga scope ng SCIM at Shared Signals, ang debugger permission) ay ini-issue lang sa client na idinedeklara ang mga ito sa oauthAllowedScope nito, sa bawat mode, at sa product mode bawat scope ay nakatali sa listahang iyon o sa isang dokumentadong default set; invalid_scope ang request na nasa labas nito."
   },
   "stsmetadata.specs.rfc6750.coverage": {
     "en": "32af4b1d310ee331",
@@ -500,8 +504,8 @@
     "text": "full (#151), bilang OpenID Provider, kung saan naka-on ang oauth2.providerCommands (naka-off bilang default): nakarehistro ang command_endpoint (DCR, console, API; https, walang fragment); mga Command Token na may type na command+jwt at naka-sign gaya ng ID Token ng client, hindi hihigit sa dalawang minuto, na may mga claim ng section 5 bawat command (sub lang sa mga account command, metadata lang sa metadata, authentication_provider lang sa migrate, hindi kailanman nonce; ang tenant ay ang realm id; ipinapadala at natututunan ang aud_sub); lahat ng sampung account command at ang mga _async variant nila sa pinagsasaluhang durable outbound queue na binabasa ang mga sagot at error ng section 3; itinatala ng metadata ang sinusuportahan ng bawat relying party; ang limang streaming tenant command ay binabasa bilang Server-Sent Events at ipinagpapatuloy gamit ang Last-Event-ID; ang callback endpoint para sa mga async na resulta at mga metadata at audit_tenant request; isang account-state register bawat relying party; awtomatikong suspend, reactivate, delete, maintain at invalidate sa mga pagbabago sa directory at sa mga global sign-out, sa relying party lang na naglista ng command. Ang test peer (tests/peer/) ang gumaganap na relying party na sumasagot sa bawat command. KULANG: pagkilos bilang relying party para sa ibang OP."
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
-    "en": "a9d422b9ede39dbe",
-    "text": "full (#148), sa bawat mode. Section 2: session_expiry (ang absolute na pagtatapos ng session, tuwing may token na ini-issue sa isang session), tenant (ang id ng trust realm) at aud_sub (isang account id na itinatala ng administrator bawat tao bawat client, console at /admin-api) sa ID Token at claims_supported. Section 3: tinatanggihan ang tenant bilang invalid_request kapag pinangangalanan nito ang ibang realm; ipinapadala ng domain_hint ang tao sa federation relationship na ang fedHomeRealmDomain ang may hawak nito. Section 4: nagdadagdag ang third-party-initiated login ng portal ng tenant, domain_hint at target_link_uri. KULANG: isang aud_sub na natutunan mula sa client, na dumarating kasama ng OpenID Provider Commands (#151)."
+    "en": "e8438c20973c8485",
+    "text": "full (#148), sa bawat mode. Section 2: session_expiry (ang absolute na pagtatapos ng session, kapag may token na ini-issue sa isang session) at tenant (ang id ng trust realm) sa isang ID Token na pinangangalanan sila ng claims request nito, o sa bawat isa kapag naka-on ang oauth2.enterpriseClaimsAlways (#1292), at aud_sub (isang account id na itinatala ng administrator bawat tao bawat client, console at /admin-api) sa ID Token; ang tatlo sa claims_supported. Section 3: tinatanggihan ang tenant bilang invalid_request kapag pinangangalanan nito ang ibang realm; ipinapadala ng domain_hint ang tao sa federation relationship na ang fedHomeRealmDomain ang may hawak nito. Section 4: nagdadagdag ang third-party-initiated login ng portal ng tenant, domain_hint at target_link_uri. KULANG: isang aud_sub na natutunan mula sa client, na dumarating kasama ng OpenID Provider Commands (#151)."
   },
   "stsmetadata.specs.oidc-ephemeral.coverage": {
     "en": "f7656881361a49fc",
@@ -560,8 +564,8 @@
     "text": "partial: ang provider configuration document na may bawat KINAKAILANGANG member ng section 3, binuo sa pamamagitan ng pagpapalawak sa RFC 8414 document para hindi magkasalungat ang dalawa tungkol sa dalawampung member na pinagsasaluhan nila. Inihahain sa well-known path, sa anyong issuer-with-path ng section 4, at sa anyong inserted-path ng RFC 8414. Mula #118, inilalathala nito ang subject_types_supported na public at pairwise, lahat ng apat na prompt value, display_values_supported, claims_locales_supported, ang mga scope na address at phone at bawat claim na pinangangalanan nila. Nire-resolve ng WebFinger (section 2, #119) ang isang acct:, e-mail o host resource ayon sa realm na may-ari ng DNS domain nito at ang isang https URL ayon sa /realm/<id> path nito, nang hindi hinahanap ang tao; ang mga anyong inserted at appended ng discovery ay parehong bumabasa ng [realm/<id>][/<server>] at 404 sa iba pa, kaya bawat dokumento ay nagpapangalan ng issuer na may tunay na nag-iissue. Wala ang check_session_iframe (#121)."
   },
   "stsmetadata.specs.oidc-registration.coverage": {
-    "en": "52a4926873bf6dbe",
-    "text": "partial: tinatanggap at kinikilala ng /oauth2/register at ng RFC 7592 management ang OpenID Connect client metadata na ipinapatupad ng serbisyong ito — subject_type at sector_identifier_uri (kinukuha at kinakailangang ilista ang bawat redirect_uri; section 5), token_endpoint_auth_signing_alg, id_token_signed_response_alg, id_token_encrypted_response_alg/enc, userinfo_signed_response_alg at ang mga encryption member nito, ang mga request object member, at ang mga front- at back-channel logout member; at (#120) application_type (web, native) kasama ang mga patakaran nito sa redirect URI, ipinapatupad ang grant_types at response_types, inilalapat ang default_max_age at default_acr_values sa request na hindi nagpapangalan ng alinman, require_auth_time (dinadala ang auth_time tuwing alam), kinukuha ang jwks_uri, at inilulunsad ang initiate_login_uri mula sa user portal na may iss at login_hint (Core section 4). Hindi saklaw: iniimbak at ibinabalik ang policy_uri at tos_uri pero hindi iginuguhit sa consent screen."
+    "en": "f938f6e1a6211dd2",
+    "text": "partial: tinatanggap at kinikilala ng /oauth2/register at ng RFC 7592 management ang OpenID Connect client metadata na ipinapatupad ng serbisyong ito — subject_type at sector_identifier_uri (kinukuha at kinakailangang ilista ang bawat redirect_uri; section 5), token_endpoint_auth_signing_alg, id_token_signed_response_alg, id_token_encrypted_response_alg/enc, userinfo_signed_response_alg at ang mga encryption member nito, ang mga request object member, at ang mga front- at back-channel logout member; at (#120) application_type (web, native) kasama ang mga patakaran nito sa redirect URI, ipinapatupad ang grant_types at response_types, inilalapat ang default_max_age at default_acr_values sa request na hindi nagpapangalan ng alinman, require_auth_time (dinadala ang auth_time tuwing alam), kinukuha ang jwks_uri, at inilulunsad ang initiate_login_uri mula sa user portal na may iss at login_hint (Core section 4); at (#1300) iniingatan ang logo_uri, policy_uri at tos_uri at ipinapakita sa sign-in at consent screen, ang logo ay nilo-load ng browser ng tao at hindi kailanman kinukuha ng serbisyong ito. Hindi saklaw: ang logo_uri, policy_uri o tos_uri na may language tag (section 2.1) ay iniingatan nang gaya ng ipinadala at hindi iginuguhit."
   },
   "stsmetadata.specs.oidc-logout.coverage": {
     "en": "762ca8fb1eb8c94b",
@@ -572,8 +576,8 @@
     "text": "partial pero malawak: issuer metadata, nonce, proof of possession, batch issuance, deferred issuance, mga Credential Offer (Appendix H.1/H.2/H.3), ang pre-authorized code grant na may tx_code, credential_identifiers, request at response encryption (section 10), at ang Notification Endpoint (section 11). Mga key attestation (Appendix D) sa header ng isang jwt proof at bilang attestation proof type, vine-verify laban sa mga naka-configure na certificate; mga status list para sa bawat credential; mga credential na naka-sign gamit ang mga post-quantum algorithm. Walang wallet attestation (Appendix E)."
   },
   "stsmetadata.specs.oid4vp.coverage": {
-    "en": "6a7b2a600e91aab4",
-    "text": "partial: mga Authorization Request ayon sa value at bilang signed Request Object ayon sa reference, response_mode=direct_post, isang DCQL query (kasama ang credential_sets), at buong verification ng bumabalik sa lahat ng tatlong format — isang Key Binding JWT, isang VP JWT na may nonce, aud at iat, isang VerifiablePresentation na may Data Integrity proof (B.1.3.2.5) — at ang status ng bawat credential, na dapat pangalanan ng bawat ipinakitang credential (oid4vp.requireStatusReference, lahat bilang default; humihingi ng credentialStatus ang ldp_vc query at tinatanggihan ang credential na nagkakait nito). Mula 2026-09-17, ang isang presentation ay MAKAKAPAG-SIGN IN NG ISANG TAO sa /authn/wallet — sa pamamagitan ng Digital Credentials API (Appendix A: openid4vp-v1-signed, expected_origins, dc_api.jwt o dc_api, ang origin: audience), same-device na may response_code ng section 8.2, at sa pamamagitan ng payak na QR code kung saan lang naka-on ang oid4vp.signInCrossDevice — pero holder-bound credential lang na inissue ng realm na ito, sa alinman sa tatlong format, at bilang directory entry lang na pinag-issue-han nito; ang iba ay nagve-verify at walang sina-sign in. Walang presentation_definition (DIF PE) — DCQL lang; walang unsigned o multi-signed DC API request; walang mso_mdoc; walang wallet attestation; walang transaction_data. MULA #129, pinangangalanan ng signed request ang Client Identifier nito ayon sa prefix na pinipili ng oid4vp.clientIdPrefix (section 5.9): pre-registered, decentralized_identifier (ang did:web ng realm, isang DID URL kid), verifier_attestation (isang Verifier Attestation JWT sa `jwt` header, naka-configure o self-attested), o openid_federation (ang Entity Configuration ng realm), at mula #230 x509_san_dns at x509_hash (section 5.9.3: ang sariling certificate ng Verifier mula sa JOSE Issuing CA ng realm sa x5c, isang dNSName na siyang host ng Response URI, o ang SHA-256 ng leaf), pinipili bawat realm o bawat request; redirect_uri ang ginagamit ng unsigned. Hindi inaalok ang origin prefix (sariling prefix ito ng Digital Credentials API, itinatakda ng browser)."
+    "en": "7b2694beee176000",
+    "text": "partial: mga Authorization Request ayon sa value at bilang signed Request Object ayon sa reference, response_mode=direct_post, isang DCQL query (kasama ang credential_sets), at buong verification ng bumabalik sa lahat ng apat na format — isang Key Binding JWT, isang VP JWT na may nonce, aud at iat, isang VerifiablePresentation na may Data Integrity proof (B.1.3.2.5), at mula #935 isang ISO mdoc (B.2: ang document signer na naka-chain sa oid4vp.mdocTrustAnchors, ang MSO, ang digest ng bawat element, ang device signature sa session transcript ng B.2.6.1; tinatanggihan ang deviceMac) — at ang status ng bawat credential, na dapat pangalanan ng bawat ipinakitang credential (oid4vp.requireStatusReference, lahat bilang default; humihingi ng credentialStatus ang ldp_vc query at tinatanggihan ang credential na nagkakait nito). Mula 2026-09-17, ang isang presentation ay MAKAKAPAG-SIGN IN NG ISANG TAO sa /authn/wallet — sa pamamagitan ng Digital Credentials API (Appendix A: openid4vp-v1-signed, expected_origins, dc_api.jwt o dc_api, ang origin: audience), same-device na may response_code ng section 8.2, at sa pamamagitan ng payak na QR code kung saan lang naka-on ang oid4vp.signInCrossDevice — pero holder-bound credential lang na inissue ng realm na ito, sa alinman sa tatlong format, at bilang directory entry lang na pinag-issue-han nito; ang iba ay nagve-verify at walang sina-sign in. Walang presentation_definition (DIF PE) — DCQL lang; walang unsigned o multi-signed DC API request; walang mdoc sa DC API o para sa sign-in; walang wallet attestation; walang transaction_data. MULA #129, pinangangalanan ng signed request ang Client Identifier nito ayon sa prefix na pinipili ng oid4vp.clientIdPrefix (section 5.9): pre-registered, decentralized_identifier (ang did:web ng realm, isang DID URL kid), verifier_attestation (isang Verifier Attestation JWT sa `jwt` header, naka-configure o self-attested), o openid_federation (ang Entity Configuration ng realm), at mula #230 x509_san_dns at x509_hash (section 5.9.3: ang sariling certificate ng Verifier mula sa JOSE Issuing CA ng realm sa x5c, isang dNSName na siyang host ng Response URI, o ang SHA-256 ng leaf), pinipili bawat realm o bawat request; redirect_uri ang ginagamit ng unsigned. Hindi inaalok ang origin prefix (sariling prefix ito ng Digital Credentials API, itinatakda ng browser)."
   },
   "stsmetadata.specs.siopv2.coverage": {
     "en": "7b5596036282fc19",
@@ -632,8 +636,8 @@
     "text": "partial: ang mga serbisyo ng issuer (issue), holder (prove, derive), verifier (mga kredensyal at presentasyon) at status, sa ibabaw ng sariling mga cryptosuite, status list at sariling mga key ng VC API ng serbisyong ito, NAKA-OFF hangga't hindi ito ino-on ng isang realm (vcApi.enabled), sa likod ng isang OAuth 2.0 access token na may dalang vc-api:issue o vc-api:verify sa bawat mode, may rate limit bawat client, at tinatanggihan ang opsyong hindi nito nauunawaan. Hindi pa nagagawa: zcap authorization, mga workflow at exchange, mga challenge, pag-iimbak ng mga kredensyal at presentasyon (GET at DELETE ng /credentials/{id}), ang mga operation:path scope ng VCALM, at mga issuer instance na kino-configure bawat realm (nakapirmi ang mga instance, isa bawat securing mechanism at curve)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "0e654cb76a7429ce",
-    "text": "partial: isang list bawat realm, dalawang bit bawat credential (VALID, INVALID, SUSPENDED), inihahain bilang Status List Token sa anyong JWT at CWT ayon sa Accept, may ttl at exp, isang aggregation endpoint, at ang status claim sa bawat SD-JWT VC at jwt_vc_json credential; nire-resolve ng Verifier ang list ng isang pinagkakatiwalaang dayuhang issuer at tumatanggi kapag walang pahayag na magagawa. At isang ikalawang list bawat realm para sa mga ACCESS TOKEN (#432): isang bit bawat token, kung saan ang bawat OAuth RFC 9068 access token at bawat GNAP jwt-signed at jwt-encrypted token ay may dalang status claim, ina-advertise bilang status_list_aggregation_endpoint (section 9.1) sa metadata ng authorization server. Walang historical resolution (501), walang sinusundang redirect, walang mdoc (walang ini-issue)."
+    "en": "b7932392e5841ca6",
+    "text": "partial: isang list bawat realm, dalawang bit bawat credential (VALID, INVALID, SUSPENDED), inihahain bilang Status List Token sa anyong JWT at CWT ayon sa Accept, may ttl at exp, isang aggregation endpoint, at ang status claim sa bawat SD-JWT VC at jwt_vc_json credential; nire-resolve ng Verifier ang list ng isang pinagkakatiwalaang dayuhang issuer at tumatanggi kapag walang pahayag na magagawa. At isang ikalawang list bawat realm para sa mga ACCESS TOKEN (#432): isang bit bawat token, kung saan ang bawat OAuth RFC 9068 access token at bawat GNAP jwt-signed at jwt-encrypted token ay may dalang status claim, ina-advertise bilang status_list_aggregation_endpoint (section 9.1) sa metadata ng authorization server. Walang historical resolution (501), walang sinusundang redirect. Walang ini-issue na mdoc; nire-resolve ng Verifier ang CWT list na pinangangalanan ng Mobile Security Object ng ipinakitang mdoc, na pinirmahan ng certificate sa x5chain nito na naka-chain sa oid4vp.mdocTrustAnchors (#935)."
   },
   "stsmetadata.specs.etsi-ts-119-602.coverage": {
     "en": "d648e3ad690b8900",
@@ -656,8 +660,8 @@
     "text": "full para sa kailangan ng Data Integrity. Ang mga JSON-LD context ay VENDORED, hindi kailanman fine-fetch: ang canonicalization na umaasa sa network fetch ay hindi magiging reproducible at hindi rin ligtas."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: ang serbisyong ito ay NAGPAPALATHALA ng isang did:web na dokumento na may dalawang verification method, at nagre-resolve at nagde-dereference (seksiyon 7) ng did:key, did:jwk at ng sarili nitong did:web sa parehong JSON na representasyon sa W3C VC API (#199), sinusukat sa W3C DID test suite. Walang ibang did:web na kinukuha; walang DID parameter (service, versionId, …) na sinusuportahan."
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: ang serbisyong ito ay NAGPAPALATHALA ng isang did:web na dokumento na may dalawang verification method, isang did:web bawat application, at isang did:web bawat tao sa isang random na address na iniingatan ang bawat bersyon ng mga susi nito (#1291); nagre-resolve at nagde-dereference ito (seksiyon 7) ng did:key, did:jwk at sarili nitong did:web sa parehong JSON na representasyon sa W3C VC API (#199), batay sa W3C DID test suite, at sinasagot ang mga DID parameter na versionId at versionTime, kasama ang didDocumentMetadata (created, updated, versionId, nextVersionId, deactivated), para sa inilathalang DID ng isang tao. Walang ibang did:web na kinukuha; walang ibang DID parameter (service, relativeRef, hl) ang suportado."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -1136,8 +1140,8 @@
     "text": "Section 3.4.3, para sa mga group."
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.what": {
-    "en": "6f6ca2ae30df56a4",
-    "text": "Sa READ, pare-parehong nire-resolve ang member, uniqueMember at memberUid at ibinabalik ang bawat member ayon sa id nito — ang pagtrato sa tatlo nang magkakaiba ang paraan kung paano tahimik na nawawala ang bawat posixGroup membership. Sa WRITE, ginagawang DN ang bawat member id at inilalagay sa member, at kini-clear ang dalawa pa para ang client na nag-alis ng lahat ay hindi makakita ng group na may laman pa. Ang member na walang pinangangalanan ay TINATANGGAP at nilo-log: ang dangling member ay estadong sulit na kayang gawin."
+    "en": "c85629ec6fc43a6f",
+    "text": "Sa READ, pare-parehong nire-resolve ang member, uniqueMember at memberUid at ibinabalik ang bawat member ayon sa id nito — ang pagtrato sa tatlo nang magkakaiba ang paraan kung paano tahimik na nawawala ang bawat posixGroup membership. Sa WRITE, ginagawang DN ang bawat member id at inilalagay sa member, at kini-clear ang dalawa pa para ang client na nag-alis ng lahat ay hindi makakita ng group na may laman pa. Ang member na walang pinangangalanan ay TINATANGGIHAN (400 invalidValue): ang group ay naglilista lamang ng mga naroroon, at ang pag-delete ay nag-aalis ng entry sa bawat group."
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.effect": {
     "en": "590332223e3866ae",
@@ -1203,9 +1207,29 @@
     "en": "bfc05d15d7d40bc2",
     "text": "NON-SPEC, at sadyang WALANG GATE. Bawat trust realm na pinapatakbo ng process na ito — ang trust realm ay isang buong lohikal na kopya ng serbisyong ito, naaabot sa ilalim ng isang segment sa harap ng path at may hawak na sariling configuration, signing key, mga session at token. May dala itong id, pangalan, base URL at path prefix ng bawat realm, ang mismong prefix SEGMENT (na isang setting, kaya hindi ito mahuhulaan ng client), at kung aling mga protocol family ang talagang pinaghihiwalay ng isang realm. Ang huli sa mga iyon ang bahaging walang ibang sumasagot: karamihan ng family ay pinaghihiwalay ng path, pero ang directory ay pinaghihiwalay ng DN, ang Kerberos ng PANGALAN ng realm sa request, ang SPIFFE ng socket address, at ang TLS certificate ay hindi pinaghihiwalay — kaya ang taong nag-akalang ang path segment ang hangganan saanman ay mali tungkol sa apat sa mga ito. Hindi makakabuo ng kahit isang URL ang client na itinuturo sa isang realm nang wala ito, kaya wala ito sa likod ng gate ng console — ang parehong argumentong pinagbabatayan ng bawat discovery document dito."
   },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC. Ang icon na kusang hinihingi ng browser sa bawat pahina: ang parisukat na marka ng logo (common/favicon.ico). Sinasagot sa bawat listener; itinatago nang isang araw."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Ang mga patakaran ng card ng sign-in screen at ng language chooser, bilang iisang stylesheet na nili-link ng shell ng isang static na pampublikong surface (common/web_card_css.ts). Sinasagot sa bawat listener; ang address na may ?v= ng build na ito ay naka-cache nang permanente."
+  },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717). Ang mga kulay ng pag-sign in ng realm bilang mga CSS custom property na binabasa ng /web/card.css (common/branding.ts): ang apat na kulay na branding.* at ang mga tonong hinango mula sa mga ito, binuo lamang mula sa mga napatunayang value. Iniuugnay ito ng shell pagkatapos ng card kung saan lamang naiiba ang itsura ng realm sa itsura ng serbisyo; ang address na may digest nito bilang ?v= ay naka-cache nang permanente."
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717). Ang PNG, JPEG o WebP na logo na in-upload para sa realm na ito sa pamamagitan ng /admin-api/branding/logo, inihahatid mula sa origin na ito upang tanggapin ito ng img-src 'self' ng mga pahina ng pag-sign in at walang ikatlong partido ang makaalam kung sino ang nagsa-sign in; nosniff, naka-sandbox, isang ETag ng digest nito. 404 kung walang logo ang realm."
+  },
+  "stsmetadata.endpoints./web/photo/:id.what": {
+    "en": "32d1ba774784074d",
+    "text": "NON-SPEC sa sarili nito (#719), at ang pinangangalanan ng picture claim ng OpenID Connect Core 5.1 para sa taong may larawan dito. Ang JPEG o PNG na itinakda sa portal o ang kopya mula sa federation partner, sa random na address na nagbabago kasama ng larawan; walang credential, dahil kinukuha ito ng relying party nang wala nito. nosniff, naka-sandbox, may ETag. 404 para sa taong naka-disable o nabura."
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717). Isang halimbawa ng sign-in card ng realm na ito na iginuhit gamit ang mga nakabinbing kulay at isang layout (accent, page, card, text, layout sa query, bawat isa sinusuri gaya ng gagawin ng mga setting), para buksan ng console sa bagong tab bago mag-save. Walang sinumang nasa-sign in dito."
   },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
@@ -1350,6 +1374,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "HINDI MULA SA SPEC. Ang natanggap ng application ng mga ulat, isang receiver ng sariling transmitter ng serbisyong ito (#1042): bawat signal sa realm para sa isang report administrator, at para sa iba ang mga signal lamang tungkol sa kanila. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719). Ang path ng sariling larawan sa profile ng naka-sign in na tao sa realm na ito, walang laman kung wala siya nito. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",
@@ -1551,9 +1579,17 @@
     "en": "83b11af065a98038",
     "text": "NON-SPEC. Lahat ng iginuguhit ng /admin/pki, bilang JSON: ang tatlong CA tier kasama ang mga subject, serial, validity, algorithm, thumbprint at CERTIFICATE nila; ang mga bokabularyong mahihingi ng isang build; at ISANG ROW BAWAT APPLICATION BAWAT PROFILE para sa lahat ng may hawak ng in-issue na key pair, dahil bawat katotohanan sa ganoong row — ang handle, ang expiry, ang idineklarang issuer — ay per profile at puwedeng humawak ang isang application ng parehong RFC 7523 at RFC 7522. **WALANG PRIVATE KEY NA KAILANMAN NASA SAGOT NA ITO**: itinatapon ng common/pki.js ang mga ito palabas, kaya hindi maililitaw ng caller dito ang key ng Root dahil lang nakalimot. Buo ang mga certificate, dahil ang certificate ang kalahati ng pares na dapat ipinapasa. BAWAT REALM, gaya ng mismong hierarchy. ANG `revocation` ANG REGISTER mula 2026-09-11 — isang entry bawat certificate authority kasama ang in-issue nito, kung ano ang nasa listahan nito, at ang mga CRL at OCSP address nito sa http at ldap — at ang `revocationNote` sa tabi nito ang matibay na PANGUNGUSAP: ang revocation dito ay INILALATHALA at hindi kailanman KINOKONSULTA, kaya ang certificate na na-revoke sa page na ito ay nakaka-authenticate pa rin sa serbisyong ito. Dalawang member ang mga ito dahil magkaibang sagot ang walang lamang listahan at ang walang listahan, at isa lang sa mga iyon ang madadala ng iisang field. Ang `residency` ang ibang limit: sa development mode, namamatay ang hierarchy kasama ng process. Sinasalamin ang GET /admin/pki."
   },
+  "stsmetadata.endpoints./admin-api/pki/trust.what": {
+    "en": "1e6d1c913b7cc28c",
+    "text": "GET /admin/pki/trust sa JSON (#1360): ang master at ang row ng bawat use case kasama ang idinaragdag nito at ang ine-exempt ng specification nito, ang signer truststore ng realm na ito, ang naka-pin sa realm ayon sa huling natuklasan ng araw-araw na audit (may paging gamit ang ?pinsPage=), at ang mga pagtanggi ng validation door sa prosesong ito."
+  },
+  "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
+    "en": "977d61c6037e8400",
+    "text": "add | remove | recheck | set-row — ang mga control sa /admin/pki/trust. Ang add ay tumatanggap ng `certificates` (isa o higit pang PEM block, bawat isa ay dumadaan sa admission rule at bawat pagtanggi ay pinangangalanan), na may `purposes` para limitahan ang mga ito; ang remove ay tumatanggap ng isang `fingerprint`; ang recheck ay agad na nagpapatakbo ng audit; ang set-row ay tumatanggap ng `pki.paranoid*` na `setting` at ang `value` nito, sa pamamagitan ng karaniwang pagsulat ng settings. Kailangan ng admin:write. Isinusulat sa ou=signerTrustAnchors, kaya nananatili ang pagbabago pagkatapos ng restart."
+  },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
-    "en": "a0a71a2a102ad10e",
-    "text": "NON-SPEC. Ang LABINDALAWANG action sa likod ng dalawang console page — build, clear, issue, revoke sa /admin/pki, at apply-profile, generate-keys, generate-alt-keys, issue-certificate, use-key, remove-object, clear-store, export sa Certificate & Key Configuration pane — sa pamamagitan ng parehong pkiAction() na tinatawag ng mga page na iyon. **NAG-RE-RESOLVE ITO SA HALIP NA AGAD MAGBALIK**: Web Crypto hanggang ilalim ang pag-issue, kaya isa ito sa dalawang action handler sa API na ito na nag-a-await (ang /admin-api/ssf ang isa pa). IBINIBIGAY NG `issue` ANG PRIVATE KEY NANG ISANG BESES at walang ikalawang kopya nito na iniingatan ng serbisyong ito; nagbabalik ang `export` ng key material na naka-base64, gaya ng /admin-api/keys/export at sa parehong dahilan. **WALANG NIRE-REVOKE ANG `revoke`**: inaalis nito ang key pair sa application, kaya hihinto ang serbisyong ito sa PAGTANGGAP ng pinipirmahan ng key na iyon, at patuloy na nagcha-chain ang certificate — sinasabi iyon ng sagot sa mismong mga salitang iyon. Tumatanggap ang `issue` at `revoke` ng `target` na application (ang default) o person — ang key pair ng isang tao ay napupunta sa ou=users entry niya bilang stsAssertion* at puwedeng mag-assert tungkol lang sa kanyang sarili. Sinasalamin ang POST /admin/pki, POST /admin/pki/certificate at POST /admin/pki/person."
+    "en": "42a6f7a0abbc65c4",
+    "text": "NON-SPEC. Ang LABINDALAWANG action sa likod ng dalawang console page — build, clear, issue, revoke sa /admin/pki, at apply-profile, generate-keys, generate-alt-keys, issue-certificate, use-key, remove-object, clear-store, export sa Certificate Workbench — sa pamamagitan ng parehong pkiAction() na tinatawag ng mga page na iyon. **NAG-RE-RESOLVE ITO SA HALIP NA AGAD MAGBALIK**: Web Crypto hanggang ilalim ang pag-issue, kaya isa ito sa dalawang action handler sa API na ito na nag-a-await (ang /admin-api/ssf ang isa pa). IBINIBIGAY NG `issue` ANG PRIVATE KEY NANG ISANG BESES at walang ikalawang kopya nito na iniingatan ng serbisyong ito; nagbabalik ang `export` ng key material na naka-base64, gaya ng /admin-api/keys/export at sa parehong dahilan. **Para sa isang application, WALANG NIRE-REVOKE ANG `revoke`**: inaalis nito ang key pair sa application, kaya hihinto ang serbisyong ito sa PAGTANGGAP ng pinipirmahan ng key na iyon, at patuloy na nagcha-chain ang certificate — sinasabi iyon ng sagot sa mismong mga salitang iyon. Tumatanggap ang `issue` at `revoke` ng `target` na application (ang default) o person — may hawak ang isang tao ng ilang key pair sa ou=users entry niya bilang stsAssertion*, bawat isa ay puwedeng mag-assert tungkol lang sa kanyang sarili, at inilalagay ng `revoke` na may `handle` ang ISA sa mga ito sa CRL ng awtoridad nito (#1290). Sinasalamin ang POST /admin/pki, POST /admin/pki/certificate at POST /admin/pki/person."
   },
   "stsmetadata.endpoints./admin-api/certificates.what": {
     "en": "dab1f4d1b78f518a",
@@ -1835,6 +1871,10 @@
     "en": "5992e8bdddc060a8",
     "text": "NON-SPEC (#129). Ang mga DID at JWK thumbprint na naka-enroll para sa isang tao, bawat isa kasama ang label nito, kung sino ang nag-enroll nito at kung paano (pinatunayan ng wallet ng tao, o ayon sa value), at ang isang did:web kasama ang mga naka-pin na key nito (#693), katabi ng kung naka-on ang oid4vp.signInSelfIssued. Nag-e-enroll ng isa ayon sa value ang POST /admin-api/users/enrol-self-issued-subject, kinukuha ang dokumento ng isang did:web para i-pin ang mga key nito; inaalis ng /admin-api/users/remove-self-issued-subject ang isa. Sinasalamin ang Self-issued IDs block sa /admin/users page ng tao."
   },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "NON-SPEC (#1291). Bawat did:web na inilalathala ng realm na ito para sa isang tao: ang random na id nito, ang DID, ang address ng dokumento nito, kung sino ang may hawak ng susi nito (wallet, realm o download), ang kalagayan nito, at bawat bersyon kasama ang mga susi nito at kung ano ang nag-awtorisa rito, kailanman ay hindi isang pribadong susi. Ide-deactivate ng POST /admin-api/users/deactivate-published-did ang isa; hindi kailanman gumagawa o nagbabago ng isa ang administrator. Sinasalamin ang bloke ng Mga inilathalang DID sa pahinang /admin/users ng tao."
+  },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
     "text": "NON-SPEC (#127). Ang mga identity verification na naitala para sa isang tao, NAKA-PAGE (`page`, `per`), pinakabago muna: ang id ng bawat isa, source (admin, wallet, certificate), kung sino ang nagtala nito, ang verification element at ang mga claim na sinaklaw nito kasama ang mga na-verify na value, katabi ng mga bokabularyong pinagbubuuan ng isang record. Nagtatala ng isa ang POST /admin-api/users/record-verification; inaalis ng /admin-api/users/remove-verification ang isa. Sinasalamin ang Identity verifications block sa /admin/users page ng tao."
@@ -1944,8 +1984,8 @@
     "text": "GET /admin/spiffe/agents sa JSON, sinala at naka-page, na may ?agent= para sa isa sa kanila. Isang TALAAN sa halip na configuration — lahat ng nasa mga entry na ito ay isinulat ng serbisyong ito nang mag-attest ang isang agent, at wala sa mga iyon ang na-verify."
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban, unban at delete. IPINAPATUPAD ang ban sa AttestAgent, na siyang pumipigil dito na maging kasinungalingan; ang delete ay paglimot sa halip na pag-revoke, dahil muling lumilitaw ang agent sa sandaling mag-attest ito muli."
+    "en": "7312163578d55aee",
+    "text": "ban, unban, delete at join-token. IPINAPATUPAD ang ban sa AttestAgent, na siyang pumipigil dito na maging kasinungalingan; ang delete ay paglimot sa halip na pag-revoke, dahil muling lumilitaw ang agent sa sandaling mag-attest ito muli. Ang join-token ay gumagawa ng join token para sa isang sidecar agent (#324), na ibinibigay nang isang beses lamang, na may alias na `agentId`."
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",
@@ -2071,6 +2111,30 @@
     "en": "853d31fe2e7b16e4",
     "text": "NON-SPEC. Ang sentral na table ng bawat failure condition na kayang gawin ng serbisyong ito, STS-<SUBSYSTEM>-<NNNN>, bilang JSON: bawat code kasama ang subsystem nito, kung ano ang nabigo, kung ano ang sinasabi sa CLIENT sa bokabularyo ng sarili nitong protocol, at ilang row ng hawak na audit log ang may dala nito sa realm na ito — sinasala ayon sa subsystem, text at ?seen=1, naka-page gamit ang ?page= at ?per=. HINDI KAILANMAN IPINAPADALA SA CLIENT ANG CODE: nasa audit row at sa log line lang ito. READ ONLY — source ang table. Sinasalamin ang GET /admin/error-codes; ang parehong table ay docs/error-codes.md."
   },
+  "stsmetadata.endpoints./admin-api/audit-export.what": {
+    "en": "c975b83632fa12f4",
+    "text": "NON-SPEC (#641). Ang iginuguhit ng Monitoring → Audit export: bawat destinasyon nang wala ang mga secret nito, at ang queue at mga delivery counter ng process na ito. Inihahatid ng bawat process ang sarili nitong mga event."
+  },
+  "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
+    "en": "c3015da7d4779805",
+    "text": "NON-SPEC (#641). add, update, remove, enable, disable at test: ang anim na kilos ng console, bawat isa ay naka-audit. Tinatanggap ang token at hindi kailanman ibinabalik. Hindi audit row ang test event."
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717). Ang iginuguhit ng Server configuration → Itsura ng pag-sign in, sa realm na hiniling: ang layout, ang apat na kulay at ang mga tonong hinango mula sa mga ito, ang contrast nila laban sa WCAG 2.2 AA, ang pangalang ipinapakita, ang naka-imbak na logo nang wala ang mga byte nito, at ang mga setting ng pahina."
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717). Ang body ay ang larawan: isang PNG, JPEG o WebP, ayon sa mga byte nito, hindi hihigit sa branding.logoMaxBytes. Pinapalitan nito ang logo ng realm at ina-audit kasama ang digest nito."
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717). Sabay na isinusulat ng save ang mga branding setting ng realm, tinatanggihan ang teksto o mga link na mas mababa sa 4.5:1 laban sa card; inaalis ng remove-logo ang logo at ina-audit ito."
+  },
+  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
+    "en": "80d0dc13ebf1f23b",
+    "text": "Inihahambing ang bawat naka-imbak na audit row sa keyed checksum nito at iniuulat ang mga hindi na tugma. Walang binabago."
+  },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",
     "text": "NON-SPEC. Kung ano ang nangyari rito, sunud-sunod, bilang JSON: bawat authentication, sign-on session, LDAP directory operation, interaksyon sa console, tawag sa management API at tawag sa protocol endpoint, pinakabago muna, sinasala ayon sa category, action, outcome, actor at free text at naka-page gamit ang ?page= at ?per=. WALANG CREDENTIAL NA KAILANMAN NASA ROW — walang password, bearer token, assertion o body; pinangangalanan ng modify ang mga attribute na binago nito at hindi kailanman ang mga value nila. IPAGPATULOY AYON SA `at`, hindi ayon sa `seq` (#465). Natatangi ang `seq` sa bawat proseso ng serbisyo at hindi kailanman ginagamit muli, at tumataas ito sa loob ng bawat proseso, ngunit ang bawat worker thread ay nagbibilang mula sa sarili nitong bloke, kaya ang mga numero ay hindi iisang pagkakasunod-sunod at ang \"lahat pagkatapos ng 4102\" ay nakakaligtaan ng isang mas huling kaganapang naitala sa mas mababang numero. Ang `origin` ang pumapantay sa `seq`. Ang page 2 na kinuha isang segundo pagkatapos ng page 1 ay puwedeng umulit ng row na lumipat dito. READ ONLY — isa sa dalawang resource dito na ganoon, ang isa pa ay /admin-api/delegation. Walang clear operation, dahil ang erase control sa hindi protektadong API ay gagawing hindi masagot ng audit log ang nag-iisang tanong na dahilan ng pag-iral nito. Sinasalamin ang GET /admin/audit."
@@ -2099,6 +2163,14 @@
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). Isang page ng mga residente ng ibang cell, sinasagot ng cell na iyon lang kung saan pinapahintulutan ng release policy nito."
   },
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). GET /admin/malware-scanning sa JSON: kung ini-scan ang mga in-upload na file at ang ICAP service na nag-i-scan. Walang binabago."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). Ipinapadala sa naka-configure na ICAP service ang EICAR test file at nagtatagumpay lamang kung na-flag ito ng service."
+  },
   "stsmetadata.endpoints./admin-api/listeners.what": {
     "en": "6a6a1ecfd0643325",
     "text": "NON-SPEC (#423, #472). GET /admin/listeners sa JSON: ang mga built-in na listener, ang mga custom listener na nakikita ng realm (ang sa serbisyo at ang sarili nito), bawat hosted application kasama ang mga listener na kinaroroonan nito at ang isa kung saan ito ina-advertise, kung ano ang mali, at ang TLS policy at client authentication ng bawat listener. Wala itong binabago."
@@ -2114,6 +2186,10 @@
   "stsmetadata.endpoints./admin-api/config.what": {
     "en": "de1ba6721d3df738",
     "text": "NON-SPEC. Bawat setting, ang effective value nito, at ang pinagmulan ng value na iyon — override, environment variable, ang appconfig file o ang env/defaults.js sa ilalim nito. Kapareho ng GET /admin/config."
+  },
+  "stsmetadata.endpoints./admin-api/config-dump.what": {
+    "en": "56a8ec7f8dbef7bb",
+    "text": "NON-SPEC. Bawat configuration parameter, global at bawat realm, na nakatakip ang bawat sensitibong value. Sumasalamin sa GET /admin/config-dump."
   },
   "stsmetadata.endpoints./admin-api/config/:action.what": {
     "en": "0493cb479489bbd8",
@@ -2563,6 +2639,30 @@
     "en": "2f7afe4a35fac4a3",
     "text": "ipinapadala ang browser sa isang BANYAGANG identity provider — isang <AuthnRequest>, isang inter-site transfer URL, wa=wsignin1.0 o isang OAuth 2.0 authorization request, alinman ang sinasabi ng relationship"
   },
+  "stsmetadata.endpoints./federation/initiate-login/:id.what": {
+    "en": "13e887ac0bdf18ce",
+    "text": "OpenID Connect Core 1.0 seksiyon 4 (#930): ang login initiation endpoint na inirerehistro ng isang OpenID Connect na ugnayan sa partner nito bilang initiate_login_uri, GET o POST. TINATANGGIHAN (403) maliban kung itinakda ng ugnayan ang fedInitiateLogin, dahil kahit anong pahina ay makapagpapadala ng browser dito; ang `iss` ay KINAKAILANGAN at dapat ay ang fedPeer ng ugnayan (400 kung hindi); ang `login_hint` ay ipinapasa sa partner; ang `target_link_uri` ay sinusundan lamang patungo sa isang path sa serbisyong ito at itinatapon kung hindi, kaya ang endpoint ay hindi isang open redirector."
+  },
+  "stsmetadata.endpoints./federation/initiate-login/:id.effect": {
+    "en": "a3604c921948a069",
+    "text": "ipinapadala ang browser sa partner na OpenID Provider na may karaniwang authorization request, gaya ng ginagawa ng /federation/login/{id}"
+  },
+  "stsmetadata.endpoints./federation/request/:id/:handle.what": {
+    "en": "6d385ce6406cf9af",
+    "text": "OpenID Connect Core 1.0 seksiyon 6.2 (#930): ang Request Object na binabanggit ng request_uri ng isang authorization request, para sa ugnayang may fedRequestObject request_uri — application/oauth-authz-req+jwt, naka-sign sa ilalim ng fedRequestObjectSigningAlg gamit ang key ng realm na ito (o hindi naka-sign, none). Sinasagot nang ISANG BESES: ginugugol ng pagkuha ng partner ang handle, at ang address na walang binabanggit ay 404."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.what": {
+    "en": "0c9410e62fd9d162",
+    "text": "OpenID Connect Discovery 1.0 seksiyon 2 (#930), para sa ugnayang naka-on ang fedWebFinger at fedDiscovery: isang form para sa identifier (acct:user@host o isang URL), at ang sagot nito — WebFinger sa host na iyon sa ilalim ng outbound policy (walang internal address sa product mode, walang redirect, ang limit), isang issuer na dapat magsimula sa fedPeer, ang discovery document nito, at isang link na dapat sundan ng tao upang mag-sign in doon. Naka-off, 403."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.effect": {
+    "en": "f47b0d4c3244e2de",
+    "text": "tinatawagan ang host na binabanggit ng na-type na identifier — ang nag-iisang federation request na pinipili ng caller ang host"
+  },
+  "stsmetadata.endpoints./federation/fragment.js.what": {
+    "en": "4717183880c5fc95",
+    "text": "HINDI-SPEC na resource ng isang spec endpoint (#930): ang iisang script na pinapatakbo ng pahina ng assertion consumer service kapag pinili ng isang OpenID Connect na ugnayan ang fedResponseMode=fragment. Ang fragment ay hindi kailanman umaabot sa server, kaya binabasa ito ng pahina, inaalis ito sa address at sa history entry, at ipino-POST ito sa parehong address, kung saan ito kinokonsumo gaya ng isang form_post na response. Walang markup na makababasa ng fragment, kaya walang button na mababalikan."
+  },
   "stsmetadata.endpoints./federation/acs/:id.what": {
     "en": "b08b39ce5a2fd9d9",
     "text": "IISANG PATH ANG TUMATANGGAP NG LAHAT NG LIMANG PROTOCOL: ang lima ay mangangahulugan ng limang URL na iko-configure sa partner at apat na paraan para mai-configure ang mali, na ang pagkabigo ay 404 sa browser PAGKATAPOS ng matagumpay na sign-in sa ibang lugar. **ITO ANG NAG-IISANG ENDPOINT SA SERBISYONG ITO NA HINDI PERMISSIVE, AT HINDI MAAARING MAGING GANOON.** Ang dumarating ay isang unauthenticated na HTTP request na nagsasabing isang tao ito; ang tanging nasa pagitan niyon at ng session ay ang signature check laban sa certificate na naka-configure sa relationship. Kaya: dapat ma-verify ang signature laban sa KEY NA IYON at hindi laban sa isang dala ng dokumento, ang issuer ay dapat ang naka-configure na partner, ang assertion ay dapat nasa loob ng validity window nito, at ang response ay dapat sumasagot sa request na ipinadala ng serbisyong ito maliban kung iba ang sinasabi ng fedAllowUnsolicited. Bawat pagtanggi ay gumuguhit ng page na nagpapangalan sa check at nagsusulat ng fedLastError sa relationship — hindi ito kailanman nagre-redirect, dahil nagtagumpay na ang sign-in ng tao sa partner at ang tanging kawili-wiling tanong ay kung ano ang hindi nagustuhan ng serbisyong ito sa sagot. Ang ENCRYPTED na assertion, identifier o attribute, o JWE ID Token, ay dine-decrypt gamit ang sariling key ng relationship sa ilalim ng eksaktong mga algorithm na inilalathala nito at sinusuri ang signature nito sa nasa loob (#168); iisang code ang bawat decryption failure, kaya hindi oracle ang sagot; tinatanggihan ang AES-CBC at rsa-1_5 sa bawat mode, at tinatanggihan ang PLAINTEXT na assertion sa product mode maliban kung itinatakda ng relationship ang fedAllowUnencrypted."
@@ -2630,6 +2730,10 @@
   "stsmetadata.endpoints./federation/metadata/:id.what": {
     "en": "bbe97109d1d3a58e",
     "text": "Isang SPSSODescriptor sa halip na IDPSSODescriptor — ito ang kalahati ng serbisyong ito na isang service provider. Bawat relationship, dahil iba ang tawag ng serbisyong ito sa sarili nito sa bawat partner. UNSIGNED, sinadya, at ito ang nag-iisang metadata document dito na ganoon: signed ang /saml2/metadata dahil nakikinabang ang service provider na nagko-configure ng tiwala nito sa serbisyong ito sa pagsuri kung sino ang sumulat ng dokumento, at dito ay sinasabihan ang partner kung saan magpapadala ng mga bagay ng mismong key na gagamitin sa paggawa ng signature. Nagbabalik ito ng 404 para sa relationship na hindi SAML, samantalang walang nagbabalik ng 404 sa /saml2/metadata — dahil ang isang iyon ay nagmi-mint ng dokumento para sa anumang entityID na hiningi at ang isang ito ay naglalarawan ng kaayusang umiiral o hindi. Mula noong #168, dala ng sa SAML 2.0 relationship ang KeyDescriptor use=\"encryption\" kasama ang mga EncryptionMethod na tinatanggap nito, at nagkakaroon din ng isa ang WS-Federation relationship: isang EntityDescriptor na may fed:ApplicationServiceType RoleDescriptor (WS-Federation 1.2 section 3.1), ang PassiveRequestorEndpoint nito at ang encryption key nito."
+  },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "NON-SPEC sa catalogue ng serbisyong ito: walang registration ang OAuth profile ng AT Protocol, kaya ang address ng pampublikong JSON document na ito ang client id, at kinukuha ito ng server ng Bluesky. Walang key ito, at sumasagot ng 404 ang relationship na hindi magagamit."
   },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",
@@ -3043,10 +3147,6 @@
     "en": "67b6934792210c8e",
     "text": "Session Management section 3.2 (#121), habang naka-on ang oauth2.sessionManagement sa realm, at 404 na nagpapangalan sa setting na iyon kung hindi. Ifine-frame ito ng relying party at nagpo-post ng \"client_id session_state\"; ikinukumpara iyon ng script nito sa OP browser state na nababasa nito at sumasagot ng changed, unchanged o error. Ang nag-iisang page dito na maaaring i-frame, at ng mga origin lamang ng mga rehistradong redirect URI ng realm."
   },
-  "stsmetadata.endpoints./oauth2/check_session.js.what": {
-    "en": "d0428e57643dabd6",
-    "text": "Ang nag-iisang script ng OP iframe, inihahain mula sa origin na ito dahil tumatakbo ang bawat page dito sa ilalim ng script-src 'none' o 'self'. Sinasagot ang postMessage ng changed, unchanged o error, ipinopost lamang sa nagtatanong na origin."
-  },
   "stsmetadata.endpoints./oauth2/logout.what": {
     "en": "bfeb68315a7d7f5f",
     "text": "Ang itinuturo ng end_session_endpoint sa OIDC discovery document, sa GET at POST (#124). Vina-validate ang request BAGO may matapos; vine-verify ang id_token_hint bilang ID Token na ibinigay ng server na ito (binibilang pa rin ang expired) at pinangangalanan nito ang client; hinihilingang magkumpirma ang tao maliban kung para mismo sa session na ito ang hint na iyon; sinusundan lamang ang post_logout_redirect_uri kapag eksaktong inirehistro ito ng client — sinusundan pa rin ng development ang isa para sa client na walang inirehistro, hindi ng product — at ibinabalik kasama nito ang state. Mga page ang mga pagtanggi, hindi JSON."
@@ -3220,8 +3320,8 @@
     "text": "Nire-revoke din ang Native SSO device secret (#130). Revocation na nagkakabisa: nag-uulat pagkatapos ang introspection ng inactive. Nag-a-authenticate ang client (sa development lamang kapag nagpapakita ito ng credential), nire-revoke lamang ang sarili nitong mga token, at isinasama ng refresh token ang grant nito."
   },
   "stsmetadata.endpoints./oauth2/register.what": {
-    "en": "80ba1f611099c06a",
-    "text": "Nagrerehistro ng client at ibinabalik ang mga credential nito kasama ang registration access token. Ang registration AY ang application entry sa ilalim ng ou=applications — walang ikalawang store — kaya parehong client ang nakikita ng /admin/applications at ng isang ldapsearch. Sa RFC 9700 mode ay TINATANGGIHAN nito ang metadata na tatanggihan ng ibang endpoint sa paggamit: ang password grant (section 2.4), ang implicit grant at anumang response type na nagpapangalan ng token (2.1.2), at ang http redirect URI na wala sa loopback (2.6), bawat isa ay may invalid_client_metadata at ang section. Ang pag-record ng permission na laging tatanggihan ng token endpoint ay ang pangako ng discovery document na sinira sa kabilang direksyon. ISINASARA ITO NG PRODUCT MODE (403) maliban kung naka-on ang oauth2.openRegistration — o may dalang software statement na pinagkakatiwalaan ng realm na ito ang registration at naka-on ang oauth2.softwareStatementOpensRegistration, kung saan nananatiling ina-advertise ang registration_endpoint; kung wala sa dalawa, umaalis ito sa parehong discovery document at ginagawa ang application sa /admin o /admin-api. Vine-verify ang SOFTWARE STATEMENT (RFC 7591 section 2.3) bago ang anumang ibang check ng metadata: ibinigay ng realm na ito (typed software-statement+jwt) o ng application na nagdedeklara ng issuer sa oauthSoftwareStatementIssuer; nangingibabaw ang mga claim ng pinagkakatiwalaang isa at ibinabalik ito nang hindi binabago; kung hindi ay invalid_software_statement o unapproved_software_statement. Mga setting ang client_id prefix, ang mga random na laki at client_secret_expires_at (oauth2.registeredClientIdPrefix at ang mga katabi nito)."
+    "en": "2a1a65e6a8ada54e",
+    "text": "Nagrerehistro ng client at ibinabalik ang mga credential nito kasama ang registration access token. Ang registration AY ang application entry sa ilalim ng ou=applications — walang ikalawang store — kaya parehong client ang nakikita ng /admin/applications at ng isang ldapsearch. Sa RFC 9700 mode ay TINATANGGIHAN nito ang metadata na tatanggihan ng ibang endpoint sa paggamit: ang password grant (section 2.4), anumang response type na nagpapangalan ng token at ang implicit grant maliban kung kailangan ito ng id_token o code id_token (2.1.2, na maaaring alisin ng isang administrator bawat realm gamit ang oauth2.allowImplicitTokenResponses), at ang http redirect URI na wala sa loopback (2.6), bawat isa ay may invalid_client_metadata at ang section. Ang pag-record ng permission na laging tatanggihan ng token endpoint ay ang pangako ng discovery document na sinira sa kabilang direksyon. ISINASARA ITO NG PRODUCT MODE (403) maliban kung naka-on ang oauth2.openRegistration — o may dalang software statement na pinagkakatiwalaan ng realm na ito ang registration at naka-on ang oauth2.softwareStatementOpensRegistration, kung saan nananatiling ina-advertise ang registration_endpoint; kung wala sa dalawa, umaalis ito sa parehong discovery document at ginagawa ang application sa /admin o /admin-api. Vine-verify ang SOFTWARE STATEMENT (RFC 7591 section 2.3) bago ang anumang ibang check ng metadata: ibinigay ng realm na ito (typed software-statement+jwt) o ng application na nagdedeklara ng issuer sa oauthSoftwareStatementIssuer; nangingibabaw ang mga claim ng pinagkakatiwalaang isa at ibinabalik ito nang hindi binabago; kung hindi ay invalid_software_statement o unapproved_software_statement. Mga setting ang client_id prefix, ang mga random na laki at client_secret_expires_at (oauth2.registeredClientIdPrefix at ang mga katabi nito)."
   },
   "stsmetadata.endpoints./oauth2/register/:client_id.what": {
     "en": "53b9b1f559379ceb",
@@ -3374,6 +3474,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "sumasagot ng 404 maliban kung idineklara ang application para sa did family at may key ito"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "Ang dokumento ng DID ng isang did:web na inilalathala ng realm na ito para sa isang tao (#1291), kung saan nire-resolve ng did:web method ang did:web:<host>[:realm:<id>]:users:<rid>, ang <rid> ay 128 random na bit: ang mga susi ng kasalukuyang bersyon bilang mga JsonWebKey2020 method sa ilalim ng authentication at assertionMethod, o ang bersyong hinihingi ng versionId o versionTime ng DID Core, mula sa isang kasaysayang hindi kailanman muling isinusulat. application/did+json, no-store. Kapag naka-deactivate — ng tao, ng isang administrator, o habang naka-disable ang account — sumasagot ito ng 410 Gone na may { id, deactivated: true }, at iniuulat ng isang resolver ang deactivated sa didDocumentMetadata. Inilalathala mula sa portal ng tao kung saan naka-on ang did.personPublishing."
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "sumasagot ng 410 Gone kapag naka-deactivate na ang DID o naka-disable ang account, at 404 para sa address na hindi kailanman nailathala"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",
@@ -3744,8 +3852,8 @@
     "text": "Ang 1.2 Web (Passive) Requestor Profile: /wsfed na nagdi-dispatch ayon sa wa, ang sign-in screen, signed federation metadata sa AD FS path, at wsignout1.0."
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "32437a522ad16a77",
-    "text": "RST / RSTR sa SOAP sa /sts, sa lahat ng apat na bersyon (1.0 hanggang 1.4), nag-iisyu ng alinmang SAML dialect na signed ang assertion at opsyonal na encrypted para sa certificate ng requestor."
+    "en": "3d88db91fab2cd5f",
+    "text": "RST / RSTR sa SOAP sa /sts, sa lahat ng apat na bersyon (1.0 hanggang 1.4), na naglalabas ng alinmang SAML dialect na naka-sign ang assertion at opsyonal na naka-encrypt sa certificate ng humihiling, isang JWT, o isang Kerberos ticket."
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

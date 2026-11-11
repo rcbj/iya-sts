@@ -528,6 +528,62 @@ function checkComplianceReport(t) {
   log.debug("Leaving checkComplianceReport().");
 }
 
+// #1398. `CertificateTrust.count()` called `realms.run(realmId)` with the id
+// string. The async context then held that string. A string is truthy, so
+// `current()` returned it, and the directory flush's read of
+// `persistence.minted` threw TypeError on `realm.overrides` (STS-STORE-0002)
+// and retried forever. `run()` now stores the record the id names.
+function checkRunById(t) {
+  log.debug("Entering checkRunById().");
+  t.log.info('realms.run() accepts a realm id');
+  withRealm(t, 'trl-id', { 'oauth2.rfc9700': true }, function () {
+    let thrown = null;
+    let minted = null;
+    realms.run('trl-id', function () {
+      try {
+        minted = config.value('persistence.minted');
+      } catch (e) {
+        log.debug("Caught in checkRunById(): " + ((e && e.message) || e));
+        thrown = (e && e.message) || String(e);
+      }
+      t.equal(realms.currentId(), 'trl-id',
+              'the ambient id is the one run() was given');
+      t.equal(config.value('oauth2.rfc9700'), true,
+              'the id resolves to the realm, so its overrides are read');
+    });
+    t.equal(thrown, null,
+            'reading persistence.minted inside run(id) does not throw');
+    t.equal(typeof minted, 'boolean',
+            'persistence.minted resolves to a boolean');
+    const bound = realms.bind('trl-id', function () {
+      return config.value('oauth2.rfc9700') && realms.currentId();
+    });
+    t.equal(bound(), 'trl-id',
+            'bind() resolves the id when the callback runs');
+  });
+  let seen = null;
+  realms.run('default', function () {
+    seen = realms.currentId();
+  });
+  t.equal(seen, realms.DEFAULT_ID, 'run("default") is the default realm');
+  let unknown = null;
+  let unknownMinted = null;
+  try {
+    realms.run('trl-no-such', function () {
+      unknown = realms.currentId();
+      unknownMinted = config.value('persistence.minted');
+    });
+  } catch (e) {
+    log.debug("Caught in checkRunById(): " + ((e && e.message) || e));
+    unknown = (e && e.message) || String(e);
+  }
+  t.equal(unknown, 'trl-no-such',
+          'an unknown id stays the id that was named');
+  t.equal(typeof unknownMinted, 'boolean',
+          'a setting read under an unknown id does not throw');
+  log.debug("Leaving checkRunById().");
+}
+
 function runChecks(t) {
   log.debug("Entering runChecks().");
   checkMarker(t);
@@ -536,6 +592,7 @@ function runChecks(t) {
   checkReadingEnd(t);
   checkReadingLock(t);
   checkComplianceReport(t);
+  checkRunById(t);
   log.debug("Leaving runChecks().");
 }
 

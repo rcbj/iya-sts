@@ -40,8 +40,8 @@
     "text": "「本服務在夥伴處的 client_id」。屬於我們、由他們簽發——不要與應用程式項目上的 oauthClientId 混淆，後者是此處客戶端的 ID。"
   },
   "fed.schema.attributes.fedResponseType.what": {
-    "en": "b2682d37a527ee98",
-    "text": "code（預設）或 id_token。`id_token` 搭配 form_post 是「不需要」後端通道的形式，因此不需要權杖端點、客戶端秘密，也沒有外送請求——這是在完全沒有對外連線的部署中與 OIDC 夥伴聯盟的唯一方式。"
+    "en": "885dc55158b43f26",
+    "text": "code（預設）、id_token，或 OpenID Connect 其他四種之一：id_token token（隱含）、code id_token、code token 及 code id_token token（混合）。`id_token` 搭配 form_post 是「不需要」後端通道的形式，因此不需要權杖端點、客戶端秘密，也沒有外送請求——這是在完全沒有對外連線的部署中與 OIDC 夥伴聯盟的唯一方式。來自授權端點的 ID Token 必須攜帶 nonce，而凡隨附代碼或存取權杖之處都必須攜帶 c_hash 及 at_hash。"
   },
   "fed.schema.attributes.fedSignRequest.what": {
     "en": "df6a6c1b53d5529c",
@@ -64,8 +64,8 @@
     "text": "「此領域以客戶端認證取得夥伴串流管理存取權杖的位置」。空白則使用 fedTokenUrl——登入關係已在撥接的同一個授權伺服器。"
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "ed55c437fcd421f1",
-    "text": "以客戶端認證要求的範圍。空白則要求 `ssf.manage`，它包含讀取。"
+    "en": "9a4b1c668a3d1dd5",
+    "text": "以客戶端憑證請求的範圍。留空則請求 `ssf.read ssf.manage`，即 CAEP 互通設定檔的兩個範圍（第 2.7.3 節）。"
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

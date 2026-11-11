@@ -159,7 +159,8 @@ import zlib = require('zlib');
 import realms = require('../common/realms');
 // The other listeners SAML 2.0 is on, for its metadata (#472). A LEAF.
 import listenerMap = require('../common/listener_map');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
+import ClosedSets = require('../common/closed_sets');
 // Every signature and every cipher in this service is in one module since
 // 2026-08-27. This file signs four documents and verifies two, and xml-crypto
 // is no longer required here: `common/crypto.js` sits over the parent
@@ -222,6 +223,7 @@ import mode = require('../common/mode');
 import authnContext = require('./authn_context');
 // The EAP class URIs (#736). A leaf; requiring it moves no route.
 import PhishingResistance = require('../common/phishing_resistance');
+import SsoConsent = require('../common/sso_consent');
 import documentSettings = require('./document_settings');
 // The certificate the back channel presents, as a metadata key (#248).
 import listenerKeys = require('./listener_keys');
@@ -229,8 +231,12 @@ import returnAddress = require('./return_address');
 import personAttributes = require('./person_attributes');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
 // no route and closes no cycle. Only the pages a PERSON passes through use it
-// — the hand-off pages and the sign-out pages; refusals stay English.
+// — the hand-off pages, the sign-out pages and, since #1327, the refusals.
 import PageLocale = require('../common/page_locale');
+// THE ONE ERROR PAGE (#1326, #1327): `samlError()` draws it. A library that
+// requires `audit`, `realms` and the page's language, none of which requires
+// this module, so it closes no cycle and moves no route.
+import ErrorPage = require('../common/error_page');
 // The description page's shell and script (#584).
 import DescriptionPages = require('../common/description_pages');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an artifact is spent
@@ -249,6 +255,8 @@ const NS_SAMLP = 'urn:oasis:names:tc:SAML:2.0:protocol';
 
 const NS_SAML = 'urn:oasis:names:tc:SAML:2.0:assertion';
 
+// SAML V2.0 Metadata Profile for Algorithm Support Version 1.0 (#1368).
+const NS_ALG = 'urn:oasis:names:tc:SAML:metadata:algsupport';
 const NS_MD = 'urn:oasis:names:tc:SAML:2.0:metadata';
 
 const NS_DS = 'http://www.w3.org/2000/09/xmldsig#';
@@ -643,6 +651,35 @@ class Saml2Sso {
    *
    * @returns the count
    */
+  // WHAT THIS REALM CAN VERIFY, PUBLISHED (#1368): the SAML V2.0 Metadata Profile
+  // for Algorithm Support 1.0, inside md:Extensions, which a consumer that does
+  // not know the profile ignores (SAML metadata section 2.3.1).
+  private algorithmSupport(): string {
+    const { config, stsCrypto } = this.deps;
+    const { log, xmlEscape } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.algorithmSupport().");
+    if (config.value('saml2.publishAlgorithmSupport') === false) {
+      log.debug("Leaving Saml2Sso.algorithmSupport(). Off.");
+      return '';
+    }
+    const digests: Record<string, any> = {};
+    stsCrypto.xmlSignatureAlgorithms().digests.forEach(function (row: any) {
+      digests[row.uri] = row;
+    });
+    const support = stsCrypto.signaturePolicy.xmlAlgorithmSupport(digests);
+    const element = function (name: string, uri: string): string {
+      return '<alg:' + name + ' xmlns:alg="' + NS_ALG + '" Algorithm="' +
+        xmlEscape(uri) + '"/>';
+    };
+    const out = support.digests.map(function (uri: string) {
+      return element('DigestMethod', uri);
+    }).concat(support.signing.map(function (uri: string) {
+      return element('SigningMethod', uri);
+    })).join('');
+    log.debug("Leaving Saml2Sso.algorithmSupport().");
+    return out;
+  }
+
   artifactCount(): number {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.artifactCount().");
@@ -927,8 +964,11 @@ class Saml2Sso {
     res.status(404)
        .type('text/plain')
        .set('Cache-Control', 'no-store')
-       .send('There is no SAML 2.0 service provider registered here as "' +
-             scoped.entityId + '", so ' + path + ' has nothing to answer ' +
+       // The name as ClosedSets.saidName() says one: a caller's markup is
+       // percent-encoded rather than repeated.
+       .send('There is no SAML 2.0 service provider registered here as ' +
+             ClosedSets.saidName(scoped.entityId) + ', so ' + path +
+             ' has nothing to answer ' +
              'for it. This identity provider publishes itself only to a ' +
              'service provider an operator registered (product mode).\n');
     log.debug("Leaving Saml2Sso.refusedUnregistered(). 404.");
@@ -1548,28 +1588,87 @@ class Saml2Sso {
   // tested. Before that point there is nowhere to send anything, and the page
   // is the only honest answer — the same position `wsfed.ts` is in for its
   // whole profile.
+  //
+  // **THE PAGE IS `common/error_page.ts`'s SINCE #1327** (rcbj's design on
+  // #1326): the sentence in the box in the page's language, chosen by the
+  // error code the caller marked (`samlErrors.refusal.<code>`, or the
+  // `pageKey` a caller names where one code covers two cases), else a
+  // general one; why it is a page and not a Response collapsed below it; the
+  // way back; and the diagnostics. The caller's English `title` and `detail`
+  // are no longer the page's prose: they are shown AS DATA in the
+  // diagnostics (the summary and the detail an operator quotes), beside the
+  // service provider, the assertion consumer service URL, the binding and
+  // the RelayState where the caller or the request knows them. The status is
+  // the caller's, unchanged. No protocol error is in the box: nothing here
+  // sends one, and the STS code is an operator's name, never shown.
+  //
+  // `background` is a key under `samlErrors.background.` the caller names for
+  // a case with something more to explain; `diag` is `{ sp, acs, binding,
+  // relayState, pageKey }`, each optional.
   // error-code: none — the helper's definition, not a call to it
-  private samlError(res, status, title, detail, extra?) {
-    const { log, xmlEscape } = this.deps.helpers;
+  private samlError(res, status, title, detail, background?, diag?) {
+    const { errorCodes } = this.deps;
+    const { log } = this.deps.helpers;
+    const { sessionOf } = this.deps.authn;
     // error-code: none — the helper's own debug line; each caller marks its
     // code
     log.debug("Entering Saml2Sso.samlError(). status=" + status + ", title=" +
               title);
-    const inner = '<h1>' + xmlEscape(title) + '</h1>' +
-      '<p class="sub">SAML 2.0 Web Browser SSO at <code>' + SSO_PATH +
-      '</code></p><div ' +
-      'class="err">' + xmlEscape(detail) + '</div>' + (extra || '') +
-      '<div class="meta"><div>This is a page rather than a ' +
-      '<code>&lt;samlp:Response&gt;</code> because the request never got as ' +
-      'far as naming somewhere to send one. Once an assertion consumer ' +
-      'service URL is known, a failure is delivered there as a Response ' +
-      'carrying a status code — which is what section 3.2.2 requires and is ' +
-      'the error path a service provider is least likely to have exercised. ' +
-      'The request is logged in full at debug level.</div></div>';
-    res.status(status)
-       .type('text/html')
-       .set('Cache-Control', 'no-store')
-       .send(this.page(title, inner));
+    const req: any = res.req || { headers: {}, query: {} };
+    const known = diag || {};
+    let params: any = {};
+    try {
+      params = this.paramsOf(req);
+    } catch (e) {
+      // A body that cannot be read leaves the request's own values out of
+      // the diagnostics; the page still says what was wrong.
+      log.debug("Caught in Saml2Sso.samlError(): " + ((e && e.message) || e));
+    }
+    let username = '';
+    try {
+      const session: any = sessionOf(req);
+      username = String((session && session.user &&
+                         session.user.username) || '');
+    } catch (e) {
+      // No session is readable here: the page names nobody signed in.
+      log.debug("Caught in Saml2Sso.samlError(): " + ((e && e.message) || e));
+    }
+    const sp = String(known.sp || params.providerId || '');
+    const t = PageLocale.translatorFor(req, { application: sp,
+                                              username: username });
+    const code = String(errorCodes.codeOf(res) || '');
+    const signOut = String(req.path || '').indexOf(SLO_PATH) >= 0;
+    const heading = status === 503 ? t.text('samlErrors.title.busy')
+      : (signOut ? t.text('samlErrors.title.signOut')
+                 : t.text('samlErrors.title.signIn'));
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: status,
+      title: heading,
+      message: ErrorPage.sentence(t, [
+        known.pageKey ? 'samlErrors.refusal.' + known.pageKey : '',
+        code ? 'samlErrors.refusal.' + code : '',
+        'samlErrors.refusal.general']),
+      // Why a page: the profile's reason always, and the case's own after it.
+      background: '<p>' + t.html('samlErrors.background.saml2') + '</p>' +
+        (background
+          ? '<p>' + ErrorPage.sentence(t,
+              ['samlErrors.background.' + background]) + '</p>'
+          : ''),
+      diagnostics: [
+        { label: t.text('errorPages.entityId'), value: sp },
+        { label: t.text('errorPages.acsUrl'), value: known.acs },
+        { label: t.text('errorPages.binding'), value: known.binding },
+        { label: t.text('errorPages.relayState'),
+          // An unsolicited sign-in carries it as `target` (#189).
+          value: known.relayState !== undefined ? known.relayState
+            : (params.RelayState || params.target) },
+        { label: t.text('errorPages.signedInAs'), value: username },
+        { label: t.text('errorPages.summary'), value: title },
+        { label: t.text('errorPages.detail'), value: detail }
+      ]
+    });
     // error-code: none — the helper's own debug line; each caller marks its
     // code
     log.debug("Leaving Saml2Sso.samlError().");
@@ -1842,6 +1941,26 @@ class Saml2Sso {
   // is the worst of the three, because the person testing their client would
   // believe the wrong thing about what their client accepted. So it is logged
   // at WARN, every time, naming the application and what to do about it.
+  // The certificate chosen, held to its use case under paranoid PKI mode (#1360):
+  // in date, may encipher, not revoked. It is registered on the application,
+  // which named it, so it needs no chain (rcbj). Refused, there is no certificate
+  // and the answer says why, so `encryptFor()` does not send what it was asked
+  // to seal.
+  private heldRecipient(pem: string, source: string): any {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.heldRecipient(). " + source);
+    const held = require('../common/certificate_trust')
+      .pinnedSync('encryption-recipient', pem, { named: true });
+    if (!held.ok) {
+      log.warn(this.deps.errorCodes.tag(held.code) + 'saml2: ' + source +
+               ' is not encrypted to: ' + held.why);
+      log.debug("Leaving Saml2Sso.heldRecipient(). Refused.");
+      return { pem: '', source: '', refused: held.why };
+    }
+    log.debug("Leaving Saml2Sso.heldRecipient().");
+    return { pem: pem, source: source };
+  }
+
   private encryptionCertificateFor(spEntityId): any {
     const { applications, mode, spMetadata } = this.deps;
     const { log } = this.deps.helpers;
@@ -1859,8 +1978,8 @@ class Saml2Sso {
     if (configured) {
       log.debug("Leaving Saml2Sso.encryptionCertificateFor(). Its own " +
                 "encryption certificate.");
-      return { pem: spMetadata.toPem(configured),
-               source: 'samlEncryptionCertificate' };
+      return this.heldRecipient(spMetadata.toPem(configured),
+                                'samlEncryptionCertificate');
     }
     // THE FIRST REGISTERED SIGNING CERTIFICATE THAT CAN BE ENCRYPTED TO:
     // since the #37 follow-up a service provider may sign with EC, EdDSA or a
@@ -1879,11 +1998,15 @@ class Saml2Sso {
     if (signing) {
       log.debug("Leaving Saml2Sso.encryptionCertificateFor(). Its signing " +
                 "certificate.");
-      return { pem: spMetadata.toPem(signing),
-               source: 'samlSigningCertificate' };
+      return this.heldRecipient(spMetadata.toPem(signing),
+                                'samlSigningCertificate');
     }
     const observed = rsaOnly(fields.samlObservedSigningCertificate);
-    if (observed && mode.encryptsToObservedCertificates()) {
+    // An OBSERVED certificate is what the request itself supplied, so under
+    // paranoid PKI mode nothing is ever encrypted to it (#1360), in either mode.
+    if (observed && mode.encryptsToObservedCertificates() &&
+        !require('../common/certificate_trust')
+          .applies('encryption-recipient')) {
       log.debug("Leaving Saml2Sso.encryptionCertificateFor(). The observed " +
                 "certificate, in development.");
       return { pem: spMetadata.toPem(observed),
@@ -1928,6 +2051,10 @@ class Saml2Sso {
               ", as=" +
               wrapper);
     const cert = this.encryptionCertificateFor(spEntityId);
+    if (cert.refused) {
+      log.debug("Leaving Saml2Sso.encryptFor(). The certificate is refused.");
+      return { xml: xml, encrypted: false, refused: true, why: cert.refused };
+    }
     if (!cert.pem) {
       log.warn('saml2: ' + (spEntityId || 'this service provider') + ' is ' +
                'configured to have ' +
@@ -2193,8 +2320,7 @@ class Saml2Sso {
   // The assertion, from the one builder. Everything the Web Browser SSO profile
   // requires of it and nothing this file decided for itself — see decision 4.
   private buildAssertionFor(request, session, spEntityId, idpEntityId, acsUrl) {
-    const { config } = this.deps;
-    const { iso, log } = this.deps.helpers;
+    const { log } = this.deps.helpers;
     const { buildSamlAssertion } = this.deps.saml2;
     log.debug("Entering Saml2Sso.buildAssertionFor(). sp=" + spEntityId);
     const user = session.user;
@@ -2218,17 +2344,12 @@ class Saml2Sso {
       // delivered to, and an InResponseTo that matches the request. A service
       // provider that checks either — and most do — refuses an assertion
       // without them, with a message that reads like a signature problem.
+      // NotOnOrAfter is omitted: the builder stamps the Conditions instant,
+      // skew included, so the two expiries are one string. A second iso()
+      // here disagreed with that instant by a millisecond.
       subjectConfirmation: {
         recipient: acsUrl,
-        inResponseTo: request.id,
-        // The SAME instant as the Conditions/NotOnOrAfter the builder computes,
-        // saml.clockSkewS included. Two expiries inside one assertion that
-        // disagree by the skew is the kind of defect a service provider reports
-        // as "assertion expired" while the console shows a window that has not
-        // closed, so this reads the setting the builder reads rather than
-        // re-deriving the lifetime on its own.
-        notOnOrAfter: iso(lifetimeMin +
-          Math.max(0, Number(config.value('saml.clockSkewS')) || 0) / 60)
+        inResponseTo: request.id
       },
       // The SESSION, not the assertion, is what a LogoutRequest names later.
       // This is the line that makes Single Logout able to find anything.
@@ -2482,7 +2603,7 @@ class Saml2Sso {
       'This service is holding as many unresolved SAML artifacts as it is ' +
       'configured to (saml2.maxArtifacts), so it cannot issue another one ' +
       'until some are resolved or expire. Nothing was sent to the service ' +
-      'provider. Try again shortly.');
+      'provider. Try again shortly.', undefined, { sp: spEntityId });
     log.debug("Leaving Saml2Sso.refuseFullArtifactStore().");
   }
 
@@ -2651,7 +2772,7 @@ class Saml2Sso {
   // store, before anything else reads it; a second arrival is refused with
   // STS-SAML-0088 once the rest of the request has been checked (below, in
   // singleSignOnChecked()). A store that cannot be asked refuses too
-  // (STS-SAML-0089): fail closed, as the artifact's claim does.
+  //: fail closed, as the artifact's claim does.
   //
   // The claim is answered in this process, synchronously, where this process
   // holds no shared claims table (`claimInProcess()`), and awaited where it
@@ -2877,7 +2998,8 @@ class Saml2Sso {
           'provider registered ahead of time (the console, /admin-api, ' +
           'RFC 7591, an LDAP add under ou=applications or verified ' +
           'metadata); one that was only seen is not registered, ' +
-          'and no Response is sent anywhere.');
+          'and no Response is sent anywhere.', undefined,
+          { sp: named, relayState: relayState });
       }
     }
 
@@ -2906,7 +3028,8 @@ class Saml2Sso {
                   "refused.");
         return this.samlError(res, 403, checked.refusal.title ||
                               'That AuthnRequest\'s signature is not accepted',
-                              checked.refusal.why);
+                              checked.refusal.why, undefined,
+        { sp: request.issuer || scoped.entityId, relayState: relayState });
       }
       verification = {
         signed: checked.assessment.signed,
@@ -2969,7 +3092,8 @@ class Saml2Sso {
         log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
                   refusal.errorCode);
         // error-code: none — marked above: refusal.errorCode is 0085–0089.
-        return this.samlError(res, 400, refusal.title, refusal.why);
+        return this.samlError(res, 400, refusal.title, refusal.why, undefined,
+          { sp: request.issuer || scoped.entityId, relayState: relayState });
       }
     }
 
@@ -3062,7 +3186,9 @@ class Saml2Sso {
       log.debug("Leaving Saml2Sso.singleSignOnChecked(). Not a registered " +
                 "assertion consumer service.");
       return this.samlError(res, 400, 'That assertion consumer service is ' +
-                                      'not registered', consumedAcs.why);
+                                      'not registered', consumedAcs.why,
+        undefined,
+        { sp: spEntityId, acs: request.acsUrl, relayState: relayState });
     }
     const acsKnown =
       applications.returnAddressesOf(known,
@@ -3084,7 +3210,8 @@ class Saml2Sso {
       errorCodes.mark(res, errorCodes.codeOf(acsWhere) || 'STS-SAML-0005');
       log.debug("Leaving Saml2Sso.singleSignOnChecked().");
       return this.samlError(res, 400, 'That assertion consumer service is ' +
-                                      'not registered', acsWhere.why);
+                                      'not registered', acsWhere.why, undefined,
+        { sp: spEntityId, acs: request.acsUrl, relayState: relayState });
     }
     const acsUrl = String(acsWhere.url);
     if (!/^https?:\/\//i.test(acsUrl)) {
@@ -3097,7 +3224,8 @@ class Saml2Sso {
         'It is "' + acsUrl + '". The response is delivered to that address ' +
         'by form POST, by redirect or as an artifact, and a relative value ' +
         'addresses this service instead — which looks exactly like a service ' +
-        'provider that ignored the response.');
+        'provider that ignored the response.', undefined,
+        { sp: spEntityId, acs: acsUrl, relayState: relayState });
     }
     let wanted = this.responseBindingFor(request);
     if (wanted.error) {
@@ -3110,9 +3238,11 @@ class Saml2Sso {
         'This request asked for ProtocolBinding="' + wanted.error + '". This ' +
         'identity provider delivers a response over HTTP POST, HTTP Redirect ' +
         'and HTTP Artifact, which are the three its metadata advertises.',
-        '<p>It is refused rather than quietly answered over HTTP POST, ' +
-        'because a service provider that asked for PAOS and received a form ' +
-        'post would conclude that PAOS worked.</p>');
+        // It is refused rather than quietly answered over HTTP POST, because
+        // a service provider that asked for PAOS and received a form post
+        // would conclude that PAOS worked — said on the page, translated.
+        'paos', { sp: spEntityId, acs: acsUrl, binding: wanted.error,
+                  relayState: relayState });
     }
     // The registered endpoint's own binding, where the metadata chose it.
     if (consumedAcs.consumed && this.deliverable(consumedAcs.binding)) {
@@ -3647,6 +3777,66 @@ class Saml2Sso {
       return;
     }
 
+    // -----------------------------------------------------------------------
+    // CONSENT TO SIGN IN TO THIS SERVICE PROVIDER (ASVS 5.0.0 7.6.2,
+    // `common/sso_consent.ts`), once per service provider, where
+    // `saml2.ssoConsent` (or the entry's `saml2SsoConsent`) asks for it. The
+    // request is held and resumed by `?rid=`, as the sign-in hop's is, so a
+    // POST-binding request survives the trip. IsPassive is answered NoPassive
+    // rather than shown the screen; a Deny is RequestDenied.
+    // -----------------------------------------------------------------------
+    const consentStep = SsoConsent.check({
+      setting: 'saml2.ssoConsent', application: spEntityId,
+      username: String((session.user || {}).username || ''),
+      passive: !!request.isPassive,
+      denied: !!String((req.query || {}).consent_error || '') });
+    if (consentStep.action === 'ask') {
+      const waiting = held || {
+        id: randomId(18), samlRequest: String(encoded),
+        relayState: String(relayState || ''),
+        arrivedBy: arrivedBy, signature: String(params.Signature || ''),
+        sigAlg: String(params.SigAlg || ''),
+        verification: verification
+      };
+      waiting.expires = Date.now() + this.requestTtlMs();
+      pendingRequests.set(waiting.id, waiting);
+      const toScreen = SsoConsent.begin({
+        returnTo: req.path + '?rid=' + encodeURIComponent(waiting.id),
+        username: String((session.user || {}).username || ''),
+        application: spEntityId, decision: consentStep.decision,
+        protocol: 'SAML 2.0',
+        details: [{ label: 'Service provider', value: spEntityId },
+                  { label: 'Assertion consumer service', value: acsUrl }]
+      });
+      this.deps.authn.holdPresentation(session);
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). To the consent " +
+                "screen.");
+      return res.set('Cache-Control', 'no-store').redirect(303, toScreen);
+    }
+    if (consentStep.action === 'refuse') {
+      pendingRequests.delete(String(params.rid || ''));
+      errorCodes.mark(res, consentStep.passive ? 'STS-SAML-0119'
+                                                : 'STS-SAML-0120');
+      const declined = this.buildResponse({
+        issuer: idpEntityId, sp: spEntityId,
+        destination: acsUrl, inResponseTo: request.id,
+        status: STATUS_RESPONDER,
+        subStatus: consentStep.passive ? STATUS_NO_PASSIVE
+          : 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        statusMessage: consentStep.why
+      });
+      this.deliver(res, {
+             binding: wanted.binding, destination: acsUrl,
+             field: 'SAMLResponse',
+             xml: declined.xml, relayState: relayState, issuer: idpEntityId,
+             spEntityId: spEntityId, inResponseTo: request.id,
+             note: { title: 'No consent — SAML 2.0',
+                     sub: consentStep.why }
+      });
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). No consent.");
+      return;
+    }
+
     pendingRequests.delete(String(params.rid || ''));
     notePresented(session, 'SAML 2.0', req, spEntityId);
     this.issueSignInResponse(res, {
@@ -3760,7 +3950,8 @@ class Saml2Sso {
         'setting, or saml2IdpInitiatedSso on its entry), so this identity ' +
         'provider sends it a Response only in answer to an AuthnRequest. ' +
         'Start the sign-in from the service provider, or turn ' +
-        'identity-provider-initiated sign-in on for it.');
+        'identity-provider-initiated sign-in on for it.', undefined,
+        { sp: spEntityId });
     }
     const askedFor = String(params.binding || '').toLowerCase();
     const asked = askedFor === 'artifact' || askedFor === BINDING_ARTIFACT
@@ -3776,7 +3967,8 @@ class Saml2Sso {
         'binding="' + askedFor + '": an unsolicited Response goes on ' +
         'HTTP-POST, HTTP-POST-SimpleSign or HTTP-Artifact — never ' +
         'HTTP-Redirect, which saml-profiles-2.0-os section 4.1.2 forbids ' +
-        'for a Response.');
+        'for a Response.', undefined,
+        { sp: spEntityId, binding: askedFor });
     }
     const idpEntityId = this.idpEntityId();
     const known = this.fieldsOf(spEntityId);
@@ -3787,7 +3979,8 @@ class Saml2Sso {
       errorCodes.mark(res, consumed.errorCode || 'STS-SAML-0070');
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Not registered ACS.");
       return this.samlError(res, 400, 'That assertion consumer service is ' +
-                                      'not registered', consumed.why);
+                                      'not registered', consumed.why, undefined,
+        { sp: spEntityId, acs: shire, binding: asked });
     }
     const acsKnown = applications.returnAddressesOf(
       known, 'samlAssertionConsumerService');
@@ -3806,7 +3999,8 @@ class Saml2Sso {
       return this.samlError(res, 400, 'There is nowhere to send it',
         where.ok ? 'This service provider has no registered assertion ' +
                    'consumer service and the link named no shire.'
-                 : String(where.why || ''));
+                 : String(where.why || ''), undefined,
+        { sp: spEntityId, acs: shire, binding: asked });
     }
     const binding = consumed.consumed &&
                     consumed.binding !== BINDING_REDIRECT &&
@@ -3946,6 +4140,51 @@ class Saml2Sso {
                 sub: 'A <samlp:Response> carrying RequestDenied.' }
       });
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). RequestDenied.");
+      return;
+    }
+    // CONSENT, AS FOR A REQUESTED SIGN-IN (ASVS 5.0.0 7.6.2): this link is
+    // the one ANY page can send a browser to, so it asks too, after the
+    // policy has allowed the sign-in and before anything is issued. The
+    // link is a GET and comes back as itself, without `consent_error`; a
+    // Deny is a RequestDenied Response, as a policy refusal is.
+    const consentStep = SsoConsent.check({
+      setting: 'saml2.ssoConsent', application: spEntityId,
+      username: String((session.user || {}).username || ''),
+      passive: false,
+      denied: !!String((req.query || {}).consent_error || '') });
+    if (consentStep.action === 'ask') {
+      const back = this.rawQueryOf(req).split('&').filter(function (part) {
+        return !!part && !/^consent_error(_description)?=/.test(part);
+      }).join('&');
+      const toScreen = SsoConsent.begin({
+        returnTo: req.path + (back ? '?' + back : ''),
+        username: String((session.user || {}).username || ''),
+        application: spEntityId, decision: consentStep.decision,
+        protocol: 'SAML 2.0',
+        details: [{ label: 'Service provider', value: spEntityId },
+                  { label: 'Assertion consumer service', value: acsUrl }]
+      });
+      this.deps.authn.holdPresentation(session);
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). To the consent " +
+                "screen.");
+      return res.set('Cache-Control', 'no-store').redirect(303, toScreen);
+    }
+    if (consentStep.action === 'refuse') {
+      errorCodes.mark(res, 'STS-SAML-0120');
+      const declined = this.buildResponse({
+        issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
+        inResponseTo: '', status: STATUS_RESPONDER,
+        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        statusMessage: consentStep.why
+      });
+      this.deliver(res, {
+        binding: binding, destination: acsUrl, field: 'SAMLResponse',
+        xml: declined.xml, relayState: relayState, issuer: idpEntityId,
+        spEntityId: spEntityId, inResponseTo: '',
+        note: { title: 'No consent — SAML 2.0',
+                sub: consentStep.why }
+      });
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). No consent.");
       return;
     }
     notePresented(session, 'SAML 2.0', req, spEntityId);
@@ -4226,7 +4465,8 @@ class Saml2Sso {
       ? this.encryptFor(spEntityId, built, 'saml:EncryptedAssertion',
                         'assertion')
       : { xml: built, encrypted: false };
-    if (wantsEncryption && !sealed.encrypted && !mode.sendsWeakerThanAsked()) {
+    if (wantsEncryption && !sealed.encrypted &&
+        (sealed.refused || !mode.sendsWeakerThanAsked())) {
       log.debug("Leaving Saml2Sso.answerAttributeQuery(). Encryption " +
                 "impossible.");
       return answer('STS-SAML-0011', STATUS_RESPONDER, '',
@@ -4312,7 +4552,8 @@ class Saml2Sso {
     // may drive a test control (`opensTestControls()`, which this used for an
     // hour for want of a predicate that named it).
     // -------------------------------------------------------------------------
-    if (wantsEncryption && !sealed.encrypted && !mode.sendsWeakerThanAsked()) {
+    if (wantsEncryption && !sealed.encrypted &&
+        (sealed.refused || !mode.sendsWeakerThanAsked())) {
       log.warn('saml2: refused to send an assertion for ' + ctx.spEntityId +
                ' ' +
                'in clear: saml2.encryptAssertion is on for it and the ' +
@@ -5045,7 +5286,8 @@ class Saml2Sso {
           return this.samlError(res, 403, checkedAnswer.refusal.title ||
                                 'That LogoutResponse\'s signature is not ' +
                                 'accepted',
-                                checkedAnswer.refusal.why);
+                                checkedAnswer.refusal.why, undefined,
+                                { sp: answerFrom });
         }
       }
       log.debug("Leaving Saml2Sso.singleLogout(). A LogoutResponse was " +
@@ -5121,7 +5363,7 @@ class Saml2Sso {
                     : 'The LogoutRequest names no Issuer, so no ') +
         'SAML 2.0 service provider is registered under it in this realm. ' +
         'In product mode only a registered service provider may end a ' +
-        'session here; nothing was ended.');
+        'session here; nothing was ended.', undefined, { sp: spEntityId });
     }
     // THE SIGNATURE (#37), before anything is decrypted or ended: a
     // LogoutRequest whose signature fails, or an unsigned one where signed
@@ -5139,7 +5381,7 @@ class Saml2Sso {
       return this.samlError(res, 403, checkedLogout.refusal.title ||
                             'That LogoutRequest\'s signature is not accepted',
                             checkedLogout.refusal.why + ' The session was ' +
-                            'NOT ended.');
+                            'NOT ended.', undefined, { sp: spEntityId });
     }
     // ITS ENVELOPE (#190): Version, IssueInstant and Destination, as an
     // AuthnRequest's — a LogoutRequest ending somebody's session is at least
@@ -5159,7 +5401,7 @@ class Saml2Sso {
       // error-code: none — marked above: STS-SAML-0085, 0086 or 0087.
       return this.samlError(res, 400, logoutEnvelope.title,
                             logoutEnvelope.why + ' The session was NOT ' +
-                            'ended.');
+                            'ended.', undefined, { sp: spEntityId });
     }
     // THE SUBJECT, WHICH MAY BE ENCRYPTED. A service provider that has this
     // service's metadata has an encryption key to use, and section 3.7.1 lets
@@ -5198,12 +5440,15 @@ class Saml2Sso {
         log.debug("Leaving Saml2Sso.singleLogout().");
         return this.samlError(res, 400,
                               'That EncryptedID could not be decrypted',
-          'This LogoutRequest carries a &lt;saml:EncryptedID&gt; rather than ' +
-          'a &lt;saml:NameID&gt;, and ' + xmlEscape(decrypted.why) + '. The ' +
+          // Plain text since #1327: the detail is shown as data, escaped
+          // once by the page (it was escaped twice before).
+          'This LogoutRequest carries a <saml:EncryptedID> rather than ' +
+          'a <saml:NameID>, and ' + decrypted.why + '. The ' +
           'session was NOT ended, because a logout this service cannot ' +
           'attribute to anybody is one it cannot honestly report as done. ' +
           'This service\'s current encryption certificate is in its ' +
-          'metadata, which is regenerated on every start.');
+          'metadata, which is regenerated on every start.', undefined,
+          { sp: spEntityId });
       }
       const reparsed = new DOMParser().parseFromString(decrypted.xml,
                                                        'text/xml');
@@ -5675,7 +5920,12 @@ class Saml2Sso {
         '<md:Extensions><cm:CryptoMetadataLocation xmlns:cm="' +
           'urn:iya:sts:crypto-metadata:1">' +
           xmlEscape(helpers.rebaseTo(base, 'pki') + '/crypto/metadata.xml') +
-          '</cm:CryptoMetadataLocation></md:Extensions>' +
+          '</cm:CryptoMetadataLocation>' +
+          // IN EVERY VIEW (#1368, rcbj): the WS-Federation paths serve this
+          // same md:EntityDescriptor, and no specification keeps the elements
+          // out of its md:Extensions. They describe the entity, not a protocol.
+          this.algorithmSupport() +
+          '</md:Extensions>' +
         // The role descriptors are a choice the schema lets come in any
         // order; WS-Federation's first, where a WS-Federation relying party
         // looks for it.
@@ -5919,19 +6169,19 @@ class Saml2Sso {
                        '(saml-core-2.0-os section 3.2.1, ' +
                        'saml-bindings-2.0-os sections 3.4.5.2 and ' +
                        '3.5.5.2); otherwise the request ' +
-                       'is refused (STS-SAML-0085).'],
+                       'is refused.'],
        ['IssueInstant', 'Required, and refused when it is more than a ' +
                         'minute in the future or older than ' +
                         'saml2.requestTtlMin — ' +
                         Math.round(this.requestWindowMs() / 60000) +
                         ' minute(s) in this realm — plus a minute of clock ' +
-                        'disagreement (STS-SAML-0086).'],
+                        'disagreement.'],
        ['Version', 'Must be 2.0 (saml-core-2.0-os section 3.2.2.1); ' +
-                   'anything else is refused (STS-SAML-0087).'],
+                   'anything else is refused.'],
        ['ID', 'Answered ONCE: the same issuer and ID arriving again inside ' +
-              'the freshness window is refused as a replay (STS-SAML-0088), ' +
+              'the freshness window is refused as a replay, ' +
               'and so is every request while the store that records them ' +
-              'cannot be asked (STS-SAML-0089).']
+              'cannot be asked.']
       ].map(function (r) {
         return '<tr><td><code>' + r[0] + '</code></td><td>' + r[1] +
                '</td></tr>';

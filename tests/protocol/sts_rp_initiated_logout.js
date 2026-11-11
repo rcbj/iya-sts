@@ -182,7 +182,14 @@ async function test() {
         "page says so", function () {
     assert.strictEqual(r.status, 200, r.raw.slice(0, 200));
     assert.strictEqual(r.location, "");
-    assert.ok(/not returned/.test(r.raw), r.raw.slice(0, 300));
+    // #1302 reworded the box; the 2026-11-05 consistency pass made it one
+    // box for every unfollowed return, in the present tense: "…is not one
+    // this client registered, so it is not followed." It names the address
+    // asked for and never the registered one (#1331).
+    assert.ok(/not one this client registered, so it is not followed/
+                .test(r.raw), r.raw.slice(0, 300));
+    assert.ok(r.raw.indexOf(BACK) < 0, "the registered address is on the " +
+              "page");
   });
 
   log.info("=== c. a client that registered none ===");

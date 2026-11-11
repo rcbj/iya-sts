@@ -148,18 +148,19 @@ async function makeRealm(realm, name) {
   log.debug("Leaving makeRealm().");
 }
 
-// A person with a GENERATED password, answered once — verified in product
-// mode, so the jobs hold for both modes. The realm's attribute policy (#396)
+// A person with a password this job chooses, because one the service generates
+// must be changed at first use in product (#1446) and these jobs authenticate
+// with it — verified in product mode, so the jobs hold for both modes. The realm's attribute policy (#396)
 // requires givenName, sn and mail of every person in product mode.
 async function makePerson(realm, who, mail) {
   log.debug("Entering makePerson(). who=" + who);
-  const made = await ok(realmApi(realm) + "/users/create",
-    { username: who, invent: false, credential: "generate",
+  const password = "Kit-" + nodeCrypto.randomBytes(18).toString("base64url");
+  await ok(realmApi(realm) + "/users/create",
+    { username: who, invent: false, credential: "password", password: password,
       attributes: { cn: who, givenName: who, sn: who, mail: mail } },
     "created " + who);
-  assert.ok(made.password, "users/create answered no generated password");
   log.debug("Leaving makePerson().");
-  return made.password;
+  return password;
 }
 
 // Whether the realm under test is in product mode — read, not assumed

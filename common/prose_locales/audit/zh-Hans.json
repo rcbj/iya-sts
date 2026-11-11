@@ -315,6 +315,10 @@
     "en": "e647419ca1d6ef3f",
     "text": "领域的邮件模板被保存或重置"
   },
+  "audit.actions.branding.logo.label": {
+    "en": "66180a1e9a6ade1e",
+    "text": "某个领域的登录徽标已上传或删除"
+  },
   "audit.actions.mail.verified.label": {
     "en": "3b2f440c71a1db39",
     "text": "某人验证了其条目上的地址"
@@ -770,6 +774,10 @@
   "audit.actions.admin.truststore.change.label": {
     "en": "feb59a61d26db396",
     "text": "客户端证书信任锚被添加或移除"
+  },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "签名者信任库或某项偏执 PKI 设置已更改"
   },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
@@ -1423,6 +1431,10 @@
     "en": "39413bc03154f800",
     "text": "已为组设置地址，或已移除其地址"
   },
+  "audit.actions.group.set-policy.label": {
+    "en": "7ca8946df0f9aee5",
+    "text": "已为组指定命名策略，或已清除其名称"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "根据手头的密码为某人生成了 keytab"
@@ -1582,6 +1594,30 @@
   "audit.actions.portal.signing-key.csrf.label": {
     "en": "51cd295b713684de",
     "text": "签名密钥表单因其 CSRF 令牌被拒绝"
+  },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "某人吊销了自己的一个签名密钥对"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "某人发布了自己的 did:web"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "某人已发布的 DID 文档有了新版本"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "某人在其已发布的 DID 上授权了一个密钥"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "某人停用了其已发布的 DID"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "管理员停用了某人已发布的 DID"
   },
   "audit.actions.portal.siop.enrol.label": {
     "en": "9c4ac2b8893fae20",
@@ -1850,5 +1886,17 @@
   "audit.actions.admin.audit-export.test.label": {
     "en": "e523fcd6d4957e6d",
     "text": "已测试审计导出目标"
+  },
+  "audit.actions.audit.export.test.label": {
+    "en": "25d9164b7269ce2d",
+    "text": "发送到审计导出目标的测试事件"
+  },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "已丢弃一条永远无法提交的已签发记录"
+  },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "配置已导出"
   }
 }

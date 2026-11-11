@@ -24,6 +24,7 @@
   "seconds.hours": "{n, plural, one {{shown} hora} other {{shown} horas}}",
   "seconds.days": "{n, plural, one {{shown} día} other {{shown} días}}",
   "chooser.showing": "Mostrando {from}&ndash;{to} de {n} {searched, select, yes {{n, plural, one {coincidencia} other {coincidencias}}} other {en la lista}}. ",
+  "chooser.showingMore": "Mostrando {from}&ndash;{to} de más de {n} coincidencias. ",
   "chooser.count": "{n} {searched, select, yes {{n, plural, one {coincidencia} other {coincidencias}}} other {en la lista}}. ",
   "chooser.previous": "&larr; {n} anteriores",
   "chooser.previous.title": "Las veinte anteriores a estas",

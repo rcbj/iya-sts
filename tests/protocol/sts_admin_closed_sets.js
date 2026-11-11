@@ -605,7 +605,11 @@ async function main() {
   await theBodies(doc);
   await theQueries(doc);
   const consoleClient = await signin.signInToTheConsole(base,
-    "closed-sets-" + Date.now().toString(36), log, { grant: "write" });
+    "closed-sets-" + Date.now().toString(36), log,
+    // The Security Administrator as well (#645): the policies page's saves
+    // are its alone, and a refusal for the role is not the closed-set
+    // refusal this job is about.
+    { grant: ["write", "security"] });
   await theConsole(doc, consoleClient);
   await theSettings(consoleClient);
   log.info("sts_admin_closed_sets: " + checks + " check(s) passed.");

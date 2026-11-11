@@ -46,11 +46,14 @@ const FROM = 'from';
 
 // ---------------------------------------------------------------------------
 // THE STYLE. Scoped under `.certdlg-` so that nothing on either page is
-// restyled by opening a dialog, and inline because this console's shell is one
-// document with its stylesheet in it — `style-src` allows that and nothing
+// restyled by opening a dialog. In the CONSOLE'S STYLESHEET since 2026-11-10
+// (`admin.ts` stylesheet() reads `CertificateDialogView.CSS`), not a `<style>`
+// drawn with the dialog: the console's policy allows no inline style. It was
+// inline because this console's shell was one
+// document with its stylesheet in it — `style-src` allowed that and nothing
 // here needs a second resource.
 // ---------------------------------------------------------------------------
-const STYLE = '<style>' +
+const STYLE =
   'body:has(.certdlg-backdrop){overflow:hidden}' +
   '.certdlg-backdrop{position:fixed;inset:0;background:rgba(20,20,30,.55);' +
   'z-index:1000;display:flex;align-items:flex-start;justify-content:center;' +
@@ -87,8 +90,7 @@ const STYLE = '<style>' +
   '.certdlg-foot{padding:.75rem 1.25rem;border-top:1px solid #e3e3ea;' +
   'display:flex;justify-content:flex-end}' +
   '.certdlg-foot form{margin:0}' +
-  '.certdlg-foot button{font-size:.95rem;padding:.45rem 1.2rem}' +
-  '</style>';
+  '.certdlg-foot button{font-size:.95rem;padding:.45rem 1.2rem}';
 
 // The sentences are messages since #539, so this is a function of the
 // page's translator rather than a table.
@@ -107,6 +109,11 @@ const CHAIN_STATUS = function (t: Json): Record<string, string> {
  * A static utility class; it holds no state and takes no dependencies.
  */
 class CertificateDialogView {
+  /**
+   * The dialog's rules, for the console's stylesheet (2026-11-10).
+   */
+  static readonly CSS = STYLE;
+
   /**
    * The query parameter naming the certificate to open.
    */
@@ -505,7 +512,7 @@ class CertificateDialogView {
         '<h3>' + t.html('consoleCertificateDialog.everyField') + '</h3>' +
         self.fieldsHtml(view.certificate, t);
     }
-    return STYLE +
+    return '' +
       // Drawn after a tabbed page's tabs (`WebPages.protocolTabs()`), so it
       // is over the page whichever tab is open.
       '<div class="certdlg-backdrop" id="certificate-details" ' +

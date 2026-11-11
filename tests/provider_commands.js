@@ -38,6 +38,23 @@ const log = require('bunyan').createLogger({ name: 'provider_commands',
 
 const ENDPOINT = 'https://rp.test/commands';
 
+// A response model, as the service holds an answer to it.
+function modelOf(operationId, status) {
+  const spec = require('../mgmt-api/admin_api_spec');
+  const adminApi = require('../mgmt-api/admin_api');
+  const document = spec.buildSpec(adminApi.ROUTES, { authRequired: true });
+  let found = null;
+  Object.keys(document.paths).forEach(function (one) {
+    Object.keys(document.paths[one]).forEach(function (method) {
+      if (document.paths[one][method].operationId === operationId) {
+        found = document.paths[one][method];
+      }
+    });
+  });
+  return { schema: found.responses[status].content['application/json'].schema,
+           components: document.components };
+}
+
 function decode(jwt) {
   log.debug("Entering decode().");
   const parts = String(jwt).split('.');
@@ -376,6 +393,105 @@ async function body(t) {
           !applications.commandMetadataProblem({
             command_endpoint: 'https://rp.test/c?q=1' }),
           '8a. command_endpoint is https with no fragment; a query is fine');
+
+  t.log.info('=== 9. what a relying party wrote, against the closed model ===');
+  // #1353: the integrator's run found `roles` modelled as scalars while every
+  // role is an object, which refused the whole realm's report. This goes through
+  // the real writer and the real report, with a relying party that also sends
+  // what no role should be, so one partner cannot refuse every client's row.
+  answers.push(json(200, {
+    context: { iss: 'https://sts.test', tenant: 'default' },
+    commands_supported: ['metadata', 'audit'],
+    command_endpoint: ENDPOINT, client_id: 'cmd-app',
+    roles: [{ id: 'reader', display: 'Reader' },
+            { id: 'editor', display: 'Editor', description: 'Changes things',
+              stray: { nested: true } },
+            { id: 'bare' }, 'a string', 7, null, { display: 'no id' },
+            { id: { not: 'a string' }, display: 'odd id' }] }));
+  c.send('cmd-app', 'metadata', '', {});
+  await settle();
+  const said = c.learnedFor('cmd-app').roles;
+  t.equal(JSON.stringify(said), JSON.stringify([
+    { id: 'reader', display: 'Reader' },
+    { id: 'editor', display: 'Editor', description: 'Changes things' },
+    { id: 'bare', display: 'bare' }
+  ]), '9a. a role is kept as section 2.2 defines one, and nothing else is');
+  const P = commandsModule.ProviderCommands;
+  t.check(P.lastAccessFrom(1700000000) === 1700000000 &&
+          P.lastAccessFrom('2026-11-05T00:00:00Z') === '2026-11-05T00:00:00Z' &&
+          P.lastAccessFrom({ at: 1 }) === null && P.lastAccessFrom([1]) === null,
+          '9b. last_access is kept only where it is a time');
+  const Ajv = require('ajv');
+  const held = modelOf('getProviderCommands', '200');
+  const validate = new Ajv({ strict: false, allErrors: true }).compile(
+    { allOf: [held.schema], components: held.components });
+  const report = c.report();
+  const row = report.clients.filter(function (one) {
+    return one.clientId === 'cmd-app';
+  })[0];
+  t.check(row && row.learned.roles.length === 3 && validate(report),
+          '9c. the real report, with roles in it, meets the model it is held to',
+          JSON.stringify(validate.errors || []).slice(0, 600));
+  // A row stored before `lastAccessFrom()` was asked at the write, which only
+  // the private writer can still make: it holds what a relying party wrote.
+  c.noteAccount('cmd-app', 'stored-bad-row', 'cmd-alice', 'active', 'audit',
+                { lastAccess: { at: 1 } });
+  c.noteAccount('cmd-app', 'stored-good-row', 'cmd-alice', 'active', 'audit',
+                { lastAccess: 1700000000 });
+  const stored = c.report();
+  const accountOf = function (sub) {
+    return stored.accounts.filter(function (one) {
+      return one.sub === sub;
+    })[0];
+  };
+  t.check(accountOf('stored-bad-row') &&
+          !('lastAccess' in accountOf('stored-bad-row')),
+          '9d. a stored last_access that is not a time is left out of the row');
+  t.equal(accountOf('stored-good-row').lastAccess, 1700000000,
+          '9e. and one that is a time is reported');
+  t.check(validate(stored), '9f. the report with such a row, and with a row ' +
+          'that has no lastAccess, meets the model',
+          JSON.stringify(validate.errors || []).slice(0, 600));
+
+  // AN ACT ANSWERS A ROW WITH NO CODE, AT ANY DEPTH (#1355): this module sends
+  // its own answers, so the strip in AdminApi.sendJson() never reached it, and
+  // POST /admin-api/commands/send-tenant answered 500 for a row that had failed.
+  const sentThrough = function (Api, body) {
+    const answer = {};
+    const res = {
+      req: { method: 'POST' },
+      status: function () {
+        return res;
+      },
+      type: function () {
+        return res;
+      },
+      set: function () {
+        return res;
+      },
+      send: function (text) {
+        answer.text = text;
+      }
+    };
+    const api = Object.create(Api.prototype);
+    api.deps = { log: t.log };
+    api.sendJson(res, 200, body);
+    return JSON.parse(answer.text);
+  };
+  const { ProviderCommandsApi } = require('../oauth-oidc/provider_commands_api');
+  const heldAct = modelOf('sendTenantCommand', '200');
+  const validateAct = new Ajv({ strict: false, allErrors: true })
+    .compile({ allOf: [heldAct.schema], components: heldAct.components });
+  const answered = sentThrough(ProviderCommandsApi, { ok: true, row: deadRow });
+  t.check(deadRow.errorCode === 'STS-OAUTH-0771' && validateAct(answered),
+          '9g. the real dead row, as this API sends it, meets the act\'s model',
+          JSON.stringify(validateAct.errors || []).slice(0, 600));
+  const { ScimClientsApi } = require('../mgmt-api/scim_clients_api');
+  const client = sentThrough(ScimClientsApi, { ok: true, client: {
+    id: 'x', deliveries: [{ errorCode: 'STS-SCIM-0001', why: 'y' }] } });
+  t.check(JSON.stringify(client).indexOf('errorCode') < 0 &&
+          client.client.deliveries[0].why === 'y',
+          '9h. and the SCIM clients\' door takes it off a nested row too');
   log.debug("Leaving body().");
 }
 

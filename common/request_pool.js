@@ -1524,6 +1524,12 @@ const PEER_CERT_HEADER = 'x-sts-peer-certificate';
  */
 const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 
+// The headers `app.js`'s enterRealm() writes on a response before this module
+// sees it, which a dispatched answer replaces whole — present or ABSENT. See
+// proxy(); `tests/proxy_early_headers.js` holds this list to that function.
+const WORKER_DECIDES = ['x-content-type-options', 'x-frame-options',
+                        'content-security-policy'];
+
 // THE TICKET THIS REQUEST WAS DISPATCHED UNDER, told to the worker so that the
 // worker can say which tickets its flush covered — see receiveCommitted().
 // Stripped from what the client sent, exactly like the two above: nothing a
@@ -1873,14 +1879,17 @@ givenUp[SURFACE_POOL] = false;
 // treats the pool as given up, and forking is allowed again for one run of
 // QUICK_EXIT_LIMIT. See armGiveUpRetry().
 const giveUpState = {};
-giveUpState[PROTOCOL_POOL] = { attempt: 0, at: 0, timer: null,
+giveUpState[PROTOCOL_POOL] = { attempt: 0, at: 0, delay: 0, timer: null,
                                probing: false };
-giveUpState[SURFACE_POOL] = { attempt: 0, at: 0, timer: null,
+giveUpState[SURFACE_POOL] = { attempt: 0, at: 0, delay: 0, timer: null,
                               probing: false };
 // The longest a cool-down grows to. An hour is long enough that a broken
 // configuration is not forking, and short enough that a node which recovers
 // is not left on one thread until somebody restarts it.
 const GIVE_UP_RETRY_CAP_MS = 60 * 60 * 1000;
+// `workers.giveUpRetryMs`'s default, which the row in config.js also
+// carries: five minutes. Used where the setting cannot be read.
+const GIVE_UP_RETRY_DEFAULT_MS = 300000;
 
 // How long the pool waits before trying again. `attempt` 0 is the setting;
 // each failed attempt doubles it, and the cap above is the ceiling. 0 — the
@@ -1907,21 +1916,22 @@ function giveUpRetryDelay(attempt, baseMs) {
   return delay;
 }
 
-// The setting, read when a cool-down is armed. 0 is legal and means the
-// pool stays given up, so it is not read as `value || default`.
+// The setting, read when a cool-down is armed and when the setting changes
+// (applyGiveUpRetrySetting()). 0 is legal and means the pool stays given
+// up, so it is not read as `value || default`.
 function giveUpRetryBaseMs() {
   log.debug("Entering giveUpRetryBaseMs().");
-  let n = 300000;
+  let n = GIVE_UP_RETRY_DEFAULT_MS;
   try {
     n = Number(config.value('workers.giveUpRetryMs'));
   } catch (e) {
     log.debug("Caught in giveUpRetryBaseMs(): " + ((e && e.message) || e));
     // No configuration at all — an in-process job that loaded this module
     // on its own. The default is the same five minutes the row carries.
-    n = 300000;
+    n = GIVE_UP_RETRY_DEFAULT_MS;
   }
   if (!(n >= 0)) {
-    n = 300000;
+    n = GIVE_UP_RETRY_DEFAULT_MS;
   }
   log.debug("Leaving giveUpRetryBaseMs(). " + n + ".");
   return n;
@@ -2729,6 +2739,25 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
 // ---------------------------------------------------------------------------
 const ANSWERED_AT_ONCE = ['/healthcheck'];
 
+// ---------------------------------------------------------------------------
+// **AND `OPTIONS *` (#1304, 2026-11-04).** The asterisk form (RFC 9112
+// section 3.2.4; `:path: *` in HTTP/2, RFC 9113 section 8.3.1) names no
+// resource: it asks about the server as a whole (RFC 9110 section 9.3.7), and
+// the answer is the CORS preflight's 204, which reads no state. So it is the
+// liveness probe's case — the process holding the listener answers, with no
+// catch-up — and no dispatch prefix can name it: `*` in `workers.dispatch`
+// means every PATH, and `*` is not one. It was dispatched like any path until
+// #1304, which found it paying a worker's barriers for an answer this process
+// gives alike. It carries no realm prefix, so it is always the default
+// realm's.
+// ---------------------------------------------------------------------------
+function answeredAtOnce(url) {
+  log.debug("Entering answeredAtOnce().");
+  const yes = String(url || '') === '*' || matchesAny(url, ANSWERED_AT_ONCE);
+  log.debug("Leaving answeredAtOnce().");
+  return yes;
+}
+
 /**
  * Tells whether a request is handled in a request worker rather than here.
  *
@@ -2749,8 +2778,7 @@ function dispatched(url) {
     log.debug("Leaving dispatched().");
     return false;
   }
-  if (matchesAny(url, NEVER_DISPATCHED) ||
-      matchesAny(url, ANSWERED_AT_ONCE)) {
+  if (matchesAny(url, NEVER_DISPATCHED) || answeredAtOnce(url)) {
     log.debug("Leaving dispatched().");
     return false;
   }
@@ -2944,17 +2972,51 @@ function receivePublishedKeys(entry, published) {
   // and the two arbiters would disagree for as long as they kept exchanging
   // it. The store decides for every node; this channel only carries it.
   // -------------------------------------------------------------------------
-  // A NEWER KEY GENERATION (2026-09-22, #42) is a rotation, not a race: the
-  // higher generation is the set every process moves to, as the store's own
-  // merge decides (`keystore.js`, decideKeys()).
-  const newer = heldBlob &&
-    keystore.generationOf(published.blob) > keystore.generationOf(heldBlob);
+  // A NEWER KEY GENERATION (2026-09-22, #42) is a rotation of the set
+  // already held, not any larger counter (`keystore.supersedes()`). A
+  // worker that lost first-generator-wins and then minted `next` keys from
+  // its own set publishes that generation marked confirmed
+  // (`replaceKeySet()`). Adopting it replaced the winning key pair after a
+  // peer had fetched metadata for the winner, and every later SAML response
+  // failed to verify (`sts_saml_interop_pysaml2`, single-node, where the
+  // store does not arbitrate and this channel is the only agreement).
+  //
+  // A confirmed publish whose generation is NOT higher still adopts. That
+  // is the store's winner replacing a local generation of a set the store
+  // refused (`adoptStoredKeys()`). The two messages have the same shape, so
+  // a confirmed generation that is lower stays adopted: rolling a held
+  // generation back is the store's answer. The front process's own
+  // publisher broadcasts what it holds without this check; the mint this
+  // refuses is a worker's publish, which is where `signing.rotate` runs.
+  const newer = keystore.supersedes(published.blob, heldBlob);
+  if (keystore.strangerGeneration(heldBlob, published.blob)) {
+    // The refused set may be the only copy of the signer groups. They
+    // join the set this process keeps; the rest of the offer does not.
+    const joined = offeredSignerGroups(heldBlob, published.blob);
+    if (joined) {
+      keystore.adoptShared(realmId, joined);
+      broadcastKeys(realmId, joined, entry);
+    }
+    sendKeys(entry, realmId);
+    log.warn('request_pool: worker ' + (entry && entry.pid) + ' offered a ' +
+             'newer generation of a key set the "' + realmId + '" realm did ' +
+             'not choose; this process kept the set it holds and told the ' +
+             'worker.');
+    log.debug("Leaving receivePublishedKeys().");
+    return;
+  }
   if (published.confirmed || newer) {
-    keystore.adoptShared(realmId, published.blob);
+    // What this set has gained since the worker read the row stays in it, and
+    // the worker is told, because a broadcast skips the publisher.
+    const kept = keystore.withHeldMembers(published.blob, heldBlob);
+    keystore.adoptShared(realmId, kept);
     log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
              'confirmed by the store through worker ' + (entry && entry.pid) +
              '; every process here now uses it.');
-    broadcastKeys(realmId, published.blob, entry);
+    broadcastKeys(realmId, kept, entry);
+    if (kept !== published.blob) {
+      sendKeys(entry, realmId);
+    }
     log.debug("Leaving receivePublishedKeys().");
     return;
   }
@@ -2984,8 +3046,40 @@ function receivePublishedKeys(entry, published) {
   // are the one window in which two processes disagree, and anything signed in
   // it is lost. That is the price of a synchronous property read that cannot
   // await, and it is written down rather than discovered.
+  //
+  // SIGNER GROUPS ARE THE EXCEPTION (2026-11-01). `joinSignerGroups()`
+  // publishes the worker's blob plus the groups it just made. That blob is
+  // often a generation behind this one — `signing.rotate` has already
+  // minted `next` — so `enriches()` refuses it and the groups never reach
+  // the JWKS. `sts_signer_groups` polled for three minutes and saw none,
+  // and the realm it left behind still published certificates the CRL had
+  // revoked (`sts_pki_distribution_points`). The groups join the set held
+  // here. The rest of the offer is still refused, and the worker is sent
+  // the set this process kept.
+  const joined = offeredSignerGroups(heldBlob, published.blob);
+  if (joined) {
+    keystore.adoptShared(realmId, joined);
+    broadcastKeys(realmId, joined, entry);
+  }
   sendKeys(entry, realmId);
   log.debug("Leaving receivePublishedKeys().");
+}
+
+// Signer groups carried by a publish this process is not adopting. Null
+// when there is nothing to join: no held set, no groups offered, or the
+// held set already has its own. The offered groups are keys of their own
+// and are copied onto the held blob; nothing else from the offer is.
+function offeredSignerGroups(heldBlob, offeredBlob) {
+  log.debug("Entering offeredSignerGroups().");
+  const offered = offeredBlob && offeredBlob.signerGroups;
+  const heldRows = heldBlob && heldBlob.signerGroups;
+  if (!heldBlob || !offered || !offered.length ||
+      (heldRows && heldRows.length)) {
+    log.debug("Leaving offeredSignerGroups(). Nothing to join.");
+    return null;
+  }
+  log.debug("Leaving offeredSignerGroups().");
+  return Object.assign({}, heldBlob, { signerGroups: offered });
 }
 
 // ---------------------------------------------------------------------------
@@ -3914,6 +4008,10 @@ function freeSlot(pool) {
  */
 function armGiveUpRetry(pool) {
   log.debug("Entering armGiveUpRetry().");
+  // A give-up is what makes the setting matter, so this is where the pool
+  // starts listening for it to change (#695) — in the process that runs
+  // the pools, whatever started them.
+  observeGiveUpRetrySetting();
   const state = giveUpState[pool];
   if (stopped || !givenUp[pool] || !state || state.timer || state.probing) {
     log.debug("Leaving armGiveUpRetry(). Not armed.");
@@ -3925,7 +4023,10 @@ function armGiveUpRetry(pool) {
     return;
   }
   state.at = Date.now() + delay;
-  log.error(errorCodes.tag('STS-WORKER-0050') +
+  state.delay = delay;
+  // WARN, NOT ERROR (#695): the give-up itself was the error, logged where
+  // it happened; this is the scheduled recovery from it.
+  log.warn(errorCodes.tag('STS-WORKER-0050') +
     'request_pool: the ' + pool + ' pool will try one worker again in ' +
     Math.round(delay / 1000) + 's (workers.giveUpRetryMs, attempt ' +
     (state.attempt + 1) + '). Until one comes up, ' +
@@ -3935,6 +4036,7 @@ function armGiveUpRetry(pool) {
   state.timer = setTimeout(function () {
     state.timer = null;
     state.at = 0;
+    state.delay = 0;
     if (stopped || !givenUp[pool]) {
       return;
     }
@@ -3944,6 +4046,58 @@ function armGiveUpRetry(pool) {
     state.timer.unref();
   }
   log.debug("Leaving armGiveUpRetry(). In " + delay + " ms.");
+}
+
+/**
+ * Applies a change to `workers.giveUpRetryMs` to the pools that have
+ * already given up (#695). The setting is `runtime: true`, but it was read
+ * only when a give-up armed a wait, so a pool that gave up while it was 0
+ * stayed given up whatever it was changed to. Now a positive value arms
+ * the wait such a pool lacks, and 0 cancels a wait that has not fired. A
+ * wait already armed keeps its length; the next one reads the new value.
+ * A try already under way (`probing`) is left to finish.
+ */
+function applyGiveUpRetrySetting() {
+  log.debug("Entering applyGiveUpRetrySetting().");
+  const off = !(giveUpRetryBaseMs() > 0);
+  Object.keys(giveUpState).forEach(function (pool) {
+    const state = giveUpState[pool];
+    if (stopped || !givenUp[pool] || !state || state.probing) {
+      return;
+    }
+    if (off && state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+      state.at = 0;
+      state.delay = 0;
+      log.warn(errorCodes.tag('STS-WORKER-0050') + 'request_pool: the ' +
+               pool + ' pool will not try a worker again: ' +
+               'workers.giveUpRetryMs is now 0, so it stays given up ' +
+               'until this process restarts.');
+    } else if (!off) {
+      armGiveUpRetry(pool);
+    }
+  });
+  log.debug("Leaving applyGiveUpRetrySetting().");
+}
+
+// Asked once, at the first give-up (armGiveUpRetry()).
+let giveUpRetryObserved = false;
+
+function observeGiveUpRetrySetting() {
+  log.debug("Entering observeGiveUpRetrySetting().");
+  if (giveUpRetryObserved || typeof config.onOverridesChanged !==
+      'function') {
+    log.debug("Leaving observeGiveUpRetrySetting(). Already, or none.");
+    return;
+  }
+  giveUpRetryObserved = true;
+  config.onOverridesChanged(function (keys) {
+    if ([].concat(keys || []).indexOf('workers.giveUpRetryMs') >= 0) {
+      applyGiveUpRetrySetting();
+    }
+  });
+  log.debug("Leaving observeGiveUpRetrySetting().");
 }
 
 // The cool-down has elapsed. One worker, and the three-failure bound
@@ -6414,8 +6568,8 @@ function middleware(options) {
       // THE LIVENESS PROBE CATCHES UP ON NOTHING (#624): it reads no state,
       // and the wait below is up to 2,000 ms plus a store round trip, which a
       // probe with a 5 s timeout cannot afford on a busy node. See
-      // ANSWERED_AT_ONCE.
-      if (matchesAny(req.originalUrl || req.url, ANSWERED_AT_ONCE)) {
+      // ANSWERED_AT_ONCE, and `OPTIONS *` beside it (answeredAtOnce()).
+      if (answeredAtOnce(req.originalUrl || req.url)) {
         next();
         return;
       }
@@ -7153,6 +7307,17 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     // `rawHeaders`; the values are still `answer.headers`', merged as
     // before. A name the worker did not send (the pin's `set-cookie` on an
     // answer that set none) keeps its lower-case key.
+    // THE HEADERS THIS PROCESS WROTE BEFORE DISPATCHING ARE THE WORKER'S TO
+    // DECIDE (2026-11-10). `app.js`'s enterRealm() writes the early security
+    // headers on every response before anything else runs, so they are on
+    // this `res` already; the worker ran the same middleware and its answer
+    // carries what the route decided. A header the route REMOVED was absent
+    // from the answer and so stayed here: the OP iframe answered
+    // `X-Frame-Options: DENY` in every dispatching mode, overruling the
+    // narrower `frame-ancestors` it had chosen. Cleared, then the answer's.
+    WORKER_DECIDES.forEach(function (name) {
+      res.removeHeader(name);
+    });
     const spelled = {};
     const raw = answer.rawHeaders || [];
     for (let i = 0; i + 1 < raw.length; i += 2) {
@@ -7347,8 +7512,10 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     errorCodes.mark(res, 'STS-WORKER-0030');
     res.status(502);
     res.type('text/plain');
-    res.send('The request worker handling this request went away (' +
-             err.message + '). A worker holds no state of its own that this ' +
+    res.send('The request worker handling this request went away' +
+             (require('./mode').hidesFailureDetail() ? '' :
+              ' (' + err.message + ')') +
+             '. A worker holds no state of its own that this ' +
              'request needed, so it can simply be made again.\n');
     log.debug("Leaving gaveUp().");
   };
@@ -7989,11 +8156,16 @@ function removeSocketDir() {
 // argues it; this is the transport, in the shape of the operation channel:
 //
 //   front -> worker   { schedulerRun, runId, jobId, realm, trigger, params,
-//                       clockOffsetMs }
-//   worker -> front   { schedulerRunDone, runId, ok, result | error, code }
+//                       clockOffsetMs, deadlineMs, grantUntilMs }
+//   worker -> front   { schedulerRunDone, runId, ok, result | error, code,
+//                       why }
 //                     or { schedulerRunDone, runId, unknownJob }
 //   front -> worker   { schedulerFence, runId }   (time limit, lost lease,
-//                                                   removed realm)
+//                                                   removed realm, a row
+//                                                   taken over)
+//   front -> worker   { schedulerRenew, runId, untilMs, off }  (#1305: the
+//                       leader still owns the run; the body's grant runs to
+//                       `untilMs`, and `off` is why its job was switched off)
 //
 // A run's answer is resolved ONCE: the answer, the fence (the leader stopped
 // waiting) or the worker's exit (STS-SCHED-0019), whichever comes first. A
@@ -8007,7 +8179,8 @@ const LOOP_LAG_FRESH_MS = 30 * 1000;
 /**
  * What the scheduler's leader hands a cluster job's body to (#408).
  *
- * @returns `{ workers(), run(workerId, request), fence(runId) }`
+ * @returns `{ workers(), run(workerId, request), fence(runId),
+ *   renew(runId, untilMs, off) }`
  */
 function schedulerRunner() {
   log.debug("Entering schedulerRunner().");
@@ -8015,7 +8188,8 @@ function schedulerRunner() {
   return {
     workers: schedulerWorkers,
     run: runSchedulerJob,
-    fence: fenceSchedulerJob
+    fence: fenceSchedulerJob,
+    renew: renewSchedulerJob
   };
 }
 
@@ -8107,6 +8281,33 @@ function fenceSchedulerJob(runId) {
   log.debug("Leaving fenceSchedulerJob().");
 }
 
+/**
+ * Renews the grant of the worker running a cluster run (#1305): the leader
+ * still owns the run, and keeps waiting for its answer.
+ *
+ * @param runId - the run
+ * @param untilMs - the grant's end, on this process's clock
+ * @param off - why the run's job was switched off, or ''
+ */
+function renewSchedulerJob(runId, untilMs, off) {
+  log.debug("Entering renewSchedulerJob(). " + runId);
+  const held = schedulerRuns.get(String(runId || ''));
+  if (!held) {
+    log.debug("Leaving renewSchedulerJob(). Not running.");
+    return;
+  }
+  try {
+    held.entry.child.send({ schedulerRenew: true, runId: String(runId),
+                            untilMs: Number(untilMs) || 0,
+                            off: String(off || '') });
+  } catch (e) {
+    // A worker that cannot be reached is going, and its run with it; a
+    // grant not renewed runs out there by itself.
+    log.debug("Caught in renewSchedulerJob(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving renewSchedulerJob().");
+}
+
 function receiveSchedulerRunDone(entry, message) {
   log.debug("Entering receiveSchedulerRunDone(). " + message.runId);
   const runId = String(message.runId || '');
@@ -8120,7 +8321,9 @@ function receiveSchedulerRunDone(entry, message) {
                  unknownRealm: !!message.unknownRealm,
                  result: message.result === undefined ? null
                    : message.result,
-                 error: message.error || '', code: message.code || '' });
+                 error: message.error || '', code: message.code || '',
+                 // A success's own why (#1313), beside its summary.
+                 why: typeof message.why === 'string' ? message.why : '' });
   log.debug("Leaving receiveSchedulerRunDone().");
 }
 
@@ -8339,18 +8542,23 @@ function stats() {
         return one.inFlight > 0;
       }).length;
       const h = history[pool];
-      // THE COOL-DOWN (#333), for Monitoring → Worker Pools. `giveUpRetryMs`
-      // is what is left of the wait, 0 when none is armed; `giveUpProbing`
-      // is the try itself, while routing still says given up.
+      // THE COOL-DOWN (#333), for Monitoring → Worker Pools.
+      // `giveUpRetryLeftMs` is what is left of the wait and
+      // `giveUpRetryArmedMs` how long it was armed for, both 0 when none is
+      // armed; `giveUpProbing` is the try itself, while routing still says
+      // given up. (One field, `giveUpRetryMs`, held the time left until
+      // #695, under the setting's own name.)
       const retry = giveUpState[pool];
       const retryMs = retry && retry.timer
         ? Math.max(0, retry.at - Date.now()) : 0;
+      const armedMs = retry && retry.timer ? Number(retry.delay) || 0 : 0;
       return { pool: pool, configured: size(pool),
                running: workers.filter(function (one) {
                  return (one.pool || PROTOCOL_POOL) === pool;
                }).length,
                ready: ready.length, gaveUp: givenUp[pool],
-               giveUpRetryMs: retryMs,
+               giveUpRetryLeftMs: retryMs,
+               giveUpRetryArmedMs: armedMs,
                giveUpProbing: !!(retry && retry.probing),
                giveUpAttempt: retry ? retry.attempt : 0,
                replaced: replaced[pool],
@@ -8586,6 +8794,7 @@ module.exports = {
   // catch a rename is a test holding them side by side. tests/ldap_logout.js
   // does exactly that.
   LDAP_DROP_HEADER: LDAP_DROP_HEADER,
+  WORKER_DECIDES: WORKER_DECIDES,
   // THIS PROCESS'S OWN WRITES MOVING THE GENERATION, exported so that
   // tests/front_process_writes.js can drive it without a store, a fork or a
   // socket: it takes the count rather than reading it, precisely so that the

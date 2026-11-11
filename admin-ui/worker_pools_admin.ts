@@ -356,9 +356,12 @@ class WorkerPoolsAdmin {
       state = 'given-up';
       // STILL GIVEN UP WHILE THE COOL-DOWN RUNS (#333). A snapshot from a
       // build that does not report the wait falls through to the old
-      // sentence: `giveUpRetryMs` and `giveUpProbing` are absent there.
+      // sentence: the wait's fields and `giveUpProbing` are absent there.
+      // `giveUpRetryLeftMs` since #695; a node on an older build still
+      // reports the time left as `giveUpRetryMs`.
       const probing = !!pool.giveUpProbing;
-      const retryMs = Number(pool.giveUpRetryMs) || 0;
+      const retryMs = Number(pool.giveUpRetryLeftMs !== undefined
+        ? pool.giveUpRetryLeftMs : pool.giveUpRetryMs) || 0;
       const failed = h.failedStarts || 0;
       if (probing) {
         stateText = say(surface ? 'givenUpSurfaceProbing'

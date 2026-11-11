@@ -170,7 +170,8 @@ class PasskeyReportApi {
     ];
     const LIST: Json[] = [
       { name: 'list', in: 'query', required: false,
-        schema: { type: 'string', enum: report.LISTS.slice() },
+        schema: { type: 'string', enum: report.LISTS.slice(),
+                  examples: ['both'] },
         description: 'The people behind one count: a kind ' +
                      '(`post-quantum-only`, `classical-only`, `both`, ' +
                      '`none`), everybody `holding` a passkey, one ' +
@@ -217,11 +218,11 @@ class PasskeyReportApi {
         mirrors: 'GET /admin/passkey-report',
         parameters: FILTER.concat(LIST).concat([
           { name: 'page', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of `list.rows`.' },
           { name: 'per', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1,
-                      maximum: report.PER_MAX },
+                      maximum: report.PER_MAX, examples: [10] },
             description: 'Rows per page.' },
           { name: 'from', in: 'query', required: false,
             schema: { type: 'string', maxLength: 2048 },
@@ -273,7 +274,8 @@ class PasskeyReportApi {
         mirrors: 'GET /admin/passkey-report',
         parameters: FILTER.concat(LIST).concat([
           { name: 'format', in: 'query', required: false,
-            schema: { type: 'string', enum: ['csv', 'json'] },
+            schema: { type: 'string', enum: ['csv', 'json'],
+                      examples: ['json'] },
             description: '`csv` (the default) or `json`.' }
         ]),
         responseDescription: 'The file, as an attachment.',
@@ -319,9 +321,10 @@ class PasskeyReportApi {
         mirrors: 'GET /admin/users',
         parameters: [
           { name: 'username', in: 'query', required: true,
-            schema: { type: 'string', maxLength: 256 } },
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] } },
           { name: 'credentialId', in: 'query', required: true,
-            schema: { type: 'string', maxLength: 2048 } }
+            schema: { type: 'string', maxLength: 2048,
+                      examples: ['no-such-credential'] } }
         ],
         responseDescription: 'The RFC 4998 EvidenceRecord and archived data.',
         responseSchema: { type: 'object', additionalProperties: true },

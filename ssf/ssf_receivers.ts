@@ -1519,7 +1519,32 @@ class SsfReceivers {
       // — so only a person who AUTHENTICATED in a later second is kept; the
       // same second is ended, which is the side to err on. No timestamp on
       // either side, no narrowing.
-      const eventAt = Number(body.event_timestamp);
+      //
+      // **AN EVENT WITH NO `event_timestamp` IS BOUNDED BY ITS SET
+      // (2026-11-10).** RISC gives that member to one event type of
+      // fourteen (`risc.ts`'s `commonClaims()`), and `caep` /
+      // `risc.omitEventTimestamp` drop it from the rest, so
+      // `account-credential-change-required` — an activation link, a reset
+      // link, a password reset — arrived with none and narrowed nothing:
+      // every token the person held when the poll collected it was revoked,
+      // including one issued on a sign-in made AFTER the act
+      // (`sts_portal_directory_attributes`, product single-node: the portal
+      // signed in again 300 ms after the activation link, the poll delivered
+      // the SET 250 ms later, and every /account-api call after it was
+      // STS-ACCOUNT-0007). The SET's own time of event (`toe`, RFC 8417
+      // section 2.2) is the next-best statement of when it happened, and
+      // its `iat` the last: a SET is built after its act, so a session or
+      // token begun in a later second than the SET was issued began after
+      // the act too. Whole seconds, the same side to err on.
+      const claimedAt = function claimedAt(value: unknown): number {
+        log.debug("Entering claimedAt().");
+        const n = Number(value);
+        log.debug("Leaving claimedAt().");
+        return Number.isFinite(n) && n > 0 ? n : 0;
+      };
+      const eventAt = claimedAt(body.event_timestamp) ||
+        claimedAt(entry.claims && entry.claims.toe) ||
+        claimedAt(entry.claims && entry.claims.iat);
       const beganAfterEvent = function (session: Loose): boolean {
         const authenticatedAt = Number(session && session.authTime);
         return eventAt > 0 && authenticatedAt > 0 &&
@@ -1546,6 +1571,36 @@ class SsfReceivers {
           return false;
         }
       };
+      // A RISC EVENT REPORTING THE ACCOUNT HOLDER'S OWN ACT (2026-11-03): the
+      // `credential-change` rule above, for the profile that cannot say who
+      // acted. A person who revokes their own key pair or TLS client
+      // certificate for `keyCompromise` on the portal sends CAEP's revoke
+      // (`user`, skipped) AND RISC's `credential-compromise`, which carries no
+      // `initiating_entity`; acting on it revoked the token the person had
+      // just made the report with. This service's own transmitter notes the
+      // act's `txn` on the account's RISC row (`risc.ts`'s `noteOwnAct()`),
+      // and only a SET this register says so of is left alone — a detector's
+      // compromise, an administrator's, or one the row cannot speak for still
+      // acts.
+      const ownRiscAct = function ownRiscAct(): boolean {
+        log.debug("Entering ownRiscAct().");
+        if (family !== 'risc') {
+          log.debug("Leaving ownRiscAct(). Not RISC.");
+          return false;
+        }
+        let own = false;
+        try {
+          own = !!require('./risc').ownAct(
+            entry.claims && entry.claims.sub_id,
+            entry.claims && entry.claims.txn);
+        } catch (e) {
+          log.debug("Caught in ownRiscAct(): " + ((e && e.message) || e));
+          // No RISC register here: nothing says it was the person's.
+          own = false;
+        }
+        log.debug("Leaving ownRiscAct(). " + own);
+        return own;
+      };
       let skip = '';
       if (family === 'caep' && short === 'session-revoked' &&
           initiator === 'policy') {
@@ -1556,6 +1611,8 @@ class SsfReceivers {
       } else if (family === 'caep' && short === 'credential-change' &&
                  changeType === 'create') {
         skip = 'a credential added, which takes nothing away';
+      } else if (ownRiscAct()) {
+        skip = 'the person\'s own report';
       }
       (decided.reactions || []).forEach(function (reaction: string): void {
         if (skip) {

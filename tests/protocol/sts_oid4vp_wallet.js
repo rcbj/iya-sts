@@ -403,7 +403,7 @@ function setsSession(r) {
   log.debug("Entering setsSession().");
   log.debug("Leaving setsSession().");
   return (r.setCookie || []).some(function (line) {
-    return /^sts_session=[^;]+/.test(line) && !/Max-Age=0/i.test(line);
+    return /^(?:__Host-)?sts_session=[^;]+/.test(line) && !/Max-Age=0/i.test(line);
   });
 }
 
@@ -610,8 +610,10 @@ async function startSignIn(who) {
   const state = "w-" + crypto.randomBytes(6).toString("hex");
   const authorized = await hop(who, "GET",
                                authorizeUrl("openid", pair, state));
-  const authnId = new URL(authorized.location || base, base).searchParams
-    .get("authn") || "";
+  // The step id is in the query in development and in the fragment in
+  // product (`mode.hidesStepIds()`, `#authn=`), so it is read from either.
+  const authnId = decodeURIComponent((/[?&#]authn=([^&#]+)/
+    .exec(String(authorized.location || "")) || [])[1] || "");
   // THE SCREEN IS A STATIC SURFACE (#571): its shell, then its view, whose
   // `wallet` member is the button.
   const screen = await hop(who, "GET", authorized.location || base);
@@ -931,7 +933,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   const s = await startSignIn(browser);
   check("the sign-in screen offers the wallet for this pending " +
         "authorization request", function () {
-          assert.ok(/\/authn\/login\?authn=/.test(s.authorized.location),
+          assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(s.authorized.location),
                     "the authorization request went to " +
                     s.authorized.location);
           assert.strictEqual(s.walletLink, "/authn/wallet?authn=" +
@@ -940,8 +942,14 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   check("the door sends the browser to the wait page and binds the " +
         "transaction to it with an HttpOnly cookie", function () {
           assert.strictEqual(s.door.status, 303, s.door.text.slice(0, 300));
-          assert.ok(/\/authn\/wallet\/wait\?/.test(s.waitUrl), s.waitUrl);
-          assert.ok(browser.cookies.sts_wallet_binding, "no binding cookie");
+          // The step's ids are in the fragment in product (#1454,
+          // `mode.hidesStepIds()`), the query in development.
+          assert.ok(/\/authn\/wallet\/wait[?#]/.test(s.waitUrl), s.waitUrl);
+          // Prefixed on the wire in product (common/cookie_wire.ts).
+          assert.ok(browser.cookies.sts_wallet_binding ||
+                    browser.cookies["__Host-sts_wallet_binding"] ||
+                    browser.cookies["__Secure-sts_wallet_binding"],
+                    "no binding cookie");
           assert.ok(/HttpOnly/i.test(s.door.setCookie.join(" ")),
                     s.door.setCookie.join(" "));
           assert.strictEqual(s.waiting.status, 200);
@@ -1010,8 +1018,9 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
         "and the wallet is sent back to the wait page with a response_code",
         function () {
           assert.strictEqual(r.status, 200, r.text.slice(0, 400));
-          assert.ok(/\/authn\/wallet\/wait\?/.test(redirect), redirect);
-          assert.ok(/[?&]response_code=/.test(redirect), redirect);
+          // Query in development, fragment in product (#1454).
+          assert.ok(/\/authn\/wallet\/wait[?#]/.test(redirect), redirect);
+          assert.ok(/[?&#]response_code=/.test(redirect), redirect);
           assert.ok(!setsSession(r), "the wallet's request sets no session");
         });
   const verdict = await verdictOf(ro.state);
@@ -1032,7 +1041,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   check("the response_code does not let another browser collect it: 403, " +
         "no session", function () {
           assert.strictEqual(r.status, 403, r.text.slice(0, 200));
-          assert.ok(!setsSession(r) && !stranger.cookies.sts_session,
+          assert.ok(!setsSession(r) && !(stranger.cookies.sts_session || stranger.cookies["__Host-sts_session"]),
                     JSON.stringify(r.setCookie));
         });
   r = await walletSignin.collect(base, null, redirect);
@@ -1053,13 +1062,13 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
 
   // The arrival cookie the authorization endpoint set, which a sign-in must
   // REPLACE rather than upgrade in place (session fixation, authn/CLAUDE.md).
-  const arrival = browser.cookies.sts_session || "";
+  const arrival = (browser.cookies.sts_session || browser.cookies["__Host-sts_session"]) || "";
   r = await walletSignin.collect(base, browser, redirect);
   check("the browser that started it collects: a NEW session cookie, and " +
         "back to the authorization request that was waiting", function () {
           assert.strictEqual(r.status, 303, r.text.slice(0, 300));
-          assert.ok(setsSession(r) && browser.cookies.sts_session &&
-                    browser.cookies.sts_session !== arrival,
+          assert.ok(setsSession(r) && (browser.cookies.sts_session || browser.cookies["__Host-sts_session"]) &&
+                    (browser.cookies.sts_session || browser.cookies["__Host-sts_session"]) !== arrival,
                     r.setCookie.join(" "));
           assert.ok(/\/oauth2\/authorize/.test(r.location), r.location);
         });
@@ -1080,8 +1089,8 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   const relogin = await hop(browser, "GET", authorizeUrl("openid", pkce(),
                                                          "again") +
                             "&prompt=login");
-  await walletSignin.refreshCsrf(base, browser, new URL(relogin.location ||
-    base, base).searchParams.get("authn") || "");
+  await walletSignin.refreshCsrf(base, browser, walletSignin.fromWaitUrl(
+    new URL(relogin.location || base, base).toString()).authn);
   r = await walletSignin.collect(base, browser, redirect);
   check("the sign-in is collected once: asked again it is refused, 400, " +
         "and starts no second session", function () {
@@ -1181,7 +1190,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
         function () {
           assert.strictEqual(r.status, 303, r.text.replace(/\s+/g, " ")
             .slice(0, 400));
-          assert.ok(second.cookies.sts_session);
+          assert.ok((second.cookies.sts_session || second.cookies["__Host-sts_session"]));
           assert.strictEqual(finished2.idToken.sub, holderSub);
           assert.deepStrictEqual(finished2.idToken.amr, ["pop"]);
         });

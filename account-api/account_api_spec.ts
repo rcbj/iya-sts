@@ -24,16 +24,13 @@
 // A LIBRARY (rule 3): it registers nothing and requires only `helpers`.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('../common/model_tables');
 import helpers = require('../common/helpers');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
 
 const log = helpers.log;
-
-// The scope every person-facing operation needs, and the one the portal's
-// client declares.
-const SCOPE = 'account:manage';
 
 /**
  * Builds the account API's OpenAPI document. A static utility class.
@@ -122,119 +119,122 @@ class AccountApiSpec {
                                schema: prop },
                              description ? { description: description } : {}));
     });
+    // THE SPENT-LINK SECRET OF A LINK PAGE'S GET (#1454) arrives in this
+    // header and never in a URL, so the operation has to declare it (#1483's
+    // refusal of a custom header no operation takes).
+    if (op.access === 'link' && op.method === 'GET') {
+      out.push({ name: 'X-Link-Token', in: 'header', required: false,
+                 schema: { type: 'string' },
+                 description: 'The single-use secret the link carried in ' +
+                              'its fragment.' });
+    }
+    AccountApiSpec.implicitHeaders().forEach(function (one) {
+      out.push(one);
+    });
     log.debug("Leaving AccountApiSpec.parametersOf(). " + out.length);
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // WHAT EVERY OPERATION TAKES WITHOUT SAYING SO (#1483, `/admin-api`'s
+  // #1476 rule): the headers a real caller of this API sends and no
+  // specification names, declared once for the whole document so that the
+  // document and the refusal read the same list. `DPoP` is RFC 9449's, on
+  // every `person` operation's call and sent by the portal's runtime; a
+  // `public` or `link` operation is declared it too, because a fuzz cell's
+  // proxy and a caller reusing one client send it on everything. And
+  // `X-Requested-With`, which an Android WebView adds to every request of a
+  // page it hosts, carrying the host app's package name: the portal and the
+  // sign-in pages are opened in WebViews, the page did not choose the header
+  // and cannot remove it, and refusing it would turn away a working sign-in.
+  // It is the one member of `common/request_headers.ts`'s "looks like its
+  // neighbour" pair that a browser, not a client, adds.
+  // -------------------------------------------------------------------------
   /**
-   * The document.
+   * The headers every operation takes.
    *
-   * @param ops - the operation table
+   * @returns the OpenAPI parameter objects
+   */
+  static implicitHeaders(): Json[] {
+    log.debug("Entering AccountApiSpec.implicitHeaders().");
+    log.debug("Leaving AccountApiSpec.implicitHeaders().");
+    return ModelTables.file('openapi.every.json').account;
+  }
+
+  /**
+   * The Account API OpenAPI document, as the model states it.
+   *
    * @param options - `baseUrl` (the realm's, with its prefix) and `version`
    * @returns the OpenAPI 3.1 document
    */
-  static document(ops: AccountOperation[], options: Json): Json {
-    log.debug("Entering AccountApiSpec.document(). " + ops.length +
-              " operation(s).");
+  static document(options: Json): Json {
+    log.debug("Entering AccountApiSpec.document().");
     const base = String((options && options.baseUrl) || '');
-    const paths: Json = {};
-    const tags: string[] = [];
-    ops.forEach(function (op) {
-      const path = AccountApiSpec.openApiPath(op.path);
-      paths[path] = paths[path] || {};
-      if (tags.indexOf(op.tag) < 0) {
-        tags.push(op.tag);
-      }
-      // A zod body is what the wrapper checks; `bodyDoc` documents one the
-      // handler checks itself.
-      const body = AccountApiSpec.jsonSchemaOf(op.body) || op.bodyDoc || null;
-      // A field the operation does not take is refused (`run()`), so an
-      // object body says so.
-      if (op.body && body && body.type === 'object' &&
-          body.additionalProperties === undefined &&
-          !AccountApiSpec.admitsAny(op.body)) {
-        body.additionalProperties = false;
-      }
-      const responses: Json = {
-        200: { description: 'The answer.',
-               content: { 'application/json': {
-                 schema: op.answer || { type: 'object' } } } },
-        400: { description: 'The request did not validate, or was refused: ' +
-                            '`{ ok: false, errors: [...] }`.' }
-      };
-      Object.keys(op.statuses || {}).forEach(function (status) {
-        responses[status] = { description: op.statuses[status] };
-      });
-      if (op.access === 'person') {
-        responses[401] = { description: 'No access token, or one that does ' +
-          'not verify, has expired, was revoked, outlived its sign-on ' +
-          'session, or came without its DPoP proof. `WWW-Authenticate` ' +
-          'says which.' };
-        responses[403] = { description: 'The token is for another audience ' +
-          'or does not carry `' + SCOPE + '`, or the access policy refused ' +
-          'the person.' };
-      }
-      const entry: Json = {
-        operationId: op.operationId,
-        tags: [op.tag],
-        summary: op.summary,
-        description: op.description +
-          (op.mirrors ? '\n\nThe door of the portal\'s `' + op.mirrors +
-                        '`.' : ''),
-        parameters: AccountApiSpec.parametersOf(op),
-        responses: responses,
-        security: op.access === 'person'
-          ? [{ portal: [SCOPE] }] : [],
-        'x-access': op.access
-      };
-      if (op.mirrors) {
-        entry['x-mirrors'] = op.mirrors;
-      }
-      if (body && op.method !== 'GET') {
-        entry.requestBody = { required: true, content: {
-          'application/json': { schema: body } } };
-      }
-      paths[path][op.method.toLowerCase()] = entry;
-    });
-    const doc = {
-      openapi: '3.1.0',
-      info: {
-        title: 'IYA STS Account API',
-        version: String((options && options.version) || '0.0.0'),
-        description: 'The user portal\'s API: everything a person can see ' +
-          'and do about their own account in this trust realm. The person ' +
-          'is ALWAYS the access token\'s subject — no operation takes a ' +
-          'username, an id or a DN naming whose account it is. A token is ' +
-          'obtained by the authorization code flow with PKCE (S256) as the ' +
-          'public client `sts-user-portal`, with `resource` set to this ' +
-          'API, and is DPoP-bound (RFC 9449): send it as `Authorization: ' +
-          'DPoP <token>` with a `DPoP` proof carrying `ath`. It stops ' +
-          'working when the sign-on session it was issued on ends. The few ' +
-          'operations marked `x-access: link` take no token: they spend the ' +
-          'single-use secret of an activation or reset link they carry.'
-      },
-      servers: [{ url: base }],
-      tags: tags.map(function (name) {
-        return { name: name };
-      }),
-      paths: paths,
-      components: {
-        securitySchemes: {
-          portal: {
-            type: 'oauth2',
-            description: 'The authorization code flow with PKCE as a public ' +
-              'client; every token DPoP-bound (RFC 9449).',
-            flows: { authorizationCode: {
-              authorizationUrl: base + '/oauth2/authorize',
-              tokenUrl: base + '/oauth2/token',
-              scopes: { [SCOPE]: 'Read and manage your own account.' } } }
-          }
-        }
-      }
-    };
-    log.debug("Leaving AccountApiSpec.document(). " +
-              Object.keys(paths).length + " path(s).");
+    const doc = ModelTables.file('openapi.account.json');
+    doc.info.version = String((options && options.version) || '0.0.0');
+    doc.servers = [{ url: base }];
+    const flow = doc.components.securitySchemes.portal.flows.authorizationCode;
+    flow.authorizationUrl = base + flow.authorizationUrl;
+    flow.tokenUrl = base + flow.tokenUrl;
+    log.debug("Leaving AccountApiSpec.document().");
     return doc;
+  }
+
+  /**
+   * The body every refusal of this API is held to.
+   *
+   * @returns the schema
+   */
+  static refusalSchema(): Json {
+    log.debug("Entering AccountApiSpec.refusalSchema().");
+    const paths = ModelTables.file('openapi.account.json').paths;
+    const index = Object.keys(paths).map(function (path) {
+      return paths[path].get;
+    }).filter(function (one) {
+      return one && one.operationId === 'getIndex';
+    })[0];
+    const schema = index.responses['400'].content['application/json'].schema;
+    log.debug("Leaving AccountApiSpec.refusalSchema().");
+    return schema;
+  }
+
+  /**
+   * Gives routing rows the names the model states for them.
+   *
+   * @param rows - the rows
+   * @returns the same rows
+   */
+  static named(rows: AccountOperation[]): AccountOperation[] {
+    log.debug("Entering AccountApiSpec.named().");
+    const paths = ModelTables.file('openapi.account.json').paths;
+    rows.forEach(function (op) {
+      const entry = paths[AccountApiSpec.openApiPath(op.path)][
+        op.method.toLowerCase()];
+      op.tag = entry.tags[0];
+      op.summary = entry.summary;
+      op.mirrors = entry['x-mirrors'] || null;
+    });
+    log.debug("Leaving AccountApiSpec.named().");
+    return rows;
+  }
+
+  /**
+   * What a row says of an operation's body, as JSON Schema: the part of the
+   * document the code still validates against.
+   *
+   * @param op - the row
+   * @returns the schema, or null
+   */
+  static bodySchemaOf(op: AccountOperation): Json {
+    log.debug("Entering AccountApiSpec.bodySchemaOf().");
+    const body = AccountApiSpec.jsonSchemaOf(op.body) || null;
+    if (op.body && body && body.type === 'object' &&
+        body.additionalProperties === undefined &&
+        !AccountApiSpec.admitsAny(op.body)) {
+      body.additionalProperties = false;
+    }
+    log.debug("Leaving AccountApiSpec.bodySchemaOf().");
+    return body;
   }
 }
 

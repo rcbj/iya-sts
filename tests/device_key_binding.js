@@ -159,7 +159,7 @@ async function body(t) {
           !d.byUserCode(late.userCode),
           '1e. past its lifetime, expired');
   clock.now += 3 * 3600 * 1000;
-  const swept = d.sweep();
+  const swept = await d.sweep();
   t.check(d.poll(made.deviceCode, 'dev-client').state === 'unknown' &&
           /removed/.test(swept.summary),
           '1f. the sweep removes what finished long ago', swept.summary);

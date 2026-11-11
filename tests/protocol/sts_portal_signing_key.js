@@ -7,6 +7,9 @@
 // /portal/signing-key: A PERSON ISSUING THEMSELVES AN RFC 7523 SIGNING KEY,
 // AND THEN USING IT — and since 2026-09-13 an RFC 7522 one beside it, on a
 // set of its own that neither signs for the other nor comes off with it.
+// SINCE #1290 (2026-11-03) several of each: Generate adds, each key pair is
+// revoked on its own row, and at `pki.personSigningKeyMax` the Generate
+// control becomes a note.
 //
 // `/admin/pki` could issue a person a key pair from 2026-09-11 and an operator
 // had to do it. This page is the person's own door onto the same act, and the
@@ -220,24 +223,90 @@ function personAttributes(who) {
            mail: who + "@" + MAIL_DOMAIN };
 }
 
-// The PEM as the page prints it. Anchored on the BEGIN line rather than on the
-// block, because the page carries a second <pre> holding a curl command and a
-// regex that matched any <pre> would read that one on the day the order
-// changed.
+// A `download` link's file, by the end of its name and its media type. The
+// link carries a `title` between `download` and `href` since #671, so other
+// attributes may sit between the two.
+function dataLink(text, suffix, mime) {
+  log.debug("Entering dataLink().");
+  const pattern = new RegExp('download="([^"]*' + suffix.replace(/\./g,
+    "\\.") + ')"[^>]*? href="data:' + mime.replace(/[/+.]/g, "\\$&") +
+    ';base64,([A-Za-z0-9+/=]+)"');
+  const found = pattern.exec(String(text || ""));
+  log.debug("Leaving dataLink().");
+  return found ? { name: found[1],
+                   bytes: Buffer.from(found[2], "base64") } : null;
+}
+
+// The private key a page offers. SINCE #671 (2026-11-03) it is a download
+// link in the certificate's row, `<name>-<profile>-signing-key.pem`, and not
+// a printed block; a PEM printed anywhere in the text is still found, so the
+// checks that a page carries NO key stay as strict as they were. Anchored on
+// the BEGIN line rather than on the block, because the page carries a <pre>
+// holding a curl command.
 function privateKeyOn(text) {
   log.debug("Entering privateKeyOn().");
-  const found = String(text).match(
-    /(-----BEGIN (?:RSA |EC )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC )?PRIVATE KEY-----)/);
+  const pemOf = function (one) {
+    const found = String(one).match(
+      /(-----BEGIN (?:RSA |EC )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC )?PRIVATE KEY-----)/);
+    return found ? found[1] : "";
+  };
+  const printed = pemOf(text);
+  const link = dataLink(text, "-key.pem", "application/x-pem-file");
   log.debug("Leaving privateKeyOn().");
+  return printed || (link ? pemOf(link.bytes.toString("utf8")) : "");
+}
+
+// ONE PROFILE'S CARD (#1290): from its heading to the next card's. Each
+// card lists every key pair the person holds, one row each, the handle in
+// the row's second cell.
+function cardOf(text, id) {
+  log.debug("Entering cardOf(). " + id);
+  const after = String(text || "").split('<h2 id="' + id + '">')[1] || "";
+  log.debug("Leaving cardOf().");
+  return after.split('<div class="card">')[0];
+}
+
+// Every handle a card lists, newest first (the order the page draws).
+function handlesOn(text, id) {
+  log.debug("Entering handlesOn(). " + id);
+  const out = [];
+  const pattern = /<\/td><td><code>([A-Za-z0-9_-]+)<\/code>/g;
+  const card = cardOf(text, id);
+  let found = pattern.exec(card);
+  while (found) {
+    out.push(found[1]);
+    found = pattern.exec(card);
+  }
+  log.debug("Leaving handlesOn(). " + out.length);
+  return out;
+}
+
+// The state a card's row for one handle says: `valid`, `revoked`, ….
+function stateOn(text, id, handle) {
+  log.debug("Entering stateOn().");
+  const rows = cardOf(text, id).split("<tr");
+  const row = rows.filter(function (one) {
+    return one.indexOf("<code>" + handle + "</code>") >= 0;
+  })[0] || "";
+  const found = /<span class="state-([a-z]+)">/.exec(row);
+  log.debug("Leaving stateOn().");
+  return found ? found[1] : "";
+}
+
+// The handle in the row a generation marked as the new one (#671, #1290).
+function freshHandleOn(text) {
+  log.debug("Entering freshHandleOn().");
+  const row = (String(text || "")
+    .match(/<tr class="fresh-row">[\s\S]*?<\/tr>/) || [""])[0];
+  const found = /<\/td><td><code>([A-Za-z0-9_-]+)<\/code>/.exec(row);
+  log.debug("Leaving freshHandleOn().");
   return found ? found[1] : "";
 }
 
 function thumbprintOn(text) {
   log.debug("Entering thumbprintOn().");
-  const found =
-      String(text).match(/<th>Thumbprint<\/th><td><code>([^<]+)<\/code>/);
   log.debug("Leaving thumbprintOn().");
-  return found ? found[1] : "";
+  return handlesOn(text, "saml")[0] || "";
 }
 
 // An RFC 7522 grant: an assertion built and signed by `saml_xmldsig.js`,
@@ -254,12 +323,11 @@ async function samlGrant(iss, sub, privateKeyPem) {
   return r;
 }
 
+// The newest RFC 7523 key pair's kid on the page.
 function kidOn(text) {
   log.debug("Entering kidOn().");
-  const found =
-      String(text).match(/<th>Key<\/th><td><code>(person-[^<]+)<\/code>/);
   log.debug("Leaving kidOn().");
-  return found ? found[1] : "";
+  return handlesOn(text, "jwt")[0] || "";
 }
 
 // A refusal read as the OAuth ERROR CODE and never as the status alone:
@@ -430,11 +498,32 @@ async function test() {
             "no private key block on the page: " +
             String(issued.text).slice(0, 600));
         });
-  check("the page says it is the only time it will be shown, which is the " +
-        "whole contract — nothing in this service opens the stored copy again",
-        function () {
-          assert.ok(/only time it will be shown/i.test(issued.text),
-            "the page does not say the key is shown once");
+  check("the page says it is the only time it can be downloaded, which is " +
+        "the whole contract — nothing in this service opens the stored copy " +
+        "again", function () {
+          assert.ok(/only time it can be downloaded/i.test(issued.text),
+            "the page does not say the key is offered once");
+        });
+  // THE TWO FILES ARE IN THE CERTIFICATE'S ROW (#671), the same pair the
+  // TLS client certificate's row carries: the key, and the chain whose leaf
+  // is the certificate that key belongs to.
+  const issuedChain = dataLink(issued.text, "-jwt-signing-chain.pem",
+                               "application/x-pem-file");
+  check("the key and the certificate chain are download links in the new " +
+        "key pair's own row, and the chain's leaf holds the key's public " +
+        "half", function () {
+          const row = (String(issued.text)
+            .match(/<tr class="fresh-row">[\s\S]*?<\/tr>/) || [""])[0];
+          assert.ok(/-jwt-signing-key\.pem"/.test(row) &&
+                    /-jwt-signing-chain\.pem"/.test(row),
+            "the two downloads are not in the certificate's row");
+          assert.ok(issuedChain, "no chain download on the page");
+          const leaf = new nodeCrypto.X509Certificate((/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/
+            .exec(issuedChain.bytes.toString("utf8")) || [""])[0]);
+          assert.ok(nodeCrypto.createPublicKey(pem)
+            .export({ type: "spki", format: "der" })
+            .equals(leaf.publicKey.export({ type: "spki", format: "der" })),
+            "the chain's leaf is not the key's certificate");
         });
   check("and it is served no-store, like every page in this portal",
         function () {
@@ -513,7 +602,7 @@ async function test() {
           const whole = String(overview.text) +
                         JSON.stringify(overview.json || {});
           ["stsAssertionPrivateKey", "stsassertionprivatekey",
-           "stsAssertionJwks", "stsassertionjwks"].forEach(function (name) {
+           "stsAssertionKeyPair", "stsassertionkeypair"].forEach(function (name) {
             assert.ok(whole.indexOf(name) < 0,
               "the Overview mentions " + name);
           });
@@ -595,49 +684,143 @@ async function test() {
           });
         });
 
-  const replacedKid = kidOn(generated.text);
-  check("generating again REPLACED the pair rather than adding one — a " +
-        "person holds one signing key, and two would mean a verifier trying " +
-        "both",
-        function () {
-          assert.ok(replacedKid && replacedKid !== kid,
-            "the key handle did not change: " + replacedKid);
+  // SEVERAL KEY PAIRS PER PROFILE (#1290): generating again ADDS one.
+  const addedKid = freshHandleOn(generated.text);
+  check("generating again ADDS a key pair rather than replacing the one " +
+        "held — the page lists both, the new one in the row carrying its " +
+        "downloads", function () {
+          assert.ok(addedKid && addedKid !== kid,
+            "the new row's kid is " + JSON.stringify(addedKid));
+          const listed = handlesOn(generated.text, "jwt");
+          assert.ok(listed.indexOf(kid) >= 0 && listed.indexOf(addedKid) >= 0,
+            "the card lists " + JSON.stringify(listed));
         });
   const oldKey = await tokenRequest({ grant_type: GRANT,
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: kid },
       { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
-        exp: now() + 120, jti: jti() }, pem) });
-  check("and the key it replaced stops working that moment, which is what " +
-        "the page warns before the button is pressed", function () {
-          refused(oldKey, "invalid_grant", "an assertion signed with the " +
-                  "replaced key");
+        exp: now() + 120, jti: jti() }, pem), scope: "openid" });
+  check("and the first key pair STILL obtains a token: each is found by its " +
+        "kid", function () {
+          assert.strictEqual(oldKey.status, 200,
+            JSON.stringify(oldKey.body).slice(0, 300));
         });
 
   // -------------------------------------------------------------------------
-  // 7. TAKING IT OFF.
+  // 7. REVOKING ONE, ROW BY ROW (#1290) — which replaced taking it off.
   // -------------------------------------------------------------------------
-  log.info("=== 7. taking it off ===");
+  log.info("=== 7. revoking one ===");
   const newPem = privateKeyOn(generated.text);
-  const removed = await act(b, "/portal/signing-key", { action: "remove" });
-  check("the remove answers a MESSAGE and no view — there is nothing to hand " +
-        "back, which is why this half carries no page and the generate does",
+  const listedPage = await pageOf(b, "/portal/signing-key");
+  check("every valid row carries its own Revoke, with the two reasons a " +
+        "holder may give", function () {
+          const card = cardOf(listedPage.text, "jwt");
+          assert.strictEqual((card.match(/name="action" value="revoke"/g) ||
+                              []).length, 2, "the JWT card's revoke forms");
+          assert.ok(card.indexOf('name="handle" value="' + kid + '"') >= 0,
+            "no revoke form names " + kid);
+          assert.ok(/value="keyCompromise"/.test(card) &&
+                    /value="cessationOfOperation"/.test(card),
+            "the reasons are not offered");
+        });
+  const otherSide = await signIn("/portal/signing-key", OTHER);
+  const notTheirs = await act(otherSide, "/portal/signing-key",
+                              { action: "revoke", purpose: "jwt",
+                                handle: kid, reason: "keyCompromise" });
+  check("**ANOTHER PERSON NAMING THIS KID REVOKES NOTHING** — the handle is " +
+        "looked up among the signed-in person's own key pairs only",
         function () {
-          assert.ok(removed.status === 200 && removed.json &&
-                    removed.json.ok === true && !removed.json.view &&
-                    removed.json.message,
-            "it answered " + removed.status + " " +
-            String(removed.text).slice(0, 200));
+          assert.strictEqual(notTheirs.status, 400,
+            "it answered " + notTheirs.status + " " + notTheirs.said);
         });
-  const afterRemoval = await tokenRequest({ grant_type: GRANT,
-    assertion: signJws({ alg: "RS256", typ: "JWT", kid: replacedKid },
+  const revoked = await act(b, "/portal/signing-key",
+                            { action: "revoke", purpose: "jwt", handle: kid,
+                              reason: "keyCompromise" });
+  check("the revoke answers a MESSAGE and no view — nothing secret comes " +
+        "back", function () {
+          assert.ok(revoked.status === 200 && revoked.json &&
+                    revoked.json.ok === true && !revoked.json.view &&
+                    /RFC 7523/.test(revoked.said),
+            "it answered " + revoked.status + " " +
+            String(revoked.text).slice(0, 200));
+        });
+  const revokedUse = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: "RS256", typ: "JWT", kid: kid },
       { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
-        exp: now() + 120, jti: jti() }, newPem) });
-  check("and an assertion signed with the key that was taken off is refused " +
-        "from that moment — which is the half that IS true of it, since the " +
-        "certificate itself is on no revocation list", function () {
-          refused(afterRemoval, "invalid_grant",
-                  "an assertion signed with a key that was taken off");
+        exp: now() + 120, jti: jti() }, pem) });
+  const otherStill = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: "RS256", typ: "JWT", kid: addedKid },
+      { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
+        exp: now() + 120, jti: jti() }, newPem), scope: "openid" });
+  check("**the revoked key is refused from that moment and the other still " +
+        "obtains a token**", function () {
+          refused(revokedUse, "invalid_grant",
+                  "an assertion signed with a revoked key");
+          assert.strictEqual(otherStill.status, 200,
+            JSON.stringify(otherStill.body).slice(0, 300));
         });
+  const revokedPage = await pageOf(b, "/portal/signing-key");
+  check("the page draws the revoked row as revoked, with no Revoke on it",
+        function () {
+          assert.strictEqual(stateOn(revokedPage.text, "jwt", kid),
+                             "revoked");
+          assert.strictEqual(stateOn(revokedPage.text, "jwt", addedKid),
+                             "valid");
+          assert.ok(cardOf(revokedPage.text, "jwt").indexOf(
+            'name="handle" value="' + kid + '"') < 0,
+            "the revoked row still offers Revoke");
+        });
+  const ownerEntry = await apiGet("/users?user=" + encodeURIComponent(OWNER));
+  check("and an administrator reads the same: the key pair revoked with " +
+        "its reason, the other valid (GET /admin-api/users?user=)",
+        function () {
+          const pairs = ((ownerEntry.body || {}).credentials || {})
+            .keyPairs || [];
+          const jwt = pairs.filter(function (one) {
+            return one.purpose === "jwt";
+          })[0] || { keys: [] };
+          const byHandle = {};
+          jwt.keys.forEach(function (one) { byHandle[one.handle] = one; });
+          assert.ok(byHandle[kid] && byHandle[kid].state === "revoked" &&
+                    byHandle[kid].reason === "keyCompromise",
+            JSON.stringify(jwt).slice(0, 400));
+          assert.ok(byHandle[addedKid] &&
+                    byHandle[addedKid].state === "valid",
+            JSON.stringify(jwt).slice(0, 400));
+        });
+
+  // THE CAP (#1290): at `pki.personSigningKeyMax` valid key pairs the page
+  // replaces Generate with a note and the act is refused.
+  const capped = await apiPost("/config/set",
+                               { key: "pki.personSigningKeyMax", value: "1" });
+  check("the cap can be lowered to 1 for this check", function () {
+    assert.strictEqual(capped.status, 200,
+      JSON.stringify(capped.body).slice(0, 300));
+  });
+  try {
+    const atCap = await pageOf(b, "/portal/signing-key");
+    check("**AT THE CAP THE GENERATE CONTROL IS REPLACED BY A NOTE**",
+          function () {
+            const card = cardOf(atCap.text, "jwt");
+            assert.ok(card.indexOf('name="action" value="generate"') < 0,
+              "the JWT card still offers Generate at the cap");
+            assert.ok(/the most this service issues to one person/
+              .test(card), "the cap note is not on the card");
+            assert.ok(cardOf(atCap.text, "saml")
+              .indexOf('name="action" value="generate"') >= 0,
+              "the cap is per profile, and the SAML card lost Generate");
+          });
+    const overCap = await act(b, "/portal/signing-key",
+                              { action: "generate", purpose: "jwt" });
+    check("and a generate posted anyway is refused 400, issuing nothing",
+          function () {
+            assert.strictEqual(overCap.status, 400,
+              "it answered " + overCap.status);
+            assert.strictEqual(privateKeyOn(overCap.text), "",
+              "a key came back over the cap");
+          });
+  } finally {
+    await apiPost("/config/reset", { key: "pki.personSigningKeyMax" });
+  }
 
   // -------------------------------------------------------------------------
   // 8. RFC 7522: A SECOND KEY PAIR, ON A SET OF ITS OWN (2026-09-13).
@@ -670,7 +853,7 @@ async function test() {
           assert.ok(/^[A-Za-z0-9_-]{20,}$/.test(thumbprint),
             "thumbprint=" + JSON.stringify(thumbprint));
           assert.strictEqual(kidOn(samlIssued.text), jwtKid,
-            "the RFC 7523 key is not the one just issued: " +
+            "the newest RFC 7523 key is not the one just issued: " +
             kidOn(samlIssued.text));
         });
 
@@ -741,33 +924,38 @@ async function test() {
         });
 
   const samlRemoved = await act(b, "/portal/signing-key",
-                                { action: "remove", purpose: "saml" });
+                                { action: "revoke", purpose: "saml",
+                                  handle: thumbprint,
+                                  reason: "cessationOfOperation" });
   const samlGone = await samlGrant(OWNER, OWNER, samlPem);
   const jwtStill = await tokenRequest({ grant_type: GRANT,
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: jwtKid },
       { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
         exp: now() + 120, jti: jti() }, jwtPem) });
-  check("**TAKING THE RFC 7522 KEY OFF LEAVES THE RFC 7523 ONE WORKING** — " +
+  check("**REVOKING THE RFC 7522 KEY LEAVES THE RFC 7523 ONES WORKING** — " +
         "the SAML key is refused from that moment and the JWT key still " +
         "obtains a token", function () {
           assert.strictEqual(samlRemoved.status, 200,
-            "the remove answered " + samlRemoved.status);
+            "the revoke answered " + samlRemoved.status);
           assert.ok(/RFC 7522/.test(samlRemoved.said),
             "the message does not name the profile: " + samlRemoved.said);
           refused(samlGone, "invalid_grant",
-                  "an assertion signed with the SAML key taken off");
+                  "an assertion signed with the revoked SAML key");
           assert.strictEqual(jwtStill.status, 200,
             JSON.stringify(jwtStill.body).slice(0, 300));
         });
   const nothingLeft = await act(b, "/portal/signing-key",
-                                { action: "remove", purpose: "saml" });
-  check("and a second SAML remove is refused 400 naming the profile, while " +
-        "the page still shows the RFC 7523 key", function () {
+                                { action: "revoke", purpose: "saml",
+                                  handle: jwtKid });
+  check("and a SAML revoke naming a JWT kid is refused 400 naming the " +
+        "profile — the two sets share nothing — while the page still shows " +
+        "the RFC 7523 key and the RFC 7522 one as revoked", function () {
           assert.strictEqual(nothingLeft.status, 400);
           assert.ok(/no RFC 7522 signing key/.test(nothingLeft.said),
             nothingLeft.said);
           assert.strictEqual(kidOn(nothingLeft.text), jwtKid);
-          assert.strictEqual(thumbprintOn(nothingLeft.text), "");
+          assert.strictEqual(stateOn(nothingLeft.text, "saml", thumbprint),
+                             "revoked");
         });
 
   // -------------------------------------------------------------------------
@@ -788,73 +976,65 @@ async function test() {
   //    than a decision.
   // -------------------------------------------------------------------------
   log.info("=== 9. a TLS client certificate ===");
-  const FILE_PASSWORD = "file password " + jti().slice(0, 8);
-  const dataLink = function (text, suffix, mime) {
-    log.debug("Entering dataLink().");
-    const pattern = new RegExp('download="([^"]*' + suffix.replace(/\./g,
-      "\\.") + ')" href="data:' + mime.replace(/[/+.]/g, "\\$&") +
-      ';base64,([A-Za-z0-9+/=]+)"');
-    const found = pattern.exec(String(text || ""));
-    log.debug("Leaving dataLink().");
-    return found ? { name: found[1],
-                     bytes: Buffer.from(found[2], "base64") } : null;
-  };
   const tlsPage = await pageOf(b, "/portal/signing-key");
   check("the page carries a TLS client certificate card with a generate form " +
-        "asking for a file password twice", function () {
+        "that asks for NO file password (#671)", function () {
           assert.ok(/id="tls-client"/.test(tlsPage.text),
             "no TLS client certificate card on the page");
           assert.ok(/name="action" value="generate-tls-client"/.test(
-            tlsPage.text) && /name="p12_password"/.test(tlsPage.text) &&
-            /name="p12_confirm"/.test(tlsPage.text),
-            "the generate form is not on the page");
+            tlsPage.text), "the generate form is not on the page");
+          assert.ok(!/name="p12_password"|name="p12_confirm"/.test(
+            tlsPage.text), "the form still asks for a file password");
           assert.ok(/You have no TLS client certificate/.test(tlsPage.text),
             "the card does not say none is held");
         });
-  const mismatched = await act(b, "/portal/signing-key",
+  const withPassword = await act(b, "/portal/signing-key",
     { action: "generate-tls-client", label: "laptop",
-      p12_password: FILE_PASSWORD, p12_confirm: FILE_PASSWORD + "x" });
-  check("two different file passwords are refused 400 and nothing is issued",
+      p12_password: "a file password" });
+  check("a body still carrying a file password is refused 400 at the form's " +
+        "shape and nothing is issued — the field is gone, not ignored",
         function () {
-          assert.strictEqual(mismatched.status, 400,
-            "it answered " + mismatched.status);
-          assert.ok(!dataLink(mismatched.text, ".p12", "application/x-pkcs12"),
-            "a PKCS#12 came back for a mismatched password");
-          assert.ok(/You have no TLS client certificate/.test(mismatched.text),
-            "a certificate was issued anyway");
+          assert.strictEqual(withPassword.status, 400,
+            "it answered " + withPassword.status);
+          assert.ok(!dataLink(withPassword.text, "-key.pem",
+                              "application/x-pem-file"),
+            "a key file came back anyway");
         });
   const noTokenTls = await fetch(base + "/account-api/signing-key", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "generate-tls-client",
-                           p12_password: FILE_PASSWORD,
-                           p12_confirm: FILE_PASSWORD }) });
+    body: JSON.stringify({ action: "generate-tls-client" }) });
   const noTokenText = await noTokenTls.text();
   check("a generate with no access token is refused 401 and issues nothing " +
         "(it was the CSRF check until #568)", function () {
           assert.strictEqual(noTokenTls.status, 401,
             "it answered " + noTokenTls.status);
-          assert.ok(!/pkcs12/i.test(noTokenText), "a file came back");
+          assert.ok(!/x-pem-file/i.test(noTokenText), "a file came back");
         });
   const tlsIssued = await act(b, "/portal/signing-key",
-    { action: "generate-tls-client", label: "laptop", key_alg: "ec-p256",
-      p12_password: FILE_PASSWORD, p12_confirm: FILE_PASSWORD });
-  const p12 = dataLink(tlsIssued.text, ".p12", "application/x-pkcs12");
+    { action: "generate-tls-client", label: "laptop", key_alg: "ec-p256" });
   const keyFile = dataLink(tlsIssued.text, "-key.pem",
                            "application/x-pem-file");
   const chainFile = dataLink(tlsIssued.text, "-chain.pem",
                              "application/x-pem-file");
-  check("**THE POST ANSWERS WITH THE THREE FILES**, no-store, as download " +
-        "links on the page that also says how to install them", function () {
+  check("**THE POST ANSWERS WITH THE TWO FILES**, no-store, as download " +
+        "links in the new certificate's own row, and NO PKCS#12 (#671)",
+        function () {
           assert.strictEqual(tlsIssued.status, 200,
             "it answered " + tlsIssued.status + " " +
             String(tlsIssued.text).slice(0, 400));
-          assert.ok(p12 && keyFile && chainFile,
-            "the three download links are not all on the page");
+          assert.ok(keyFile && chainFile,
+            "the two download links are not both on the page");
+          assert.ok(!/\.p12"/.test(tlsIssued.text),
+            "a PKCS#12 is still offered");
+          const row = (String(tlsIssued.text)
+            .match(/<tr class="fresh-row">[\s\S]*?<\/tr>/) || [""])[0];
+          assert.ok(row.indexOf(keyFile.name) >= 0 &&
+                    row.indexOf(chainFile.name) >= 0,
+            "the downloads are not in the certificate's row");
           assert.ok(/no-store/.test(
             String(tlsIssued.headers.get("cache-control") || "")));
-          assert.ok(/Firefox/.test(tlsIssued.text) &&
-                    /Keychain Access/.test(tlsIssued.text),
-            "the page carries no install steps");
+          assert.ok(/curl --cert /.test(tlsIssued.text),
+            "the page does not say how to use the files");
           assert.ok(/only time these files can be downloaded/.test(
             tlsIssued.text), "the page does not say the files are shown once");
         });
@@ -877,19 +1057,18 @@ async function test() {
                              "the chain file is not the leaf and two " +
                              "issuers");
         });
-  check("the key file is ENCRYPTED, opens with the file password, and holds " +
-        "the certificate's key; the PKCS#12 is DER", function () {
+  check("the key file is an UNENCRYPTED PKCS#8 block (#671: no file " +
+        "password) and holds the certificate's key", function () {
           const keyText = keyFile.bytes.toString("utf8");
-          assert.ok(/ENCRYPTED PRIVATE KEY/.test(keyText),
-            "the key file is not an encrypted PKCS#8 block");
+          assert.ok(/-----BEGIN PRIVATE KEY-----/.test(keyText) &&
+                    !/ENCRYPTED/.test(keyText),
+            "the key file is not an unencrypted PKCS#8 block");
           const opened = nodeCrypto.createPrivateKey({ key: keyText,
-            format: "pem", passphrase: FILE_PASSWORD });
+            format: "pem" });
           assert.ok(nodeCrypto.createPublicKey(opened)
             .export({ type: "spki", format: "der" })
             .equals(tlsLeaf.publicKey.export({ type: "spki", format: "der" })),
             "the key in the file is not the certificate's");
-          assert.ok(p12.bytes[0] === 0x30 && p12.bytes.length > 500,
-            "the .p12 is not a DER SEQUENCE");
         });
   const tlsSerial = tlsLeaf ? String(tlsLeaf.serialNumber).toLowerCase() : "";
   const tlsListed = await pageOf(b, "/portal/signing-key");
@@ -900,8 +1079,9 @@ async function test() {
                     "the serial is not listed");
           assert.ok(/class="state-valid">valid/.test(tlsListed.text),
             "it is not listed as valid");
-          assert.ok(!dataLink(tlsListed.text, ".p12", "application/x-pkcs12"),
-            "the PKCS#12 is still on the page");
+          assert.ok(!dataLink(tlsListed.text, "-key.pem",
+                              "application/x-pem-file"),
+            "the key file is still on the page");
         });
   const otherBrowser = await signIn("/portal/signing-key", OTHER);
   const otherPage = await pageOf(otherBrowser, "/portal/signing-key");
@@ -947,7 +1127,8 @@ const program = new Command();
 program
   .name("sts_portal_signing_key")
   .description("/portal/signing-key: a person issues themselves an RFC 7523 " +
-      "key pair, the private half is shown once on the page that comes back, " +
+      "key pair, the private half is offered once on the page that comes " +
+      "back, " +
       "it obtains an access token as them at /oauth2/token and obtains " +
       "nothing as anybody else, it never appears again, a post with no " +
       "access token is refused, a username in the body changes nothing, " +

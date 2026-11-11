@@ -326,6 +326,22 @@ is nothing to lose when a browser closes and no second copy that could disagree
 with the stored one. The cost is that editing is LIVE, so the page says so and
 puts the disable control one click away.
 
+**An expression edit names an expression.** The six `set-expression-*` actions
+replace the node at the path. A path that resolves to a Match, a rule, a
+target, an AnyOf or an AllOf is refused (`STS-XACML-0035`) rather than
+written: `writeTarget()` would then call `writeExpression()` on the Match's
+missing `value` and throw reading `.kind`, which the fault boundary answers
+as HTTP 500 (`STS-API-0140`, #1419). The document root was already that
+refusal (#1356). A Match is edited by `edit-match`.
+
+**An `edit-match` names a Match.** The action reads the Match's value.
+A path `kindAt()` calls `allOf` (the fuzzer sent
+`.rules.0.target.anyOf.0.allOf.0` and omitted `value`) has no `value`,
+so the read throws (`STS-API-0140`, #1428). The edit is refused
+(`STS-XACML-0035`) before anything is written. A function with no first
+argument, and a Match that has no value when the body supplies none,
+are the same refusal: both are the next read that would throw.
+
 ## What the editor can build, and the three things it cannot
 
 **Since 2026-09-05 the guided editor reaches the whole of the XACML 3.0 policy
@@ -1764,8 +1780,15 @@ document implementing it is missing would be the one failure this feature must
 not have — a configured refusal silently not happening. So that one is refused,
 and the refusal NAMES the policy and the template that rebuilds it.
 
-**An error is not a decision.** A throw out of the engine is a defect, and
-`issuance_gate.js` answers a throw by allowing, for the locked-room reason. A
+**An error is not a decision.** A throw out of the engine is a defect, and in
+DEVELOPMENT `issuance_gate.js` answers a throw (or no answer) by allowing, for
+the locked-room reason. **In product it refuses (#1494, ASVS 5.0.0 16.5.3,
+`STS-XACML-0183`), as the access gate does (#1450)**: `noDecision()` asks
+`mode.failsOpenOnPolicyFault()`, and an application register that cannot be
+read to judge a sign-in yields the mechanism `unreadable`, which nothing holds.
+The recovery from a policy that denies its own repair is `roles.enforceIssuance`
+off, which `/admin/mode` reports while it is. An EMPTY decider (the XACML family
+not loaded in this process) still allows in both modes — that is rule 3v. A
 Deny, a NotApplicable and an Indeterminate are not throws — they are answers,
 and every one of them refuses here, because the policy is `deny-unless-permit`
 and an issuance decision must not rest on a PEP's bias. **`xacml.pepBias` was
@@ -2534,6 +2557,10 @@ an owner only by this rule.
 leave out what turns owning into Admin: `create`, delete and rename,
 `add-permission` on a role, `set-service-account`, `reveal-secret`, and an
 application's scopes, roles, grant types, keys and delegation.
+The one flow an owner MAY enable is `oauthAllowedTokenResponseTypes` (#1296,
+rcbj's decision): the token response types the application may use, which
+the realm must allow first — the registry refuses a value it does not
+(`STS-REG-0364`), so owning an application never widens the realm.
 
 **THE PIP ANSWERS THREE MORE DESIGNATORS** (`xacml_pip.ts`'s `ownerFact()`),
 out of `common/ownership.ts`: `object-owner` and `object-protected` — the ONE

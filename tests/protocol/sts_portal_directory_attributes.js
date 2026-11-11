@@ -607,6 +607,18 @@ async function theCredentialsAreNotOnIt(b) {
   // `account-credential-change-required` (#233), and the portal is a Shared
   // Signals receiver whose default signal-response policy ends the person's
   // sessions on it. The password is untouched, so it still signs them in.
+  //
+  // **NOT IN THE SAME SECOND AS THE LINK (2026-11-10).** The signal reaches
+  // the portal by its poll, a moment after this answer, and what it revokes
+  // is bounded by the event's time in WHOLE SECONDS, a token issued in the
+  // event's own second being revoked as the side to err on
+  // (`ssf/ssf_receivers.ts`, `actOn()`). A sign-in 300 ms after the link
+  // landed in that second and lost its token to the poll 250 ms later
+  // (product single-node). So the sign-in waits for the next second; the
+  // service's clock and this one are the same host's.
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 1050 - (Date.now() % 1000));
+  });
   b = await signIn(OWNER, PROBE_PASSWORD);
   await b.client.act("/portal/mfa", { action: "start" });
   // DRAWN AGAIN FOR A MOMENT (cluster, 2026-10-28): the started enrolment
@@ -679,16 +691,14 @@ async function theCredentialsAreNotOnIt(b) {
      // private half is an attribute in this directory that can be read back
      // and USED, so it belongs on this list beside the authenticator's
      // secret (the recovery codes are hashes since 2026-09-11, and stay on
-     // the list by name) — and the public five belong on it too,
+     // the list by name) — and the public records belong on it too,
      // because the page draws a FIXED LIST and an attribute arriving on it by
      // accident is the defect this section exists to catch, whatever that
-     // attribute happens to hold.
-     "stsAssertionPrivateKey", "stsAssertionJwks", "stsAssertionCertificate",
-     "stsAssertionCertificateChain", "stsAssertionKid",
-     "stsAssertionExpiresAt", "stsAssertionIssuer",
-     "stsassertionprivatekey", "stsassertionjwks", "stsassertioncertificate",
-     "stsassertioncertificatechain", "stsassertionkid",
-     "stsassertionexpiresat", "stsassertionissuer",
+     // attribute happens to hold. One record per key pair since #1290.
+     "stsAssertionPrivateKey", "stsAssertionKeyPair", "stsAssertionIssuer",
+     "stsSamlAssertionPrivateKey", "stsSamlAssertionKeyPair",
+     "stsassertionprivatekey", "stsassertionkeypair", "stsassertionissuer",
+     "stssamlassertionprivatekey", "stssamlassertionkeypair",
      // The stored spellings too: this directory lower-cases every attribute
      // name on the way in, so a dump of the entry would print THESE rather
      // than the canonical ones above.
@@ -718,10 +728,26 @@ async function oneUserCannotReadAnother() {
   const intruder = await signIn(INTRUDER);
   // Since #568 the page's view is `GET /account-api/overview`, asked here
   // with another person's name in every parameter it could plausibly read.
-  const theirs = await intruder.draw("/portal",
-    { user: OWNER, username: OWNER });
-  check("a signed-in person naming somebody else in the query gets THEIR OWN " +
-        "entry", function () {
+  // SINCE #1483 THE ACCOUNT API REFUSES A QUERY NAME AN OPERATION DOES NOT
+  // TAKE, so each is refused, carrying nothing; the page is then drawn with
+  // nothing naming anybody, and can only be the token's person's.
+  for (const name of ["user", "username"]) {
+    const asked = {};
+    asked[name] = OWNER;
+    const refused = await intruder.draw("/portal", asked);
+    check("a signed-in person naming somebody else in `" + name + "` is " +
+          "refused, and is shown nothing of theirs", function () {
+      assert.strictEqual(refused.status, 400,
+        "/portal answered " + refused.status);
+      assert.deepStrictEqual(Object.keys(refused.json).sort(),
+                             ["errors", "ok"],
+                             JSON.stringify(refused.json));
+      assert.ok(JSON.stringify(refused.json).indexOf(OWNER) < 0,
+        "the refusal repeats " + OWNER + ": " + JSON.stringify(refused.json));
+    });
+  }
+  const theirs = await intruder.draw("/portal");
+  check("and with nothing named they get THEIR OWN entry", function () {
     assert.strictEqual(theirs.status, 200,
       "/portal answered " + theirs.status);
     assert.ok(String(theirs.text).indexOf(INTRUDER) >= 0,

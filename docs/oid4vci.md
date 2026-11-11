@@ -52,7 +52,7 @@ instant that would let verifiers link them (RFC 9901 section 10.1).
 
 | Configuration | Format | Scope | Holder binding |
 |---|---|---|---|
-| `IdentityCredential` | `dc+sd-jwt`, `vct` `urn:idptools:sd-jwt-vc:identity` | `identity_credential` | `jwk` |
+| `IdentityCredential` | `dc+sd-jwt`, `vct` `urn:iya:sts:sd-jwt-vc:identity` | `identity_credential` | `jwk` |
 | `IdentityCredentialJwtVcJson` | `jwt_vc_json` | `identity_credential_jwt` | `jwk` |
 | `IdentityCredentialLdpVc` | `ldp_vc`, secured with `bbs-2023` | `identity_credential_ldp` | `did:jwk` |
 | `IdentityCredentialDid` | `dc+sd-jwt`, issuer named by `did:web` | `identity_credential_did` | `jwk` |
@@ -69,7 +69,9 @@ The holder binding in the table is the default. Any configuration named in
 
 `dc+sd-jwt` and `jwt_vc_json` credentials are signed with
 `oid4vci.credentialSigningAlgorithm` (RS256 by default; ML-DSA, SLH-DSA and
-the composites are allowed and are signed in the worker pool). `ldp_vc` is
+the composites are allowed and are signed in the worker pool, unless the realm
+is in [wallet compatibility mode](oid4vp.md#wallet-compatibility-mode), which
+refuses them with `credential_request_denied`). `ldp_vc` is
 signed with the realm's BBS key, which is published at `/bbs/keys/{kid}` and in
 the DID document, and which rotates like any other signing key. A credential
 and the Token Status List Token its status names carry the certificate chain
@@ -238,7 +240,9 @@ means the whole configured set.
   one).
 * **Proofs** (section 8.2.1, Appendix F): the `jwt` proof type
   (`openid4vci-proof+jwt`, every asymmetric algorithm this service signs with,
-  post-quantum included) and the `attestation` proof type. A `c_nonce` is spent
+  post-quantum included except in
+  [wallet compatibility mode](oid4vp.md#wallet-compatibility-mode)) and the
+  `attestation` proof type. A `c_nonce` is spent
   once across the whole cluster. A proof's `iat` must be within
   `oid4vci.proofIatWindowS` of now.
 * **The key, by value or by DID** (Appendix F.1). A `jwt` proof names its key
@@ -248,7 +252,8 @@ means the whole configured set.
   to be listed under the DID document's `authentication`, which rules out a
   `did:jwk` whose key says `use: "enc"`. Appendix F.1 says that `jwk` and
   `kid` MUST NOT both be present, so such a proof is refused, and so is a
-  `did:web` `kid`. A configuration bound to a key binds to the key a `kid`
+  `did:web` `kid`, except one this realm publishes for the person
+  ([below](#bound-to-the-persons-did)). A configuration bound to a key binds to the key a `kid`
   names in the same way it binds to a `jwk`.
 * **Key attestations** (Appendix D). An attestation in a `jwt` proof's
   `key_attestation` header, or as an `attestation` proof, is verified against
@@ -363,11 +368,22 @@ is the trade a configuration makes by opting in, so the binding is opt-in per
 configuration and never the default. The nonces and rounded validity times are
 unchanged.
 
-**`did:web` is not offered.** The service pins a `did:web`'s key at
-enrolment, but the host can still change its document between the proof and
-the moment a relying party resolves the DID to check a presentation. Binding a
-credential to a DID whose key can change after issuance needs a design of its
-own.
+**A `did:web` is offered only when this realm publishes it.** The service
+pins a `did:web`'s key at enrolment, but a host elsewhere can still change its
+document between the proof and the moment a relying party resolves the DID to
+check a presentation, so a `did:web` hosted anywhere else is refused
+(`invalid_proof`). A did:web **this realm publishes for the person**
+([Published DIDs](person-dids.md)) is different: every version of its keys is
+kept and never rewritten. With `did.personPublishing` on, a DID-bound
+`dc+sd-jwt` or `jwt_vc_json` configuration adds `did:web` to
+`cryptographic_binding_methods_supported`. The proof's `kid` names
+`<did>#<key>` in the DID's current version, and the credential's `cnf.kid`
+names that **version**: `<did>?versionId=<n>#<key>`. A relying party resolves
+that version at any time, and this service's own Verifier resolves it from the
+realm's history without fetching anything. Only a DID the person proved with a
+wallet binds. A DID whose key the realm keeps, or a downloaded key nobody has
+proved yet, is refused. An `ldp_vc` names its holder by the bare DID, with no
+version, so it is never bound to a `did:web`.
 
 The Verifier reads the key that `cnf.kid` and a `did:key` subject name, so a
 DID-bound credential [signs its holder in](oid4vp.md#signing-in-with-a-wallet)
@@ -437,8 +453,9 @@ unverifiable, not invalid: it is somebody else's conforming document.
 ### Not implemented
 
 * No historical status lists: `?time=` on the status list endpoint answers 501.
-* A key attestation or trusted issuer **certificate** with a post-quantum key,
-  because such certificates cannot be read here.
+* A key attestation **certificate** with a post-quantum key. (A trusted
+  issuer certificate may hold one; see
+  [OpenID4VP](oid4vp.md#trusted-issuers).)
 
 ## Development and product mode
 
@@ -452,6 +469,8 @@ unverifiable, not invalid: it is somebody else's conforming document.
 
 A credential issued in development on an unverified token cannot sign anybody
 in, in either mode. See [What is not checked](what-is-not-checked.md).
+
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the `x5c` of a key attestation is a real path, so a wallet provider's intermediates count where outside this mode only one hop does. Revocation is asked where the chain names a source; [where it names none there is no check to perform](pki.md#paranoid-pki-mode). A certificate in `oid4vci.keyAttestationTrustedCertificates` that signs the attestation itself must hold its own fields. `pki.paranoidVcKeyAttestation` turns this row off.
 
 ## Configuration
 
@@ -469,12 +488,13 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.deferredReadyMs` | `OID4VCI_DEFERRED_READY_MS` | `4000` | yes | How long a deferred credential stays pending (answered `202`). |
 | `oid4vci.deferredIntervalS` | `OID4VCI_DEFERRED_INTERVAL_S` | `2` | yes | The `interval` a wallet is asked to wait between deferred polls. |
 | `oid4vci.requestEncryptionRequired` | `OID4VCI_REQUEST_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a credential request that is not a JWE. |
-| `oid4vci.requestEncryptionKeyBits` | `OID4VCI_REQUEST_ENCRYPTION_KEY_BITS` | `2048` | yes | The RSA modulus of the realm's request-encryption key; reaches keys made after the change. |
+| `oid4vci.requestEncryptionKeyBits` | `OID4VCI_REQUEST_ENCRYPTION_KEY_BITS` | `2048` (`3072` in product) | yes | The RSA modulus of the realm's request-encryption key; reaches keys made after the change. |
 | `oid4vci.requestEncryptionEncValues` | `OID4VCI_REQUEST_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | Content encryption algorithms offered for requests; only these two are implemented. |
 | `oid4vci.responseEncryptionEncValues` | `OID4VCI_RESPONSE_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | Content encryption algorithms offered for responses. |
 | `oid4vci.responseEncryptionRequired` | `OID4VCI_RESPONSE_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a request that does not ask for an encrypted response. |
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | yes | How long every minted credential is valid (thirty days). |
 | `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential — the default a `/portal/wallet` offer may change for its own credential. |
+| `oid4vc.walletCompatibility` | `OID4VC_WALLET_COMPATIBILITY` | `false` | yes | [Wallet compatibility mode](oid4vp.md#wallet-compatibility-mode): no post-quantum or composite algorithm offered, signed with or accepted in OpenID4VCI and OpenID4VP. |
 | `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5c` | yes | Whether a credential and its Status List Token carry their signing key's chain: `x5c` (inline, without the Root), `x5u`, `both` or `none`. |
 | `oid4vci.signedMetadataCertificateHeader` | `OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | The same for the metadata's `signed_metadata`. |
 | `oid4vci.trustedListCertificateHeader` | `OID4VCI_TRUSTED_LIST_CERTIFICATE_HEADER` | `x5c` | yes | Whether the trusted list carries its signer's chain; `x5c` or `both`, or the list is not served. |
@@ -488,7 +508,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.didHolderBinding` | `OID4VCI_DID_HOLDER_BINDING` | *(empty)* | yes | The configurations bound to the person's proved `did:jwk` or `did:key` instead of to a key. |
 | `oid4vci.statusListTtlS` | `OID4VCI_STATUS_LIST_TTL_S` | `300` | yes | The `ttl` (and HTTP `max-age`) of this realm's status lists. |
 | `oid4vci.statusListLifetimeS` | `OID4VCI_STATUS_LIST_LIFETIME_S` | `86400` | yes | How long a status list token, or a Bitstring Status List credential, says it is valid. |
-| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Credential Issuer` | yes | The metadata's `display.name`. |
+| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `Iya STS Credential Issuer` | yes | The metadata's `display.name`. |
 | `oid4vci.domainLinkageLifetimeS` | `OID4VCI_DOMAIN_LINKAGE_LIFETIME_S` | `31536000` | yes | How long the Domain Linkage Credential says it is valid. |
 | `oid4vci.sdJwtIssuerDid` | `OID4VCI_SD_JWT_ISSUER_DID` | `false` | restart | Name the plain `dc+sd-jwt` configuration's issuer by `did:web`. |
 | `oid4vci.ldpVcIssuerDid` | `OID4VCI_LDP_VC_ISSUER_DID` | `false` | restart | The same for the plain `ldp_vc` configuration. |

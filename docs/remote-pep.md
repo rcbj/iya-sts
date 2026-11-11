@@ -131,7 +131,8 @@ an anchor it holds, which is the commonest thing to get wrong in mutual TLS.
 node tests/tools/pep-credential.js \
   --url=https://localhost:8081 \
   --out=/tmp/pep-certs \
-  --subject="CN=remote-pep-1,OU=remote-peps,O=iya-sts"
+  --subject="CN=remote-pep-1,OU=remote-peps,O=iya-sts" \
+  --root-subject="CN=remote-pep-1 Root CA,O=iya-sts"
 ```
 
 **The flags take `=`**; a space between the flag and its value is reported as an
@@ -151,6 +152,14 @@ openssl x509 -in /tmp/pep-certs/pep.crt -out /tmp/pep-certs/pep-leaf.crt
 api users/add-certificate "$(jq -n --rawfile pem /tmp/pep-certs/pep-leaf.crt \
   '{user:"remote-pep-1", certificate:$pem}')"
 ```
+
+**Give the root a subject of your own** with `--root-subject`, for example
+`--root-subject="CN=Example PEP Root CA,O=Example"`. Without it the root is
+`CN=iya-sts test Root CA,O=iya-sts tests`, the name the test suite's own roots
+carry, and on a reused AWS test environment the suite's reset
+(`deploy/aws/reset-environment.js`) removes every runtime trust anchor with
+that common name before a run: a PEP whose root kept the default loses its
+trust at the next suite run.
 
 Until it is stored, the PEP's certificate verifies and is still refused
 (`STS-XACML-0179`). A deployment upgraded from a version that matched the
@@ -362,6 +371,68 @@ That is a real trade and both ends say so rather than hiding it: **a policy
 change made during an outage is not enforced here until the next successful
 pull.** The alternative, a PDP outage denying everything everywhere, is the
 failure mode that makes people remove authorization services.
+
+## Running more than one
+
+**Run as many as the load needs, side by side, and put a load balancer in
+front.** Instances share nothing and never talk to each other. There is no
+cluster to join, because nothing a PEP holds needs coordinating:
+
+| What an instance holds | Where it comes from |
+|---|---|
+| the policy set | pulled from the PDP. A new instance holds exactly what the others hold after one pull |
+| the AuthZEN catalogue and caller list | pulled from the PDP |
+| its decision counters | its own. Each instance counts only what it decided |
+| its HTTPS listener pair | the two files `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name |
+| a person's attributes | asked of `POST /xacml/pip` before each decision, and not kept |
+
+The service is already the one place the policy comes from, so instances
+converge on it on their own: each within one `PEP_POLL_INTERVAL_MS`, or at once
+when nudged. An instance that cannot reach the service keeps enforcing what it
+last pulled, [as above](#when-the-pdp-goes-away). A peer could only hand it the
+same copy or an older one.
+
+### One certificate per instance, or one shared
+
+**This is the one choice to make.** The service files a remote PEP by its
+client certificate, so one certificate is one row on
+[the **Remote PEPs** tab](configure-xacml.md#stop-nudging-or-forget-a-pep). Both
+choices decide correctly. What differs is what you can see and how fast a
+change arrives:
+
+| | One certificate per instance | One certificate shared by every instance |
+|---|---|---|
+| rows on the **Remote PEPs** tab | one per instance | one for the whole deployment |
+| the nudge on a policy change | reaches every instance | reaches one instance: whichever registered or sent a heartbeat last, because its `PEP_NOTIFY_URL` replaces the row's. The rest pick the change up on their next poll |
+| decision counters, build, bias | each instance's own | whichever instance sent the last heartbeat. Each heartbeat replaces the row's numbers, so the row jumps between instances and is never the total |
+| an instance that stops | its row goes stale | hidden while any other instance still sends heartbeats |
+| stopping nudges, or revoking the certificate | one instance at a time | every instance at once |
+| adding an instance | first mint a certificate and store it on an entry in `remote-peps` ([Minting the certificate](#minting-the-certificate)) | start a container with the same files |
+| the HTTPS listener certificate | issued per instance, naming its own notify host | one certificate whose `dnsNames` include the load balancer's name |
+
+**For a fixed number of instances, give each its own certificate.** The console
+then tells you about every instance, and every one is nudged.
+
+**For an autoscaling group, share one certificate**, because a new instance
+then needs nothing minted before it starts. Accept the costs in the right-hand
+column: one row that is not a total, a policy change that reaches most
+instances on the poll rather than the nudge, and a dead instance you see in
+your load balancer's health checks rather than on the console. If a change has
+to arrive faster, lower `PEP_POLL_INTERVAL_MS`: an unchanged policy answers the
+poll with `304`, so that costs the service very little.
+
+### What more instances cost the service
+
+**Polling costs almost nothing per instance**: one conditional request every
+`PEP_POLL_INTERVAL_MS`, answered `304` while the policy is unchanged, and a
+heartbeat every `PEP_HEARTBEAT_INTERVAL_MS`.
+
+**The PIP query is the load that grows**, because it is one batched
+`POST /xacml/pip` per decision that needs an attribute the request did not
+carry. More PEP instances spread the decisions out but send the service the
+same number of queries. To cut that load, have the caller send the attributes
+in the request, or set `PEP_PIP=false` where the policy needs nothing from the
+directory.
 
 ## An HTTPS listener, certified by the realm it registered to
 

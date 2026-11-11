@@ -56,6 +56,10 @@ an `ldapmodify`.
 | `GET\|POST /federation/acs/{id}` | **finish**: the assertion consumer service, the WS-Federation `wreply` and the OAuth 2.0 `redirect_uri`, all one path. **This is the URL to configure at the partner** |
 | `GET /federation/link/{handle}` | where the linking sign-in of `link-at-first-sign-in` returns: after the person has signed in here as the account the partner named, this records the link and finishes the federated sign-in (#109). Single-use, and it records the link only for a fresh local sign-in as that person |
 | `GET /federation/metadata/{id}` | this service's own SAML metadata (an `SPSSODescriptor`) for one SAML partner, unsigned — with its `SingleLogoutService` on the Redirect and POST bindings and, for SAML 2.0, its encryption key (`KeyDescriptor use="encryption"`, #168). For a WS-Federation partner, an `EntityDescriptor` with a `fed:ApplicationServiceType` role, its passive requestor endpoint and its encryption key |
+| `GET\|POST /federation/initiate-login/{id}` | an OpenID Connect relationship's `initiate_login_uri` (OpenID Connect Core section 4): a sign-in the **partner** starts. Off unless `fedInitiateLogin` is on; `iss` must be the relationship's `fedPeer`; `login_hint` is passed on; `target_link_uri` is followed only to a path on this service |
+| `GET /federation/request/{id}/{handle}` | a Request Object by reference, fetched once by the partner (`fedRequestObject` `request_uri`) |
+| `GET\|POST /federation/webfinger/{id}` | where a person types an identifier to find their OpenID Provider (`fedWebFinger`) |
+| `GET /federation/fragment.js` | the one script of the assertion consumer service, for a relationship whose `fedResponseMode` is `fragment`: it posts the fragment-encoded answer back to `/federation/acs/{id}` |
 | `GET /federation/jwks/{id}` | an OpenID Connect relationship's encryption key as a JWKS (`use: enc`), what the partner registers to encrypt its ID Token to (#168) |
 | `GET\|POST /federation/slo/{id}` | **a partner's sign-out, in a browser** (#167): a SAML 2.0 `<LogoutRequest>` or `<LogoutResponse>`, a WS-Federation `wsignoutcleanup1.0` or `wsignout1.0`, and the browser coming back from an OpenID Provider's `end_session_endpoint`. The SAML `SingleLogoutService`, the WS-Federation sign-out URL and the OpenID Connect `post_logout_redirect_uri` to configure at the partner |
 | `POST /federation/backchannel-logout/{id}` | the OpenID Connect `backchannel_logout_uri` to register at the partner |
@@ -95,7 +99,9 @@ The five protocols, and where each differs:
 * **OpenID Connect** — the authorization code flow by default.
   `fedResponseType: id_token` with `response_mode=form_post` needs **no back
   channel at all**, which is the way to federate with an OIDC partner from a
-  deployment with no egress. The `nonce` is checked. Attributes come off the ID
+  deployment with no egress. The other response types are taken too — see
+  [OpenID Connect as the relying party](#openid-connect-as-the-relying-party).
+  The `nonce` is checked. Attributes come off the ID
   Token and, when configured, UserInfo. **With the code flow, configure
   `fedUserinfoUrl`**: a provider that follows OpenID Connect Core section 5.4
   (this service among them, since #118) puts profile claims such as
@@ -125,16 +131,140 @@ What is checked on the way in, in every mode:
 * the **audience**: every `AudienceRestriction` must name this service (several
   audiences in one restriction are an OR, several restrictions an AND). A
   SAML 2.0 assertion with no restriction is refused, because the Web Browser SSO
-  profile requires one; SAML 1.1 and WS-Federation, whose profiles make it
-  optional, are accepted with a warning. An assertion a partner minted for any
+  profile requires one. SAML 1.1 and WS-Federation, whose profiles make it
+  optional, are accepted with a warning in development mode and refused in
+  product mode (`STS-FED-0241`) unless
+  `federation.allowAssertionWithoutAudience` is on. An assertion a partner minted for any
   other of its relying parties verifies against the same key, names the same
   issuer and is inside its window, so this is what stops anybody holding one
   from signing in here;
 * the validity window, and that the response answers a request this service
   sent (`InResponseTo`, or the handle in `RelayState` / `wctx` / `state`),
   unless `fedAllowUnsolicited` is on;
+* that an OAuth 2.0 or OpenID Connect answer belongs to the partner the
+  sign-in was started for: its `state` must have been minted for the
+  relationship whose endpoint received it, and an `iss` parameter (RFC 9207),
+  wherever the partner sends one, must be the partner's issuer
+  (`STS-FED-0238`);
+* that a SAML or WS-Federation assertion is used once. Its ID is claimed for as
+  long as it is valid, whether or not it answered a request, so a captured
+  assertion cannot be replayed (`STS-FED-0239`);
+* how long ago the partner authenticated the person, when
+  `federation.maxPartnerAuthAgeS` is set (see
+  [When the partner authenticated the person](#when-the-partner-authenticated-the-person));
 * the partner's signing certificate for **revocation**, under
   `pki.revocationCheck`.
+
+### When the partner authenticated the person
+
+A federated session's authentication time is the one the partner states: an ID
+Token's `auth_time`, or a SAML or WS-Federation assertion's `AuthnInstant`. An
+application's `max_age` is judged on it, not on when the person arrived here.
+A partner that states no time is taken to have authenticated the person when
+its answer arrived, unless `federation.maxPartnerAuthAgeS` is set (below).
+
+When an application's `max_age` or `prompt=login` sends a federated person back
+to sign in, the partner is asked for a fresh authentication: `prompt=login` to
+an OpenID Connect or OAuth 2.0 partner, `ForceAuthn="true"` in a SAML 2.0
+AuthnRequest, and `wfresh=0` to a WS-Federation partner. A partner that ignores
+the request and answers with an authentication from before it was asked is
+refused (`STS-FED-0242`), so the person is not sent round in a loop.
+
+`federation.maxPartnerAuthAgeS` sets an upper limit of its own on that age, for
+every sign-in through a partner. It is 0, off, by default. While it is set, a
+sign-in whose partner authenticated the person longer ago is refused
+(`STS-FED-0240`), and so is one whose partner states no time at all.
+
+### OpenID Connect as the relying party
+
+An inbound OpenID Connect relationship is checked against the OpenID
+Foundation's relying-party certification plans ([conformance](conformance.md)).
+What it does, in every mode:
+
+* **The ID Token** must carry `sub`, `iat` and `exp`. Its `azp`, when present,
+  must be this service's client id, and it must be present when there are
+  several audiences. The `nonce` this service always sends must come back, from
+  either endpoint (`STS-FED-0195` to `0198`, `0039`). **A partner that leaves
+  the nonce out of a code-flow ID Token is refused**; until #930 that was
+  accepted with a warning.
+* **UserInfo** must answer for the ID Token's `sub`, or the sign-in is refused
+  (`STS-FED-0202`). A UserInfo endpoint that does not answer still only costs
+  its attributes.
+* **Every response type**: `code`, `id_token`, `id_token token`,
+  `code id_token`, `code token` and `code id_token token`. Whatever the
+  authorization endpoint sends is checked first. Its ID Token needs `c_hash`
+  next to a code and `at_hash` next to an access token, and the code is
+  redeemed only after that. The token endpoint's ID Token must name the same
+  `iss` and `sub` (`STS-FED-0199` to `0201`). PKCE goes with every code.
+* **`fedResponseMode`**: empty asks for `form_post` for every type that carries
+  an ID Token or an access token, and nothing (`query`) for `code`.
+  `fragment` is the specification's default for those types. The answer
+  comes back after `#`, and a page with one script posts it to
+  `/federation/acs/{id}`. **This is a warning: the ID Token is in the
+  browser's history until the script replaces the entry.** Use it only for a
+  partner that cannot post. `query` cannot carry an ID Token and makes the
+  relationship not ready.
+* **`fedDiscovery`** reads `fedSsoUrl`, `fedTokenUrl`, `fedUserinfoUrl` and
+  `fedJwksUri` from `{fedPeer}/.well-known/openid-configuration` at the start
+  of every sign-in. The document's `issuer` must be `fedPeer` exactly
+  (`STS-FED-0203`, `0204`). Off by default. `fedEndSessionUrl` is still
+  written by hand.
+* **`fedIdTokenSignedResponseAlg`** holds ID Tokens and Logout Tokens to the
+  algorithm registered at the partner (`STS-FED-0208`). **Check the partner**
+  on the relationship's page (`check-partner` on `/admin-api`) fetches its
+  discovery document and key set and reports them, writing nothing.
+* **`fedInitiateLogin`** answers `/federation/initiate-login/{id}`, the
+  `initiate_login_uri` to register at the partner (`STS-FED-0205`, `0206`).
+  Off by default, because any page could otherwise start a sign-in in a
+  person's browser.
+
+* **`fedRefreshTokens`** (off by default) keeps the refresh token the
+  partner issues at sign-in, sealed, for the session it started. Every
+  `fedRefreshEverySeconds` (empty: when the access token expires, or hourly)
+  the scheduler job `federation.partner-refresh` refreshes it. The new ID
+  Token must name the same `iss` and `sub`, and UserInfo must still answer
+  for that `sub`. **A refresh the partner refuses, or an answer that fails
+  those checks, ends the session** (`STS-FED-0210`, `0211`, `0202`). The
+  token is dropped when the session ends. Off, the partner's tokens are used
+  once and discarded. **Turning it on is a warning**: this service then holds
+  a long-lived credential at the partner. A partner that issues refresh
+  tokens only for `offline_access` needs that in `fedScope`.
+* **A signed or encrypted UserInfo answer** is verified against the
+  partner's keys (`fedUserinfoSignedResponseAlg` pins its algorithm) before it
+  is used.
+
+* **`fedRegister`** (off by default, needs `fedDiscovery`) registers this
+  service at the partner's `registration_endpoint` (RFC 7591) whenever the
+  relationship holds no client registered with that issuer: at a sign-in,
+  or with **Register at the partner** (`register-partner` on
+  `/admin-api`). The `client_id` and secret are written to the relationship,
+  the secret sealed. What is registered is the relationship's own addresses,
+  response type, client authentication and algorithms, and the one public
+  key that signs its Request Objects.
+* **`fedRequestObject`** sends the authorization request as a Request Object
+  (Core section 6, RFC 9101): `request` by value, or `request_uri` by
+  reference, served once at `/federation/request/{id}/{handle}`. Signed under
+  `fedRequestObjectSigningAlg` (`RS256` by default, `PS256`, `ES256`) with
+  the realm's key. **`none` is a warning**: an unsigned object, by reference
+  over https only.
+* **`fedWebFinger`** (off by default, needs `fedDiscovery`) answers
+  `/federation/webfinger/{id}`, where a person types an address or URL and
+  this service asks that host for their OpenID Provider (OpenID Connect
+  Discovery section 2). **This is a warning**: it is the one federation
+  request whose host a caller chooses. It goes through the outbound policy,
+  and the issuer it finds must lie within `fedPeer`: the same scheme, host
+  and port, and `fedPeer`'s path or a path below it. Being a prefix of the
+  text is not enough, so `https://op.example` does not admit
+  `https://op.example.evil.com`. The person sees the
+  issuer and continues only by following the link
+  (`STS-FED-0215` to `0217`).
+
+One thing the plans test is not done, by design:
+
+* **Session Management.** This service does not poll the partner's
+  `check_session_iframe`. Back-Channel Logout tells it the same thing.
+
+### The request context
 
 The request context — the request id, `nonce`, PKCE verifier and where the
 person was going — is kept on the server, per trust realm; the partner carries
@@ -227,6 +357,21 @@ request to the federated flow and brings them back to it. Only relationships
 that would actually work are offered; a button leading to a refusal is worse
 than no button, because the person has already left the screen by the time
 they find out.
+
+**A partner's photo is copied** (`profilePhoto.cacheFederated`, on by default).
+When the mapped attributes carry a `pictureUrl`, as the OpenID Connect `picture`
+claim does, this service fetches the image after the sign-in has finished and
+keeps it, and the person's `picture` claim names that copy from then on. No
+sign-in waits for it or fails because of it. The fetch follows
+[the outbound policy](#outbound-requests) and follows no redirect, the image must
+be a JPEG or PNG of at most `profilePhoto.maxStoredBytes`, and the same address
+is not fetched again for a week. Where a copy cannot be made the claim keeps the
+partner's address (`STS-FED-0219`, `STS-FED-0220`, `STS-FED-0221` in the log), and
+the next sign-in tries again. In product mode a copy needs `global.publicBaseUrl`.
+
+A photo the person set themselves is never replaced, and one they removed is not
+copied again. With `fedUpdateUserAttributes` off, a returning person's photo is
+left as it is.
 
 ### Which people a partner may assert
 
@@ -405,7 +550,9 @@ mechanism because a relationship preferred one.
 
 Federation is where this service first made an **outbound** request, and it
 dials only URLs an administrator wrote on a relationship: the partner's token
-endpoint (`fedTokenUrl`), UserInfo (`fedUserinfoUrl`) and JWKS (`fedJwksUri`).
+endpoint (`fedTokenUrl`), UserInfo (`fedUserinfoUrl`) and JWKS (`fedJwksUri`),
+and with `fedDiscovery` on, the discovery document at an address derived from
+`fedPeer`.
 The distinction is not "this feature needs it", which is the argument every
 server-side request forgery ever shipped was made with: a URL a **caller**
 supplies (WS-Federation's `wreqptr`) is refused, while these are supplied by an
@@ -451,7 +598,7 @@ browser — front-channel notifications drawn before the answer goes back.
 | Protocol | What the partner sends | What is checked |
 |---|---|---|
 | SAML 2.0 | a `<LogoutRequest>` to `/federation/slo/{id}`, Redirect or POST binding | signed (saml-profiles-2.0-os section 4.4.4.1) and verified against `fedSigningCertificate` and nothing else — the Redirect binding's detached signature over the query string, or an enveloped one; issued by `fedPeer`; `Destination` this endpoint; `IssueInstant` within `federation.requestTtlMin` and `NotOnOrAfter` not passed; its `ID` accepted once ever. Answered with a signed `<LogoutResponse>` to `fedSloUrl` on `fedSloBinding` — `Requester`/`UnknownPrincipal` where no session matched |
-| OpenID Connect | a Logout Token POSTed to `/federation/backchannel-logout/{id}` | verified exactly as the partner's ID Token is (its keys, the key's algorithm family, `aud` = `fedClientId`, `iss` = `fedPeer`), then Back-Channel Logout 1.0 section 2.6: the `events` member, no `nonce`, `sub` or `sid`, a `jti` accepted once ever, `iat` within `federation.requestTtlMin`. 200, or 400 `invalid_request` |
+| OpenID Connect | a Logout Token POSTed to `/federation/backchannel-logout/{id}` | verified exactly as the partner's ID Token is (its keys, the key's algorithm family, `aud` = `fedClientId`, `iss` = `fedPeer`), then Back-Channel Logout 1.0 section 2.6: the `events` member, no `nonce`, `sub` or `sid`, a `jti` accepted once ever, `iat` within `federation.requestTtlMin`. In product mode it must be typed `logout+jwt` unless `federation.allowUntypedLogoutToken` is on. 200, or 400 `invalid_request` |
 | OpenID Connect | `/federation/frontchannel-logout/{id}?iss=…&sid=…` in the partner's iframe | `iss` must be `fedPeer` and `sid` is required. Only the partner's origin may frame the page (`frame-ancestors` narrowed, never dropped) and it runs no script. Best-effort by nature — the iframe is the partner's page — so Back-Channel Logout is the reliable path |
 | WS-Federation | `wa=wsignoutcleanup1.0` or `wsignout1.0` at `/federation/slo/{id}` | unsigned by its specification, so it ends nothing by itself: it draws a page with a real button, and the session in **that** browser ends only when the button is pressed |
 | SAML 1.1, OAuth 2.0 | — | **neither defines a sign-out**: SAML 1.1 has no logout protocol, and OAuth 2.0 authorizes a client rather than signing anybody in. A message for either is refused naming that |
@@ -523,9 +670,9 @@ WS-Federation relationship is refused them.
 
 ### Not implemented
 
-* Refreshing a partner's tokens, or re-checking a federated person with the
-  partner while the session lasts — beyond the partner's own sign-out and its
-  `SessionNotOnOrAfter`, above.
+* Re-checking a federated person with the partner while the session lasts —
+  beyond the partner's own sign-out, its `SessionNotOnOrAfter`, and an OpenID
+  Connect relationship's `fedRefreshTokens` (off by default), above.
 * Validating the partner's certificate against a CA or its validity dates — it
   is a pinned key; only its revocation is checked.
 
@@ -616,28 +763,48 @@ rather than a convenience: `?application=` is a string anybody who can reach
 the port chose, and the attribute it would grow is on the one entry whose
 contents decide whether an assertion is verified.
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a partner's signing certificate is held to its validity, keyUsage and revocation at every use. An administrator registering it on the relationship names it, so it needs no chain. A partner key that carries an `x5c` is held to what its certificate says, and needs no chain either; a bare key is left alone. See the `federation-partner` row of the [use cases](pki-use-cases.md).
+
 ## Development and product mode
 
-The refusals above are the same in both modes — federation is not permissive in
-development. What the mode changes:
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a back channel to a partner the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside the setting that names a CA file.
+
+The refusals above are the same in both modes, except that a SAML 1.1 or
+WS-Federation assertion with no audience is accepted with a warning in
+development — federation is not permissive in development. What the mode
+changes:
 
 | | Development | Product |
 |---|---|---|
 | A person with no directory entry | under `link-at-first-sign-in` and `jit-namespaced`, created on first sign-in as `<relationship>~<subject>`, linked, unless `fedAutocreateUsers` is off. A new relationship is created with the switch on. `any-existing` creates under the confirm-lookup name instead | created when `fedAutocreateUsers` is on, as `<relationship>~<subject>`, linked. A new relationship is created with the switch off, and a sign-in for somebody with no entry is then refused `STS-FED-0090`. A relationship that already stores TRUE keeps creating. `any-existing` cannot be set |
 | `fedSubjectPolicy` `any-existing` | the name match of old | refused, when set and at the sign-in |
+| The browser the answer arrives in | any | the browser that started the sign-in: a cookie set when the person is sent to the partner must come back with the answer, or it is refused (`STS-FED-0237`) |
+| A SAML 1.1 or WS-Federation assertion with no audience restriction | accepted, with a warning | refused (`STS-FED-0241`) unless `federation.allowAssertionWithoutAudience` is on |
+| An untyped Logout Token from an OpenID Connect partner | accepted when it is typed `jwt` or carries no type | accepted only typed `logout+jwt`, unless `federation.allowUntypedLogoutToken` is on |
 | The password at the linking sign-in | not checked (the reserved `invalid` is refused) | verified, with the second factor |
 | Revocation of the partner's signing certificate (`pki.revocationCheck=auto`) | soft-fail: a status that cannot be fetched is accepted | hard-fail: a status that cannot be established is refused |
 | `fedRequireSignedLogout` off | an **unsigned** SAML logout message from the partner is accepted — a warning: anybody who can name a partner session can then end it | refused on the relationship (`STS-FED-0132`), and an unsigned logout message is refused whatever it says |
 | A plaintext SAML 2.0 or WS-Federation assertion, or a signed-only `id_token` by form_post | accepted | **refused** (`STS-FED-0140`) unless the relationship sets `fedAllowUnencrypted` — a warning: the person's identifier and attributes then cross their browser in clear. An ID Token redeemed at the partner's token endpoint crosses no browser and is not asked about |
 
-**A newcomer the realm's [attribute policy](admin-console.md#policies--adminpolicies)
-would refuse is not created in product mode** (#396): where `fedAutocreateUsers`
-lets a first sign-in create the person, the partner's mapped attributes must
-supply what every person must hold — by default a given name, a surname and an
-address. The refusal page carries `STS-FED-0158`, and the session refusal is
-audited `STS-AUTHN-0180`. Map them on the relationship (`fedAttributeMap`, for
-example `given_name=givenName`, `family_name=sn`, `email=mail`), or provision
-the person first.
+**A newcomer is asked for what the partner did not send, in product mode**
+(#396, #701): where `fedAutocreateUsers` lets a first sign-in create the
+person, the entry must hold what the realm's
+[attribute policy](admin-console.md#policies--adminpolicies) requires of every
+person — by default a given name, a surname and an address. When the partner's
+mapped attributes leave one of them empty, the person is shown a short form
+at `/federation/profile/{handle}` asking for exactly the missing values, and
+the account is created from the partner's values and theirs. This holds for
+every relationship, enterprise partners as well as consumer providers. A value
+the partner did send is never replaced by a typed one, and an address typed
+there is recorded as unverified. The form is good for one sign-in, in the
+browser it started in, and for five tries.
+
+The sign-in is refused, `STS-FED-0158` on the page and `STS-AUTHN-0180` on the
+session refusal, only when a required attribute is not one a person can be
+given a value of, or the values given still leave the policy unmet. To spare
+people the form, map the attributes on the relationship (`fedAttributeMap`,
+for example `given_name=givenName`, `family_name=sn`, `email=mail`), or
+provision the person first.
 
 See [What is not checked](what-is-not-checked.md), *Federation inverts all of
 this*.
@@ -659,6 +826,7 @@ this*.
 | `federation.outboundSkipTlsVerification` | `STS_FEDERATION_OUTBOUND_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Accept a partner certificate nothing here trusts, logged on every request. Ignored in product, and refused on write there. |
 | `federation.outboundCaFile` | `STS_FEDERATION_OUTBOUND_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates a partner may chain to, beside node's own store. How product reaches a privately certified partner. |
 | `federation.requestTtlMin` | `STS_FEDERATION_REQUEST_TTL_MIN` | `10` | yes | How long an outbound sign-in's context is remembered; a later response is refused as unsolicited. |
+| `federation.allowUntypedLogoutToken` | `STS_FEDERATION_ALLOW_UNTYPED_LOGOUT_TOKEN` | `false` | yes | Product mode accepts a partner's Logout Token only if it is typed `logout+jwt`. On, one typed `jwt` or carrying no type is accepted too, for a partner that does not send the type. |
 | `federation.maxContexts` | `STS_FEDERATION_MAX_CONTEXTS` | `500` | yes | How many in-flight sign-in contexts are held per trust realm; past it the oldest is dropped. |
 | `federation.maxApplicationLength` | `STS_FEDERATION_MAX_APPLICATION_LENGTH` | `256` | yes | The longest `?application=` a federated login carries across the round trip. |
 | `federation.maxApplicationUse` | `STS_FEDERATION_MAX_APPLICATION_USE` | `64` | yes | How many per-application usage rows one relationship keeps; the busiest are kept. |
@@ -667,6 +835,9 @@ this*.
 | `federation.jwtAlgorithms` | `STS_FEDERATION_JWT_ALGORITHMS` | `RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512` | yes | The JWS algorithms a partner's ID Token or JWT access token may use; it only narrows, never admitting `none` or an HMAC. |
 | `federation.spNameIdFormat` | `STS_FEDERATION_SP_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified` | yes | The `<md:NameIDFormat>` published in `/federation/metadata/{id}`. |
 | `federation.encryptionKeyGraceS` | `STS_FEDERATION_ENCRYPTION_KEY_GRACE_S` | `86400` | yes | How long a relationship's encryption key still decrypts after a rotation replaced it; `0` ends it at the rotation (#168). |
+| `federation.maxPartnerAuthAgeS` | `STS_FEDERATION_MAX_PARTNER_AUTH_AGE_S` | `0` | yes | Refuses a federated sign-in whose partner says the person authenticated longer ago than this many seconds, by `auth_time` or `AuthnInstant`. While it is set, a partner that does not say when is refused. `0`, the default, does not ask. |
+| `federation.allowAssertionWithoutAudience` | `STS_FEDERATION_ALLOW_ASSERTION_WITHOUT_AUDIENCE` | `false` | yes | Product mode only. On, a partner's SAML 1.1 or WS-Federation assertion with no audience restriction is accepted with a warning, for a partner that cannot send one; off, the default, it is refused. |
+| `federation.allowUntypedLogoutToken` | `STS_FEDERATION_ALLOW_UNTYPED_LOGOUT_TOKEN` | `false` | yes | Product mode only. On, a partner's Logout Token typed `jwt` or carrying no type is accepted as well as one typed `logout+jwt`. The OpenID specification only recommends the type. |
 
 What this service calls itself to a partner is derived from the URL the browser
 reached it at; `global.publicBaseUrl` pins it for everything, and
@@ -694,7 +865,15 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedJwksUri`, `fedJwks` | SP | the partner's keys, fetched or pasted (pasted is read first and never refreshed) |
 | `fedSigningCertificate` | SP | the partner's signing certificate, base64 DER — what every SAML and WS-Federation assertion is verified against |
 | `fedClientId`, `fedClientSecret` | SP | this service's client credentials at the partner |
-| `fedScope`, `fedResponseType` | SP | the scope asked for (`openid profile email` by default for OIDC); `code` or `id_token` |
+| `fedScope`, `fedResponseType` | SP | the scope asked for (`openid profile email` by default for OIDC); `code` (default), `id_token`, `id_token token`, `code id_token`, `code token` or `code id_token token` |
+| `fedResponseMode` | SP | empty, `query`, `form_post` or (OIDC) `fragment` — **`fragment` is a warning**: see [OpenID Connect as the relying party](#openid-connect-as-the-relying-party) |
+| `fedRegister`, `fedRegisteredIssuer` | SP (OIDC) | register this service at the partner (`FALSE` by default); the issuer the client was registered with |
+| `fedRequestObject`, `fedRequestObjectSigningAlg` | SP (OIDC) | `request` or `request_uri`; `RS256`, `PS256`, `ES256` or `none` (**a warning**) |
+| `fedWebFinger` | SP (OIDC) | find a person's provider from an identifier they type (`FALSE` by default — **a warning**) |
+| `fedRefreshTokens`, `fedRefreshEverySeconds` | SP (OIDC) | keep and use the partner's refresh token for each session (`FALSE` by default — **a warning** when on); how often, in seconds |
+| `fedUserinfoSignedResponseAlg` | SP (OIDC) | the algorithm a signed UserInfo answer must use |
+| `fedIdTokenSignedResponseAlg` | SP (OIDC) | the one algorithm the partner signs ID Tokens and Logout Tokens with (what was registered as `id_token_signed_response_alg`); a token under another is refused even when a partner key verifies it. **Empty is a warning**: any algorithm of the key's family is accepted |
+| `fedDiscovery`, `fedInitiateLogin` | SP (OIDC) | read the endpoints from the partner's discovery document; answer a sign-in the partner starts. Both `FALSE` by default |
 | `fedBinding`, `fedSignRequest` | SP | the outbound SAML binding; whether the `AuthnRequest` is signed |
 | `fedSloUrl`, `fedSloBinding` | SP | the partner's SAML `SingleLogoutService`, and the binding (`HTTP-Redirect`, the default, or `HTTP-POST`) this service's `LogoutRequest` and `LogoutResponse` go on |
 | `fedEndSessionUrl` | SP | the partner's OpenID Connect `end_session_endpoint`; the ID Token is kept for `id_token_hint` only while this is set |
@@ -719,8 +898,9 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 What each protocol requires before a relationship is usable: for the five
 sign-in protocols, `fedSsoUrl` and `fedPeer` always; `fedSigningCertificate`
 for the three SAML-shaped protocols; `fedClientId` for OIDC, with
-`fedTokenUrl` for the code flow or `fedJwks` / `fedJwksUri` for
-`fedResponseType` `id_token`; `fedTokenUrl` and `fedClientId` for OAuth 2.0,
+`fedTokenUrl` for a response type with a code and `fedJwks` / `fedJwksUri` for
+one with an ID Token from the authorization endpoint (neither, nor `fedSsoUrl`,
+with `fedDiscovery`); `fedTokenUrl` and `fedClientId` for OAuth 2.0,
 with `fedUserinfoUrl` (or `fedJwks` / `fedJwksUri`, when the access token is a
 JWT); for `ssf`, `fedPeer` and a way to reach the partner's stream (a bearer,
 or a token endpoint and client). An OIDC relationship with `fedTrustAnchor`

@@ -662,7 +662,8 @@ class SoftwareStatement {
     const usedX5c = usedKey && usedKey.jwk && Array.isArray(usedKey.jwk.x5c)
       ? usedKey.jwk.x5c : [];
     if (usedX5c.length) {
-      const keyChain = await pki.verifySignerChain(undefined, {
+      const keyChain = await require('../common/certificate_trust')
+        .signerChain('jose-signer', {
         certificate: usedX5c[0], chain: usedX5c.slice(1), key: usedKey.jwk,
         source: 'the key "' + (usedKey.kid || '(no kid)') + '" in ' +
                 usedKey.source + ' for "' + iss + '"'
@@ -973,6 +974,17 @@ class SoftwareStatement {
                      options.lifetimeSeconds === ''
       ? self.issuedLifetimeSeconds()
       : Math.max(0, Math.floor(Number(options.lifetimeSeconds) || 0));
+    // An `exp` no Date can hold was signed, and the line that writes it down
+    // then threw a 500 (#1470). The field also takes text, so the management
+    // API's integer bound does not cover it.
+    if (lifetime > 0 &&
+        Number.isNaN(new Date((issuedAt + lifetime) * 1000).getTime())) {
+      log.debug("Leaving SoftwareStatement.issue(). Lifetime out of range.");
+      return errorCodes.mark({ ok: false,
+        errors: ['lifetimeSeconds is too large: the statement would expire ' +
+                 'after the last date this service can write.'] },
+        'STS-ADMIN-0915');
+    }
     const claims = Object.assign({ software_id: identifier }, metadata, {
       iss: iss,
       sub: identifier,

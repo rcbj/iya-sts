@@ -267,6 +267,22 @@
     "en": "335d6e9891f39e35",
     "text": "federation.releaseIndexTtlMs ({{ms}} ms) efter att det byggdes, eller omedelbart när en federationsrelation skrivs via den här tjänsten."
   },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "CDN-noders intervall"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies, tolkat till en BlockList, så att en begäran inte tolkar om inställningen för att avgöra om den kom från en CDN-nod som måste bära den här driftsättningens hemlighet."
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Strukturell: en tolkad kopia av inställningen."
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "Tills texten i global.edgeProxies ändras."
+  },
   "caches.store.global.trusted-proxies.title": {
     "en": "9c82ac7525550c6d",
     "text": "Betrodda proxyintervall"
@@ -1126,6 +1142,22 @@
   "caches.store.persistence.write-shadow.lifetime": {
     "en": "9c59c7826b7934f6",
     "text": "Ingen utgång: förnyas vid varje tömning, en post per skriven katalogpost och sfär. Tom i minnesläge."
+  },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "Återkallelse av fästa certifikat"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "Det som senast hämtades om ett fäst certifikat, för de dörrar som svarar i ett enda varv under paranoid PKI-läge. Nyckel: certifikatets fingeravtryck."
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "Tillämpas: 1024 poster; den äldsta skrivningen kastas och hämtas igen vid behov."
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 minuter"
   },
   "caches.store.revocation.ca-certificates.title": {
     "en": "c65adefa5d027d1a",

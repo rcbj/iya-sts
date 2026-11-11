@@ -100,6 +100,10 @@ function library(t) {
      'the authorization_code grant with no redirect_uris'],
     [Object.assign({ id_token_signed_response_alg: 'XX512' }, WEB),
      'STS-REG-0185', 'an ID Token algorithm this service does not sign with'],
+    // #1293: an UNSIGNED ID Token is not on the list either, unlike UserInfo
+    // below — what OIDF's oidcc-idtoken-unsigned would ask for.
+    [Object.assign({ id_token_signed_response_alg: 'none' }, WEB),
+     'STS-REG-0185', 'an unsigned ID Token (OIDF oidcc-idtoken-unsigned)'],
     [Object.assign({ userinfo_signed_response_alg: 'none' }, WEB), '',
      'UserInfo unsigned, which section 2 allows'],
     [Object.assign({ jwks: { keys: [] },
@@ -115,6 +119,21 @@ function library(t) {
      'default_acr_values that is not an array'],
     [Object.assign({ initiate_login_uri: 'http://rp.example/login' }, WEB),
      'STS-REG-0188', 'an http initiate_login_uri'],
+    // #1300: what the sign-in and consent screens show.
+    [Object.assign({ logo_uri: 'https://cdn.rp.example/logo.png',
+                     policy_uri: 'https://rp.example/privacy',
+                     tos_uri: 'https://rp.example/terms' }, WEB), '',
+     'https logo_uri, policy_uri and tos_uri'],
+    [Object.assign({ logo_uri: 'http://cdn.rp.example/logo.png' }, WEB),
+     'STS-REG-0365', 'an http logo_uri'],
+    [Object.assign({ policy_uri: 'not a url' }, WEB),
+     'STS-REG-0365', 'a policy_uri that is not a URL'],
+    [Object.assign({ tos_uri: 'https://u:p@rp.example/terms' }, WEB),
+     'STS-REG-0365', 'a tos_uri carrying credentials'],
+    [Object.assign({ tos_uri: 42 }, WEB),
+     'STS-REG-0365', 'a tos_uri that is not a string'],
+    [Object.assign({ logo_uri: 'data:image/png;base64,AAAA' }, WEB),
+     'STS-REG-0365', 'a data: logo_uri'],
     [Object.assign({ initiate_login_uri: 'https://rp.example/login',
                      default_max_age: 300, require_auth_time: true,
                      default_acr_values: ['mfa', '1'] }, WEB), '',
@@ -158,6 +177,19 @@ function library(t) {
           !!applications.initiateLoginUriProblem('not a url'),
           '1b-ii. initiateLoginUriProblem() refuses http, a fragment and ' +
           'what is not a URL');
+  // #1300: the screens' reader holds the attributes to https again, and
+  // answers nothing for a client with none of them.
+  t.check(applications.clientDisplayUriProblem('oauthLogoUri',
+            'https://cdn.rp.example/l.png') === '' &&
+          !!applications.clientDisplayUriProblem('oauthLogoUri',
+            'http://cdn.rp.example/l.png') &&
+          !!applications.clientDisplayUriProblem('oauthLogoUri',
+            'https://cdn.rp.example/a b.png') &&
+          !!applications.clientDisplayUriProblem('oauthLogoUri', '') &&
+          applications.clientDisplayOf('') === null &&
+          applications.clientDisplayOf('no-such-client-1300') === null,
+          '1b-iii. clientDisplayUriProblem() refuses http, a space and ' +
+          'nothing; clientDisplayOf() answers null for no client');
 
   const registered = { default_acr_values: ['mfa'], default_max_age: 60 };
   const bare = stepUp.requirementOf({}, registered);
@@ -322,6 +354,41 @@ function childMain() {
            '2a. refused ' + one[1] + ': ' + one[2],
            r.status + ' ' + r.text.slice(0, 200));
     }
+    // AN UNSIGNED ID TOKEN (#1293). The OpenID Foundation's
+    // oidcc-idtoken-unsigned is SKIPPED against this service, because
+    // discovery lists no `none` for the ID Token; what that skip stands for
+    // is held here — the list never carries it, in either mode, and a client
+    // that registers it anyway is refused rather than issued unsigned tokens.
+    r = await request(port, 'POST', '/oauth2/register',
+      { json: { redirect_uris: ['https://rp.or.example/cb'],
+                id_token_signed_response_alg: 'none' } });
+    note(r.status === 400 && r.json &&
+           r.json.error === 'invalid_client_metadata' &&
+           /id_token_signed_response_alg/.test(
+             String(r.json.error_description)),
+         '2a. refused invalid_client_metadata: id_token_signed_response_alg ' +
+         'none (stands in for OIDF oidcc-idtoken-unsigned)',
+         r.status + ' ' + r.text.slice(0, 300));
+    const idTokenAlgs = async function () {
+      const d = await request(port, 'GET',
+                              '/.well-known/openid-configuration');
+      return (d.json || {}).id_token_signing_alg_values_supported;
+    };
+    const devAlgs = await idTokenAlgs();
+    config.setOverride('global.mode', 'product');
+    let productAlgs = null;
+    try {
+      productAlgs = await idTokenAlgs();
+    } finally {
+      config.clearOverride('global.mode');
+    }
+    note([devAlgs, productAlgs].every(function (algs) {
+      return Array.isArray(algs) && algs.length > 0 &&
+             algs.indexOf('none') < 0;
+    }),
+         '2a. id_token_signing_alg_values_supported never lists none, in ' +
+         'development or product (stands in for OIDF oidcc-idtoken-unsigned)',
+         JSON.stringify({ development: devAlgs, product: productAlgs }));
     r = await request(port, 'POST', '/oauth2/register',
       { json: { application_type: 'native',
                 redirect_uris: ['http://127.0.0.1:9/cb'] } });
@@ -460,6 +527,68 @@ function childMain() {
          '2d. with federation.outboundAllowHttp off an http jwks_uri is ' +
          'never dialled', JSON.stringify(refused));
     config.setOverride('federation.outboundAllowHttp', true);
+
+    // --- f. what the screens show (#1300) -----------------------------------
+    const LOGO = 'https://cdn.or.example:8443/logo.png';
+    r = await request(port, 'POST', '/oauth2/register',
+      { json: { redirect_uris: ['https://rp.or.example/cb'],
+                client_name: 'OR shown', logo_uri: LOGO,
+                policy_uri: 'https://rp.or.example/privacy',
+                tos_uri: 'https://rp.or.example/terms' } });
+    const shown = r.json || {};
+    const shownEntry = applications.forClientId(shown.client_id) ||
+                       { fields: {} };
+    const fieldOf = function (entry, name) {
+      return String([].concat(entry.fields[name] || [])[0] || '');
+    };
+    note(r.status === 201 && shown.logo_uri === LOGO &&
+           shown.policy_uri === 'https://rp.or.example/privacy' &&
+           shown.tos_uri === 'https://rp.or.example/terms' &&
+           fieldOf(shownEntry, 'oauthLogoUri') === LOGO &&
+           fieldOf(shownEntry, 'oauthPolicyUri') ===
+             'https://rp.or.example/privacy' &&
+           fieldOf(shownEntry, 'oauthTosUri') === 'https://rp.or.example/terms',
+         '2f. logo_uri, policy_uri and tos_uri are returned and kept as ' +
+         'oauthLogoUri, oauthPolicyUri and oauthTosUri',
+         r.status + ' ' + r.text.slice(0, 300) + ' ' +
+         JSON.stringify(shownEntry.fields).slice(0, 300));
+    const display = applications.clientDisplayOf(shown.client_id);
+    note(display && display.name === 'OR shown' && display.logo === LOGO &&
+           display.logoOrigin === 'https://cdn.or.example:8443' &&
+           display.tos === 'https://rp.or.example/terms',
+         '2f. clientDisplayOf() answers the name, the logo and its origin, ' +
+         'and the two documents', JSON.stringify(display));
+    for (const bad of [{ logo_uri: 'http://cdn.or.example/logo.png' },
+                       { policy_uri: '/privacy' },
+                       { tos_uri: 'https://rp.or.example/a b' }]) {
+      r = await request(port, 'POST', '/oauth2/register', { json:
+        Object.assign({ redirect_uris: ['https://rp.or.example/cb'] }, bad) });
+      note(r.status === 400 && r.json &&
+             r.json.error === 'invalid_client_metadata' &&
+             new RegExp(Object.keys(bad)[0]).test(
+               String(r.json.error_description)),
+           '2f. refused invalid_client_metadata: ' + JSON.stringify(bad),
+           r.status + ' ' + r.text.slice(0, 200));
+    }
+    r = await manage('PUT', shown, { json: {
+      client_id: shown.client_id, redirect_uris: ['https://rp.or.example/cb'],
+      client_name: 'OR shown', logo_uri: LOGO } });
+    const updated = applications.forClientId(shown.client_id) ||
+                    { fields: {} };
+    note(r.status === 200 && r.json.logo_uri === LOGO &&
+           r.json.tos_uri === undefined &&
+           fieldOf(updated, 'oauthLogoUri') === LOGO &&
+           fieldOf(updated, 'oauthPolicyUri') === '' &&
+           fieldOf(updated, 'oauthTosUri') === '',
+         '2f. an RFC 7592 update that drops policy_uri and tos_uri removes ' +
+         'them from the entry', r.status + ' ' +
+         JSON.stringify(updated.fields).slice(0, 300));
+    r = await manage('PUT', shown, { json: {
+      client_id: shown.client_id, redirect_uris: ['https://rp.or.example/cb'],
+      logo_uri: 'ftp://cdn.or.example/logo.png' } });
+    note(r.status === 400 && r.json.error === 'invalid_client_metadata',
+         '2f. an RFC 7592 update with a non-https logo_uri is refused',
+         r.status + ' ' + r.text.slice(0, 200));
 
     // --- e. an encrypted response's key ------------------------------------
     r = await request(port, 'POST', '/oauth2/register', { json: {

@@ -26,5 +26,9 @@
   "thWhy": "原因",
   "anythingBut": "除以下值外的任意值：",
   "ignoredMark": " — 已忽略",
-  "notYetHeading": "product 模式仍不檢查的內容"
+  "notYetHeading": "product 模式仍不檢查的內容",
+  "waivedBy": "管理員已在此領域豁免：<code>{requirement}</code>（{section}，{level}），因為 <code>{setting}</code> 已開啟。BCP 的其他所有要求仍然有效。",
+  "requirementNotMet": "此處未符合：<code>{requirement}</code>（{section}），原因是 <code>{setting}</code>。",
+  "waivedPerApplication": "按應用程式：只有當應用程式的 <code>{attribute}</code> 列出其請求的回應類型時，它才能使用這些回應類型；該屬性由管理員或應用程式的擁有者設定。自行註冊的用戶端只能啟用 <code>{setting}</code> 所列的類型：{value}。",
+  "waivedPerApplicationNone": "按應用程式：只有當應用程式的 <code>{attribute}</code> 列出其請求的回應類型時，它才能使用這些回應類型；該屬性由管理員或應用程式的擁有者設定。自行註冊的用戶端無法啟用其中任何一種，因為 <code>{setting}</code> 為空。"
 }

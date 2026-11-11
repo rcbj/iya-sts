@@ -158,20 +158,16 @@ const delegation = require('../common/delegation');
 // parent project's in-process Kerberos jobs — which load this file and never
 // the XACML family — behave exactly as they did.
 //
-// **IT ADDS ONE LINE TO THE PARENT PROJECT'S `sts/` COPY SET**, which is the
-// standing obligation CLAUDE.md's last section describes: the closure of what
-// `krb5_kdc.js`, `krb5_service.js` and `spnego.js` require is copied into that
-// project's `tests/Dockerfile`, and a require added here needs
-// `COPY sts/common/issuance_gate.js ./sts/common/` in the commit that bumps
-// the pin across this change. `docs/parent-project-migration.md` records it.
+// (History: when it was added, this require owed the parent project's `sts/`
+// COPY set a line, `COPY sts/common/issuance_gate.js ./sts/common/`. Nothing
+// is owed since #1280; `docs/parent-project-migration.md` records it.)
 const gate = require('../common/issuance_gate');
-// THE MODE. A LEAF (rule 3) requiring only `config`, and already in the parent
-// project's copy set: `common/helpers.js` requires it, and `krb5_principals.js`
-// below does too — so this line adds no file to that closure.
+// THE MODE. A LEAF (rule 3) requiring only `config`, and already loaded:
+// `common/helpers.js` requires it, and `krb5_principals.js` below does too.
 const mode = require('../common/mode');
 // ERROR CODES (common/error_codes.js) and the audit log. Both are already in
-// this module's closure through admin_stats.js, so neither adds a file to the
-// parent project's copy set. A KRB-ERROR on TCP or UDP 88 has no HTTP funnel to
+// this module's closure through admin_stats.js, so neither adds a file to
+// what it loads. A KRB-ERROR on TCP or UDP 88 has no HTTP funnel to
 // carry its code, so the transport records it with audit.failure(); over
 // /KdcProxy the code is marked on the response instead, which is ONE row.
 const audit = require('../common/audit');
@@ -186,17 +182,17 @@ const kpac = require('./krb5_pac.js');
 const KDC_PORT = config.value('krb5.kdcPort');
 // The realms library, for the one thing this file does with it: entering the
 // trust realm a request is FOR before answering it (see routeOf()). A LEAF that
-// registers no route, already in the parent project's copy set through
-// `common/app.js` and `krb5_principals.js`.
+// registers no route, already loaded through `common/app.js` and
+// `krb5_principals.js`.
 const realms = require('../common/realms');
 
 // WHO MAY ACT FOR WHOM (#186): `kerberos/krb5_delegation.ts`, the Kerberos
 // side of the one delegation policy — the parties of an S4U request named as
 // the directory's entries, the issuance policy asked, the evidence ticket's
 // PAC checked, PA-S4U-X509-USER read and answered. Required LAZILY: only a
-// request that delegates (or asks for a forwardable ticket) needs it, and the
-// parent project's in-process jobs load this file without a directory. See
-// `kerberos/CLAUDE.md` for what that closure is owed.
+// request that delegates (or asks for a forwardable ticket) needs it, and a
+// process can load this file without a directory (the parent project's
+// in-process jobs do).
 let delegationFacts = null;
 function krb5Delegation() {
   log.debug("Entering krb5Delegation().");
@@ -261,7 +257,7 @@ function renewLifetimeSeconds() {
 // since #181 (2026-09-23): read through `mode.valueInForce()`, so a product
 // realm's KDC runs on the machine's clock whatever is stored, and says so
 // once (STS-CORE-0106). `mode` was already required here, so this adds no
-// require to the parent project's COPY closure.
+// require.
 function clockOffsetSeconds() {
   log.debug("Entering clockOffsetSeconds().");
   log.debug("Leaving clockOffsetSeconds().");
@@ -409,8 +405,7 @@ function isTgtRequest(sname) {
 //
 // WHERE THE CLAIMS COME FROM is admin_stats.js's sixth claim set,
 // `kerberos-pac` (rcbj's decision 1 on #493) — reached through that module,
-// which this file already requires, so the parent project's in-process
-// Kerberos jobs gain no file in their COPY closure. Three shapes:
+// which this file already requires, so no require is added. Three shapes:
 //
 //  * A TGT, and a ticket the AS exchange issues straight to a service, carry
 //    the REALM's set for the client, with their realm-wide roles under it
@@ -1780,6 +1775,17 @@ async function resolveS4u(ctx) {
       // built this padata holds the TGT's session key. It is integrity, not
       // authorization. [MS-SFU] section 2.2.1 fixes the algorithm as HMAC-MD5
       // at key usage 17 whatever the session key's etype.
+      if (!mode.allowsLegacyHashes()) {
+        log.debug("Leaving resolveS4u(). HMAC-MD5 is not allowed.");
+        return refuseS4u(intent, 12, {
+          errorCode: 'STS-KRB-0256',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm,
+          sname: body.sname,
+          eText: 'S4U2Self is checksummed with HMAC-MD5, which this realm ' +
+                 'does not use unless crypto.allowLegacyHashes is on.'
+        });
+      }
       const arcfour = kcrypto.etypeById(23);
       const expected = await arcfour.checksum(ctx.sessionKey,
         kcrypto.KEY_USAGE.PA_FOR_USER_CKSUM,
@@ -2832,12 +2838,13 @@ async function checkEncTimestamp(client, etype, padata) {
 // which is what lets a KRB-ERROR name a FAST factor to the client without an
 // attacker on the path reading or rewriting it.
 //
-// **THE FAST CODE IS NOT IN THIS FILE**, which belongs to the parent project
-// and may gain no require outside its `sts/` COPY set (kerberos/CLAUDE.md). It
-// is `krb5_fast.ts`, handed over inside the KEY SOURCE the principal database
-// already takes (`principals.preauthProvider()`). A process without that
-// source — the parent's in-process jobs — has no provider, so PA-FX-FAST is
-// ignored as unknown padata was before, and nothing here changes for it.
+// **THE FAST CODE IS NOT IN THIS FILE**, which kept it out of the parent
+// project's `sts/` COPY set (an obligation until #1280; the arrangement
+// stands). It is `krb5_fast.ts`, handed over inside the KEY SOURCE the
+// principal database already takes (`principals.preauthProvider()`). A
+// process without that source — the parent's in-process jobs — has no
+// provider, so PA-FX-FAST is ignored as unknown padata was before, and
+// nothing here changes for it.
 // ---------------------------------------------------------------------------
 // A pause inside one AS exchange, for awaitSignOutSecond(). Not periodic and
 // not a timer of this module's: it resolves once, and the exchange waits on it.
@@ -3424,6 +3431,25 @@ async function answerAsReq(request, fast) {
         : null
     });
   };
+  // A LIMIT ON GUESSES AT A PRINCIPAL (#1448, ASVS 5.0.0 6.3.1), for each way
+  // a password-derived key is proved: PA-ENC-TIMESTAMP and, inside FAST,
+  // PA-ENCRYPTED-CHALLENGE and PA-OTP-REQUEST.
+  const websecurity = require('../common/websecurity');
+  const preauthPrincipal = client.name.join('/') + '@' + asRealm;
+  const preauthLimit = {
+    failed: function () {
+      websecurity.doorFailed('krb5-preauth', null, preauthPrincipal);
+    },
+    succeeded: function () {
+      websecurity.doorSucceeded('krb5-preauth', null, preauthPrincipal);
+    }
+  };
+  if ((encTimestamp || encChallenge || otpRequest) &&
+      websecurity.doorBlocked('krb5-preauth', null, preauthPrincipal)) {
+    log.debug("Leaving answerAsReq(). Too many failures.");
+    return preauthFailed({ code: 24, errorCode: 'STS-KRB-0255',
+                           eText: 'PREAUTH_FAILED' });
+  }
   if (pkAsReq) {
     // PKINIT (#179) — the strongest method present, so it is the one checked:
     // the certificate's signature, its path to this realm's authorities, its
@@ -3451,9 +3477,13 @@ async function answerAsReq(request, fast) {
     const result = await provider.checkOtpRequest(client, etype, otpRequest,
                                                   fast);
     if (!result.ok) {
+      if (result.code === 24) {
+        preauthLimit.failed();
+      }
       log.debug("Leaving answerAsReq().");
       return preauthFailed(result);
     }
+    preauthLimit.succeeded();
     preauth = { method: 'PA-OTP-REQUEST inside FAST (password and an ' +
                         'authenticator code)',
                 indicators: result.indicators || [],
@@ -3462,20 +3492,41 @@ async function answerAsReq(request, fast) {
     const result = await provider.checkEncryptedChallenge(client, etype,
                                                           encChallenge, fast);
     if (!result.ok) {
+      if (result.code === 24) {
+        preauthLimit.failed();
+      }
       log.debug("Leaving answerAsReq().");
       return preauthFailed(result);
     }
+    preauthLimit.succeeded();
     preauth = { method: 'PA-ENCRYPTED-CHALLENGE inside FAST',
                 indicators: [], replyEtype: result.etype,
                 replyKey: null, kdcPadata: result.kdcPadata || [] };
   } else if (encTimestamp) {
     const failure = await checkEncTimestamp(client, etype, encTimestamp);
     if (failure) {
+      if (failure.errorCode === 'STS-KRB-0016') {
+        preauthLimit.failed();
+      }
       log.debug("Leaving answerAsReq().");
       return preauthFailed(failure);
     }
+    preauthLimit.succeeded();
     preauth = { method: 'PA-ENC-TIMESTAMP' + (fast ? ' inside FAST' : ''),
                 indicators: [], replyKey: null, kdcPadata: [] };
+  }
+
+  // A TEMPORARY PASSWORD IS NOT A WAY TO A TICKET (#1446, ASVS 5.0.0 6.4.1):
+  // it has to be changed first, and Kerberos has nowhere to change it.
+  if (preauth && !preauth.pkinit && mode.verifiesCredentials() &&
+      require('../common/credentials')
+        .passwordResetRequired(client.name.join('/'))) {
+    log.debug("Leaving answerAsReq(). The password must be changed.");
+    return errorReply(23, {
+      errorCode: 'STS-KRB-0257',
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      eText: 'this password has to be changed at the sign-in screen first'
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -5714,9 +5765,10 @@ async function answerTgsReq(request, state) {
 //
 // Only with `logout.kerberosSignOut` on, and only in active-active: nothing
 // else reads replicated state here, and a single node is exactly as it was.
-// The requires are LAZY and guarded, because the parent project loads this
-// file in-process from a COPY set (kerberos/CLAUDE.md); both modules are
-// already in that closure through common/app.js.
+// The requires are LAZY and guarded, because the parent project loaded this
+// file in-process from a COPY set (an obligation until #1280; the
+// arrangement stands); both modules are already loaded through
+// common/app.js.
 // ---------------------------------------------------------------------------
 // **AND WITH REQUEST WORKERS, ON ONE NODE TOO (2026-09-23).** A password
 // set, a principal created, an authenticator enrolled or a sign-out stamped is
@@ -5730,7 +5782,7 @@ async function answerTgsReq(request, state) {
 // `workers.readYourWrite` is on and workers exist, the front process waits
 // for what the workers have answered to commit and pulls it — the same two
 // steps `request_pool.js` takes for an HTTP request it keeps. Lazy and
-// guarded for the parent's COPY set, as below.
+// guarded, as below (for the parent's COPY set, until #1280).
 //
 // **AND NOT IN A REQUEST WORKER (2026-10-07).** Port 88's messages are
 // answered in a worker now (`answerSocketMessage()`, below), and so is
@@ -6014,8 +6066,9 @@ async function handleMessage(bytes, options) {
 // which MIT's and Heimdal's clients read as "this KDC did not answer" and
 // retry, against the next KDC in their list or this one again.
 //
-// The require of the pool is LAZY and guarded, for the parent project's COPY
-// set (kerberos/CLAUDE.md): a process without it answers here, as before.
+// The require of the pool is LAZY and guarded (for the parent project's COPY
+// set, until #1280; the arrangement stands): a process without it answers
+// here, as before.
 // ---------------------------------------------------------------------------
 const MESSAGE_OPERATION = 'krb5.message';
 
@@ -6170,11 +6223,11 @@ async function answerSocketMessage(bytes, transport, address, port) {
 // here: a placement that failed must not leave a client waiting for a reply
 // that never comes, and the KDC's own answer is what it got before this seam.
 //
-// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. This file is in the parent
-// project's tests-image COPY closure (`kerberos/CLAUDE.md`), so it requires
-// nothing new: `krb5_home.ts` installs the router from outside
-// (`common/protocol_stack.ts`, right after requiring this file), and only in a
-// service deployed as cells. With no router — single-cell mode, and every
+// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. This file was in the parent
+// project's tests-image COPY closure, so it required nothing new (an
+// obligation until #1280; the arrangement stands): `krb5_home.ts` installs
+// the router from outside (`common/protocol_stack.ts`, right after requiring
+// this file), and only in a service deployed as cells. With no router — single-cell mode, and every
 // in-process loader of this file — `answerFromSocket()` calls
 // `answerSocketMessage()` and nothing else, byte for byte what the sockets
 // did before. No realm is passed, because the sockets have none: `routeOf()`
@@ -6326,8 +6379,7 @@ function startTcp(port) {
     // the AS-REQ's `authentication` row is written by `admin_stats.js`, which
     // is handed no socket, so each chunk is handled inside an audit source
     // naming the peer (`common/audit.js`, `withSource()`). No require is
-    // added — `audit` was already one — so the parent project's COPY closure
-    // does not move.
+    // added — `audit` was already one.
     socket.on('data', function (chunk) {
       audit.withSource({ address: socket.remoteAddress || '' }, function () {
         buffer = Buffer.concat([buffer, chunk]);
@@ -6522,9 +6574,13 @@ app.post('/KdcProxy', function (req, res) {
     log.error('krb5: KdcProxy failed: ' + (e.stack || e.message));
     log.debug('Leaving POST /KdcProxy. Failed.');
     errorCodes.mark(res, 'STS-KRB-0051');
+    // THE ERROR'S OWN TEXT STAYS IN THE LOG IN PRODUCT (ASVS 5.0.0 16.5.1),
+    // as every other handler's does: it can name a file, a key or a row.
     res.status(500)
        .type('text/plain')
-       .send('the KDC could not answer: ' + e.message);
+       .send(mode.hidesFailureDetail()
+         ? 'the KDC could not answer.'
+         : 'the KDC could not answer: ' + e.message);
   });
 });
 
@@ -6575,9 +6631,254 @@ function listen(port) {
 // registerWorkerOperation().
 registerWorkerOperation();
 
+// ---------------------------------------------------------------------------
+// A TICKET THE SECURITY TOKEN SERVICE ISSUES AS A TOKEN (#658).
+//
+// WS-Trust's `wst:TokenType` and RFC 8693's `requested_token_type` may ask
+// for a Kerberos token (the Web Services Security Kerberos Token Profile
+// 1.1's AP-REQ), and the ticket inside it is THIS KDC's: the STS and the KDC
+// are one process, so the ticket is sealed here, with the keys and the PAC
+// builder every other ticket of this realm goes through — not by a second
+// ticket builder in `kerberos/krb5_tokens.ts`, which would be a second copy
+// of what a ticket of this realm says. `krb5_tokens.ts` wraps what this
+// returns in an Authenticator and an AP-REQ.
+//
+// WHAT IS DIFFERENT FROM A TGS-REQ, and why each is right:
+//
+//   * NO TGT IS PRESENTED. The subject proved themselves to the STS (a
+//     UsernameToken, an assertion, a JWT, an earlier Kerberos token), and
+//     the STS's issuance and delegation policies decided the exchange before
+//     this is reached. This function decides nothing of the kind: it is
+//     asked to seal a ticket already decided, which is the position the
+//     KDC's own S4U2Self branch is in once the policy has answered.
+//   * THE PAC IS BUILT FRESH from the principal database (`buildPacFor()`),
+//     exactly as for a TGS-REQ whose client this KDC holds; a subject of
+//     ANOTHER Kerberos realm has no account here, so their PAC is the one
+//     their own token carried (`spec.carriedPac`, already SID-filtered on
+//     arrival), re-signed for the target — the referral branch's rule.
+//   * `S4U_DELEGATION_INFO` is written when the exchange was a DELEGATION
+//     (`spec.delegationInfo`), naming the target and every party that acted,
+//     in the order they acted — the record an S4U2Proxy ticket carries
+//     (#489's syntax: `SPN@REALM`, or an application's identifier for a
+//     party with no SPN, rcbj's decision D4 on #658).
+//   * PRE-AUTHENT IS NOT SET. RFC 4120 section 2.2 says the flag reports the
+//     client's INITIAL authentication; this ticket asserts an identity the
+//     STS was shown, not an AS exchange this KDC verified. A service that
+//     reads the flag is told the truth.
+//   * FORWARDABLE only where the caller asks AND the subject is not
+//     protected (`isProtected()`, [MS-SFU] 3.2.1's DelegationNotAllowed), as
+//     the S4U2Proxy branch decides it; OK-AS-DELEGATE on the service's
+//     `krb5TrustedForDelegation`, as every TGS-REP decides it.
+//   * A ticket for `krbtgt/<another realm>` is a REFERRAL toward a trust
+//     (#430), and its PAC is signed with the inter-realm key, server, KDC and
+//     ticket signature alike, as `issueReferral()` signs one — the one key
+//     the partner's KDC holds to check them with.
+//
+// NO REQUIRE WAS ADDED: every function this calls is in this file or in a
+// module it already requires, so the parent project's COPY closure is what
+// it was. `krb5_tokens.ts`, which calls this, is reached from WS-Trust and
+// the token endpoint, neither of which is in that closure.
+//
+// `spec`: { client: { name, realm }, service: { name }, forwardable,
+// forwarded, delegationInfo, carriedPac, lifetimeSeconds, etypes }.
+// Answers `{ ok: true, ticket, sessionKey, flags, … }` or `{ ok: false,
+// errorCode, reason }`.
+// ---------------------------------------------------------------------------
+async function mintTicket(spec) {
+  log.debug('Entering mintTicket(). ' + (spec && spec.client &&
+            (spec.client.name || []).join('/')) + ' for ' +
+            (spec && spec.service && (spec.service.name || []).join('/')));
+  const answeringRealm = ourRealm();
+  const refuse = function (code, reason) {
+    log.debug('Entering refuse().');
+    log.info(errorCodes.tag(code) + 'krb5: no ticket was minted for the ' +
+             'security token service: ' + reason);
+    log.debug('Leaving refuse().');
+    return { ok: false, errorCode: code, reason: reason };
+  };
+  const clientName = { type: msgs.NAME_TYPE.PRINCIPAL,
+                       name: (spec.client.name || []).map(String) };
+  const clientRealm = String(spec.client.realm || answeringRealm);
+  const sname = { type: msgs.NAME_TYPE.SRV_INST,
+                  name: (spec.service.name || []).map(String) };
+  const isTgt = isTgtRequest(sname);
+  const referral = isTgt && sname.name[1] !== answeringRealm;
+  const service = principals.find(sname.name, answeringRealm);
+  if (!service) {
+    log.debug('Leaving mintTicket(). No such service.');
+    return refuse('STS-KRB-0244', 'this realm (' + answeringRealm + ') ' +
+                  'holds no principal ' + sname.name.join('/') + ', so ' +
+                  'there is no key to seal a ticket for it with');
+  }
+  const offered = principals.supportedEtypes(service).filter(function (id) {
+    return principals.etypePermitted(id);
+  });
+  const preference = spec.etypes && spec.etypes.length ? spec.etypes
+                                                        : offered;
+  let etype = null;
+  for (const id of preference) {
+    if (offered.indexOf(id) !== -1) {
+      etype = id;
+      break;
+    }
+  }
+  if (etype === null) {
+    log.debug('Leaving mintTicket(). No enctype.');
+    return refuse('STS-KRB-0245', sname.name.join('/') + ' offers [' +
+                  offered.join(', ') + '] and the request named [' +
+                  (preference || []).join(', ') + ']');
+  }
+  let client = null;
+  if (clientRealm === answeringRealm) {
+    if (principals.personDisabled(clientName.name, clientRealm)) {
+      log.debug('Leaving mintTicket(). A disabled subject.');
+      return refuse('STS-KRB-0246', clientName.name.join('/') + '@' +
+                    clientRealm + ' is disabled');
+    }
+    const looked = principals.lookupUser(clientName.name, clientRealm);
+    // A person whose keys were never derived — nobody needs their key for
+    // this ticket, which nobody's password sealed — is the keyless record
+    // PKINIT uses (`certificatePerson()`).
+    client = looked.principal ||
+      principals.certificatePerson(clientName.name, clientRealm);
+    if (!client) {
+      log.debug('Leaving mintTicket(). Nobody to issue for.');
+      return refuse('STS-KRB-0247', 'this KDC holds no account for ' +
+                    clientName.name.join('/') + '@' + clientRealm +
+                    (looked.refusal ? ' (' + looked.refusal.eText + ')' : ''));
+    }
+  } else if (!spec.carriedPac) {
+    log.debug('Leaving mintTicket(). A foreign subject with no PAC.');
+    return refuse('STS-KRB-0248', clientName.name.join('/') + '@' +
+                  clientRealm + ' is of another Kerberos realm and brought ' +
+                  'no PAC of their own, and this KDC may not invent one');
+  }
+  const flags = [];
+  if (spec.forwardable &&
+      !krb5Delegation().isProtected(clientName.name, clientRealm)) {
+    flags.push(msgs.TICKET_FLAG.FORWARDABLE);
+  }
+  if (spec.forwarded) {
+    flags.push(msgs.TICKET_FLAG.FORWARDED);
+  }
+  if (!isTgt &&
+      krb5Delegation().trustedForDelegation(sname.name, answeringRealm)) {
+    flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
+  }
+  const at = now();
+  const lifetime = Math.min(Number(spec.lifetimeSeconds) ||
+                            ticketLifetimeSeconds(), ticketLifetimeSeconds());
+  const authtime = spec.authtime instanceof Date ? spec.authtime : at;
+  const endtime = kdcTime(lifetime);
+  const profile = kcrypto.etypeById(etype);
+  const sessionKey = kcrypto.randomBytes(profile.keyBytes);
+  const serverKey = await principals.longTermKey(service, etype);
+  const krbtgt = principals.find(['krbtgt', answeringRealm], answeringRealm);
+  const krbtgtEtype = krbtgt ? principals.supportedEtypes(krbtgt)[0] : null;
+  if (!krbtgt || krbtgtEtype === undefined || krbtgtEtype === null) {
+    log.debug('Leaving mintTicket(). No krbtgt key.');
+    return refuse('STS-KRB-0244', 'this realm (' + answeringRealm + ') ' +
+                  'holds no krbtgt key to sign the PAC with');
+  }
+  const serverKeyObj = { etype: etype, key: serverKey };
+  const kdcKey = referral ? serverKeyObj
+    : { etype: krbtgtEtype,
+        key: await principals.longTermKey(krbtgt, krbtgtEtype) };
+  const encodeTicketPart = function (authorizationData) {
+    log.debug('Entering encodeTicketPart().');
+    log.debug('Leaving encodeTicketPart().');
+    return msgs.encEncTicketPart({
+      flags: flags,
+      key: { etype: etype, key: sessionKey },
+      crealm: clientRealm,
+      cname: clientName,
+      authtime: authtime,
+      starttime: at,
+      endtime: endtime,
+      renewTill: null,
+      authorizationData: authorizationData || null
+    });
+  };
+  const spn = sname.name.join('/') + '@' + answeringRealm;
+  let claims = null;
+  let pacBytes;
+  if (client) {
+    claims = claimsForTicket({ username: clientName.name.join('/'),
+                               isTgt: isTgt, spn: spn });
+    pacBytes = await buildPacFor(client, {
+      clientClaims: claims,
+      authtime: authtime,
+      clientRealm: clientRealm,
+      serverKey: serverKeyObj,
+      kdcKey: kdcKey,
+      isTgt: isTgt,
+      pacRequested: true,
+      encodeTicketPart: encodeTicketPart
+    });
+  } else {
+    pacBytes = spec.carriedPac;
+  }
+  if (spec.delegationInfo || referral || !client) {
+    const placeholder = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
+      new Uint8Array([0])));
+    pacBytes = await kpac.resignPac(pacForTarget(pacBytes, isTgt),
+      Object.assign({
+        serverKey: serverKeyObj,
+        kdcKey: kdcKey,
+        includeTicketSignature: !isTgt || referral,
+        includeExtendedKdcSignature: !isTgt,
+        ticketBytes: placeholder
+      }, spec.delegationInfo ? { delegationInfo: spec.delegationInfo } : {}));
+  }
+  const encTicketPart = encodeTicketPart(
+    kpac.wrapPacAsAuthorizationData(pacBytes));
+  const ticket = {
+    realm: answeringRealm,
+    sname: sname,
+    encPart: {
+      etype: etype,
+      kvno: service.kvno,
+      cipher: await profile.encrypt(serverKey,
+                                    kcrypto.KEY_USAGE.KDC_REP_TICKET,
+                                    encTicketPart)
+    }
+  };
+  stats.recordTicket(isTgt ? 'TGT' : 'service ticket', {
+    client: clientName.name.join('/') + '@' + clientRealm,
+    realm: answeringRealm,
+    service: sname.name.join('/'),
+    etype: profile.name,
+    expiresAt: endtime.getTime(),
+    claimSet: claims ? 'kerberos-pac' : '',
+    username: clientName.name.join('/'),
+    pacClaims: claims ? claims.count : 0
+  });
+  log.info('krb5: minted a ' + (isTgt ? 'TGT' : 'service ticket') + ' for ' +
+           clientName.name.join('/') + '@' + clientRealm + ' to ' + spn +
+           ' for the security token service (' + profile.name +
+           (spec.delegationInfo ? ', with S4U_DELEGATION_INFO' : '') + ')');
+  log.debug('Leaving mintTicket().');
+  return {
+    ok: true,
+    ticket: ticket,
+    sessionKey: { etype: etype, key: sessionKey },
+    flags: msgs.ticketFlagNames(flags),
+    flagBits: flags.slice(),
+    authtime: authtime,
+    starttime: at,
+    endtime: endtime,
+    crealm: clientRealm,
+    cname: clientName,
+    sname: sname,
+    realm: answeringRealm
+  };
+}
+
 module.exports = {
   listen: listen,
   handleMessage: handleMessage,
+  // #658: a ticket sealed for the security token service, decided there.
+  mintTicket: mintTicket,
   // PORT 88'S OPERATION SEAM (2026-10-07), exported for
   // tests/kerberos_worker_operation.js and for nothing else in the service:
   // the sockets call answerSocketMessage() and a worker reaches

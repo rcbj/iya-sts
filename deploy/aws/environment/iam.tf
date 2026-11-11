@@ -241,6 +241,7 @@ data "aws_iam_policy_document" "execution" {
       local.shared_secret_arns["admin-api-client-secret"],
       aws_secretsmanager_secret.main["db-master-password"].arn,
       aws_secretsmanager_secret.main["db-app-password"].arn,
+      local.cloudfront ? aws_secretsmanager_secret.main["cloudfront-edge-secret"].arn : "",
     ])
   }
 
@@ -279,6 +280,7 @@ data "aws_iam_policy_document" "execution" {
       actions = ["secretsmanager:GetSecretValue"]
       resources = [
         local.shared_secret_arns["bootstrap-admin-password"],
+        local.shared_secret_arns["bootstrap-admin-username"],
         local.shared_secret_arns["krb5-krbtgt-password"],
         local.shared_secret_arns["krb5-service-password"],
       ]

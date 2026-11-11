@@ -207,6 +207,7 @@ async function node(role, storeFile, kekFile) {
   // node and a dispatched container both are.
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   process.env.STS_WORKERS_REQUEST_COUNT = '1';
   process.env.STS_WORKERS_DISPATCH = '*';

@@ -65,6 +65,10 @@
 // that module's exports.
 // ---------------------------------------------------------------------------
 
+import responseChecks = require('../common/response_models');
+import ModelTables = require('../common/model_tables');
+// What a request may name and hold (#1483): a leaf that registers nothing.
+import RequestHeaders = require('../common/request_headers');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -78,6 +82,7 @@ import cors = require('../common/cors');
 // THE SIGN-IN SERVICE, whose views and acts these are, and the reason this
 // file is below #8 in the require order.
 import authn = require('./authn');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 
@@ -89,65 +94,17 @@ const CSRF_HEADER = 'x-csrf-token';
 
 const API = authn.AUTHN_API_PATH;
 
-// ---------------------------------------------------------------------------
-// THE BODIES, ONE PER OPERATION. Closed shapes: a field this API does not
-// take is refused (`.strict()`), because these are this service's own
-// operations answering to no specification, and a field that decides
-// whether a credential is issued must not arrive under a name nobody reads.
-//
-// They are the sign-in form's fields as they were (the form is gone), and
-// `screenAct()` receives them as the form handler did, its `action` set by
-// the operation. What each field is:
-//
-//   * `username` — `vt.name`, a BOUND and no control characters, and
-//     deliberately not `vt.identifier`: this service accepts any name, and
-//     narrowing it would refuse people whose names are none of its business.
-//   * `password` — bounded and nothing else: its content is
-//     `credentials.ts`'s business in product mode and nobody's in
-//     development, and a scrypt should not be asked to hash a megabyte.
-//   * `use_webauthn`, `webauthn_only` — the two passkey boxes; the record,
-//     not the body, decides where a demand or a configuration fixed them.
-//   * `remember_browser` (#265), `device_fp` (#62 P6, FingerprintJS's
-//     visitorId, hex; empty where the realm asks for none).
-//   * `credential` — a passkey ceremony's result (#474), bounded and parsed
-//     downstream as the WebAuthn page's is.
-// ---------------------------------------------------------------------------
-const FLAG = vt.opt(vt.flag);
-const FINGERPRINT = vz.string().max(64).regex(/^[A-Za-z0-9]*$/).optional();
+const PASSWORD_BODY = ModelZod.body('authn', 'signInWithPassword');
 
-const PASSWORD_BODY = vz.object({
-  username: vt.opt(vt.name),
-  password: vz.string().max(1024).optional(),
-  use_webauthn: FLAG,
-  webauthn_only: FLAG,
-  remember_browser: FLAG,
-  device_fp: FINGERPRINT
-}).strict();
+const EMPTY_BODY = ModelZod.body('authn', 'cancelSignIn');
 
-const EMPTY_BODY = vz.object({}).strict();
+const ANONYMOUS_BODY = ModelZod.body('authn', 'continueAnonymously');
 
-const ANONYMOUS_BODY = vz.object({
-  remember_browser: FLAG,
-  device_fp: FINGERPRINT
-}).strict();
+const EMAIL_BODY = ModelZod.body('authn', 'signInByEmail');
 
-const EMAIL_BODY = vz.object({
-  username: vt.opt(vt.name),
-  kind: vt.oneOf(['code', 'link']),
-  remember_browser: FLAG,
-  device_fp: FINGERPRINT
-}).strict();
+const PASSKEY_BODY = ModelZod.body('authn', 'signInWithPasskey');
 
-const PASSKEY_BODY = vz.object({
-  credential: vz.string().max(validation.CAP.TEXT).optional(),
-  remember_browser: FLAG,
-  device_fp: FINGERPRINT
-}).strict();
-
-const PASSWORD_CHANGE_BODY = vz.object({
-  new_password: vz.string().max(1024).optional(),
-  confirm_password: vz.string().max(1024).optional()
-}).strict();
+const PASSWORD_CHANGE_BODY = ModelZod.body('authn', 'changePassword');
 
 // THE SECOND-FACTOR AND EMAILED-FACTOR STEPS' BODIES (#572, #573): the
 // fields their forms posted, `mfa_id` gone into the path.
@@ -160,55 +117,44 @@ const PASSWORD_CHANGE_BODY = vz.object({
 //   * `credential` — a ceremony's result, bounded and parsed downstream.
 //   * `key` — the passkey a person chose (#534), a credential id.
 //   * `t` — a mailed link's token, as the link carried it.
-const CODE_BODY = vz.object({
-  code: vz.string().max(32).optional()
-}).strict();
+const CODE_BODY = ModelZod.body('authn', 'checkCode');
 
-const BACKUP_CODE_BODY = vz.object({
-  code: vz.string().max(64).optional()
-}).strict();
+const BACKUP_CODE_BODY = ModelZod.body('authn', 'spendRecoveryCode');
 
-const FACTOR_PASSWORD_BODY = vz.object({
-  password: vz.string().max(1024).optional()
-}).strict();
+const FACTOR_PASSWORD_BODY = ModelZod.body('authn', 'checkFactorPassword');
 
-const KEY_BODY = vz.object({
-  key: vt.opt(vt.base64url),
-  // THE LANE A REGISTRATION IS MADE IN (#643): `classical` or `pqc`, where
-  // the realm offers both. Kept on the step; the answer never names it.
-  lane: vt.opt(vt.oneOf(['classical', 'pqc'])),
-  // THE CLASSICAL RETRY (#944): `classical` asks for a registration with
-  // the classical algorithms only, after an ML-DSA-first one failed on the
-  // device. Refused where the realm forbids a classical passkey
-  // (STS-AUTHN-0420); kept on the step otherwise.
-  algorithms: vt.opt(vt.oneOf(['classical']))
-}).strict();
+const KEY_BODY = ModelZod.body('authn', 'passkeyStepOptions');
 
-const CREDENTIAL_BODY = vz.object({
-  credential: vz.string().max(validation.CAP.TEXT).optional()
-}).strict();
+const CREDENTIAL_BODY = ModelZod.body('authn', 'finishPasskeyStep');
 
-const SEND_BODY = vz.object({
-  kind: vt.oneOf(['code', 'link'])
-}).strict();
+const SEND_BODY = ModelZod.body('authn', 'sendEmailedFactor');
 
-const OPEN_BODY = vz.object({
-  t: vt.opt(vt.base64url)
-}).strict();
+const OPEN_BODY = ModelZod.body('authn', 'spendEmailedLink');
 
 // The pages a step's view is asked for (`?page=`), and the passkey chosen.
 const MFA_PAGES = ['totp', 'webauthn', 'backup-code', 'password', 'setup',
                    'email-code', 'email-link', 'email-link-open',
                    'post-login'];
 
-const MFA_QUERY = vz.object({
-  page: vt.opt(vt.oneOf(MFA_PAGES)),
-  key: vt.opt(vt.base64url)
-});
+const MFA_QUERY = ModelZod.query('authn', 'getStep');
 
 const ID_PARAMS = vz.object({
   id: vt.base64url
 });
+
+// WHAT THE WALLET'S START VIEW IS ASKED WITH (#1483, the names this door has
+// always read): `authn` or `mfa` (what the start is for), `siop`, an
+// enrolment's `enrol`, `login_hint` and `did_act`. The act names the rest of
+// what `oid4vc/vc_signin.ts`'s `QUERY` admits (`state`, `response_code`,
+// `wallet`, `qr`), which belong to that door's shells and are not this API's.
+const WALLET_VIEW_QUERY = ModelZod.query('authn', 'getWalletStart');
+
+// THE CODE OF EACH WAY A REQUEST'S SHAPE IS REFUSED (#1483).
+const SHAPE_CODES: Record<string, string> = {
+  'unknown-parameter': 'STS-AUTHN-0553',
+  'wrong-type': 'STS-AUTHN-0554',
+  header: 'STS-AUTHN-0555'
+};
 
 // ---------------------------------------------------------------------------
 // THE WALLET'S BODIES (#574). The ids an act names beside the transaction
@@ -224,23 +170,11 @@ const WALLET_IDS = {
   enrol: vt.opt(vt.oneOf(['1']))
 };
 
-const WALLET_START_BODY = vz.object(Object.assign({}, WALLET_IDS, {
-  siop: vt.opt(vt.oneOf(['1'])),
-  wallet: vt.opt(vt.uri),
-  // An enrolment's account among this browser's (2026-10-20): the portal's
-  // Enrol link names it, and `oid4vc/vc_signin.ts`'s startable() hints it.
-  login_hint: vt.opt(vt.opaque)
-})).strict();
+const WALLET_START_BODY = ModelZod.body('authn', 'startWalletSignIn');
 
-const WALLET_STATUS_BODY = vz.object(Object.assign({}, WALLET_IDS, {
-  response_code: vt.opt(vt.opaque)
-})).strict();
+const WALLET_STATUS_BODY = ModelZod.body('authn', 'walletStatus');
 
-const WALLET_DC_API_BODY = vz.object(Object.assign({}, WALLET_IDS, {
-  response: vz.union([vz.string().max(1024 * 1024),
-                      vz.object({ protocol: vz.string().max(200),
-                                  data: vz.any() })]).optional()
-})).strict();
+const WALLET_DC_API_BODY = ModelZod.body('authn', 'answerWalletDcApi');
 
 // ---------------------------------------------------------------------------
 // THE SIGN-OUT'S BODY AND QUERY (#577). The act's fields are what the
@@ -254,25 +188,13 @@ const WALLET_DC_API_BODY = vz.object(Object.assign({}, WALLET_IDS, {
 // it: an account's KEY, read only with `authn.multipleAccounts` on, choosing
 // only among this browser's own accounts. `login_hint` preselects one at the
 // step and chooses nothing.
-const LOGOUT_BODY = vz.object({
-  scope: vt.opt(vt.oneOf(['global', 'selected'])),
-  select: vz.array(vz.string().max(validation.CAP.TOKEN)).max(10000)
-    .optional(),
-  username: vt.opt(vt.name),
-  account: vz.string().min(1).max(600).optional()
-}).strict();
+const LOGOUT_BODY = ModelZod.body('authn', 'signOut');
 
-const LOGOUT_QUERY = vz.object({
-  username: vt.opt(vt.name),
-  account: vz.string().min(1).max(600).optional(),
-  login_hint: vz.string().max(512).optional()
-});
+const LOGOUT_QUERY = ModelZod.query('authn', 'getSignOut');
 
 // THE SIGN-OUT'S ACCOUNT STEP (#561): an account's key, or `all` — every
 // account in this browser.
-const LOGOUT_ACCOUNT_BODY = vz.object({
-  account: vz.string().min(1).max(600)
-}).strict();
+const LOGOUT_ACCOUNT_BODY = ModelZod.body('authn', 'chooseSignOutAccount');
 
 // ---------------------------------------------------------------------------
 // THE ACCOUNT PICKER'S BODY (#561): the account's KEY — its subject, or
@@ -280,9 +202,7 @@ const LOGOUT_ACCOUNT_BODY = vz.object({
 // `keyOf()`) — and nothing else. Never a sid: the picker is drawn without
 // one and the server finds the session by the key in this browser's set.
 // ---------------------------------------------------------------------------
-const ACCOUNT_BODY = vz.object({
-  account: vz.string().min(1).max(600)
-}).strict();
+const ACCOUNT_BODY = ModelZod.body('authn', 'selectAccount');
 
 /**
  * One operation of the API.
@@ -303,14 +223,15 @@ interface Operation {
     'session';
   // The page or form control this operation is the door of, for the
   // runtime and the reader (`/account-api`'s convention, rule 7's twin).
-  mirrors: string | null;
+  mirrors?: string | null;
   // For an act at the screen: the form's `action` it is.
   action?: string;
-  summary: string;
-  description: string;
+  summary?: string;
   body?: Json;
-  // The answer's shape, documented.
-  answer?: Json;
+  // The operation's query, as the zod object its handler checks or (the
+  // wallet's start view) as the names it reads (#1483): the document and the
+  // refusal of a name it does not take read this one declaration.
+  query?: Json;
   handler: string;
   // For a wallet operation (#574): the `oid4vc/vc_signin.ts` method it is.
   walletAct?: string;
@@ -321,299 +242,118 @@ interface Operation {
 }
 
 // THE ANSWERS, DOCUMENTED ONCE for the OpenAPI document.
-const NEXT_ANSWER = {
-  type: 'object',
-  description: 'What the act leads to. `redirect`: go to `location` with a ' +
-    'GET — back to the request that sent the person here (the session ' +
-    'cookie is set on this answer where a sign-in completed). `mfa`: the ' +
-    'second-factor step `step` (`totp`, `webauthn`, `enrol`, `email-code`, ' +
-    '`email-link`) whose page is `location`. `password-change`: the forced ' +
-    'change, at `location`. `home-cell`: the person is homed in another ' +
-    'cell; send `form` (its `method`, `action` and `fields`) as it is. ' +
-    '`refused`: `errors` says why, in English, and the page is drawn ' +
-    'again — or, where `location` is named (a session refused at the end ' +
-    'of a second-factor step), the sign-in screen at `location` says it; ' +
-    'with `end` (`{ title }`), the emailed factor\'s page ends there. ' +
-    '`stay`: an emailed factor was sent (`notice: resent`) and the page is ' +
-    'drawn again.',
-  properties: {
-    ok: { type: 'boolean' },
-    next: { type: 'string',
-            enum: ['redirect', 'mfa', 'password-change', 'home-cell',
-                   'stay', 'refused'] },
-    location: { type: 'string' },
-    step: { type: 'string' },
-    id: { type: 'string' },
-    form: { type: 'object' },
-    notice: { type: 'string' },
-    end: { type: 'object' },
-    errors: { type: 'array', items: { type: 'string' } },
-    passkey: { type: 'object',
-               description: 'After a refused passkey: a credential nobody ' +
-                 'holds, to signal to the credential manager, and whether ' +
-                 'the autofill may be armed again.' }
-  }
-};
 
 const OPERATIONS: Operation[] = [
   { method: 'GET', path: API, operationId: 'getIndex', access: 'public',
-    mirrors: null, handler: 'index',
-    summary: 'Lists every operation of this API',
-    description: 'Each operation, its method and path, and the sign-in ' +
-      'page or control it is the door of.' },
+    handler: 'index' },
   { method: 'GET', path: API + '/openapi.json', operationId: 'getOpenApi',
-    access: 'public', mirrors: null, handler: 'openApi',
-    summary: 'This API\'s OpenAPI document',
-    description: 'Generated from the operation table and its body schemas.' },
+    access: 'public', handler: 'openApi' },
   { method: 'GET', path: API + '/pending/:id', operationId: 'getScreen',
-    access: 'pending', mirrors: 'GET /authn/login', handler: 'screen',
-    summary: 'What the sign-in screen offers for a pending sign-in',
-    description: 'The screen\'s view, as facts and no words: the ' +
-      'authentication policy\'s mechanisms, the passkey policy\'s boxes, ' +
-      'the demands the calling protocol made, the partners, the Kerberos ' +
-      'and wallet doors, what this mode checks, and the protocol\'s own ' +
-      'rows — and `csrf`, the token every act on this sign-in carries.' },
+    access: 'pending', handler: 'screen' },
   { method: 'GET', path: API + '/pending/:id/partners',
     operationId: 'getPartners', access: 'pending',
-    mirrors: 'GET /authn/select-idp', handler: 'partners',
-    summary: 'The federation partners a sign-in may choose between',
-    description: 'Resolved again from the application\'s entry; with fewer ' +
-      'than two left, `go` names the sign-in screen instead.' },
+    handler: 'partners' },
   { method: 'POST', path: API + '/pending/:id/password',
     operationId: 'signInWithPassword', access: 'pending',
-    mirrors: 'POST /authn/login', action: 'login', handler: 'act',
-    body: PASSWORD_BODY, answer: NEXT_ANSWER,
-    summary: 'Signs in with a username and password, or a passkey for the ' +
-             'named account',
-    description: 'The Sign In button: the password checked (in product ' +
-      'mode), rate limited by identity and address, the risk assessed, ' +
-      'the issuance policy asked, and the second factor, the set-up step ' +
-      'or the forced password change answered as the next step. ' +
-      '`webauthn_only` asks for a passkey instead of the password.' },
+    action: 'login', handler: 'act',
+    body: PASSWORD_BODY },
   { method: 'POST', path: API + '/pending/:id/cancel',
     operationId: 'cancelSignIn', access: 'pending',
-    mirrors: 'POST /authn/login', action: 'cancel', handler: 'act',
-    body: EMPTY_BODY, answer: NEXT_ANSWER,
-    summary: 'Declines the sign-in',
-    description: 'Cancel: the calling protocol is told the person ' +
-      'declined (`authn_error=access_denied`) at `location`.' },
+    action: 'cancel', handler: 'act',
+    body: EMPTY_BODY },
   { method: 'POST', path: API + '/pending/:id/anonymous',
     operationId: 'continueAnonymously', access: 'pending',
-    mirrors: 'POST /authn/login', action: 'anonymous', handler: 'act',
-    body: ANONYMOUS_BODY, answer: NEXT_ANSWER,
-    summary: 'Continues without signing in',
-    description: 'Where `authn.unauthenticatedSessions` is on: a session ' +
-      'that records that nobody authenticated.' },
+    action: 'anonymous', handler: 'act',
+    body: ANONYMOUS_BODY },
   { method: 'POST', path: API + '/pending/:id/certificate',
     operationId: 'continueWithCertificate', access: 'pending',
-    mirrors: 'POST /authn/login', action: 'certificate', handler: 'act',
-    body: ANONYMOUS_BODY, answer: NEXT_ANSWER,
-    summary: 'Continues as the holder of the connection\'s TLS client ' +
-             'certificate',
-    description: 'Where the view offers `certificate` (#1051): the TLS ' +
-      'client certificate this connection presented, its revocation ' +
-      'consulted, the identity gate asked for this sign-in\'s realm, and ' +
-      'an application\'s certificate refused — the checks `GET ' +
-      '/tls/sign-in` makes — as a first factor, `amr ["swk"]`. The ' +
-      'authentication policy, the risk and the issuance policy decide as ' +
-      'for any first factor, and a second factor is the next step where ' +
-      'one is needed.' },
+    action: 'certificate', handler: 'act',
+    body: ANONYMOUS_BODY },
   { method: 'POST', path: API + '/pending/:id/email',
     operationId: 'signInByEmail', access: 'pending',
-    mirrors: 'POST /authn/login', action: 'email', handler: 'act',
-    body: EMAIL_BODY, answer: NEXT_ANSWER,
-    summary: 'Mails a sign-in code or link as a first factor',
-    description: 'Where the authentication policy accepts one (#64): the ' +
-      'next step is the page that waits for it, the same whether or not ' +
-      'the account exists.' },
+    action: 'email', handler: 'act',
+    body: EMAIL_BODY },
   { method: 'POST', path: API + '/pending/:id/passkey/options',
     operationId: 'passkeyOptions', access: 'pending',
-    mirrors: 'POST /authn/login', action: 'passkey-options',
-    handler: 'passkeyOptions', body: EMPTY_BODY,
-    summary: 'Arms a passkey ceremony with no username',
-    description: 'A single-use challenge on the pending sign-in, the RP ID ' +
-      'and the request options, for the button and the username field\'s ' +
-      'autofill (conditional mediation).' },
+    action: 'passkey-options',
+    handler: 'passkeyOptions', body: EMPTY_BODY },
   { method: 'POST', path: API + '/pending/:id/passkey',
     operationId: 'signInWithPasskey', access: 'pending',
-    mirrors: 'POST /authn/login', action: 'passkey', handler: 'act',
-    body: PASSKEY_BODY, answer: NEXT_ANSWER,
-    summary: 'Signs in with a passkey and no username',
-    description: 'The ceremony\'s result, verified with user verification ' +
-      'required against the challenge `passkey/options` armed.' },
+    action: 'passkey', handler: 'act',
+    body: PASSKEY_BODY },
   { method: 'GET', path: API + '/password-change/:id',
     operationId: 'getPasswordChange', access: 'step',
-    mirrors: 'GET /authn/password-change', handler: 'passwordChange',
-    summary: 'The forced password change a sign-in is waiting on',
-    description: 'Whose password, and why it must be changed now where ' +
-      'there is a reason to give; `csrf` as for the screen.' },
+    handler: 'passwordChange' },
   { method: 'POST', path: API + '/password-change/:id',
     operationId: 'changePassword', access: 'step',
-    mirrors: 'POST /authn/password-change', action: 'password-change',
-    handler: 'changePassword', body: PASSWORD_CHANGE_BODY,
-    answer: NEXT_ANSWER,
-    summary: 'Stores the new password and continues the sign-in',
-    description: 'Held to the password policy; the sign-in then continues ' +
-      'exactly as after the password step — second factor included.' },
+    action: 'password-change',
+    handler: 'changePassword', body: PASSWORD_CHANGE_BODY },
   { method: 'POST', path: API + '/password-change/:id/start-over',
     operationId: 'startOverFromPasswordChange', access: 'step',
-    mirrors: 'POST /authn/password-change', action: 'start-over',
-    handler: 'passwordChangeStartOver', body: EMPTY_BODY,
-    answer: NEXT_ANSWER,
-    summary: 'Leaves the forced password change and starts the sign-in over',
-    description: 'Changes nothing: the step is ended and the pending ' +
-      'sign-in it was minted from is put back under its id, so the ' +
-      'request it carries completes after the person signs in again. ' +
-      '`next: redirect` to the sign-in screen.' },
+    action: 'start-over',
+    handler: 'passwordChangeStartOver', body: EMPTY_BODY },
   // --- the second-factor and emailed-factor steps (#572, #573) -----------
   { method: 'GET', path: API + '/mfa/:id', operationId: 'getStep',
-    access: 'mfa', handler: 'mfaStep',
-    mirrors: 'GET /authn/totp, /authn/webauthn, /authn/backup-code, ' +
-             '/authn/password-factor, /authn/mfa-setup, /authn/email-code, ' +
-             '/authn/email-link, /authn/email-link/open, /authn/post-login',
-    summary: 'What a second-factor or emailed-factor step\'s page shows',
-    description: 'The step\'s view for the page `page` names (`totp`, ' +
-      '`webauthn`, `backup-code`, `password`, `setup`, `email-code`, ' +
-      '`email-link`, `email-link-open`, `post-login`; the step\'s own ' +
-      'where left out), ' +
-      'as facts and no words: the person, the ways round the factor asked ' +
-      'for, the set-up step\'s choice and its authenticator app\'s ' +
-      '`otpauth:` URI, the passkey ceremony\'s description, an emailed ' +
-      'factor\'s state — and `csrf`. Refused (400) where the page could ' +
-      'never be drawn for the step: an expired step, a code page for ' +
-      'somebody with no authenticator app, a passkey page for somebody ' +
-      'holding no passkey (any key may answer the step since #1135; the ' +
-      'authentication policy decides whether this use is open). `key` ' +
-      'names the passkey a person chose where the passkey policy offers ' +
-      'them one by one.' },
+    access: 'mfa', handler: 'mfaStep', query: MFA_QUERY },
   { method: 'POST', path: API + '/mfa/:id/totp', operationId: 'checkCode',
-    access: 'mfa', mirrors: 'POST /authn/totp', action: 'totp',
-    handler: 'mfaAct', body: CODE_BODY, answer: NEXT_ANSWER,
-    refusedCode: 'STS-AUTHN-0039',
-    summary: 'Checks a one-time code from an authenticator app',
-    description: 'RFC 6238, checked in every mode and rate limited by ' +
-      'identity and address; a refused code keeps the step.' },
+    access: 'mfa', action: 'totp',
+    handler: 'mfaAct', body: CODE_BODY, refusedCode: 'STS-AUTHN-0039' },
   { method: 'POST', path: API + '/mfa/:id/backup-code',
     operationId: 'spendRecoveryCode', access: 'mfa',
-    mirrors: 'POST /authn/backup-code', action: 'backup-code',
-    handler: 'mfaAct', body: BACKUP_CODE_BODY, answer: NEXT_ANSWER,
-    refusedCode: 'STS-AUTHN-0041',
-    summary: 'Checks and spends a recovery code',
-    description: 'In place of the second factor; a code that cannot be ' +
-      'marked spent is refused.' },
+    action: 'backup-code',
+    handler: 'mfaAct', body: BACKUP_CODE_BODY, refusedCode: 'STS-AUTHN-0041' },
   { method: 'POST', path: API + '/mfa/:id/password',
     operationId: 'checkFactorPassword', access: 'mfa',
-    mirrors: 'POST /authn/password-factor', action: 'password',
-    handler: 'mfaAct', body: FACTOR_PASSWORD_BODY, answer: NEXT_ANSWER,
-    summary: 'Checks a password as the second factor after a wallet',
-    description: 'Rate limited on the sign-in bucket.' },
+    action: 'password',
+    handler: 'mfaAct', body: FACTOR_PASSWORD_BODY },
   { method: 'POST', path: API + '/mfa/:id/webauthn/options',
     operationId: 'passkeyStepOptions', access: 'mfa',
-    mirrors: 'POST /authn/webauthn', action: 'webauthn-options',
-    handler: 'mfaAct', body: KEY_BODY,
-    summary: 'Arms the passkey step\'s ceremony',
-    description: 'The step\'s challenge, the RP ID, the user (its handle ' +
-      'and display name), the keys allowed and excluded and the passkey ' +
-      'policy\'s options, for `navigator.credentials.create()` or ' +
-      '`.get()` as `mode` says. `lane` (`classical` or `pqc`) chooses the ' +
-      'lane a registration is made in where the realm offers both (#643): ' +
-      'its handle, its algorithms and its exclude list. `algorithms: ' +
-      'classical` (#944) arms a registration with the classical ' +
-      'algorithms only, the retry `fallback.classical` says may be ' +
-      'offered after an ML-DSA-first registration failed on the device; ' +
-      'refused (400) where the realm forbids a classical passkey.' },
+    action: 'webauthn-options',
+    handler: 'mfaAct', body: KEY_BODY },
   { method: 'POST', path: API + '/mfa/:id/webauthn',
     operationId: 'finishPasskeyStep', access: 'mfa',
-    mirrors: 'POST /authn/webauthn', action: 'webauthn',
-    handler: 'mfaAct', body: CREDENTIAL_BODY, answer: NEXT_ANSWER,
-    refusedCode: 'STS-AUTHN-0020',
-    summary: 'Verifies the passkey step\'s ceremony and finishes the step',
-    description: 'A registration where the step enrols a key, an ' +
-      'assertion otherwise — decided by the step, not the body.' },
+    action: 'webauthn',
+    handler: 'mfaAct', body: CREDENTIAL_BODY, refusedCode: 'STS-AUTHN-0020' },
   { method: 'POST', path: API + '/mfa/:id/setup/totp',
     operationId: 'beginAppEnrolment', access: 'mfa',
-    mirrors: 'POST /authn/mfa-setup', action: 'totp', handler: 'mfaAct',
-    body: EMPTY_BODY, answer: NEXT_ANSWER,
-    summary: 'Begins enrolling an authenticator app at the set-up step',
-    description: 'The next step is the set-up page again, drawing the ' +
-      'secret.' },
+    action: 'totp', handler: 'mfaAct',
+    body: EMPTY_BODY },
   { method: 'POST', path: API + '/mfa/:id/setup/confirm',
     operationId: 'confirmAppEnrolment', access: 'mfa',
-    mirrors: 'POST /authn/mfa-setup', action: 'confirm-totp',
-    handler: 'mfaAct', body: CODE_BODY, answer: NEXT_ANSWER,
-    summary: 'Confirms an authenticator app with its first code',
-    description: 'Rate limited; on success a session of two factors.' },
+    action: 'confirm-totp',
+    handler: 'mfaAct', body: CODE_BODY },
   { method: 'POST', path: API + '/mfa/:id/setup/webauthn',
     operationId: 'beginKeyEnrolment', access: 'mfa',
-    mirrors: 'POST /authn/mfa-setup', action: 'webauthn',
-    handler: 'mfaAct', body: EMPTY_BODY, answer: NEXT_ANSWER,
-    summary: 'Chooses a passkey at the set-up step',
-    description: 'The next step is the passkey page\'s registration.' },
+    action: 'webauthn',
+    handler: 'mfaAct', body: EMPTY_BODY },
   { method: 'POST', path: API + '/mfa/:id/skip',
     operationId: 'ignoreOffer', access: 'mfa',
-    mirrors: 'POST /authn/mfa-setup', action: 'ignore', handler: 'mfaAct',
-    body: EMPTY_BODY, answer: NEXT_ANSWER,
-    summary: 'Ignores an offered second factor (#246)',
-    description: 'Only where the step was offered rather than required: ' +
-      'the sign-in finishes on the password.' },
+    action: 'ignore', handler: 'mfaAct',
+    body: EMPTY_BODY },
   // --- the post-login activity (#1096) -------------------------------------
   { method: 'POST', path: API + '/mfa/:id/post-login/register',
     operationId: 'registerPostLoginPasskey', access: 'mfa',
-    mirrors: 'POST /authn/post-login', action: 'register',
-    handler: 'mfaAct', body: EMPTY_BODY, answer: NEXT_ANSWER,
-    summary: 'Chooses to register the passkey a post-login activity asks for',
-    description: 'The next step is the passkey page\'s registration, ' +
-      'offering ML-DSA only; the key has no role (#1135). Its finish ' +
-      'starts the session the sign-in was held for. Where the realm can ' +
-      'no longer enrol an ML-DSA passkey the session starts without it ' +
-      '(STS-AUTHN-0475).' },
+    action: 'register',
+    handler: 'mfaAct', body: EMPTY_BODY },
   { method: 'POST', path: API + '/mfa/:id/post-login/skip',
     operationId: 'skipPostLoginActivity', access: 'mfa',
-    mirrors: 'POST /authn/post-login', action: 'skip',
-    handler: 'mfaAct', body: EMPTY_BODY, answer: NEXT_ANSWER,
-    refusedCode: 'STS-AUTHN-0474',
-    summary: 'Puts a post-login activity off',
-    description: 'For the profile\'s `snoozeDays`; the held session ' +
-      'starts. Refused (400) once the allotted time since the first ' +
-      'invitation has passed (STS-AUTHN-0474).' },
+    action: 'skip',
+    handler: 'mfaAct', body: EMPTY_BODY, refusedCode: 'STS-AUTHN-0474' },
   { method: 'POST', path: API + '/mfa/:id/email/send',
     operationId: 'sendEmailedFactor', access: 'mfa',
-    mirrors: 'POST /authn/email-code, /authn/email-link', action: 'send',
-    handler: 'mfaAct', body: SEND_BODY, answer: NEXT_ANSWER,
-    summary: 'Mails a code or a sign-in link for the step (#64)',
-    description: 'To the person\'s verified address only; a resend ' +
-      'replaces the last. `next: stay` with `notice: resent` where it ' +
-      'went. A link\'s binding cookie is set on this answer.' },
+    action: 'send',
+    handler: 'mfaAct', body: SEND_BODY },
   { method: 'POST', path: API + '/mfa/:id/email/code',
     operationId: 'checkEmailedCode', access: 'mfa',
-    mirrors: 'POST /authn/email-code', action: 'verify',
-    handler: 'mfaAct', body: CODE_BODY, answer: NEXT_ANSWER,
-    summary: 'Checks an emailed code',
-    description: 'Once for the cluster, a bounded number of wrong codes ' +
-      'per step, rate limited as the one-time code is.' },
+    action: 'verify',
+    handler: 'mfaAct', body: CODE_BODY },
   { method: 'POST', path: API + '/mfa/:id/email-link/open',
     operationId: 'spendEmailedLink', access: 'mfa',
-    mirrors: 'POST /authn/email-link/open', action: 'open',
-    handler: 'mfaAct', body: OPEN_BODY, answer: NEXT_ANSWER,
-    summary: 'Spends a mailed sign-in link: its Continue button',
-    description: 'Only in the browser that asked for the link (the ' +
-      '`sts_email_binding` cookie). Opening the link spends nothing.' },
+    action: 'open',
+    handler: 'mfaAct', body: OPEN_BODY },
   { method: 'POST', path: API + '/mfa/:id/start-over',
     operationId: 'startOver', access: 'mfa',
-    mirrors: 'POST /authn/totp, /authn/webauthn, /authn/backup-code, ' +
-             '/authn/password-factor, /authn/mfa-setup, /authn/email-code, ' +
-             '/authn/email-link, /authn/email-link/open',
-    action: 'start-over', handler: 'mfaAct', body: EMPTY_BODY,
-    answer: NEXT_ANSWER,
-    summary: 'Leaves a sign-in step and starts the sign-in over',
-    description: 'Every second-factor, set-up and emailed-factor page\'s ' +
-      'Start over button. The step is ended with whatever it held (an ' +
-      'emailed code, a link, an enrolment in progress), no session is ' +
-      'started and no factor is counted, and the pending sign-in the step ' +
-      'was minted from is put back under its id, so the request it ' +
-      'carries completes after the person signs in again. `next: ' +
-      'redirect` to the sign-in screen; a step that has already ended is ' +
-      'refused (400).' }
+    action: 'start-over', handler: 'mfaAct', body: EMPTY_BODY }
 ];
 
 // ---------------------------------------------------------------------------
@@ -624,77 +364,25 @@ const OPERATIONS: Operation[] = [
 // A table of their own beside the screen's, which the other sign-in steps'
 // tickets extend in theirs.
 // ---------------------------------------------------------------------------
-const WALLET_ANSWER = {
-  type: 'object',
-  description: 'As the screen\'s acts answer: `redirect` (the session ' +
-    'cookie set on this answer), `mfa` (a second factor after the wallet, ' +
-    'at `location`), or `refused` with `errors` and a `view` of kind ' +
-    '`refused` (the heading, the presentation\'s checks, `retry` and ' +
-    '`back`). The poll answers `wait` while the wallet has not answered.',
-  properties: {
-    ok: { type: 'boolean' },
-    next: { type: 'string',
-            enum: ['wait', 'redirect', 'mfa', 'refused'] },
-    location: { type: 'string' },
-    go: { type: 'string' },
-    state: { type: 'string' },
-    expiresIn: { type: 'integer' },
-    errors: { type: 'array', items: { type: 'string' } },
-    view: { type: 'object' }
-  }
-};
 
 const WALLET_OPERATIONS: Operation[] = [
   { method: 'GET', path: API + '/wallet', operationId: 'getWalletStart',
-    access: 'wallet', mirrors: 'GET /authn/wallet', handler: 'wallet',
-    walletAct: 'startView',
-    summary: 'What a wallet sign-in\'s start page needs',
-    description: 'Takes the start page\'s query — `authn` (a pending ' +
-      'sign-in) or `mfa` (a second-factor step), `siop=1` for a ' +
-      'self-issued ID Token, `enrol=1` to enrol one from a session (with ' +
-      '`login_hint` naming which of the browser\'s accounts) — and ' +
-      'answers what is being started and `csrf`, after the refusals a ' +
-      'start would meet. It creates nothing.' },
+    access: 'wallet', handler: 'wallet',
+    walletAct: 'startView', query: WALLET_VIEW_QUERY },
   { method: 'POST', path: API + '/wallet', operationId: 'startWalletSignIn',
-    access: 'wallet', mirrors: 'GET /authn/wallet', handler: 'wallet',
-    walletAct: 'start', body: WALLET_START_BODY, answer: WALLET_ANSWER,
-    refusedCode: 'STS-VC-0069',
-    summary: 'Starts a wallet sign-in',
-    description: 'An OpenID4VP request bound to the pending sign-in (or ' +
-      'the step, or the enrolment) and to this browser by the ' +
-      '`sts_wallet_binding` cookie this answer sets; `go` names the wait ' +
-      'page.' },
+    access: 'wallet', handler: 'wallet',
+    walletAct: 'start', body: WALLET_START_BODY, refusedCode: 'STS-VC-0069' },
   { method: 'GET', path: API + '/wallet/:state', operationId: 'getWalletWait',
-    access: 'wallet', mirrors: 'GET /authn/wallet/wait', handler: 'wallet',
-    walletAct: 'waitView',
-    summary: 'What the wallet sign-in\'s wait page draws',
-    description: 'For the browser that started the transaction only: the ' +
-      'Digital Credentials API request, the same-device link ' +
-      '(`sameDevice`: the request under the scheme a wallet app registers ' +
-      'for, `oid4vp.walletInvocation`), a configured web wallet\'s link ' +
-      '(`webWallet`, or empty), the QR ' +
-      'code\'s text where `oid4vp.signInCrossDevice` offers it, the ' +
-      'seconds left and the poll\'s interval, and `csrf`.' },
+    access: 'wallet', handler: 'wallet',
+    walletAct: 'waitView' },
   { method: 'POST', path: API + '/wallet/:state/status',
     operationId: 'walletStatus', access: 'wallet',
-    mirrors: 'GET /authn/wallet/wait', handler: 'wallet',
-    walletAct: 'status', body: WALLET_STATUS_BODY, answer: WALLET_ANSWER,
-    refusedCode: 'STS-VC-0069',
-    summary: 'Whether the wallet has answered, and the sign-in once it has',
-    description: 'The poll: `wait` until the wallet has answered, then the ' +
-      'sign-in finished in this request — once, in the browser that ' +
-      'started it, with the right `response_code` where one is carried.' },
+    handler: 'wallet',
+    walletAct: 'status', body: WALLET_STATUS_BODY, refusedCode: 'STS-VC-0069' },
   { method: 'POST', path: API + '/wallet/:state/dc-api',
     operationId: 'answerWalletDcApi', access: 'wallet',
-    mirrors: 'GET /authn/wallet/wait', handler: 'wallet',
-    walletAct: 'dcApi', body: WALLET_DC_API_BODY, answer: WALLET_ANSWER,
-    refusedCode: 'STS-VC-0069',
-    summary: 'The Digital Credentials API\'s answer',
-    description: 'The DigitalCredential `navigator.credentials.get()` ' +
-      'answered, from a page on this service\'s own origin: decrypted ' +
-      'where the request asked for `dc_api.jwt`, verified with ' +
-      '`origin:<origin>` as the audience, answered once, and the sign-in ' +
-      'finished in this request.' }
+    handler: 'wallet',
+    walletAct: 'dcApi', body: WALLET_DC_API_BODY, refusedCode: 'STS-VC-0069' }
 ];
 
 OPERATIONS.push.apply(OPERATIONS, WALLET_OPERATIONS);
@@ -707,71 +395,23 @@ OPERATIONS.push.apply(OPERATIONS, WALLET_OPERATIONS);
 // (`hosted_applications.js`). The logic is `logout/logout.ts`'s
 // (`signOutView()`, `signOutAct()`), reached when an operation arrives.
 // ---------------------------------------------------------------------------
-const LOGOUT_ANSWER = {
-  type: 'object',
-  description: 'The sign-out\'s result. `next` is `signed-out`. Where the ' +
-    'browser has something to fan out — Front-Channel Logout iframes, ' +
-    'WS-Federation cleanup images, SAML LogoutRequest links, back-channel ' +
-    'deliveries, a federation partner\'s sign-out — `form` names the ' +
-    'signed-out document: POST its `fields` to its `action` as a ' +
-    'navigation. Otherwise `view` is the result to draw: what was ended, ' +
-    'what was not and why, and how much is still live. The `sts_session` ' +
-    'cookie is cleared on this answer where the browser\'s own session was ' +
-    'ended (`ownSessionEnded`).',
-  properties: {
-    ok: { type: 'boolean' },
-    next: { type: 'string', enum: ['signed-out', 'inventory'] },
-    username: { type: 'string' },
-    account: { type: 'string' },
-    location: { type: 'string' },
-    ownSessionEnded: { type: 'boolean' },
-    scope: { type: 'string', enum: ['global', 'selected'] },
-    form: { type: 'object' },
-    view: { type: 'object' },
-    errors: { type: 'array', items: { type: 'string' } }
-  }
-};
 
 const LOGOUT_OPERATIONS: Operation[] = [
   { method: 'GET', path: API + '/logout', operationId: 'getSignOut',
-    access: 'session', mirrors: 'GET /logout', handler: 'logoutView',
-    summary: 'Everything a sign-out would end',
-    description: 'The sign-out page\'s view, as facts and no words: every ' +
-      'family of live session or credential this service holds for the ' +
-      'person the browser\'s session names — or `username`, where naming ' +
-      'somebody is open (a development test control) — each row with ' +
-      'whether it can be ended and why not, and `csrf`. Refused (403) for ' +
-      'a name that may not be used, and (401) with nobody to act on.' },
+    access: 'session', handler: 'logoutView', query: LOGOUT_QUERY },
   { method: 'POST', path: API + '/logout', operationId: 'signOut',
-    access: 'session', mirrors: 'POST /logout', action: 'logout',
-    handler: 'logoutAct', body: LOGOUT_BODY, answer: LOGOUT_ANSWER,
-    refusedCode: 'STS-LOGOUT-0003',
-    summary: 'Signs out: everything, or what was ticked',
-    description: 'A `scope` of `global`, or no selection, ends everything ' +
-      'the person holds; `select` ends those rows only, each looked up ' +
-      'again now. The answer is the result, or the signed-out document ' +
-      'that carries what the browser must still do.' },
+    access: 'session', action: 'logout',
+    handler: 'logoutAct', body: LOGOUT_BODY, refusedCode: 'STS-LOGOUT-0003' },
   // SEVERAL ACCOUNTS IN ONE BROWSER (#561): the step `/logout` draws first
   // where the browser holds more than one signed-in account.
   { method: 'GET', path: API + '/logout/accounts',
     operationId: 'getSignOutAccounts', access: 'session',
-    mirrors: 'GET /logout/accounts', handler: 'logoutAccountsView',
-    summary: 'Which account a sign-out is for',
-    description: 'The sign-out\'s account step: this browser\'s signed-in ' +
-      'accounts, each by its key, names and whether it is the browser\'s ' +
-      'default — never a sid — the one `login_hint` names, preselected, ' +
-      'and `csrf`. 400 where authn.multipleAccounts is off.' },
+    handler: 'logoutAccountsView', query: LOGOUT_QUERY },
   { method: 'POST', path: API + '/logout/accounts',
     operationId: 'chooseSignOutAccount', access: 'session',
-    mirrors: 'POST /logout/accounts', action: 'account',
+    action: 'account',
     handler: 'logoutAccountsAct', body: LOGOUT_ACCOUNT_BODY,
-    answer: LOGOUT_ANSWER, refusedCode: 'STS-LOGOUT-0003',
-    summary: 'Chooses the account to sign out, or every account',
-    description: 'An account\'s key answers `next: inventory` and the ' +
-      'address of that person\'s sign-out page; `all` signs every account ' +
-      'in this browser out — each person\'s own global sign-out — and ' +
-      'answers as `POST /authn-api/logout` does. 409 for an account no ' +
-      'longer signed in here.' }
+    refusedCode: 'STS-LOGOUT-0003' }
 ];
 
 OPERATIONS.push.apply(OPERATIONS, LOGOUT_OPERATIONS);
@@ -783,71 +423,25 @@ OPERATIONS.push.apply(OPERATIONS, LOGOUT_OPERATIONS);
 // The logic is `authn.ts`'s (`accountsView()`, `accountsAct()`,
 // `browserAccounts()`); every act is bound as every act here is.
 // ---------------------------------------------------------------------------
-const ACCOUNTS_ANSWER = {
-  type: 'object',
-  description: '`redirect`: go to `location` with a GET — the request the ' +
-    'person was choosing an account for, continuing as the chosen ' +
-    'account, or the sign-in that adds one. `stay`: the account was ' +
-    'forgotten; draw the picker again. `refused` (409): `errors` says why, ' +
-    'in English — the account\'s session ended, it is still signed in ' +
-    '(forget), or the browser holds as many accounts as it may.',
-  properties: {
-    ok: { type: 'boolean' },
-    next: { type: 'string', enum: ['redirect', 'stay', 'refused'] },
-    location: { type: 'string' },
-    errors: { type: 'array', items: { type: 'string' } }
-  }
-};
 
 const ACCOUNT_OPERATIONS: Operation[] = [
   { method: 'GET', path: API + '/pending/:id/accounts',
     operationId: 'getAccountChoice', access: 'pending',
-    mirrors: 'GET /authn/accounts', handler: 'accountsGet',
-    summary: 'The accounts a sign-in may continue as',
-    description: 'The account picker\'s view: this browser\'s signed-in ' +
-      'accounts and the signed-out ones it remembers — each by its key, ' +
-      'names, state and times, never a sid — whether Use another account ' +
-      'is open, and the protocol\'s own rows; and `csrf`. 503 with ' +
-      'Retry-After where the browser\'s account set, or a session it ' +
-      'lists, could not be read.' },
+    handler: 'accountsGet' },
   { method: 'POST', path: API + '/pending/:id/accounts/select',
     operationId: 'selectAccount', access: 'pending',
-    mirrors: 'POST /authn/accounts', action: 'select',
-    handler: 'accountsPost', body: ACCOUNT_BODY, answer: ACCOUNTS_ANSWER,
-    refusedCode: 'STS-AUTHN-0342',
-    summary: 'Continues as one of this browser\'s accounts',
-    description: 'The account is checked again: its session must still be ' +
-      'live in this browser, and a demand for two factors it does not ' +
-      'meet sends the person to sign in again as that account. A ' +
-      'signed-out account goes to the sign-in with its name filled in. ' +
-      'Every selection rotates the sts_accounts handle. 503 with ' +
-      'Retry-After where the browser\'s accounts could not be read.' },
+    action: 'select',
+    handler: 'accountsPost', body: ACCOUNT_BODY, refusedCode: 'STS-AUTHN-0342' },
   { method: 'POST', path: API + '/pending/:id/accounts/another',
     operationId: 'useAnotherAccount', access: 'pending',
-    mirrors: 'POST /authn/accounts', action: 'another',
-    handler: 'accountsPost', body: EMPTY_BODY, answer: ACCOUNTS_ANSWER,
-    refusedCode: 'STS-AUTHN-0342',
-    summary: 'Signs in as another account',
-    description: 'The sign-in the picker stood in front of, with nothing ' +
-      'filled in; refused while every place the browser has is a ' +
-      'signed-in account.' },
+    action: 'another',
+    handler: 'accountsPost', body: EMPTY_BODY, refusedCode: 'STS-AUTHN-0342' },
   { method: 'POST', path: API + '/pending/:id/accounts/forget',
     operationId: 'forgetAccount', access: 'pending',
-    mirrors: 'POST /authn/accounts', action: 'forget',
-    handler: 'accountsPost', body: ACCOUNT_BODY, answer: ACCOUNTS_ANSWER,
-    refusedCode: 'STS-AUTHN-0342',
-    summary: 'Forgets a signed-out account',
-    description: 'Only an account that signed out in this browser; a ' +
-      'signed-in one is signed out at /logout. No session is touched.' },
+    action: 'forget',
+    handler: 'accountsPost', body: ACCOUNT_BODY, refusedCode: 'STS-AUTHN-0342' },
   { method: 'GET', path: API + '/accounts', operationId: 'getAccounts',
-    access: 'session', mirrors: null, handler: 'accountsList',
-    summary: 'The accounts this browser holds',
-    description: 'Each signed-in and remembered account of the browser\'s ' +
-      'account set — key, subject, names, state, times, and whether it is ' +
-      'the browser\'s default — never a sid or a token; `enabled` false ' +
-      'and no accounts where authn.multipleAccounts is off. With it on, ' +
-      '`anotherAccount` is where Sign in with another account starts: the ' +
-      'user portal, asked to sign in again.' }
+    access: 'session', handler: 'accountsList' }
 ];
 
 OPERATIONS.push.apply(OPERATIONS, ACCOUNT_OPERATIONS);
@@ -867,20 +461,6 @@ OPERATIONS.push.apply(OPERATIONS, ACCOUNT_OPERATIONS);
 // own names (`lim_t0r<n>_<member>`, `common/web_limits_form.ts`), a
 // receiver's boxes as an array. Nothing else is taken.
 // ---------------------------------------------------------------------------
-const CONSENT_ANSWER = {
-  type: 'object',
-  description: '`redirect`: go to `location` with a GET — the ' +
-    'authorization request the person was asked in the middle of, which ' +
-    'issues on Allow and answers the client `access_denied` on Deny. ' +
-    '`refused` (400): `errors` says why, in English; the record is kept ' +
-    'and the page may be answered again (a limit raised, say).',
-  properties: {
-    ok: { type: 'boolean' },
-    next: { type: 'string', enum: ['redirect', 'refused'] },
-    location: { type: 'string' },
-    errors: { type: 'array', items: { type: 'string' } }
-  }
-};
 
 // A limit control's name, and what it may hold: `common/web_limits_form.ts`
 // draws one detail's controls as `lim_t0r<r>_<member>`.
@@ -890,35 +470,29 @@ const LIMIT_VALUE = vz.union([vz.string().max(1024),
 
 // The answer itself, checked closed once the limit controls are taken off.
 // Documented open, since the controls are beside it.
-const CONSENT_BODY = vz.object({
-  action: vt.oneOf(['allow', 'deny'])
-});
+const CONSENT_BODY = ModelZod.body('authn', 'answerConsent');
 
 const CONSENT_OPERATIONS: Operation[] = [
   { method: 'GET', path: API + '/consent/:id', operationId: 'getConsent',
-    access: 'consent', mirrors: 'GET /oauth2/consent', handler: 'consent',
-    summary: 'What the OAuth consent screen asks',
-    description: 'The consent screen\'s view, as facts and no words: who ' +
-      'is signed in, the application asking (its name and client_id), ' +
-      'each scope outstanding and the permission it resolves to, each ' +
-      'RFC 9396 authorization detail member by member, the limits a ' +
-      'person may lower, what was already agreed, and the request\'s own ' +
-      'parameters — and `csrf`. Refused (400) where nothing is pending ' +
-      'under the id, or the browser\'s session is not the person it was ' +
-      'asked of.' },
+    access: 'consent', handler: 'consent' },
   { method: 'POST', path: API + '/consent/:id', operationId: 'answerConsent',
-    access: 'consent', mirrors: 'POST /oauth2/consent', handler: 'consent',
-    body: CONSENT_BODY, answer: CONSENT_ANSWER,
-    summary: 'Allows or denies what the consent screen asks',
-    description: '`action: allow` writes one oauthConsent value per scope ' +
-      'onto the person\'s entry and records an RFC 9396 Allow for this one ' +
-      'request, with any limit lowered (`lim_t0r<n>_<member>`, as the page ' +
-      'draws them; a raised one is refused); `action: deny` records ' +
-      'nothing. Either way the pending consent is spent and the answer ' +
-      'names the authorization request to go back to.' }
+    access: 'consent', handler: 'consent',
+    body: CONSENT_BODY }
 ];
 
 OPERATIONS.push.apply(OPERATIONS, CONSENT_OPERATIONS);
+
+// THE NAMES OF EACH OPERATION ARE IN THE MODEL (#1390): `models/api/authn.tsp`.
+// What is left above is the routing: the path, the handler, what it accepts.
+{
+  const described = ModelTables.file('openapi.authn.json').paths;
+  OPERATIONS.forEach(function (op) {
+    const path = String(op.path).replace(/:([A-Za-z]+)/g, '{$1}');
+    const entry = described[path][op.method.toLowerCase()];
+    op.summary = entry.summary;
+    op.mirrors = entry['x-mirrors'] || null;
+  });
+}
 
 interface AuthnApiDeps {
   log: typeof helpers.log;
@@ -1972,131 +1546,141 @@ class AuthnApi {
   // field refused are one declaration.
   // ---------------------------------------------------------------------------
   /**
-   * An operation's parameters, for the OpenAPI document.
+   * The body every refusal of this API is held to.
    *
-   * @param op - the operation
-   * @returns the parameter objects
+   * @returns the schema
    */
-  static parametersOf(op: Operation): Json[] {
-    helpers.log.debug("Entering AuthnApi.parametersOf().");
-    if (op.access === 'public') {
-      helpers.log.debug("Leaving AuthnApi.parametersOf(). None.");
-      return [];
-    }
-    if (op.access === 'session') {
-      helpers.log.debug("Leaving AuthnApi.parametersOf(). The sign-out's.");
-      return op.method === 'GET'
-        ? [{ name: 'username', in: 'query', required: false,
-             description: 'Whom the page is about, where naming somebody ' +
-               'is open (development mode and `logout.anyUser`), or the ' +
-               'caller\'s own name; the browser\'s session otherwise.',
-             schema: { type: 'string' } },
-           { name: 'account', in: 'query', required: false,
-             description: 'With authn.multipleAccounts on (#561): one of ' +
-               'this browser\'s signed-in accounts, by its key.',
-             schema: { type: 'string' } },
-           { name: 'login_hint', in: 'query', required: false,
-             description: 'With authn.multipleAccounts on (#561): the ' +
-               'account the sign-out\'s account step preselects.',
-             schema: { type: 'string' } }] : [];
-    }
-    if (op.access === 'wallet') {
-      helpers.log.debug("Leaving AuthnApi.parametersOf(). The wallet's.");
-      if (op.path.indexOf(':state') >= 0) {
-        return [{ name: 'state', in: 'path', required: true,
-                  description: 'The wallet sign-in\'s transaction: a bearer ' +
-                    'capability, answered to this browser only (its ' +
-                    '`sts_wallet_binding` cookie).',
-                  schema: { type: 'string' } }];
-      }
-      return op.method === 'GET'
-        ? ['authn', 'mfa', 'siop', 'enrol'].map(function (name) {
-          return { name: name, in: 'query', required: false,
-                   schema: { type: 'string' } };
-        }) : [];
-    }
-    helpers.log.debug("Leaving AuthnApi.parametersOf().");
-    return [{ name: 'id', in: 'path', required: true,
-              description: op.access === 'consent'
-                ? 'The pending consent\'s id: a bearer capability, as the ' +
-                  '`consent` the consent screen was opened with, answered ' +
-                  'only to the browser whose session is the person asked.'
-                : op.access === 'step'
-                ? 'The password change step\'s id.'
-                : op.access === 'mfa'
-                ? 'The second-factor or emailed-factor step\'s id: a ' +
-                  'bearer capability, as the `mfa` its page was opened with.'
-                : 'The pending sign-in\'s id: a bearer capability, as the ' +
-                  '`authn` the screen was opened with.',
-              schema: { type: 'string' } }];
+  static refusalSchema(): Json {
+    helpers.log.debug("Entering AuthnApi.refusalSchema().");
+    const index = ModelTables.file('openapi.authn.json').paths[API].get;
+    const schema = index.responses['400'].content['application/json'].schema;
+    helpers.log.debug("Leaving AuthnApi.refusalSchema().");
+    return schema;
   }
 
   /**
-   * The OpenAPI 3.1 document of this API.
+   * The parameters an operation declares: its path's, its query's and the
+   * headers a caller of this API sends (#1483). The document states the same
+   * list, and `tests/model_openapi.js` holds the two equal.
+   *
+   * @param op - the operation
+   * @returns the parameters
+   */
+  static parametersOf(op: Operation): Json[] {
+    helpers.log.debug("Entering AuthnApi.parametersOf().");
+    const Spec = require('../account-api/account_api_spec');
+    const out: Json[] = [];
+    if (op.access === 'wallet' && op.path.indexOf(':state') >= 0) {
+      out.push({ name: 'state', in: 'path', required: true,
+                 description: 'The wallet sign-in\'s transaction: a bearer ' +
+                   'capability, answered to this browser only (its ' +
+                   '`sts_wallet_binding` cookie).',
+                 schema: { type: 'string' } });
+    } else if (op.path.indexOf(':id') >= 0) {
+      out.push({ name: 'id', in: 'path', required: true,
+                 description: op.access === 'consent'
+                   ? 'The pending consent\'s id: a bearer capability, as the ' +
+                     '`consent` the consent screen was opened with, answered ' +
+                     'only to the browser whose session is the person asked.'
+                   : op.access === 'step'
+                   ? 'The password change step\'s id.'
+                   : op.access === 'mfa'
+                   ? 'The second-factor or emailed-factor step\'s id: a ' +
+                     'bearer capability, as the `mfa` its page was opened ' +
+                     'with.'
+                   : 'The pending sign-in\'s id: a bearer capability, as the ' +
+                     '`authn` the screen was opened with.',
+                 schema: { type: 'string' } });
+    }
+    const query = op.query ? Spec.jsonSchemaOf(op.query) : null;
+    const props = (query && query.properties) || {};
+    Object.keys(props).forEach(function (name) {
+      const prop = Object.assign({}, props[name]);
+      const description = prop.description;
+      delete prop.description;
+      out.push(Object.assign({ name: name, in: 'query', required: false,
+                               schema: prop },
+                             description ? { description: description } : {}));
+    });
+    // WHAT A CALLER OF THIS API SENDS AND NO SPECIFICATION NAMES (#1483):
+    // `X-CSRF-Token`, this API's own binding of an act, and
+    // `X-Requested-With`, which an Android WebView adds to every request of
+    // a page it hosts — a sign-in opened in one must not be refused for it
+    // (`account-api/account_api_spec.ts`, `implicitHeaders()`).
+    if (op.method === 'POST') {
+      out.push({ name: 'X-CSRF-Token', in: 'header', required: false,
+                 description: 'The `csrf` the page\'s view answered, bound ' +
+                   'to the browser\'s `sts_session` cookie.',
+                 schema: { type: 'string' } });
+    }
+    out.push.apply(out, ModelTables.file('openapi.every.json').authn);
+    helpers.log.debug("Leaving AuthnApi.parametersOf(). " + out.length);
+    return out;
+  }
+
+  // The declared parameters of each operation, once (#1483).
+  private readonly declared: Map<Operation, Json[]> = new Map();
+
+  /**
+   * An operation's declared parameters, once.
+   *
+   * @param op - the operation
+   * @returns the OpenAPI parameter list
+   */
+  parametersFor(op: Operation): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering AuthnApi.parametersFor().");
+    let list = this.declared.get(op);
+    if (!list) {
+      list = AuthnApi.parametersOf(op);
+      this.declared.set(op, list);
+    }
+    log.debug("Leaving AuthnApi.parametersFor().");
+    return list;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A REQUEST MAY NAME AND HOLD (#1483, `/admin-api`'s #1476 rule). A
+  // query name the operation does not declare, a value its type does not hold
+  // and a custom header nobody defined are refused here, before the handler
+  // and so before an act's binding: the three say nothing about which ids are
+  // live, and the sentence names the parameter or the header, never its value.
+  // ---------------------------------------------------------------------------
+  /**
+   * Refuses a request whose query or headers its operation does not take.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param op - the operation
+   * @returns true when the request was answered
+   */
+  shapeRefused(req: Json, res: Json, op: Operation): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthnApi.shapeRefused().");
+    const shape = RequestHeaders.checkRequest(this.parametersFor(op),
+      req.query || {}, req.headers || {});
+    if (shape.ok) {
+      log.debug("Leaving AuthnApi.shapeRefused(). Accepted.");
+      return false;
+    }
+    errorCodes.mark(res, SHAPE_CODES[String(shape.problem)]);
+    // error-code: none — marked on the line above, SHAPE_CODES's by the kind
+    this.refuse(res, 400, String(shape.sentence));
+    log.debug("Leaving AuthnApi.shapeRefused(). " + shape.problem);
+    return true;
+  }
+
+  /**
+   * The OpenAPI 3.1 document of this API, as the model states it.
    *
    * @param options - `baseUrl` (the realm's) and `version`
    * @returns the document
    */
   static document(options: Json): Json {
     helpers.log.debug("Entering AuthnApi.document().");
-    // The account API's converter, reused rather than written twice.
-    const Spec = require('../account-api/account_api_spec');
-    const base = String((options && options.baseUrl) || '');
-    const paths: Json = {};
-    OPERATIONS.forEach(function (op) {
-      const path = String(op.path).replace(/:([A-Za-z]+)/g, '{$1}');
-      paths[path] = paths[path] || {};
-      const entry: Json = {
-        operationId: op.operationId,
-        tags: ['Sign-in'],
-        summary: op.summary,
-        description: op.description +
-          (op.mirrors ? '\n\nThe door of the sign-in surface\'s `' +
-                        op.mirrors + '`.' : '') +
-          (op.method === 'POST'
-            ? '\n\nSent with `Content-Type: application/json`, an `Origin` ' +
-              'of this service and `X-CSRF-Token` — the `csrf` the page\'s ' +
-              'view answered, bound to the browser\'s `sts_session` cookie.'
-            : ''),
-        parameters: AuthnApi.parametersOf(op),
-        responses: {
-          200: { description: 'The answer.', content: { 'application/json': {
-            schema: op.answer || { type: 'object' } } } },
-          400: { description: 'Refused: `{ ok: false, errors }` — the body, ' +
-                              'the id, or the act itself.' }
-        },
-        security: []
-      };
-      if (op.method === 'POST') {
-        entry.responses[403] = { description: 'No Origin of this service, ' +
-          'or no CSRF token bound to this browser\'s session.' };
-        entry.responses[415] = { description: 'Not a JSON body.' };
-        entry.responses[429] = { description: 'Too many attempts.' };
-        entry.requestBody = { required: true, content: { 'application/json': {
-          schema: Spec.jsonSchemaOf(op.body || EMPTY_BODY) } } };
-      }
-      if (op.mirrors) {
-        entry['x-mirrors'] = op.mirrors;
-      }
-      paths[path][op.method.toLowerCase()] = entry;
-    });
-    const doc = {
-      openapi: '3.1.0',
-      info: {
-        title: 'IYA STS Sign-in API',
-        version: String((options && options.version) || '0.0.0'),
-        description: 'The sign-in screen\'s API: what the screen offers for ' +
-          'a pending sign-in, and the acts it sends. Unauthenticated and ' +
-          'keyed by the pending sign-in\'s id; every act is bound to the ' +
-          'browser\'s session cookie by a CSRF token. Answers name the next ' +
-          'step; refusals are English and carry no error code. And the ' +
-          'sign-out page\'s (#577): what a sign-out would end for the ' +
-          'person the session names, and the act that ends it.'
-      },
-      servers: [{ url: base }],
-      tags: [{ name: 'Sign-in' }],
-      paths: paths
-    };
+    const doc = ModelTables.file('openapi.authn.json');
+    doc.info.version = String((options && options.version) || '0.0.0');
+    doc.servers = [{ url: String((options && options.baseUrl) || '') }];
     helpers.log.debug("Leaving AuthnApi.document().");
     return doc;
   }
@@ -2111,12 +1695,72 @@ class AuthnApi {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AuthnApi.registerRoutes().");
+    // A SIGN-IN STEP BELONGS TO ONE BROWSER (#1454), in product. An emailed
+    // link is exempt: it opens in whichever browser the mail client picks, and
+    // has a binding of its own (`authn/email_factor.ts`).
+    // THE ID IN A HEADER (#1454): the sign-in pages send `-` in the path and
+    // the id in `X-Step-Id`, so no address carries it.
+    (app as any).use(API, (req: Json, res: Json, next: any) => {
+      const id = String(req.headers['x-step-id'] || '');
+      if (id && /^\/(?:mfa|pending|password-change|consent)\/-(?:[/?]|$)/
+        .test(String(req.url))) {
+        req.url = String(req.url).replace('/-', '/' + encodeURIComponent(id));
+      }
+      const asked = new URLSearchParams(String(req.headers['x-step-query'] ||
+                                               ''));
+      ['authn', 'mfa', 'enrol'].forEach(function (name) {
+        if (asked.has(name)) {
+          req.query[name] = asked.get(name);
+        }
+      });
+      next();
+    });
+    ['mfa', 'pending', 'password-change', 'consent'].forEach((kind) => {
+      (app as any).use(API + '/' + kind + '/:id',
+                       (req: Json, res: Json, next: any) => {
+        const { authn, errorCodes } = this.deps;
+        const mode = require('../common/mode');
+        const opened = /\/email-link\/open$/.test(String(req.path || '')) ||
+          String((req.query || {}).page || '') === 'email-link-open';
+        if (opened || !mode.bindsSignInSteps()) {
+          next();
+          return;
+        }
+        // A LINK CARRIES NO HEADER (#1487): the page's own view leaves the id
+        // in a cookie for the Kerberos button and the federation links.
+        if (kind === 'pending' && req.method === 'GET' &&
+            mode.hidesStepIds() && req.params.id !== '-') {
+          res.append('Set-Cookie', require('../common/step_address')
+            .stepCookie(encodeURIComponent(req.params.id)));
+        }
+        const found = authn.cookieSession(req, authn.SESSION_COOKIE);
+        const sid = String((found && found.id) || '');
+        const held = kind === 'consent'
+          ? require('../oauth-oidc/consent_screen')
+            .claimForBrowser(req.params.id, sid)
+          : authn.claimStepForBrowser(req.params.id, sid, kind);
+        if (!held) {
+          errorCodes.mark(res, 'STS-AUTHN-0552');
+          this.refuse(res, 400, 'That sign-in was started in another browser.');
+          return;
+        }
+        next();
+      });
+    });
+    // EVERY ANSWER IS HELD TO ITS MODEL (#1353), before any route answers.
+    responseChecks.install(app, API, function () {
+      return AuthnApi.document({});
+    }, AuthnApi.refusalSchema());
     OPERATIONS.forEach(function (op) {
       app[op.method.toLowerCase()](op.path, function (req: Json, res: Json) {
         log.debug('Entering ' + op.method + ' ' + op.path + '.');
         // THE ANSWERS ARE JSON: `authn.ts`'s acts read this off the
         // response (`answersJson()`).
         res.locals.authnApi = true;
+        if (self.shapeRefused(req, res, op)) {
+          log.debug('Leaving ' + op.method + ' ' + op.path + '. Its shape.');
+          return;
+        }
         Promise.resolve((self as Json)[op.handler](req, res, op))
           .catch(function (e: Json) {
             log.debug("Caught in AuthnApi route: " +

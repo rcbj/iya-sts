@@ -107,6 +107,20 @@ function call(o) {
 }
 
 /**
+ * Reads a step's id from a query or, in product (#1454), a fragment.
+ *
+ * @param {URL} url - the address
+ * @param {string} name - the parameter
+ * @returns {string} the id
+ */
+function stepOf_(url, name) {
+  log.debug("Entering stepOf_().");
+  log.debug("Leaving stepOf_().");
+  return url.searchParams.get(name) ||
+    new URLSearchParams(url.hash.slice(1)).get(name) || '';
+}
+
+/**
  * The screen's address split into its path, its prefix and its id.
  *
  * @param {string} at - `/realm/x/authn/login?authn=…`, a URL, or a path to
@@ -120,8 +134,8 @@ function parse(at) {
     .exec(url.pathname);
   log.debug("Leaving parse().");
   return { prefix: m ? m[1] : '', page: m ? m[2] : 'login',
-           id: url.searchParams.get('authn') ||
-               url.searchParams.get('change') || '' };
+           id: stepOf_(url, 'authn') ||
+               stepOf_(url, 'change') || '' };
 }
 
 /**
@@ -135,7 +149,9 @@ function parse(at) {
 async function open(o) {
   log.debug("Entering open().");
   const where = parse(o.at);
-  const shellPath = o.at.replace(/^https?:\/\/[^/]+/, '');
+  // A browser never sends the fragment (#1454).
+  const shellPath = o.at.replace(/^https?:\/\/[^/]+/, '')
+    .replace(/#.*$/, '');
   const shell = await call({ port: o.port, ca: o.ca, cert: o.cert,
                              key: o.key, jar: o.jar,
                              userAgent: o.userAgent, method: 'GET',
@@ -351,9 +367,9 @@ function stepOf(at) {
     ? url.pathname.slice(0, url.pathname.length - path.length) : '';
   log.debug("Leaving stepOf().");
   return { prefix: prefix, path: path, page: STEP_PAGES[path] || '',
-           id: url.searchParams.get('mfa') || '',
+           id: stepOf_(url, 'mfa') || '',
            key: url.searchParams.get('key') || '',
-           t: url.searchParams.get('t') || '' };
+           t: new URLSearchParams(url.hash.slice(1)).get('t') || '' };
 }
 
 /**
@@ -374,7 +390,8 @@ async function openStep(o) {
                              key: o.key, jar: o.jar,
                              userAgent: o.userAgent, method: 'GET',
                              path: String(o.at).replace(/^https?:\/\/[^/]+/,
-                                                         '') });
+                                                         '')
+                               .replace(/#.*$/, '') });
   const view = await call({ port: o.port, ca: o.ca, cert: o.cert,
                             key: o.key, jar: o.jar,
     userAgent: o.userAgent, method: 'GET',
@@ -593,7 +610,7 @@ function consentOf(at) {
   const m = /^(.*?)\/oauth2\/consent$/.exec(url.pathname);
   log.debug("Leaving consentOf().");
   return { prefix: m ? m[1] : '',
-           id: url.searchParams.get('consent') || '' };
+           id: stepOf_(url, 'consent') || '' };
 }
 
 /**
@@ -611,7 +628,8 @@ async function openConsent(o) {
                              key: o.key, jar: o.jar,
                              userAgent: o.userAgent, method: 'GET',
                              path: String(o.at).replace(/^https?:\/\/[^/]+/,
-                                                         '') });
+                                                         '')
+                               .replace(/#.*$/, '') });
   const view = await call({ port: o.port, ca: o.ca, cert: o.cert,
                             key: o.key, jar: o.jar,
     userAgent: o.userAgent, method: 'GET',

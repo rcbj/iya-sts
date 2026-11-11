@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "此客户端可以请求的 response_type 值——RFC 7591 第 2 节的 response_types，来自注册或由管理员写入，每个值一个响应类型（\"code\"、\"code id_token\"）。授权端点在所有模式下都会拒绝其他任何值（unauthorized_client）；空列表不限制任何东西。客户端实际请求过的是 oauthResponseTypeObserved。"
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "在 RFC 9700 模式生效时（产品模式始终生效）此客户端可以使用的、从授权端点签发访问令牌的响应类型——token、code token、id_token token、code id_token token。仅当领域豁免 RFC 9700 第 2.1.2 节时生效（oauth2.allowImplicitTokenResponses，在 OAuth 2.1 或 FAPI 下从不生效）；此时未在此列出的类型会被拒绝（unauthorized_client）。默认为空，空表示无。在领域允许这些类型时由管理员或应用程序的所有者写入，或由 oauth2.dynamicRegistrationTokenResponseTypes 范围内的动态注册写入。RFC 9700 第 2.1.2 节规定客户端不应（SHOULD NOT）使用它们。"
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "在令牌端点看到此客户端使用过的授权类型。是记录而不是权限：oauthGrantType 才是它可以使用的。"
@@ -580,8 +584,8 @@
     "text": "此应用定义的每个权限所依附的基础 URI，也是使这里的权限名称全局唯一的东西。权限由此值后跟其名称来标识——基础 `https://example.com/` 加名称 `write` 就是权限 `https://example.com/write`——这是客户端放入 `scope` 的内容，访问令牌随后也以它为受众。Entra ID 称之为 Application ID URI，并写作 `api://<guid>`；形式相同，这里并不要求该协议方案。\n\n通过本模块写入时，它会被规范化为以分隔符结尾——末尾不是 `/`、`#` 或 `:` 时会添加一个 `/`——因为基础加名称是简单的拼接，否则 `https://example.com` 加 `write` 会得到 `https://example.comwrite`。`ldapmodify` 与对其他属性一样也能访问此属性，并且不会被规范化，因此手动写入的基础就严格按其字面含义。\n\n单值，它是这一组中唯一一个不先作出决定就无法扩展的属性：两个基础意味着条目上的每个权限都有两个标识符，而将作用域转换为受众的查找就必须选一个放入 `aud`。"
   },
   "applications.schema.attributes.oauthPermission.what": {
-    "en": "0c47fe049bbc6c7b",
-    "text": "此应用公开的一个权限，每个值一个。值是权限的名称——`read`、`write`、`Widgets.ReadWrite.All`——后面可选择跟 `|` 和描述：`write|Change widgets on somebody's behalf`。第一个 `|` 是分隔符，之后的每一个都属于描述，因此描述可以包含该字符，名称则不能。\n\n名称必须是合法的 OAuth 作用域令牌（RFC 6749 第 3.3 节——不含空格、双引号或反斜杠），因为这是客户端将放入 `scope` 参数的内容，也是令牌的 `scope` 声明中返回的内容。`ldapmodify` 写入时不会强制这一点；本模块和两个控制台会强制。\n\n权限必须先存在，才能授予任何人，这是此功能唯一的顺序规则，并在 updateApplication() 中检查，以便控制台表单和管理 API 不会对此产生分歧。它在授予时检查，而不是在这里：此属性是定义，一个尚未有人使用的定义是正常的第一步，而不是错误。"
+    "en": "7eb690e390462f2d",
+    "text": "此应用公开的一个权限，每个值一个。值是权限的名称——`read`、`write`、`Widgets.ReadWrite.All`——后面可选择跟 `|` 和描述：`write|Change widgets on somebody's behalf`。第一个 `|` 是分隔符，之后的每一个都属于描述，因此描述可以包含该字符，名称则不能。\n\n名称必须是合法的 OAuth 作用域令牌（RFC 6749 第 3.3 节——不含空格、双引号或反斜杠），因为这是客户端将放入 `scope` 参数的内容，也是令牌的 `scope` 声明中返回的内容。包含操作员错误代码的名称或描述也会被拒绝：两者都会在列出该权限的每个页面上返回，而错误代码只记录、不发送。`ldapmodify` 写入该值时不会强制这两条规则；本模块和两个控制台会强制。\n\n权限必须先存在，才能授予任何人，这是此功能唯一的顺序规则，并在 updateApplication() 中检查，以便控制台表单和管理 API 不会对此产生分歧。它在授予时检查，而不是在这里：此属性是定义，一个尚未有人使用的定义是正常的第一步，而不是错误。"
   },
   "applications.schema.attributes.oauthRoleGatedPermission.what": {
     "en": "fa1c86d8fb8ce2fb",
@@ -732,8 +736,8 @@
     "text": "AuthZEN 访问请求回调（#1180）：此客户端作为 AuthZEN PEP 可指定为访问请求 callback.endpoint 的 https URL——每个值一个，须完全匹配。指定其他任何 URL 的请求都会被拒绝；本服务绝不会仅凭请求中的 URL 就向其发起回调。由管理员设置，绝不由调用方设置。"
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 第 3 节：此应用作为资源服务器，对访问令牌背后的身份验证所要求的 acr 值——以空格分隔，最优先的在前。acr 一个都不满足的令牌会收到 401 insufficient_user_authentication 质询，并以这些值作为 acr_values。级别 0 < 1 < mfa 是有序的；hwk、phr 和 phrh 由密码加安全密钥满足；任何其他值只能由完全相同的 acr 满足。为空表示不作要求。"
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 第 3 节：此应用作为资源服务器，对访问令牌背后的身份验证所要求的 acr 值——以空格分隔，最优先的在前。acr 一个都不满足的令牌会收到 401 insufficient_user_authentication 质询，并以这些值作为 acr_values。级别 0 < 1 < mfa 是有序的；hwk 由密码加安全密钥满足；phr 和 phrh 只能由其所指的抗钓鱼身份验证满足 (#723)；任何其他值只能由完全相同的 acr 满足。为空表示不作要求。"
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1083,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "由第三方发起此客户端登录的位置：OpenID Connect Core 第 4 节的 initiate_login_uri，/launch/{app} 和用户门户会带着 iss、login_hint 和 target_link_uri 将某人发送到这里。仅限 https，且不得带片段。"
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "客户端的徽标：OpenID Connect Registration 第 2 节的 logo_uri，绘制在登录和同意界面上客户端名称旁边。由用户的浏览器从此地址加载；本服务从不获取它。一个绝对 https URL。"
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "客户端的隐私政策：OpenID Connect Registration 第 2 节的 policy_uri，从登录和同意界面链接。一个绝对 https URL。"
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "客户端的服务条款：OpenID Connect Registration 第 2 节的 tos_uri，从登录和同意界面链接。一个绝对 https URL。"
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "由此客户端执行的 RFC 8693 令牌交换，是否在交换得到的访问令牌之外还获得一个 `refresh_token`，仅对它覆盖 oauth2.tokenExchangeRefreshToken。取三个词之一：`never`、`when-requested`（全服务范围的默认值——客户端以 RFC 8693 第 2.1 节的 `requested_token_type` 请求，只有请求了才会得到）或 `always`。\n\n它在执行交换的客户端上读取，而不是在受众上读取，因为刷新令牌是交给客户端的：它是该方持有、吊销并最终兑换的凭据。在值得关注的情况下，交换所涉及的主体在此注册表中根本没有条目，因为交换的全部意义就在于来自别处的 subject_token。\n\n**它适用于 OAuth 2.0 和 OpenID Connect 族，不适用于其他任何族，而且与这里的其他所有属性不同，这一点是强制执行的。** 未声明用于这两族之一的条目会被两个控制台入口和管理 API 拒绝，并指明需要先勾选的族——因为这里的值是关于令牌端点的策略，而一个任何令牌请求都无法指向的条目若携带它，看起来就像它已生效一样。此行上方的说明块对此进行了论证。`ldapmodify` 与访问其他属性一样可以访问此属性，且不受检查。\n\n不属于这三个词之一的值在写入时不算错误，但也不会被悄悄忽略：settingFor() 会发出警告，指明条目、属性及其所持有的值，并由全服务范围的设置决定——与此条目上其他每个覆盖项一样，诚实地对待三种状态。"
@@ -1244,8 +1260,8 @@
     "text": "TRUE 或 FALSE：此依赖方自己的 wsignin1.0 是否得到应答，覆盖 wsfed.spInitiatedSso。wsignin1.0 是一个未签名的 URL，因此 FALSE 关上的是门，而不能证明是谁开的门。"
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "为此应用发送 wsignoutcleanup1.0 通知的地址——WS-Federation 的注销 URI，此表直到 2026-08-30 才有这一项。它是声明的，而非观察得到的，这使它成为 samlSingleLogoutService 而非 wsfedReplyUrl 的同类：清理是在会话结束时发送的，而那时本可能携带 wreply 的请求早已结束。\n\n**注销目前尚未读取它**，这一点明确说明而非暗示。`cleanupTargetsFor()` 根据 `session.wsfedRealms` 构建其列表，后者记录每个登录响应实际发往的 wreply——因此本服务今天通知的是它观察到的地址，而此属性是操作员声明的地址。它们是两个不同的事实，而后者才是设置应用的人能够预先说明的。把它接入为未带 wreply 登录的领域的后备地址是显而易见的下一步，但这里刻意没有这样做：此变更添加的是字段和存储，而改变清理的去向是对协议行为的改变。"
+    "en": "677e7babd8d711d3",
+    "text": "为此应用发送 wsignoutcleanup1.0 通知的地址——WS-Federation 的注销 URI，此表直到 2026-08-30 才有这一项。它是声明的，而非观察得到的，这使它成为 samlSingleLogoutService 而非 wsfedReplyUrl 的同类：清理是在会话结束时发送的，而那时本可能携带 wreply 的请求早已结束。\n\n**声明的地址优先于观察到的地址** (#747)。对于会话已登录的领域，`cleanupTargetsFor()` 会通知此处的每个值；只有此处为空时，才使用登录响应所发往的 wreply，它由 `session.wsfedRealms` 记录。"
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",
@@ -1262,6 +1278,10 @@
   "applications.schema.attributes.krb5ClaimsPac.what": {
     "en": "0abf4d44f51d3755",
     "text": "此服务自己的 PAC 声明，以 JSON 数组形式保存，各行与本领域的 Kerberos PAC 声明页面相同。它们会添加到为此应用某个 SPN 签发的服务票据所携带的声明中（即签发它所用的 TGT 的声明），同名时应用的行替换该声明。仅在 krb5.pacClaims 开启时有效。"
+  },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "此客户端自己的 GNAP 访问令牌 JWT 声明，以 JSON 数组形式保存，各行与其他自定义声明集相同。它们会添加到签发给此客户端的 jwt-signed 令牌中，以及 jwt-encrypted 令牌内部的 JWT 中；同名时应用的行替换领域的行。令牌自身的声明（access、flags、label、grant_id 以及 JWT 名称）不能被覆盖。macaroon、biscuit 和 zcap 令牌不携带这些行。"
   },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
@@ -1990,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 注册时关于自身所说的任何内容。"
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE 或 FALSE：在 SAML 2.0 用用户已有的会话将其登录到此应用之前，是否先询问用户一次，覆盖 saml2.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 适合领域内所有人都要使用的应用；条目上的全局同意代表所有人回答，并保留谁同意过的记录。"
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE 或 FALSE：在 SAML 1.1 用用户已有的会话将其登录到此应用之前，是否先询问用户一次，覆盖 saml11.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 适合领域内所有人都要使用的应用；条目上的全局同意代表所有人回答，并保留谁同意过的记录。"
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE 或 FALSE：在 WS-Federation 用用户已有的会话将其登录到此应用之前，是否先询问用户一次，覆盖 wsfed.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 适合领域内所有人都要使用的应用；条目上的全局同意代表所有人回答，并保留谁同意过的记录。"
   }
 }

@@ -14,9 +14,9 @@
 // required**: it exports `registerRoutes(app)`, and this file calls each one,
 // at the point in the sequence where requiring that module used to register
 // its routes. The route order is therefore the order of the `register()` calls
-// below, and the modules still written in JavaScript (the parent project's
-// Kerberos closure, `tls_server`, `ldap_server`) still register when they are
-// required, at the require that loads them. The two sequences
+// below, and the modules still written in JavaScript (`krb5_kdc`,
+// `krb5_service`, `spnego`, `tls_server`, `ldap_server`) still register when
+// they are required, at the require that loads them. The two sequences
 // are interleaved exactly as they ran before, and the router's layer list was
 // compared before and after the change and is identical.
 //
@@ -258,6 +258,16 @@ class ProtocolStack {
     this.build('common/public_assets', require('./public_assets'),
                'PublicAssets');
     this.register(app, require('./public_assets'), 'common/public_assets');
+    // A REALM'S SIGN-IN APPEARANCE (#717): `/web/theme.css`,
+    // `/web/branding/logo` and `/web/branding/preview`, beside the card
+    // they style.
+    // A library of `config`, `realms`, `crypto` and `shell_document`; its
+    // paths collide with nothing, and requiring it adds the write rules that
+    // hold its colours to WCAG 2.2 AA before any setting is restored.
+    this.register(app, require('./branding'), 'common/branding');
+    // `/web/photo/{id}` (#719), the logo's reason: a library whose one path is
+    // under `/web`, reaching the directory lazily.
+    this.register(app, require('./profile_photo'), 'common/profile_photo');
 
     // The authentication service: the sign-in screen every protocol here sends
     // a person to, and the session store it fills. FIRST of the modules that
@@ -824,6 +834,9 @@ class ProtocolStack {
     // references them. None requires the issuer or the verifier.
     this.build('oid4vc/vc_status_codec', require('../oid4vc/vc_status_codec'),
                'VcStatusCodec');
+    // #935: the ISO mdoc the Verifier checks — a library over the codec
+    // and `authn/webauthn.js`'s COSE_Key reader, which registers nothing.
+    this.build('oid4vc/vc_mdoc', require('../oid4vc/vc_mdoc'), 'VcMdoc');
     // #194-#196: the closed JSON-LD loader and RDFC-1.0 the RDFC
     // cryptosuites canonicalize with, and the VC Data Model's MUSTs. Two
     // libraries, built before the Data Integrity suites that read them.
@@ -843,6 +856,13 @@ class ProtocolStack {
     // and the enrolled subjects. A library the verifier, the sign-in, the
     // portal and the console ask; it registers nothing.
     this.build('oid4vc/siop', require('../oid4vc/siop'), 'Siop');
+    // #1291: a did:web the realm publishes for a person — a library over
+    // `siop.ts` that the sign-in, the issuer, the verifier, the resolver,
+    // the portal and the console reach LAZILY, with one route of its own,
+    // `/users/:rid/did.json`, which collides with nothing.
+    this.build('oid4vc/person_did', require('../oid4vc/person_did'),
+               'PersonDid');
+    this.register(app, require('../oid4vc/person_did'), 'oid4vc/person_did');
     this.build('oid4vc/vc_status', require('../oid4vc/vc_status'), 'VcStatus');
     this.register(app, require('../oid4vc/vc_status'), 'oid4vc/vc_status');
     // The trusted list (2026-10-17): ETSI TS 119 602's List of Trusted
@@ -921,8 +941,8 @@ class ProtocolStack {
     // required so it runs first — it relays a request whose client is homed
     // in another cell and calls next() for everything else, after which the
     // KDC's own handler answers exactly as it did. It is not inside
-    // krb5_kdc.js so that the KDC's require closure, which the parent's
-    // tests image copies, does not grow.
+    // krb5_kdc.js, which kept the KDC's require closure (then copied by the
+    // parent's tests image, an obligation until #1280) from growing.
     // It requires only the vendored codec (a leaf set) at load and the
     // principal database lazily, so nothing moves and no cycle closes.
     // -------------------------------------------------------------------------
@@ -930,8 +950,8 @@ class ProtocolStack {
     this.register(app, require('../kerberos/krb5_home'), 'kerberos/krb5_home');
     // The Kerberos KDC. Requiring it registers /KdcProxy (/krb5/principals
     // until #595 deleted it)
-    // — it is one of the JavaScript files the parent's tests image copies,
-    // which still register at require (rule 1) — but NOT the raw TCP/UDP
+    // — it is one of the JavaScript modules that still register at require
+    // (rule 1) — but NOT the raw TCP/UDP
     // listeners on port 88, which are started by krb5.listen() below.
     // Binding a privileged port can fail, and a require that throws takes the
     // whole service down; a route cannot.
@@ -1370,6 +1390,15 @@ class ProtocolStack {
     // module does not.
     this.build('common/audit_export', require('./audit_export'),
                'AuditExport');
+    // 18j-viii. THE VALIDATION DOOR AND THE SIGNER TRUSTSTORE (#1360): libraries
+    // with no route. Before `ldap/ldap_server` (21), whose require fills the
+    // store's directory slot through its facades (a facade asked before this
+    // line would build a default instance the root could then not install),
+    // and after the scheduler, for the door's one job.
+    this.build('common/signer_truststore', require('./signer_truststore'),
+               'SignerTruststore');
+    require('./certificate_trust').install();
+    require('./certificate_pins').install();
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');
@@ -1409,6 +1438,11 @@ class ProtocolStack {
                require('../admin-ui/listeners_admin'), 'ListenersAdmin');
     this.register(app, require('../admin-ui/listeners_admin'),
                   'admin-ui/listeners_admin');
+    // 18k-iv. MALWARE SCANNING (#1501): 18a's placement and reason.
+    this.build('admin-ui/malware_scan_admin',
+               require('../admin-ui/malware_scan_admin'), 'MalwareScanAdmin');
+    this.register(app, require('../admin-ui/malware_scan_admin'),
+                  'admin-ui/malware_scan_admin');
     // 18k-ii. CELLS (#98, 2026-09-28). `/admin/cells` — the cell map, the
     // store's tiers, the channel, the Cells settings and another cell's
     // residents. 18a's placement and 18a's reason: the console's shell and
@@ -1591,6 +1625,11 @@ class ProtocolStack {
     // The register is built at 18j-vii and reached from the handlers lazily.
     this.build('mgmt-api/audit_export_api',
                require('../mgmt-api/audit_export_api'), 'AuditExportApi');
+    // #717: the sign-in appearance operations, spread by `mgmt-api/admin_api`.
+    // `common/branding` is built with the shell's libraries and reached from
+    // the handlers lazily.
+    this.build('mgmt-api/branding_api',
+               require('../mgmt-api/branding_api'), 'BrandingApi');
     // #552: the outbound SCIM clients' operations; the client itself is built
     // at 22, beside the SCIM server, and reached from here lazily.
     this.build('mgmt-api/scim_clients_api',
@@ -1893,6 +1932,12 @@ class ProtocolStack {
     // reaches is reached lazily, so the order is for a reader.
     this.build('kerberos/krb5_krbtgt_rotation',
                require('../kerberos/krb5_krbtgt_rotation'), 'KrbtgtRotation');
+    // 23b-iii-b. THE `grantinggroup` KEY BACKFILL (#1311): a library that
+    // registers one scheduler job and no route, in every process so every
+    // process lists it. After `ldap/ldap_server` (21), whose entries it keys,
+    // beside the krbtgt rotation for a reader; the store, the scheduler and
+    // the keystore are reached lazily, so the order is for a reader too.
+    require('../persistence/granting_index_backfill').install();
     // 23b-iv. OPENID PROVIDER COMMANDS (#151): the library — Command Tokens
     // on the shared outbound queue, tenant runs, the account-state register
     // — whose wire step registers the `oauth2.command-sweep` job and adds it
@@ -2194,6 +2239,8 @@ class ProtocolStack {
     require('../sts_metadata');
     this.build('sts_metadata', require('../sts_metadata'), 'StsMetadata');
     this.register(app, require('../sts_metadata'), 'sts_metadata');
+    // After every route, or a later route would not reach it (#1353).
+    require('./response_models').answerExceptions(app);
     // NO `build()` OF THIS FILE (2026-09-17, #36 follow-up). There was one
     // here — R2's build list was recorded from the order modules FINISHED
     // loading, and this file finishes last — and it was the one line in the

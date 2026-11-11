@@ -16,7 +16,9 @@
 //      catalogs exist and which locales the chooser offers, the same
 //      `common/locales/catalogs.json` the server reads
 //      (`common/public_assets.ts` serves it, cacheable for good under the
-//      build's version, which the shell names in `data-sts-version`).
+//      build, which the shell names in `data-sts-build` — the commit and
+//      the build instant, since the version is the release and two builds
+//      of one release must not share an immutable address, #1298).
 //   2. THE LANGUAGE, in today's order (`WebLocale.preferences()`, the
 //      server's own): `ui_locales` where the surface's request carries one;
 //      the person's `preferredLanguage` where the surface's API answered it;
@@ -141,7 +143,7 @@ class WebI18n {
    * @returns `?v=<build>`, or '' where the shell names none
    */
   versionQuery(): string {
-    const v = this.attribute('data-sts-version');
+    const v = this.attribute('data-sts-build');
     return v ? '?v=' + encodeURIComponent(v) : '';
   }
 

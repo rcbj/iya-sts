@@ -1,0 +1,1473 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+//
+// File: models/api/report.tsp
+//
+// Written by hand (#1390). THE REPORTS API OPENAPI DOCUMENT'S SOURCE:
+// `models/tools/generate.mjs` compiles it during the image build, and
+// `report/openapi.ts` serves the result and holds every answer to it.
+//
+// `x-iya-catalog-sources` and `{{sources}}` are bound to the loaded catalog when
+// the document is served.
+//
+// The reasoning below sat in `report/openapi.ts`.
+//
+//
+//
+// ---------------------------------------------------------------------------
+// THE REPORT API'S OWN DESCRIPTION (#956).
+//
+// GET /report-api/openapi.json is this document. It names every released
+// route, the query document, the parameter bag, the definition, the job
+// and the error body. Field meanings, operators, retention, the limit-only
+// page and the empty relationship list are the catalog, which this
+// document points at rather than copying, so a new field does not have to
+// be written twice. It does not describe an offset or a second source:
+// both are refused.
+//
+// EVERY ANSWER IS HELD TO THIS DOCUMENT (#1353, `common/response_models.ts`):
+// an answer with a member a schema does not declare, or at a media type its
+// status does not declare, is not sent and the caller gets a 500. So every
+// object here is closed, every operation has a `default` (the `Error` every
+// refusal in `report_api.ts` is, through `reportSend()`), and a report's own
+// answer declares each of its three media types.
+//
+// **IT STAYS OPENAPI 3.0.3**, which `tests/report_query.js` pins, so a nullable
+// value is `nullable: true`, and two things follow from how the validator reads
+// that. An enumerated nullable value has to list null itself, since `enum` is
+// asked apart from `type`. And `nullable` cannot stand beside a `$ref`, so a
+// schema that may be null where it is used says so itself: `Filter` and
+// `ParameterBag`.
+//
+// **KEYS THAT ARE DATA ARE A TYPED MAP**: a result row's (the fields the query
+// selected) and a parameter bag's (the names the filter uses). What a field
+// holds is the catalog's four types, a list arrives joined into one string
+// (`rows.ts`), and `QueryDocument` is a response member too: a job and a
+// definition answer the stored document, which `Query.document()` already held
+// to these keys. Its `source` is not an enumeration, unlike `Source.id`: a
+// definition that outlives a source in a later release must still be readable.
+// ---------------------------------------------------------------------------
+// Not this API's vocabulary: see `OpenApiDocument` below.
+// What a filter compares with, what a parameter holds, and what a report's cell
+// holds: one of the catalog's four types (a timestamp is a string or a number),
+// null, or a short list of those, which `in`'s value and its parameter are.
+// A report's own body, in whichever format the query asked for: `executor.ts`'s
+// `mediaOf()`. JSON is held to `QueryResult`; the other two are bytes.
+
+import "../lib/api_lib.tsp";
+import "./common.tsp";
+
+using IyaSts.ApiLib;
+using IyaSts.Api.Common;
+
+@apiDocument(#{
+  `x-iya-every-operation`:#[#{`name`:"DPoP",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP <token> requires."},#{`name`:"X-Requested-With",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it."}],
+  `openapi`:"3.0.3",
+  `info`:#{
+    `title`:"IYA STS reports",
+    `version`:"1",
+    `description`:"The reports API. Every operation takes an access token for this realm's /report-api carrying report:use or report:admin — the public client sts-report's, DPoP-bound and sent as Authorization: DPoP, or an application's own (client_credentials) where the application is a member of REPORT_USE or REPORT_ADMIN and declares the scope. The scopes are the permissions of those two roles; the access-control policy decides every definition and job: an owner their own, a report administrator every one, a shared group's member reading and running one shared with them, an application only what it defined. A job id is not an authorization: retrieving a result takes the same token. Paths are after the realm prefix; the default realm has none. The catalog is the field reference. A query names one source. An offset, a second source and a SQL statement are invalid_query. Errors are English. The body never carries an STS-REPORT code."
+  },
+  `components`:#{
+    `securitySchemes`:#{
+      `dpop`:#{
+        `type`:"http",
+        `scheme`:"bearer",
+        `bearerFormat`:"JWT",
+        `description`:"Send the access token as Authorization: DPoP, with a DPoP proof. Bearer is refused for this token."
+      }
+    }
+  },
+  `x-iya-doc`:"report"
+})
+namespace IyaSts.Api.Report {
+  
+
+@component model `Error` {`error`?: string; `error_description`?: string}
+
+@component model `OpenApiDocument` {
+    `openapi`?: string;
+    `info`?: WithTitleVersionDescription;
+    @js(#{
+      `x-free-form`:"The operations and components of an OpenAPI document are that specification's vocabulary, not this API's, and this document describes itself with them.",
+      `description`:"The operations and components of an OpenAPI document are that specification's vocabulary, not this API's, and this document describes itself with them."
+    }) `paths`?: unknown;
+    @js(#{
+      `x-free-form`:"The operations and components of an OpenAPI document are that specification's vocabulary, not this API's, and this document describes itself with them.",
+      `description`:"The operations and components of an OpenAPI document are that specification's vocabulary, not this API's, and this document describes itself with them."
+    }) `components`?: unknown
+  }
+
+@component model `Index` {
+    @js(#{`example`:"report"}) `service`?: string;
+    `catalog`?: string;
+    `realms`?: string;
+    `version`?: WithVersionStampedBuildInfo
+  }
+
+@component model `Realm` {
+    `id`?: string;
+    `name`?: string;
+    @js(#{`description`:"The realm's path prefix; empty for the default realm."}) `prefix`?: string
+  }
+
+@component model `Realms` {`current`?: `Realm`; @js(#{`nullable`:true}) `realms`?: (`Realm`)[]}
+
+@component model `Me` {
+    @js(#{`description`:"The path of the person's own photo, or empty."}) `photo`?: string
+  }
+
+@component model `AnnouncementPage` {
+    @js(#{
+      `description`:"This service's clock, in milliseconds: the `since` of the next ask."
+    }) `now`?: numeric;
+    @js(#{`nullable`:true}) `everyMs`?: numeric;
+    `announcements`?: (WithIdAtMessage)[]
+  }
+
+@component model `SignalPage` {
+    `scope`?: "realm" | "own";
+    `receiving`?: boolean;
+    @js(#{`description`:"Why nothing can arrive, where nothing can."}) `why`?: (string)[];
+    `total`?: integer;
+    `page`?: integer;
+    `pages`?: integer;
+    `per`?: integer;
+    `rows`?: ({
+      `at`?: string;
+      `name`?: string;
+      `vocabulary`?: string;
+      `type`?: string;
+      `subject`?: string;
+      `verified`?: boolean;
+      `reactions`?: ({
+        `failed`?: boolean;
+        @js(#{`description`:"Why nothing was done, or empty."}) `skipped`?: string;
+        `observed`?: boolean;
+        `ended`?: numeric;
+        `revoked`?: numeric
+      })[]
+    })[]
+  }
+
+@component model `Schedule` {
+    `definition`?: {
+      `id`?: string;
+      `name`?: string;
+      `owner`?: string;
+      `ownerName`?: string;
+      `schedule`?: string;
+      `scheduleEnabled`?: boolean;
+      `notify`?: boolean;
+      @js(#{`nullable`:true}) `nextRunAt`?: string;
+      @js(#{`nullable`:true}) `lastSlotAt`?: string;
+      `failures`?: ({@js(#{`nullable`:true}) `at`?: string; `description`?: string})[]
+    };
+    @js(#{
+      `description`:"The most recent scheduled jobs, newest first, at most five."
+    }) `jobs`?: (`Job`)[];
+    @js(#{`description`:"How many scheduled jobs the definition has in all."}) `jobCount`?: integer
+  }
+
+@component model `SchedulePage` {
+    `scope`?: "mine" | "realm";
+    @js(#{`nullable`:true}) `owner`?: string;
+    `page`?: integer;
+    `pages`?: integer;
+    `per`?: integer;
+    `total`?: integer;
+    `schedules`?: (`Schedule`)[]
+  }
+
+@component model `Group` {
+    `dn`?: string;
+    @js(#{`description`:"The cn."}) `name`?: string;
+    @js(#{`description`:"The group's own address, or empty."}) `mail`?: string
+  }
+
+@component model `GroupPage` {
+    `q`?: string;
+    `page`?: integer;
+    `pages`?: integer;
+    @js(#{`example`:5}) `per`?: integer;
+    `total`?: integer;
+    `groups`?: (`Group`)[]
+  }
+
+@component model `Field` {
+    `id`?: string;
+    `type`?: "string" | "number" | "boolean" | "timestamp";
+    `meaning`?: string;
+    `filter`?: boolean;
+    `sort`?: boolean;
+    `group`?: boolean;
+    `operators`?: (string)[];
+    @js(#{
+      `description`:"The operators the directory answers with an index, so a filter using one of them reads only the rows it names. A users query whose filter uses none, with an order or a count, or on a sealed field, reads every person: refused in sync mode (result_too_large), a job in auto mode."
+    }) `indexed`?: (string)[];
+    @js(#{
+      `description`:"The values whose equality the index answers, when it answers only some: users status is indexed for locked, and active is everybody else. Absent when every value is answered."
+    }) `indexedValues`?: (string)[];
+    @js(#{
+      `description`:"Every value the field can hold, when it is an enumeration; the page draws a dropdown of them for equals and not equals. Absent for an open field."
+    }) `values`?: (string)[]
+  }
+
+@component model `Source` {
+    @js(#{`x-iya-catalog-sources`:true}) `id`?: string;
+    @js(#{
+      `description`:"True for a source read from the directory (users, credentialHolders): a filter on it has to name a field whose `indexed` list holds the operator — a leaf of an and, or every arm of an or — or it is refused as invalid_query; the other fields narrow an indexed read."
+    }) `anchored`?: boolean;
+    `bounded`?: boolean;
+    `retention`?: string;
+    `paging`?: "limit";
+    @js(#{`maxItems`:0}) `relationships`?: (string)[];
+    `fields`?: (`Field`)[];
+    @js(#{
+      `description`:"Predefined queries (#1110): a name and a whole query document the page offers as a starting point. Data, not a stored definition: nobody owns one and nothing runs it until somebody does."
+    }) `presets`?: ({`id`?: string; `name`?: string; `document`?: `QueryDocument`})[]
+  }
+
+@component model `Catalog` {`sources`?: (`Source`)[]}
+
+@component model `SourceEnvelope` {`source`?: `Source`}
+
+  
+
+  
+
+@js(#{
+    `nullable`:true,
+    `description`:"A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter."
+  }) @component model `Filter` {
+    `op`?: string;
+    `field`?: string;
+    `value`?: StringOrNumericOrBooleanEtc9;
+    `param`?: string;
+    `args`?: (`Filter`)[];
+    `arg`?: `Filter`
+  }
+
+@component model `QueryDocument` {
+    @js(#{
+      `description`:"One source, by its id in the catalog: {{sources}}. An array is invalid_query."
+    }) `source`: string;
+    @js(#{
+      `nullable`:true,
+      `description`:"The fields. A count may name none, as three presets do."
+    }) `select`?: (string)[];
+    `where`?: `Filter`;
+    @js(#{`nullable`:true}) `orderBy`?: ({`field`?: string; `dir`?: "asc" | "desc"})[];
+    @js(#{`minimum`:1}) `limit`?: integer;
+    `format`?: "json" | "csv" | "pdf";
+    `mode`?: "auto" | "sync" | "async";
+    @js(#{
+      `nullable`:true,
+      `maxLength`:35,
+      `description`:"A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi."
+    }) `locale`?: string;
+    @js(#{`nullable`:true,`enum`:#["count",null]}) `aggregate`?: string;
+    @js(#{`nullable`:true}) `groupBy`?: (string)[]
+  }
+
+  
+
+  
+
+@js(#{
+    `description`:"A string, a number, a boolean, null, or a list of those."
+  }) @hoisted union QueryResult_rows_i_ap_h8 {
+    String,
+    numeric,
+    boolean,
+    (StringOrNumericOrBoolean2)[]
+  }
+
+@js(#{
+    `nullable`:true,
+    `description`:"One row: a field's id to what it holds. The keys are the fields the query selected, and `count` where it counted."
+  }) @hoisted model QueryResult_rows_i_h9 is Record<QueryResult_rows_i_ap_h8>;
+  
+
+@js(#{`description`:"A report as JSON: `Formats.jsonParts()`."}) @component model `QueryResult` {
+    `source`?: string;
+    `fields`?: (string)[];
+    `rows`?: (QueryResult_rows_i_h9)[];
+    `truncated`?: boolean
+  }
+
+  
+
+  
+
+@js(#{
+    `nullable`:true,
+    `description`:"Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none."
+  }) @component model `ParameterBag` is Record<StringOrNumericOrBooleanEtc9>;
+  
+
+@component model `DefinitionWrite` {
+    @js(#{`maxLength`:120}) `name`: string;
+    `document`: `QueryDocument`;
+    `parameters`?: `ParameterBag`;
+    @js(#{`description`:"A UTC cron expression, or empty."}) `schedule`?: string;
+    `scheduleEnabled`?: boolean;
+    @js(#{
+      `description`:"Mail the owner when a scheduled run finishes. The message links to the job. It does not contain rows."
+    }) `notify`?: boolean
+  }
+
+@js(#{`description`:"A run a schedule skipped: `reportNoteFailure()`."}) @hoisted model Definition_failures_i_h14 {
+    @js(#{`description`:"When, in milliseconds."}) `at`?: numeric;
+    `description`?: string
+  }
+
+@component model `Definition` {
+    `id`?: string;
+    `name`?: string;
+    @js(#{`description`:"The owner's subject (urn:uuid:…)."}) `owner`?: string;
+    @js(#{
+      `description`:"The owner's display name, or username; empty for a subject this realm cannot name."
+    }) `ownerName`?: string;
+    @js(#{
+      `description`:"A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes."
+    }) `schedule`?: string;
+    `scheduleEnabled`?: boolean;
+    @js(#{
+      `nullable`:true,
+      `description`:"When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence."
+    }) `nextRunAt`?: string;
+    @js(#{
+      `nullable`:true,
+      `description`:"The most recent occurrence the schedule has taken (queued, or skipped with a note), or null."
+    }) `lastSlotAt`?: string;
+    `notify`?: boolean;
+    `editable`?: boolean;
+    @js(#{`format`:"date-time",`nullable`:true}) `createdAt`?: string;
+    @js(#{`format`:"date-time",`nullable`:true}) `modifiedAt`?: string;
+    `document`?: `QueryDocument`;
+    `parameters`?: `ParameterBag`;
+    `groups`?: (string)[];
+    `failures`?: (Definition_failures_i_h14)[]
+  }
+
+@component model `DefinitionEnvelope` {`definition`?: `Definition`}
+
+@component model `DefinitionList` {
+    `definitions`?: (`Definition`)[];
+    `page`?: integer;
+    `pages`?: integer;
+    `per`?: integer;
+    `total`?: integer
+  }
+
+@component model `Deleted` {@js(#{`description`:"The definition's id."}) `deleted`?: string}
+
+@component model `ShareWrite` {`groups`: (string)[]}
+
+@component model `Job` {
+    `id`?: string;
+    `status`?: "queued" | "running" | "completed" | "failed" | "cancelled" | "expired";
+    `format`?: string;
+    @js(#{`nullable`:true}) `submittedAt`?: string;
+    @js(#{`nullable`:true}) `completedAt`?: string;
+    @js(#{`nullable`:true}) `byteSize`?: integer;
+    @js(#{
+      `nullable`:true,
+      `description`:"The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial."
+    }) `error`?: string;
+    @js(#{`nullable`:true}) `definitionId`?: string;
+    @js(#{`nullable`:true}) `definitionName`?: string;
+    `source`?: string;
+    `fields`?: (string)[];
+    @js(#{
+      `nullable`:true,
+      `enum`:#["every-person","asked","limit","source","run","schedule",null],
+      `description`:"Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule."
+    }) `queuedBecause`?: string;
+    `query`?: `QueryDocument`
+  }
+
+@component model `JobEnvelope` {`job`?: `Job`}
+
+@component model `JobList` {
+    `jobs`?: (`Job`)[];
+    @js(#{`nullable`:true}) `next`?: string;
+    @js(#{`description`:"Absent on a cursor page."}) `page`?: integer;
+    `pages`?: integer;
+    `per`?: integer;
+    `total`?: integer
+  }
+
+@endpoint("/report-api",
+  "get",
+  #{
+    `summary`:"The report API index",
+    `description`:"Names the catalog and realms addresses, and carries the service version the application draws in its footer.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The index.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    }
+  })
+op `get__report_api`(`responses/200/content/application~1json/schema`: `Index`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/openapi.json",
+  "get",
+  #{
+    `summary`:"This document",
+    `description`:"The description of the released routes.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"This OpenAPI document.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    }
+  })
+op `get__report_api_openapi_json`(`responses/200/content/application~1json/schema`: `OpenApiDocument`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/realms",
+  "get",
+  #{
+    `summary`:"The trust realms",
+    `description`:"The realm this request is in, and every realm with its id, name and path prefix where realms are active (null where they are not). The application draws its realm field and switch from it.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The realms.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    }
+  })
+op `get__report_api_realms`(`responses/200/content/application~1json/schema`: `Realms`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/groups",
+  "get",
+  #{
+    `summary`:"Search the realm's groups",
+    `description`:"The groups of this realm whose name or DN contains `q` (case-insensitive; empty matches every group), five a page in name order, each with its own `mail` attribute or an empty string. The definition page builds its share list from it; a definition's groups are who is emailed its result, at that address (#989).",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"One page of groups.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:"no-such-group"
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      }
+    ]
+  })
+op `get__report_api_groups`(`parameters/0/schema`: string,
+  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
+  `responses/200/content/application~1json/schema`: `GroupPage`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/signals",
+  "get",
+  #{
+    `summary`:"This application's Shared Signals inbox",
+    `description`:"The CAEP and RISC events this application's own stream delivered in this realm, newest first, twenty a page by default (#1042). report:admin sees every one (`scope` realm); anybody else sees only the events about themselves (`scope` own), and an application sees none. Each row says what this application did with it: the sessions it ended and the tokens of its own client it revoked for the person named, or why it did nothing. `receiving` is false, with `why`, when nothing can arrive. `per` is at most 100.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"One page of the inbox.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:20
+      }
+    ]
+  })
+op `get__report_api_signals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:100}) `parameters/1/schema`: integer,
+  `responses/200/content/application~1json/schema`: `SignalPage`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/me",
+  "get",
+  #{
+    `summary`:"What the user menu draws",
+    `description`:"The path of the signed-in person's own profile photo on this realm (#719), empty where they have none. It answers only about the token's person.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"`photo`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    }
+  })
+op `get__report_api_me`(`responses/200/content/application~1json/schema`: `Me`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/announcements",
+  "get",
+  #{
+    `summary`:"Announcements for everybody signed in",
+    `description`:"What an administrator broadcast to this application (#1086) after `since` — the `now` this operation answered the tab's first ask with — within ssf.announcementKeepS, oldest first. With no `since` it answers only `now`. `everyMs` is how often an open tab asks again.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"`now`, `everyMs` and `announcements`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"since",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:0
+      }
+    ]
+  })
+op `get__report_api_announcements`(@js(#{`minimum`:0}) `parameters/0/schema`: integer,
+  `responses/200/content/application~1json/schema`: `AnnouncementPage`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/schedules",
+  "get",
+  #{
+    `summary`:"The scheduled definitions and their runs",
+    `description`:"Every definition that carries a schedule, with when it next runs, the occurrence it last took, the notes a skipped run left, and its most recent scheduled jobs. A report:use token sees the definitions it owns or is shared; report:admin sees every one in the realm and may name one owner with `owner` (a urn:uuid subject or a username). A report:use token that names another owner is refused with forbidden (403). Paged; `per` is at most 100.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The schedules.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"Another owner was named without report:admin.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"owner",
+        `in`:"query",
+        `required`:false,
+        `schema`:null
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:20
+      }
+    ]
+  })
+op `get__report_api_schedules`(`parameters/0/schema`: string,
+  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:100}) `parameters/2/schema`: integer,
+  `responses/200/content/application~1json/schema`: `SchedulePage`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/catalog",
+  "get",
+  #{
+    `summary`:"The report catalog",
+    `description`:"Every source. Each field has an id, a meaning, a type, whether it can be filtered, sorted or grouped, and its operators. paging is limit. relationships is empty. retention is the English sentence for how long the rows last.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The sources.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    }
+  })
+op `get__report_api_catalog`(`responses/200/content/application~1json/schema`: `Catalog`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/catalog/{id}",
+  "get",
+  #{
+    `summary`:"One report source",
+    `description`:"The same object the catalog lists for one id.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The source.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"unknown_source.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The source id.",
+        `schema`:null,
+        `example`:"users"
+      }
+    ]
+  })
+op `get__report_api_catalog__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: `SourceEnvelope`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/queries",
+  "post",
+  #{
+    `summary`:"Run a query",
+    `description`:"Synchronous when the source is bounded and the limit fits the sync caps. Otherwise 202 and a job. mode sync over the cap is result_too_large. A body over the byte cap or a sync call over the time cap is refused whole.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The JSON, CSV or PDF body. JSON is an object with rows and truncated false. CSV is RFC 4180. PDF is PDF 1.4.",
+        `content`:#{
+          `application/json`:#{`schema`:null},
+          `text/csv`:#{`schema`:null},
+          `application/pdf`:#{`schema`:null}
+        }
+      },
+      `202`:#{
+        `description`:"A job was queued.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"invalid_query, unknown_source is 404, unknown_field, unsupported_operation, unsupported_format or result_too_large.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `429`:#{
+        `description`:"too_many_jobs.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`source`:"users",`select`:#["username"],`limit`:1,`mode`:"sync",`format`:"json"}}}}
+  })
+op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `QueryDocument`,
+  `responses/200/content/application~1json/schema`: `QueryResult`,
+  `responses/200/content/text~1csv/schema`: string,
+  @js(#{`format`:"binary"}) `responses/200/content/application~1pdf/schema`: string,
+  `responses/202/content/application~1json/schema`: `JobEnvelope`,
+  `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/definitions",
+  "get",
+  #{
+    `summary`:"List definitions",
+    `description`:"The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows. `limit` is the older spelling of `per`, read when `per` is absent.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The definitions.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:20
+      },
+      #{
+        `name`:"limit",
+        `in`:"query",
+        `required`:false,
+        `description`:"The older spelling of `per`.",
+        `schema`:null
+      }
+    ]
+  })
+op `get__report_api_definitions`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:200}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:200}) `parameters/2/schema`: integer,
+  `responses/200/content/application~1json/schema`: `DefinitionList`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/definitions",
+  "post",
+  #{
+    `summary`:"Create a definition",
+    `description`:"Stores the document. parameters is the bag a schedule runs with. A missing value can still be type-checked; it is not stored as a dummy, and the schedule will not run until the value is saved.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The stored definition.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"invalid_query.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`name`:"example",`document`:#{`source`:"no-such-source",`limit`:1}}}}}
+  })
+op `post__report_api_definitions`(`requestBody/content/application~1json/schema`: `DefinitionWrite`,
+  `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
+  `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/definitions/{id}",
+  "get",
+  #{
+    `summary`:"Read a definition",
+    `description`:"An id the caller may not see is not_found, the same answer as an id that does not exist.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The definition.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"not_found.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The definition id.",
+        `schema`:null,
+        `example`:"noSuchDefinition"
+      }
+    ]
+  })
+op `get__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/definitions/{id}",
+  "post",
+  #{
+    `summary`:"Replace a definition",
+    `description`:"The owner, or report:admin. parameters omitted keeps the stored bag. parameters null clears it.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The stored definition.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"invalid_query.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"not_found.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The definition id.",
+        `schema`:null,
+        `example`:"noSuchDefinition"
+      }
+    ],
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`name`:"example",`document`:#{`source`:"no-such-source",`limit`:1}}}}}
+  })
+op `post__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+  `requestBody/content/application~1json/schema`: `DefinitionWrite`,
+  `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
+  `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/definitions/{id}",
+  "delete",
+  #{
+    `summary`:"Delete a definition",
+    `description`:"The owner, or report:admin. A share cannot delete.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"Deleted.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"not_found.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The definition id.",
+        `schema`:null,
+        `example`:"noSuchDefinition"
+      }
+    ]
+  })
+op `delete__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: `Deleted`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/definitions/{id}/share",
+  "post",
+  #{
+    `summary`:"Share a definition",
+    `description`:"Replaces the group list. A share can run and retrieve. It cannot edit or delete. Each value is a group DN in this realm.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The definition.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"invalid_query.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"not_found.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The definition id.",
+        `schema`:null,
+        `example`:"noSuchDefinition"
+      }
+    ],
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`groups`:#[]}}}}
+  })
+op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+  `requestBody/content/application~1json/schema`: `ShareWrite`,
+  `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
+  `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/definitions/{id}/run",
+  "post",
+  #{
+    `summary`:"Run a saved definition",
+    `description`:"Always a job. The body is a parameter object, not a query document. A key in the body overrides the stored default. An empty body uses the stored defaults. The stored document already carries locale.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `202`:#{
+        `description`:"The job.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"invalid_query or result_too_large.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"not_found.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `429`:#{
+        `description`:"too_many_jobs.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The definition id.",
+        `schema`:null,
+        `example`:"noSuchDefinition"
+      }
+    ],
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}}
+  })
+op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+  `requestBody/content/application~1json/schema`: `ParameterBag`,
+  `responses/202/content/application~1json/schema`: `JobEnvelope`,
+  `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/jobs",
+  "get",
+  #{
+    `summary`:"List jobs",
+    `description`:"Newest first, in numbered pages: `page` and `per` (50 unless given, at most 200), with page, pages, per and total beside the rows. A caller may page by cursor instead: `after` is the previous page's next id and `limit` its size. A job id in the list is not permission to read a job the token cannot see.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The page. next is null on the last page.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:20
+      },
+      #{
+        `name`:"after",
+        `in`:"query",
+        `required`:false,
+        `description`:"The last id of the previous page, for a cursor walk; page and per are then ignored.",
+        `schema`:null
+      },
+      #{
+        `name`:"limit",
+        `in`:"query",
+        `required`:false,
+        `description`:"How many jobs a cursor page returns.",
+        `schema`:null
+      }
+    ]
+  })
+op `get__report_api_jobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:200}) `parameters/1/schema`: integer,
+  `parameters/2/schema`: string,
+  `parameters/3/schema`: integer,
+  `responses/200/content/application~1json/schema`: `JobList`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/jobs",
+  "post",
+  #{
+    `summary`:"Queue a job",
+    `description`:"The same document as a query, forced to a job even when it would have fit in one synchronous call.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `202`:#{
+        `description`:"The job.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"invalid_query, unknown_field, unsupported_operation or result_too_large.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `429`:#{
+        `description`:"too_many_jobs.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`source`:"no-such-source",`limit`:1}}}}
+  })
+op `post__report_api_jobs`(`requestBody/content/application~1json/schema`: `QueryDocument`,
+  `responses/202/content/application~1json/schema`: `JobEnvelope`,
+  `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/jobs/{id}",
+  "get",
+  #{
+    `summary`:"Read a job",
+    `description`:"The owner and report:admin also receive the query document. A hidden id is job_not_found.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The job.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"job_not_found.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The job id.",
+        `schema`:null,
+        `example`:"noSuchJob"
+      }
+    ]
+  })
+op `get__report_api_jobs__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: `JobEnvelope`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/jobs/{id}/cancel",
+  "post",
+  #{
+    `summary`:"Cancel a job",
+    `description`:"A queued job becomes cancelled. A running job is asked to stop and is not returned in part.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The job.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"job_not_found.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The job id.",
+        `schema`:null,
+        `example`:"noSuchJob"
+      }
+    ]
+  })
+op `post__report_api_jobs__id__cancel`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: `JobEnvelope`,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+
+@endpoint("/report-api/jobs/{id}/result",
+  "get",
+  #{
+    `summary`:"Download a result",
+    `description`:"The artifact bytes. The media type is the format. A job id is not enough: the token must be allowed to see the job. Past artifact retention the result is gone.",
+    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `responses`:#{
+      `200`:#{
+        `description`:"The artifact. JSON, CSV or PDF.",
+        `content`:#{
+          `application/json`:#{`schema`:null},
+          `text/csv`:#{`schema`:null},
+          `application/pdf`:#{`schema`:null}
+        }
+      },
+      `401`:#{
+        `description`:"invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"forbidden or insufficient_scope.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"job_not_found.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `409`:#{
+        `description`:"job_not_ready.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `410`:#{
+        `description`:"result_expired.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The job id.",
+        `schema`:null,
+        `example`:"noSuchJob"
+      }
+    ]
+  })
+op `get__report_api_jobs__id__result`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: `QueryResult`,
+  `responses/200/content/text~1csv/schema`: string,
+  @js(#{`format`:"binary"}) `responses/200/content/application~1pdf/schema`: string,
+  `responses/401/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error`,
+  `responses/409/content/application~1json/schema`: `Error`,
+  `responses/410/content/application~1json/schema`: `Error`,
+  `responses/default/content/application~1json/schema`: `Error`): void;
+  
+}

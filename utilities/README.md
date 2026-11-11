@@ -1,11 +1,12 @@
 # Utilities
 
-Load and soak scripts used against a running iya-sts (8081 by default). They
+Load and soak scripts used against a running iya-sts (8081 by default). Apart from `config-dump.js`, they
 are not part of the service: `.dockerignore` keeps them out of the image, and
 no test runs them.
 
 | Script | What it does |
 |---|---|
+| `config-dump.js` | Saves the masked configuration dump (`docs/configuration-dump.md`). The one script here that ships in the image. |
 | `load-users.js` (`run.sh`) | Adds people to a realm's directory over LDAPS, resumably, through a bind identity it creates and then takes Admin Write back from. |
 | `bulk-import.sh` | Loads people with the offline bulk import (`persistence/bulk_import.js`), one generated LDIF file at a time, with the `sts` container stopped. |
 | `sessions-1m/setup.js` | Prepares the realm for the session test: raises the session, refresh-family and revocation limits, and creates the relying party `sessions-1m-rp`. |
@@ -14,6 +15,7 @@ no test runs them.
 | `sessions-1m/teardown.js` | Puts back every setting `setup.js` changed. |
 | `sessions-1m/soak-check.sh` | One stability reading of a running soak; `--brief` for one line. |
 | `create-rcbj-apps-8081.sh` | Rebuilds a demonstration set around one person: a resource application (`oauth2-resource-server`) defining two permissions, a confidential client granted them, a group, a role and two service accounts, all owned by that person. Its header says what it makes and the scope rules it follows (#1139). |
+| `create-qualys-scanner-client.sh` | Makes `qualys-scanner`, a read-only `/admin-api` client for an authenticated Qualys WAS scan: `client_credentials` only, granted `admin:read` and a member of ADMIN_READ, never write. It proves the result (a read works, `admin:write` is refused, a write is 403) and prints the secret and the Qualys authentication-record values once. |
 
 Each `run-*.sh` runs its script with the service's Root trusted and appends
 to a log beside it. `sessions-1m/README.md` describes the session test.

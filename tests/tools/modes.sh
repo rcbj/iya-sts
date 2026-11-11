@@ -110,7 +110,9 @@ stsModeEnv()
       cat <<'EOF'
 STS_MODE=development
 STS_PERSISTENCE_MODE=memory
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=false
+STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
 STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
@@ -153,7 +155,45 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
+    mariadb)
+      # THE SINGLE-NODE PRODUCTION DEPLOYMENT ON MARIADB (#677) — ASKED FOR
+      # BY NAME ONLY: `--modes=mariadb`, like `cells`, and NOT in
+      # STS_ALL_MODES. Every value `single-node` names, with
+      # `persistence.mode=mariadb`: the store is the database `sts_store` on
+      # the stack's `mariadb` server, built by the layer's one-shot from
+      # mariadb/schema.sql (tests/docker-compose-run-tests-mariadb.yml).
+      # PostgreSQL stays this service's primary store (rcbj on #677); this
+      # mode is the suite run against the second engine, and a failure here
+      # and not in `single-node` is a finding about the MariaDB driver.
+      # Here the `mariadb` server is the whole store, so its buffer pool is
+      # sized for that (STS_MARIADB_BUFFER_POOL); every other mode, where it
+      # serves one job, names the laptop-sized 128M (rcbj on #695) — named
+      # rather than left to the compose default, since a mode that does not
+      # name a variable inherits the previous mode's (unit_job_environment).
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=mariadb
+STS_MARIADB_BUFFER_POOL=1G
+STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
 STS_WORKERS_SURFACE_COUNT=1
 STS_WORKERS_DISPATCH=*
@@ -223,7 +263,42 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=active-active
+STS_PROXY_PROTOCOL=v2
+STS_TEST_FRESH_CONNECTIONS=1
+STS_TEST_CLUSTER_NODES=2
+STS_TEST_BULK_LAST=1
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
+    cluster-portable)
+      # THE `cluster` MODE ON THE PORTABLE STATEMENTS (#677) — ASKED FOR BY
+      # NAME ONLY: `--modes=cluster-portable`, like `cells`, and NOT in
+      # STS_ALL_MODES. The same two product nodes active-active on one
+      # postgres, every value `cluster` names, and one more:
+      # `persistence.sqlDialect=portable`, so both nodes coordinate through
+      # the statements MariaDB runs (persistence/cluster_portable.js) —
+      # inserts that do nothing on a duplicate, row locks in
+      # sts_cluster_locks, no LISTEN/NOTIFY and a one-second poll. A failure
+      # here and not in `cluster` is a finding about the portable
+      # statements, which is exactly what rcbj asked this mode to find before
+      # a second database exists.
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
+STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=portable
 STS_WORKERS_REQUEST_COUNT=3
 STS_WORKERS_SURFACE_COUNT=1
 STS_WORKERS_DISPATCH=*
@@ -265,11 +340,41 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
 STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
 STS_WORKERS_READ_YOUR_WRITE=false
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
+    fuzz)
+      # THE `fuzz` MODE (#1299) — BY NAME ONLY: `--modes=fuzz`, like `cells`,
+      # and NOT in STS_ALL_MODES, so a bare run does not grow by a stack. A
+      # single-node production deployment (every value `single-node` names) on
+      # a NETWORK-ISOLATED stack (tests/docker-compose-run-tests-fuzz.yml, the
+      # `internal` network: no egress), for `sts_schemathesis.js` to throw
+      # malformed inputs at without anything leaving the device. Run it as
+      # `--modes=fuzz --only=schemathesis`.
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=postgres
+STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
 STS_KEYS_SOURCE=persisted
 STS_CLUSTER_MODE=off
 STS_PROXY_PROTOCOL=off
@@ -296,8 +401,11 @@ stsModeDescription()
   case "$1" in
     memory)   echo "one process, nothing persisted, nothing coordinated — the baseline" ;;
     single-node) echo "a single-node production deployment: product mode, postgres, 3 request workers + 1 surface worker, read-your-write" ;;
+    mariadb)  echo "the single-node production deployment with its store on MariaDB (#677): persistence.mode=mariadb, the database sts_store on the stack's mariadb server — by name only (--modes=mariadb)" ;;
     cluster)  echo "a multi-node production deployment: 2 such nodes active-active on one postgres, behind an L4 load balancer, a new connection per request" ;;
+    cluster-portable) echo "the cluster mode on the portable coordination statements a second database engine runs (#677): no LISTEN/NOTIFY, lock rows, a one-second poll — by name only (--modes=cluster-portable)" ;;
     cells)    echo "two cells of one service (#98): cella (us) and cellb (ca), product mode, each on its own postgres over a shared global-tier postgres, the inter-cell channel between them — by name only (--modes=cells)" ;;
+    fuzz)     echo "the single-node production deployment on a network-isolated stack (#1299), for Schemathesis to fuzz the four APIs and the protocol surface — by name only (--modes=fuzz --only=schemathesis)" ;;
     *)        echo "unknown" ;;
   esac
 }
@@ -344,12 +452,22 @@ stsModeNeedsPostgres()
 # more and nothing failing. 80 minutes is that pace with room;
 # STS_SINGLE_NODE_MODE_TIMEOUT overrides it. tests/teardown_bounds.js holds
 # the CI `tests` job's timeout above the largest of the bounds it runs.
+# 150 MINUTES SINCE 2026-11-10: run 14's single-node mode on 942307fd1 was
+# stopped by the 80-minute bound with 43 of about 1,136 jobs never started —
+# every conformance job among them — nothing wedged. The same suite's memory
+# mode took 104 minutes, 67 of them the OpenID Connect conformance job, and
+# product on postgres is slower than that.
 # ---------------------------------------------------------------------------
 stsModeTimeout()
 {
   case "$1" in
     cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
-    single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-4800}" ;;
+    cluster-portable) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
+    # The whole suite on the second engine: it was stopped at job 948 of 1067
+    # by the 3000 s a mode with no bound of its own gets, nothing wedged (#677).
+    mariadb) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
+    single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-9000}" ;;
+    fuzz)     echo "${STS_FUZZ_MODE_TIMEOUT:-21600}" ;;
     *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
   esac
 }
@@ -365,7 +483,20 @@ stsModeTimeout()
 stsModeIsCluster()
 {
   case "$1" in
-    cluster) return 0 ;;
+    cluster|cluster-portable) return 0 ;;
+    *)       return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Whether a mode keeps its store on MARIADB (#677): which compose layer is
+# added (tests/docker-compose-run-tests-mariadb.yml) and which one-shot is
+# not attached. Asked as the two questions below it are.
+# ---------------------------------------------------------------------------
+stsModeIsMariadb()
+{
+  case "$1" in
+    mariadb) return 0 ;;
     *)       return 1 ;;
   esac
 }
@@ -384,5 +515,15 @@ stsModeIsCells()
   case "$1" in
     cells) return 0 ;;
     *)     return 1 ;;
+  esac
+}
+
+# Whether a mode runs on the network-isolated fuzzing stack (#1299): which
+# compose layer run-tests.sh adds.
+stsModeIsFuzz()
+{
+  case "$1" in
+    fuzz) return 0 ;;
+    *)    return 1 ;;
   esac
 }

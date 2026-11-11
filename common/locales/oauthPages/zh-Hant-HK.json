@@ -2,5 +2,6 @@
   "formPost.title": "正在返回客戶端",
   "formPost.heading": "正在返回客戶端",
   "formPost.continue": "繼續前往客戶端",
-  "formPost.scriptNote": "表單由 <code>/oauth2/autopost.js</code> 自動提交。它是一個獨立的資源，因為本服務對每個回應都設定 <code>script-src 'none'</code>，而本頁將其放寬為 <code>'self'</code>；腳本關閉時，按鈕就是提交方式。"
+  "formPost.scriptNote": "表單由 <code>/oauth2/autopost.js</code> 自動提交。它是一個獨立的資源，因為本服務對每個回應都設定 <code>script-src 'none'</code>，而本頁將其放寬為 <code>'self'</code>；腳本關閉時，按鈕就是提交方式。",
+  "signedOut.notRegistered": "<strong>此登出要求按其傳送時的內容無效：其 post_logout_redirect_uri 不是此客戶端註冊的位址，因此不會將您轉到該位址。</strong>要求指定的是 <code>{uri}</code>（RP-Initiated Logout 1.0 第 3 節）。"
 }

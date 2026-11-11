@@ -1,0 +1,851 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+// File: tests/federation_oidc_rp.js
+// ===========================================================================
+// AN INBOUND OPENID CONNECT RELATIONSHIP AS THE CONFORMANCE SUITE'S RELYING
+// PARTY PLANS HOLD IT (#930), IN PROCESS. The whole stack in a child process
+// over HTTP on 127.0.0.1, and beside it a small OpenID Provider written
+// here (plain http, which development mode's federation.outboundAllowHttp
+// admits for a loopback partner) whose answers each case chooses:
+//   1. the code flow: a good ID Token signs in and UserInfo is asked; an ID
+//      Token with no sub (STS-FED-0195), no iat (0196), a foreign azp
+//      (0197), no nonce (0198), another nonce (0039) or an algorithm other
+//      than the registered one (0208) is refused before UserInfo is asked;
+//      UserInfo answering for another sub is refused (0202); the
+//      administrator's check-partner reads the key set;
+//   2. the hybrid `code id_token` type: PKCE beside it, the front ID
+//      Token's c_hash checked BEFORE the code is redeemed (0199: the token
+//      endpoint is never called), and the two ID Tokens held to one
+//      subject (0201);
+//   3. the implicit `id_token token` type in the fragment mode: no
+//      response_mode asked, the bare GET answered with the page and its one
+//      script under `script-src 'self'` with `frame-ancestors` kept, the
+//      script served, a wrong at_hash refused (0200) and a right one asking
+//      UserInfo with the front access token; `query` with that type is not
+//      ready;
+//   4. discovery: the endpoints read from {fedPeer}/.well-known/
+//      openid-configuration at the sign-in, and a document naming another
+//      issuer refused (0204);
+//   5. the login initiation endpoint: off refuses (0205), another iss
+//      refuses (0206), the right one starts the sign-in with the
+//      login_hint passed on;
+//   7. self-registration (fedRegister) and Request Objects by reference:
+//      the registration's metadata and one public key, the client kept,
+//      the object verifying with that key and answered once (0218), no
+//      second registration for the same issuer, register-partner, alg none;
+//   8. WebFinger: off refuses (0215), the form, an address looked up as
+//      acct: with nothing continuing by itself, continuing registering at
+//      the found issuer, and an issuer outside fedPeer refused (0217);
+//   6. refresh tokens (fedRefreshTokens): a held token refreshed when due
+//      and UserInfo asked with the new access token; a refreshed ID Token
+//      naming another iss (0211) and a refused refresh (0210) end the
+//      session; an ended session's token is gone.
+// The conformance suite's relying-party plans drive the same code over the
+// wire (`tests/protocol/sts_oidcc_rp_conformance.js`); this pins each
+// refusal's code and that nothing is dialled after it.
+// ===========================================================================
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const childProcess = require('child_process');
+const bunyan = require('bunyan');
+
+const log = bunyan.createLogger({ name: 'federation_oidc_rp',
+  level: process.env.STS_LOG_LEVEL || 'info' });
+
+const ROOT = path.join(__dirname, '..');
+
+/**
+ * The child process: builds the stack and the partner, listens, and asks.
+ *
+ * @returns {void}
+ */
+function childMain() {
+  const ROOT_DIR = process.env.FRP_ROOT;
+  const OUT = process.env.FRP_OUT;
+  const http = require('http');
+  const fs = require('fs');
+  const nodeCrypto = require('crypto');
+  const findings = [];
+  function note(ok, what, detail) {
+    findings.push({ ok: !!ok, what: what,
+                    detail: detail === undefined ? '' : String(detail) });
+  }
+  function b64u(value) {
+    return Buffer.from(typeof value === 'string' ? value
+                                                 : JSON.stringify(value))
+      .toString('base64url');
+  }
+  function halfHash(value) {
+    const digest = nodeCrypto.createHash('sha256').update(String(value))
+      .digest();
+    return digest.subarray(0, digest.length / 2).toString('base64url');
+  }
+
+  (async function () {
+    require(ROOT_DIR + '/common/protocol_stack');
+    const app = require(ROOT_DIR + '/common/app');
+    const config = require(ROOT_DIR + '/common/config');
+    const audit = require(ROOT_DIR + '/common/audit');
+    const federation = require(ROOT_DIR + '/federation/federation');
+    const screen = require(ROOT_DIR + '/tests/tools/authn_screen');
+
+    // --- the partner -------------------------------------------------------
+    const pair = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const jwk = pair.publicKey.export({ format: 'jwk' });
+    jwk.kid = 'frp-1';
+    jwk.use = 'sig';
+    jwk.alg = 'RS256';
+    const op = { calls: [], scenario: {}, byToken: {} };
+    const sign = function (claims) {
+      const input = b64u({ alg: 'RS256', kid: 'frp-1', typ: 'JWT' }) + '.' +
+                    b64u(claims);
+      return input + '.' + nodeCrypto.sign('sha256', Buffer.from(input),
+                                           pair.privateKey)
+        .toString('base64url');
+    };
+    const partner = http.createServer(function (req, res) {
+      let body = '';
+      req.on('data', function (c) {
+        body += c;
+      });
+      req.on('end', function () {
+        const url = new URL(req.url, 'http://x');
+        op.calls.push({ path: url.pathname, body: body,
+                        auth: String(req.headers.authorization || '') });
+        const send = function (status, json) {
+          res.writeHead(status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(json));
+        };
+        const s = op.scenario;
+        if (/openid-configuration$/.test(url.pathname)) {
+          return send(200, Object.assign({
+            issuer: s.issuer,
+            registration_endpoint: s.base + 'register',
+            authorization_endpoint: s.base + 'disco-authorize',
+            token_endpoint: s.base + 'token', jwks_uri: s.base + 'jwks',
+            userinfo_endpoint: s.base + 'userinfo' }, s.discovery || {}));
+        }
+        if (url.pathname === '/.well-known/webfinger') {
+          op.webfinger = url.searchParams.get('resource');
+          return send(200, { subject: op.webfinger, links: [
+            { rel: 'http://openid.net/specs/connect/1.0/issuer',
+              href: s.webfingerIssuer } ] });
+        }
+        if (/\/register$/.test(url.pathname)) {
+          op.registered = JSON.parse(body || '{}');
+          op.registrations = (op.registrations || 0) + 1;
+          return send(201, Object.assign({}, op.registered,
+            // A SECRET WITH WHAT FORM-ENCODING CHANGES (#930), as the
+            // suite's registrations hand out: 7g decodes the Basic header
+            // a token request carries against it.
+            { client_id: 'dyn-' + op.registrations,
+              client_secret: 'dyn %+:<\u00e9/secret-' +
+                             op.registrations }));
+        }
+        if (/\/jwks$/.test(url.pathname)) {
+          return send(200, { keys: [jwk] });
+        }
+        if (/\/token$/.test(url.pathname)) {
+          // A refresh answers by the token it was sent, so each held
+          // session keeps its own case whatever order they are refreshed in.
+          if (/grant_type=refresh_token/.test(body)) {
+            const rt = new URLSearchParams(body).get('refresh_token');
+            const how = op.byToken[rt] || {};
+            return how.refuse
+              ? send(400, { error: 'invalid_grant' })
+              : send(200, { access_token: 'at-' + rt,
+                            token_type: 'Bearer', refresh_token: rt,
+                            id_token: sign(how.claims()) });
+          }
+          return send(200, { access_token: 'at-back', token_type: 'Bearer',
+                             refresh_token: s.rt || 'rt-none',
+                             id_token: sign(s.backClaims()) });
+        }
+        if (/\/userinfo$/.test(url.pathname)) {
+          op.bearer = String(req.headers.authorization || '');
+          return send(200, Object.assign({ sub: 'frp-person' },
+                                         s.userinfo || {}));
+        }
+        return send(404, { error: 'not_found' });
+      });
+    });
+    await new Promise(function (r) {
+      partner.listen(0, '127.0.0.1', r);
+    });
+    const opBase = 'http://127.0.0.1:' + partner.address().port + '/op/';
+    // THE SAME PARTNER OVER TLS, for WebFinger, which is https only: a
+    // certificate made here (verification is off for it below, as
+    // development's federation.outboundSkipTlsVerification allows).
+    const x509 = require(ROOT_DIR + '/common/crypto_impl/x509');
+    const keyMaterial = require(ROOT_DIR + '/common/crypto_impl/key_material');
+    const tlsPair = await keyMaterial.generateKeyPair('ec-p256');
+    const tlsCert = await x509.issueCertificate({
+      subject: [{ name: 'CN', value: '127.0.0.1' }],
+      subjectPublicKey: tlsPair.publicPem,
+      issuerPrivateKey: tlsPair.privatePem, signatureAlg: 'sha256-ecdsa',
+      serial: nodeCrypto.randomBytes(8).toString('hex'),
+      notBefore: new Date(Date.now() - 60000).toISOString(),
+      notAfter: new Date(Date.now() + 3600000).toISOString(),
+      extensions: { basicConstraints: { present: true, critical: true,
+                                        ca: false } } });
+    const tlsPartner = require('https').createServer(
+      { key: tlsPair.privatePem, cert: tlsCert.pem },
+      partner.listeners('request')[0]);
+    await new Promise(function (r) {
+      tlsPartner.listen(0, '127.0.0.1', r);
+    });
+    const tlsHost = '127.0.0.1:' + tlsPartner.address().port;
+
+    // --- the service ---------------------------------------------------------
+    const server = http.createServer(app);
+    await new Promise(function (r) {
+      server.listen(0, '127.0.0.1', r);
+    });
+    const port = server.address().port;
+    const call = function (method, p, form, jar) {
+      const body = form ? new URLSearchParams(form).toString() : undefined;
+      return screen.call({ port: port, jar: jar || {}, method: method,
+        path: p, body: body,
+        headers: form ? { 'content-type':
+                          'application/x-www-form-urlencoded' } : {} });
+    };
+    const coded = function (code) {
+      return audit.list().filter(function (row) {
+        return row.errorCode === code;
+      }).length;
+    };
+    config.setOverride('federation.enabled', 'true');
+    config.setOverride('federation.outboundAllowHttp', 'true');
+    config.setOverride('federation.outboundSkipTlsVerification', 'true');
+    const stamp = String(Date.now()).slice(-6);
+    const make = function (id, fields) {
+      const made = federation.create({ fedId: id, fedRole: 'service-provider',
+                                       fedProtocol: 'oidc', fedPeer: opBase });
+      const all = Object.assign({ fedPeer: opBase, fedClientId: 'frp-client',
+        fedClientSecret: 'frp-secret-' + stamp, fedAutocreateUsers: 'TRUE',
+        fedSsoUrl: opBase + 'authorize', fedTokenUrl: opBase + 'token',
+        fedJwksUri: opBase + 'jwks', fedUserinfoUrl: opBase + 'userinfo',
+        fedScope: 'openid profile email' }, fields || {});
+      const results = [made];
+      Object.keys(all).forEach(function (field) {
+        if (all[field] === null) {
+          return;
+        }
+        results.push(federation.update(id, { field: field,
+                                             value: String(all[field]) }));
+      });
+      results.push(federation.update(id, { field: 'fedEnabled',
+                                           value: 'TRUE' }));
+      return results.every(function (one) {
+        return one && one.ok;
+      }) ? id : JSON.stringify(results.filter(function (one) {
+        return !one || !one.ok;
+      }));
+    };
+    // The authorization request the login endpoint sends the browser with.
+    const begin = async function (id, jar) {
+      const r = await call('GET', '/federation/login/' + id, null, jar);
+      const at = new URL(String(r.headers.location || 'http://x/'));
+      return { status: r.status, location: String(r.headers.location || ''),
+               params: at.searchParams };
+    };
+    const claims = function (started, extra) {
+      const now = Math.floor(Date.now() / 1000);
+      return Object.assign({ iss: opBase, sub: 'frp-person',
+        aud: 'frp-client', iat: now, exp: now + 300,
+        nonce: started.params.get('nonce') }, extra || {});
+    };
+    const without = function (object, name) {
+      const out = Object.assign({}, object);
+      delete out[name];
+      return out;
+    };
+
+    // --- 1. the code flow ----------------------------------------------------
+    const CODE = make('frp-code-' + stamp);
+    note(CODE === 'frp-code-' + stamp, '0. a code-flow relationship', CODE);
+    const codeCase = async function (what, back, userinfo, code) {
+      const jar = {};
+      const started = await begin(CODE, jar);
+      op.calls = [];
+      op.scenario = { backClaims: function () {
+        return back(started);
+      }, userinfo: userinfo };
+      const before = code ? coded(code) : 0;
+      const r = await call('GET', '/federation/acs/' + CODE + '?state=' +
+        encodeURIComponent(started.params.get('state')) + '&code=c-1', null,
+        jar);
+      const asked = op.calls.map(function (c) {
+        return c.path;
+      });
+      return { r: r, asked: asked, coded: code ? coded(code) - before : 0,
+               started: started };
+    };
+    let got = await codeCase('good', function (s) {
+      return claims(s);
+    });
+    note(got.r.status < 400 && got.asked.indexOf('/op/userinfo') >= 0 &&
+         got.started.params.get('code_challenge'),
+         '1a. a good ID Token signs in, and UserInfo is asked',
+         got.r.status + ' ' + JSON.stringify(got.asked) + ' ' +
+         got.r.text.slice(0, 300));
+    const refusals = [
+      ['1b. no sub', function (s) {
+        return without(claims(s), 'sub');
+      }, 'STS-FED-0195'],
+      ['1c. no iat', function (s) {
+        return without(claims(s), 'iat');
+      }, 'STS-FED-0196'],
+      ['1d. an azp that is not this client', function (s) {
+        return claims(s, { azp: 'somebody-else' });
+      }, 'STS-FED-0197'],
+      ['1e. two audiences and no azp', function (s) {
+        return claims(s, { aud: ['frp-client', 'another'] });
+      }, 'STS-FED-0197'],
+      ['1f. no nonce', function (s) {
+        return without(claims(s), 'nonce');
+      }, 'STS-FED-0198'],
+      ['1g. another nonce', function (s) {
+        return claims(s, { nonce: 'n-not-this-one' });
+      }, 'STS-FED-0039']
+    ];
+    for (const one of refusals) {
+      got = await codeCase(one[0], one[1], null, one[2]);
+      note(got.r.status === 401 && got.coded === 1 &&
+           got.asked.indexOf('/op/userinfo') < 0,
+           one[0] + ': refused (' + one[2] + ') and UserInfo never asked',
+           got.r.status + ' ' + got.coded + ' ' + JSON.stringify(got.asked) +
+           ' ' + got.r.text.slice(0, 200));
+    }
+    got = await codeCase('userinfo', function (s) {
+      return claims(s);
+    }, { sub: 'somebody-else' }, 'STS-FED-0202');
+    note(got.r.status === 401 && got.coded === 1,
+         '1h. UserInfo answering for another sub is refused (STS-FED-0202)',
+         got.r.status + ' ' + got.coded);
+
+    federation.update(CODE, { field: 'fedIdTokenSignedResponseAlg',
+                              value: 'ES256' });
+    got = await codeCase('registered alg', function (s) {
+      return claims(s);
+    }, null, 'STS-FED-0208');
+    note(got.r.status === 401 && got.coded === 1 &&
+         got.asked.indexOf('/op/userinfo') < 0,
+         '1i. an ID Token under another algorithm than ' +
+         'fedIdTokenSignedResponseAlg is refused (STS-FED-0208)',
+         got.r.status + ' ' + got.coded);
+    federation.update(CODE, { field: 'fedIdTokenSignedResponseAlg',
+                              value: 'RS256' });
+    got = await codeCase('registered alg', function (s) {
+      return claims(s);
+    });
+    note(got.r.status < 400, '1j. and accepted under the registered one',
+         got.r.status);
+    const actions = require(ROOT_DIR + '/admin-core/admin_actions');
+    op.scenario = {};
+    const checked = await actions.federationAction(
+      { action: 'check-partner', id: CODE });
+    note(checked.ok && checked.keys === 1 && checked.readable === 1 &&
+         checked.discovered === false &&
+         !('errorCode' in checked) &&
+         checked.endpoints.jwks_uri === opBase + 'jwks',
+         '1k. check-partner reads the partner\'s key set and reports it',
+         JSON.stringify(checked));
+
+    // --- 2. hybrid -----------------------------------------------------------
+    const HYBRID = make('frp-hyb-' + stamp,
+                        { fedResponseType: 'code id_token' });
+    const hybridCase = async function (front, back, code) {
+      const jar = {};
+      const started = await begin(HYBRID, jar);
+      op.calls = [];
+      op.scenario = { backClaims: function () {
+        return back(started);
+      } };
+      const before = code ? coded(code) : 0;
+      const r = await call('POST', '/federation/acs/' + HYBRID, {
+        state: started.params.get('state'), code: 'c-hybrid',
+        id_token: sign(front(started)) }, jar);
+      return { r: r, started: started,
+               coded: code ? coded(code) - before : 0,
+               asked: op.calls.map(function (c) {
+                 return c.path;
+               }) };
+    };
+    got = await hybridCase(function (s) {
+      return claims(s, { c_hash: halfHash('c-hybrid') });
+    }, function (s) {
+      return claims(s);
+    });
+    note(got.r.status < 400 && got.asked.indexOf('/op/token') >= 0 &&
+         got.started.params.get('response_type') === 'code id_token' &&
+         got.started.params.get('response_mode') === 'form_post' &&
+         got.started.params.get('code_challenge_method') === 'S256',
+         '2a. code id_token: PKCE and form_post asked, a good c_hash ' +
+         'signs in after the code is redeemed',
+         got.r.status + ' ' + got.started.location + ' ' +
+         JSON.stringify(got.asked) + ' ' + got.r.text.slice(0, 200));
+    got = await hybridCase(function (s) {
+      return claims(s);
+    }, function (s) {
+      return claims(s);
+    }, 'STS-FED-0199');
+    note(got.r.status === 401 && got.coded === 1 &&
+         got.asked.indexOf('/op/token') < 0,
+         '2b. no c_hash: refused (STS-FED-0199) and the code never redeemed',
+         got.r.status + ' ' + got.coded + ' ' + JSON.stringify(got.asked));
+    got = await hybridCase(function (s) {
+      return claims(s, { c_hash: halfHash('another code') });
+    }, function (s) {
+      return claims(s);
+    }, 'STS-FED-0199');
+    note(got.r.status === 401 && got.coded === 1,
+         '2c. a c_hash of another code: refused (STS-FED-0199)',
+         got.r.status + ' ' + got.coded);
+    got = await hybridCase(function (s) {
+      return claims(s, { c_hash: halfHash('c-hybrid') });
+    }, function (s) {
+      return claims(s, { sub: 'somebody-else' });
+    }, 'STS-FED-0201');
+    note(got.r.status === 401 && got.coded === 1,
+         '2d. the token endpoint\'s ID Token naming another sub: refused ' +
+         '(STS-FED-0201)', got.r.status + ' ' + got.coded);
+
+    // --- 3. implicit, in the fragment mode -----------------------------------
+    const IMPLICIT = make('frp-imp-' + stamp,
+                          { fedResponseType: 'id_token token',
+                            fedResponseMode: 'fragment' });
+    let r = await call('GET', '/federation/acs/' + IMPLICIT);
+    const csp = String(r.headers['content-security-policy'] || '');
+    note(r.status === 200 &&
+         r.text.indexOf('<script src="/federation/fragment.js"></script>') >
+           0 && r.text.indexOf('id="fed-fragment"') > 0 &&
+         /script-src 'self'/.test(csp) && /frame-ancestors/.test(csp) &&
+         /no-store/.test(String(r.headers['cache-control'])),
+         '3a. the bare GET is answered with the fragment page and its one ' +
+         'script', r.status + ' ' + csp + ' ' + r.text.slice(0, 300));
+    r = await call('GET', '/federation/fragment.js');
+    note(r.status === 200 &&
+         /javascript/.test(String(r.headers['content-type'])) &&
+         r.text.indexOf('fed-fragment') > 0 &&
+         r.text.indexOf('replaceState') > 0,
+         '3b. the script is served', r.status);
+    r = await call('GET', '/federation/acs/' + CODE);
+    note(r.status !== 200 || r.text.indexOf('fragment.js') < 0,
+         '3c. a relationship that did not choose the fragment mode never ' +
+         'answers with the page', r.status);
+    const implicitCase = async function (front, access, code) {
+      const jar = {};
+      const started = await begin(IMPLICIT, jar);
+      op.calls = [];
+      op.bearer = '';
+      op.scenario = {};
+      const before = code ? coded(code) : 0;
+      const resp = await call('POST', '/federation/acs/' + IMPLICIT, {
+        state: started.params.get('state'), access_token: access,
+        token_type: 'Bearer', id_token: sign(front(started)) }, jar);
+      return { r: resp, started: started,
+               coded: code ? coded(code) - before : 0,
+               asked: op.calls.map(function (c) {
+                 return c.path;
+               }) };
+    };
+    got = await implicitCase(function (s) {
+      return claims(s, { at_hash: halfHash('another token') });
+    }, 'at-front', 'STS-FED-0200');
+    note(got.r.status === 401 && got.coded === 1 &&
+         got.started.params.get('response_mode') === null &&
+         got.asked.indexOf('/op/userinfo') < 0,
+         '3d. id_token token by fragment: no response_mode asked, and a ' +
+         'wrong at_hash refused (STS-FED-0200) before UserInfo',
+         got.r.status + ' ' + got.coded + ' ' + got.started.location);
+    got = await implicitCase(function (s) {
+      return without(claims(s), 'nonce');
+    }, 'at-front', 'STS-FED-0198');
+    note(got.r.status === 401 && got.coded === 1,
+         '3e. a front-channel ID Token with no nonce: refused (STS-FED-0198)',
+         got.r.status + ' ' + got.coded);
+    got = await implicitCase(function (s) {
+      return claims(s, { at_hash: halfHash('at-front') });
+    }, 'at-front');
+    note(got.r.status < 400 && op.bearer === 'Bearer at-front',
+         '3f. a right at_hash signs in, asking UserInfo with the front ' +
+         'access token', got.r.status + ' ' + op.bearer + ' ' +
+         got.r.text.slice(0, 200));
+    const QUERY = make('frp-query-' + stamp,
+                       { fedResponseType: 'id_token token',
+                         fedResponseMode: 'query' });
+    const ready = federation.readinessOf(federation.get(QUERY));
+    note(!ready.ready && ready.missing.some(function (one) {
+      return /fedResponseMode/.test(one);
+    }), '3g. id_token token with fedResponseMode=query is not ready',
+         JSON.stringify(ready));
+
+    // --- 4. discovery --------------------------------------------------------
+    const DISCO = make('frp-disco-' + stamp,
+                       { fedDiscovery: 'TRUE', fedSsoUrl: null,
+                         fedTokenUrl: null, fedJwksUri: null,
+                         fedUserinfoUrl: null });
+    note(federation.readinessOf(federation.get(DISCO)).ready,
+         '4a. a discovering relationship is ready with no endpoint written',
+         JSON.stringify(federation.readinessOf(federation.get(DISCO))));
+    op.calls = [];
+    op.scenario = { issuer: opBase, base: opBase };
+    let started = await begin(DISCO, {});
+    note(started.status === 302 &&
+         started.location.indexOf(opBase + 'disco-authorize?') === 0 &&
+         op.calls.some(function (c) {
+           return c.path === '/op/.well-known/openid-configuration';
+         }),
+         '4b. the sign-in reads the discovery document and goes to the ' +
+         'authorization endpoint it names', started.status + ' ' +
+         started.location);
+    op.scenario = { issuer: opBase + 'someone-else/', base: opBase };
+    let before = coded('STS-FED-0204');
+    started = await begin(DISCO, {});
+    note(started.status === 502 && coded('STS-FED-0204') === before + 1,
+         '4c. a document naming another issuer is refused (STS-FED-0204)',
+         started.status);
+
+    // --- 6. refresh tokens ---------------------------------------------------
+    const fedSp = require(ROOT_DIR + '/federation/federation_sp');
+    const REFRESH = make('frp-ref-' + stamp, { fedRefreshTokens: 'TRUE',
+                                               fedRefreshEverySeconds: '1' });
+    const fresh = function () {
+      const now = Math.floor(Date.now() / 1000);
+      return { iss: opBase, sub: 'frp-person', aud: 'frp-client', iat: now,
+               exp: now + 300 };
+    };
+    const refreshCase = async function (rt, how) {
+      const jar = {};
+      const started = await begin(REFRESH, jar);
+      op.byToken[rt] = how;
+      op.scenario = { rt: rt, backClaims: function () {
+        return claims(started);
+      } };
+      await call('GET', '/federation/acs/' + REFRESH + '?state=' +
+        encodeURIComponent(started.params.get('state')) + '&code=c-r', null,
+        jar);
+      op.calls = [];
+      return fedSp.refreshDue(Date.now() + 5000);
+    };
+    const bearers = function () {
+      return op.calls.filter(function (c) {
+        return c.path === '/op/userinfo';
+      }).map(function (c) {
+        return c.auth;
+      });
+    };
+    let counts = await refreshCase('rt-good', { claims: fresh });
+    note(counts.refreshed === 1 && counts.ended === 0 &&
+         bearers().indexOf('Bearer at-rt-good') >= 0,
+         '6a. a held refresh token is refreshed when due, and UserInfo asked ' +
+         'with the new access token', JSON.stringify(counts) + ' ' +
+         JSON.stringify(bearers()));
+    before = coded('STS-FED-0211');
+    counts = await refreshCase('rt-iss', { claims: function () {
+      return Object.assign(fresh(), { iss: 'https://another.example/' });
+    } });
+    note(counts.ended === 1 && coded('STS-FED-0211') === before + 1 &&
+         bearers().indexOf('Bearer at-rt-iss') < 0,
+         '6b. a refreshed ID Token naming another iss ends the session ' +
+         '(STS-FED-0211), and UserInfo is not asked for it',
+         JSON.stringify(counts) + ' ' + JSON.stringify(bearers()));
+    before = coded('STS-FED-0210');
+    counts = await refreshCase('rt-refused', { refuse: true });
+    note(counts.ended === 1 && coded('STS-FED-0210') === before + 1,
+         '6c. a refresh the partner refuses ends the session (STS-FED-0210)',
+         JSON.stringify(counts));
+    counts = await fedSp.refreshDue(Date.now() + 5000);
+    note(counts.refreshed === 1 && counts.ended === 0,
+         '6d. an ended session\'s token is gone: only the live one is ' +
+         'refreshed again', JSON.stringify(counts));
+
+    // --- 7. self-registration and Request Objects -------------------------
+    const stateOf = function (text) {
+      const m = /<html[^>]* data-sts-state="([^"]*)"/.exec(String(text || ''));
+      return m ? JSON.parse(m[1].replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')) : null;
+    };
+    const DYN = make('frp-dyn-' + stamp, { fedDiscovery: 'TRUE',
+      fedRegister: 'TRUE', fedRequestObject: 'request_uri',
+      fedRequestObjectSigningAlg: 'RS256', fedClientId: null,
+      fedClientSecret: null, fedSsoUrl: null, fedTokenUrl: null,
+      fedJwksUri: null, fedUserinfoUrl: null });
+    note(federation.readinessOf(federation.get(DYN)).ready,
+         '7a. a registering relationship is ready with no client written',
+         JSON.stringify(federation.readinessOf(federation.get(DYN))));
+    op.scenario = { issuer: opBase, base: opBase };
+    started = await begin(DYN, {});
+    const dyn = federation.get(DYN);
+    const md = op.registered || {};
+    const registeredKey = ((md.jwks || {}).keys || [])[0] || {};
+    note(started.status === 302 && dyn.fedClientId === 'dyn-1' &&
+         dyn.fedRegisteredIssuer === opBase &&
+         started.params.get('client_id') === 'dyn-1' &&
+         md.request_object_signing_alg === 'RS256' &&
+         registeredKey.kty === 'RSA' && !registeredKey.d &&
+         (md.redirect_uris || [])[0] ===
+           'http://127.0.0.1:' + port + '/federation/acs/' + DYN,
+         '7b. the sign-in registers the relationship at the partner, keeps ' +
+         'the client it is given, and registers one public RSA key',
+         started.status + ' ' + dyn.fedClientId + ' ' +
+         JSON.stringify(md).slice(0, 400));
+    const requestUri = String(started.params.get('request_uri') || '');
+    r = await call('GET', requestUri);
+    const parts = r.text.split('.');
+    const claimsOf = parts.length === 3
+      ? JSON.parse(Buffer.from(parts[1], 'base64url').toString()) : {};
+    const verifies = parts.length === 3 && nodeCrypto.verify('sha256',
+      Buffer.from(parts[0] + '.' + parts[1]),
+      nodeCrypto.createPublicKey({ key: registeredKey, format: 'jwk' }),
+      Buffer.from(parts[2], 'base64url'));
+    note(r.status === 200 &&
+         /oauth-authz-req\+jwt/.test(String(r.headers['content-type'])) &&
+         verifies && claimsOf.iss === 'dyn-1' && claimsOf.aud === opBase &&
+         claimsOf.client_id === 'dyn-1' &&
+         claimsOf.state === started.params.get('state') &&
+         claimsOf.nonce === started.params.get('nonce'),
+         '7c. the Request Object at request_uri carries the request, ' +
+         'verifies with the registered key, iss the client and aud the ' +
+         'partner', r.status + ' ' + JSON.stringify(claimsOf).slice(0, 300));
+    before = coded('STS-FED-0218');
+    r = await call('GET', requestUri);
+    note(r.status === 404 && coded('STS-FED-0218') === before + 1,
+         '7d. a Request Object is answered once (STS-FED-0218)', r.status);
+    started = await begin(DYN, {});
+    note(op.registrations === 1,
+         '7e. a relationship already registered with this issuer does not ' +
+         'register again', String(op.registrations));
+    federation.update(DYN, { field: 'fedRequestObjectSigningAlg',
+                             value: 'none' });
+    const rereg = await actions.federationAction(
+      { action: 'register-partner', id: DYN,
+        base: 'http://127.0.0.1:' + port });
+    started = await begin(DYN, {});
+    r = await call('GET', String(started.params.get('request_uri') || ''));
+    note(rereg.ok && op.registrations === 2 &&
+         op.registered.request_object_signing_alg === 'none' &&
+         !op.registered.jwks && /\.$/.test(r.text) &&
+         JSON.parse(Buffer.from(r.text.split('.')[0], 'base64url')
+           .toString()).alg === 'none',
+         '7f. register-partner registers again; an unsigned Request Object ' +
+         'registers no key and is sent alg none',
+         JSON.stringify(rereg) + ' ' + r.text.slice(0, 80));
+
+    // --- 7g. the registered client's Basic credentials --------------------
+    // RFC 6749 section 2.3.1: id and secret each form-urlencoded, then
+    // joined and base64-encoded. Sent raw, the suite's URLDecoder refused
+    // a secret holding `%` ("Incomplete trailing escape") and its
+    // ValidateClientIdAndSecret failed the rest (2026-11-03).
+    const regd = federation.get(DYN);
+    const issued = federation.clientSecretOf(regd);
+    const callsBefore = op.calls.length;
+    await require(ROOT_DIR + '/federation/federation_http').fetchJson(
+      Object.assign({}, regd, { fedTokenUrl: opBase + 'basic-probe' }),
+      'fedTokenUrl', { method: 'POST', form: { grant_type: 'probe' },
+                       basic: { user: regd.fedClientId, pass: issued } });
+    const probe = op.calls.slice(callsBefore).filter(function (c) {
+      return /basic-probe$/.test(c.path);
+    })[0] || { auth: '' };
+    const joined = Buffer.from(probe.auth.replace(/^Basic /, ''), 'base64')
+      .toString('utf8');
+    const colon = joined.indexOf(':');
+    const formDecoded = function (v) {
+      return decodeURIComponent(String(v).replace(/\+/g, ' '));
+    };
+    let decodedId = '';
+    let decodedSecret = '';
+    try {
+      decodedId = formDecoded(joined.slice(0, colon));
+      decodedSecret = formDecoded(joined.slice(colon + 1));
+    } catch (e) {
+      decodedSecret = 'undecodable: ' + ((e && e.message) || e);
+    }
+    note(/[%+:<\u00e9 ]/.test(issued) && colon > 0 &&
+         decodedId === regd.fedClientId && decodedSecret === issued &&
+         joined.slice(colon + 1).indexOf(':') < 0,
+         '7g. a registered client\'s Basic header form-urlencodes the id and ' +
+         'the secret (RFC 6749 section 2.3.1), so a secret holding % + : < ' +
+         'and a space decodes to itself',
+         JSON.stringify({ issued: issued, joined: joined,
+                          decoded: [decodedId, decodedSecret] }));
+
+    // --- 8. WebFinger from a typed identifier --------------------------------
+    before = coded('STS-FED-0215');
+    r = await call('GET', '/federation/webfinger/' + DYN + '?resource=' +
+                   encodeURIComponent('acct:a@' + tlsHost));
+    note(r.status === 403 && coded('STS-FED-0215') === before + 1,
+         '8a. off by default: refused (STS-FED-0215)', r.status);
+    federation.update(DYN, { field: 'fedWebFinger', value: 'TRUE' });
+    r = await call('GET', '/federation/webfinger/' + DYN);
+    let view = (stateOf(r.text) || {}).view || {};
+    note(r.status === 200 && view.kind === 'webfinger' &&
+         view.step === 'ask',
+         '8b. the page asks for an identifier', r.status + ' ' +
+         JSON.stringify(view));
+    op.scenario = { issuer: opBase + 'tenant7', base: opBase,
+                    webfingerIssuer: opBase + 'tenant7' };
+    op.calls = [];
+    r = await call('GET', '/federation/webfinger/' + DYN + '?resource=' +
+                   encodeURIComponent('a@' + tlsHost));
+    view = (stateOf(r.text) || {}).view || {};
+    note(r.status === 200 && view.step === 'found' &&
+         view.issuer === opBase + 'tenant7' &&
+         op.webfinger === 'acct:a@' + tlsHost &&
+         op.calls.some(function (c) {
+           return c.path === '/op/tenant7/.well-known/openid-configuration';
+         }) && !op.calls.some(function (c) {
+           return /authorize|register/.test(c.path);
+         }),
+         '8c. an address is looked up as acct:, the issuer found and its ' +
+         'discovery document read, and nothing goes on by itself',
+         r.status + ' ' + JSON.stringify(view));
+    const registeredBefore = op.registrations;
+    r = await call('GET', String(view.continueHref || ''));
+    note(r.status === 302 &&
+         String(r.headers.location).indexOf(opBase + 'disco-authorize') ===
+           0 && op.registrations === registeredBefore + 1 &&
+         federation.get(DYN).fedRegisteredIssuer === opBase + 'tenant7',
+         '8d. continuing signs in at that issuer, registering there first',
+         r.status + ' ' + r.headers.location);
+    op.scenario.webfingerIssuer = 'https://elsewhere.example/';
+    before = coded('STS-FED-0217');
+    r = await call('GET', '/federation/webfinger/' + DYN + '?resource=' +
+                   encodeURIComponent('https://' + tlsHost + '/x'));
+    note(r.status === 403 && coded('STS-FED-0217') === before + 1,
+         '8e. an issuer outside fedPeer is refused (STS-FED-0217)',
+         r.status);
+
+    // --- 9. the WebFinger bound is parsed, never a string prefix ----------
+    const within = require(ROOT_DIR + '/federation/federation_sp')
+      .issuerWithin;
+    const bounds = [
+      ['https://op.example', 'https://op.example', true],
+      ['https://op.example', 'https://op.example/', true],
+      ['https://op.example', 'https://OP.example/tenant/a', true],
+      ['https://op.example', 'https://op.example:443/x', true],
+      ['https://op.example/tenant', 'https://op.example/tenant', true],
+      ['https://op.example/tenant/', 'https://op.example/tenant/7', true],
+      ['https://op.example', 'https://op.example.evil.com', false],
+      ['https://op.example', 'https://op.example:8443', false],
+      ['https://op.example', 'https://op.example@evil.com', false],
+      ['https://op.example', 'https://u:p@op.example/x', false],
+      ['https://op.example/tenant', 'https://op.example/tenant2', false],
+      ['https://op.example/tenant', 'https://op.example/tenant/../x', false],
+      ['https://op.example', 'http://op.example', false],
+      ['https://op.example', 'https://op.example/x?a=1', false],
+      ['https://op.example', 'https://op.example/x#f', false],
+      ['https://op.example', 'not a url', false]];
+    bounds.forEach(function (one) {
+      note(within(one[1], one[0]) === one[2],
+           '9. ' + one[1] + ' is ' + (one[2] ? '' : 'NOT ') + 'within ' +
+           one[0], String(within(one[1], one[0])));
+    });
+    // And through the endpoint: fedPeer `http://127.0.0.1` and an issuer on
+    // another port of that host, which a string prefix admits — a real
+    // partner answering there, so only the bound can refuse it.
+    const BOUND = make('frp-bound-' + stamp, { fedDiscovery: 'TRUE',
+      fedWebFinger: 'TRUE', fedPeer: 'http://127.0.0.1', fedSsoUrl: null,
+      fedTokenUrl: null, fedJwksUri: null, fedUserinfoUrl: null });
+    op.scenario = { webfingerIssuer: opBase, issuer: opBase, base: opBase };
+    before = coded('STS-FED-0217');
+    r = await call('GET', '/federation/webfinger/' + BOUND + '?resource=' +
+                   encodeURIComponent('a@' + tlsHost));
+    note(BOUND === 'frp-bound-' + stamp &&
+         federation.get(BOUND).fedPeer === 'http://127.0.0.1' &&
+         r.status === 403 && coded('STS-FED-0217') === before + 1,
+         '9b. an issuer on another port of fedPeer\'s host is refused ' +
+         '(STS-FED-0217)', r.status + ' ' + BOUND + ' ' +
+         federation.get(BOUND).fedPeer);
+
+    // --- 5. the login initiation endpoint ------------------------------------
+    before = coded('STS-FED-0205');
+    r = await call('GET', '/federation/initiate-login/' + CODE + '?iss=' +
+                   encodeURIComponent(opBase));
+    note(r.status === 403 && coded('STS-FED-0205') === before + 1,
+         '5a. off by default: refused (STS-FED-0205)', r.status);
+    federation.update(CODE, { field: 'fedInitiateLogin', value: 'TRUE' });
+    before = coded('STS-FED-0206');
+    r = await call('GET', '/federation/initiate-login/' + CODE + '?iss=' +
+                   encodeURIComponent('https://another.example/'));
+    note(r.status === 400 && coded('STS-FED-0206') === before + 1,
+         '5b. another issuer: refused (STS-FED-0206)', r.status);
+    r = await call('POST', '/federation/initiate-login/' + CODE, {
+      iss: opBase, login_hint: 'frp@example.org',
+      target_link_uri: 'https://elsewhere.example/steal' });
+    const sent = new URL(String(r.headers.location || 'http://x/'));
+    note(r.status === 302 &&
+         String(r.headers.location).indexOf(opBase + 'authorize?') === 0 &&
+         sent.searchParams.get('login_hint') === 'frp@example.org',
+         '5c. the partner\'s own issuer starts the sign-in, its login_hint ' +
+         'passed on and a foreign target dropped', r.status + ' ' +
+         r.headers.location);
+
+    fs.writeFileSync(OUT, JSON.stringify(findings));
+    server.close();
+    partner.close();
+    tlsPartner.close();
+    process.exit(0);
+  })().catch(function (e) {
+    findings.push({ ok: false, what: 'the child process threw',
+                    detail: String((e && e.stack) || e) });
+    fs.writeFileSync(OUT, JSON.stringify(findings));
+    process.exit(1);
+  });
+}
+
+async function run(t) {
+  log.debug("Entering run().");
+  const out = path.join(os.tmpdir(), 'frp-' + process.pid + '-' +
+                        Date.now() + '.json');
+  const clean = {};
+  Object.keys(process.env).forEach(function (key) {
+    if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$|ADMIN_API_)/
+        .test(key)) {
+      clean[key] = process.env[key];
+    }
+  });
+  const result = childProcess.spawnSync(process.execPath,
+    ['-e', '(' + childMain.toString() + ')()'], {
+      env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal',
+                                  FRP_ROOT: ROOT, FRP_OUT: out }),
+      encoding: 'utf8', timeout: 240000, cwd: ROOT
+    });
+  let findings = null;
+  try {
+    findings = JSON.parse(fs.readFileSync(out, 'utf8'));
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+    findings = null;
+  }
+  try {
+    fs.unlinkSync(out);
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+  }
+  if (!t.check(Array.isArray(findings),
+               'the child process reported its findings',
+               'exit ' + result.status + ' ' +
+               String(result.stderr || '').slice(-800))) {
+    log.debug("Leaving run().");
+    return;
+  }
+  findings.forEach(function (one) {
+    t.check(one.ok, one.what, one.detail);
+  });
+  log.debug("Leaving run().");
+}
+
+module.exports = {
+  name: 'federation_oidc_rp',
+  describe: 'an inbound OpenID Connect relationship holds the ID Token, ' +
+            'UserInfo, hybrid, fragment, discovery and login-initiation ' +
+            'rules the conformance suite\'s relying-party plans test (#930)',
+  run: run
+};

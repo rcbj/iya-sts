@@ -218,14 +218,20 @@ class GeolocationPage {
     // The map is laid out where the geography is (#446): it arrives in
     // the view as `drawing`.
     const drawn = v.drawing;
+    // A SWATCH IS AN SVG, its colour a `fill` attribute (2026-11-10): the
+    // console's policy allows no `style=""`, and the colours are the
+    // drawing's, so no class could name them in advance. `.geo-swatch` in
+    // the console's stylesheet lays it out.
+    const swatch = function (colour: string): string {
+      return '<svg class="geo-swatch" width="14" height="14" ' +
+        'viewBox="0 0 14 14" aria-hidden="true" focusable="false">' +
+        '<rect width="14" height="14" rx="3" fill="' + kit.esc(colour) +
+        '"/></svg>';
+    };
     const legend = drawn.legend.map(function (s: Json): string {
-      return '<span class="geo-swatch" style="display:inline-block;' +
-        'width:14px;height:14px;border-radius:3px;vertical-align:middle;' +
-        'margin:0 4px 0 12px;background:' + s.colour + '"></span>' +
+      return swatch(String(s.colour)) +
         (s.from === s.to ? s.from : s.from + '–' + s.to);
-    }).join('') + '<span style="display:inline-block;width:14px;height:14px;' +
-      'border-radius:3px;vertical-align:middle;margin:0 4px 0 12px;' +
-      'background:' + v.noDataColour + '"></span>' +
+    }).join('') + swatch(String(v.noDataColour)) +
       t.html('consoleGeolocation.legend.none');
     const where = v.country
       ? t.html('consoleGeolocation.where', { place: v.country.name })

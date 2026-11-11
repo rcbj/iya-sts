@@ -608,6 +608,19 @@ function kindOfTyp(typ) {
 // that says nothing (the credential issuer, WS-Trust's JWT) leaves both fields
 // empty, which the users page reports as "not through a browser session" rather
 // than as unknown.
+// A claim as text for a register row, or ''. These rows hold what an UNVERIFIED
+// token said in development mode (token exchange, the Credential Endpoint), so
+// a `sub` of any JSON type reached them and made the tokens page or a person's
+// page unanswerable (#1353). Called for every token this service issues, so no
+// Entering/Leaving pair, which would drown the log on a path this hot.
+function claimText(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return typeof value === 'number' || typeof value === 'boolean'
+    ? String(value) : '';
+}
+
 function recordJwt(payload, signed, context) {
   log.debug("Entering recordJwt(). typ=" + (payload.typ || '(none)'));
   const issuedUnder = context || {};
@@ -631,7 +644,7 @@ function recordJwt(payload, signed, context) {
     kind: kind,
     typ: payload.typ || '',
     revocable: !!payload.jti && REVOCABLE_KINDS.indexOf(kind) >= 0,
-    sub: payload.sub || '',
+    sub: claimText(payload.sub),
     // WHO SAID IT, which is this service under whichever base URL the request
     // arrived on — `oauth2.issuer` is empty by default precisely so that one
     // process answers correctly as localhost, as `sts` on a compose network and
@@ -796,70 +809,113 @@ function recordJwt(payload, signed, context) {
 const TOKEN_PURGE_JOB = 'oauth2.expired-token-purge';
 let tokenPurgeRegistered = false;
 
+// **IN SLICES, AND LINEAR (#704).** The dead jtis were an array searched with
+// `indexOf()` for every dated revocation — quadratic in the revocations of a
+// realm — and both walks ran in one turn of the event loop. They are a Set
+// now, and each walk gives the loop a turn every PURGE_SLICE entries; the
+// deletes happen after the walks, so a walk never sees the Map it is
+// emptying. Everything a slice decides is decided inside its realm, read
+// again in each slice (`realms.run()`), because a turn of the loop ends the
+// ambient realm.
+/** Entries of the token register walked between two turns of the loop. */
+const PURGE_SLICE = 500;
+
+// Walks a Map PURGE_SLICE entries at a time, each slice inside `realm`, a
+// turn of the event loop between slices.
+async function walkInSlices(realm, map, visit) {
+  log.debug("Entering walkInSlices().");
+  const it = map.entries();
+  let done = false;
+  while (!done) {
+    realms.run(realm, function () {
+      for (let i = 0; i < PURGE_SLICE; i++) {
+        const step = it.next();
+        if (step.done) {
+          done = true;
+          return;
+        }
+        visit(step.value[1], step.value[0]);
+      }
+    });
+    if (!done) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+  }
+  log.debug("Leaving walkInSlices().");
+}
+
 /**
  * Deletes, in every realm, token records past their expiry and retention, and
  * revoked jtis whose tokens have expired; the `oauth2.expired-token-purge`
  * scheduler job.
  *
  * @param nowMs - the time in milliseconds; now when omitted
- * @returns how many records and revocations were deleted
+ * @returns a promise of how many records and revocations were deleted
  */
-function purgeExpiredTokens(nowMs) {
+async function purgeExpiredTokens(nowMs) {
   log.debug("Entering purgeExpiredTokens().");
   const now = Number(nowMs) || Date.now();
   const out = { records: 0, revocations: 0 };
-  realms.list().forEach(function (r) {
-    realms.run(r, function () {
-      const skewMs = Number(config.value('oauth2.clockSkewS')) * 1000;
-      const keepMs = Number(config.value('oauth2.expiredTokenRetentionS')) *
-                     1000;
-      const map = tokens.realmMap(r.id);
-      const revoked = revokedJtis.realmMap(r.id);
-      // ON DEMAND (#820 part 2) the revocations are the store's: each row
-      // carries its expiry, and the minted expiry purge deletes it. A walk
-      // here would see only what is held, and a `has()` per record would be
-      // a read of the store for every revoked one.
-      const revokedHere = !revokedJtis.onDemandLive();
-      const deadJtis = [];
-      const gone = [];
-      // On demand (#820 part 3) the register's expired records are the
-      // store's expiry purge's: each carries its `expiresAt`. A walk here
-      // would see only what is held.
-      const recordsHere = !tokens.onDemandLive();
-      map.forEach(function (record, key) {
-        if (!recordsHere || !record || !record.exp) {
+  for (const r of realms.list()) {
+    const setting = realms.run(r, function () {
+      return {
+        skewMs: Number(config.value('oauth2.clockSkewS')) * 1000,
+        keepMs: Number(config.value('oauth2.expiredTokenRetentionS')) * 1000
+      };
+    });
+    const skewMs = setting.skewMs;
+    const keepMs = setting.keepMs;
+    const map = tokens.realmMap(r.id);
+    const revoked = revokedJtis.realmMap(r.id);
+    // ON DEMAND (#820 part 2) the revocations are the store's: each row
+    // carries its expiry, and the minted expiry purge deletes it. A walk
+    // here would see only what is held, and a `has()` per record would be
+    // a read of the store for every revoked one.
+    const revokedHere = !revokedJtis.onDemandLive();
+    const deadJtis = new Set();
+    const gone = [];
+    // On demand (#820 part 3) the register's expired records are the
+    // store's expiry purge's: each carries its `expiresAt`. A walk here
+    // would see only what is held.
+    const recordsHere = !tokens.onDemandLive();
+    if (recordsHere) {
+      await walkInSlices(r, map, function (record, key) {
+        if (!record || !record.exp) {
           return;
         }
         const deadAt = record.exp * 1000 + skewMs;
         if (revokedHere && deadAt <= now && record.jti &&
             revoked.has(record.jti)) {
-          deadJtis.push(record.jti);
+          deadJtis.add(record.jti);
         }
         if (deadAt + keepMs <= now) {
           gone.push(key);
         }
       });
-      // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
-      // register still holds their record.
-      if (revokedHere) {
-        revoked.forEach(function (value, jti) {
-          const exp = revokedExpOf(value);
-          if (exp && exp * 1000 + skewMs <= now &&
-              deadJtis.indexOf(jti) < 0) {
-            deadJtis.push(jti);
-          }
-        });
-      }
+    }
+    // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
+    // register still holds their record.
+    if (revokedHere) {
+      await walkInSlices(r, revoked, function (value, jti) {
+        const exp = revokedExpOf(value);
+        if (exp && exp * 1000 + skewMs <= now) {
+          deadJtis.add(jti);
+        }
+      });
+    }
+    realms.run(r, function () {
       deadJtis.forEach(function (jti) {
         revoked.delete(jti);
       });
       gone.forEach(function (key) {
         map.delete(key);
       });
-      out.records += gone.length;
-      out.revocations += deadJtis.length;
     });
-  });
+    out.records += gone.length;
+    out.revocations += deadJtis.size;
+  }
   log.debug("Leaving purgeExpiredTokens(). " + JSON.stringify(out));
   return out;
 }
@@ -1118,11 +1174,12 @@ function makeRoomForRevocation() {
 //
 // A SLOT AND NOT A REQUIRE, argued both ways round (rule 3e): the observer
 // delivers through `ssf/ssf.ts`, which requires this file at its load, so a
-// load-time require from here closes that cycle; and a LAZY one would put
-// `oauth-oidc/` and `ssf/` in the parent project's Kerberos COPY closure,
-// which reaches this file (`kerberos/CLAUDE.md`). The observer is told only
-// of a jti NEWLY revoked, is called for its side effect, and can never fail a
-// revocation: what it throws is logged and dropped.
+// load-time require from here closes that cycle; and a LAZY one would have
+// put `oauth-oidc/` and `ssf/` in the parent project's Kerberos COPY closure,
+// which reached this file (an obligation until #1280; the slot stands). The
+// observer is told only of a jti NEWLY revoked, is called for its side
+// effect, and can never fail a revocation: what it throws is logged and
+// dropped.
 //
 // `how` is the door's own statement of the act, passed through untouched:
 // `{ initiatingEntity, superseded, replay }` — see the observer's file.
@@ -1863,7 +1920,7 @@ function recordCredentialStatus(subject, status, detail) {
 function recordCredential(format, detail) {
   log.debug("Entering recordCredential(). format=" + format);
   const record = recordArtifact('Credential (' + format + ')', {
-    subject: detail.subject || '',
+    subject: claimText(detail.subject),
     // THE PERSON IT WAS ISSUED FOR, when that is not its subject (#38). An
     // ldp_vc names its HOLDER KEY as a did:jwk and says nothing about whose
     // wallet that is, so without this the credential was nobody's on
@@ -3765,7 +3822,7 @@ function recordAuthentication(detail) {
   // The subject, now that the entry exists: the caller's where it gave one, and
   // otherwise the directory's — '' for a client, for somebody the directory
   // declined to create, and in a process with no directory.
-  const subject = info.sub ||
+  const subject = claimText(info.sub) ||
     (record.isClient ? '' : subjectForName(identity.key));
   family.count++;
   family.methods[method] = (family.methods[method] || 0) + 1;
@@ -3782,9 +3839,9 @@ function recordAuthentication(detail) {
   record.events.push({
     at: now, protocol: protocol, method: method, presented: identity.form,
     realm: identity.realm || '', sub: subject, address: address,
-    client_id: info.client_id || '',
-    amr: (info.amr || []).join(', '), acr: info.acr || '',
-    sessionId: info.sessionId || '', note: info.note || ''
+    client_id: claimText(info.client_id),
+    amr: (info.amr || []).join(', '), acr: claimText(info.acr),
+    sessionId: claimText(info.sessionId), note: claimText(info.note)
   });
   if (record.events.length > MAX_EVENTS_PER_USER) {
     record.events.shift();
@@ -5141,9 +5198,9 @@ function effectiveClaimSet(id, context) {
   // set, `scope_claims.ts`'s four modes over the names, the application's
   // row winning wherever both hold one. Unset is `union`, which is what
   // this function did before the choice existed.
-  // REQUIRED HERE, LAZILY: this module is in the parent project's Kerberos
-  // COPY closure (`kerberos/CLAUDE.md`) and the KDC never reaches this line,
-  // so a load-time require would owe a COPY line for nothing.
+  // REQUIRED HERE, LAZILY: the KDC never reaches this line, so a process
+  // that loads this module only for Kerberos never loads it (which kept it
+  // out of the parent project's Kerberos COPY closure until #1280).
   const scopeClaims = require('./scope_claims');
   const mode = scopeClaims.realmModeOf(id, applicationForClaims(name)) ||
     'union';

@@ -16,16 +16,33 @@
 //   b. CONFIRMATION: no hint → the page, the session alive; "no" keeps it;
 //      a forged or stale confirm_for is asked again; the page's own form ends
 //      it. A cross-site POST (no cookie) is asked rather than answered with a
-//      cookie clear.
+//      cookie clear. The page names WHY it asks, one sentence per case
+//      (#1301): no id_token_hint (and, where the address will not be
+//      followed, that the person is not sent on to it), no cookie, a hint
+//      for another session, a logout_hint naming somebody else.
 //   c. THE HINT: a verified id_token_hint for THIS session signs out at once
 //      and returns to the registered address WITH state, by GET and by POST;
 //      a tampered hint, and a client_id it was not issued to, are refused
 //      and the session survives; a logout_hint naming somebody else asks.
 //   d. THE RETURN: a registered client is held to its own list exactly (an
-//      unregistered address is not followed and the page says why), a
+//      unregistered address is not followed, and the page says why in a
+//      warning box beside the "signed out" one (#1302) — a query added to
+//      the registered address too, in the page's language), a
 //      private-use address nobody registered is not followed, and
 //      development still follows an http(s) address for a client that
 //      registered none. No session at all: straight back, with state.
+//   e. THE AUTHORIZATION ENDPOINT'S OWN REFUSALS, read on the same server
+//      and client (2026-11-04): a redirect_uri this client did not register
+//      or none at all is a 400 that a browser reads as the error page and
+//      anything else as JSON, with the same values; a request with no
+//      redirect_uri says it has none (#1302), an empty or malformed one
+//      keeps its own sentence; a request for an ID Token with no nonce says
+//      it has no nonce.
+//   f. THE SECOND SIGN-IN'S NOTICE (#1302): prompt=login, or a session
+//      older than max_age, puts the reason in `/authn-api`'s view and one
+//      line on the screen; a first sign-in and prompt=login with no
+//      session draw none, prompt=select_account is the account picker and
+//      a max_age the session meets is answered at once, as they were.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -198,7 +215,93 @@ function childMain() {
            !/<script/i.test(r.text) && await alive(),
          'b1. no hint: a confirmation page with a real button and no script, ' +
          'and the session alive', r.status);
-    const asked = hiddenOf(r.text);
+    let asked = hiddenOf(r.text);
+    // WHY IT ASKS, one sentence per case (#1301): what the request lacked,
+    // and — where the address it named will not be followed — that the
+    // person is not sent on to it. Read as the page's closing sentence.
+    const whyOf = function (text) {
+      return ((/<\/form><p class="sub">([\s\S]*?)<\/p>/.exec(String(text)) ||
+               [])[1] || '');
+    };
+    const NO_HINT = 'This sign-out request carried no id_token_hint, so ' +
+      'this service cannot tell which application sent it';
+    const SECTION = ' (RP-Initiated Logout 1.0 section 2).';
+    const emptyQuoted = function (text) {
+      return /<code>\s*<\/code>|""|\(\s*\)/.test(String(text));
+    };
+    let why = whyOf(r.text);
+    note(why === NO_HINT + SECTION && !emptyQuoted(why),
+         'b1b. no hint, a client that registered the address: the page says ' +
+         'the request carried no id_token_hint, and promises nothing about ' +
+         'the return it will make', why);
+    // A RETURN THAT WILL NOT BE FOLLOWED IS THE AMBER BOX, FIRST, ON THE
+    // QUESTION TOO (rcbj, 2026-11-05): "not valid as sent", the address
+    // asked for and the section, above the question section 2 requires; the
+    // grey line is left out rather than repeat it. The OpenID Foundation's
+    // oidcc-rp-initiated-logout-no-id-token-hint reviewer is asked for a
+    // page saying the request is invalid as the id_token_hint is missing.
+    const enPages = JSON.parse(fs.readFileSync(path.join(ROOT, 'common',
+      'locales', 'oauthPages', 'en.json'), 'utf8'));
+    const boxOf = function (text) {
+      return (String(text).match(
+        /<div class="warn" role="alert" id="logout-return-refused">[\s\S]*?<\/div>/) ||
+        [''])[0];
+    };
+    const boxFor = function (key, uri) {
+      return '<div class="warn" role="alert" id="logout-return-refused">' +
+        enPages['signedOut.' + key].replace('{uri}', uri) + '</div>';
+    };
+    const leads = function (text) {
+      const body = String(text);
+      return boxOf(body) !== '' &&
+        body.indexOf(boxOf(body)) < body.indexOf('<form method="post"');
+    };
+    let w = await logout({ post_logout_redirect_uri:
+                             'https://rp.rl.example/any', state: 's' });
+    why = whyOf(w.text);
+    note(w.status === 200 && !w.headers.location &&
+           boxOf(w.text) === boxFor('noClient', 'https://rp.rl.example/any') &&
+           /not valid as sent: it carries neither an id_token_hint nor a client_id/
+             .test(w.text) &&
+           leads(w.text) && why === '' &&
+           /name="confirm_for"/.test(w.text) && await alive(),
+         'b1c. no hint and no client: the box first — not valid as sent, no ' +
+         'id_token_hint, the address not followed — then the question, and ' +
+         'no grey line repeating it', boxOf(w.text) || w.text.slice(0, 400));
+    const confirmed = await request(port, 'POST', '/oauth2/logout',
+      { form: Object.assign(hiddenOf(w.text), { confirm: 'yes' }) });
+    note(confirmed.status === 200 && !confirmed.headers.location &&
+           boxOf(confirmed.text) ===
+             boxFor('noClient', 'https://rp.rl.example/any') &&
+           /<h1>Sign-out request partly refused<\/h1>/.test(confirmed.text) &&
+           /<section class="diagnostics"/.test(confirmed.text) &&
+           /href="\/portal"/.test(confirmed.text) && !(await alive()),
+         'b1c-ii. and once confirmed: signed out, the page partly refused, ' +
+         'the same box, the diagnostics and the way back',
+         confirmed.status + ' ' + boxOf(confirmed.text));
+    idToken = await signIn('rl-alice');
+    w = await logout({ client_id: 'rl-rp',
+                       post_logout_redirect_uri: 'https://evil.example/x' });
+    why = whyOf(w.text);
+    note(boxOf(w.text) === boxFor('notRegistered', 'https://evil.example/x') &&
+           leads(w.text) && why === '' && w.text.indexOf(BACK) < 0,
+         'b1d. no hint and an address the named client did not register: ' +
+         'the same box, its own reason, the address sent and never the ' +
+         'registered one', boxOf(w.text) || w.text.slice(0, 400));
+    // b1c-ii signed the first session out; the checks below confirm b1's
+    // question, so it is asked again of the session signed in for b1d.
+    asked = hiddenOf((await logout({ client_id: 'rl-rp',
+      post_logout_redirect_uri: BACK, state: 'st-b' })).text);
+    w = await logout({});
+    why = whyOf(w.text);
+    note(w.status === 200 && why === NO_HINT + SECTION &&
+           !emptyQuoted(why) && await alive(),
+         'b1e. no parameters at all: the page says the request carried no ' +
+         'id_token_hint, and names no address', why);
+    w = await logout({ state: 'only-state', client_id: 'rl-rp' });
+    why = whyOf(w.text);
+    note(why === NO_HINT + SECTION && !emptyQuoted(why),
+         'b1f. only state and client_id: the same sentence', why);
     let d = await request(port, 'POST', '/oauth2/logout',
       { form: Object.assign({}, asked, { confirm: 'no' }) });
     note(d.status === 200 && /still signed in/i.test(d.text) &&
@@ -215,6 +318,12 @@ function childMain() {
            !String(d.headers['set-cookie'] || '').includes('sts_session=;'),
          'b4. a cross-site POST (no cookie) is asked, and no cookie is cleared',
          JSON.stringify(d.headers['set-cookie'] || []));
+    note(whyOf(d.text) === 'This sign-out request arrived without the ' +
+           'sign-in cookie of this browser, as a form sent from another ' +
+           'site does, so this service cannot tell which session it is for' +
+           SECTION,
+         'b4b. and the page says the request came without this browser\'s ' +
+         'sign-in cookie', whyOf(d.text));
     jar = withCookie;
     d = await request(port, 'POST', '/oauth2/logout',
       { form: Object.assign({}, asked, { confirm: 'yes' }) });
@@ -239,6 +348,32 @@ function childMain() {
     note(r.status === 400 && await alive(),
          'c2. a hint that does not verify is refused, the session survives',
          r.status);
+    // c2b/c2c (2026-11-04): the OpenID Foundation's
+    // oidcc-rp-initiated-logout-modified-id-token-hint re-heads the hint as
+    // alg none, and the refusal page must say THAT, not quote an empty key.
+    const parts = idToken.split('.');
+    const reheaded = function (header) {
+      return Buffer.from(JSON.stringify(header)).toString('base64url') +
+        '.' + parts[1] + '.';
+    };
+    r = await logout({ id_token_hint: reheaded({ alg: 'none' }) });
+    note(r.status === 400 && await alive() &&
+         /is unsigned \(alg none\)/.test(r.text) && !/key ""/.test(r.text),
+         'c2b. an alg-none hint is refused as unsigned, naming no empty key',
+         r.status + ' ' + (String(r.text).match(/<p>[^<]*/) || [''])[0]
+           .slice(3, 220));
+    const head = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+    delete head.kid;
+    r = await logout({ id_token_hint: reheaded(head) + parts[2] });
+    // An RS or PS hint is checked by signature against the realm's own RSA
+    // key, never looked up by kid, so here it is refused as not verifying;
+    // a kid-looked-up algorithm says it names no key. Either way no refusal
+    // quotes an empty key name.
+    note(r.status === 400 && await alive() && !/key ""/.test(r.text) &&
+         !/\.\.(\s|<|$)/.test(r.text),
+         'c2c. a signed hint with no kid is refused, quoting no empty key',
+         r.status + ' ' + (String(r.text).match(/<p>[^<]*/) || [''])[0]
+           .slice(3, 220));
     r = await logout({ id_token_hint: idToken, client_id: 'rl-bare' });
     note(r.status === 400 && await alive(),
          'c3. a client_id the hint was not issued to is refused', r.status);
@@ -246,6 +381,22 @@ function childMain() {
     note(r.status === 200 && /name="confirm_for"/.test(r.text) &&
            await alive(),
          'c4. a logout_hint naming somebody else asks, even with the hint');
+    note(whyOf(r.text) === 'The logout_hint in this sign-out request ' +
+           'names somebody other than the person signed in to this browser' +
+           SECTION,
+         'c4b. and the page says the logout_hint names somebody else',
+         whyOf(r.text));
+    // A hint for an EARLIER session: verified, and its sid not this one.
+    const earlier = idToken;
+    await signIn('rl-alice');
+    r = await logout({ id_token_hint: earlier });
+    note(r.status === 200 && /name="confirm_for"/.test(r.text) &&
+           whyOf(r.text) === 'The id_token_hint in this sign-out request ' +
+             'was issued to another session, not the one signed in to this ' +
+             'browser' + SECTION && await alive(),
+         'c4c. a hint for another session asks, and the page says so',
+         whyOf(r.text));
+    idToken = await signIn('rl-alice');
     r = await request(port, 'POST', '/oauth2/logout',
       { form: { id_token_hint: idToken, post_logout_redirect_uri: BACK } });
     note(r.status === 302 && !(await alive()),
@@ -257,10 +408,56 @@ function childMain() {
     r = await logout({ id_token_hint: idToken,
                        post_logout_redirect_uri: 'https://evil.example/x' });
     note(r.status === 200 && !r.headers.location &&
-           /not returned/.test(r.text) && !(await alive()),
+           /so it is not followed/.test(r.text) && !(await alive()),
          'd1. a registered client is held to its own list: an address it ' +
          'did not register is not followed, and the page says why',
          r.status + ' ' + r.headers.location);
+    // d1b (#1302): the refusal is a WARNING BOX beside the "signed out"
+    // one, leading with what was wrong, then both addresses and the
+    // section — where it was a grey sentence under a green banner.
+    const warningOf = boxOf;
+    const warningFor = function (uri) {
+      return boxFor('notRegistered', uri);
+    };
+    const okAt = String(r.text).indexOf('<div class="ok">');
+    note(warningOf(r.text) === warningFor('https://evil.example/x') &&
+           okAt >= 0 && String(r.text).indexOf(warningOf(r.text)) < okAt &&
+           !/You were not returned/.test(r.text) &&
+           /\.warn\{background:#fff8e1;border-left:4px solid #b26a00;/
+             .test(r.text) &&
+           /<h1>Sign-out request partly refused<\/h1>/.test(r.text) &&
+           /<title>Sign-out request partly refused<\/title>/.test(r.text) &&
+           r.text.indexOf(BACK) < 0,
+         'd1b. and the page says so in a warning box as prominent as the ' +
+         '"signed out" banner, above it: not one this client registered, ' +
+         'not followed, the address asked for and the section, and nowhere ' +
+         'on the page the address registered (#1331); the heading and the ' +
+         'title name the refusal', warningOf(r.text) ||
+         r.text.slice(-700));
+    // d1c (#1302): the suite's other case, the registered address with a
+    // query added — the same box, naming the address as sent, and the
+    // session still ended.
+    idToken = await signIn('rl-alice');
+    r = await logout({ id_token_hint: idToken,
+                       post_logout_redirect_uri: BACK + '?extra=1' });
+    note(r.status === 200 && !r.headers.location && !(await alive()) &&
+           warningOf(r.text) === warningFor(BACK + '?extra=1'),
+         'd1c. a query added to the registered address: not followed, the ' +
+         'same box, the session ended', r.status + ' ' + warningOf(r.text));
+    // d1d (#1302): in the page's language, the addresses unchanged.
+    idToken = await signIn('rl-alice');
+    r = await logout({ id_token_hint: idToken, ui_locales: 'fr',
+                       post_logout_redirect_uri: 'https://evil.example/x' });
+    note(r.status === 200 && !(await alive()) &&
+           warningOf(r.text).indexOf(JSON.parse(fs.readFileSync(path.join(
+             ROOT, 'common', 'locales', 'oauthPages', 'fr.json'), 'utf8'))[
+             'signedOut.notRegistered'].split('<code>')[0]) > 0 &&
+           warningOf(r.text).indexOf('<code>https://evil.example/x</code>') >
+             0 && r.text.indexOf(BACK) < 0 &&
+           /<h1>Demande de déconnexion refusée en partie<\/h1>/.test(r.text),
+         'd1d. ui_locales=fr: the box and the heading in French, the ' +
+         'addresses as they are',
+         warningOf(r.text));
     jar = {};
     r = await logout({ client_id: 'rl-bare',
                        post_logout_redirect_uri: 'https://rp.rl.example/any',
@@ -288,6 +485,260 @@ function childMain() {
            !/mock/i.test(r.text),
          'd4. with nowhere to return, a page — not text/plain "mock"',
          r.headers['content-type']);
+
+    // --- e. the authorization endpoint's own refusals ------------------------
+    jar = {};
+    const authorize = function (params, accept) {
+      return request(port, 'GET', '/oauth2/authorize?' +
+        new URLSearchParams(Object.assign({ client_id: 'rl-rp',
+          response_type: 'code', scope: 'openid', state: 'st', nonce: 'n' },
+          params)).toString(),
+        { headers: accept ? { accept: accept } : {} });
+    };
+    const HTML = 'text/html,application/xhtml+xml,*/*;q=0.8';
+    const WRONG = 'https://rp.rl.example/elsewhere';
+    // #1331: only the address sent is named, never the registered one.
+    const SENTENCE = '\'' + WRONG + '\' is not a redirect URI registered ' +
+      'for this client';
+    const plain = await authorize({ redirect_uri: WRONG });
+    const page = await authorize({ redirect_uri: WRONG }, HTML);
+    const described = String((plain.json || {}).error_description || '');
+    note(plain.status === 400 && !plain.headers.location &&
+           plain.json && plain.json.error === 'invalid_request' &&
+           described.indexOf(SENTENCE) >= 0 &&
+           described.indexOf(REDIRECT) < 0 &&
+           !/the 1 |\(s\)|ou=|oauthRedirectUri|none of/.test(described),
+         'e1. an unregistered redirect_uri is a 400, never redirected, and ' +
+         'says it is not the redirect URI registered for this client, with ' +
+         'no directory detail', plain.status + ' ' + described);
+    note(page.status === 400 && !page.headers.location &&
+           /text\/html/.test(String(page.headers['content-type'])) &&
+           /<h1>This request could not be completed<\/h1>/.test(page.text) &&
+           page.text.indexOf('invalid_request') >= 0 &&
+           page.text.replace(/&#39;|&#x27;|&apos;/g, '\'')
+             .indexOf(SENTENCE) >= 0 && page.text.indexOf(REDIRECT) < 0,
+         'e2. and a browser is shown that refusal on the error page, with ' +
+         'the same status, error and description',
+         page.status + ' ' + page.headers['content-type'] + ' ' +
+         page.text.slice(-500));
+    const none = await authorize({}, HTML);
+    const noneJson = await authorize({});
+    // #1302: the sentence says the request HAS none; the status, the
+    // error and the page are what they were.
+    const NONE = 'This authorization request has no redirect_uri, and one ' +
+      'is required: without it there is nowhere to send the response.';
+    note(none.status === 400 && !none.headers.location &&
+           /text\/html/.test(String(none.headers['content-type'])) &&
+           /<h1>This request could not be completed<\/h1>/.test(none.text) &&
+           none.text.indexOf('invalid_request') >= 0 &&
+           none.text.indexOf(NONE) >= 0 &&
+           noneJson.status === 400 && noneJson.json &&
+           noneJson.json.error === 'invalid_request' &&
+           noneJson.json.error_description === NONE,
+         'e3. no redirect_uri: the error page for a browser, the JSON ' +
+         'otherwise, both 400 invalid_request, saying the request has none',
+         none.status + ' ' + noneJson.status + ' ' +
+         noneJson.text.slice(0, 300));
+    const empty = await authorize({ redirect_uri: '' });
+    const bad = await authorize({ redirect_uri: 'not a uri' });
+    note(empty.status === 400 && !empty.headers.location && empty.json &&
+           empty.json.error === 'invalid_request' &&
+           empty.json.error_description ===
+             'A valid absolute redirect_uri is required.' &&
+           bad.status === 400 && !bad.headers.location && bad.json &&
+           bad.json.error === 'invalid_request' &&
+           String(bad.json.error_description || '').indexOf(NONE) < 0 &&
+           String(bad.json.error_description || '').length > 0,
+         'e3b. one that is present and empty keeps "A valid absolute ' +
+         'redirect_uri is required.", and a malformed one keeps the ' +
+         'validator\'s sentence; neither says the request has none',
+         empty.text.slice(0, 200) + ' | ' + bad.text.slice(0, 200));
+    const noNonce = await request(port, 'GET', '/oauth2/authorize?' +
+      new URLSearchParams({ client_id: 'rl-rp', response_type: 'id_token',
+        redirect_uri: REDIRECT, scope: 'openid', state: 'st' }).toString());
+    const noNonceAt = decodeURIComponent(
+      String(noNonce.headers.location || '') + ' ' + noNonce.text)
+      .replace(/\+/g, ' ');
+    note(/This request has no nonce, and response_type .id_token. returns an ID Token from the authorization endpoint, for which OIDC Core makes nonce REQUIRED \(section 3\.2\.2\.1, the implicit flow\)/
+           .test(noNonceAt),
+         'e4. an implicit request with no nonce is told it has none',
+         noNonce.status + ' ' + noNonceAt.slice(0, 400));
+
+    // --- e5-e8. ONE ERROR PAGE (#1326) -------------------------------------
+    // The error in the box, the background collapsed, a way back to the
+    // portal, the language chooser, and the diagnostics with an incident ID
+    // that IS the seq of the request's audit row.
+    const audit = require(ROOT + '/common/audit');
+    const catalog = function (ns, tag) {
+      return JSON.parse(fs.readFileSync(path.join(ROOT, 'common', 'locales',
+                                                  ns, tag + '.json'),
+                                        'utf8'));
+    };
+    const incidentOf = function (text) {
+      const m = /<dt>[^<]*<\/dt><dd><code>(\d+)<\/code><\/dd>/
+        .exec(String(text).slice(String(text).indexOf('class="diagnostics"')));
+      return m ? Number(m[1]) : 0;
+    };
+    const shaped = function (text) {
+      const body = String(text);
+      const box = body.indexOf('<div class="warn" role="alert">');
+      const more = body.indexOf('<details class="prose">');
+      const portal = body.indexOf('href="/portal"');
+      const diag = body.indexOf('<section class="diagnostics"');
+      return box > 0 && more > box && portal > more && diag > portal &&
+        /<form class="language-chooser"/.test(body) &&
+        !/<script/i.test(body);
+    };
+    const e5 = await authorize({ redirect_uri: WRONG, state: 'st-e5',
+                                 nonce: 'n-e5' }, HTML);
+    const e5Id = incidentOf(e5.text);
+    const e5Row = audit.localEvents().filter(function (row) {
+      return row.seq === e5Id;
+    })[0];
+    note(e5.status === 400 && shaped(e5.text) && e5Id > 0 && e5Row &&
+           e5Row.target === '/oauth2/authorize' && !!e5Row.errorCode &&
+           /<code>st-e5<\/code>/.test(e5.text) &&
+           /<code>n-e5<\/code>/.test(e5.text) &&
+           /<code>rl-rp<\/code>/.test(e5.text),
+         'e5. the refusal page: the box, then the background collapsed, the ' +
+         'portal, the diagnostics with the state, nonce and client, and an ' +
+         'incident ID that is the seq of the request\'s own audit row',
+         e5Id + ' ' + JSON.stringify(e5Row || null).slice(0, 200));
+    const seqs = audit.localEvents().map(function (row) {
+      return Number(row.seq);
+    });
+    note(seqs.every(function (n, i) {
+      return i === 0 || n > seqs[i - 1];
+    }), 'e5b. and the ring\'s numbers still rise in the order the rows were ' +
+        'written, which the audit export\'s cursor relies on',
+         seqs.slice(-8).join(','));
+    const frPages = catalog('oauthPages', 'fr');
+    const frFrame = catalog('errorPages', 'fr');
+    const e6 = await authorize({ redirect_uri: WRONG, ui_locales: 'fr' },
+                               HTML);
+    note(e6.status === 400 && /<html lang="fr"/.test(e6.text) &&
+           e6.text.indexOf(frPages['authorizeError.title']
+             .replace(/'/g, '&#39;')) > 0 &&
+           e6.text.indexOf(frFrame.diagnostics) > 0 &&
+           e6.text.indexOf(frFrame.portal) > 0,
+         'e6. ui_locales=fr: the refusal page in French, frame and message',
+         e6.text.slice(0, 300));
+    // e9 (#1326): a request-object refusal reaches a browser as the same
+    // page with its own sentence; a client library still gets the JSON.
+    const e9Query = { request: 'x.y.z',
+                      request_uri: 'https://rp.rl.example/r' };
+    const e9 = await authorize(e9Query, HTML);
+    const e9Json = await authorize(e9Query);
+    const en = catalog('oauthPages', 'en');
+    note(e9.status === 400 && shaped(e9.text) &&
+           e9.text.indexOf(en['refusal.STS-OAUTH-0341']) > 0 &&
+           e9Json.status === 400 && e9Json.json &&
+           e9Json.json.error === 'invalid_request',
+         'e9. both request and request_uri: the page for a browser, saying ' +
+         'so in its own sentence; the JSON otherwise',
+         e9.status + ' ' + e9Json.status + ' ' + e9.text.slice(0, 300));
+    idToken = await signIn('rl-alice');
+    const e8Tampered = idToken.slice(0, -4) + (idToken.slice(-4) === 'AAAA'
+      ? 'BBBB' : 'AAAA');
+    const e8 = await logout({ id_token_hint: e8Tampered, ui_locales: 'fr',
+                              state: 'st-e8' });
+    note(e8.status === 400 && await alive() && shaped(e8.text) &&
+           incidentOf(e8.text) > 0 &&
+           e8.text.indexOf(frPages['logoutRefused.refusedTitle']
+             .replace(/'/g, '&#39;')) > 0 &&
+           /<code>st-e8<\/code>/.test(e8.text) &&
+           /<code>rl-alice<\/code>/.test(e8.text),
+         'e8. a refused sign-out: the same page, in French, the state and ' +
+         'the person signed in among the diagnostics, the session alive',
+         e8.status + ' ' + e8.text.slice(0, 400));
+
+    // --- f. the second sign-in's notice (#1302) ------------------------------
+    // The authorization endpoint's reason rides the pending sign-in into
+    // `/authn-api`'s view, and the screen draws one line for it.
+    const T = require(ROOT + '/common/i18n').translator(['en']);
+    const WebAuthnLogin = require(ROOT + '/authn/web_authn_login');
+    const PROMPT_LOGIN = 'The application asked you to sign in again ' +
+      '(prompt=login).';
+    const MAX_AGE = 'The application asked you to sign in again because ' +
+      'your last sign-in is older than it allows (max_age).';
+    const screenAfter = async function (extra) {
+      const asked = await request(port, 'GET', '/oauth2/authorize?' +
+        new URLSearchParams(Object.assign({ client_id: 'rl-rp',
+          response_type: 'code', redirect_uri: REDIRECT, scope: 'openid',
+          state: 'st', nonce: 'n-f' }, extra || {})).toString());
+      const at = String(asked.headers.location || '');
+      if (!/\/authn\/login\?/.test(at)) {
+        return { at: at, view: null, drawn: '' };
+      }
+      const opened = await screen.open({ port: port, jar: jar, at: at });
+      const view = opened.view || null;
+      let drawn = '';
+      try {
+        drawn = view ? WebAuthnLogin.render(view, { t: T, error: '' }) : '';
+      } catch (e) {
+        drawn = 'render threw: ' + ((e && e.message) || e);
+      }
+      return { at: at, view: view, drawn: drawn };
+    };
+    const noticeOf = function (drawn) {
+      return (String(drawn).match(
+        /<div class="warn" id="authn-reauthentication">[\s\S]*?<\/div>/) ||
+        [''])[0];
+    };
+    jar = {};
+    let f = await screenAfter({});
+    note(f.view && f.view.reauthentication === '' &&
+           /<h1>/.test(f.drawn) && noticeOf(f.drawn) === '' &&
+           WebAuthnLogin.reauthentication('', T) === '' &&
+           WebAuthnLogin.reauthentication('select_account', T) === '',
+         'f1. a first sign-in: no reason in the view, no notice on the screen',
+         f.at + ' ' + JSON.stringify(f.view && f.view.reauthentication) +
+         ' ' + f.drawn.slice(0, 200));
+    f = await screenAfter({ prompt: 'login' });
+    note(f.view && f.view.reauthentication === '' &&
+           noticeOf(f.drawn) === '',
+         'f1b. prompt=login with no session is a first sign-in too',
+         JSON.stringify(f.view && f.view.reauthentication));
+    await signIn('rl-alice');
+    f = await screenAfter({ prompt: 'login' });
+    note(f.view && f.view.reauthentication === 'prompt_login' &&
+           T.text('authn.login.reauthPromptLogin') === PROMPT_LOGIN &&
+           noticeOf(f.drawn) ===
+             '<div class="warn" id="authn-reauthentication">' + PROMPT_LOGIN +
+             '</div>' &&
+           f.drawn.indexOf(noticeOf(f.drawn)) >
+             f.drawn.indexOf('<p class="sub">'),
+         'f2. prompt=login with a session: the screen says the application ' +
+         'asked for a second sign-in, under the heading',
+         f.at + ' ' + JSON.stringify(f.view && f.view.reauthentication) +
+         ' ' + noticeOf(f.drawn));
+    // `authn.multipleAccounts` is on by default, so select_account is the
+    // account picker, as it was — never the screen with a notice.
+    f = await screenAfter({ prompt: 'select_account' });
+    note(!f.view && /\/authn\/accounts\?/.test(f.at),
+         'f3. prompt=select_account: the account picker, as it was — not a ' +
+         'reason the notice names', f.at);
+    f = await screenAfter({ max_age: '3600' });
+    note(!f.view && /[?&]code=/.test(f.at) && f.at.indexOf(REDIRECT) === 0,
+         'f4. a max_age the session meets: answered at once, as it was',
+         f.at.slice(0, 120));
+    await new Promise(function (done) { setTimeout(done, 2100); });
+    f = await screenAfter({ max_age: '1' });
+    note(f.view && f.view.reauthentication === 'max_age' &&
+           T.text('authn.login.reauthMaxAge') === MAX_AGE &&
+           noticeOf(f.drawn) ===
+             '<div class="warn" id="authn-reauthentication">' + MAX_AGE +
+             '</div>',
+         'f5. a session older than max_age: the screen says the last ' +
+         'sign-in is older than the application allows',
+         f.at + ' ' + JSON.stringify(f.view && f.view.reauthentication) +
+         ' ' + noticeOf(f.drawn));
+    const fr = require(ROOT + '/common/i18n').translator(['fr']);
+    note(WebAuthnLogin.reauthentication('prompt_login', fr) ===
+           '<div class="warn" id="authn-reauthentication">L’application ' +
+           'vous a demandé de vous reconnecter (prompt=login).</div>',
+         'f6. the notice is drawn in the page\'s language',
+         WebAuthnLogin.reauthentication('prompt_login', fr));
 
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));

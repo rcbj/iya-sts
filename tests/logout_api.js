@@ -32,6 +32,11 @@
 //   7. THE JSON DOOR at `GET|POST /logout` is unchanged, and a form posted
 //      there ends nothing and is sent to the page.
 //   8. No answer carries an error code.
+//   9. ENDING ANOTHER SESSION NEEDS A RECENT SIGN-IN AT THIS DOOR TOO (#1521,
+//      #1577), as at `POST /logout`: refused 403 with a `reauthenticate` view
+//      naming where to sign in again, nothing ended; signing yourself out
+//      everywhere is never asked; and after that sign-in the same act ends
+//      the other session.
 // ===========================================================================
 
 const fs = require('fs');
@@ -133,7 +138,7 @@ function childMain() {
          'API from \'self\' only', csp);
     r = await get({}, '/logout');
     note(r.status === 302 &&
-         /\/authn\/login\?authn=/.test(String(r.headers.location || '')),
+         /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(r.headers.location || '')),
          '1c. a browser with no session is sent to sign in first, as it ' +
          'always was', r.status + ' ' + r.headers.location);
     const named = {};
@@ -262,6 +267,9 @@ function childMain() {
     note(!ann.jar.sts_session && !authn.sessionById(annSession),
          '5b. the browser\'s own session ended, and its cookie was cleared ' +
          'on the answer', JSON.stringify(ann.jar));
+    note(r.headers['clear-site-data'] === '"storage"',
+         '5c. the answer tells the browser to drop storage, and not cookies ' +
+         '(#1440)', r.headers['clear-site-data']);
 
     // --- 6. a sign-out that fans out: the signed-out document ---------------
     const cy = await signIn('la-cy');
@@ -386,6 +394,84 @@ function childMain() {
          !eve.jar.sts_session,
          '8a. authn_screen.signOut() walks the page: shell, view, act',
          walked.status + ' ' + String(walked.text).slice(0, 200));
+
+    // --- 9. ending another session needs a recent sign-in (#1577) ---------
+    config.setOverride('account.recentAuthMinutes', '15');
+    const fay = await signIn('la-fay');
+    const fayOther = await signIn('la-fay');
+    const faySession = sessionIdOf(fay.jar);
+    const fayOtherSession = sessionIdOf(fayOther.jar);
+    const stale = function (sid) {
+      const one = authn.sessionById(sid);
+      const old = Math.floor(Date.now() / 1000) - 7200;
+      (one.events || []).forEach(function (event) {
+        event.at = old;
+      });
+      one.authTime = old;
+    };
+    stale(faySession);
+    const fayCsrf = websecurity.tokenFor(faySession);
+    r = await act(fay.jar, { scope: 'selected',
+                             select: ['session:' + fayOtherSession] },
+                  { csrf: fayCsrf });
+    const owed = r.json || {};
+    note(r.status === 403 && owed.ok === false && owed.view &&
+         owed.view.state === 'reauthenticate' &&
+         /^\/authn\/login/.test(String(owed.view.signIn || '')) &&
+         Array.isArray(owed.errors) && owed.errors.length === 1 &&
+         codeFree(r.text),
+         '9a. a stale sign-in ending another session is refused (403) with ' +
+         'a view naming where to sign in again, and no code',
+         r.status + ' ' + r.text.slice(0, 300));
+    note(!!authn.sessionById(fayOtherSession) &&
+         !!authn.sessionById(faySession) && !!fay.jar.sts_session,
+         '9b. and nothing was ended', faySession + ' ' + fayOtherSession);
+    r = await screen.call({ port: port, jar: fay.jar, method: 'POST',
+      path: '/logout', headers: { 'content-type': 'application/json',
+                                  accept: 'application/json' },
+      body: JSON.stringify({ scope: 'selected',
+                             select: ['session:' + fayOtherSession] }) });
+    note(r.status === 403 && r.json &&
+         r.json.error === 'reauthentication_required',
+         '9c. the JSON door answers the same act the same way', r.status);
+    const again = await screen.submit({ port: port, jar: fay.jar,
+      at: owed.view.signIn,
+      fields: { action: 'login', username: 'la-fay', password: 'right' } });
+    note(again.next === 'redirect' && !!authn.sessionById(faySession),
+         '9d. signing in again where the view said keeps the same session',
+         again.next);
+    r = await act(fay.jar, { scope: 'selected',
+                             select: ['session:' + fayOtherSession] },
+                  { csrf: websecurity.tokenFor(faySession) });
+    note(r.status === 200 && r.json && r.json.ok === true &&
+         !authn.sessionById(fayOtherSession) &&
+         !!authn.sessionById(faySession),
+         '9e. and then the same act ends the other session, and only it',
+         r.status + ' ' + r.text.slice(0, 200));
+    const gus = await signIn('la-gus');
+    const gusSession = sessionIdOf(gus.jar);
+    stale(gusSession);
+    r = await act(gus.jar, { scope: 'global' },
+                  { csrf: websecurity.tokenFor(gusSession) });
+    note(r.status === 200 && r.json && r.json.ok === true &&
+         !authn.sessionById(gusSession),
+         '9f. signing yourself out everywhere is never asked', r.status);
+    config.clearOverride('account.recentAuthMinutes');
+    const pages = require(ROOT_DIR + '/logout/web_signout_pages');
+    const drawn = pages.render('/logout', owed.view, { t: {
+      html: function (key) {
+        return '[' + key + ']';
+      },
+      text: function (key) {
+        return key;
+      } } });
+    note(drawn.indexOf('[logout.reauthenticate.lead]') > 0 &&
+         drawn.indexOf('[logout.reauthenticate.signIn]') > 0 &&
+         drawn.indexOf('data-sts-navigate="1"') > 0 &&
+         drawn.indexOf('href="' + String(owed.view.signIn)
+           .replace(/&/g, '&amp;')) > 0,
+         '9g. the page draws that view as a sentence and a link to sign in ' +
+         'again, in the catalogs\' words', drawn.slice(0, 300));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

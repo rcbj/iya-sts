@@ -38,5 +38,13 @@
   "profile.heading": "Quelques informations avant la création de votre compte",
   "profile.lead": "{partner} vous a connecté, mais n’a pas transmis tout ce dont ce service a besoin pour créer votre compte. Indiquez les informations ci-dessous pour terminer.",
   "profile.submit": "Créer mon compte",
-  "profile.note": "Ces informations sont conservées sur votre compte ici. Une adresse e-mail que vous saisissez est enregistrée comme non vérifiée."
+  "profile.note": "Ces informations sont conservées sur votre compte ici. Une adresse e-mail que vous saisissez est enregistrée comme non vérifiée.",
+  "webfinger.title": "Trouver votre connexion",
+  "webfinger.heading": "Trouver où vous vous connectez",
+  "webfinger.lead": "Saisissez l’adresse avec laquelle vous vous connectez chez {partner}, et ce service demande à l’hôte de cette adresse où se trouve votre compte.",
+  "webfinger.label": "Votre adresse ou URL",
+  "webfinger.submit": "Rechercher",
+  "webfinger.found": "{identifier} se connecte chez {issuer}.",
+  "webfinger.continue": "Continuer pour vous y connecter",
+  "webfinger.note": "Rien ne se passe avant que vous continuiez : vérifiez que c’est bien là que vous vous attendez à vous connecter."
 }

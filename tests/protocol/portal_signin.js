@@ -167,11 +167,11 @@ async function mirroring(base, method, path) {
 
 // AN OPERATION THAT TAKES NO TOKEN, as the portal calls one for a page drawn
 // for nobody: `{ status, json, text, headers }`.
-async function nobody(base, method, path, body) {
+async function nobody(base, method, path, body, extra) {
   log.debug("Entering nobody().");
   const url = /^https?:/.test(path) ? path : base + path;
-  const init = { method: method, headers: { accept: "application/json",
-                                            "User-Agent": AGENT } };
+  const init = { method: method, headers: Object.assign(
+    { accept: "application/json", "User-Agent": AGENT }, extra || {}) };
   if (body !== undefined) {
     init.headers["content-type"] = "application/json";
     init.body = JSON.stringify(body);
@@ -195,7 +195,10 @@ async function nobody(base, method, path, body) {
 // password of an account that exists, `options.cookie` a sign-on session
 // already held (no password typed: single sign-on answers the flow), and
 // `options.acrValues` / `options.prompt` for a step-up,
-// `options.consent: false` to stop at a consent screen rather than allow, and
+// `options.consent: false` to stop at a consent screen rather than allow,
+// `options.publicBase` for a walk that reaches `base` under a private name (a
+// cell addressed directly, `tests/protocol/cells_kit.js`): the redirect URI and
+// the resource are the public name's, and a redirect to it comes back to `base`,
 // `options.scope` for a token that asks for something other than the
 // portal's own `openid account:manage` (a test of the gate's scope check).
 async function signInToThePortal(base, user, log2, options) {
@@ -217,7 +220,9 @@ async function signInToThePortal(base, user, log2, options) {
   }
 
   function fromLocation(location) {
-    return new URL(String(location || ""), base).toString();
+    const url = new URL(String(location || ""), base).toString();
+    return opts.publicBase && url.indexOf(opts.publicBase + "/") === 0
+      ? base + url.slice(opts.publicBase.length) : url;
   }
 
   async function fetchKeeping(url, init) {
@@ -242,11 +247,12 @@ async function signInToThePortal(base, user, log2, options) {
 
   const verifier = b64u(crypto.randomBytes(32));
   const state = b64u(crypto.randomBytes(16));
-  const redirectUri = base + "/portal/callback";
-  const resource = base + "/account-api";
+  const named = opts.publicBase || base;
+  const redirectUri = named + "/portal/callback";
+  const resource = named + "/account-api";
   // AN OWNER'S SIGN-IN (#607), as the runtime makes it: the management API
   // as a second resource, and the owner scopes beside account:manage.
-  const ownerResource = base + "/admin-api";
+  const ownerResource = named + "/admin-api";
   const params = {
     response_type: "code", client_id: "sts-user-portal",
     redirect_uri: redirectUri, scope: opts.scope || (opts.owner
@@ -328,7 +334,7 @@ async function signInToThePortal(base, user, log2, options) {
   }
   let at = await fetchKeeping(authorizeUrl);
   let location = at.headers.get("location") || "";
-  const authn = (location.match(/[?&]authn=([^&]+)/) || [])[1];
+  const authn = (location.match(/[?&#]authn=([^&]+)/) || [])[1];
   if (authn) {
     assert.ok(password, "the portal's authorization request asked for a " +
       "sign-in, and this walk was given a session rather than a password");

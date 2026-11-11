@@ -280,7 +280,7 @@ async function test() {
   check("4a. a password session is sent to sign in again instead of being " +
         "shown the page", function () {
     assert.ok(stepApproval.page.status === 303 &&
-              /\/authn\/login\?authn=/.test(stepApproval.page.location),
+              /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(stepApproval.page.location),
               stepApproval.page.status + " " + stepApproval.page.location +
               " " + stepApproval.page.text.slice(0, 200));
   });

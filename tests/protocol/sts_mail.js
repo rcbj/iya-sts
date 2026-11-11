@@ -204,7 +204,10 @@ function linkParam(link, name) {
   log.debug("Entering linkParam().");
   let value = "";
   try {
-    value = new URL(link).searchParams.get(name) || "";
+    // The query, or the fragment, where a link's token travels (#1454).
+    const url = new URL(link);
+    value = url.searchParams.get(name) ||
+      new URLSearchParams(url.hash.slice(1)).get(name) || "";
   } catch (e) {
     log.debug("Caught in linkParam(): " + ((e && e.message) || e));
     // Not a URL: no parameter, which the assertion that reads it says.
@@ -379,8 +382,8 @@ async function test() {
   const linkUser = linkParam(resetLink, "user");
   const linkToken = linkParam(resetLink, "token");
   r = await call("GET", realmBase() + "/account-api/reset-password?" +
-                 new URLSearchParams({ user: linkUser, token: linkToken })
-                   .toString());
+                 new URLSearchParams({ user: linkUser }).toString(),
+                 undefined, { "X-Link-Token": linkToken });
   check("3. the link opens the form", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
   });

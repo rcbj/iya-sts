@@ -114,6 +114,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import errorCodes = require('../common/error_codes');
 import webauthnPolicy = require('./webauthn_policy');
@@ -1605,9 +1606,11 @@ class WebauthnAttestation {
     const anchors = configured.concat(fromMds);
     const leaf = statement.trustPath[0];
     const rest = statement.trustPath.slice(1);
-    const path = anchors.length
-      ? await pki.verifyPathToAnchors(leaf, rest, anchors,
-                                      { now: this.deps.now() })
+    const path = CertificateTrust.anchorsAvailable('webauthn-attestation',
+                                                   anchors)
+      ? await CertificateTrust.path('webauthn-attestation', leaf, rest, anchors,
+        { now: this.deps.now(), siteAsksRevocation: true,
+          variant: statement.format === 'tpm' ? 'tpm' : undefined })
       : { ok: false, reason: 'no trust anchor is configured or listed' };
     if (!path.ok) {
       if (fromMds.length) {

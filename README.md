@@ -2,12 +2,6 @@
 
 # iya-sts
 
-> [!WARNING]
-> **Not ready for production deployments.** This is a relatively new project.
-> No formal penetration testing has been done, and it has not been formally
-> evaluated by any standards body. Do not use it to protect real users,
-> credentials or data yet.
-
 An **identity provider and security token service** that speaks the protocol
 families below from one process, with a certificate authority of its own.
 
@@ -63,6 +57,49 @@ iya-sts is built around open identity and security standards, making it useful a
 One identity layer. Multiple protocols. Multiple trust relationships. Modern applications and AI agents.
 
 iya-sts is built for organizations that don't want to replace their entire identity infrastructure just to build what's next.
+
+# OpenID Connect Certification
+<p align="left"><img src="docs/oid-l-certification-mark-l-cmyk-150dpi-90mm.jpg" alt="IYA STS — Security Token Service"></p>
+
+**Iya-STS v1.0.0**, from Iya CyberSecurity Solutions, has achieved OpenID Connect Provider (OP) certification through the OpenID Foundation across all seven published OP conformance profiles and all four OpenID Connect logout profiles.
+
+## OpenID Connect Provider Conformance Profiles
+
+| Conformance Profile | Certification Date |
+|---|---|
+| Basic OpenID Provider | November 5, 2026 |
+| Implicit OpenID Provider | November 5, 2026 |
+| Hybrid OpenID Provider | November 5, 2026 |
+| Configuration | November 5, 2026 |
+| Dynamic OpenID Provider | November 5, 2026 |
+| Form Post Response Mode | November 5, 2026 |
+| Third-Party Initiated Login | November 5, 2026 |
+
+**Official registry:** [Certified OpenID Providers & Profiles](https://openid.net/certification/certified-openid-providers-profiles/)
+
+## OpenID Connect Logout Profiles
+
+| Logout Profile | Certification Date |
+|---|---|
+| RP-Initiated Logout | November 5, 2026 |
+| Session Management | November 5, 2026 |
+| Front-Channel Logout | November 5, 2026 |
+| Back-Channel Logout | November 5, 2026 |
+
+**Official registry:** [Certified OpenID Providers for Logout Profiles](https://openid.net/certification/certified-openid-providers-for-logout-profiles/)
+
+## Certification Summary
+
+Iya-STS v1.0.0 has achieved **11 OpenID Foundation certifications**:
+
+- 7 OpenID Connect Provider conformance profiles
+- 4 OpenID Connect Logout profiles
+
+All eleven certifications are dated November 5, 2026, and are published in the OpenID Foundation's official certification registries.
+
+These certifications demonstrate conformance of Iya-STS v1.0.0 with the applicable OpenID Connect Provider and Logout specifications and profiles.
+
+For independent verification, refer to the official OpenID Foundation certification registries linked above.
 
 ## Architecture
 
@@ -195,15 +232,22 @@ AWS cluster.
 
 ## Versioning
 
-The version is **M.N.O**: M.N from the `VERSION` file, and O the UTC build
-instant (or `BUILD_NUMBER`), stamped into the image when it is built.
+The version is **M.N.O.build**: the release read whole from the `VERSION`
+file (currently `1.0.0`), then a build number stamped into the image when it
+is built — the UTC build instant (`1.0.0.20261104151200`) by default, or, for
+a release build, the number the build names (`1.0.0.0`).
 
 ```bash
-node common/version.js                    # 0.1.20260906143205
+node common/version.js                    # 1.0.0.20261104151200
 node common/version.js --sync-manifests   # after editing VERSION
-BUILD_NUMBER=$(date -u +%Y%m%d%H%M%S) GIT_COMMIT=$(git rev-parse HEAD) \
-  docker compose --profile xacml build    # one release, both images
+GIT_COMMIT=$(git rev-parse HEAD) \
+  docker compose --profile xacml build    # both images, naming the commit
+docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .
+                                          # a release build: 1.0.0.0
 ```
+
+A release flag without a valid `BUILD_NUMBER` fails the build; without the
+flag `BUILD_NUMBER` is ignored.
 
 ## Running the tests
 

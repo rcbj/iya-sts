@@ -81,8 +81,9 @@ a partner's token, UserInfo and JWKS endpoints), `federation.outboundCaFile`
 
 ## What development and product mode change
 
-The checks on what a partner sends are the same in both modes: federation is
-not permissive in development. What changes is what you must fill in.
+The checks on what a partner sends are the same in both modes, with one
+exception below (the audience): federation is not permissive in development.
+What changes is mostly what you must fill in.
 
 * **Creating people.** A new relationship is written with
   `fedAutocreateUsers` **TRUE in development and FALSE in product**. In
@@ -91,7 +92,9 @@ not permissive in development. What changes is what you must fill in.
 * **The attributes a new person must hold.** In product, a person a sign-in
   creates must meet the realm's attribute policy: by default a given name, a
   surname and an address. Map them from the partner's names with
-  `fedAttributeMap` (below), or the sign-in is refused (`STS-FED-0158`).
+  `fedAttributeMap` (below). Otherwise the person is asked for the missing
+  values on a short form before the account is created (`STS-FED-0188`), and
+  an address they type is recorded as unverified.
 * **Plaintext assertions.** Product refuses a plaintext SAML 2.0 or
   WS-Federation assertion, and a signed-only ID Token by `form_post`
   (`STS-FED-0140`). Have the partner encrypt
@@ -112,6 +115,13 @@ not permissive in development. What changes is what you must fill in.
 * **The partner's certificate's revocation**, under `pki.revocationCheck`
   `auto`: a status that cannot be fetched is accepted in development and
   refused in product.
+* **The audience.** Product refuses a SAML 1.1 or WS-Federation assertion
+  with no audience restriction (`STS-FED-0241`). Have the partner name this
+  service's entity id, or set `federation.allowAssertionWithoutAudience` for a
+  partner that cannot.
+* **One browser.** Product binds each sign-in to the browser that started it,
+  with a cookie set when the person is sent to the partner. An answer that
+  arrives in another browser is refused (`STS-FED-0237`).
 
 ---
 
@@ -533,8 +543,9 @@ switch in **Switches**.
 | `fedProvisionCap` | empty (unlimited for an enterprise partner) | how many people this relationship may create |
 | `fedProvisionIdleMinutes` | empty (off) | disable a person whose only way in is this relationship, once they have not signed in for this long |
 
-**For product mode, map the names the attribute policy needs.** Taken from
-`sts_federation_consumer.js`:
+**For product mode, map the names the attribute policy needs.** A newcomer
+whose partner sends none of them is asked for them on a form instead. Taken
+from `sts_federation_consumer.js`:
 
 ```bash
 for m in given_name=givenName family_name=sn email=mail; do

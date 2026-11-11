@@ -78,6 +78,7 @@ import asn1js = require('asn1js');
 import pkijs = require('pkijs');
 
 import helpers = require('./helpers');
+import Classes = require('./domain_classes');
 const { log } = helpers;
 import applications = require('./applications');
 import audit = require('./audit');
@@ -92,6 +93,7 @@ import errorCodes = require('./error_codes');
 import keyMaterial = require('./crypto_impl/key_material');
 import keystore = require('./keystore');
 import mode = require('./mode');
+import CertificateTrust = require('./certificate_trust');
 import pki = require('./pki');
 import realms = require('./realms');
 import x509 = require('./crypto_impl/x509');
@@ -183,6 +185,16 @@ const ATTRIBUTES = {
     challenge: 'appScepChallenge',
     hostName: 'appCertificateHostName'
   }
+};
+
+// The domain-model field each key of `ATTRIBUTES` is, the same for a person's
+// Credential and an Application (#1390).
+const CONCEPT_FIELDS = {
+  certificate: 'enrolledCertificate',
+  privateKey: 'enrolledPrivateKey',
+  eab: 'acmeEabKey',
+  challenge: 'scepChallenge',
+  hostName: 'certificateHostName'
 };
 
 // The attributes a reader of the socket must never see, for
@@ -736,18 +748,17 @@ class CertEnrollment {
                          'kept on it.');
     }
     const attrs = found.attributes || {};
-    const first = function (name) {
-      return (attrs[name] && attrs[name].length) ? String(attrs[name][0]) : '';
-    };
-    const names = ATTRIBUTES[kind];
+    const user = kind === 'person' ? Classes.User.fromEntry(attrs) : null;
+    const held = self.heldValues({ entry: { kind: kind }, attributes: attrs },
+                                 'hostName');
     log.debug("Leaving CertEnrollment.resolveEntry(). " + found.dn);
     return {
       ok: true,
       entry: { kind: kind, id: String(id) },
       dn: found.dn,
-      mail: kind === 'person' ? first('mail') : '',
-      upn: kind === 'person' ? first('userPrincipalName') : '',
-      hostNames: (attrs[names.hostName] || []).map(function (one) {
+      mail: (user && user.email) || '',
+      upn: (user && user.userPrincipalName) || '',
+      hostNames: held.map(function (one) {
         return self.normalHostName(one);
       }).filter(function (one) { return !!one; }),
       attributes: attrs
@@ -1116,7 +1127,11 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.authenticatePresentedCertificate().");
     const opts = options || {};
-    const verified = await pki.verifyLeaf(realms.currentId(), pem, []);
+    // A site that does not ask for clientAuth is SCEP's renewal, whose signer
+    // is held to the variant its codec already asked.
+    const verified = await CertificateTrust.realmLeaf('enrollment-credential',
+      realms.currentId(), pem, [],
+      opts.clientAuth === false ? { variant: 'scep' } : undefined);
     if (!verified.ok) {
       log.debug("Leaving CertEnrollment.authenticatePresentedCertificate(). " +
                 "Path refused.");
@@ -1895,27 +1910,12 @@ class CertEnrollment {
   }
 
   async proofOfPossession(csr, spkiPem, desc) {
-    const { stsCrypto, log, x509 } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering CertEnrollment.proofOfPossession(). kind=" + desc.kind);
     try {
-      const tbs = csr.tbsView ? Buffer.from(csr.tbsView)
-        : Buffer.from(csr.encodeTBS().toBER(false));
-      const signature = Buffer.from(csr.signatureValue.valueBlock.valueHexView);
-      const sig = x509.sigAlgForOid(csr.signatureAlgorithm.algorithmId);
-      if (sig && sig.kind === 'pqc') {
-        const ok = await x509.verifyBytes(sig, spkiPem, signature, tbs);
-        log.debug("Leaving CertEnrollment.proofOfPossession(). pqc=" + ok);
-        return !!ok;
-      }
-      if (desc.kind === 'okp') {
-        const key = stsCrypto.publicKeyOf(spkiPem);
-        const ok = stsCrypto.signatureValid(null, tbs, key, signature);
-        log.debug("Leaving CertEnrollment.proofOfPossession(). Ed25519=" + ok);
-        return !!ok;
-      }
-      const ok = await csr.verify();
-      log.debug("Leaving CertEnrollment.proofOfPossession(). pkijs=" + ok);
-      return !!ok;
+      const ok = await pki.csrProofOfPossession(csr, spkiPem, desc);
+      log.debug("Leaving CertEnrollment.proofOfPossession(). " + ok);
+      return ok;
     } catch (e) {
       log.debug("Caught in CertEnrollment.proofOfPossession(): " +
                 ((e && e.message) || e));
@@ -2190,6 +2190,29 @@ class CertEnrollment {
     return out;
   }
 
+  /**
+   * One of `ATTRIBUTES`' values on a resolved entry, through the concept the
+   * entry is (#1390): a person's are on Credential, an application's on
+   * Application, under the same field names. The secret is asked for by
+   * name and only that one, because this module reads each of them for
+   * itself, and a concept with nothing named keeps none.
+   *
+   * @param resolved - what `resolveEntry()` answered
+   * @param key - the `ATTRIBUTES` key
+   * @returns the values, empty when the entry holds none
+   */
+  heldValues(resolved, key) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.heldValues(). key=" + key);
+    const field = CONCEPT_FIELDS[key];
+    const options = { secrets: [field] };
+    const concept: any = resolved.entry.kind === 'person'
+      ? Classes.Credential.fromEntry(resolved.attributes, options)
+      : Classes.Application.fromEntry(resolved.attributes, options);
+    log.debug("Leaving CertEnrollment.heldValues().");
+    return concept[field] || [];
+  }
+
   readAttribute(entry, key) {
     const { log } = this.deps;
     const self = this;
@@ -2200,7 +2223,7 @@ class CertEnrollment {
       return null;
     }
     log.debug("Leaving CertEnrollment.readAttribute().");
-    return (resolved.attributes[ATTRIBUTES[entry.kind][key]] || []).slice();
+    return self.heldValues(resolved, key);
   }
 
   writeAttribute(entry, key, values) {
@@ -2525,8 +2548,8 @@ class CertEnrollment {
       return auditRefusal(names);
     }
     const nowMs = Date.now();
-    const existing = self.parseJsonValues(resolved.attributes[
-      ATTRIBUTES[resolved.entry.kind].certificate]);
+    const existing = self.parseJsonValues(
+      self.heldValues(resolved, 'certificate'));
     const live = existing.filter(function (one) {
       return new Date(one.notAfter).getTime() > nowMs;
     });
@@ -2635,7 +2658,7 @@ class CertEnrollment {
                                         'sealed for storage, so the ' +
                                         'certificate was not recorded.'));
       }
-      const keys = (resolved.attributes[ATTRIBUTES[kind].privateKey] || [])
+      const keys = self.heldValues(resolved, 'privateKey')
         .filter(function (one) {
           return String(one).indexOf(record.serialHex + ':') !== 0;
         }).concat([record.serialHex + ':' + sealed.value]);
@@ -2664,7 +2687,8 @@ class CertEnrollment {
     // A person's subject DN goes into x509subject as well, which is the
     // attribute every certificate-to-entry lookup here already reads.
     if (kind === 'person' && subjectDn && self.directory) {
-      const subjects = (resolved.attributes.x509subject || []).slice();
+      const subjects = Classes.PersonRecord.fromEntry(resolved.attributes)
+        .x509subject || [];
       if (subjects.indexOf(subjectDn) < 0) {
         try {
           self.directory.write('person', resolved.entry.id, 'x509subject',
@@ -3543,8 +3567,7 @@ class CertEnrollment {
       return resolved;
     }
     const nowMs = Date.now();
-    const values = resolved.attributes[ATTRIBUTES[resolved.entry.kind].eab] ||
-                   [];
+    const values = self.heldValues(resolved, 'eab');
     // Expired keys are dropped as a new one is made; a key already used to bind
     // an account is kept, because that account's binding is described by it.
     const kept = self.parseJsonValues(values).filter(function (one) {
@@ -3934,8 +3957,7 @@ class CertEnrollment {
       return resolved;
     }
     const nowMs = Date.now();
-    const values = resolved.attributes[
-      ATTRIBUTES[resolved.entry.kind].challenge] || [];
+    const values = self.heldValues(resolved, 'challenge');
     const kept = self.liveCredentials(values, nowMs);
     if (kept.length >= MAX_CREDENTIALS_PER_ENTRY) {
       log.debug("Leaving CertEnrollment.createScepChallenge(). Too many.");

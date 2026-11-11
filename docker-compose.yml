@@ -8,20 +8,23 @@ services:
     image: postgres:18
     environment:
       - POSTGRES_USER=sts
-      - POSTGRES_PASSWORD=sts
+      - STS_POSTGRES_PASSWORD
       - POSTGRES_DB=sts
       - STS_DB_APP_USER=${STS_DB_APP_USER:-sts_app}
-      - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      - STS_DB_APP_PASSWORD
       - POSTGRES_TLS_PUBLIC_DIR=/run/sts-db-ca
     volumes:
       - sts-db:/var/lib/postgresql
       - sts-db-ca:/run/sts-db-ca
+      - sts-db-secrets:/run/sts-db-secrets
+      - ./postgres/db-secrets.sh:/usr/local/bin/db-secrets.sh:ro
       - ./postgres/generate-tls.sh:/usr/local/bin/generate-tls.sh:ro
       - ./postgres/require-tls.sh:/docker-entrypoint-initdb.d/00-require-tls.sh:ro
       - ./postgres/apply-schema.sh:/docker-entrypoint-initdb.d/10-apply-schema.sh:ro
       - ./postgres/schema.sql:/usr/local/share/sts/schema.sql:ro
     command: >
-      bash -c '/usr/local/bin/generate-tls.sh &&
+      bash -c '. /usr/local/bin/db-secrets.sh &&
+      /usr/local/bin/generate-tls.sh &&
       exec docker-entrypoint.sh postgres
       -c max_connections=200
       -c shared_buffers=${STS_POSTGRES_SHARED_BUFFERS:-2GB}
@@ -60,10 +63,12 @@ services:
       - STS_BAO_TLS_DIR=/openbao/file/tls
       - STS_BAO_TLS_NAMES=${STS_BAO_TLS_NAMES:-openbao,localhost}
       - STS_BAO_TLS_IPS=${STS_BAO_TLS_IPS:-127.0.0.1}
+      - STS_BAO_SEAL_KEY
     volumes:
       - sts-bao-file:/openbao/file
       - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
-    command: ["node", "openbao/generate-tls.js"]
+      - ./openbao/generate-seal.js:/usr/src/sts/openbao/generate-seal.js:ro
+    command: ["sh", "-c", "node openbao/generate-tls.js && node openbao/generate-seal.js"]
 
   openbao:
     container_name: ${STS_BAO_CONTAINER_NAME:-sts-openbao}
@@ -76,11 +81,11 @@ services:
       - IPC_LOCK
     environment:
       - BAO_STATIC_SEAL_CURRENT_KEY_ID=${STS_BAO_SEAL_KEY_ID:-sts}
-      - BAO_STATIC_SEAL_CURRENT_KEY=${STS_BAO_SEAL_KEY:-KSVmckTNY246XdLbpfIzGbuXvgZqAOPzsrF4itdFTvo=}
+      - STS_BAO_SEAL_KEY
     volumes:
       - ./openbao/bao.hcl:/openbao/config/bao.hcl:ro
       - sts-bao-file:/openbao/file
-    command: ["server", "-config=/openbao/config/bao.hcl"]
+    command: ["sh", "-c", "BAO_STATIC_SEAL_CURRENT_KEY=\"$${STS_BAO_SEAL_KEY:-$$(cat /openbao/file/seal/seal.key)}\" exec docker-entrypoint.sh server -config=/openbao/config/bao.hcl"]
     healthcheck:
       test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/seeder.token"]
       interval: 5s
@@ -103,7 +108,7 @@ services:
       - STS_BAO_CA_FILE=/openbao/file/tls/server.crt
       - STS_BAO_POLICY_FILE=/usr/src/sts/openbao/read-only.hcl
       - STS_BAO_CLIENT_CN=${STS_BAO_CLIENT_CN:-sts}
-      - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      - STS_DB_APP_PASSWORD
       - STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET:-}
       - STS_BAO_STARTUP_NODES=sts
       - STS_BAO_STARTUP_DIR=/openbao/startup
@@ -116,7 +121,31 @@ services:
       - ./openbao/read-only.hcl:/usr/src/sts/openbao/read-only.hcl:ro
       - ./openbao/admin-secret.hcl:/usr/src/sts/openbao/admin-secret.hcl:ro
       - ./openbao/seeder.hcl:/usr/src/sts/openbao/seeder.hcl:ro
-    command: ["node", "openbao/seed.js"]
+      - ./openbao/seed-start.sh:/usr/src/sts/openbao/seed-start.sh:ro
+      - sts-db-secrets:/run/sts-db-secrets:ro
+    command: ["sh", "openbao/seed-start.sh"]
+
+  clamav:
+    container_name: ${STS_CLAMAV_CONTAINER_NAME:-sts-clamav}
+    image: ${STS_CLAMAV_IMAGE:-clamav/clamav:1.5.4}
+    volumes:
+      - clamd-socket:/tmp
+    scale: ${STS_CLAMAV_SCALE:-0}
+    entrypoint: ["/bin/sh", "-c", "printf 'StreamMaxLength 2500M\\nMaxFileSize 2500M\\nMaxScanSize 4000M\\n' >> /etc/clamav/clamd.conf && exec /init"]
+    restart: unless-stopped
+
+  icap:
+    container_name: ${STS_ICAP_CONTAINER_NAME:-sts-icap}
+    image: ${STS_ICAP_IMAGE:-iya-sts-icap-clamav}
+    build:
+      context: ./icap-clamav
+    scale: ${STS_ICAP_SCALE:-0}
+    environment:
+      - ICAP_TLS=${STS_ICAP_TLS:-true}
+    volumes:
+      - clamd-socket:/clamd-socket
+      - icap-tls:/icap-tls
+    restart: unless-stopped
 
   sts:
     container_name: ${STS_CONTAINER_NAME:-sts}
@@ -150,8 +179,9 @@ services:
     build:
       context: .
       args:
-        BUILD_NUMBER: "${BUILD_NUMBER:-}"
         GIT_COMMIT: "${GIT_COMMIT:-}"
+        STS_RELEASE: "${STS_RELEASE:-false}"
+        BUILD_NUMBER: "${BUILD_NUMBER:-}"
         DEBUGGER_IMAGE: "${DEBUGGER_IMAGE:-debugger-none}"
     ports:
       - "${STS_HOST_PORT:-8081}:8081"
@@ -167,6 +197,7 @@ services:
       - sts-bao-client:/run/secrets/openbao:ro
       - sts-bao-startup:/run/secrets/openbao-startup
       - sts-db-ca:/run/secrets/database-ca:ro
+      - icap-tls:/etc/ssl/icap:ro
       - sts-data:/usr/src/sts/data
       - sts-risk-uploads:/usr/src/sts/data/risk-uploads
       - ./env:/usr/src/sts/env:ro
@@ -175,6 +206,12 @@ services:
     environment:
       - CONFIG_FILE=${CONFIG_FILE:-./env/local.js}
       - STS_LOG_LEVEL
+      - STS_MALWARE_SCAN_ENABLED
+      - STS_SECURITY_REQUESTS_PER_ADDRESS_PER_MINUTE
+      - STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD
+      - STS_MALWARE_SCAN_URL
+      - STS_MALWARE_SCAN_CA_FILE
+      - STS_MALWARE_SCAN_ALLOW_CLEARTEXT
       - STS_HTTPS=${STS_HTTPS:-true}
       - UV_THREADPOOL_SIZE=${UV_THREADPOOL_SIZE:-32}
       - PKI_DISTRIBUTION_PORT=${STS_PKI_HOST_PORT:-8082}
@@ -223,8 +260,9 @@ services:
       context: .
       dockerfile: xacml-pep/Dockerfile
       args:
-        BUILD_NUMBER: "${BUILD_NUMBER:-}"
         GIT_COMMIT: "${GIT_COMMIT:-}"
+        STS_RELEASE: "${STS_RELEASE:-false}"
+        BUILD_NUMBER: "${BUILD_NUMBER:-}"
     ports:
       - "${XACML_PEP_HOST_PORT:-9090}:9090"
       - "${XACML_PEP_HTTPS_HOST_PORT:-9444}:9443"
@@ -292,10 +330,13 @@ networks:
         - subnet: ${STS_NETWORK_SUBNET:-172.29.0.0/24}
 
 volumes:
+  clamd-socket:
+  icap-tls:
   sts-bao-file:
   sts-bao-client:
   sts-bao-startup:
   sts-db:
   sts-db-ca:
+  sts-db-secrets:
   sts-data:
   sts-risk-uploads:

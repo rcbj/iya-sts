@@ -84,6 +84,7 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import Classes = require('../common/domain_classes');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
@@ -98,6 +99,8 @@ type Req = any;
  * flows.
  */
 const REFRESH_JOB = 'oauth2.claim-sources-refresh';
+// Holders whose links the refresh opens between two turns of the loop (#704).
+const HOLDER_SLICE = 50;
 const FLOW_TTL_MS = 10 * 60 * 1000;
 const REFRESH_AHEAD_MS = 5 * 60 * 1000;
 /**
@@ -287,11 +290,34 @@ class ClaimsProviders {
   // ===========================================================================
   // THE REGISTER.
   // ===========================================================================
+  // A stored definition held to the members a provider has. An LDAP client can
+  // write this attribute, and the console lists every provider (#1353).
+  private static providerFrom(record: Json): Provider {
+    const text = function (name: string): string {
+      return typeof record[name] === 'string' ? record[name] : '';
+    };
+    const time = function (name: string): number {
+      return Number.isFinite(record[name]) ? record[name] : 0;
+    };
+    return {
+      id: text('id'), name: text('name'), issuer: text('issuer'),
+      authorizationEndpoint: text('authorizationEndpoint'),
+      tokenEndpoint: text('tokenEndpoint'),
+      claimsEndpoint: text('claimsEndpoint'), jwksUri: text('jwksUri'),
+      clientId: text('clientId'), authMethod: text('authMethod'),
+      scope: text('scope'),
+      claims: (Array.isArray(record.claims) ? record.claims : [])
+        .filter(function (one: Json) { return typeof one === 'string'; }),
+      delivery: text('delivery'), createdAt: time('createdAt'),
+      updatedAt: time('updatedAt')
+    };
+  }
+
   private readEntry(stored: Json): Provider | null {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.readEntry().");
-    const a = stored.attributes || {};
-    const raw = String((a.stsclaimproviderdata || [])[0] || '');
+    const raw = Classes.ClaimProvider.fromEntry(
+      stored.attributes || {}).data || '';
     let record: Json = null;
     try {
       record = JSON.parse(raw);
@@ -302,7 +328,9 @@ class ClaimsProviders {
       record = null;
     }
     log.debug("Leaving ClaimsProviders.readEntry().");
-    return record && record.id ? record as Provider : null;
+    return record && typeof record === 'object' &&
+      typeof record.id === 'string' && record.id
+      ? ClaimsProviders.providerFrom(record) : null;
   }
 
   /**
@@ -366,8 +394,11 @@ class ClaimsProviders {
       .filter(function (e: Json): boolean {
         return String(((e.attributes || {}).cn || [])[0] || '') === id;
       })[0];
-    const raw = stored ? String(((stored.attributes || {})
-      .stsclaimprovidersecret || [])[0] || '') : '';
+    // The secret is the concept's, asked for by name where it is opened
+    // (#1390). An entry's `cn` above is not a field of the concept: the id
+    // the provider goes by is inside its data.
+    const raw = stored ? Classes.ClaimProvider.fromEntry(
+      stored.attributes || {}, { secrets: ['secret'] }).secret || '' : '';
     log.debug("Leaving ClaimsProviders.secretOf().");
     return raw ? this.open(raw, 'claims-provider-secret') : '';
   }
@@ -600,8 +631,18 @@ class ClaimsProviders {
         map = {};
       }
     }
+    // One person's value is on the realm-wide page, so a link that is not one
+    // is not read as one (#1353).
+    const links: Record<string, Link> = {};
+    Object.keys(map && typeof map === 'object' && !Array.isArray(map)
+      ? map : {}).forEach(function (id: string): void {
+        const one = map[id];
+        if (one && typeof one === 'object' && !Array.isArray(one)) {
+          links[id] = one;
+        }
+      });
     log.debug("Leaving ClaimsProviders.linksRaw().");
-    return map;
+    return links;
   }
 
   private writeLinks(username: string, map: Record<string, Link>): boolean {
@@ -635,8 +676,10 @@ class ClaimsProviders {
     const map = this.linksRaw(username);
     const out = Object.keys(map).sort().map(function (id: string): Json {
       const one = map[id];
-      return { provider: id, sub: one.sub, linkedAt: one.linked_at,
-               expiresAt: one.expires_at || 0,
+      return { provider: id,
+               sub: typeof one.sub === 'string' ? one.sub : '',
+               linkedAt: Number.isFinite(one.linked_at) ? one.linked_at : 0,
+               expiresAt: Number.isFinite(one.expires_at) ? one.expires_at : 0,
                refreshable: !!one.refresh_token, stale: !!one.stale };
     });
     log.debug("Leaving ClaimsProviders.linksOf(). " + out.length + ".");
@@ -956,6 +999,12 @@ class ClaimsProviders {
     });
     let why = 'no key in the provider\'s set verified it';
     for (const jwk of keys) {
+      // A provider's key that carries an x5c is held to it (#1360).
+      const held = require('../common/certificate_trust').bareKey(jwk);
+      if (!held.ok) {
+        why = held.why;
+        continue;
+      }
       try {
         const key = stsCrypto.publicKeyFromJwk(jwk);
         const claims = stsCrypto.verifyJws(String(jwt), key, {
@@ -1244,7 +1293,17 @@ class ClaimsProviders {
       }
     });
     const providers = this.list();
+    // A TURN OF THE LOOP EVERY HOLDER_SLICE HOLDERS (#704). Each holder's
+    // links are decrypted and parsed (`linksRaw()`), and a run with nothing
+    // due awaited nothing, so every holder of the realm was opened in one
+    // turn of the process running the job.
+    let seen = 0;
     for (const holder of (this.store('claimSourceTokenHolders', []) || [])) {
+      if (++seen % HOLDER_SLICE === 0) {
+        await new Promise(function (resolve: (v?: unknown) => void): void {
+          setImmediate(resolve);
+        });
+      }
       const map = this.linksRaw(holder.username);
       for (const provider of providers) {
         const link = map[provider.id];

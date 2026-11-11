@@ -116,6 +116,8 @@
 // would drag every `/ldap` route to the front of the router.
 // ---------------------------------------------------------------------------
 
+const ModelTables = require('./model_tables');
+const DomainClasses = require('./domain_classes');
 const { log } = require('./helpers');
 const config = require('./config');
 // The error-code registry. A LEAF that requires nothing here, so this file
@@ -134,97 +136,8 @@ const errorCodes = require('./error_codes');
  * The `ou=roles` schema published on `/admin/ldap/roles`: the `stsRole`
  * object class and what each of its attributes means.
  */
-const SCHEMA = {
-  objectClasses: [
-    { name: 'stsRole',
-      what: 'One ROLE. The entry is named by the role name (`cn=staff`), and ' +
-            'everything on it is MEMBERSHIP — who holds the role. What a ' +
-            'role is REQUIRED for lives on the application entry that ' +
-            'requires it, in `appRequiredRole`, because that is a fact about ' +
-            'the application rather than about the role.' }
-  ],
-  attributes: [
-    { name: 'roleName',
-      what: 'The role name, which is also the `cn`. Carried explicitly as ' +
-            'well so that a reader who has only the attributes has the name.' },
-    { name: 'roleMemberUser',
-      what: 'A username that holds this role. Multi-valued. The person need ' +
-            'not exist yet — this service creates a directory entry for any ' +
-            'name on first sight, so a role may be granted before its holder ' +
-            'has ever signed in.' },
-    { name: 'roleMemberGroup',
-      what: 'A group whose every member holds this role. Multi-valued. ' +
-            'Resolved at DECISION TIME rather than expanded on write, so an ' +
-            '`ldapmodify` adding somebody to the group changes the very next ' +
-            'token.' },
-    { name: 'roleMemberApplication',
-      what: 'An application that holds this role AS ITSELF — what a ' +
-            'client_credentials grant is decided on, where there is no ' +
-            'person. Multi-valued. NOT the same relation as ' +
-            '`appRequiredRole` on the application entry, which is what that ' +
-            'application DEMANDS of others.' },
-    { name: 'rolePermission',
-      what: 'A permission a holder of this role may be ISSUED (#303). ' +
-            'Multi-valued. Named as a client asks for it: a generic ' +
-            'application permission by its full scope value — the resource ' +
-            'application\'s `oauthPermissionBaseUri` followed by the name — ' +
-            'and a native permission of this service by its own name ' +
-            '(`admin:read`, `admin:write`). It matters only for a permission ' +
-            'its resource application GATES (`oauthRoleGatedPermission`); ' +
-            'a gated permission is issued only to a subject holding a role ' +
-            'that names it, and an ungated one as it always was.' },
-    { name: 'roleConferredBy',
-      what: 'A client this role is CONFERRED BY (#454): every person who ' +
-            'signs in through that client holds the role on the access ' +
-            'token the client is issued, and on no other token. Multi-' +
-            'valued, client_ids of applications in this realm. A role ' +
-            'held this way is a fact about the TOKEN rather than about ' +
-            'the person, so it is mixed with the roles the person holds ' +
-            'themselves on every call, and taking a client off it takes ' +
-            'the role off that client\'s tokens at once. Never applied to ' +
-            'a client\'s own client_credentials token, whose roles are ' +
-            'its membership. ADMIN_CONSOLE is seeded conferred by ' +
-            '`sts-admin-console`.' },
-    { name: 'roleApplication',
-      what: 'The ONE application this role belongs to (#310), by its ' +
-            'identifier in ou=applications; absent, the role is realm-wide. ' +
-            'An application\'s role is named `<role>@<application>` in the ' +
-            'register, so two applications may each have a `reader`; a token ' +
-            'or assertion for that application carries it as `<role>`, and ' +
-            'no other application\'s token carries it at all. The ' +
-            'application\'s `appRequiredRole` may name it by `<role>`.' },
-    { name: 'roleAllowedMemberType',
-      what: 'WHO MAY HOLD this role (#93): `user` (people, directly or ' +
-            'through a group) and `application` (an application as ' +
-            'itself). Multi-valued; absent, both may — every role written ' +
-            'before it. A member of a kind the role does not allow is ' +
-            'refused when the role is written. The two console roles ' +
-            'cannot be restricted: the roster grants their people and the ' +
-            'seed their application.' },
-    { name: 'displayName',
-      what: 'An optional name for people to read (#93). The role\'s NAME ' +
-            'is still what a token carries, what a requirement names and ' +
-            'what the register is keyed on; this is only its label on the ' +
-            'console and the API. Its stable id is the entry\'s ' +
-            '`entryUUID`, kept across every edit.' },
-    { name: 'description',
-      what: 'What the role is for, for the next person.' },
-    { name: 'owner',
-      what: 'A person or a group of this realm who answers for the role ' +
-            '(#604), by DN — RFC 4519 section 2.23\'s attribute, as a ' +
-            'group\'s owners are (#603). Multi-valued, at most 25. Since ' +
-            '#607 an owner may ADMINISTER the role through /admin-api with ' +
-            'owner:read and owner:write (OWNER_READ, OWNER_WRITE), within ' +
-            'what the access-control policy\'s owner rule allows; an owner ' +
-            'holds the role itself only by being a member. The user portal ' +
-            'lists what a person owns.' },
-    { name: 'stsOwnerProtected',
-      what: 'TRUE: the role\'s owners may not administer it through ' +
-            '/admin-api (#607), whatever they own — an administrator\'s ' +
-            'mark, read by the access-control policy\'s owner rule as ' +
-            'urn:sts:xacml:object-protected. Absent is FALSE.' }
-  ]
-};
+// The table is written in models/directory/role.tsp (#1390).
+const SCHEMA = ModelTables.schema('role');
 
 // ---------------------------------------------------------------------------
 // THE BUILT-IN ROLES. SIX WHEN THIS TABLE WAS WRITTEN, SEVEN SINCE 2026-09-06,
@@ -617,21 +530,35 @@ function isBuiltIn(name) {
 // authorizing `admin:write` would be the scope-as-authorization mistake
 // written into the register instead.
 // ---------------------------------------------------------------------------
+// **AND A THIRD, SECURITY_ADMIN (#645, 2026-11-02)**, over the console's
+// Security Administrator group (`admin.securityGroup`). It authorizes
+// `admin:security`, which the management API asks — INSTEAD of
+// `admin:write` — for a change to a Directory → Policies policy, for naming
+// one on an application, group or person, for granting the role itself and
+// for acting on the account of a person who holds it
+// (`common/security_operations.ts`). It implies Admin Read on the roster, so
+// its group is one of ADMIN_READ's, and NOT Admin Write: the role exists so
+// that managing security can be somebody's whole job. `sts-api-client` is
+// seeded in it, as in the other two (rcbj's decision on #645), so a machine
+// that writes policy keeps working until an operator takes it out.
 /**
- * The two console roles, ADMIN_READ and ADMIN_WRITE: configured roles seeded
- * in every realm, each authorizing the native permission of the same name.
+ * The three console roles, ADMIN_READ, ADMIN_WRITE and SECURITY_ADMIN:
+ * configured roles seeded in every realm, each authorizing the native
+ * permission of its own.
  *
- * Their groups are read from the `admin.readGroup` / `admin.writeGroup`
- * settings, never stored; people hold them through the console roster.
+ * Their groups are read from the `admin.readGroup` / `admin.writeGroup` /
+ * `admin.securityGroup` settings, never stored; people hold them through the
+ * console roster.
  */
 const CONSOLE_ROLES = [
   { name: 'ADMIN_READ', consoleRole: 'read', permission: 'admin:read',
-    groupSettings: ['admin.readGroup', 'admin.writeGroup'],
+    groupSettings: ['admin.readGroup', 'admin.writeGroup',
+                    'admin.securityGroup'],
     seedApplications: ['sts-api-client'],
     what: 'Admin Read: every READ on /admin-api. Held by the console\'s ' +
-          'Admin Read and Admin Write groups (Admin Write implies Admin ' +
-          'Read) and by the applications listed here. Authorizes the ' +
-          'admin:read permission.' },
+          'Admin Read, Admin Write and Security Administrator groups (both ' +
+          'of the others imply Admin Read) and by the applications listed ' +
+          'here. Authorizes the admin:read permission.' },
   { name: 'ADMIN_WRITE', consoleRole: 'write', permission: 'admin:write',
     groupSettings: ['admin.writeGroup'],
     seedApplications: ['sts-api-client'],
@@ -639,7 +566,18 @@ const CONSOLE_ROLES = [
           'Held by the console\'s Admin Write group and by the applications ' +
           'listed here. Authorizes the admin:write permission. It does not ' +
           'imply Admin Read on a token: a token may carry either scope, and ' +
-          'the policy asks for the one the operation needs.' }
+          'the policy asks for the one the operation needs.' },
+  { name: 'SECURITY_ADMIN', consoleRole: 'security',
+    permission: 'admin:security',
+    groupSettings: ['admin.securityGroup'],
+    seedApplications: ['sts-api-client'],
+    what: 'Security Administrator: the /admin-api operations that change ' +
+          'security — a policy on Directory → Policies, a policy named on ' +
+          'an application, group or person, a grant of this role, and the ' +
+          'account of a person who holds it. Admin Write does not reach ' +
+          'them. Held by the console\'s Security Administrator group and ' +
+          'by the applications listed here. Authorizes the admin:security ' +
+          'permission.' }
 ];
 
 // The application the seed puts in both. The bootstrap client,
@@ -652,7 +590,7 @@ const CONSOLE_ROLE_APPLICATION = 'sts-api-client';
 
 // ---------------------------------------------------------------------------
 // THE NATIVE ROLES (#309, a follow-up to #88, 2026-09-28): every role that
-// authorizes one of this service's NATIVE permissions — the two console roles
+// authorizes one of this service's NATIVE permissions — the three console roles
 // above, ADMIN_CONSOLE (#454), DEVICE_COMPLIANCE, and the two Shared Signals
 // roles SSF_READ and SSF_MANAGE. Each is seeded in every realm, cannot be
 // deleted, and authorizes exactly its permission.
@@ -796,10 +734,10 @@ function consoleRoleFor(name) {
 }
 
 /**
- * Tells whether a role name is one of the two console roles.
+ * Tells whether a role name is one of the three console roles.
  *
  * @param name - a role name
- * @returns true for ADMIN_READ or ADMIN_WRITE
+ * @returns true for ADMIN_READ, ADMIN_WRITE or SECURITY_ADMIN
  */
 function isConsoleRole(name) {
   log.debug("Entering isConsoleRole().");
@@ -901,19 +839,17 @@ function firstValue(attributes, name) {
   return Array.isArray(found) ? (found[0] || '') : (found || '');
 }
 
-function allValues(attributes, name) {
-  log.debug("Entering allValues().");
-  const found = attributes[name] || attributes[name.toLowerCase()];
-  if (!found) {
-    log.debug("Leaving allValues().");
-    return [];
-  }
-  log.debug("Leaving allValues().");
-  return (Array.isArray(found) ? found : [found]).map(function (one) {
+// A role's list as this module has always answered it: each value trimmed and
+// the empty ones gone, which a concept's list does not do for it (#1390).
+function trimmedValues(values) {
+  log.debug("Entering trimmedValues().");
+  const out = (values || []).map(function (one) {
     return String(one).trim();
   }).filter(function (one) {
     return one.length > 0;
   });
+  log.debug("Leaving trimmedValues().");
+  return out;
 }
 
 /**
@@ -935,12 +871,15 @@ function all() {
   }
   const rows = directory.allRoles().map(function (entry) {
     const at = entry.attributes || {};
+    // What the role says comes from its concept (#1390); the entryUUID below
+    // is the one read no field of the concept holds.
+    const role = DomainClasses.Role.fromEntry(at);
     const consoleRow = consoleRoleFor(entry.name);
     const nativeRow = nativeRoleFor(entry.name);
     // THE APPLICATION A ROLE BELONGS TO (#310), and its name inside it: the
     // part of `<role>@<application>` before the separator, which is what a
     // token for that application carries and its requirement names.
-    const application = firstValue(at, 'roleApplication');
+    const application = role.roleApplication || '';
     return {
       name: entry.name,
       application: application,
@@ -954,27 +893,26 @@ function all() {
       // across every rewrite of the entry and a delete and re-create does
       // not, so a caller holding it can tell the role from a namesake.
       id: firstValue(at, 'entryUUID').toLowerCase(),
-      displayName: firstValue(at, 'displayName'),
+      displayName: role.displayName || '',
       // WHO MAY HOLD IT (#93); empty is both kinds.
-      memberTypes: allValues(at, 'roleAllowedMemberType'),
-      description: firstValue(at, 'description'),
+      memberTypes: trimmedValues(role.roleAllowedMemberType),
+      description: role.description || '',
       // A console role's people and groups are the roster's, never stored:
       // see THE TWO CONSOLE ROLES.
-      users: consoleRow ? [] : allValues(at, 'roleMemberUser'),
+      users: consoleRow ? [] : trimmedValues(role.memberUsers),
       groups: consoleRow ? consoleRoleGroups(consoleRow)
-                         : allValues(at, 'roleMemberGroup'),
-      applications: allValues(at, 'roleMemberApplication'),
+                         : trimmedValues(role.memberGroups),
+      applications: trimmedValues(role.memberApplications),
       // THE CLIENTS THAT CONFER IT (#454) on every person signing in
       // through them.
-      conferredBy: allValues(at, 'roleConferredBy'),
+      conferredBy: trimmedValues(role.roleConferredBy),
       permissions: nativeRow ? [nativeRow.permission]
-                             : allValues(at, 'rolePermission'),
+                             : trimmedValues(role.permissions),
       // WHO ANSWERS FOR IT (#604): the `owner` DNs as stored.
-      owners: allValues(at, 'owner'),
+      owners: trimmedValues(role.owner),
       // CLOSED TO ITS OWNERS (#607, rcbj's decision 4): an administrator's
       // mark, which the access-control policy's owner rule reads.
-      ownerProtected: firstValue(at, 'stsOwnerProtected').toUpperCase() ===
-                      'TRUE',
+      ownerProtected: role.stsOwnerProtected === true,
       console: !!consoleRow,
       // Seeded in every realm, undeletable, its permission fixed (#309).
       native: !!nativeRow,
@@ -1260,6 +1198,17 @@ function write(name, record) {
     attributes.roleMemberGroup = [];
   }
   const written = directory.writeRole(String(name), attributes);
+  // `{ ok: false }` is truthy. putEntry() answers it for a description
+  // that carries an operator code and writes nothing (#1416). The role
+  // answer's field is `why`, and it must not be the raw refusal: that
+  // object has no `why`, so the door would report a blank sentence.
+  if (written && written.ok === false) {
+    log.debug('Leaving write(). A description carries an operator code.');
+    return errorCodes.mark({ ok: false,
+             why: (written.errors && written.errors[0]) ||
+                  'A description cannot carry an operator error code.' },
+             written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+  }
   if (!written) {
     log.debug('Leaving write(). The directory refused.');
     return errorCodes.mark({ ok: false,
@@ -2016,6 +1965,148 @@ function prose() {
  * `error_codes`, and reaches the directory through a slot.
  * @namespace
  */
+// ---------------------------------------------------------------------------
+// A MEMBER THAT NO LONGER EXISTS HOLDS NOTHING (2026-11-10).
+//
+// A role names its members — people by username, groups by name,
+// applications by identifier — and nothing took a name out when the thing it
+// named was deleted. So an application forgotten while it held ADMIN_READ (or
+// ADMIN_WRITE) left its identifier on the role, and the next application made
+// under that identifier held the role from its first request: a deleted
+// client's authority passed to a stranger by name. The same was true of a
+// person deleted through SCIM and made again with the same username, and of a
+// group. This is called where each is deleted (`applications.js`
+// deleteApplication(), `ldap/ldap_server.js` removePersonEntry() and
+// deleteGroupEntry()), after the delete, in the realm that deleted it.
+//
+// It is the role REGISTER only, which is this service's authorization record.
+// A deleted person's DN is still left in the groups that list it, on purpose
+// (`ldap/ldap_server.js`, above deletePerson()): that is directory
+// referential integrity, and /admin/groups reports it.
+//
+// Each role is written back whole, as `remove-member` writes it, because
+// write() REPLACES an entry. A console role's people are the roster's, so its
+// `users` never names anybody to take out.
+// ---------------------------------------------------------------------------
+/**
+ * Takes a deleted member's name out of every configured role in the ambient
+ * realm.
+ *
+ * @param field - `users`, `groups` or `applications`
+ * @param name - the deleted member's username, group name or identifier
+ * @returns the names of the roles it was taken out of
+ */
+function forgetMember(field, name) {
+  log.debug('Entering forgetMember(). field=' + field);
+  const wanted = String(name || '').toLowerCase();
+  if (!wanted || MEMBER_FIELDS.indexOf(field) < 0) {
+    log.debug('Leaving forgetMember(). Nothing to forget.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    // A console role's people and groups are the roster's settings, not its
+    // entry, and write() refuses either on it; only its applications are its
+    // own to take out.
+    if (row.console && field !== 'applications') {
+      return;
+    }
+    const list = (row[field] || []).filter(function (one) {
+      return String(one).toLowerCase() !== wanted;
+    });
+    if (list.length === (row[field] || []).length) {
+      return;
+    }
+    const record = {
+      description: row.description, users: row.users, groups: row.groups,
+      applications: row.applications, permissions: row.permissions,
+      application: row.application, displayName: row.displayName,
+      memberTypes: row.memberTypes
+    };
+    record[field] = list;
+    const result = write(row.name, record);
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      // The member stays on the role; nothing else is undone. The log line
+      // names both, so an administrator can take it out by hand.
+      log.error(errorCodes.tag('STS-ADMIN-0919') + 'roles: could not take ' +
+                field + ' "' + name + '" out of the role "' + row.name +
+                '" after it was deleted: ' + result.why);
+    }
+  });
+  if (changed.length) {
+    log.info('roles: the deleted ' + field.replace(/s$/, '') + ' "' + name +
+             '" was taken out of ' + changed.join(', ') + '.');
+  }
+  log.debug('Leaving forgetMember(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
+// A MEMBER RENAMED KEEPS ITS ROLES (2026-11-10). forgetMember()'s pair: an
+// LDAP modifyDN that changes a person's username or a group's name moves the
+// name on every role that listed it, so the renamed member holds what it held
+// and nothing is left naming the old name for whatever is made under it next.
+// ---------------------------------------------------------------------------
+/**
+ * Renames a member in every configured role in the ambient realm.
+ *
+ * @param field - `users`, `groups` or `applications`
+ * @param from - the name it had
+ * @param to - the name it has now
+ * @returns the names of the roles changed
+ */
+function renameMember(field, from, to) {
+  log.debug('Entering renameMember(). field=' + field);
+  const was = String(from || '').toLowerCase();
+  const now = String(to || '');
+  if (!was || !now || was === now.toLowerCase() ||
+      MEMBER_FIELDS.indexOf(field) < 0) {
+    log.debug('Leaving renameMember(). Nothing to rename.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    if (row.console && field !== 'applications') {
+      return;
+    }
+    const held = row[field] || [];
+    if (!held.some(function (one) {
+      return String(one).toLowerCase() === was;
+    })) {
+      return;
+    }
+    const list = held.map(function (one) {
+      return String(one).toLowerCase() === was ? now : one;
+    }).filter(function (one, at, every) {
+      return every.map(function (x) {
+        return String(x).toLowerCase();
+      }).indexOf(String(one).toLowerCase()) === at;
+    });
+    const record = {
+      description: row.description, users: row.users, groups: row.groups,
+      applications: row.applications, permissions: row.permissions,
+      application: row.application, displayName: row.displayName,
+      memberTypes: row.memberTypes
+    };
+    record[field] = list;
+    const result = write(row.name, record);
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      log.error(errorCodes.tag('STS-ADMIN-0919') + 'roles: could not rename ' +
+                field + ' "' + from + '" to "' + to + '" on the role "' +
+                row.name + '": ' + result.why);
+    }
+  });
+  log.debug('Leaving renameMember(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+// The three member lists a role row carries.
+const MEMBER_FIELDS = ['users', 'groups', 'applications'];
+
 module.exports = {
   SCHEMA: SCHEMA,
   BUILT_IN: BUILT_IN,
@@ -2053,6 +2144,10 @@ module.exports = {
   entryOf: entryOf,
   addOwner: addOwner,
   removeOwner: removeOwner,
+  // A deleted member taken out of every role (2026-11-10).
+  forgetMember: forgetMember,
+  // A renamed member keeps its roles (2026-11-10).
+  renameMember: renameMember,
   rolesOf: rolesOf,
   claimFor: claimFor,
   rolesInClaims: rolesInClaims,

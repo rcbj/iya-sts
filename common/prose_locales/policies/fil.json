@@ -48,24 +48,24 @@
     "text": "simbolo"
   },
   "password.FIELDS.minSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "Ilang character na hindi titik, hindi digit at hindi whitespace ang dapat laman ng password. Pinapatay ng 0 ang patakaran."
+    "en": "1121ccc1580b0c86",
+    "text": "Laging 0. Tinatanggihan ang patakarang humihingi ng mga simbolo: hinihingi ng ASVS 5.0.0 6.2.5 na tanggapin ang password na may anumang komposisyon, kaya haba lang ang hinihingi ng patakarang ito."
   },
   "password.FIELDS.requireUppercase.label": {
     "en": "41d8365a4b5a8473",
     "text": "Kailangan ng malaking titik"
   },
   "password.FIELDS.requireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "Kung dapat may kahit isang malaking titik ang password, sa anumang script."
+    "en": "9ab7a52d3b16949e",
+    "text": "Laging naka-off. Tinatanggihan ang patakarang humihingi ng malaking titik: hinihingi ng ASVS 5.0.0 6.2.5 na tanggapin ang password na may anumang komposisyon."
   },
   "password.FIELDS.requireDigit.label": {
     "en": "eaa0c73c3cc00f02",
     "text": "Kailangan ng numero"
   },
   "password.FIELDS.requireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "Kung dapat may kahit isang decimal digit ang password."
+    "en": "9d7cd7fdbca971d9",
+    "text": "Laging naka-off. Tinatanggihan ang patakarang humihingi ng numero: hinihingi ng ASVS 5.0.0 6.2.5 na tanggapin ang password na may anumang komposisyon."
   },
   "password.FIELDS.generatedLength.label": {
     "en": "9a6d2215cc16392c",
@@ -168,16 +168,16 @@
     "text": "Ilan sa mga NAKARAANG password ng isang tao ang inaalala at tinatanggihan. Palaging tinatanggihan din ang kasalukuyang password habang higit sa 0 ito, kaya ang 5 ay nangangahulugang ang bagong password ay hindi maaaring alinman sa huling anim. Pinapatay ng 0 ang patakaran. Ang attribute ng draft, na may kahulugan ng draft. Bawat inaalalang password ay itinatago bilang hash na ginamit na sa pag-store nito (argon2id o scrypt), sa pwdHistory sa sariling entry ng tao, at ang pagsuri sa bagong password ay gumagastos ng isang paghahambing ng hash bawat isang inaalala."
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "Ilang character na hindi titik, hindi digit at hindi whitespace ang dapat laman ng password. Pinapatay ng 0 ang patakaran."
+    "en": "1121ccc1580b0c86",
+    "text": "Laging 0. Tinatanggihan ang patakarang humihingi ng mga simbolo: hinihingi ng ASVS 5.0.0 6.2.5 na tanggapin ang password na may anumang komposisyon, kaya haba lang ang hinihingi ng patakarang ito."
   },
   "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "Kung dapat may kahit isang malaking titik ang password, sa anumang script."
+    "en": "9ab7a52d3b16949e",
+    "text": "Laging naka-off. Tinatanggihan ang patakarang humihingi ng malaking titik: hinihingi ng ASVS 5.0.0 6.2.5 na tanggapin ang password na may anumang komposisyon."
   },
   "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "Kung dapat may kahit isang decimal digit ang password."
+    "en": "9d7cd7fdbca971d9",
+    "text": "Laging naka-off. Tinatanggihan ang patakarang humihingi ng numero: hinihingi ng ASVS 5.0.0 6.2.5 na tanggapin ang password na may anumang komposisyon."
   },
   "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
     "en": "9abc8e368dbfdf05",
@@ -234,22 +234,6 @@
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
     "text": "hindi bababa sa {{n}} character"
-  },
-  "password.sentences.minSymbolsOne": {
-    "en": "bcd5d7597e2d9c28",
-    "text": "hindi bababa sa {{n}} simbolo (character na hindi titik, numero o espasyo)"
-  },
-  "password.sentences.minSymbolsMany": {
-    "en": "59951161d553809a",
-    "text": "hindi bababa sa {{n}} simbolo (character na hindi titik, numero o espasyo)"
-  },
-  "password.sentences.uppercase": {
-    "en": "4a27754133d00695",
-    "text": "isang malaking titik"
-  },
-  "password.sentences.digit": {
-    "en": "d24f1fa16d122006",
-    "text": "isang numero"
   },
   "password.sentences.history": {
     "en": "524e6c7233b4e109",
@@ -963,57 +947,29 @@
     "en": "02f30171dcced882",
     "text": "LDAP simple bind"
   },
-  "serviceAccount.DOORS.allowLdapBind.what": {
-    "en": "3a8c8bfe4923e585",
-    "text": "Isang bind sa 389 o 636 (RFC 4513)."
-  },
   "serviceAccount.DOORS.allowWsTrust.label": {
     "en": "a1d8fa9805648e7d",
     "text": "WS-Trust UsernameToken"
-  },
-  "serviceAccount.DOORS.allowWsTrust.what": {
-    "en": "4d920a20f96a19a1",
-    "text": "Isang WS-Security UsernameToken na ipinadala sa security token service."
   },
   "serviceAccount.DOORS.allowScim.label": {
     "en": "13441836ceee258a",
     "text": "SCIM HTTP Basic"
   },
-  "serviceAccount.DOORS.allowScim.what": {
-    "en": "506c021bbd796caa",
-    "text": "HTTP Basic sa /scim/v2 (RFC 7617)."
-  },
   "serviceAccount.DOORS.allowSsf.label": {
     "en": "5f0a37c29c6be8ab",
     "text": "Shared Signals HTTP Basic"
-  },
-  "serviceAccount.DOORS.allowSsf.what": {
-    "en": "41e56e2806f5f363",
-    "text": "HTTP Basic sa mga /ssf endpoint (RFC 7617)."
   },
   "serviceAccount.DOORS.allowEst.label": {
     "en": "90892c78280ab239",
     "text": "EST HTTP Basic"
   },
-  "serviceAccount.DOORS.allowEst.what": {
-    "en": "a40e0a702c1600f6",
-    "text": "HTTP Basic sa /.well-known/est (RFC 7030 section 3.2.3)."
-  },
   "serviceAccount.DOORS.allowKerberos.label": {
     "en": "b707a90f8fd22d69",
     "text": "Kerberos AS exchange"
   },
-  "serviceAccount.DOORS.allowKerberos.what": {
-    "en": "22fac9e9e9e7d0a8",
-    "text": "Isang AS-REQ na ang pre-authentication ay nagpapatunay ng key ng password (RFC 4120), at MS-KKDCP."
-  },
   "serviceAccount.DOORS.allowPasswordGrant.label": {
     "en": "a55abf2085020a8c",
     "text": "OAuth 2.0 password grant"
-  },
-  "serviceAccount.DOORS.allowPasswordGrant.what": {
-    "en": "7fe8d96fec703361",
-    "text": "grant_type=password sa token endpoint (RFC 6749 section 4.3), kung saan pinapayagan ng realm ang grant."
   },
   "serviceAccount.SELECTORS.precedence.what": {
     "en": "3bc40f48dcc93e91",
@@ -1691,22 +1647,6 @@
     "en": "df463dd3d0380799",
     "text": "Ang class ng serbisyong ito para sa attribute policy: ang mga attribute na dapat hawak ng bawat tao sa isang realm. Pinangangalanan ng PROFILE (`cn=default`, o isang named profile na sa realm mismo)."
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "Sa isang tao o isang group: ang attribute policy na pinapangalanan nito, `default` o isang named profile ng realm. Isang value."
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "ito ay para sa taong nagpapangalan nito, o nasa group na nagpapangalan nito, kapag walang ibang policy na pinapangalanan nila ang may mas mababang precedence kaysa {{precedence}}"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "Ang class ng serbisyong ito para sa custom attribute ng isang realm, sa ou=attributeDefinitions, pinangangalanan ng attribute (`cn=<name>`)."
@@ -1730,6 +1670,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "TRUE kung iisa ang value ng custom attribute, FALSE kung marami."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "TRUE kapag nakikita ng tao ang sarili niyang mga value ng isang custom attribute sa Overview ng user portal. FALSE, o wala, bilang default."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "TRUE kapag maaaring baguhin ng tao ang sarili niyang mga value ng isang custom attribute sa user portal. Kasama rito ang stsAttributePortalVisible. FALSE, o wala, bilang default."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "Sa isang tao o isang group: ang attribute policy na pinapangalanan nito, `default` o isang named profile ng realm. Isang value."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1743,17 @@
     "en": "3867ffa1e351efa2",
     "text": "Tinukoy ang custom attribute na {{name}} sa realm na ito sa {{dn}}. Puwede na itong ibigay sa isang tao at gawing kailangan ng policy na ito."
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "Binago na ang custom attribute na {{name}}. Hindi nagbago ang syntax nito at kung ilang value ang hawak nito."
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "Hindi na tinutukoy ang custom attribute na {{name}} sa realm na ito."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "ito ay para sa taong nagpapangalan nito, o nasa group na nagpapangalan nito, kapag walang ibang policy na pinapangalanan nila ang may mas mababang precedence kaysa {{precedence}}"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

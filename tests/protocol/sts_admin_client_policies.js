@@ -268,7 +268,7 @@ function sentToSignIn(r) {
   log.debug("Entering sentToSignIn().");
   log.debug("Leaving sentToSignIn().");
   return (r.status === 302 || r.status === 303) &&
-    /\/authn\/login\?authn=/.test(r.location);
+    /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location);
 }
 
 // RFC 9700 section 2.1.1: a nonce is transaction-specific, and product

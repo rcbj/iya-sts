@@ -2,6 +2,8 @@
   "login.title": "登入 — 身分驗證服務",
   "login.heading": "登入",
   "login.at": "身分驗證服務，位址 <code>{base}</code>",
+  "login.reauthPromptLogin": "應用程式要求您重新登入（prompt=login）。",
+  "login.reauthMaxAge": "應用程式要求您重新登入，因為您上次登入的時間早於它允許的範圍（max_age）。",
   "login.linkAccount": "<strong>連結您的帳戶。</strong>一個聯合身分合作夥伴已將您以 <code>{name}</code> 身分登入，但該帳戶尚未與其連結。請在此以 {name} 身分登入以完成連結；按「取消」則不會連結任何內容。",
   "login.username": "使用者名稱",
   "login.password": "密碼",
@@ -197,5 +199,7 @@
   "postLogin.subAttestation": "{name}，您的後量子通行金鑰並未以後量子演算法進行證明。請註冊一個經過後量子演算法證明的通行金鑰。",
   "postLogin.failed": "您的裝置未能建立通行金鑰（{error}）。",
   "postLogin.failedHelp": "如果您的裝置或瀏覽器無法建立 ML-DSA 通行金鑰，請在支援 ML-DSA 的獨立安全金鑰上註冊，或洽詢管理員：在您的通行金鑰原則允許管理員為您註冊通行金鑰的情況下，管理員可以為您註冊一個，並且可以從主控台升級您的通行金鑰。",
-  "postLogin.failedSkip": "您也可以暫時略過此步驟。"
+  "postLogin.failedSkip": "您也可以暫時略過此步驟。",
+  "client.policy": "隱私權政策",
+  "client.tos": "服務條款"
 }

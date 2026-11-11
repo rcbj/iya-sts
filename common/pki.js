@@ -110,12 +110,13 @@ const errorCodes = require('./error_codes');
 // A LEAF (`config` and `error_codes` only), so no cycle.
 const mode = require('./mode');
 // THE ISSUED REGISTER'S DISPLACED RECORD (#185), shared with the cluster
-// merge. A LEAF (`config` and bunyan), already in the parent project's
-// Kerberos COPY closure through `keystore.js`, which requires it at load.
+// merge. A LEAF (`config` and bunyan), already loaded through `keystore.js`,
+// which requires it at load.
 const pkiMerge = require('./pki_merge');
 // The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
 // `common/crypto_impl/CLAUDE.md`.
 const x509 = require('./crypto_impl/x509');
+const algorithmRegistry = require('./crypto_impl/algorithm_registry');
 const keyMaterial = require('./crypto_impl/key_material');
 // The X.509 binding of the post-quantum algorithms, and the algorithm table it
 // rests on — for ONE thing: writing the SubjectPublicKeyInfo of a
@@ -569,8 +570,10 @@ function intermediatePathLen(kind) {
 function algorithmsForUseCase(uc, chosen, options) {
   log.debug("Entering algorithmsForUseCase().");
   const configured = String(config.value('pki.keyAlgorithm') || '');
+  // Product's own default is a default too (#1491), not an operator's choice.
+  const defaulted = /^default/.test(String(config.sourceOf('pki.keyAlgorithm')));
   if (!uc.keyAlg || options.keyAlg ||
-      (configured && configured !== DEFAULT_KEY_ALG)) {
+      (configured && !defaulted && configured !== DEFAULT_KEY_ALG)) {
     log.debug("Leaving algorithmsForUseCase().");
     return chosen;
   }
@@ -629,8 +632,10 @@ const DEFAULT_SIG_ALG = 'sha256-rsa';
 
 // The default subject fields. Overridable per build; they are here so that a
 // hierarchy built with the button and nothing typed still reads as something
-// rather than as `CN=RootCA`.
-const DEFAULT_ORGANISATION = 'sts';
+// rather than as `CN=RootCA`. It is the product's name, `iya-sts`, since
+// #1294 (2026-11-03); it was `sts`, the product's old name, until then, and
+// a hierarchy built before that keeps the subject it was built with.
+const DEFAULT_ORGANISATION = 'iya-sts';
 
 // ---------------------------------------------------------------------------
 // THE ALTERNATIVE KEY EVERY AUTHORITY HOLDS (2026-09-26, #68 — rcbj's D4,
@@ -789,6 +794,49 @@ function tierYearsFrom(years, tier) {
   return configuredTierYears(tier);
 }
 
+// A lifetime `setUTCFullYear` cannot represent. ECMAScript throws
+// `RangeError: Invalid time value` past the largest date it can hold, and
+// `buildScope()` was recording that as the certificate encoder failing
+// (STS-PKI-0006, #1409). The caller refuses before a key is generated.
+/**
+ * Answers a refusal when a lifetime in years is not a date a certificate
+ * can carry, and null when it is or when the profile's own default applies.
+ *
+ * @param years - the lifetime `tierYearsFrom()` answered
+ * @returns `{ ok: false, errors }` marked STS-PKI-0268, or null
+ */
+function certificateLifetimeProblem(years) {
+  log.debug("Entering certificateLifetimeProblem().");
+  const n = Math.floor(Number(years));
+  if (!(n > 0)) {
+    log.debug("Leaving certificateLifetimeProblem(). The profile's own.");
+    return null;
+  }
+  const notBefore = certificateInstant();
+  const notAfter = certificateInstant(notBefore.getTime());
+  let thrown = null;
+  try {
+    notAfter.setUTCFullYear(notAfter.getUTCFullYear() + n);
+  } catch (e) {
+    // The date cannot represent the year. That is the input, not the encoder.
+    thrown = e;
+    log.debug("Caught in certificateLifetimeProblem(): " +
+              ((e && e.message) || e));
+  }
+  if (thrown || isNaN(notAfter.getTime())) {
+    log.info(errorCodes.tag('STS-PKI-0268') + 'pki: a lifetime of ' + n +
+             ' years is not a date a certificate can carry. Nothing was ' +
+             'stored.');
+    log.debug("Leaving certificateLifetimeProblem(). Unrepresentable.");
+    return errorCodes.mark({ ok: false,
+             errors: ['A lifetime of ' + n + ' years is not a date a ' +
+                      'certificate can carry. Nothing was stored.'] },
+                           'STS-PKI-0268');
+  }
+  log.debug("Leaving certificateLifetimeProblem().");
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // WHICH ALGORITHMS MAY BE ASKED FOR. Both lists are READ FROM THE MODULE THAT
 // PERFORMS THEM rather than written here, which is `crypto_metadata.js`'s rule
@@ -913,7 +961,13 @@ function signatureForIssuer(parent, preferred, subjectKeyAlg) {
   const issuerKeyAlg = parent ? parent.keyAlg : subjectKeyAlg;
   const issuerDesc = keyMaterial.keyAlg(issuerKeyAlg);
   const wanted = x509.sigAlg(preferred);
-  if (issuerDesc && wanted && wanted.kind === issuerDesc.kind &&
+  // A post-quantum key produces exactly one algorithm, and a KEM produces
+  // none. Matching on `kind` alone handed an ML-KEM issuer a composite
+  // signature, and signing the Issuing CA then threw (#1409). A signature
+  // this issuer cannot produce is replaced, which is the rule above.
+  const producible = issuerDesc
+    ? x509.signatureAlgorithmsFor(issuerDesc) : [];
+  if (wanted && producible.indexOf(wanted.id) >= 0 &&
       (!wanted.weak || mode.usesBrokenAlgorithms())) {
     log.debug("Leaving signatureForIssuer().");
     return preferred;
@@ -1199,6 +1253,12 @@ async function buildRootNow(opts) {
     log.debug('Leaving buildRoot(). ' + chosen.errors.join(' '));
     return chosen;
   }
+  const rootYears = tierYearsFrom(options.years, 'root');
+  const rootLifetime = certificateLifetimeProblem(rootYears);
+  if (rootLifetime) {
+    log.debug('Leaving buildRoot(). The lifetime.');
+    return rootLifetime;
+  }
   const organisation = String(options.organisation || DEFAULT_ORGANISATION);
   const country = String(options.country || '');
   let root;
@@ -1209,7 +1269,7 @@ async function buildRootNow(opts) {
       organisation: organisation, country: country,
       keyAlg: chosen.keyAlg, signatureAlg: chosen.signatureAlg,
       altKeyAlg: chosen.altKeyAlg,
-      years: tierYearsFrom(options.years, 'root'), parent: null
+      years: rootYears, parent: null
     });
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0005') + 'pki: the Root CA could not ' +
@@ -1580,8 +1640,8 @@ function buildsSettled() {
 
 // The key and signature algorithm a build is to use, checked as a PAIR. It is
 // one function because the three checks belong together — an unknown key
-// algorithm, an unknown signature algorithm, and a pair whose families
-// disagree — and because every builder below makes all three.
+// algorithm, an unknown signature algorithm, and a signature the key
+// cannot produce — and because every builder below makes all three.
 /**
  * Decides the key, signature and alternative key algorithms a build is to
  * use, checked as a pair.
@@ -1630,8 +1690,16 @@ function algorithmsFrom(options) {
   // -------------------------------------------------------------------------
   const configuredSig = String(mode.valueInForce('pki.signatureAlgorithm') ||
                                '').trim();
-  const configuredFits = !!configuredSig && !!x509.sigAlg(configuredSig) &&
-                         x509.sigAlg(configuredSig).kind === keyDesc.kind;
+  const configuredSpec = x509.sigAlg(configuredSig);
+  // Membership, not kind. Two post-quantum algorithms are both `pqc`, so a
+  // kind check treated a composite setting as a signature an ML-DSA key can
+  // produce and the build was then refused. A setting the key cannot
+  // produce is skipped, as an RSA setting already is for an EC build
+  // (#1409). A caller that names the pair is still refused below.
+  const configuredFits = !!configuredSpec &&
+    signatureAlgorithms(keyAlgId).some(function (one) {
+      return one.id === configuredSpec.id;
+    });
   const sigAlgId = String(options.signatureAlg ||
                           (configuredFits ? configuredSig : '') ||
                           defaultSignatureAlgorithmFor(keyAlgId));
@@ -1654,17 +1722,21 @@ function algorithmsFrom(options) {
                         return one.id;
                       }).join(', ') + '.'] }, 'STS-PKI-0191');
   }
-  if (sig.kind !== keyDesc.kind) {
-    log.debug("Leaving algorithmsFrom().");
-    // Refused here rather than left to Web Crypto, which reports it as a key
-    // usage error naming neither the key nor the algorithm.
-    return errorCodes.mark({ ok: false,
-             errors: ['A ' + keyDesc.label + ' key cannot produce a ' +
-                      sig.label + ' signature. The algorithms this key can ' +
-                      'sign with are ' +
-                      signatureAlgorithms(keyAlgId).map(function (one) {
-                        return one.id;
-                      }).join(', ') + '.'] }, 'STS-PKI-0004');
+  // Not the kind alone. A post-quantum key produces one algorithm, and a
+  // KEM produces none; both are `kind: 'pqc'`, so a kind check accepted an
+  // ML-KEM authority asked to sign with a composite and the encoder threw
+  // (STS-PKI-0007, #1409). The authoring pane already uses this list.
+  const producible = signatureAlgorithms(keyAlgId);
+  if (!producible.some(function (one) { return one.id === sig.id; })) {
+    log.debug("Leaving algorithmsFrom(). The key cannot produce it.");
+    const listed = producible.map(function (one) { return one.id; });
+    const sentence = listed.length
+      ? ('A ' + keyDesc.label + ' key cannot produce a ' + sig.label +
+         ' signature. The algorithms this key can sign with are ' +
+         listed.join(', ') + '.')
+      : ('A ' + keyDesc.label + ' key cannot sign, so it cannot be a ' +
+         'certificate authority.');
+    return errorCodes.mark({ ok: false, errors: [sentence] }, 'STS-PKI-0004');
   }
   const alternative = alternativeKeyAlgFrom(options.altKeyAlg);
   if (!alternative.ok) {
@@ -1829,6 +1901,89 @@ function realmRemovedDuringBuild(id, kind, since) {
   return true;
 }
 
+// OpenSSL's default maximum certificate list is 102400 bytes
+// (SSL_MAX_CERT_LIST_DEFAULT). The process listener presents four
+// certificates: the leaf, the TLS Issuing CA, the Intermediate and the
+// Root (#1064). A scope build does not replace the Root. The Intermediate
+// is signed by that Root, so the leaf and the TLS Issuing CA are the two
+// certificates this build signs. A hybrid branch adds the alternative
+// signature on those two, and a post-quantum signing key replaces the
+// classical signature on those two. The classical bodies still have to
+// fit. 16384 bytes is that headroom. ML-DSA-87 (4627) stays inside the
+// limit. SLH-DSA-256f (49856) does not, whether it is the alternative key
+// (#1421) or the signing key itself (#1432), and the listener then fails
+// every handshake.
+const LISTENER_CERT_LIST_MAX = 102400;
+const LISTENER_CLASSICAL_CHAIN_BUDGET = 16384;
+const PROCESS_LISTENER_ALT_SIGNATURES = 2;
+
+// A classical id contributes nothing: its signature already sits in the
+// 16384-byte budget. A post-quantum id contributes its FIPS signature
+// length. An id the size table does not know contributes nothing here;
+// the algorithm refusal that already ran is the answer for that id.
+function listenerPqSignatureBytes(alg) {
+  log.debug('Entering listenerPqSignatureBytes().');
+  if (!alg) {
+    log.debug('Leaving listenerPqSignatureBytes(). None.');
+    return 0;
+  }
+  const desc = keyMaterial.keyAlg(alg);
+  let signatureBytes = 0;
+  try {
+    const found = desc && desc.pqc ? pqc.signatureAlg(desc.pqc) : null;
+    signatureBytes = (found && found.lengths &&
+                      found.lengths.signature) || 0;
+  } catch (e) {
+    log.debug('Caught in listenerPqSignatureBytes(): ' +
+              ((e && e.message) || e));
+    signatureBytes = 0;
+  }
+  log.debug('Leaving listenerPqSignatureBytes().');
+  return signatureBytes;
+}
+
+function processListenerAltSignatureProblem(altKeyAlg, keyAlg) {
+  log.debug('Entering processListenerAltSignatureProblem().');
+  const altBytes = listenerPqSignatureBytes(altKeyAlg);
+  const primaryBytes = listenerPqSignatureBytes(keyAlg);
+  if (!altBytes && !primaryBytes) {
+    log.debug('Leaving processListenerAltSignatureProblem(). Classical.');
+    return null;
+  }
+  const bytes = (altBytes + primaryBytes) *
+                PROCESS_LISTENER_ALT_SIGNATURES +
+                LISTENER_CLASSICAL_CHAIN_BUDGET;
+  if (bytes <= LISTENER_CERT_LIST_MAX) {
+    log.debug('Leaving processListenerAltSignatureProblem(). Fits.');
+    return null;
+  }
+  // The #1421 sentence stays word for word when only the alternative key
+  // is large. A signing key, or both, is named for what it is.
+  let detail = 'An alternative ' + altKeyAlg + ' key';
+  if (primaryBytes && altBytes) {
+    detail = 'A ' + keyAlg + ' signing key and an alternative ' +
+             altKeyAlg + ' key';
+  } else if (primaryBytes) {
+    detail = 'A ' + keyAlg + ' signing key';
+  }
+  const logged = detail.charAt(0).toLowerCase() + detail.slice(1);
+  log.error(errorCodes.tag('STS-PKI-0270') + 'pki: ' + logged +
+            ' on the process branch would put ' +
+            (altBytes + primaryBytes) + ' bytes of signature on each of ' +
+            'the ' + PROCESS_LISTENER_ALT_SIGNATURES + ' certificates ' +
+            'this build signs, past the ' + LISTENER_CERT_LIST_MAX +
+            '-byte certificate list a stock TLS client accepts. The ' +
+            'branch was not built.');
+  log.debug('Leaving processListenerAltSignatureProblem(). Too large.');
+  return errorCodes.mark({ ok: false,
+           errors: [detail + ' on the process branch would make the TLS ' +
+                    'listener certificate list larger than a stock TLS ' +
+                    'client can receive. The process branch was not ' +
+                    'rebuilt, and the listener certificate was left as ' +
+                    'it is.'] },
+                         'STS-PKI-0270');
+}
+
 async function buildScopeNow(scopeId, opts) {
   log.debug('Entering buildScope(). scope=' + scopeId);
   const id = String(scopeId);
@@ -1841,6 +1996,28 @@ async function buildScopeNow(scopeId, opts) {
   if (!chosen.ok) {
     log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
     return chosen;
+  }
+  // BEFORE the Root and BEFORE any tier is made, for the same reason as the
+  // algorithm refusal above. A process branch is the main listener's chain.
+  // A signing key or an alternative key whose signatures do not fit in a
+  // stock TLS client's certificate list would be installed and then every
+  // handshake would fail (#1421, #1432). Refusing here leaves the branch,
+  // and the listener, as they are.
+  if (kind === 'process') {
+    const handshake = processListenerAltSignatureProblem(chosen.altKeyAlg,
+                                                         chosen.keyAlg);
+    if (handshake) {
+      log.debug('Leaving buildScope(). The listener chain.');
+      return handshake;
+    }
+  }
+  const intermediateYears = tierYearsFrom(options.years, 'intermediate');
+  const issuingYears = tierYearsFrom(options.years, 'issuing');
+  const lifetime = certificateLifetimeProblem(intermediateYears) ||
+                   certificateLifetimeProblem(issuingYears);
+  if (lifetime) {
+    log.debug('Leaving buildScope(). The lifetime.');
+    return lifetime;
   }
   const removalsAtStart = removalCount(id);
   const rooted = await ensureRoot(options);
@@ -1884,7 +2061,7 @@ async function buildScopeNow(scopeId, opts) {
         // `intermediatePathLen()`. A realm's is 2 because it carries `spiffe`;
         // the process branch's is 1, exactly as the profile says.
         pathLen: intermediatePathLen(kind),
-        years: tierYearsFrom(options.years, 'intermediate'), parent: root
+        years: intermediateYears, parent: root
       });
     } catch (e) {
       log.error(errorCodes.tag('STS-PKI-0006') + 'pki: ' + label + '\'s ' +
@@ -1917,7 +2094,7 @@ async function buildScopeNow(scopeId, opts) {
         keyAlg: forThis.keyAlg, signatureAlg: forThis.signatureAlg,
         altKeyAlg: chosen.altKeyAlg,
         pathLen: issuingPathLen(uc.id),
-        years: tierYearsFrom(options.years, 'issuing'),
+        years: issuingYears,
         parent: intermediate
       });
     } catch (e) {
@@ -2394,7 +2571,8 @@ function chainPemFor(realmId) {
 // `/crypto/metadata`, and the XML signatures' and metadata's `X509Data`.
 //
 // **WHY THE ROOT GOES WITH IT.** Every Root this service builds is called
-// `CN=sts Root CA, O=sts`, and a fresh install builds a new one. A party never
+// `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts` before #1294),
+// and a fresh install builds a new one. A party never
 // handed the current Root sees only the top certificate's issuer NAME and can
 // match it to an older Root of that name it already holds — which a Windows
 // user reported as "the Root is the same on every install" when it never was.
@@ -2908,14 +3086,51 @@ async function issueSigningKeyPair(realmId, opts) {
   // same rule every kid in this service follows, and for the same reason: two
   // keys under one name is a verifier reporting a bad signature about a key it
   // fetched from the wrong place.
-  const publicJwk = publicJwkOf(pair.publicPem);
+  //
+  // A CLASSICAL PEM goes through Node's decoder. A post-quantum one does not:
+  // OpenSSL has no decoder for these OIDs, and `createPublicKey` throws
+  // `error:03000072`, which left this call as an uncaught 500 on
+  // `POST /admin-api/pki/issue` (#1418). `pubToJwk()` is the AKP conversion
+  // already used everywhere else, and it refuses a composite ML-DSA key on
+  // purpose — the X.509 bytes and the JOSE bytes are not the same key.
+  let publicJwk;
+  try {
+    if (keyDesc.kind === 'pqc') {
+      publicJwk = await keyMaterial.pubToJwk(pair.publicPem, keyDesc);
+    } else {
+      publicJwk = publicJwkOf(pair.publicPem);
+    }
+  } catch (e) {
+    // The composite refusal, or a PEM this build cannot read. The sentence
+    // the caller sees names neither the key nor the OpenSSL text: both are
+    // an operator's, and the code is recorded rather than sent.
+    log.debug('Caught in issueSigningKeyPair(): ' +
+              ((e && e.message) || e));
+    log.debug('Leaving issueSigningKeyPair(). No JWK.');
+    return unpublishedJwk(identifier, (e && e.message) || e);
+  }
   const jwsAlg = jwsAlgFor(keyDesc, sigAlgId);
-  publicJwk.kid = subjectKind.kidPrefix +
-                  stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
-  publicJwk.use = encryption ? 'enc' : 'sig';
+  // `alg` is set BEFORE the thumbprint. It is not a member of a classical
+  // thumbprint, so moving it changes no RSA, EC or OKP kid. It IS a member
+  // of an AKP thumbprint (RFC 9964), and computing one without it throws.
   if (jwsAlg && !encryption) {
     publicJwk.alg = jwsAlg;
   }
+  if (!encryption && keyDesc.kind === 'pqc' && !jwsAlg) {
+    // A KEM, or a parameter set JOSE has no name for. A signing JWK with no
+    // `alg` is not a key a verifier can use, and an AKP thumbprint cannot
+    // be computed without one when pubToJwk did not set it either.
+    log.debug('Leaving issueSigningKeyPair(). No JOSE algorithm.');
+    return unpublishedJwk(identifier,
+                          'no JOSE signature algorithm for ' + keyDesc.id);
+  }
+  if (publicJwk.kty === 'AKP' && !publicJwk.alg) {
+    log.debug('Leaving issueSigningKeyPair(). AKP without alg.');
+    return unpublishedJwk(identifier, 'an AKP key is missing alg');
+  }
+  publicJwk.kid = subjectKind.kidPrefix +
+                  stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  publicJwk.use = encryption ? 'enc' : 'sig';
   // `x5c` is the certificate chain in the JWK itself (RFC 7517 section 4.7):
   // base64 DER, leaf first, NOT base64url. A client that registers this JWKS
   // therefore registers the chain as well, which is what lets `client_auth.js`
@@ -2950,6 +3165,10 @@ async function issueSigningKeyPair(realmId, opts) {
     subjectKind: subjectKind.id,
     subjectKindLabel: subjectKind.label,
     subjectUri: subjectKind.urnPrefix + identifier,
+    // WHICH AUTHORITY SIGNED IT, by the id its revocation list is kept
+    // under (#1290): a person's key pairs are revoked one at a time on
+    // `/portal/signing-key`, and a serial is unique only within one issuer.
+    useCase: issuing.useCase || primaryUseCaseFor(id),
     kid: publicJwk.kid,
     keyAlg: keyAlgId,
     signatureAlg: sigAlgId,
@@ -3097,12 +3316,9 @@ const PATH_MAX_POLICY_NODES = 10000;
 // Every extension this module reads and so may accept marked critical. The
 // purpose extensions (keyUsage, extKeyUsage) are the caller's to ask about,
 // and understanding them is what lets a caller ask.
-const PATH_UNDERSTOOD_CRITICAL = Object.keys(PATH_EXTENSION_OIDS)
-  .map(function (name) { return PATH_EXTENSION_OIDS[name]; });
-const PATH_KEY_USAGE_BITS = ['digitalSignature', 'nonRepudiation',
-                             'keyEncipherment', 'dataEncipherment',
-                             'keyAgreement', 'keyCertSign', 'cRLSign',
-                             'encipherOnly', 'decipherOnly'];
+// One list (#1360): `crypto.js`'s field checks read the same one.
+const PATH_UNDERSTOOD_CRITICAL = stsCrypto.CERTIFICATE_UNDERSTOOD_CRITICAL;
+const PATH_KEY_USAGE_BITS = stsCrypto.KEY_USAGE_BITS;
 const PATH_EMAIL_ADDRESS_OID = '1.2.840.113549.1.9.1';
 // RFC 9881 section 2's three ML-DSA parameter sets, and section 5's rule for
 // the keyUsage a certificate carrying one of them may state.
@@ -3546,6 +3762,14 @@ function nameBytesOf(name) {
  * @param one - an entry with `der`, as `certificateFromDer()` makes it
  * @returns the certificate's path facts
  */
+// RSASSA-PSS's hash by OID, the part of the algorithm its own OID does not name.
+const PATH_PSS_HASHES = {
+  '1.3.14.3.2.26': 'sha1',
+  '2.16.840.1.101.3.4.2.1': 'sha256',
+  '2.16.840.1.101.3.4.2.2': 'sha384',
+  '2.16.840.1.101.3.4.2.3': 'sha512'
+};
+
 function pathFactsOf(one) {
   log.debug("Entering pathFactsOf().");
   if (one.pathFacts) {
@@ -3597,6 +3821,7 @@ function pathFactsOf(one) {
                       '2.1.1 forbids specifiedCurve and implicitCurve)');
     }
     const signedWith = pk.signatureAlgorithm.algorithmId;
+    facts.signatureOid = signedWith;
     if (PATH_MD_SIGNATURES.indexOf(signedWith) >= 0) {
       facts.weakSignature = 'md';
     } else if (PATH_SHA1_SIGNATURES.indexOf(signedWith) >= 0) {
@@ -3612,6 +3837,7 @@ function pathFactsOf(one) {
         hash = PATH_SHA1;
       }
       facts.weakSignature = hash === PATH_SHA1 ? 'sha1' : '';
+      facts.signatureHash = PATH_PSS_HASHES[hash] || '';
     }
     facts.notBefore = pk.notBefore.value.getTime();
     facts.notAfter = pk.notAfter.value.getTime();
@@ -4221,6 +4447,8 @@ function describePathName(name) {
 //   unusable        the certificate cannot be held to the rules (see
 //                   `pathFactsOf()`)
 //   critical        a critical extension nothing here implements
+//   unaccepted-signature  a certificate signed with an algorithm
+//                   `pki.acceptedSignatureAlgorithms` does not list (#1368)
 //   weak-signature  a certificate signed with MD2, MD5 or (unless
 //                   `opts.allowSha1`) SHA-1
 //   malformed       a rule of RFC 5280 section 4 a relying party can and
@@ -4240,7 +4468,8 @@ function describePathName(name) {
  * Holds a certificate path to this module's path rules and reports the first
  * certificate, from the leaf, that breaks one.
  *
- * `check` is one of unusable, critical, weak-signature, malformed, not-ca,
+ * `check` is one of unusable, critical, weak-signature, unaccepted-signature,
+ * malformed, not-ca,
  * key-cert-sign, path-len, name-constraints or policy.
  * @param path - entries with `der`, leaf first and anchor last
  * @param opts - `allowCritical` (extensions the caller evaluates itself),
@@ -4276,6 +4505,16 @@ function pathRuleProblem(path, opts) {
       return refuse('critical', i, 'carries a critical extension this ' +
                     'service does not implement (' + unknown.join(', ') +
                     '), which RFC 5280 section 4.2 says must be refused');
+    }
+    // THE X.509 ACCEPT CHOKEPOINT (#1368). Above the weak-hash rule's reach:
+    // a list is the realm's own statement, at every certificate but the anchor.
+    if (i < path.length - 1 && facts.signatureOid) {
+      const unaccepted = stsCrypto.signaturePolicy.acceptX509Cause(
+        facts.signatureOid, facts.signatureHash);
+      if (unaccepted) {
+        log.debug("Leaving pathRuleProblem(). Not accepted at " + i + ".");
+        return refuse('unaccepted-signature', i, unaccepted.message);
+      }
     }
     if (i < path.length - 1 && facts.weakSignature &&
         (facts.weakSignature === 'md' || !options.allowSha1)) {
@@ -4374,6 +4613,20 @@ function pathRuleProblem(path, opts) {
   if (!policy.ok) {
     log.debug("Leaving pathRuleProblem(). Policy.");
     return { check: 'policy', index: 0, why: policy.why };
+  }
+  // THE LEAF'S OWN FIELDS, LAST (#1360): what its use case asks of its
+  // keyUsage and extendedKeyUsage, so they are part of path validation rather
+  // than something a caller remembers to add. Only a caller naming a purpose
+  // passes `opts.leaf`; every other path is exactly what it was.
+  if (options.leaf) {
+    const field = stsCrypto.certificateFieldProblem(path[0].der,
+      Object.assign({ role: 'leaf', allowSha1: options.allowSha1,
+                      allowCritical: allowed }, options.leaf));
+    if (field) {
+      log.debug("Leaving pathRuleProblem(). The leaf's " + field.check + ".");
+      return { check: field.check, index: 0, why: field.why,
+               code: field.code };
+    }
   }
   log.debug("Leaving pathRuleProblem(). The path holds.");
   return null;
@@ -4497,6 +4750,7 @@ function authorityCode(problem, issuerCode) {
   const codes = { 'name-constraints': 'STS-PKI-0194',
                   critical: 'STS-PKI-0195', malformed: 'STS-PKI-0196',
                   unusable: 'STS-PKI-0196', 'weak-signature': 'STS-PKI-0197',
+                  'unaccepted-signature': 'STS-KEYS-0185',
                   policy: 'STS-PKI-0199' };
   const code = codes[problem.check] || issuerCode;
   log.debug("Leaving authorityCode(). " + code);
@@ -5355,7 +5609,9 @@ async function registerCertificate(realmId, opts) {
       log.debug('Leaving registerCertificate(). An unreadable certificate.');
       return uploadRefusal('STS-PKI-0143', 'Certificate ' + (i + 1) + ' of ' +
                            everything.length + ' in the upload could not be ' +
-                           'read: ' + e.message + '.');
+                           'read: ' +
+                           String((e && e.message) || e).replace(/\.+$/, '') +
+                           '.');
     }
     const key = cert.raw.toString('base64');
     if (seen[key]) {
@@ -5545,7 +5801,8 @@ async function registerCertificate(realmId, opts) {
       log.debug("Caught in registerCertificate(): " + ((e && e.message) || e));
       log.debug('Leaving registerCertificate(). The path would not parse.');
       return uploadRefusal('STS-PKI-0143', 'The chain could not be read: ' +
-                           e.message + '.');
+                           String((e && e.message) || e).replace(/\.+$/, '') +
+                           '.');
     }
     for (let i = 0; i < links.length; i++) {
       const link = links[i];
@@ -5670,6 +5927,14 @@ async function registerCertificate(realmId, opts) {
            identifier + '" in the "' + id + '" realm for ' + purpose.label +
            '. subject=' + record.subject + ', issuer=' + record.issuer +
            ', kid=' + record.kid + ', expires ' + record.notAfter + '.');
+  // One rule at the upload door and the use door, under paranoid PKI mode
+  // (#1360): the same fields, before it is written down.
+  const paranoid = require('./certificate_trust')
+    .registrationProblem('jose-signer', leaf.pem);
+  if (paranoid) {
+    log.debug('Leaving registerCertificate(). Paranoid: ' + paranoid.code);
+    return uploadRefusal(paranoid.code, paranoid.why);
+  }
   log.debug('Leaving registerCertificate(). ' + source);
   return { ok: true, registered: record };
 }
@@ -5948,7 +6213,8 @@ async function verifySignerChain(realmId, material) {
     log.debug("Caught in verifySignerChain(): " + ((e && e.message) || e));
     log.debug('Leaving verifySignerChain(). Unreadable.');
     return refuse('STS-PKI-0161', 'A certificate in ' + source + ' could not ' +
-                  'be read: ' + e.message + '.');
+                  'be read: ' +
+                  String((e && e.message) || e).replace(/\.+$/, '') + '.');
   }
   const leafName = oneLineName(leaf.cert.subject);
 
@@ -5993,7 +6259,8 @@ async function verifySignerChain(realmId, material) {
       log.debug('Leaving verifySignerChain(). The pinned certificate would ' +
                 'not parse.');
       return refuse('STS-PKI-0161', 'The certificate "' + leafName + '" in ' +
-                    source + ' could not be read: ' + e.message + '.');
+                    source + ' could not be read: ' +
+                    String((e && e.message) || e).replace(/\.+$/, '') + '.');
     }
     const broken = linkProblem(links);
     if (broken) {
@@ -6111,7 +6378,9 @@ async function verifySignerChain(realmId, material) {
     log.debug("Caught in verifySignerChain(): " + ((e && e.message) || e));
     log.debug('Leaving verifySignerChain(). The path would not parse.');
     return refuse('STS-PKI-0161', 'The chain of "' + leafName + '" could not ' +
-                  'be read: ' + e.message + '.', { path: chainSubjects });
+                  'be read: ' +
+                  String((e && e.message) || e).replace(/\.+$/, '') +
+                  '.', { path: chainSubjects });
   }
   // The foreign rule of `alternativeProblem()` (#68): wrong is refused.
   const altProblem = await alternativeProblem(path.map(function (one) {
@@ -6244,6 +6513,21 @@ function publicJwkOf(publicPem) {
   return stsCrypto.publicKeyOf(publicPem).export({ format: 'jwk' });
 }
 
+// The refusal `issueSigningKeyPair()` returns when the subject key has no
+// JWK this service can publish (#1418). The sentence is fixed: it does not
+// repeat the key, the OpenSSL text, or the code, which is recorded here.
+function unpublishedJwk(identifier, why) {
+  log.debug('Entering unpublishedJwk().');
+  log.error(errorCodes.tag('STS-PKI-0269') + 'pki: the public key for "' +
+            identifier + '" has no JWK this service can publish: ' + why);
+  log.debug('Leaving unpublishedJwk().');
+  return errorCodes.mark({ ok: false,
+           errors: ['That key cannot be published as a JWK. A composite ' +
+                    'ML-DSA key is kept as PEM, and a key-establishment ' +
+                    'algorithm is not a signing key.'] },
+                         'STS-PKI-0269');
+}
+
 // The JWS `alg` a key of this kind signs with, so that the JWK this module
 // hands out names one. The signature algorithm chosen for the CERTIFICATE
 // decides the digest — an RSA key issued under a SHA-384 chain gets RS384 —
@@ -6279,8 +6563,23 @@ function jwsAlgFor(keyDesc, sigAlgId) {
     log.debug('Leaving jwsAlgFor(). RSA.');
     return (sig.pss ? 'PS' : 'RS') + digit;
   }
-  log.debug('Leaving jwsAlgFor(). No JWS algorithm for that key.');
-  return null;
+  // A POST-QUANTUM SUBJECT KEY HAS THE ONE ALGORITHM, where JOSE has a name
+  // for it (#1368). The name is the SUBJECT's, not the issuer's signature:
+  // a classical Issuing CA can certify an ML-DSA leaf, and the JWK's `alg`
+  // is the leaf's (#1418). `null` for a parameter set JOSE has none for, and
+  // for a KEM, which signs nothing. A composite ML-DSA key never reaches
+  // here with a JWK: `pubToJwk()` refuses it, because the X.509 bytes and
+  // the JOSE bytes are not the same key.
+  if (keyDesc.kind === 'pqc') {
+    const subject = algorithmRegistry.byId(keyDesc.pqc);
+    log.debug('Leaving jwsAlgFor(). ' +
+              ((subject && subject.jose) || 'None') + '.');
+    return (subject && subject.jose) || null;
+  }
+  const row = sig.kind === 'pqc'
+    ? algorithmRegistry.bySpelling('x509', sigAlgId) : null;
+  log.debug('Leaving jwsAlgFor(). ' + ((row && row.jose) || 'None') + '.');
+  return (row && row.jose) || null;
 }
 
 
@@ -7964,7 +8263,7 @@ function roomForObject(realmId, objectId) {
 
 /**
  * Lists the objects in a realm's object store (what `/admin/pki`'s
- * Certificate & Key Configuration pane issues into).
+ * Certificate Workbench issues into).
  *
  * @param realmId - the realm
  * @returns a copy of the list
@@ -8397,6 +8696,63 @@ function pqSubjectPublicKeyPem(alg, publicJwk) {
   return pem;
 }
 
+// THE OTHER DIRECTION (#657): the AKP JWK of a post-quantum key a CERTIFICATE
+// holds, for a key somebody else certified — `oid4vp.trustedIssuerCertificates`
+// — so the Verifier can check a credential and a status list that issuer
+// signed with it. `PQ_JOSE_IN_X509` read backwards, and the one translation
+// undone: an ECDSA composite's X.509 point loses its 0x04 prefix, because
+// JOSE carries `x || y`. Answers null for a classical key (node reads that
+// one), `{ alg, publicJwk }` for a post-quantum one with a JOSE name, and
+// THROWS for a post-quantum key with none (an SLH-DSA parameter set this
+// service does not speak in JOSE), naming it.
+/**
+ * Returns the AKP JWK of the post-quantum key a certificate holds.
+ *
+ * @param certificatePem - the certificate
+ * @returns null for a classical key, else `{ alg, publicJwk }`
+ * @throws Error, naming the algorithm, for a post-quantum key with no JOSE
+ * algorithm here
+ */
+function pqJwkFromCertificate(certificatePem) {
+  log.debug("Entering pqJwkFromCertificate().");
+  const spki = pqcX509.decodeSpki(new Uint8Array(
+    certificateSpkiDer(String(certificatePem || ''))));
+  if (!spki || !spki.alg) {
+    log.debug("Leaving pqJwkFromCertificate(). Classical.");
+    return null;
+  }
+  const alg = Object.keys(PQ_JOSE_IN_X509).filter(function (one) {
+    return PQ_JOSE_IN_X509[one].id === spki.alg;
+  })[0];
+  if (!alg) {
+    log.debug("Leaving pqJwkFromCertificate(). No JOSE name.");
+    // `noJoseName` tells this refusal from a certificate that could not be
+    // read at all, which a caller reports differently.
+    const refused = /** @type {any} */ (new Error('the certificate holds a ' +
+      spki.alg + ' key, which has no JOSE algorithm this service speaks.'));
+    refused.noJoseName = true;
+    throw refused;
+  }
+  let pub = Buffer.from(spki.pub);
+  const entry = PQ_JOSE_IN_X509[alg];
+  const composite = pqcX509.COMPOSITE_ALGS[entry.id];
+  if (composite && entry.ecField) {
+    const mlLength = pqc.SIGNATURE_ALGS[composite.mldsa].lengths.publicKey;
+    const trad = pub.subarray(mlLength);
+    if (trad.length !== 1 + 2 * entry.ecField || trad[0] !== 0x04) {
+      log.debug("Leaving pqJwkFromCertificate(). EC half is not an " +
+                "uncompressed point.");
+      throw new Error('the certificate\'s ' + alg + ' key\'s ECDSA half is ' +
+                      'not an uncompressed point on its curve.');
+    }
+    pub = Buffer.concat([pub.subarray(0, mlLength), trad.subarray(1)]);
+  }
+  log.debug("Leaving pqJwkFromCertificate(). " + alg);
+  return { alg: alg,
+           publicJwk: { kty: 'AKP', alg: alg, use: 'sig',
+                        pub: pub.toString('base64url') } };
+}
+
 // ---------------------------------------------------------------------------
 // CERTIFY A REALM'S POST-QUANTUM KEYS UNDER ITS JOSE ISSUING CA.
 //
@@ -8459,7 +8815,12 @@ async function certifyPqKeys(realmId, pqKeys, keepKids) {
       continue;
     }
     const held = certificateFor(id, 'jose', alg);
-    const issuingNow = (rawRowFor(id).issuing.jose || {}).certificatePem;
+    // Asked again after each `await`, and the branch may have gone by now: an
+    // administrator's removal was a TypeError and a 500 here (#1472). With no
+    // Issuing CA, `certify()` below reports the key as failed.
+    const rowNow = rawRowFor(id);
+    const issuingNow = ((rowNow && rowNow.issuing && rowNow.issuing.jose) ||
+                        {}).certificatePem;
     if (held && !held.pinned && held.subjectKeyFingerprint === fingerprint &&
         (held.chainPem || [])[0] === issuingNow && scopeChainsToRoot(id)) {
       unchanged += 1;
@@ -9147,6 +9508,83 @@ async function certifyKeySet(realmId, keys) {
   return failed.length ? errorCodes.mark(verdict, 'STS-PKI-0031') : verdict;
 }
 
+// ---------------------------------------------------------------------------
+// A KEY SET MADE BEFORE ITS REALM'S BRANCH EXISTS IS CERTIFIED ONCE THE
+// BRANCH DOES (2026-11-04).
+//
+// `helpers.js`'s `certifyLater()` calls this when a realm's key set is made.
+// It called `certifyKeySet()` directly, which answers STS-PKI-0008 for a realm
+// with no branch yet — and nothing asked again. In one process that is
+// harmless: the realm watcher builds the branch in the process that created
+// the realm, finds that process holding the keys, and certifies them. **IN A
+// CLUSTER IT IS NOT.** The keys are made by whichever process first has a
+// request that needs them, the branch by whichever process first asks for it,
+// and the watcher certifies only where it built the branch itself AND holds
+// the keys. On 2026-11-04 (`sts_eudi_wallet_portal`, cluster mode) a realm's
+// keys were made by one worker at 10:54:51.44 and its branch by another
+// process at 10:54:53.29: nobody certified the classical keys, so every
+// OpenID4VCI credential that realm issued went out with no `x5c` although
+// `oid4vci.credentialCertificateHeader` is `x5c`, and a wallet verifying
+// offline could not find the issuer's key. `tests/jose_certificate_header.js`
+// had been working round the same gap ("ask once, as a restart would").
+//
+// **SO THIS ASKS FOR THE BRANCH FIRST**, through `ensureScope()` — the
+// explicit ask the watcher's own comment allows: one build at a time in this
+// process, one in the cluster (`oneBuildInTheCluster()` reads the store and
+// adopts a build another process or node made, or waits for one in
+// progress). Only where this process builds branches for runtime realms at
+// all — `pki.start()` ran with `pki.autoBuild` on, which is when the watcher
+// is subscribed. `npm test`'s in-process files, the parent project's jobs and
+// a service with `pki.autoBuild` off get exactly the old answer.
+//
+// `stillCurrent`, where given, is asked after the wait: a key set this process
+// held when it was made may have been replaced by a sibling's (first generator
+// wins), and certifying a set nobody signs with would put a certificate over
+// a discarded key into the plain slot. The process that made the winning set
+// certifies it.
+// ---------------------------------------------------------------------------
+/**
+ * Certifies a realm's key set, asking for the realm's certificate authority
+ * branch first where it does not exist yet and this process builds branches.
+ *
+ * @param realmId - the realm
+ * @param keys - the realm's key set
+ * @param stillCurrent - optional: answers whether `keys` is still the set
+ *   this process signs with, asked once the branch is in hand
+ * @returns a promise of `certifyKeySet()`'s answer, or a refusal
+ */
+async function certifyKeySetWhenBranched(realmId, keys, stillCurrent) {
+  log.debug('Entering certifyKeySetWhenBranched(). realm=' + realmId);
+  const id = realmIdOf(realmId);
+  const branched = function () {
+    const row = rawRowFor(id);
+    return !!(row && row.issuing);
+  };
+  if (!branched() && watching) {
+    const made = await ensureScope(id);
+    if (!made || !made.ok) {
+      log.warn(errorCodes.tag('STS-PKI-0226') + 'pki: the "' +
+               (id || 'default') + '" realm\'s signing keys were made before ' +
+               'its certificate authority branch, and the branch could not ' +
+               'be had: ' + ((made && made.errors) || []).join(' ') +
+               ' They still SIGN — what they lack is a certificate chaining ' +
+               'to this service\'s Root, so a token whose use case asks for ' +
+               'x5c or x5u carries none.');
+      log.debug('Leaving certifyKeySetWhenBranched(). No branch.');
+      return errorCodes.mark({ ok: false, certified: 0,
+        errors: ((made && made.errors) || []).slice() }, 'STS-PKI-0226');
+    }
+    if (typeof stillCurrent === 'function' && !stillCurrent()) {
+      log.debug('Leaving certifyKeySetWhenBranched(). The set was replaced ' +
+                'while the branch was awaited; its maker certifies the one ' +
+                'that won.');
+      return { ok: true, certified: 0, failed: [], replaced: true };
+    }
+  }
+  log.debug('Leaving certifyKeySetWhenBranched().');
+  return certifyKeySet(id, keys);
+}
+
 
 // ---------------------------------------------------------------------------
 // THE REVOCATION POINTERS EVERY CERTIFICATE THIS SERVICE MINTS CARRIES
@@ -9694,6 +10132,24 @@ async function importCa(scopeId, useCaseId, material) {
                       'by a path validator. A leaf cannot be an issuing ' +
                       'authority.'] }, 'STS-PKI-0041');
   }
+  // UNDER PARANOID PKI MODE (#1360): cA, keyCertSign, validity and pathLen, and
+  // an Issuing CA chains to the service Root. Off, as before: a CA whose key
+  // matches. Lazily: the door requires this module.
+  const importedInForce = require('./certificate_trust')
+    .assess('ca-import', {
+      leaf: certificatePem, pinned: useCaseId === 'root',
+      chain: useCaseId === 'root' ? [] :
+        ((rawChainFor(scopeId) || {}).tiers || []).map(function (tier) {
+          return tier.certificatePem;
+        }).filter(Boolean)
+    }, { realmId: realms.get(scopeId) ? scopeId : realms.DEFAULT_ID,
+         variant: useCaseId === 'root' ? 'root' : undefined });
+  const imported = await importedInForce;
+  if (!imported.ok) {
+    log.debug("Leaving importCa(). Paranoid: " + imported.code);
+    return errorCodes.mark({ ok: false, errors: ['That authority is refused: ' +
+             imported.why] }, imported.code);
+  }
   const desc = await keyMaterial.describePublicPem(
     cert.publicKey.export({ type: 'spki', format: 'pem' }));
   const record = {
@@ -9881,6 +10337,21 @@ async function pinKeyPair(scopeId, useCaseId, slot, material, options) {
       return errorCodes.mark({ ok: false,
                errors: ['That private key does not belong to that ' +
                         'certificate.'] }, 'STS-PKI-0040');
+    }
+    // A pinned leaf's own fields, under paranoid PKI mode (#1360): a write is
+    // not a use, so no path and no revocation, and that leaf's owner is the
+    // operator whose choice it is to chain it.
+    const pinTrust = require('./certificate_trust');
+    if (pinTrust.applies('ca-import', realms.get(scopeId) ? scopeId :
+                                      realms.DEFAULT_ID)) {
+      const field = stsCrypto.certificateFieldProblem(cert, {
+        role: 'leaf', mayBeCa: cert.subject === cert.issuer,
+        keyUsage: ['digitalSignature'] });
+      if (field) {
+        log.debug("Leaving pinKeyPair(). Paranoid: " + field.code);
+        return errorCodes.mark({ ok: false, errors: ['That certificate is ' +
+                 'refused: ' + field.why] }, field.code);
+      }
     }
     const row = rawRowFor(scopeId) || {};
     row.certs = Object.assign({}, row.certs || {});
@@ -11535,6 +12006,23 @@ function watchRealms() {
   log.debug("Leaving watchRealms().");
 }
 
+// Whether this process builds certificate authority branches for realms made
+// at runtime: `pki.start()` ran with `pki.autoBuild` on and subscribed the
+// realm watcher. A signer asks it before waiting for a certificate
+// (`helpers.certificateHeaderForAsync()`): where it is false nothing here
+// will ever certify a runtime realm's keys, so there is nothing to wait for.
+/**
+ * Answers whether this process builds certificate authority branches for
+ * realms created at runtime (`pki.start()` ran with `pki.autoBuild` on).
+ *
+ * @returns true once the realm watcher is subscribed
+ */
+function buildsRealmBranches() {
+  log.debug("Entering buildsRealmBranches().");
+  log.debug("Leaving buildsRealmBranches(). " + watching);
+  return watching;
+}
+
 // A scope's branch, built only if it is not there. The counterpart of
 // `ensureRoot()` and for its reason: rebuilding a branch that exists would
 // invalidate every certificate under it, and a restart in PRODUCT mode — where
@@ -12029,6 +12517,178 @@ function subjectText(one) {
         ? ' (' + String(one.x509.subjectAltName) + ')' : '');
 }
 
+// The certificates a named source of anchors holds, as `certificateFromDer()`
+// entries for the anchors and DER for the intermediates. `signer_truststore`
+// requires this module, so it is reached lazily, as `revocation_status` is.
+function namedAnchors(source, options) {
+  log.debug("Entering namedAnchors(). " + source);
+  let anchorDers = [];
+  let intermediates = [];
+  if (source === 'signer-truststore') {
+    const held = require('./signer_truststore')
+      .anchorsFor(options.realmId, options.purpose);
+    anchorDers = held.anchors;
+    intermediates = held.intermediates;
+  } else {
+    anchorDers = trustAnchorsFor(options.realmId).map(function (pem) {
+      return pemToDer(pem);
+    });
+  }
+  const anchors = anchorDers.map(function (der) {
+    return certificateFromDer(der);
+  }).filter(Boolean);
+  log.debug("Leaving namedAnchors(). " + anchors.length + " anchor(s).");
+  return { anchors: anchors, intermediates: intermediates };
+}
+
+// ---------------------------------------------------------------------------
+// WHO MAY ENTER A TRUSTSTORE (#1360, gap 5 of the audit): the one admission
+// rule, for the signer truststore and the client-certificate truststore and
+// the files beside each. An ANCHOR is a self-signed CA, whose self-signature
+// verifies, within its validity, that may sign certificates. An INTERMEDIATE
+// is a CA that chains to an anchor already held. A LEAF is refused from both:
+// a leaf to pin goes on the entry or relationship that uses it, and a
+// self-signed leaf in OpenSSL's store is an anchor for itself, which is the
+// hole this closes. The validity and strength of an anchor are asked even
+// though RFC 5280 relies on neither, because this is an administrator deciding
+// what to trust from here on rather than a path being walked.
+// ---------------------------------------------------------------------------
+// The half of the rule that needs no engine: is this the kind of certificate
+// the role asks for at all. `{ entry, facts, role, problem }`.
+function anchorFieldsOf(cert, opts) {
+  log.debug("Entering anchorFieldsOf().");
+  let entry = null;
+  try {
+    const der = Buffer.isBuffer(cert) || cert instanceof Uint8Array ? cert :
+      stsCrypto.parseCertificate(String(cert)).raw;
+    entry = certificateFromDer(der);
+  } catch (e) {
+    log.debug("Caught in anchorFieldsOf(): " + ((e && e.message) || e));
+  }
+  if (!entry) {
+    log.debug("Leaving anchorFieldsOf(). Not a certificate.");
+    return { problem: { code: 'STS-PKI-0238', role: opts.role || '',
+                        why: 'this is not an X.509 certificate' } };
+  }
+  const facts = stsCrypto.certificateFacts(entry.x509);
+  const role = opts.role || (facts.selfIssued ? 'anchor' : 'intermediate');
+  const out = { entry: entry, facts: facts, role: role, problem: null };
+  if (!facts.ca) {
+    out.problem = { code: 'STS-PKI-0234', role: role, why: '"' + facts.subject +
+      '" is a leaf, not a certificate authority: a leaf to pin goes on the ' +
+      'entry or relationship that uses it, never in a truststore' };
+  } else if (role === 'anchor' && !facts.selfIssued) {
+    out.problem = { code: 'STS-PKI-0228', role: role, why: '"' + facts.subject +
+      '" is not self-signed, so it cannot be an anchor; add the Root it ' +
+      'chains to, and this as an intermediate' };
+  } else {
+    const field = stsCrypto.certificateFieldProblem(entry.x509,
+      { role: role, keyUsage: ['keyCertSign'], now: opts.now });
+    if (field) {
+      const codes = { validity: 'STS-PKI-0231',
+                      'basic-constraints': 'STS-PKI-0229',
+                      'key-usage': 'STS-PKI-0230' };
+      out.problem = { code: codes[field.check] || 'STS-PKI-0232', role: role,
+                      why: field.why };
+    }
+  }
+  log.debug("Leaving anchorFieldsOf(). " + (out.problem ? out.problem.code :
+                                            'holds'));
+  return out;
+}
+
+/**
+ * Holds a certificate to the admission rule of a truststore.
+ *
+ * @param cert - PEM text or DER bytes
+ * @param options - `{ role: 'anchor'|'intermediate' (omitted: a self-issued
+ *   certificate is an anchor, any other an intermediate), heldAnchors: the
+ *   anchors an intermediate may chain to, as PEM or DER, heldIntermediates,
+ *   now }`
+ * @returns a promise of null, or `{ code, why, role }`
+ */
+async function anchorProblem(cert, options) {
+  log.debug("Entering anchorProblem().");
+  const opts = options || {};
+  const read = anchorFieldsOf(cert, opts);
+  if (read.problem) {
+    log.debug("Leaving anchorProblem(). " + read.problem.code);
+    return read.problem;
+  }
+  if (read.role === 'anchor' && !(await pathSigned(read.entry, read.entry))) {
+    log.debug("Leaving anchorProblem(). The self-signature does not verify.");
+    return { code: 'STS-PKI-0228', role: read.role, why: '"' +
+             read.facts.subject + '" does not verify under its own key' };
+  }
+  if (read.role === 'intermediate') {
+    const held = (opts.heldAnchors || []).map(function (one) {
+      return certificateFromDer(typeof one === 'string' ?
+        stsCrypto.parseCertificate(one).raw : one);
+    }).filter(Boolean);
+    const path = await verifyPathToAnchors(read.entry.der,
+      opts.heldIntermediates || [], held, { now: opts.now });
+    if (!path.ok) {
+      log.debug("Leaving anchorProblem(). Reaches no held anchor.");
+      return { code: 'STS-PKI-0233', role: read.role, why: '"' +
+               read.facts.subject + '" chains to no anchor held here (' +
+               path.reason + ')' };
+    }
+  }
+  log.debug("Leaving anchorProblem(). Admitted as " + read.role + ".");
+  return null;
+}
+
+/**
+ * The same rule for the client-certificate truststore's synchronous doors: a
+ * listener's context is rebuilt in the same tick, and the file is read at
+ * require. The signature and the one hop go through node, so a key node cannot
+ * read is held to the fields alone here; such an anchor is still only what
+ * OpenSSL will build a path to.
+ *
+ * @param cert - PEM text or DER bytes
+ * @param options - as `anchorProblem()`; `heldAnchors` are the certificates an
+ *   intermediate may be issued by, directly
+ * @returns null, or `{ code, why, role }`
+ */
+function anchorProblemSync(cert, options) {
+  log.debug("Entering anchorProblemSync().");
+  const opts = options || {};
+  const read = anchorFieldsOf(cert, opts);
+  if (read.problem) {
+    log.debug("Leaving anchorProblemSync(). " + read.problem.code);
+    return read.problem;
+  }
+  if (read.role === 'anchor') {
+    let signed = true;
+    try {
+      signed = read.entry.x509.verify(read.entry.x509.publicKey);
+    } catch (e) {
+      log.debug("Caught in anchorProblemSync(): " + ((e && e.message) || e));
+    }
+    if (!signed) {
+      log.debug("Leaving anchorProblemSync(). Not self-signed.");
+      return { code: 'STS-PKI-0228', role: read.role, why: '"' +
+               read.facts.subject + '" does not verify under its own key' };
+    }
+  } else {
+    const held = (opts.heldAnchors || []).map(function (one) {
+      return { raw: typeof one === 'string' ?
+        stsCrypto.parseCertificate(one).raw : one };
+    });
+    const direct = verifyIssuedDirectly(read.entry.der, held,
+                                        { now: opts.now });
+    if (!direct.ok) {
+      log.debug("Leaving anchorProblemSync(). Reaches nothing held.");
+      return { code: 'STS-PKI-0233', role: read.role, why: '"' +
+               read.facts.subject + '" chains to nothing held here (' +
+               direct.reason + ')' };
+    }
+  }
+  log.debug("Leaving anchorProblemSync(). Admitted as " + read.role + ".");
+  return null;
+}
+
+
 // Build and verify a path from `leafDer` through `intermediateDers` to one of
 // `anchors` (certificateFromDer() answers). `opts.now` is milliseconds;
 // `opts.skewMs` widens every validity window; `opts.allowCritical` names
@@ -12054,6 +12714,19 @@ function subjectText(one) {
 async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   log.debug("Entering verifyPathToAnchors().");
   const options = opts || {};
+  // A NAMED SOURCE OF ANCHORS (#1360): `signer-truststore` is the realm's
+  // store, and what it holds as intermediates completes a chain; `realm` is
+  // this service's Root. Answered through the same builder, with the source
+  // recorded on the result.
+  if (anchors === 'signer-truststore' || anchors === 'realm') {
+    const named = namedAnchors(anchors, options);
+    const result = /** @type {any} */ (await verifyPathToAnchors(leafDer,
+      (intermediateDers || []).concat(named.intermediates), named.anchors,
+      options));
+    result.anchorSource = anchors;
+    log.debug("Leaving verifyPathToAnchors(). Through " + anchors + ".");
+    return result;
+  }
   const leaf = certificateFromDer(leafDer);
   if (!leaf) {
     log.debug("Leaving verifyPathToAnchors(). No leaf.");
@@ -13347,13 +14020,16 @@ async function verifyFidoMdsBlob(token, opts) {
   // certificate's issuer "neither held here nor in the chain that was
   // presented" and hard-fail refused every genuine BLOB (2026-09-26).
   let pathChain = null;
-  if (!anchors.length) {
+  if (!require('./certificate_trust').anchorsAvailable('fido-mds', anchors)) {
     failure = 'no FIDO MDS trust anchor: none is configured ' +
       '(risk.mdsTrustAnchors) and GlobalSign Root CA - R3 is not in this ' +
       'node\'s root store';
   } else {
-    const path = await verifyPathToAnchors(ders[0], ders.slice(1), anchors,
-                                           { now: options.now });
+    // Through the door, lazily (it requires this module), so paranoid PKI mode
+    // asks the same checks of this signer as of any other (#1360).
+    const path = await require('./certificate_trust')
+      .path('fido-mds', ders[0], ders.slice(1), anchors,
+            { now: options.now, siteAsksRevocation: true });
     if (!path.ok) {
       failure = 'the BLOB\'s signing chain does not verify: ' + path.reason;
     } else {
@@ -13682,7 +14358,81 @@ async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
  * paths, and holds the object store `/admin/pki` issues into.
  * @namespace
  */
+// ---------------------------------------------------------------------------
+// THE X.509 ENGINE'S DOORS, for what lives outside this file (#1368).
+// tests/crypto_centralised.js holds everything else to them.
+// ---------------------------------------------------------------------------
+/**
+ * Checks each link of a chain, leaf first.
+ *
+ * @param pems - the certificates, leaf first
+ * @returns a promise of the links, each with `signatureValid`
+ */
+function verifyChain(pems) {
+  log.debug("Entering verifyChain().");
+  log.debug("Leaving verifyChain().");
+  return x509.verifyChain(pems);
+}
+
+/**
+ * Issues a certificate for a hierarchy this file does not hold, such as the
+ * SPIFFE fallback authority: self-signed where `spec` names `issuerPrivateKey`,
+ * else under `spec.issuer`.
+ *
+ * @param spec - what `x509.issueCertificate()` takes
+ * @returns a promise of the issued certificate
+ */
+function issueOutsideHierarchy(spec) {
+  log.debug("Entering issueOutsideHierarchy().");
+  log.debug("Leaving issueOutsideHierarchy().");
+  return x509.issueCertificate(spec);
+}
+
+/**
+ * A CSR's proof of possession: whether it verifies under the key it asks to
+ * certify. The one rule for every key family, held to
+ * `pki.acceptedSignatureAlgorithms` before any key is used.
+ *
+ * @param csr - the parsed pkijs request
+ * @param spkiPem - the public key it asks to certify
+ * @param desc - that key's description
+ * @returns a promise of whether it is proven
+ */
+async function csrProofOfPossession(csr, spkiPem, desc) {
+  log.debug("Entering csrProofOfPossession(). kind=" + desc.kind);
+  const oid = csr.signatureAlgorithm.algorithmId;
+  const unaccepted = stsCrypto.signaturePolicy.acceptX509Cause(oid);
+  if (unaccepted) {
+    log.warn(errorCodes.tag(unaccepted.code) + unaccepted.message);
+    log.debug("Leaving csrProofOfPossession(). Not accepted here.");
+    return false;
+  }
+  const tbs = csr.tbsView ? Buffer.from(csr.tbsView)
+    : Buffer.from(csr.encodeTBS().toBER(false));
+  const signature = Buffer.from(csr.signatureValue.valueBlock.valueHexView);
+  const sig = x509.sigAlgForOid(oid);
+  if (sig && sig.kind === 'pqc') {
+    const ok = await x509.verifyBytes(sig, spkiPem, signature, tbs);
+    log.debug("Leaving csrProofOfPossession(). pqc=" + ok);
+    return !!ok;
+  }
+  if (desc.kind === 'okp') {
+    const ok = stsCrypto.signatureValid(null, tbs,
+                                        stsCrypto.publicKeyOf(spkiPem),
+                                        signature);
+    log.debug("Leaving csrProofOfPossession(). Ed25519=" + ok);
+    return !!ok;
+  }
+  const ok = await csr.verify();
+  log.debug("Leaving csrProofOfPossession(). pkijs=" + ok);
+  return !!ok;
+}
+
 module.exports = {
+  verifyChain: verifyChain,
+  issueOutsideHierarchy: issueOutsideHierarchy,
+  csrProofOfPossession: csrProofOfPossession,
+  authorityCode: authorityCode,
   // --- the console prose (#543) ---
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
@@ -13697,6 +14447,11 @@ module.exports = {
   spkiOf: spkiOf,
   keyUsageOf: keyUsageOf,
   verifyPathToAnchors: verifyPathToAnchors,
+  anchorProblem: anchorProblem,
+  anchorProblemSync: anchorProblemSync,
+  pemToDer: pemToDer,
+  pathSigned: pathSigned,
+  pathValidityProblem: pathValidityProblem,
   verifyIssuedDirectly: verifyIssuedDirectly,
   peerChainProblem: peerChainProblem,
   pathFactsOf: pathFactsOf,
@@ -13770,6 +14525,8 @@ module.exports = {
   issueEnrolled: issueEnrolled,
   describeIssuer: describeIssuer,
   certifyKeySet: certifyKeySet,
+  certifyKeySetWhenBranched: certifyKeySetWhenBranched,
+  buildsRealmBranches: buildsRealmBranches,
   certifyStandbyKeys: certifyStandbyKeys,
   // The eleven post-quantum keys per realm, under its JOSE Issuing CA
   // (2026-09-13) — and the one translation that makes that possible, exported
@@ -13777,6 +14534,7 @@ module.exports = {
   certifyPqKeys: certifyPqKeys,
   PQ_JOSE_IN_X509: PQ_JOSE_IN_X509,
   pqSubjectPublicKeyPem: pqSubjectPublicKeyPem,
+  pqJwkFromCertificate: pqJwkFromCertificate,
   registerCertifiable: registerCertifiable,
   // Whether a certificate a registration holds may be presented again
   // (2026-10-08): `certifyRegistered()` asks it, and the tests.
@@ -13837,6 +14595,10 @@ module.exports = {
   keyAlgorithms: keyAlgorithms,
   signatureAlgorithms: signatureAlgorithms,
   alternativeKeyAlgs: alternativeKeyAlgs,
+  // Whether an alternative key's signatures fit the process listener's
+  // certificate list (#1421). Null when they do. Exported so a test can
+  // ask without building a branch.
+  processListenerAltSignatureProblem: processListenerAltSignatureProblem,
   certifySignerGroups: certifySignerGroups,
   alternativeProblem: alternativeProblem,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,

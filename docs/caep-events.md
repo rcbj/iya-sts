@@ -158,6 +158,7 @@ by construction rather than by six call sites remembering to do it. The callers:
 | The same screen reached from a SAML 1.1 inter-site transfer | `SAML 1.1` |
 | A Kerberos ticket spent at `/authn/spnego` — integrated authentication, no screen | `Kerberos v5 (SPNEGO)` |
 | A wallet's presentation, collected at `/authn/wallet/wait` by the browser that started the sign-in | `OpenID4VP (a wallet)` |
+| A wallet's self-issued ID Token (SIOPv2), signed by a key the person enrolled, collected the same way | `SIOPv2 (a self-issued ID)` |
 | A federated assertion accepted at `/federation/acs/{id}` — the person signed in at a *foreign* identity provider | `Federation (SAML 2.0)`, and the same for the other four federation protocols |
 | A WS-Trust exchange that signs somebody in | `WS-Trust` and the operation |
 | The first call of a SCIM client, whatever scheme it authenticated with (each call after it is a `session-presented`) | `SCIM` |

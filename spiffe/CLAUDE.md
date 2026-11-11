@@ -882,6 +882,21 @@ entitled to nothing is `STS-SPIFFE-0150`, this process's parallel of
 methods stay `0029`. A held stream whose re-send fails is `0030` and is
 re-armed, not ended. No code is sent.
 
+**A SIDECAR WAITS FOR `--ready-file`, NOT FOR THE SOCKET (#695).** With
+the option, `main()` writes the agent's SPIFFE ID and a newline to that
+path once `start()` has bound the socket — beside itself and renamed, so a
+reader never sees half an ID — and removes it at SIGTERM and SIGINT. The
+socket exists a moment before the agent is worth calling, and the ID is
+what a workload's entries are parented on, so a workload in another
+container waits for the file. Not being able to write it is
+`STS-SPIFFE-0152`, and the agent stops rather than serve a socket nothing
+will find. `readArgs()` returns it beside `opts` as `readyFile`; the class
+does not know about it. **The AWS suite task runs this agent as a sidecar**
+(`spiffe-agent`, `deploy/aws/suite-callbacks/main.tf`): the service image,
+a bash line that waits for a join token in the shared volume and then
+`exec`s this file. `deploy/aws/CLAUDE.md` (*A realm's SPIFFE port*) argues
+the container; what a workload operator copies from it is the command line.
+
 **THE ROTATION TIMER IS NOT A SCHEDULER JOB.** A stream stays open and is
 written again at half the shortest lifetime the last message carried,
 floored at one second, by `setTimeout` inside `arm()`. `tick()` is the
@@ -895,7 +910,9 @@ in-process half, in a child, and does not weaken
 `tests/spiffe_workload_tcp_product.js`. `tests/protocol/sts_spiffe_grpc.js`
 still asserts the TCP refusal where the posture is not served, and then
 mints a join token, starts this agent and runs the rest of the job
-through its socket. On the declared bridge the job stays on TCP.
+through its socket — in its own process, or, where `STS_SPIFFE_AGENT_DIR`
+names the AWS suite task's shared directory, the `spiffe-agent` sidecar
+(#695). On the declared bridge the job stays on TCP.
 `deploy/aws/CLAUDE.md` is the publish change: 8181 only. GCP and Azure
 still publish 8092; only AWS has been applied, and their files say so.
 
@@ -1450,8 +1467,9 @@ administrators of nothing.
 
 ### New settings, each defaulting to the literal it replaced
 
-`spiffe.caSubject` (`CN=sts SPIFFE {kind} ({trustDomain}),O=sts`, the
-self-signed fallback CA and every downstream CA), `spiffe.retainedAuthorities`
+`spiffe.caSubject` (`CN=iya-sts SPIFFE {kind} ({trustDomain}),O=iya-sts`
+since #1294, `O=sts` before it; the self-signed fallback CA and every
+downstream CA), `spiffe.retainedAuthorities`
 (4, min 2 — `MAX_RETAINED_AUTHORITIES` is a getter over it so the console's
 report follows), `spiffe.agentSvidTtl` (0, meaning `spiffe.svidTtl`),
 `spiffe.joinTokenTtl` (600), `spiffe.maxJoinTokens` (256, per realm),

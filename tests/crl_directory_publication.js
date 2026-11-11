@@ -265,6 +265,101 @@ async function stillTheList(t, all, installed) {
   log.debug("Leaving stillTheList().");
 }
 
+// H. A SAVE OF ONE BRANCH DOES NOT RE-SIGN THE ROOT'S LIST (2026-11-10).
+// `publishScopeSoon()` published every authority `authorities()` named,
+// the Root's among them, for every save of every branch in every process;
+// under the fuzz gate's `pki/build` calls that was hundreds of Root
+// signings a minute racing one CRL-number counter (STS-PKI-0185), and the
+// store round trips held the change-log pull past the read barrier
+// (STS-STORE-0039, STS-WORKER-0027). And concurrent signings of one
+// authority in a process share one, unless the list changed between them.
+async function onlyWhatChanged(t, installed) {
+  log.debug("Entering onlyWhatChanged().");
+  t.log.info('=== H. a branch saved re-signs only what changed, and one ' +
+             'authority is signed once at a time ===');
+  await revocation.publishAll(pki.knownScopes());
+  const written = [];
+  revocation.setDirectory({
+    publishCrl: function (scope, ca, der) {
+      log.debug("Entering publishCrl(). Counted.");
+      written.push(revocation.scopeSegment(scope) + '/' + ca);
+      log.debug("Leaving publishCrl().");
+      return installed.publishCrl(scope, ca, der);
+    },
+    baseDnFor: installed.baseDnFor,
+    publishedCrl: installed.publishedCrl
+  });
+  const settle = function () {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, 300);
+    });
+  };
+  let revoked = null;
+  try {
+    revocation.publishScopeSoon(REALM);
+    revocation.publishScopeSoon(pki.SERVICE_SCOPE);
+    await settle();
+    t.equal(written.join(' '), '',
+            'H1. a save of a branch, and of the service scope, with nothing ' +
+            'changed signs and writes no list — not the Root\'s');
+    revoked = revocation.revoke(REALM, 'intermediate',
+                                { serialHex: '0a0b0c0d1110',
+                                  reason: 'keyCompromise' });
+    await settle();
+    t.check(revoked && revoked.ok &&
+            written.some(function (one) {
+              return /\/intermediate$/.test(one);
+            }) && !written.some(function (one) {
+              return /\/root$/.test(one);
+            }),
+            'H2. a revocation in the branch writes that authority\'s list ' +
+            'at once, and still not the Root\'s', written.join(' '));
+    const intermediateWrites = function () {
+      return written.filter(function (one) {
+        return /\/intermediate$/.test(one);
+      }).length;
+    };
+    t.equal(intermediateWrites(), 1,
+            'H2a. and writes it ONCE: the revocation\'s own publication and ' +
+            'the save\'s are one');
+    written.length = 0;
+    ['0a0b0c0d1112', '0a0b0c0d1113', '0a0b0c0d1114'].forEach(function (s) {
+      revocation.revoke(REALM, 'intermediate',
+                        { serialHex: s, reason: 'keyCompromise' });
+    });
+    await settle();
+    t.equal(intermediateWrites(), 1,
+            'H2b. three revocations in a burst are one list written',
+            written.join(' '));
+  } finally {
+    revocation.restoreDirectory(installed);
+  }
+  const both = await Promise.all([
+    revocation.buildCrl(REALM, 'intermediate'),
+    revocation.buildCrl(REALM, 'intermediate')]);
+  t.check(both[0].ok && both[1].ok &&
+          both[0].crlNumber === both[1].crlNumber &&
+          Buffer.compare(Buffer.from(both[0].der),
+                         Buffer.from(both[1].der)) === 0,
+          'H3. two signings of one list asked at once are one signing',
+          JSON.stringify([both[0].crlNumber, both[1].crlNumber]));
+  const first = revocation.buildCrl(REALM, 'intermediate');
+  const again = revocation.revoke(REALM, 'intermediate',
+                                  { serialHex: '0a0b0c0d1111',
+                                    reason: 'keyCompromise' });
+  const second = revocation.buildCrl(REALM, 'intermediate');
+  const pair = await Promise.all([first, second]);
+  t.check(again && again.ok && pair[0].ok && pair[1].ok &&
+          pair[0].crlNumber !== pair[1].crlNumber &&
+          pair[1].count === pair[0].count + 1,
+          'H4. but a list asked for after a change is signed anew, never ' +
+          'handed the one started before it',
+          JSON.stringify(pair.map(function (one) {
+            return { n: one.crlNumber, count: one.count };
+          })));
+  log.debug("Leaving onlyWhatChanged().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const before = heldAuthority(pki, keystore);
@@ -512,6 +607,7 @@ async function run(t) {
       revocation.restoreDirectory(installed);
     }
     await stillTheList(t, all, installed);
+    await onlyWhatChanged(t, installed);
   } finally {
     realms.remove(REALM);
     restoreAuthority(pki, keystore, before);

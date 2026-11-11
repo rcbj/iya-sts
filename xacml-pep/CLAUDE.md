@@ -379,6 +379,26 @@ bias decides — which for the default deny-biased PEP means refusing everything
 "No policy" and "a policy that permits nothing" are indistinguishable from
 outside and want opposite fixes, which is why they are two different reports.
 
+### Several instances are NOT a cluster, and must not become one (#676)
+
+**rcbj's decision on #676 (2026-11-03): no clustering concept.** The ticket
+asked for one; reviewing it found nothing to coordinate. Everything an
+instance holds is pulled (the policy set, the AuthZEN catalogue and callers),
+its own (the counters, which a heartbeat SETS), read from disk (the listener
+pair) or fetched per decision and not kept (the PIP). The PDP is already the
+single source of policy, so a peer could only hand an instance a copy that
+might be OLDER, and being behind is already the handled state above. Peer
+coordination would add a failure mode and buy no correctness. **A change that
+makes one instance depend on another, or hold something only another has, is
+reversing that decision** and needs the argument made with rcbj first.
+
+What scaling DOES involve is the credential choice, and it is the PDP's
+register that makes it a choice: one certificate is one row, and a heartbeat
+replaces the row's notify URL and counters, so instances sharing a
+certificate show as one row that flips between them and are nudged one at a
+time. `docs/remote-pep.md`, *Running more than one*, is where that is told to
+an operator; it is not repeated here.
+
 ---
 
 ## Configuration
@@ -493,18 +513,32 @@ after it.
 
 ## The version this container reports
 
-**It is `M.N.O` from the one `VERSION` file the service reads**, stamped into
-`version.json` at image build time by the binary itself (`xacml-pep --stamp
-.`, `sts-core::version`, a port of `common/version.js`). It rides on the
-registration and every heartbeat, the PDP stores it as `xacmlPepVersion`, and
-`/admin/xacml/peps` draws it — which is why it may never be a hand-written
-label (it was `'mock-sts xacml-pep, phase five'` until 2026-09-06). **A
-version may never stop this container starting**: an unreadable `VERSION` is
-0.0 (`STS-CORE-0040`), a corrupt stamp a computed record.
+**It is `M.N.O.<build>` under the service's own rules (#1317)** — the
+release from the one `VERSION` file the service reads, then a build number
+that is the UTC build instant, `YYYYMMDDHHMMSS`, unless the image is built as
+a RELEASE (`--build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0`, the
+same two arguments the service's `Dockerfile` takes), when it is that number:
+`1.0.0.0`. A release flag with no valid number fails the image build
+(`STS-CORE-0164`) and without the flag `BUILD_NUMBER` is ignored. It is
+stamped into `version.json` at image build time by the binary itself
+(`xacml-pep --stamp .`, `sts-core::version`'s `stamp()`, a port of
+`common/version.js` with `cargo test -p sts-core` holding the same cases as
+`tests/version.js`), with `build`, `release`, the commit and the build
+instant. It rides on the registration and every heartbeat, the PDP stores it
+as `xacmlPepVersion`, and `/admin/xacml/peps` draws it — which is why it may
+never be a hand-written label (it was `'mock-sts xacml-pep, phase five'`
+until 2026-09-06). **A version may never stop this container starting**: an
+unreadable `VERSION` is 0.0.0 (`STS-CORE-0040`), a corrupt stamp a computed
+record, and a stamp a #1298 build wrote (no `build`) still loads, reporting
+the bare `M.N.O`.
 
-**M.N must agree with the PDP and the build numbers need not**: two images,
-built separately, each stamped with the instant it was built unless one
-`BUILD_NUMBER` is passed to both. `GET /`'s `build.what` says so.
+**The release must equal the PDP's and an ordinary build number need not**:
+two images, built separately, each numbered by the instant it was built. Two
+images built as the same release report the same version, and
+`sts_xacml_remote_pep.js` then asserts the whole string. `GET /`'s `build`
+carries `number`, `release`, `commit`, `at` and `stamped`, and `build.what`
+says so. The crates' `Cargo.toml` versions are Cargo's and nothing reads them
+at runtime.
 
 ## THE AUTHZEN EDGE PDP (#1179)
 

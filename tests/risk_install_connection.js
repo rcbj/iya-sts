@@ -174,6 +174,7 @@ async function run(t) {
   ] }));
   const provider = {
     STS_KEYS_KEK_PROVIDER: 'file',
+    STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
     STS_KEYS_KEK_FILE: rawKey,
     STS_DATABASE_PASSWORD_PROVIDER: 'file',
     STS_DATABASE_PASSWORD_REF: own,

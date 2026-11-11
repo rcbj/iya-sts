@@ -292,19 +292,24 @@ const SIGNED_OUT_FORM = validation.z.looseObject({
 // drift. The CSS is exactly what `page()` drew before #577.
 const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
   'Roboto,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;' +
-  'line-height:1.5;color:#111}h1{font-size:1.5rem;margin-bottom:.2rem}' +
-  'h2{font-size:1.05rem;margin:1.6rem 0 .3rem}.sub{color:#555;' +
+  'line-height:1.5;color:var(--sts-text,#111)}h1{font-size:1.5rem;' +
+  'margin-bottom:.2rem}' +
+  'h2{font-size:1.05rem;margin:1.6rem 0 .3rem}.sub{color:var(--sts-dim,#555);' +
   'font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;' +
-  'padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;' +
-  'border-left:4px solid #f9a825;padding:.6rem .8rem;margin:1rem 0}' +
+  'padding:.6rem .8rem;margin:1rem 0;color:#111}.warn{background:#fff8e1;' +
+  'border-left:4px solid #f9a825;padding:.6rem .8rem;margin:1rem 0;' +
+  'color:#111}' +
   '.err{background:#ffebee;border-left:4px solid #b00020;padding:.6rem ' +
-  '.8rem;margin:1rem 0}table{border-collapse:collapse;width:100%;' +
+  '.8rem;margin:1rem 0;color:#111}table{border-collapse:collapse;width:100%;' +
   'margin:.3rem 0 1rem}th,td{text-align:left;padding:.4rem .5rem;' +
-  'border-bottom:1px solid #ddd;vertical-align:top;font-size:.92rem}' +
+  'border-bottom:1px solid var(--sts-border,#ddd);vertical-align:top;' +
+  'font-size:.92rem}' +
   'th{font-size:.8rem;text-transform:uppercase;letter-spacing:.03em;' +
-  'color:#555}code{background:#f4f4f4;padding:.05rem .25rem;' +
+  'color:var(--sts-dim,#555)}code{background:var(--sts-rule,#f4f4f4);' +
+  'padding:.05rem .25rem;' +
   'border-radius:3px;word-break:break-all}.cannot{color:#8a6d00}' +
-  '.spec{color:#555;font-size:.82rem}button{font:inherit;padding:.45rem ' +
+  '.spec{color:var(--sts-dim,#555);font-size:.82rem}' +
+  'button{font:inherit;padding:.45rem ' +
   '.9rem;border-radius:4px;border:1px solid #999;background:#f6f6f6;' +
   'cursor:pointer}button.global{background:#b00020;border-color:#8a0018;' +
   'color:#fff;font-weight:600}a.btn{display:inline-block;padding:' +
@@ -315,26 +320,27 @@ const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
   // The console's fold, restyled for this page's palette: a `<details>`
   // whose summary is the prose's opening sentence (`WebKit.note()`), so
   // the explanation is one line until somebody asks for the rest.
-  '.note{color:#444;font-size:.88rem;margin:.2rem 0 .6rem}' +
+  '.note{color:var(--sts-dim,#444);font-size:.88rem;margin:.2rem 0 .6rem}' +
   'details.fold{margin:.3rem 0 .8rem}details.fold>summary{cursor:' +
   'pointer;list-style:none;display:flex;gap:.45em;align-items:' +
   'baseline}details.fold>summary::-webkit-details-marker{display:' +
   'none}details.fold>summary::before{content:"\\25b8";flex:none;' +
   'font-size:.9em}details.fold[open]>summary::before{content:' +
   '"\\25be"}details.fold>summary:focus-visible{outline:2px solid ' +
-  '#555;outline-offset:2px}.foldbody{margin:.3rem 0 0 1.05em}' +
-  'details.note.fold>summary:hover{color:#111}' +
+  'var(--sts-dim,#555);outline-offset:2px}.foldbody{margin:.3rem 0 0 ' +
+  '1.05em}details.note.fold>summary:hover{color:var(--sts-text,#111)}' +
   // The language chooser (#539), small and to one side, as on the
   // sign-in screen: the page's first business is the sign-out.
-  'form.language-chooser{float:right;font-size:.8rem;margin:0 0 .5rem ' +
+  'details.language-row{float:right;font-size:.8rem;margin:0 0 .5rem ' +
   '1rem}form.language-chooser button{padding:.15rem .5rem}' +
-  'form.language-chooser label{margin-right:.3rem}' +
+  'form.language-chooser label{margin-right:.3rem}' + PageLocale.ROW_CSS +
   // THE TWO TABS (2026-10-12): `WebKit.tabbedPanels()`, the console's, with
   // its rules in this page's palette — the fragment decides, through
   // `:target` and `:has()`, with no script; a browser without `:has()`
   // shows both panels, which is the page as it was.
   '.tabbar{display:flex;gap:4px;margin:1.2rem 0 .8rem;border-bottom:1px ' +
-  'solid #ddd}.tabbar a{padding:.35rem .8rem;border:1px solid #ddd;' +
+  'solid var(--sts-border,#ddd)}' +
+  '.tabbar a{padding:.35rem .8rem;border:1px solid #ddd;' +
   'border-bottom:0;border-radius:4px 4px 0 0;background:#f6f6f6;' +
   'color:#111;text-decoration:none;font-size:.92rem}' +
   '.tabpanel{scroll-margin-top:1rem}' +
@@ -346,7 +352,41 @@ const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
   '.tabs:has(#logout-signout:target)>.tabbar a[href="#logout-signout"],' +
   '.tabs:has(#logout-details:target)>.tabbar a[href="#logout-details"]' +
   '{background:#fff;font-weight:700;border-color:#555}}' +
-  'table.sessions td:first-child{width:3rem}';
+  'table.sessions td:first-child{width:3rem}' +
+  // A REALM'S SIGN-IN APPEARANCE (#717, `common/branding.ts`). The rules
+  // above read the realm's colours through custom properties, each falling
+  // back to the literal it replaced; the ones below apply only under
+  // `html[data-sts-layout]`, which the shell carries only for a realm whose
+  // appearance differs from the service's, so for every other realm — and
+  // in the server-drawn result document, which inlines this text and links
+  // no theme — the page is what it was. This page has no card, so for a
+  // realm it gets one: the page colour behind, the card colour under the
+  // text (the colour the contrast rule holds the text and links to), and
+  // the brand header the runtime draws at its top — in the card for
+  // centered, a band in the accent colour across the card's top for banner
+  // and split (a panel beside a page of tables would leave them no room).
+  // The links take the accent at the lowest specificity (`:where()`), so
+  // the button-like links and the tabs keep their own.
+  'html[data-sts-layout]{background:var(--sts-page,#f4f4f7)}' +
+  'html[data-sts-layout] body{background:var(--sts-card,#fff);' +
+  'border:1px solid var(--sts-border,#d5d5dd);border-radius:10px;' +
+  'padding:1.5rem 2rem;box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
+  ':where(html[data-sts-layout]) a{color:var(--sts-accent,#12107c)}' +
+  '.sts-brand{display:flex;align-items:center;justify-content:center;' +
+  'gap:12px;margin:0 0 1rem}img.sts-brand-logo{display:block;' +
+  'max-width:240px;max-height:64px}a.sts-brand-link{display:block;' +
+  'line-height:0}.sts-brand-name{font-weight:600;font-size:1.15em;' +
+  'overflow-wrap:anywhere}' +
+  'html[data-sts-layout=banner] .sts-brand,' +
+  'html[data-sts-layout=split] .sts-brand{margin:-1.5rem -2rem 1.2rem;' +
+  'padding:12px 24px;border-radius:10px 10px 0 0;' +
+  'background:var(--sts-accent,#12107c);' +
+  'color:var(--sts-on-accent,#fff)}' +
+  '@media (max-width:40rem){html[data-sts-layout] body{margin:0;' +
+  'border-radius:0;border-width:0;padding:1rem}' +
+  'html[data-sts-layout=banner] .sts-brand,' +
+  'html[data-sts-layout=split] .sts-brand{margin:-1rem -1rem 1rem;' +
+  'border-radius:0}}';
 
 // THE STATIC PAGE'S STYLESHEET, `/logout/signout.css`: the page's rules and,
 // after them, the account control's (#561) — `WebSurface` draws the browser's
@@ -356,7 +396,9 @@ const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
 // the setting off, when no control is drawn, they style nothing. The
 // server-drawn document (`page()`) inlines the same text, so the two still
 // cannot drift (`tests/logout_api.js` 6d holds them to the byte).
-const SIGNOUT_CSS = LOGOUT_CSS + WebCardCss.ACCOUNTS_CSS;
+// The control's rules go through the card's `themed()` (#717), so they
+// take a realm's colours as the card's own copy does.
+const SIGNOUT_CSS = LOGOUT_CSS + WebCardCss.themed(WebCardCss.ACCOUNTS_CSS);
 
 // A FAMILIES row, a live-session row, an inventory: open records, as the
 // JavaScript built them.
@@ -1046,9 +1088,10 @@ class Logout {
           log.debug("Entering wsfed-rp.collect().");
           const rows = [];
           ctx.sessions.forEach((session) => {
-            wsfed.cleanupTargetsFor(session).forEach((target) => {
+            // A realm can declare several addresses (#747), each a row.
+            wsfed.cleanupTargetsFor(session).forEach((target, at) => {
               rows.push(this.row('wsfed-rp', 'realm', session.id + '|' +
-                                 target.realm, {
+                                 target.realm + (at ? '|' + at : ''), {
                 label: target.realm,
                 detail: target.url ? 'cleanup goes to ' + target.url
                                    : 'this realm supplied no wreply, so ' +
@@ -4064,6 +4107,30 @@ class Logout {
   // session this service no longer holds is a browser that looks signed in
   // and is not.
   // ---------------------------------------------------------------------------
+  // Ending somebody's OTHER sessions needs a recent sign-in (ASVS 5.0.0 7.5.2).
+  // Signing yourself out never does, and that includes signing out everywhere:
+  // nothing may stand between a person and leaving.
+  private reauthenticationOwed(subject: any, body: any): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering Logout.reauthenticationOwed().");
+    const limit = Number(config.value('account.recentAuthMinutes')) * 60;
+    const raw = body.select === undefined ? [] : body.select;
+    const own = subject.session ? String(subject.session.id) : '';
+    const others = (Array.isArray(raw) ? raw : [raw]).filter(function (one) {
+      return one && String(one) !== own && String(one) !== 'session:' + own;
+    });
+    if (limit === 0 || String(body.scope || '') === 'global' || !others.length) {
+      log.debug("Leaving Logout.reauthenticationOwed(). Not asked.");
+      return false;
+    }
+    const signOn = subject.session || {};
+    const events = Array.isArray(signOn.events) ? signOn.events : [];
+    const latest = events.length ? events[events.length - 1] : null;
+    const at = Number((latest && latest.at) || signOn.authTime || 0);
+    log.debug("Leaving Logout.reauthenticationOwed().");
+    return !(at > 0 && Date.now() / 1000 - at <= limit);
+  }
+
   private endFor(req?, res?, subject?, body?) {
     const { log, authn, baseUrlOf } = this.deps;
     log.debug("Entering Logout.endFor().");
@@ -4102,6 +4169,9 @@ class Logout {
       authn.afterAccountSignOut(req, res);
     } else if (endedOwn) {
       authn.clearSessionCookie(res);
+    }
+    if (res && (endedOwn || result.terminated.length)) {
+      authn.clearSiteDataAfterSignOut(req, res);
     }
     log.debug("Leaving Logout.endFor(). " + result.terminated.length +
               " ended.");
@@ -4231,6 +4301,7 @@ class Logout {
             'the browser', spareCredentials: true });
     });
     authn.afterAccountSignOut(req, res);
+    authn.clearSiteDataAfterSignOut(req, res);
     const result = Logout.mergedResult(results);
     const answer: Loose = { ok: true, next: 'signed-out',
       username: accounts.map(function (one) {
@@ -4373,6 +4444,14 @@ class Logout {
       log.debug("Leaving Logout.signOutAct(). Refused.");
       return this.subjectRefusal(subject, true);
     }
+    // THE SAME QUESTION THE JSON DOOR ASKS (#1521, ASVS 5.0.0 7.5.2; #1577).
+    // Until #1577 only `POST /logout` asked it, so the page — the one a
+    // person is sent to, the portal's own "end your other sessions" among
+    // them — ended other sessions on a sign-in of any age.
+    if (this.reauthenticationOwed(subject, body || {})) {
+      log.debug("Leaving Logout.signOutAct(). Sign in again.");
+      return this.reauthenticationRefusal(req, subject, body || {});
+    }
     const ended = this.endFor(req, res, subject, body || {});
     const result = ended.result;
     const answer: Loose = { ok: true, next: 'signed-out',
@@ -4389,6 +4468,41 @@ class Logout {
     answer.view = this.resultView(result, remaining);
     log.debug("Leaving Logout.signOutAct(). The result's view.");
     return { status: 200, json: answer };
+  }
+
+  /**
+   * The page's answer when ending another session needs a recent sign-in:
+   * 403, `STS-LOGOUT-0015` (the JSON door's code), the English refusal every
+   * refusal here is, and a `reauthenticate` view carrying where to sign in
+   * again. The sign-in comes back to `/logout`, re-authenticating this same
+   * session (`authn`'s `session.reauthenticate`), so the person ticks the
+   * rows again and the act is then asked of a fresh sign-in.
+   *
+   * @param req - the request
+   * @param subject - whom the act is about
+   * @param body - the act's body, for the account it names (#561)
+   * @returns `{ status, code, json }` for the API to send
+   */
+  private reauthenticationRefusal(req?, subject?, body?): Loose {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.reauthenticationRefusal().");
+    const account = body && body.account ? String(body.account) : '';
+    // A fresh sign-in, never the account picker (prompt=login's choice), for
+    // the person the page is about.
+    const signIn = authn.beginAuthentication({
+      returnTo: LOGOUT_PATH + (account
+        ? '?account=' + encodeURIComponent(account) : ''),
+      protocol: 'Logout', request: req, accountChoice: 'never',
+      hint: subject && subject.username ? String(subject.username) : '',
+      details: [{ label: 'what happens next',
+                  value: 'you will be returned to the sign-out page',
+                  note: 'ending your other sessions needs a recent ' +
+                        'sign-in (account.recentAuthMinutes)' }]
+    });
+    log.debug("Leaving Logout.reauthenticationRefusal().");
+    return { status: 403, code: 'STS-LOGOUT-0015', json: { ok: false,
+      errors: ['Sign in again, then come back to end your other sessions.'],
+      view: { state: 'reauthenticate', signIn: signIn } } };
   }
 
   // Whether a result leaves the browser something to do — `fanOutOf()`'s
@@ -4533,6 +4647,12 @@ class Logout {
                    Array<[string, string]>)
         .concat(PageLocale.shellAttributes(req, '', String(person || ''))),
       stylesheets: [SIGNOUT_STYLE_PATH],
+      // THE REALM'S SIGN-IN APPEARANCE (#717): this page's stylesheet is
+      // its own rather than the card's, so it says so — the realm's
+      // `/web/theme.css` after it and the brand facts on `<html>`, which
+      // `WebSurface.put()` draws the header from; nothing at all for a
+      // realm that set nothing.
+      branded: true,
       script: SIGNOUT_SCRIPT_PATH,
       open: '',
       close: '',
@@ -4698,6 +4818,18 @@ class Logout {
         log.debug("Leaving the logout action endpoint. A form: the page.");
         return;
       }
+      // THE JSON DOOR READS THE COOKIE, so a page of another site may not
+      // reach it (#1442, ASVS 5.0.0 3.5.1). A program sends no Origin.
+      if (cors.crossSiteBrowserRequest(req)) {
+        errorCodes.mark(res, 'STS-LOGOUT-0014');
+        res.status(403).type('application/json').set('Cache-Control',
+                                                     'no-store')
+           .send(JSON.stringify({ error: 'cross_site_request',
+             error_description: 'This request came from a page of another ' +
+                                'site.' }, null, 2));
+        log.debug("Leaving the logout action endpoint. Another site.");
+        return;
+      }
       const body = parseBody(req);
       const subject = this.subjectOf(req, body);
       if (subject.refused) {
@@ -4752,6 +4884,16 @@ class Logout {
                                   error_description: String(asked.detail) },
                                 null, 2));
         log.debug("Leaving the logout action endpoint. " + asked.detail);
+        return;
+      }
+      if (this.reauthenticationOwed(subject, body)) {
+        errorCodes.mark(res, 'STS-LOGOUT-0015');
+        res.status(403).type('application/json').set('Cache-Control',
+                                                     'no-store')
+           .send(JSON.stringify({ error: 'reauthentication_required',
+             errors: ['Sign in again at /authn/login, then come back to end ' +
+                      'your other sessions.'] }, null, 2));
+        log.debug("Leaving the logout action endpoint. Sign in again.");
         return;
       }
       const ended = this.endFor(req, res, subject, body);

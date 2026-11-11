@@ -513,7 +513,7 @@ async function anUnconfiguredRealmRefusesNobody() {
       "GET /admin-api/roles should answer 200; it answered " +
       register.status);
   });
-  check("a new realm holds exactly the eight native roles", function () {
+  check("a new realm holds exactly the nine native roles", function () {
     // #303: ADMIN_READ and ADMIN_WRITE are CONFIGURED roles seeded into every
     // realm, each held by the realm's own management API client and
     // authorizing its admin scope. #309: DEVICE_COMPLIANCE beside them,
@@ -524,19 +524,22 @@ async function anUnconfiguredRealmRefusesNobody() {
     // with the groups ssf-read and ssf-manage and with no application.
     // #1030: REPORT_USE and REPORT_ADMIN authorize report:use and
     // report:admin, seeded with the groups report-users and report-admins
-    // and with no application. Nothing else is seeded.
+    // and with no application. #645: SECURITY_ADMIN, the third console
+    // role, authorizing admin:security and held by sts-api-client like the
+    // other two. Nothing else is seeded.
     const names = register.body.roles.map(function (r) { return r.name; });
     assert.strictEqual(JSON.stringify(names.slice().sort()),
       JSON.stringify(["ADMIN_CONSOLE", "ADMIN_READ", "ADMIN_WRITE",
                       "DEVICE_COMPLIANCE", "REPORT_ADMIN", "REPORT_USE",
-                      "SSF_MANAGE", "SSF_READ"]),
-      "a realm's ou=roles starts with the eight native roles; this one " +
+                      "SECURITY_ADMIN", "SSF_MANAGE", "SSF_READ"]),
+      "a realm's ou=roles starts with the nine native roles; this one " +
       "holds " + JSON.stringify(names));
     const wanted = { ADMIN_READ: "admin:read", ADMIN_WRITE: "admin:write",
                      DEVICE_COMPLIANCE: "device:compliance",
                      ADMIN_CONSOLE: "admin:console",
                      SSF_READ: "ssf.read", SSF_MANAGE: "ssf.manage",
-                     REPORT_USE: "report:use", REPORT_ADMIN: "report:admin" };
+                     REPORT_USE: "report:use", REPORT_ADMIN: "report:admin",
+                     SECURITY_ADMIN: "admin:security" };
     register.body.roles.forEach(function (row) {
       const unheld = row.name === "DEVICE_COMPLIANCE" ||
                      row.name === "ADMIN_CONSOLE" ||
@@ -888,7 +891,7 @@ async function theAuthorizationEndpointRefuses() {
   let step = await refusedBrowser.go("GET", authorizeUrl(NARROWED));
   check("an unauthenticated authorization request goes to the sign-in screen",
     function () {
-      assert.ok(/\/authn\/login\?authn=/.test(step.location),
+      assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(step.location),
         "it went to " + step.location);
     });
   const refusedSignIn = await screenSignIn(refusedBrowser, step.location,
@@ -926,7 +929,7 @@ async function theAuthorizationEndpointRefuses() {
   const afterRefusal = await refusedBrowser.go("GET", authorizeUrl(NARROWED));
   check("and no session was established — the same browser is sent BACK to " +
         "the sign-in screen rather than through it", function () {
-    assert.ok(/\/authn\/login\?authn=/.test(afterRefusal.location),
+    assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(afterRefusal.location),
       "a refused sign-in must leave the browser signed in to nothing. This " +
       "one was answered " + afterRefusal.status + " -> " +
       afterRefusal.location + " instead of being sent back to the screen. " +
@@ -991,7 +994,7 @@ async function theAuthorizationEndpointRefuses() {
     authorizeUrl("roles-second-app"));
   check("the consent screen is drawn BEFORE the refusal, not after",
     function () {
-      assert.ok(/\/oauth2\/consent\?consent=/.test(asksFirst.location),
+      assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(asksFirst.location),
         "it went to " + asksFirst.location);
     });
   await setSetting("oauth2.consentRequired", false);

@@ -203,6 +203,52 @@ async function drained() {
   return filesIn();
 }
 
+// A FILE'S NAME AGAINST ITS FORMAT (#1480, ASVS 5.0.0 5.2.2).
+function nameChecks(t) {
+  log.debug("Entering nameChecks().");
+  const refused = riskUpload.RiskUpload.nameRefusal;
+  const bad = refused('dbip-city-csv', 'dataset.exe');
+  t.check(bad && bad.status === 400, 'a name that does not fit is refused',
+          JSON.stringify(bad));
+  t.check(refused('dbip-city-csv', 'cities.csv') === null,
+          'one that does is not');
+  t.check(refused('dbip-city-csv', 'cities.csv.gz') === null,
+          'a compression suffix is set aside');
+  t.check(!!refused('dbip-city-csv', 'cities.gz'),
+          'and a compressed file still needs the format\'s own name');
+  t.check(refused('ip-list', 'torbulkexitlist') === null,
+          'a list published with no extension may have none');
+  t.check(!!refused('dbip-city-csv', 'noextension'),
+          'a CSV format may not');
+  t.check(refused('dbip-city-csv', '') === null,
+          'the API door has no name to compare');
+  log.debug("Leaving nameChecks().");
+}
+
+// THE MALWARE SCAN COMES FIRST (#1501): a flagged upload is refused and gone.
+async function scanChecks(t) {
+  log.debug("Entering scanChecks().");
+  const MalwareScan = require('../common/malware_scan');
+  const real = MalwareScan.fileRefusal;
+  MalwareScan.fileRefusal = function () {
+    return Promise.resolve({ status: 422, code: 'STS-CORE-0168',
+                             error: 'flagged.' });
+  };
+  try {
+    const flagged = await riskUpload.receiveRaw(apiRequest(
+      Buffer.from('192.0.2.1\\n'), { dataset: 'iplist.operator-deny',
+                                     format: 'ip-list', realm: 'default' },
+      'application/octet-stream'), apiDoor());
+    t.check(flagged.status === 422 && flagged.code === 'STS-CORE-0168' &&
+            filesIn().length === 0,
+            'a dataset the scanner flags is refused and not kept',
+            JSON.stringify(flagged));
+  } finally {
+    MalwareScan.fileRefusal = real;
+  }
+  log.debug("Leaving scanChecks().");
+}
+
 async function partA(t) {
   log.debug("Entering partA().");
   const gz = zlib.gzipSync(listOf(1200, 'A1'));
@@ -525,6 +571,8 @@ async function run(t) {
   riskStore.reset();
   riskDatasets.forget();
   try {
+    nameChecks(t);
+    await scanChecks(t);
     await partA(t);
     await partB(t);
     await partC(t);

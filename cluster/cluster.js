@@ -60,6 +60,8 @@ const config = require('../common/config');
 // over `config`, so this require cannot close a cycle.
 const stsCrypto = require('../common/crypto');
 const errorCodes = require('../common/error_codes');
+// Which persistence modes are a database (#677). A LEAF.
+const storeModes = require('../persistence/store_modes');
 const capabilities = require('./cluster_capabilities');
 // A leaf requiring only `config` and `error_codes` (rule 3ap), so this adds
 // nothing to what loads before the store's gate.
@@ -190,24 +192,25 @@ function resolve() {
     return { mode: 'off', why: 'cluster.mode is off' };
   }
   if (configured === 'auto') {
-    if (product && store === 'postgres') {
+    if (product && storeModes.isDatabase(store)) {
       log.debug("Leaving resolve(). Auto: active-passive.");
       return { mode: 'active-passive',
                why: 'cluster.mode is auto, and this is product mode on a ' +
-                    'postgres store' };
+                    'database store' };
     }
     log.debug("Leaving resolve(). Auto: off.");
     return { mode: 'off',
              why: 'cluster.mode is auto, which is off outside product mode ' +
                   'on a postgres store' };
   }
-  if (store !== 'postgres') {
-    log.debug("Leaving resolve(). Refused: no postgres store.");
+  if (!storeModes.isDatabase(store)) {
+    log.debug("Leaving resolve(). Refused: no database store.");
     return { mode: configured, refused: errorCodes.tag('STS-CLUSTER-0007') +
              'cluster.mode is "' + configured + '" and persistence.mode is "' +
-             store + '". Only a postgres store can hold a membership table, ' +
-             'leases and atomic claims that several containers agree on. Set ' +
-             'persistence.mode=postgres, or cluster.mode=off for one node.' };
+             store + '". Only a database store (postgres, or mariadb) can ' +
+             'hold a membership table, leases and atomic claims that several ' +
+             'containers agree on. Set persistence.mode=postgres, or ' +
+             'cluster.mode=off for one node.' };
   }
   if (configured === 'active-active' &&
       String(config.value('keys.source')) !== 'persisted' &&
@@ -661,11 +664,13 @@ function listenerCertificatesOfLiveNodes() {
 // which is why it needed no new plumbing.
 //
 // IT IS COMPUTED BY A JOB OF ITS OWN, NOT ON THE HEARTBEAT. A snapshot
-// walks every registered store's rows, and the heartbeat is what a node's
-// life depends on (the paragraph above `nodeInfo()`): so the heartbeat only
-// attaches the last one taken, and the walk happens every CACHE_REPORT_MS
-// (the scheduler job below), first at the join. What another node shows is
-// therefore up to that old plus a heartbeat, and the page says how old.
+// counts every registered store (and lists the few it cannot count, #704's
+// `tallyOf()` in `common/cache_registry.js`), and the heartbeat is what a
+// node's life depends on (the paragraph above `nodeInfo()`): so the
+// heartbeat only attaches the last one taken, and the count happens every
+// CACHE_REPORT_MS (the scheduler job below), first at the join. What another
+// node shows is therefore up to that old plus a heartbeat, and the page says
+// how old.
 // ---------------------------------------------------------------------------
 const CACHE_REPORT_MS = 30000;
 const CACHE_REPORT_JOB = 'cluster.cache-report';
@@ -681,6 +686,19 @@ function refreshCacheReport() {
     log.debug("Caught in refreshCacheReport(): " + ((e && e.message) || e));
   }
   log.debug("Leaving refreshCacheReport().");
+}
+
+// The job's form (#704): the same report, taken without holding the loop.
+function refreshCacheReportAsync() {
+  log.debug("Entering refreshCacheReportAsync().");
+  log.debug("Leaving refreshCacheReportAsync().");
+  return cacheRegistry.snapshotAsync().then(function (taken) {
+    cacheReport = taken;
+  }, function (e) {
+    // refreshCacheReport()'s reason: the last report taken stays.
+    log.debug("Caught in refreshCacheReportAsync(): " +
+              ((e && e.message) || e));
+  });
 }
 
 // THE WALK IS A SCHEDULER JOB (#49 P5): `cluster.cache-report`, a QUIET
@@ -715,9 +733,13 @@ function scheduleCacheReport() {
       return stopping || role !== 'front' || !nodeId
         ? 'this process is not a joined front process' : '';
     },
+    // COUNTED IN SLICES (#704): `snapshotAsync()` tallies rather than lists
+    // and yields between stores, so the front process's listeners wait for
+    // one slice of the report, never the whole of it.
     run: function () {
-      refreshCacheReport();
-      return { taken: !!cacheReport };
+      return refreshCacheReportAsync().then(function () {
+        return { taken: !!cacheReport };
+      });
     }
   });
   log.debug("Leaving scheduleCacheReport(). On the scheduler.");

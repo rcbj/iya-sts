@@ -1243,6 +1243,9 @@ async function ticketIndicators(ticket, serviceKey) {
 module.exports = {
   msgs: msgs,
   kcrypto: kcrypto,
+  // #658: the GSS framing, for a job that opens a Kerberos token it was
+  // issued (sts_kerberos_tokens.js).
+  gss: gss,
   spnego: spnego,
   ETYPES: ETYPES,
   WINDOWS_MECHS: WINDOWS_MECHS,

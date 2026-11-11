@@ -398,6 +398,51 @@ class ProviderCommands {
     return ACCOUNT_COMMANDS.indexOf(base) >= 0;
   }
 
+  /**
+   * The roles a relying party's metadata answer names, as section 2.2 of the
+   * specification defines one: `id`, `display` and an optional `description`,
+   * all strings. Anything else is dropped here, because this is a value another
+   * party wrote and the register's answer is held to a closed model (#1353): as
+   * it arrived, one relying party's odd answer would have refused the whole
+   * realm's report, every other client's row with it.
+   *
+   * @param roles - the member as it arrived, or as it was stored earlier
+   * @returns the roles, at most 200
+   */
+  static rolesFrom(roles: Json): Json[] {
+    helpers.log.debug("Entering ProviderCommands.rolesFrom().");
+    const text = function (value: Json): boolean {
+      return typeof value === 'string' && value.length > 0;
+    };
+    const out = (Array.isArray(roles) ? roles : []).filter(function (one: Json) {
+      return one && typeof one === 'object' && text(one.id);
+    }).slice(0, 200).map(function (one: Json) {
+      const role: Json = { id: one.id, display: text(one.display)
+        ? one.display : one.id };
+      if (text(one.description)) {
+        role.description = one.description;
+      }
+      return role;
+    });
+    helpers.log.debug("Leaving ProviderCommands.rolesFrom(). " + out.length);
+    return out;
+  }
+
+  /**
+   * A stream's `last_access`, kept only where it is a time: a number or a
+   * string. Another party wrote it, for `rolesFrom()`'s reason.
+   *
+   * @param value - the member as it arrived
+   * @returns the value, or null to record none
+   */
+  static lastAccessFrom(value: Json): Json {
+    helpers.log.debug("Entering ProviderCommands.lastAccessFrom().");
+    const usable = (typeof value === 'number' && Number.isFinite(value)) ||
+      (typeof value === 'string' && value.length > 0);
+    helpers.log.debug("Leaving ProviderCommands.lastAccessFrom(). " + usable);
+    return usable ? value : null;
+  }
+
   // The digest a callback token is stored under.
   /**
    * Returns the digest a callback token is stored under.
@@ -856,7 +901,7 @@ class ProviderCommands {
         commandsSupported: a.commands_supported.map(String),
         commandEndpoint: String(a.command_endpoint || ''),
         audSubRequired: a.aud_sub_required === true,
-        roles: Array.isArray(a.roles) ? a.roles.slice(0, 200) : [],
+        roles: ProviderCommands.rolesFrom(a.roles),
         context: a.context, learnedAt: this.deps.now()
       });
     }
@@ -1198,8 +1243,8 @@ class ProviderCommands {
       this.noteAccount(run.clientId, String(data.sub),
                        held ? held.username : '',
                        String(data.account_state), run.command,
-                       data.last_access ? { lastAccess: data.last_access }
-                                        : undefined);
+                       ProviderCommands.lastAccessFrom(data.last_access) !==
+                         null ? { lastAccess: data.last_access } : undefined);
       run.accounts++;
     } else if (event.event === 'command-complete') {
       run.totalAccounts = data && Number.isInteger(data.total_accounts)
@@ -1238,7 +1283,7 @@ class ProviderCommands {
              accounts: run.accounts, totalAccounts: run.totalAccounts,
              resumes: run.resumes, lastEventId: run.lastEventId || '',
              errors: (run.errors || []).slice(0), why: run.why || '',
-             errorCode: run.errorCode || '', actor: run.actor || '',
+             actor: run.actor || '',
              startedAt: iso(run.startedAt), finishedAt: iso(run.finishedAt) };
   }
 
@@ -1710,9 +1755,15 @@ class ProviderCommands {
     const accountRows: Json[] = [];
     accounts.forEach(function (row: Json) {
       if (row && (!o.clientId || row.clientId === o.clientId)) {
-        accountRows.push(Object.assign({}, row, {
+        const shown = Object.assign({}, row, {
           updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString()
-                                   : '' }));
+                                   : '' });
+        // Through the same door as `roles`: a row stored earlier is as the
+        // relying party wrote it, and one bad row must not refuse the report.
+        if (ProviderCommands.lastAccessFrom(row.lastAccess) === null) {
+          delete shown.lastAccess;
+        }
+        accountRows.push(shown);
       }
     });
     accountRows.sort(function (a, b) {
@@ -1736,7 +1787,10 @@ class ProviderCommands {
         return { clientId: c.clientId, name: c.name, endpoint: c.endpoint,
                  learned: known ? {
                    commandsSupported: known.commandsSupported,
-                   audSubRequired: known.audSubRequired, roles: known.roles,
+                   audSubRequired: known.audSubRequired,
+                   // Through the same door: a row learned before #1353 is
+                   // as the relying party wrote it.
+                   roles: ProviderCommands.rolesFrom(known.roles),
                    learnedAt: new Date(known.learnedAt).toISOString() }
                    : null };
       }),

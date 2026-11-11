@@ -47,6 +47,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -71,21 +72,9 @@ const PER_PAGE = 20;
 // line break and a NUL (`applications.js`) — so it is bounded by length and
 // checked against the person's own entry, which is the rule that matters.
 // `scope` is one RFC 6749 scope token.
-const WITHDRAW_FORM = vz.object({
-  action: vt.oneOf(['scope', 'application'])
-    .describe('`scope`: withdraw one scope. `application`: withdraw ' +
-              'everything one application holds.'),
-  client: vz.string().min(1).max(512)
-    .describe('The application\'s client_id.'),
-  scope: vz.string().max(1024).optional()
-    .describe('The scope, for `action=scope`.'),
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('The page of the list the form was on.')
-});
+const WITHDRAW_FORM = ModelZod.body('account', 'withdrawConsent');
 
-const CONSENTS_QUERY = vz.object({
-  page: vt.opt(vt.integer(1, 100000))
-});
+const CONSENTS_QUERY = ModelZod.query('account', 'getConsents');
 
 /**
  * `/portal/consents`' account API operations: what the person has agreed
@@ -258,15 +247,7 @@ class PortalConsents {
     log.debug("Entering PortalConsents.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/consents',
-        operationId: 'getConsents', tag: 'Consents', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/consents',
-        summary: 'What you have agreed each application may ask for',
-        description: 'One page (`paging`) of `groups`, one per application ' +
-          'you have consented to, the newest first: its client_id, its ' +
-          'name, and each scope with when you agreed (a GeneralizedTime). ' +
-          '`administrative` is every scope an application\'s global ' +
-          'consent answered for you that still stands, which is not yours ' +
-          'to withdraw.',
+        operationId: 'getConsents', access: 'person',
         query: CONSENTS_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
@@ -274,14 +255,7 @@ class PortalConsents {
                           self.view(caller.username, input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/consents',
-        operationId: 'withdrawConsent', tag: 'Consents', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/consents',
-        summary: 'Withdraws a consent of yours',
-        description: 'One scope (`action=scope`) or everything an ' +
-          'application holds (`action=application`). Every token that ' +
-          'application holds for you under it is revoked, and a refresh ' +
-          'token granted before is refused even after you agree again. A ' +
-          'consent that is not on your own entry is refused.',
+        operationId: 'withdrawConsent', access: 'person',
         body: WITHDRAW_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

@@ -35,6 +35,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -45,13 +46,7 @@ const vz = validation.z;
 
 // The three fields, each optional here because the handler says which one
 // is missing in a sentence rather than as a schema refusal.
-const PASSWORD_FORM = vz.object({
-  current: vz.string().max(1024).optional()
-    .describe('Your current password: a change re-proves it.'),
-  next: vz.string().max(1024).optional().describe('The new password.'),
-  confirm: vz.string().max(1024).optional()
-    .describe('The new password again.')
-});
+const PASSWORD_FORM = ModelZod.body('account', 'changePassword');
 
 interface AccountPasswordDeps {
   log: typeof helpers.log;
@@ -195,7 +190,8 @@ class AccountPassword {
       reasonUser: 'You changed your password.' });
     log.debug("Leaving AccountPassword.change(). Changed.");
     return ctx.json(res, 200, { ok: true,
-                                message: t.text('portal.done.password') });
+                                message: t.text('portal.done.password') + ' ' +
+                                         t.text('portal.done.endOthers') });
   }
 
   /**
@@ -210,27 +206,15 @@ class AccountPassword {
     log.debug("Entering AccountPassword.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/password',
-        operationId: 'getPassword', tag: 'Password', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/password',
-        summary: 'Whether you have a password, and what one must be',
-        description: '`hasPassword`, and `rules`: the password policy\'s ' +
-          'rules for you (`enforced` false in development mode, where ' +
-          'nothing is checked).',
-        query: vz.object({}),
+        operationId: 'getPassword', access: 'person',
+        query: ModelZod.query('account', 'getPassword'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));
         } },
       { method: 'POST', path: ctx.BASE + '/password',
-        operationId: 'changePassword', tag: 'Password', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/password',
-        summary: 'Changes your password',
-        description: 'Re-proves the current password (rate limited, in the ' +
-          'budget the Kerberos keytab shares), screens the new one against ' +
-          'breached passwords, applies the password policy, and tells your ' +
-          'relying parties over CAEP. A refusal carries the page\'s `view`.',
+        operationId: 'changePassword', access: 'person',
         body: PASSWORD_FORM,
-        statuses: { 429: 'Too many attempts; try again later.' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.change(ctx, req, res, caller, input.body);

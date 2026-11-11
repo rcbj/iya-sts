@@ -77,6 +77,7 @@ import realms = require('../common/realms');
 // THE RECOVERY QUESTION (#724).
 import passkeyPolicy = require('../common/passkey_policy');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -92,21 +93,12 @@ const RESET_REFUSAL =
   'one on the "Forgot your password?" page where it is offered, or ask ' +
   'whoever manages your account.';
 
-const RESET_QUERY = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.'),
-  token: vt.opt(vt.token).describe('The link\'s single-use secret.')
-});
+const RESET_QUERY = ModelZod.query('account', 'getPasswordReset');
 
 // THE TOKEN RIDES IN THE BODY, for the activation form's reason: nobody is
 // signed in, so there is no session to carry it on, and a POST keeps it out
 // of a referer and an access log.
-const RESET_FORM = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.'),
-  token: vt.opt(vt.token).describe('The link\'s single-use secret.'),
-  password: vz.string().max(1024).optional().describe('The new password.'),
-  confirm: vz.string().max(1024).optional()
-    .describe('The new password again.')
-});
+const RESET_FORM = ModelZod.body('account', 'spendPasswordReset');
 
 // The response a request that FINISHED is marked with, so the claim on the
 // link is kept rather than given back (`holdLinkClaim()`).
@@ -431,13 +423,23 @@ class AccountReset {
     res[LINK_SPENT] = true;
     credentials.consumePasswordReset(username);
     credentials.setPasswordResetRequired(username, false);
-    await websecurity.succeededShared('password-reset', req, username);
+    // RECORDED BEFORE ANYTHING ELSE CAN FAIL (ASVS 5.0.0 2.3.3): the password
+    // is set and the link is spent, so the row has to exist whatever follows.
     audit.record({
       category: 'authentication', action: 'portal.password-reset',
       actor: username, target: username, outcome: 'success',
       summary: username + ' chose a new password from a reset link',
       detail: { address: websecurity.addressOf(req) }
     });
+    try {
+      await websecurity.succeededShared('password-reset', req, username);
+    } catch (e) {
+      // The reset happened; only the failure count was not cleared, and a
+      // 500 for an act that is done would send the person to repeat it.
+      log.warn(errorCodes.tag('STS-PORTAL-0637') + 'portal: the reset of ' +
+               username + ' is done, and its failure count could not be ' +
+               'cleared: ' + ((e && e.message) || e));
+    }
     this.deps.accountSignals().credentialChanged({ username: username,
       credentialType: 'password', changeType: 'create',
       initiatingEntity: 'user', via: 'portal',
@@ -504,31 +506,14 @@ class AccountReset {
     log.debug("Entering AccountReset.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/reset-password',
-        operationId: 'getPasswordReset', tag: 'Password reset link',
-        access: 'link', mirrors: 'GET ' + ctx.PORTAL + '/reset-password',
-        summary: 'Checks a password reset link, and spends nothing',
-        description: 'Takes no token: the link\'s `user` and `token` are ' +
-          'the credential. Answers the form\'s view — the username, the ' +
-          'service\'s address and the password rules — or one sentence for ' +
-          'every way a link can fail (`view.refused`), so nobody learns ' +
-          'which usernames have a link outstanding. Rate limited.',
-        query: RESET_QUERY,
-        statuses: { 429: 'Too many attempts; `view.refused` says so.' },
+        operationId: 'getPasswordReset', access: 'link', query: RESET_QUERY,
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
-          return self.look(ctx, req, res, input.query);
+          return self.look(ctx, req, res, Object.assign({}, input.query,
+            { token: String(req.headers['x-link-token'] || '') }));
         } },
       { method: 'POST', path: ctx.BASE + '/reset-password',
-        operationId: 'spendPasswordReset', tag: 'Password reset link',
-        access: 'link', mirrors: 'POST ' + ctx.PORTAL + '/reset-password',
-        summary: 'Sets a new password from a reset link, and spends it',
-        description: 'Checks the link again, claims it, screens the ' +
-          'password against breached passwords and the password policy, ' +
-          'stores it, clears the must-change flag, and spends the link; ' +
-          'signs nobody in. CAEP credential-change is sent. A refusal ' +
-          'carries the page\'s `view`; success answers `view.done`.',
-        body: RESET_FORM,
-        statuses: { 429: 'Too many attempts; `view.refused` says so.' },
+        operationId: 'spendPasswordReset', access: 'link', body: RESET_FORM,
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
           return self.spend(ctx, req, res, input.body);

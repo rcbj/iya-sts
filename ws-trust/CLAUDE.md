@@ -199,11 +199,12 @@ fault. Each refusal names its code at the place it refuses:
 | Code | Refusals | Why that one |
 |---|---|---|
 | `InvalidScope` | `0030` (#496: product, an `AppliesTo` that resolves to no registered application) | 1.3 section 4.1 calls `wsp:AppliesTo` "the scope for which this security token is desired", so an AppliesTo this STS serves nobody under is section 11's "The request scope is invalid" — the exact sentence, where InvalidRequest would have been true and said less |
-| `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
-| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010`, the connection's certificate's `0034`–`0039` (#1046, #1061), a signed request's `0040`–`0047`, `0049`, `0050`, `0052`, `0053` (#521) | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
+| `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025`, a delegated Kerberos token's `0054`, `0055`, `0058`–`0060` and `0063` (#658: no TLS for a Kerberos proof key), `0067` (a Renew or Cancel of a Kerberos token) | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
+| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010`, the connection's certificate's `0034`–`0039` (#1046, #1061), a signed request's `0040`–`0047`, `0049`, `0050`, `0052`, `0053` (#521), the requester's Kerberos token's `0054`–`0057` and a Kerberos-keyed signature's `0069` (#658) | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
 | `AuthenticationBadElements` | `0040` when the reading's code is `STS-KEYS-0163` (#521): a signature that does not cover the Body or the Timestamp | section 11's "Insufficient Digest Elements", exactly |
 | `ExpiredData` | `0006`, in either seat, a JWT's `0027` in either seat (#477, #519), and a signed request's Timestamp, `0048` (#521) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
-| `RequestFailed` | `0051` (#521: the used-assertion history not asked or not answering — this service's failure to prove the request new, not the requester's), `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell) | the request was understood and authenticated, and could not be done |
+| `BadRequest` | `0062` (#658: `wstrust.issueKerberos` off) and `0064` (an AppliesTo that is no Kerberos service) | section 11's "The request was invalid or malformed" is InvalidRequest's; BadRequest's own sentence in 1.4 is "The specified RequestSecurityToken is not understood" — a token type this STS does not issue here, which is what both are |
+| `RequestFailed` | `0051` (#521: the used-assertion history not asked or not answering — this service's failure to prove the request new, not the requester's), `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell), `0061` (#658: a forwarded Kerberos ticket from a requester not trusted for delegation), `0065` (`wst:Delegatable` to a target not trusted for it), `0066` (the KDC could not mint the ticket) | the request was understood and authenticated, and could not be done |
 
 **Not used, and why**: `InvalidSecurityToken` is "Security token has been
 revoked" in 1.4's table, and nothing here checks revocation of a presented
@@ -211,7 +212,8 @@ token; `InvalidTimeRange` would refuse a `wst:Lifetime`, which is CLAMPED instea
 (section 4.1 makes it a request the STS decides); `BadRequest`,
 `RenewNeeded` and `UnableToRenew` have no refusal here that they describe
 better than the codes above — an unknown RequestType is issued, and a Renew
-re-issues whatever token it is handed. (`InvalidScope` was on this list until
+re-issues whatever token it is handed. (`BadRequest` was on this list until
+#658.) (`InvalidScope` was on this list until
 #496, when an `AppliesTo` nobody registered stopped being issued for in
 product.)
 
@@ -219,7 +221,8 @@ product.)
 those is a Sender fault. An exception in the endpoint is `receiverFault()`'s
 `soap:Receiver` (SOAP 1.2 Part 1 section 5.4.6) or `soap:Server` (SOAP 1.1
 section 4.4.1), in the version the request was sent in — it was always a SOAP
-1.2 envelope until #183. `0014` is a `wst:Status` in a 200, not a fault.
+1.2 envelope until #183. `0014` and `0068` (#658: a Kerberos token the
+acceptor did not accept) are a `wst:Status` in a 200, not a fault.
 
 `tests/wstrust_fault_codes.js` asks every refusal above on both SOAP versions,
 the namespace and the receiver fault included.
@@ -599,11 +602,10 @@ behind `mode.issuesToUnregisteredApplications()` (the
   are not asked.
 * **Development is unchanged**: a token for any AppliesTo or none, under the
   shared name, and `seen()` files the AppliesTo.
-* **An entry an LDAP add made is not registered either**: the add writes no
-  `appRegisteredBy` (the registry writes it, for the console, `/admin-api`,
-  RFC 7591, an OpenID Federation and the seeds), so #494's definition reads
-  it as one that turned up. Whether an LDAP add should count is open on
-  #496; until it is decided, register through the console or `/admin-api`.
+* **An entry an LDAP add made IS registered, since #504**:
+  `stampLdapRegistration()` writes `appRegisteredBy: ldap:<the bound DN>` on an
+  add under `ou=applications`, unless the add already says who. A modify of an
+  entry that only turned up does not register it.
 
 `tests/unregistered_applications.js` holds it in both modes, with the
 nothing-recorded checks; `tests/wstrust_fault_codes.js` holds both faults.
@@ -620,8 +622,8 @@ SAML 2.0, SAML 1.1 and JWT:
 | Seat | What it takes |
 |---|---|
 | the requester's credential, `wsse:Security` | **a WS-Security signature over the request (#521)**, asked first; a UsernameToken; an assertion this STS issued (either SAML version); **a JWT this STS issued (#519)**, in the `wsse:BinarySecurityToken` this STS's own RSTR carries one in; and, when none of those is there, **the connection's TLS client certificate (#1046)** |
-| `<wst:OnBehalfOf>` / `<wst14:ActAs>` | an assertion (either version); a JWT (#477) |
-| `wst:TokenType` | SAML 2.0, SAML 1.1 (#487), JWT (#476) |
+| `<wst:OnBehalfOf>` / `<wst14:ActAs>` | an assertion (either version); a JWT (#477); a delegated Kerberos ticket (#658) |
+| `wst:TokenType` | SAML 2.0, SAML 1.1 (#487), JWT (#476), a Kerberos token (#658) |
 
 **THE REQUESTER'S JWT** is read by `readOwnJwt()`, the one function the
 delegated JWT goes through too, so the two seats cannot disagree about what
@@ -880,3 +882,84 @@ no token. A person already held here as a projection is read as they are.
 A NameID that is not a login name (an email address, a pairwise value) is
 unknown to the routing index and served where it arrives. Held in process by `tests/cell_saml_federation.js`.
 
+## KERBEROS TOKENS IN EVERY SEAT (#658, 2026-11-03)
+
+rcbj's decisions D1–D8 on #658 (the ticket carries them). The wire format is
+the Web Services Security Kerberos Token Profile 1.1: an AP-REQ in a
+BinarySecurityToken of one of six ValueTypes. Every Kerberos operation is
+`kerberos/krb5_tokens.ts`'s; this file only reads the seats and speaks
+WS-Trust's faults.
+
+**ONLY A TICKET FOR THIS SERVICE'S OWN SPN IS ACCEPTED**, by the acceptor
+(`krb5_service.js`'s `accept()`, `record: false`). The acceptor's rule — a
+ticket for one service proves nothing to another — is what decides the
+delegated case. The user's ticket to the middle tier is never read here, even
+though this process holds that key. What the middle tier presents is a ticket
+it obtained FOR THIS SERVICE by Kerberos delegation, and the ticket says how:
+
+* `S4U_DELEGATION_INFO` in its PAC (S4U2Proxy). The last transited service
+  must be the requester (`kerberosChainProblem()`, `0060`, every mode); the
+  ones before it are `delegates`; S is the requester's application (D3).
+* `FORWARDED` (bought with a forwarded TGT). The requester must carry
+  `krb5TrustedForDelegation` (`0061`).
+* Neither: refused in every mode (D2, `0059`).
+
+**Protocol transition is not read off the ticket.** An S4U2Proxy ticket looks
+the same whether its evidence came from S4U2Self or from a real sign-in,
+because this KDC writes no asserted-identity SID (S-1-18-2). The KDC's own
+row on `/admin/delegation` records the S4U2Self. The ticket's plan said
+"recorded as protocol transition"; that is the KDC's row, not this one.
+
+**THE ASYNCHRONOUS BOUNDARY.** Accepting a ticket is asynchronous, and
+`handleRst()` is synchronous for its seventy callers. So every Kerberos
+token in the document is accepted FIRST:
+
+* by the endpoint, in `prepareKerberosAt()` beside #521's
+  `prepareMessageSignature()`;
+* or by `handleRst()` itself, which then answers a Promise for that one
+  request.
+
+The verdicts ride on the connection (`kerberos`, keyed by the token's text),
+and each seat reads its verdict synchronously. ISSUING one is asynchronous
+too (the KDC encrypts). So the tail of an issue moved, unchanged, into
+`finishIssue()`, which `handleRst()` reaches directly or after
+`issueKerberos()` resolves. `stsEndpointNow()` serves a Promise by calling
+itself with the answer in hand.
+
+**Accepting spends the token** (the acceptor's replay claim), whatever is
+decided after. An AP-REQ is good once anywhere.
+
+**CELLS: SERVED WHERE IT ARRIVES.** The ticket's client is only inside the
+encrypted ticket and Authenticator, so there is no name to read unverified.
+Accepting the token to read one would spend it, and the home cell would then
+refuse the relayed request as a replay. `homeNameOf()` answers ''. The ticket
+said "placed by its cname"; that cannot be built.
+
+**ISSUED** (`issueKerberos()`):
+
+* The target is the AppliesTo's application's SPN (`appliesToApplication()`
+  answers an identifier; the entry is read for its SPN).
+* `delegates`, mapped to `SPN@REALM` or the identifier (D4), are
+  S4U_DELEGATION_INFO's transited services.
+* The proof key is the Authenticator's subkey, as `wst:BinarySecret`, over TLS
+  only (D5, `0063`).
+* `wst:Forwardable` asks for a forwardable ticket (the KDC drops it for a
+  protected person).
+* `wst:Delegatable` asks for a forwarded TGT in the Authenticator (D7), only
+  to a target trusted for it (`0065`).
+* The Lifetime is the Authenticator's window. A target in another realm is
+  `krb5_tokens.ts`'s trust walk (D8).
+
+**A SIGNATURE WITH THE TOKEN'S SESSION KEY** (D7, `kerberosSignature()`) is
+`messageSignature()`'s other branch. When the reading's key reference is a
+Kerberos token, the token is the credential (`kerberosCredential()`) and the
+HMAC must verify with its key (`crypto.verifyWsSecurityHmac()`). The signed
+parts and the Timestamp are checked by `signedPartsProblem()`, which the X.509
+branch now shares. There is nothing to prepare: replay is the token's.
+
+**Validate** of a Kerberos token answers the acceptor's verdict (`0068`).
+**Renew** and **Cancel** of one are refused (`0067`).
+
+Settings: `wstrust.acceptKerberos` (on) and `wstrust.issueKerberos` (off).
+`tests/kerberos_tokens.js` holds all of it in process, and
+`tests/protocol/sts_kerberos_tokens.js` over HTTP and TCP 88.

@@ -536,6 +536,24 @@ function slhEntry(name, prim, joseName) {
       log.debug("Leaving SLH-DSA sign().");
       return sig;
     },
+    // THE SAME TWO ON LIBUV'S THREAD POOL (#1464). An `s` parameter set takes
+    // seconds, and `await` on the synchronous pair yields nothing: the thread
+    // stops, and a transaction it has open keeps its locks the whole time.
+    keygenAsync: function () {
+      log.debug("Entering SLH-DSA keygenAsync().");
+      log.debug("Leaving SLH-DSA keygenAsync().");
+      return prim.keygenAsync().then(function (kp) {
+        return { publicKey: kp.publicKey, secretKey: kp.secretKey,
+                 seed: null };
+      });
+    },
+    signAsync: function (msg, sk, opts) {
+      log.debug("Entering SLH-DSA signAsync().");
+      var o = opts || {};
+      log.debug("Leaving SLH-DSA signAsync().");
+      return prim.signAsync(asBytes(sk), asBytes(msg),
+                            o.context ? asBytes(o.context) : EMPTY_CTX);
+    },
     verify: function (sig, msg, pk, opts) {
       log.debug("Entering SLH-DSA verify().");
       var o = opts || {};

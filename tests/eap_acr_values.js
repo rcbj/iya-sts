@@ -559,7 +559,7 @@ function childMain() {
       const b = browser(port);
       const first = await authorize(b, client, extra);
       const at = String(first.headers.location || '');
-      if (!/\/authn\/login\?authn=/.test(at)) {
+      if (!/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at)) {
         return { first: first, final: first };
       }
       const page = await authnScreen.open({ port: port, jar: b.jar, at: at });
@@ -798,7 +798,7 @@ function hardwareAllow(t) {
             'not armed', JSON.stringify(none.body));
     const drawn = page.webauthn({
       id: 'step', username: name, passwordless: false,
-      webauthn: { mode: 'get', hardwareRefused: { code: 'STS-AUTHN-0459' },
+      webauthn: { mode: 'get', hardwareRefused: { why: 'no key earns it' },
                   problem: 'none of the passkeys held can earn it',
                   challenge: 'c', rpId: 'localhost',
                   userVerification: 'required', algorithms: [] } },

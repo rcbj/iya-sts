@@ -32,8 +32,8 @@
 //   4. The ledger is `conformance_suite.js`'s: a FAILED module, or a WARNING
 //      from a condition KNOWN_WARNINGS does not name, fails the job.
 //
-// The receiver plans are #153's (this service as a receiver of somebody
-// else's transmitter), and are not run here.
+// The receiver plans (this service as a receiver of somebody else's
+// transmitter) are `sts_ssf_receiver_conformance.js`'s (#932).
 //
 // OWNED HERE (local: true): this repository's SSF transmitter.
 // ---------------------------------------------------------------------------

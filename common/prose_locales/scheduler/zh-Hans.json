@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "对每个已到定时间隔的属性源，读取本领域人员的下一页数据并写入其条目（#94）。每次运行每个属性源处理 attributeSources.refreshBatch 个人员。"
   },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "审计导出"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "在每个进程中、针对每个领域：将本进程自己的新审计事件投递到该领域已启用的目标。一个目标失败不会阻碍其他目标。投递至少一次。"
+  },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",
     "text": "账号集过期"
@@ -95,6 +103,14 @@
     "en": "c8990a4ca5b5163e",
     "text": "在 federation.encryptionKeyGraceS 过后，从每个联合关系中移除被轮换替换的加密密钥。该密钥在那一刻就已停止解密；此作业只是将它从条目上移除。"
   },
+  "sched.jobs.federation.partner-refresh.title": {
+    "en": "5354cb5ed3b1e58f",
+    "text": "联合会话的合作伙伴刷新"
+  },
+  "sched.jobs.federation.partner-refresh.describe": {
+    "en": "6fc466ab1fe4b653",
+    "text": "对于开启了 fedRefreshTokens 的 OpenID Connect 关系：在到期时刷新每个持有合作伙伴令牌的会话的令牌，检查新的 ID Token 和 UserInfo 是否仍指向此人，并在合作伙伴拒绝或响应不再指向此人时结束会话（#930）。"
+  },
   "sched.jobs.federation.provision-idle.title": {
     "en": "20200542bb3c76b9",
     "text": "联合预配闲置清理"
@@ -174,6 +190,14 @@
   "sched.jobs.krb5.krbtgt-rotate-now.describe": {
     "en": "6fffa44535aa160d",
     "text": "立即轮换本领域的 krbtgt 密钥。使用 invalidate 时不保留旧版本：此前签发的每个 TGT 都会被拒绝，并由一个 Shared Signals 事件说明这一点。"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "LDAP 连接镜像维护"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "删除已不再是成员的节点的镜像 LDAP 连接，以及已过有效期的注销指令。"
   },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
@@ -311,21 +335,53 @@
     "en": "049675db215c0863",
     "text": "为 监控 → 通行密钥 统计领域的通行密钥（#942）：按算法和通道，统计仅持有后量子、仅持有传统或两者皆有的人员，以及哪些验证器型号持有哪些算法。只读取持有通行密钥的人员，每次一页；之后发生的变更会在写入时计入。"
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "授权组索引回填"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "为 #1306 之前写入的每个目录条目补上其授权属性的 grantinggroup 索引键，每次处理存储中的一页，使联合预配向存储提出的问题能找到此类条目所指名的组；只将存储标记为完成一次，此后即处于关闭状态（#1311）。"
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "过期铸造行清除"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "从共享存储中删除任何启动都不会再读取的铸造行，每批 5000 行，每次运行每种类型最多 20 批：已超过自身过期时间的行、已不再定义的领域的行（写入超过一小时）、以及短期存储中没有过期时间且早于 persistence.mintedRetention 的行。"
+    "en": "51b75ecbc03ac6ba",
+    "text": "从此集群的存储（在以单元方式部署的服务中，为此单元自己的数据库）中删除任何启动都不会再读取的铸造行，每批 5000 行，每次运行每种类型最多 20 批：已超过自身过期时间的行、已不再定义的领域的行（写入超过一小时）、以及短期存储中没有过期时间且早于 persistence.mintedRetention 的行。"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "过期铸造行清除（全局层）"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "在以单元方式部署的服务中，以相同的批次从全局层的数据库中删除同样三类铸造行；其运行在全局层中认领，因此每个时段只有一个单元运行。在只有一个数据库的服务中关闭，由另一项清除涵盖。"
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",
     "text": "过期墓碑清理"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "d5b8faad6c0c24c4",
-    "text": "从共享存储中删除早于 persistence.mintedRetention 的已结束铸造行的墓碑。"
+    "en": "56aed2e95604a1b4",
+    "text": "从此集群的存储中删除早于 persistence.mintedRetention 的已结束铸造行的墓碑，每批 5000 个、每次运行最多 20 批（在以单元方式部署的服务中，为此单元自己的数据库）。"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.title": {
+    "en": "15e3f193cfee5337",
+    "text": "过期墓碑清理（全局层）"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.describe": {
+    "en": "98370fb755b4ba95",
+    "text": "在以单元方式部署的服务中，以相同的批次从全局层的数据库中删除早于 persistence.mintedRetention 的已结束铸造行的墓碑；其运行在全局层中认领，因此每个时段只有一个单元运行。在只有一个数据库的服务中关闭，由另一项清理涵盖。"
+  },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "固定证书审计"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "对领域中每一份固定证书和签名者信任库的每一个条目执行偏执 PKI 模式的检查，保存 /admin/pki/trust 所绘制的结果，并记录和邮件通知发生的变化。"
   },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
@@ -340,8 +396,8 @@
     "text": "内存报告"
   },
   "sched.jobs.process.memory-report.describe": {
-    "en": "4f2c054a1405a843",
-    "text": "在本进程中记录一行日志，包含其角色和内存：常驻内存大小、已用堆和堆总量、堆限制、外部内存和数组缓冲区（#341）。"
+    "en": "d4a21d654747ddc9",
+    "text": "在本进程中记录本次运行的摘要，包含其角色和内存：常驻内存大小、已用堆和堆总量、堆限制、外部内存和数组缓冲区。该日志行为调试级别（#341）。"
   },
   "sched.jobs.report.build-cleanup.title": {
     "en": "e5bd8efc07f0b31b",
@@ -454,6 +510,14 @@
   "sched.jobs.risk.upload-cleanup.describe": {
     "en": "758dfacad5326b05",
     "text": "在每个进程中：使本进程正在导入的数据集上传保持新鲜，并从 risk.uploadDirectory 中删除 risk.importStallMinutes 内没有任何活动进程触及的上传——即中途停止导入的进程留下的内容。"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "SAML 服务提供方元数据刷新"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "重新获取每个已超过其 cacheDuration 的服务提供方元数据，来源为其 samlSpMetadataUrl 或 MDQ 响应方；已超过其 validUntil 的文档会被拒绝。"
   },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",

@@ -852,7 +852,8 @@ async function didPageSections(t) {
         return answer(200, { access_token: 'at', expires_in: 300,
           refresh_token: 'rt',
           id_token: b64u({ alg: 'ES256' }) + '.' +
-            b64u({ sub: 'urn:uuid:alice', nonce: nonce }) + '.sig' });
+            b64u({ sub: 'urn:uuid:alice', nonce: nonce,
+                   aud: ['sts-user-portal'] }) + '.sig' });
       }
       if (/\/account-api\/me$/.test(u)) {
         return answer(200, { user: { username: 'alice' },

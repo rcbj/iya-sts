@@ -178,7 +178,9 @@ async function run(t) {
   });
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
-      env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal',
+      env: Object.assign(clean, { LOG_LEVEL: 'fatal',
+        STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_LOG_LEVEL: 'fatal',
+        STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true',
                                   AG_ROOT: ROOT, AG_OUT: out }),
       encoding: 'utf8', timeout: 180000, cwd: ROOT
     });

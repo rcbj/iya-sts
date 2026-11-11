@@ -57,6 +57,7 @@
 
 import bunyan = require('bunyan');
 import errorCodes = require('../common/error_codes');
+import DomainMap = require('../common/domain_map');
 import stores = require('./stores');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
@@ -442,6 +443,34 @@ function reportAttrList(entry: any, name: string): string[] {
   return out;
 }
 
+// The values a list field holds, without an empty one: the directory can hold
+// an empty value and a report's cell must not count it (#1390).
+function reportFilled(values: string[] | undefined): string[] {
+  log.debug("Entering reportFilled().");
+  const out = (values || []).filter(function (value: string): boolean {
+    return !!value;
+  });
+  log.debug("Leaving reportFilled().");
+  return out;
+}
+
+// Who a person is and what is recorded about them (#1390), made ONCE PER
+// ENTRY by whoever walks the entries and handed down: a concept is read field
+// by field, and a report may walk every person in a realm. entryUUID is an
+// operational attribute, and an entry here carries it among its own.
+function reportPerson(entry: any): { user: IyaDomain.User;
+    record: IyaDomain.PersonRecord } {
+  log.debug("Entering reportPerson().");
+  const attributes = (entry && entry.attributes) || {};
+  const person = {
+    user: DomainMap.fromEntry('User', attributes,
+      { on: { operational: attributes } }),
+    record: DomainMap.fromEntry('PersonRecord', attributes)
+  };
+  log.debug("Leaving reportPerson().");
+  return person;
+}
+
 function reportClasses(entry: any): string[] {
   log.debug("Entering reportClasses().");
   const raw = entry && entry.objectClass;
@@ -624,10 +653,15 @@ async function reportGroupIndex(): Promise<any> {
     if (!isGroup) {
       return;
     }
-    const cn = reportAttr(entry, 'cn');
-    const members = reportAttrList(entry, 'member').concat(
-      reportAttrList(entry, 'uniqueMember'));
-    groups.push({ entry: entry, dn: dn, cn: cn, members: members });
+    // Made after the class check, so an entry that is no group costs no
+    // concept. A group lists its members under either attribute (#1390).
+    const group = DomainMap.fromEntry('Group',
+      (entry && entry.attributes) || {});
+    const cn = group.name || '';
+    const members = reportFilled(group.members).concat(
+      reportFilled(group.uniqueMember));
+    groups.push({ dn: dn, cn: cn, members: members,
+      description: group.description || '' });
     members.forEach(function (memberDn: string): void {
       const key = memberDn.toLowerCase();
       if (!byUser[key]) {
@@ -711,35 +745,48 @@ async function reportEachUser(onUser: (entry: any, dn: string) =>
 // answer today, so it does not move when an operator turns a use off.
 // `keysOfValues()` parses the values, so a value that is not a key is not
 // counted.
-function reportSecondFactors(entry: any): number {
+function reportSecondFactors(entry: any, username: string,
+    credential: IyaDomain.Credential): number {
   log.debug("Entering reportSecondFactors().");
-  const keys = reportAttrList(entry, 'stsWebauthnCredential');
+  const keys = reportFilled(credential.passkeys);
   let n = 0;
   if (keys.length) {
     const credentials = require('../common/credentials');
-    n += credentials.keysOfValues(keys, reportAttr(entry, 'uid')).length;
+    n += credentials.keysOfValues(keys, username).length;
   }
-  n += reportAttrList(entry, 'stsTotpCredential').length;
+  // The attribute is single-valued, so a person has one app or none.
+  n += credential.authenticatorApp ? 1 : 0;
+  // No concept of a person holds this one: the model files it under the
+  // authentication policy (#1390).
   n += reportAttrList(entry, 'stsMailFactor').length;
   log.debug("Leaving reportSecondFactors(). " + n + '.');
   return n;
 }
 
-function reportUserRow(entry: any, names: string[]): any {
+function reportUserRow(entry: any, person: { user: IyaDomain.User;
+    record: IyaDomain.PersonRecord }, names: string[]): any {
   log.debug("Entering reportUserRow().");
+  const attributes = (entry && entry.attributes) || {};
+  const user = person.user;
+  const record = person.record;
+  const kept = DomainMap.fromEntry('DirectoryEntry', attributes);
+  // THE TWO SECRETS ARE NAMED ONLY TO SAY WHETHER THEY ARE THERE: this row
+  // has always counted them, and neither value reaches a cell (#1390).
+  const credential = DomainMap.fromEntry('Credential', attributes,
+    { secrets: ['passwordHash', 'authenticatorApp'] });
   // pwdAccountLockedTime is the administrative disable and any other
   // lock. The catalog calls both locked. This read does not ask
   // account_state, which would walk the directory a second time.
-  const locked = reportAttr(entry, 'pwdAccountLockedTime');
+  const locked = credential.lockedSince || '';
+  const mfaLast = record.mfaLastAuthTime || '';
   const row = {
-    username: reportAttr(entry, 'uid'),
+    username: user.username || '',
     status: locked ? 'locked' : 'active',
-    createdAt: reportLdapTime(reportAttr(entry, 'createTimestamp')),
-    modifiedAt: reportLdapTime(reportAttr(entry, 'modifyTimestamp')),
-    entryUuid: reportAttr(entry, 'entryUUID'),
-    mail: reportAttr(entry, 'mail'),
-    displayName: reportAttr(entry, 'displayName') ||
-      reportAttr(entry, 'cn'),
+    createdAt: reportLdapTime(kept.createTimestamp || ''),
+    modifiedAt: reportLdapTime(kept.modifyTimestamp || ''),
+    entryUuid: user.entryUuid || '',
+    mail: user.email || '',
+    displayName: user.displayName || (user.cn || [])[0] || '',
     memberOf: names.join(', '),
     // WHAT THE PERSON CAN SIGN IN WITH, AND HAS (#1019, rcbj: account for
     // username/password): whether a password is set, how many second
@@ -748,11 +795,11 @@ function reportUserRow(entry: any, names: string[]): any {
     // credentialHolders source's common columns, on the person's own row,
     // so `hasPassword equals true` and `factors equals 0` is "password
     // only". None is indexed: a job on a large directory.
-    hasPassword: reportAttrList(entry, 'userPassword').length > 0,
-    factors: reportSecondFactors(entry),
-    methodsUsed: reportAttrList(entry, 'authnMethod').join(', '),
-    mfaLastAuthTime: reportLdapTime(reportAttr(entry, 'mfaLastAuthTime')) ||
-      reportIso(Date.parse(reportAttr(entry, 'mfaLastAuthTime')))
+    hasPassword: !!credential.passwordHash,
+    factors: reportSecondFactors(entry, user.username || '', credential),
+    methodsUsed: reportFilled(record.authnMethod).join(', '),
+    mfaLastAuthTime: reportLdapTime(mfaLast) ||
+      reportIso(Date.parse(mfaLast))
   };
   log.debug("Leaving reportUserRow().");
   return row;
@@ -1112,10 +1159,9 @@ async function reportCandidates(lookups: Lookup[], ldap: any,
 // rather than from a pass over every group: a candidate's row needs its
 // groups, not the realm's. A group the person only claims through their
 // own `memberOf` is left out, as the walk's index leaves it out.
-function reportGroupNamesOf(ldap: any, entry: any): string[] {
+function reportGroupNamesOf(ldap: any, username: string): string[] {
   log.debug("Entering reportGroupNamesOf().");
   const names: string[] = [];
-  const username = reportAttr(entry, 'uid');
   if (username && typeof ldap.groupsOfUser === 'function') {
     const answer = ldap.groupsOfUser(username) || {};
     (answer.groups || []).forEach(function (group: any): void {
@@ -1236,7 +1282,8 @@ async function reportOwnerDisabled(kind: string, ownerRealm: string,
         return ldap.existingUserEntriesAsync([who]);
       });
     const entry = (found || [])[0];
-    const locked = !!(entry && reportAttr(entry, 'pwdAccountLockedTime'));
+    const locked = !!(entry && DomainMap.fromEntry('Credential',
+      entry.attributes || {}).lockedSince);
     log.debug("Leaving reportOwnerDisabled(). " + locked);
     return locked;
   } catch (e) {
@@ -1255,7 +1302,8 @@ async function reportPersonMail(username: string): Promise<string> {
   try {
     const found = await reportLdap().existingUserEntriesAsync([name]);
     const entry = (found || [])[0];
-    const mail = entry ? reportAttr(entry, 'mail') : '';
+    const mail = entry ? DomainMap.fromEntry('User', entry.attributes || {},
+      { on: { operational: entry.attributes || {} } }).email : '';
     log.debug("Leaving reportPersonMail().");
     return String(mail || '');
   } catch (e) {
@@ -1294,8 +1342,9 @@ async function reportReadUsers(rows: any, control: any): Promise<void> {
   if (candidates) {
     for (let i = 0; i < candidates.length; i++) {
       const entry = candidates[i];
-      const keep = await reportOffer(reportUserRow(entry,
-        reportGroupNamesOf(ldap, entry)), rows, control);
+      const person = reportPerson(entry);
+      const keep = await reportOffer(reportUserRow(entry, person,
+        reportGroupNamesOf(ldap, person.user.username || '')), rows, control);
       if (keep === false) {
         log.debug("Leaving reportReadUsers(). Stopped.");
         return;
@@ -1342,7 +1391,8 @@ async function reportReadUsers(rows: any, control: any): Promise<void> {
   await reportEachUser(async function (entry: any, dn: string):
       Promise<boolean> {
     const names = index.byUser[String(dn).toLowerCase()] || [];
-    return reportOffer(reportUserRow(entry, names), rows, control);
+    return reportOffer(reportUserRow(entry, reportPerson(entry), names), rows,
+      control);
   });
   log.debug("Leaving reportReadUsers().");
 }
@@ -1404,8 +1454,8 @@ const MECHANISM_TABLE = [
   // protocols authenticate a request with. EST has none of its own: it takes
   // the person's password or a client certificate. Each is an asked name,
   // so an indexed read; no secret half reaches a row.
-  { id: 'jwtSigningKey', attribute: 'stsAssertionJwks', role: 'signer' },
-  { id: 'samlSigningKey', attribute: 'stsSamlAssertionCertificate',
+  { id: 'jwtSigningKey', attribute: 'stsAssertionKeyPair', role: 'signer' },
+  { id: 'samlSigningKey', attribute: 'stsSamlAssertionKeyPair',
     role: 'signer' },
   { id: 'acmeAccountKey', attribute: 'stsAcmeEabKey', role: 'enrollment' },
   { id: 'scepChallenge', attribute: 'stsScepChallenge', role: 'enrollment' },
@@ -1515,10 +1565,9 @@ function reportDidAlgorithm(subject: string): string {
 // without it would show none of the person's wallet credentials when
 // another mechanism's read found the entry first.
 const HOLDER_FIELDS = ['uid', 'displayname', 'cn', 'authnmethod',
-  'mfalastauthtime', 'pwdchangedtime', 'entryuuid',
-  // The signing keys' public facts (#1036), read beside their asked name.
-  'stsassertioncertificate', 'stsassertionkid', 'stsassertionkeysource',
-  'stssamlassertionthumbprint', 'stssamlassertionkeysource'];
+  'mfalastauthtime', 'pwdchangedtime', 'entryuuid'];
+// (The signing keys' public facts were five fields here (#1036) until
+// #1290 made each key pair one record of the asked name itself.)
 
 // A certificate's key algorithm, named as a report would (#1036): RSA with
 // its size, an EC curve by its JOSE name, EdDSA and the post-quantum keys by
@@ -1617,18 +1666,21 @@ function reportMinIso(stamps: any[]): string | null {
 // The rows one person contributes for one mechanism: one per credential
 // (#1011), a passkey's no longer grouped by a role (#1135).
 // What every row of a person says, whatever the mechanism (#1002, #1021).
-function reportHolderCommon(entry: any, mechanism: any, ldap: any): any {
+function reportHolderCommon(person: any, mechanism: any, ldap: any): any {
   log.debug("Entering reportHolderCommon().");
+  const user: IyaDomain.User = person.user;
+  const record: IyaDomain.PersonRecord = person.record;
+  const mfaLast = record.mfaLastAuthTime || '';
   const common = {
-    username: reportAttr(entry, 'uid'),
-    displayName: reportAttr(entry, 'displayName') || reportAttr(entry, 'cn'),
+    username: user.username || '',
+    displayName: user.displayName || (user.cn || [])[0] || '',
     mechanism: mechanism.id,
-    methodsUsed: reportAttrList(entry, 'authnMethod').join(', '),
-    mfaLastAuthTime: reportLdapTime(reportAttr(entry, 'mfaLastAuthTime')) ||
-      reportIso(Date.parse(reportAttr(entry, 'mfaLastAuthTime'))),
-    memberOf: reportGroupNamesOf(ldap, entry).join(', '),
-    mail: reportAttr(entry, 'mail'),
-    entryUuid: reportAttr(entry, 'entryUUID'),
+    methodsUsed: reportFilled(record.authnMethod).join(', '),
+    mfaLastAuthTime: reportLdapTime(mfaLast) ||
+      reportIso(Date.parse(mfaLast)),
+    memberOf: reportGroupNamesOf(ldap, user.username || '').join(', '),
+    mail: user.email || '',
+    entryUuid: user.entryUuid || '',
     channel: '',
     format: ''
   };
@@ -1647,10 +1699,10 @@ function reportHolderCommon(entry: any, mechanism: any, ldap: any): any {
 // issuance and latest wallet report; `credentialId` names the credential
 // type (the configuration id). A copy the holder removed on /portal/wallet
 // is left out.
-function reportIssuedRowsFor(entry: any, mechanism: any, ldap: any,
+function reportIssuedRowsFor(person: any, mechanism: any, ldap: any,
                              context: any): any[] {
   log.debug("Entering reportIssuedRowsFor().");
-  const subject = 'urn:uuid:' + reportAttr(entry, 'entryUUID');
+  const subject = 'urn:uuid:' + (person.user.entryUuid || '');
   const bySubject: Map<string, any[]> = (context &&
     context.issuedBySubject) || new Map();
   const rows = bySubject.get(subject) || [];
@@ -1662,7 +1714,7 @@ function reportIssuedRowsFor(entry: any, mechanism: any, ldap: any,
       }
     });
   });
-  const common = reportHolderCommon(entry, mechanism, ldap);
+  const common = reportHolderCommon(person, mechanism, ldap);
   const groups = new Map<string, any[]>();
   copies.forEach(function (copy: any): void {
     const alg = String(copy.one.holderAlg || '');
@@ -1694,21 +1746,23 @@ function reportIssuedRowsFor(entry: any, mechanism: any, ldap: any,
   return out;
 }
 
-function reportHolderRows(entry: any, mechanism: any, ldap: any,
+function reportHolderRows(entry: any, person: any, mechanism: any, ldap: any,
                           context?: any): any[] {
   log.debug("Entering reportHolderRows(). " + mechanism.id);
   if (mechanism.register) {
-    const issued = reportIssuedRowsFor(entry, mechanism, ldap, context);
+    const issued = reportIssuedRowsFor(person, mechanism, ldap, context);
     log.debug("Leaving reportHolderRows(). Register.");
     return issued;
   }
+  // The attribute is the mechanism table's, so no one field names it, and
+  // some of them are secrets this report only classifies (#1390).
   const values = reportAttrList(entry, mechanism.attribute);
   if (!values.length) {
     log.debug("Leaving reportHolderRows(). None.");
     return [];
   }
-  const username = reportAttr(entry, 'uid');
-  const common = reportHolderCommon(entry, mechanism, ldap);
+  const username = person.user.username || '';
+  const common = reportHolderCommon(person, mechanism, ldap);
   const out: any[] = [];
   if (mechanism.id === 'selfIssued') {
     // A SELF-ISSUED SUBJECT (#1021): one row per enrolled DID or key, the
@@ -1769,27 +1823,37 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any,
     return out;
   }
   if (mechanism.id === 'jwtSigningKey' || mechanism.id === 'samlSigningKey') {
-    // A SIGNING KEY PAIR (#1036): one row, its certificate's key algorithm,
-    // its kid or thumbprint, where the pair came from as the channel
-    // (`issued` here or `uploaded`), and the certificate's notBefore. The
-    // private half is sealed on the entry and never read here.
+    // A SIGNING KEY PAIR (#1036): one row per key pair the person still
+    // holds — several per profile since #1290, each a record of the asked
+    // name — with its certificate's key algorithm, its kid or thumbprint,
+    // where the pair came from as the channel (`issued` here or
+    // `uploaded`), and the certificate's notBefore. A key pair that is not
+    // VALID is no row: revoked from the portal or the console, revoked on
+    // `/admin/pki`'s revocation pane (the authority's list, which only
+    // `keyPairState()` reads), or past its expiry. The private half is
+    // sealed on the entry and never read here.
     const jwt = mechanism.id === 'jwtSigningKey';
-    const pem = jwt ? reportAttr(entry, 'stsAssertionCertificate')
-      : values[0];
-    out.push(Object.assign({}, common, {
-      role: mechanism.role,
-      credentials: 1,
-      credentialId: jwt ? reportAttr(entry, 'stsAssertionKid')
-        : reportAttr(entry, 'stsSamlAssertionThumbprint'),
-      algorithm: reportCertKeyAlg(pem),
-      lane: reportKeyLane(reportCertKeyAlg(pem)),
-      channel: reportAttr(entry, jwt ? 'stsAssertionKeySource'
-        : 'stsSamlAssertionKeySource'),
-      format: jwt ? 'RFC 7523' : 'RFC 7522',
-      enrolledAt: reportCertIssuedAt(pem),
-      lastUsedAt: null
-    }));
-    log.debug("Leaving reportHolderRows(). Signing key.");
+    const personAssertions = require('../common/person_assertions');
+    const held = reportParsedValues(values).filter(function (one: any):
+        boolean {
+      return !!one.id && personAssertions.keyPairState(one).state === 'valid';
+    });
+    held.forEach(function (one: any): void {
+      const pem = String(one.certificatePem || '');
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: held.length,
+        credentialId: String(one.id),
+        algorithm: reportCertKeyAlg(pem),
+        lane: reportKeyLane(reportCertKeyAlg(pem)),
+        channel: String(one.source || 'issued'),
+        format: jwt ? 'RFC 7523' : 'RFC 7522',
+        enrolledAt: reportCertIssuedAt(pem),
+        lastUsedAt: null
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). Signing keys, " + out.length +
+              '.');
     return out;
   }
   if (mechanism.id === 'acmeAccountKey' || mechanism.id === 'scepChallenge') {
@@ -1874,6 +1938,8 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any,
     // own `$scrypt$…` and `$argon2id$…` (`common/crypto.js`'s
     // `encodeStoredSecret`, `encodeArgon2Secret`), or an imported
     // `{SCHEME}…`; the enrolment is the directory's pwdChangedTime.
+    const changed = DomainMap.fromEntry('Credential',
+      (entry && entry.attributes) || {}).passwordChanged || '';
     values.forEach(function (value: string, i: number): void {
       const text = String(value || '');
       const dollar = /^\$([a-z0-9-]+)\$/i.exec(text);
@@ -1884,8 +1950,7 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any,
         credentialId: String(i + 1),
         algorithm: dollar ? dollar[1] : (braced ? braced[1] : ''),
         lane: '',
-        enrolledAt: reportLdapTime(reportAttr(entry, 'pwdChangedTime')) ||
-          null,
+        enrolledAt: reportLdapTime(changed) || null,
         lastUsedAt: null
       }));
     });
@@ -2258,8 +2323,10 @@ async function reportReadCredentialHolders(rows: any, control: any):
     }
   }
   for (let i = 0; i < entries.length; i++) {
+    const person = reportPerson(entries[i]);
     for (let m = 0; m < table.length; m++) {
-      const made = reportHolderRows(entries[i], table[m], ldap, context);
+      const made = reportHolderRows(entries[i], person, table[m], ldap,
+        context);
       for (let r = 0; r < made.length; r++) {
         const keep = await reportOffer(made[r], rows, control);
         if (keep === false) {
@@ -2302,9 +2369,10 @@ async function reportReadGroups(rows: any, control: any): Promise<void> {
           continue;
         }
         const members = reportGroupMemberNames(wanted, ldap);
+        const concept = DomainMap.fromEntry('Group', group.attributes || {});
         const keep = await reportOffer({
           name: wanted,
-          description: reportAttr(group, 'description'),
+          description: concept.description || '',
           memberCount: members.length,
           members: members.join(', ')
         }, rows, control);
@@ -2322,7 +2390,7 @@ async function reportReadGroups(rows: any, control: any): Promise<void> {
     const group = index.groups[i];
     const keep = await reportOffer({
       name: group.cn,
-      description: reportAttr(group.entry, 'description'),
+      description: group.description,
       memberCount: group.members.length,
       members: group.members.join(', ')
     }, rows, control);
@@ -3237,7 +3305,7 @@ function reportGroupRows(ldap: any): any[] {
   const list = typeof ldap.allGroupEntries === 'function' ?
     (ldap.allGroupEntries() || []) : [];
   const rows = list.map(function (group: any): any {
-    const cn = reportAttr(group, 'cn');
+    const cn = DomainMap.fromEntry('Group', group.attributes || {}).name || '';
     return {
       dn: String(group.dn || ''),
       name: cn || String(group.dn || ''),

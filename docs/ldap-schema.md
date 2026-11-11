@@ -53,6 +53,7 @@ dc=example,dc=com                       domain, dcObject
 ├── ou=oidfed                           stsOidfedEntry              (#132)
 ├── ou=claimproviders                   stsClaimProvider            (#147)
 ├── ou=trustAnchors                     stsTrustAnchor              (default realm only)
+├── ou=signerTrustAnchors               stsSignerTrustAnchor        (#1360)
 └── ou=crl                              cRLDistributionPoint        (created on first CRL)
 ```
 
@@ -94,6 +95,8 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 | `title`, `employeeType`, `telephoneNumber`, `mobile`, `street`, `l`, `st`, `postalCode`, `c`, `postalAddress`, `o`, `ou`, `departmentNumber`, `employeeNumber`, `preferredLanguage`, `labeledURI`, `manager` | released as claims (`oid4vc/vc_claims.ts`) and mapped by SCIM (`scim/scim_map.ts`) |
 | `schacDateOfBirth`, `schacCountryOfCitizenship`, `schacPersonalTitle` | SCHAC names, released as `birthdate`, `nationalities`, `title` |
 | `salutation`, `birthFamilyName`, `birthGivenName`, `birthMiddleName`, `alsoKnownAs`, `placeOfBirthCountry`, `placeOfBirthRegion`, `placeOfBirthLocality` | this service's own, for Identity Assurance claims |
+| `schacGender`, `middleName`, `timeZone`, `pictureUrl`, `profileUrl` | the `profile` scope's `gender` (SCHAC, ISO/IEC 5218 codes, answered `male`, `female`, `not known` or `not applicable`), `middle_name`, `zoneinfo`, `picture` and `profile` (#1292); all but `schacGender` are this service's own |
+| `stsProfilePhoto` | a person's [profile photo](user-facing-pages.md#the-user-portal): which image is theirs and whose it was, as one JSON value. Withheld from every read, and written only by the portal and a federated sign-in. The image is not on the entry, and while a person has one `pictureUrl` holds its address. `jpegPhoto` is a separate attribute this service neither reads nor writes |
 | `scimExternalId` | SCIM `externalId`, on people and groups |
 | `userPrincipalName` | read by certificate enrollment's smartcard-logon profile. Nothing in the service writes it; a client supplies it |
 | `pwdChangedTime`, `pwdHistory` | draft-behera password policy: when the password last changed, and earlier hashes for the history rule |
@@ -113,25 +116,28 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 | `stsKrb5Keys`, `stsKrb5KeyInfo` | Kerberos long-term keys for every enctype, derived from the password, and their public half (kvno, enctypes, when) | keys **sealed and withheld**, including the ciphertext |
 | `hobaPublicKey` | RFC 7486 HOBA keys, `<kid> <base64 DER>` | public |
 | `stsSelfIssuedSubject` | SIOPv2 subjects the person enrolled (a DID or a JWK thumbprint URI), as JSON (#129) | withheld |
+| `stsPublishedDid` | Each did:web this realm publishes for the person, as JSON: its random id, the DID, who holds its key, every version of its keys and what authorized each, its deactivation, and in `realm` custody the private key, sealed (#1291). See [Published DIDs](person-dids.md) | withheld |
 | `stsCibaUserCode` | the CIBA user code the person set on `/portal/ciba` (#131) | scrypt-hashed, withheld |
 | `stsAudSub` | the account id a client knows the person by, `<client_id> <aud_sub>` per value, sent as that client's ID Token `aud_sub` (#148) | plain |
 | `stsClaimSourceTokens` | the person's access and refresh tokens at each Claims Provider they linked on `/portal/claim-sources`, one JSON value (#147) | **sealed** where keys persist, withheld |
 
 ### Assertion key pairs (RFC 7523 and RFC 7522)
 
-A person may hold a key pair to sign assertions **about themselves only**. The
+A person may hold key pairs to sign assertions **about themselves only** —
+several per profile since #1290, up to `pki.personSigningKeyMax` valid ones. The
 two sets share no names.
 
 | JWT (RFC 7523) | SAML (RFC 7522) |
 |---|---|
 | `stsAssertionIssuer` | `stsSamlAssertionIssuer` |
-| `stsAssertionJwks`, `stsAssertionKid` | `stsSamlAssertionThumbprint` |
-| `stsAssertionCertificate`, `stsAssertionCertificateChain` | `stsSamlAssertionCertificate`, `stsSamlAssertionCertificateChain` |
-| `stsAssertionPrivateKey` (**sealed, withheld**) | `stsSamlAssertionPrivateKey` (**sealed**) |
-| `stsAssertionExpiresAt`, `stsAssertionKeySource` | `stsSamlAssertionExpiresAt`, `stsSamlAssertionKeySource` |
+| `stsAssertionKeyPair` (one JSON record per key pair) | `stsSamlAssertionKeyPair` (one JSON record per key pair) |
+| `stsAssertionPrivateKey` (one value per key pair issued here; **sealed, withheld**) | `stsSamlAssertionPrivateKey` (**sealed, withheld**) |
 
-`…KeySource` says whether the pair was issued here or a certificate was
-uploaded instead.
+A record carries the handle (`kid`, or the certificate thumbprint), the
+certificate and its chain (and for JWT the public JWK with `x5c`), the serial
+and the authority that signed it, the label, `source` (issued here or a
+certificate uploaded instead), the validity, and — when it was revoked here —
+`withdrawnAt` and `withdrawnReason`.
 
 ### Certificates issued by enrollment (ACME, EST, SCEP)
 
@@ -252,6 +258,7 @@ draws it with a description of every field.
 | SAML per-profile | `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `saml2EncryptLogoutNameId`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS` |
 | WS-* | `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wsfedAssertionLifetimeMin`, `wstrustAppliesTo`, `wstrustJwtScope` |
 | Who may start a sign-in (#426; [Identity-provider-initiated sign-in](idp-initiated-sso.md)) | `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso` (each TRUE or FALSE, overriding the realm setting of the same name; identity-provider-initiated is off by default), `oauthInitiateLoginUri` (OpenID Connect Core section 4's `initiate_login_uri`; https, no fragment), `appLaunchProtocol` (`saml2`, `saml11`, `wsfed` or `oidc`: what `/launch/{app}` starts when the link names none) |
+| What the sign-in and consent screens show (#1300; [Dynamic Client Registration](configure-oidc-flows.md#what-the-sign-in-and-consent-screens-show-about-the-client)) | `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri` (OpenID Connect Registration section 2's `logo_uri`, `policy_uri` and `tos_uri`; absolute https; the browser loads the logo, this service never fetches it) |
 | Kerberos service | `krb5ServicePrincipalName`, `krb5ServiceKeys` (**sealed**), `krb5ServiceKeyInfo` |
 | Delegation (#108, #186; [Delegation and impersonation](delegation.md)) | `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSemantics`, `appDefaultDelegationSemantics`, `appDelegationSubjectGroup`, `appNotDelegated`, `appMayAct`, and for a Kerberos service `krb5TrustedForDelegation` |
 | Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnPolicy` (the [named authentication policy](authentication.md#named-authentication-policies) it signs in under; it replaced `appAuthnMechanism` and `appMfaMechanism`), `appPasskeyPolicy` (the [named passkey policy](passkeys.md#different-rules-for-different-applications-or-groups) a sign-in to it is held to), `appLocalePolicy` (the [named locale policy](languages.md#named-profiles-for-applications-and-groups) its pages and the people it creates fall back to), `appPasswordPolicy` (the [named password policy](authentication.md#different-password-rules-for-different-applications-or-groups) a password set while signing in to it is held to), `appPostLoginPolicy` (the [named post-login profile](post-login-activities.md#which-profile-applies-groups-and-applications-name-it) a sign-in to it follows) |
@@ -368,9 +375,12 @@ their groups name, the one with the lowest precedence applies.
 `cn=<name>,ou=attributeDefinitions` is one of the realm's custom attributes:
 `objectClass: top, stsAttributeDefinition`, `stsAttributeLabel`,
 `stsAttributeSyntax` (`string`, `integer`, `boolean`, `date`, `email`, `uri`,
-`dn`), `stsAttributeSingleValued` (`TRUE` or `FALSE`) and an optional
-`description`. Its values are stored on a person under that name, like any
-other attribute. See `common/attribute_policy.ts`.
+`dn`), `stsAttributeSingleValued` (`TRUE` or `FALSE`), an optional
+`description`, and since #700 `stsAttributePortalVisible` and
+`stsAttributePortalEditable` (`TRUE` or `FALSE`; absent is `FALSE`): whether
+the person sees their own values on the user portal, and whether they may
+change them there. Editable implies visible. Its values are stored on a
+person under that name, like any other attribute. See `common/attribute_policy.ts`.
 
 ## SPIFFE: `ou=spiffe`
 
@@ -471,6 +481,14 @@ certificates: `stsTrustAnchor`, `stsTrustAnchorCertificate`,
 so none of these is sealed. An entry here decides whose client certificate
 becomes an identity. See [TLS](tls.md).
 
+`ou=signerTrustAnchors` exists in every realm, with one
+`objectClass: top, stsSignerTrustAnchor` entry per certificate of that realm's
+[signer truststore](signer-truststore.md): `stsTrustAnchorCertificate`,
+`stsTrustAnchorFingerprint`, `stsTrustAnchorAddedBy`, `stsSignerTrustAnchorKind`
+(`anchor` or `intermediate`) and, where it is restricted,
+`stsSignerTrustAnchorPurpose` (multi-valued). An entry here decides whose signature
+the realm believes.
+
 `ou=crl` holds `objectClass: top, cRLDistributionPoint` entries (`cn=<caId>`, `certificateRevocationList;binary`) once a CRL is published. They are a cache of the register, readable anonymously ([PKI](pki.md)).
 
 ---
@@ -484,7 +502,8 @@ included (`SECRET_ATTRIBUTES` in `ldap/ldap_server.js`):
 * passwords: `userPassword`, `pwdHistory`, `stsAppPassword`,
   `stsActivationToken`, `stsPasswordResetToken`, `stsMailVerifyToken`
 * second factors and subjects: `stsTotpCredential`, `stsBackupCodes`,
-  `stsSelfIssuedSubject`, `stsIdaVerification`, `stsCibaUserCode`
+  `stsSelfIssuedSubject`, `stsPublishedDid`, `stsIdaVerification`,
+  `stsCibaUserCode`
 * devices: `stsDeviceSecretHash`
 * client secrets: `oauthClientSecret`, `appRegistrationAccessToken`,
   `fedClientSecret`, `stsClaimProviderSecret`
@@ -525,20 +544,27 @@ identity, and only a person may bind: see
 
 ## Keeping this page current
 
-This page is a copy of tables that live in code, so it can drift. The sources:
+This page is a copy of tables that live in the model, so it can drift. The sources:
 
-* `ldap/ldap_server.js`: `STANDARD_NAMES`, `OWN_NAMES`, `SECRET_ATTRIBUTES`,
-  and `seed()` for the containers
-* `common/applications.js`: the application field table
-* `federation/federation.js`, `spiffe/spiffe_registry.ts`,
-  `xacml/xacml_store.ts`, `xacml/xacml_pep_registry.ts`, `common/roles.js`,
-  `common/password_policy.ts`, `common/devices.ts`
+* `models/directory/names.tsp`: the standard and own spellings, and the
+  attributes withheld from every reader
+* `ldap/ldap_server.js`: `seed()` for the containers
+* `models/directory/application.tsp`: the application field table
+* `models/directory/`: the role, device, service account, SPIFFE, XACML,
+  federation and policy tables
+
+`models/directory/` holds these names as TypeSpec.
+[Directory models](data-model-directory.md) is that inventory in reading
+form, rewritten when the model is written. This page stays the
+explanation. The directory still enforces nothing.
 
 A running service describes its own containers: `/admin/ldap/directory` shows
 any entry, and `/admin/ldap/federations` shows the federation schema.
 
 ## Related
 
+* [Abstract data model](data-model.md): the directory, API, and
+  persistence namespaces, and where each generated file lives.
 * [LDAP](ldap.md): the protocol, the sockets, the five rules and the settings.
 * [PostgreSQL schema](postgres-schema.md): where these entries are stored.
 * [SCIM 2.0](scim.md): how SCIM attributes map onto these.

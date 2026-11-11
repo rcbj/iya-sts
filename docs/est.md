@@ -172,6 +172,8 @@ service already has; EST has none of its own:
   application in the realm.
 * In **product** mode a request that did not arrive over TLS is refused.
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a client certificate must also carry the clientAuth extendedKeyUsage and permit digitalSignature. `pki.paranoidEnrollmentCredential` turns this row off.
+
 ## Requesting a certificate with curl and openssl
 
 Get the CA certificates first (unauthenticated):
@@ -213,7 +215,7 @@ subjectAltName of the certificate being renewed; the old one goes on the EST
 CRL as `superseded`:
 
 ```sh
-openssl req -new -key alice-new.key -subj "/CN=alice/O=sts" \
+openssl req -new -key alice-new.key -subj "/CN=alice/O=iya-sts" \
   -addext "subjectAltName=URI:urn:sts:person:alice" -outform DER \
   -out renew.csr.der
 base64 renew.csr.der | curl -s --cacert sts-root.pem \

@@ -317,8 +317,12 @@ class EmailFactor {
           dedupKey: 'sign-in:' + mfaId + ':' + state.sends, via: 'authn' }
       : { username: step.username, template: 'sign-in-link',
           values: { username: step.username, minutes: String(minutes) },
-          links: { signin: authn.EMAIL_LINK_OPEN_PATH + '?mfa=' +
-                           encodeURIComponent(mfaId) + '&t=' +
+          links: { signin: authn.EMAIL_LINK_OPEN_PATH +
+                           (require('../common/mode').hidesStepIds()
+                             ? '#mfa=' : '?mfa=') +
+                           encodeURIComponent(mfaId) +
+                           (require('../common/mode').hidesStepIds()
+                             ? '&t=' : '#t=') +
                            encodeURIComponent(secret) },
           dedupKey: 'sign-in:' + mfaId + ':' + state.sends, via: 'authn' });
     const refused = !sent || !sent.ok;
@@ -478,8 +482,12 @@ class EmailFactor {
         id: String(mfaId), username: String(step.username) } }, lang);
     }
     log.debug("Leaving EmailFactor.view().");
-    return Object.assign({ status: 200, view: this.stepFacts(mfaId, step,
-      kind, armed ? (kind === 'code' ? 'code' : 'wait') : 'ask') }, lang);
+    // WHO IS ASKING (#1300), as on the screen.
+    return Object.assign({ status: 200, view: Object.assign(
+      this.stepFacts(mfaId, step, kind,
+                     armed ? (kind === 'code' ? 'code' : 'wait') : 'ask'),
+      { clientDisplay: authn.clientDisplay(record.application) }) },
+      lang);
   }
 
   // Whether this browser holds the binding cookie the link was sent with

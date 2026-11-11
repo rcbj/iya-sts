@@ -44,7 +44,9 @@
 #      so one report answers for the run;
 #   6. DESTROYS the callback stack — pass, fail or interrupt (an EXIT trap).
 #
-# THE TWO CALLBACK JOBS, and why they cannot run here:
+# THE CALLBACK JOBS, and why they cannot run here (and, since #695,
+# sts_spiffe_grpc, which can but runs there against the task's Workload API
+# sidecar — see CALLBACK_JOBS below):
 #   sts_xacml_remote_pep  the PDP nudges a remote PEP container, and the job
 #                         writes that PEP's listener certificate into a
 #                         directory the container reads — so the job runs in
@@ -99,6 +101,16 @@ IN_AWS="${STS_SUITE_IN_AWS:-0}"
 if [ "${IN_AWS}" = "1" ];
 then
   WITH_CALLBACKS=1
+fi
+# AND sts_spiffe_grpc, WHERE THERE IS A CALLBACK TASK (#695). Its agent path
+# calls the Workload API through an agent, and in the task that agent is the
+# `spiffe-agent` sidecar from the service's own image (suite-callbacks/
+# main.tf), in another container, as a workload would run it. Without a
+# task (STS_SUITE_CALLBACKS=0) the job runs here and starts the agent in its
+# own process, as it did.
+if [ "${WITH_CALLBACKS}" = "1" ];
+then
+  CALLBACK_JOBS="${CALLBACK_JOBS},sts_spiffe_grpc.js"
 fi
 export AWS_REGION="${AWS_REGION:-us-west-2}"
 
@@ -157,7 +169,20 @@ ENV_REGION="$(out aws_region)"
 ENV_REGION="${ENV_REGION:-${AWS_REGION}}"
 SECRET_ARN="$(out admin_api_client_secret_arn)"
 NLB_DNS="$(out nlb_dns_name)"
-LDAP_PORT="$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).ldap.listener))' "$(out load_balancer_ports)")"
+# THE DIRECTORY THE JOBS DIAL (2026-11-10): plain LDAP where the environment
+# publishes 389, and LDAPS on 636 where it does not, which since the ASVS L2
+# hardening (#1490, ldap.plainListener off in product) is every AWS
+# environment. LDAPS is verified against the certificate, so it is dialled by
+# a name the certificate carries: the direct name where CloudFront fronts the
+# public one (CloudFront carries no 636), else the public name, else the NLB.
+LDAP_SCHEME="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).ldap ? "ldap" : "ldaps")' "$(out load_balancer_ports)")"
+LDAP_PORT="$(node -e 'const p = JSON.parse(process.argv[1]); process.stdout.write(String((p.ldap || p.ldaps).listener))' "$(out load_balancer_ports)")"
+LDAP_HOST="${NLB_DNS}"
+if [ "${LDAP_SCHEME}" = "ldaps" ]; then
+  LDAP_HOST="$(out direct_hostname)"
+  LDAP_HOST="${LDAP_HOST:-$(out public_hostname)}"
+  LDAP_HOST="${LDAP_HOST:-${NLB_DNS}}"
+fi
 NODES="$(node -e 'process.stdout.write(String(Object.keys(JSON.parse(process.argv[1])).length))' "$(out ecs_services)")"
 # WHAT THIS ENVIRONMENT DOES NOT PUBLISH (2026-09-21), for the jobs that
 # dial a port of their own rather than the main one. Kerberos TCP 88 is a
@@ -401,7 +426,7 @@ docker run --rm --network host \
   -e STS_CLUSTER_ALTERNATION_REQUESTS="${STS_CLUSTER_ALTERNATION_REQUESTS:-200}" \
   -e STS_PUBLIC_BASE_URL="${URL}" \
   -e STS_TEST_SERVICE_URL="${URL}" \
-  -e STS_LDAP_URL="ldap://${NLB_DNS}:${LDAP_PORT}" \
+  -e STS_LDAP_URL="${LDAP_SCHEME}://${LDAP_HOST}:${LDAP_PORT}" \
   -e STS_LDAP_PORT="${LDAP_PORT}" \
   "${TESTS_IMAGE}" bash -c '
     set -uo pipefail
@@ -452,6 +477,7 @@ then
     PEP_REALM="pep-$(date -u +%m%d%H%M%S)"
     OVERRIDES="$(RUN_ID="${RUN_ID}" PEP_REALM="${PEP_REALM}" ONLY="${TASK_JOBS}" \
       KEEP="${TASK_KEEP_REALMS}" UNPUB="${UNPUBLISHED}" \
+      SPIFFE_SERVER="${STS_SPIFFE_SERVER_URL:-}" \
       JT="${STS_SUITE_JOB_TIMEOUT_MS:-}" node -e '
       const env = function (pairs) {
         return Object.keys(pairs).filter(function (k) { return pairs[k]; })
@@ -464,6 +490,7 @@ then
             STS_SUITE_ONLY: process.env.ONLY,
             STS_SUITE_KEEP_REALMS: process.env.KEEP || "",
             STS_TEST_UNPUBLISHED: process.env.UNPUB || "",
+            STS_SPIFFE_SERVER_URL: process.env.SPIFFE_SERVER || "",
             STS_SUITE_JOB_TIMEOUT_MS: process.env.JT || "" }) },
         { name: "xacml-pep", environment: env({
             XACML_PEP_REALM: process.env.PEP_REALM }) }

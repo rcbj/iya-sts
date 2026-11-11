@@ -126,6 +126,25 @@ single most misleading thing this endpoint could do. They are rows with no
 checkbox and a sentence — the same decision `/admin/sts-metadata` makes about
 coverage notes.
 
+**IN PRODUCT A SIGN-OUT REVOKES THE ACCESS TOKENS OF ITS SESSION (#1449, ASVS
+5.0.0 7.4.1)**, in `Authn.dropSession()`: this service is what consults them, so
+that much can be recalled. The rest of this paragraph stands.
+
+**ENDING SOMEBODY'S OTHER SESSIONS NEEDS A RECENT SIGN-IN; LEAVING NEVER DOES
+(#1521, ASVS 5.0.0 7.5.2).** `Logout.reauthenticationOwed()` asks, at `POST
+/logout`, whether a selection names a session other than the caller's own, and
+refuses it (403, `STS-LOGOUT-0015`) when the latest authentication event is
+older than `account.recentAuthMinutes`. A global sign-out and the caller's own
+session are never asked, whatever else a global sign-out ends: nothing may
+stand between a person and leaving. **`signOutAct()`, the page's door at `POST
+/authn-api/logout`, asks the same since #1577** — until then only the JSON door
+did, and the page, where the portal sends people to end their other sessions,
+never asked. It answers in that API's shape (`reauthenticationRefusal()`: 403,
+the same code, an English `errors`, and a `reauthenticate` view whose `signIn`
+is a `beginAuthentication()` path back to `/logout`), and `web_signout.ts`
+draws that view rather than leaving the refusal over the old page.
+`tests/logout_api.js` section 9 holds both doors.
+
 **THIS SERVICE DOES NOT RECALL ANYTHING IT HAS ALREADY ISSUED** — a SAML
 assertion, a Kerberos service ticket, an X509-SVID. **Still true, and QUALIFIED
 since 2026-09-05: it now DISOWNS them.** A sign-out marks each revoked in this
@@ -285,6 +304,39 @@ touched** (#569's rule), and nothing they answer changed.
 `tests/tools/web_surfaces.js`; `tests/tools/authn_screen.js`'s `signOut()` in
 process and `tests/protocol/authn_signin.js`'s `signOut()` over HTTP, which
 every job that signed out through the form now signs out through.
+
+### A realm's sign-in appearance (#717, 2026-11-04)
+
+`/logout` is in the card family rcbj's D4 names, but it does not link the
+card's stylesheet, so it takes a realm's appearance (`common/branding.ts`)
+itself:
+
+* **The shell says `branded: true`**: `ShellDocument` links the realm's
+  `/web/theme.css` after `/logout/signout.css` and puts the brand facts on
+  `<html>`, and the runtime is a `WebSurface`, whose `put()` draws the brand
+  header and the title from them. For a realm that set nothing, nothing.
+* **`LOGOUT_CSS` reads the custom properties** — the text, the quieter
+  text, the rules, a code's ground — each falling back to the literal it
+  replaced. The `.ok`, `.warn` and `.err` boxes pin the `#111` they always
+  inherited, since their pale grounds are not the realm's; the grey
+  buttons and the tabs keep their own literal colours for the same reason.
+  The account control's rules go through `WebCardCss.themed()`.
+* **A realm's page gets a card.** This page never had one: its text sits on
+  the page. The contrast rule holds the realm's text and links against the
+  CARD colour, so under `html[data-sts-layout]` the page colour is behind
+  and the body is a card in the card colour; the header is at the top of
+  that card for `centered`, and a band in the accent colour across the
+  card's top for `banner` and `split` (a panel beside a page of tables
+  would leave them no room). Links take the accent at `:where()`
+  specificity, so the button-like links and the tabs keep theirs.
+* **The signed-out document that fans out is NOT branded.** It inlines the
+  same `SIGNOUT_CSS` (6d still holds the two to the byte), but it links no
+  theme and carries no layout attribute, so every rule above is inert
+  there: it is the specifications' fan-out document, and #569's rule leaves
+  a specification's document as it is.
+
+`tests/branding_surfaces.js` holds the shell with and without an appearance
+and the stylesheet's properties.
 
 ## SEVERAL ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
 

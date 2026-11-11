@@ -283,6 +283,16 @@ cannot be removed while anybody holds a value of it, or while any profile of
 this realm requires it. `POST /admin-api/policies/define-person-attribute`
 and `remove-person-attribute` are the same acts.
 
+Each custom attribute has two user portal settings, both off by default:
+**Show it to the person on the portal** and **Let the person change it on
+the portal**. The person then sees, or edits, their own values on the
+portal's Overview ([User-facing pages](user-facing-pages.md#the-user-portal);
+`POST /account-api/attributes`). Letting the person change an attribute also
+shows it, and hiding it also stops the editing. **Change** on the attribute's
+row edits its label, description and the two settings, as does
+`POST /admin-api/policies/update-person-attribute`. The syntax and whether it
+holds several values cannot be changed (STS-LDAP-0208).
+
 The directory shape is under
 [LDAP schema](ldap-schema.md#attribute-policies-and-custom-attributes-ouattributepolicies-ouattributedefinitions).
 

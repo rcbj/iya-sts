@@ -449,7 +449,8 @@ class UmaOwnerPolicy {
    *
    * @param owner - the owner's key
    * @returns `{ ok, shares, custom, version, rules, alfaEditing, alfa }`,
-   *   or `{ ok: false, code, why }` for a document that will not parse
+   *   or `{ ok: false, why }`, marked with its code, for a document that
+   *   will not parse: the console answers this view whole (#1355)
    */
   view(owner: string): Json {
     const self = this;
@@ -463,8 +464,8 @@ class UmaOwnerPolicy {
                 'the owner "' + owner + '" does not parse: ' +
                 ((e && e.message) || e));
       log.debug("Leaving UmaOwnerPolicy.view(). Unreadable.");
-      return { ok: false, code: 'STS-UMA-0309',
-               why: 'Your sharing policy could not be read.' };
+      return errorCodes.mark({ ok: false,
+        why: 'Your sharing policy could not be read.' }, 'STS-UMA-0309');
     }
     const alfa = self.deps.loadAlfa();
     const editing = config.value('uma.ownerAlfaEditing') === true;

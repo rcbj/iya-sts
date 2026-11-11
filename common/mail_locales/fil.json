@@ -75,6 +75,11 @@
       "text": "Agad na ibinigay ang emergency access, nang walang tagapag-apruba, sa isang kahilingang nagtatalaga sa iyo, {{username}}, bilang isa sa mga tagapag-apruba nito: maaaring {{action}} ni {{subject}} ang {{resource}} sa application na {{application}}, sa pamamagitan ng {{requester}}, sa maikling panahon.\n\nAng ibinigay na katwiran: {{justification}}\n\nPinapayagan ng patakaran ang emergency access dito. Suriin ito, at bawiin kung hindi ito makatwiran:\n\n{{link}}\n",
       "html": "<p>Agad na ibinigay ang emergency access, nang walang tagapag-apruba, sa isang kahilingang nagtatalaga sa iyo, <strong>{{username}}</strong>, bilang isa sa mga tagapag-apruba nito: maaaring <strong>{{action}}</strong> ni <strong>{{subject}}</strong> ang <strong>{{resource}}</strong> sa application na <strong>{{application}}</strong>, sa pamamagitan ng {{requester}}, sa maikling panahon.</p><p>Ang ibinigay na katwiran: {{justification}}</p><p>Pinapayagan ng patakaran ang emergency access dito. <a href=\"{{link}}\">Suriin ito</a>, at bawiin kung hindi ito makatwiran.</p>"
     },
+    "pki-pin-status": {
+      "subject": "{{service}}: may nagbago sa state ng isang certificate na pinagbabatayan ng realm na ito",
+      "text": "Ang araw-araw na audit ng mga certificate na pinagbabatayan ng realm na ito ay nakakita ng mga pagbabagong ito:\n\n{{changes}}\n\nIpinapakita ng pahinang PKI trust ng admin console ang bawat isa. Natanggap mo ito dahil may Admin Write ka sa realm na ito.\n",
+      "html": "<p>Ang araw-araw na audit ng mga certificate na pinagbabatayan ng realm na ito ay nakakita ng mga pagbabagong ito:</p><p>{{changes}}</p><p>Ipinapakita ng pahinang PKI trust ng admin console ang bawat isa. Natanggap mo ito dahil may Admin Write ka sa realm na ito.</p>"
+    },
     "administrator-alert": {
       "subject": "{{service}}: {{act}} para kay {{username}}",
       "text": "Ang serbisyong ito, hindi isang tao, ang gumawa ng aksyon sa account na {{username}} noong {{when}}: {{act}}.\n\n{{why}}\n\nNatanggap mo ito dahil may Admin Write ka sa realm na ito.\n",

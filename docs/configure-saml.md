@@ -421,8 +421,8 @@ api applications/set '{"application":"https://enc-gcm.example.com",
 
 | Setting (and per-SP attribute) | Values |
 |---|---|
-| `saml2.encryptionAlgorithm` (`saml2EncryptionAlgorithm`) | `aes256-gcm` (the default), `aes128-gcm`, `aes256-cbc`, `aes128-cbc` |
-| `saml2.keyTransportAlgorithm` (`saml2KeyTransportAlgorithm`) | `rsa-oaep-mgf1p` (the default), `rsa-oaep`, `rsa-1_5` (development only) |
+| `saml2.encryptionAlgorithm` (`saml2EncryptionAlgorithm`) | `aes256-gcm` (the default), `aes128-gcm`, `aes256-cbc` and `aes128-cbc` (development only) |
+| `saml2.keyTransportAlgorithm` (`saml2KeyTransportAlgorithm`) | `rsa-oaep-mgf1p` (the default; product uses `rsa-oaep` unless `crypto.allowLegacyHashes` is on), `rsa-oaep`, `rsa-1_5` (development only) |
 | `saml2.encryptLogoutNameId` (`saml2EncryptLogoutNameId`) | encrypts the NameID in a LogoutRequest |
 
 The key to encrypt to is looked for in this order:

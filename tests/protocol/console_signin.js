@@ -324,8 +324,10 @@ function consoleBundle() {
 // a deployment with an administrator admits only a holder, and a job that
 // reads console pages answers 403 for want of a role rather than for anything
 // it tests. Opt-in, because sts_realm_administrators.js grants and confines
-// roles itself. "write" grants both. The role goes to an account whose
-// password only this process holds.
+// roles itself. "write" grants both. Since #645 it may also be "security" or
+// a list (`["write", "security"]`), for a job whose writes are the Security
+// Administrator's. The role goes to an account whose password only this
+// process holds.
 //
 // Answers the client described at the top of this file.
 async function signInToTheConsole(base, user, log2, options) {
@@ -349,9 +351,31 @@ async function signInToTheConsole(base, user, log2, options) {
     return r;
   }
 
-  const password = await ensureConsoleAccount(base, user, say);
-  if (opts.grant === "read" || opts.grant === "write") {
-    const roles = opts.grant === "write" ? ["read", "write"] : ["read"];
+  // `options.password` signs in an account that EXISTS with that password —
+  // `portal_signin.js`'s rule (its line "opts.password || ensureConsoleAccount")
+  // — so a caller that manages the account's password itself (the #1299 fuzz
+  // kit re-sets it per cell) is not fought by ensureConsoleAccount's own
+  // set-password of a stable value, which the realm's password history would
+  // then refuse, leaving the account on the caller's password and this sign-in
+  // on the wrong one. With no `options.password` the account is created here
+  // with a random password this process holds, exactly as before.
+  const password = opts.password || await ensureConsoleAccount(base, user, say);
+  // A LIST AS WELL SINCE #645: `["write", "security"]` adds the Security
+  // Administrator, which a job saving a policy needs — the console asks
+  // admin:security at sign-in, and it is narrowed off a person without the
+  // role. "write" still means read and write.
+  const asked = [].concat(opts.grant || []);
+  const roles = [];
+  asked.forEach(function (one) {
+    const wanted = one === "write" ? ["read", "write"]
+      : (one === "read" || one === "security") ? [one] : [];
+    wanted.forEach(function (role) {
+      if (roles.indexOf(role) < 0) {
+        roles.push(role);
+      }
+    });
+  });
+  if (roles.length) {
     for (const role of roles) {
       const r = await fetch(base + "/admin-api/rbac/grant", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -383,7 +407,8 @@ async function signInToTheConsole(base, user, log2, options) {
   const authorize = base + "/oauth2/authorize?" + new URLSearchParams({
     response_type: "code", client_id: "sts-admin-console",
     redirect_uri: redirectUri,
-    scope: "openid admin:read admin:write admin:console",
+    // admin:security since #645, as the console's runtime asks.
+    scope: "openid admin:read admin:write admin:security admin:console",
     state: state, code_challenge: b64u(crypto.createHash("sha256")
       .update(verifier).digest()),
     code_challenge_method: "S256", resource: resource,
@@ -393,7 +418,7 @@ async function signInToTheConsole(base, user, log2, options) {
       .digest("base64url") }).toString();
   const toScreen = await fetchKeeping(authorize);
   const where = toScreen.headers.get("location") || "";
-  const authn = (where.match(/[?&]authn=([^&]+)/) || [])[1];
+  const authn = (where.match(/[?&#]authn=([^&]+)/) || [])[1];
   assert.ok(authn,
     "the console's authorization request should send a browser with no " +
     "sign-on session to the sign-in screen carrying the id of the request " +
@@ -412,7 +437,7 @@ async function signInToTheConsole(base, user, log2, options) {
   if (signedIn.ignored) {
     say("[console] " + user + " was offered a second factor and ignored it.");
   }
-  assert.ok(signedIn.next === "redirect" && cookies.get("sts_session"),
+  assert.ok(signedIn.next === "redirect" && (cookies.get("sts_session") || cookies.get("__Host-sts_session")),
     "signing in at /authn/login should set the sign-on session cookie and " +
     "answer where to go; it answered " + signedIn.status + " " +
     signedIn.next + " " + JSON.stringify(signedIn.errors));
@@ -602,6 +627,12 @@ async function signInToTheConsole(base, user, log2, options) {
       return refreshToken;
     },
     cookie: cookies.header(),
+    // The DPoP key this sign-in is bound to, so a caller that forwards its
+    // own requests (the Schemathesis auth proxy, #1299) can sign a fresh
+    // proof for each one; `portal_signin.js` already exposes its key the same
+    // way. `key.proof(method, url, token)` signs, `key.keepNonce(response)`
+    // adopts a `use_dpop_nonce` challenge's nonce.
+    key: key,
     api: api,
     raw: raw,
     refresh: refresh,

@@ -394,7 +394,7 @@ async function authorize(actions) {
     authorization_details: JSON.stringify([detail(actions)]) }).toString();
   const first = await fetch(url, { redirect: "manual", headers: agent });
   const screenAt = first.headers.get("location") || "";
-  assert.ok(/\/authn\/login\?authn=/.test(screenAt), "the authorization " +
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(screenAt), "the authorization " +
     "request should reach the sign-in screen; it answered " + first.status +
     " " + screenAt + " " + String(await first.text()).slice(0, 300));
   const screenUrl = new URL(screenAt, base);
@@ -473,10 +473,12 @@ async function setUp() {
   remotePep = await credentials.mint({
     subject: "CN=" + REMOTE_PEP + ",OU=remote-peps,O=iya-sts tests" });
   for (const one of [authzenCaller, remotePep]) {
-    const posted = await credentials.trustAnchor(base, one.anchorPem);
+    // Recorded before it is posted (#1307): an add applied but answered
+    // late is still removed when the job finishes.
+    const posted = await credentials.trustRecorded(base, one.anchorPem,
+                                                   addedAnchors);
     assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
       "Root CA this file built; it answered " + posted.status);
-    addedAnchors.push(one.anchorPem);
   }
   storedHere.push(await credentials.storeOnEntry({ get: get, post: postJson },
     base, PREFIX, AUTHZEN_CALLER, authzenCaller.leaf.pem));

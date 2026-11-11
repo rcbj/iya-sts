@@ -48,24 +48,24 @@
     "text": "symboler"
   },
   "password.FIELDS.minSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "Hur många tecken som varken är en bokstav, en siffra eller ett blanksteg ett lösenord måste innehålla. 0 stänger av regeln."
+    "en": "1121ccc1580b0c86",
+    "text": "Alltid 0. En policy som kräver symboler avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras, så den här policyn frågar bara efter längd."
   },
   "password.FIELDS.requireUppercase.label": {
     "en": "41d8365a4b5a8473",
     "text": "Kräv en versal"
   },
   "password.FIELDS.requireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "Om ett lösenord måste innehålla minst en versal, i vilket skriftsystem som helst."
+    "en": "9ab7a52d3b16949e",
+    "text": "Alltid av. En policy som kräver en versal avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras."
   },
   "password.FIELDS.requireDigit.label": {
     "en": "eaa0c73c3cc00f02",
     "text": "Kräv en siffra"
   },
   "password.FIELDS.requireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "Om ett lösenord måste innehålla minst en decimal siffra."
+    "en": "9d7cd7fdbca971d9",
+    "text": "Alltid av. En policy som kräver en siffra avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras."
   },
   "password.FIELDS.generatedLength.label": {
     "en": "9a6d2215cc16392c",
@@ -168,16 +168,16 @@
     "text": "Hur många av en persons TIDIGARE lösenord som kommer ihåg och nekas. Det nuvarande lösenordet nekas alltid också så länge detta är över 0, så 5 betyder att ett nytt lösenord inte får vara något av de sex senaste. 0 stänger av regeln. Utkastets attribut, med utkastets betydelse. Varje ihågkommet lösenord sparas som den hash det redan var lagrat som (argon2id eller scrypt), i pwdHistory på personens egen post, och att kontrollera ett nytt lösenord kostar en hashjämförelse per ihågkommet lösenord."
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "Hur många tecken som varken är en bokstav, en siffra eller ett blanksteg ett lösenord måste innehålla. 0 stänger av regeln."
+    "en": "1121ccc1580b0c86",
+    "text": "Alltid 0. En policy som kräver symboler avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras, så den här policyn frågar bara efter längd."
   },
   "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "Om ett lösenord måste innehålla minst en versal, i vilket skriftsystem som helst."
+    "en": "9ab7a52d3b16949e",
+    "text": "Alltid av. En policy som kräver en versal avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras."
   },
   "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "Om ett lösenord måste innehålla minst en decimal siffra."
+    "en": "9d7cd7fdbca971d9",
+    "text": "Alltid av. En policy som kräver en siffra avvisas: ASVS 5.0.0 6.2.5 kräver att ett lösenord med valfri sammansättning accepteras."
   },
   "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
     "en": "9abc8e368dbfdf05",
@@ -234,22 +234,6 @@
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
     "text": "minst {{n}} tecken"
-  },
-  "password.sentences.minSymbolsOne": {
-    "en": "bcd5d7597e2d9c28",
-    "text": "minst {{n}} symbol (ett tecken som inte är en bokstav, en siffra eller ett mellanslag)"
-  },
-  "password.sentences.minSymbolsMany": {
-    "en": "59951161d553809a",
-    "text": "minst {{n}} symboler (tecken som inte är en bokstav, en siffra eller ett mellanslag)"
-  },
-  "password.sentences.uppercase": {
-    "en": "4a27754133d00695",
-    "text": "en versal"
-  },
-  "password.sentences.digit": {
-    "en": "d24f1fa16d122006",
-    "text": "en siffra"
   },
   "password.sentences.history": {
     "en": "524e6c7233b4e109",
@@ -963,57 +947,29 @@
     "en": "02f30171dcced882",
     "text": "Enkel LDAP-bindning"
   },
-  "serviceAccount.DOORS.allowLdapBind.what": {
-    "en": "3a8c8bfe4923e585",
-    "text": "En bindning på 389 eller 636 (RFC 4513)."
-  },
   "serviceAccount.DOORS.allowWsTrust.label": {
     "en": "a1d8fa9805648e7d",
     "text": "WS-Trust UsernameToken"
-  },
-  "serviceAccount.DOORS.allowWsTrust.what": {
-    "en": "4d920a20f96a19a1",
-    "text": "En WS-Security UsernameToken som skickas till säkerhetstokentjänsten."
   },
   "serviceAccount.DOORS.allowScim.label": {
     "en": "13441836ceee258a",
     "text": "SCIM HTTP Basic"
   },
-  "serviceAccount.DOORS.allowScim.what": {
-    "en": "506c021bbd796caa",
-    "text": "HTTP Basic på /scim/v2 (RFC 7617)."
-  },
   "serviceAccount.DOORS.allowSsf.label": {
     "en": "5f0a37c29c6be8ab",
     "text": "Shared Signals HTTP Basic"
-  },
-  "serviceAccount.DOORS.allowSsf.what": {
-    "en": "41e56e2806f5f363",
-    "text": "HTTP Basic på /ssf-slutpunkterna (RFC 7617)."
   },
   "serviceAccount.DOORS.allowEst.label": {
     "en": "90892c78280ab239",
     "text": "EST HTTP Basic"
   },
-  "serviceAccount.DOORS.allowEst.what": {
-    "en": "a40e0a702c1600f6",
-    "text": "HTTP Basic på /.well-known/est (RFC 7030 avsnitt 3.2.3)."
-  },
   "serviceAccount.DOORS.allowKerberos.label": {
     "en": "b707a90f8fd22d69",
     "text": "Kerberos AS-utbyte"
   },
-  "serviceAccount.DOORS.allowKerberos.what": {
-    "en": "22fac9e9e9e7d0a8",
-    "text": "En AS-REQ vars förautentisering bevisar lösenordets nyckel (RFC 4120), samt MS-KKDCP."
-  },
   "serviceAccount.DOORS.allowPasswordGrant.label": {
     "en": "a55abf2085020a8c",
     "text": "OAuth 2.0 password grant"
-  },
-  "serviceAccount.DOORS.allowPasswordGrant.what": {
-    "en": "7fe8d96fec703361",
-    "text": "grant_type=password vid tokenslutpunkten (RFC 6749 avsnitt 4.3), där sfären över huvud taget tillåter beviljandetypen."
   },
   "serviceAccount.SELECTORS.precedence.what": {
     "en": "3bc40f48dcc93e91",
@@ -1691,22 +1647,6 @@
     "en": "df463dd3d0380799",
     "text": "Tjänstens klass för en attributpolicy: de attribut som varje person i en sfär måste ha. Namngiven efter PROFILEN (`cn=default`, eller en namngiven profil som är sfärens egen)."
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "På en person eller en grupp: attributpolicyn den namnger, `default` eller en namngiven profil i sfären. Ett värde."
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "den gäller en person som namnger den, eller som ingår i en grupp som namnger den, när ingen annan policy de namnger har lägre precedens än {{precedence}}"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "Tjänstens klass för ett anpassat attribut i en sfär, i ou=attributeDefinitions, namngiven efter attributet (`cn=<name>`)."
@@ -1730,6 +1670,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "TRUE om ett anpassat attribut har ett värde, FALSE om det har flera."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "TRUE när en person ser sina egna värden för ett anpassat attribut på användarportalens översikt. FALSE, eller saknas, som standard."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "TRUE när en person får ändra sina egna värden för ett anpassat attribut i användarportalen. Innebär stsAttributePortalVisible. FALSE, eller saknas, som standard."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "På en person eller en grupp: attributpolicyn den namnger, `default` eller en namngiven profil i sfären. Ett värde."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1743,17 @@
     "en": "3867ffa1e351efa2",
     "text": "Det anpassade attributet {{name}} är definierat i den här sfären på {{dn}}. Det kan nu ges till en person och krävas av den här policyn."
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "Det anpassade attributet {{name}} är ändrat. Dess syntax och om det har flera värden är som förut."
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "Det anpassade attributet {{name}} är inte längre definierat i den här sfären."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "den gäller en person som namnger den, eller som ingår i en grupp som namnger den, när ingen annan policy de namnger har lägre precedens än {{precedence}}"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

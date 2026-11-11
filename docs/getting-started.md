@@ -443,13 +443,24 @@ docker compose up -d --wait
 
 `--wait` returns once `sts` is healthy, a minute or two on a first start.
 
-* **Signing in.** The console's first account is `admin`, with a password
-  generated on the first start and printed once in the log; it has to be
-  changed at the first sign-in. To choose it instead, put
-  `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start.
+* **Signing in.** The console's first account has a generated name and a
+  password generated on the first start. Both are written, as `name:password`,
+  to `data/bootstrap-admin-password`, which only the service can read; the log
+  names the account and says where. The password has to be changed at the
+  first sign-in. To choose the password instead, put
+  `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start; the log
+  then names the account, and no file is written.
 
   ```bash
-  docker compose logs sts | grep -A6 'PRODUCT MODE BOOTSTRAP'
+  docker compose exec sts cat data/bootstrap-admin-password
+  ```
+
+  Product mode requires a second factor, so you enrol one at that first
+  sign-in. To script a sign-in with an authenticator app's secret, generate the
+  code with `oathtool`:
+
+  ```bash
+  oathtool --totp -b "$TOTP_SECRET"
   ```
 
   Then open `https://localhost:8081/admin` and accept the certificate.
@@ -519,7 +530,9 @@ docker compose up -d --wait
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
 * **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
-  build of `main`, and every build also has its `M.N.O`. `STS_PORT`,
+  build of `main`, the release's `M.N.O` (`1.0.0`) names the release build cut
+  for it, and the full `M.N.O.<build>` (`1.0.0.0`, or
+  `1.0.0.20261104151200`) names exactly one build. `STS_PORT`,
   `PKI_PORT` and `KDC_PORT` move the published ports.
 * **Kerberos works from the start.** The KDC is published on 88 (TCP and
   UDP), and the SPNEGO acceptor holds `HTTP/localhost`, the name a browser
@@ -581,26 +594,31 @@ its own description of itself.
 
 ## Which build am I running?
 
-Every page says so, and so does the log. The version is **M.N.O** — a release
-from the repo-root `VERSION` file plus a build number:
+Every page says so, and so does the log. The version is **M.N.O.build**:
+the release, exactly as the repo-root `VERSION` file says it (`1.0.0`),
+followed by a **build number**. An ordinary build is numbered by the UTC
+instant the image was built, `YYYYMMDDHHMMSS`; a **release build** names its
+own number, so the 1.0.0 release is `1.0.0.0`. The commit it was built from
+and the build instant are reported beside it.
 
 ```
-0.1.20260906143205
-│ │ └── the build: the UTC instant the image was built (or BUILD_NUMBER)
-│ └──── minor
-└────── major
+1.0.0.20261104120000      an ordinary build of release 1.0.0
+1.0.0.0                   the 1.0.0 release build
+Build 20261104120000 — Built 2026-11-04T12:00:00Z — commit 0123456789ab
 ```
 
 The quickest ways to read it:
 
 ```bash
-curl -sk https://localhost:8081/admin-api | head -8   # version, build, commit, stamped
+curl -sk https://localhost:8081/admin-api | head -10  # version, build, release, commit, builtAt, stamped
 curl -sk https://localhost:8081/home-api/front        # the front page's version
 node common/version.js                                # from a checkout, without running it
 ```
 
-It is also in the foot of every admin console page and every user portal page,
-in the first paragraph of `/admin/sts-metadata`, and in the first line the
+It is also in the foot of every admin console page and every user portal page
+(the build in the tooltip), in the first paragraph of `/admin/sts-metadata`
+(whose JSON carries `build.number`, `build.release`, `build.commit` and
+`build.at`), and in the first line the
 service logs when it starts.
 
 **The remote XACML PEP reports one too**, if you are running it
@@ -611,43 +629,107 @@ and in the Version column of `/admin/xacml/peps` on this service's console:
 curl -s http://localhost:9090/ | head -20      # the PEP's own page
 ```
 
-Its **M.N always matches** this service's — both images are built from one tree
-and one `VERSION` file — while its **build number is its own**, because they are
-two images built at two instants. So a different release on that row is a PEP
-left behind across an upgrade, and a different build number is just two
-artifacts. Pass one `BUILD_NUMBER` to both builds to say they are one release.
+Its **release always matches** this service's — both images are built from
+one tree and one `VERSION` file — while an ordinary build's **build number is
+its own** (its `build.number` and `build.at`), because they are two images
+built at two instants. Built as the same release, both are the same version
+(`1.0.0.0`). So a different release on that row is a PEP left behind across an
+upgrade, and a different build number is just two artifacts.
 
 **`stamped` is the field worth knowing about.** A container reports a build
-number that was fixed when the image was built, so restarting it reports the
-same one. A checkout run with `node server.js` was never built at all — it
-computes a number when the process starts and reports `stamped: false`, and
-every page says so in as many words. Two instances of the same release with
-different build numbers mean nothing if neither was ever built.
+that was fixed when the image was built, so restarting it reports the same
+one. A checkout run with `node server.js` was never built at all — it records
+the instant the process started and reports `stamped: false`, and every page
+says so in as many words. Two instances of the same release with different
+build times mean nothing if neither was ever built.
 
-To give an image a build number and a commit of your own:
+To name the commit an image was built from:
 
 ```bash
-BUILD_NUMBER=1234 GIT_COMMIT=$(git rev-parse HEAD) docker compose build sts
+GIT_COMMIT=$(git rev-parse HEAD) docker compose build sts
 ```
 
 The commit is a build argument rather than something the image works out,
 because the build context deliberately carries no `.git`.
 
+### Building a release
+
+A release build is flagged and names its build number. Pass both build
+arguments, to both images:
+
+```bash
+docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .
+docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 \
+  -f xacml-pep/Dockerfile .
+# or, both at once:
+STS_RELEASE=true BUILD_NUMBER=0 docker compose --profile xacml build
+```
+
+That is `1.0.0.0`. The build number is a non-negative integer with no leading
+zero. `STS_RELEASE=true` with no valid `BUILD_NUMBER` fails the build
+(`STS-CORE-0164`) rather than making a release with a date in it. Without
+`STS_RELEASE=true`, `BUILD_NUMBER` is ignored and the build is numbered by its
+build instant, so a CI system's own `BUILD_NUMBER` cannot make an ordinary
+build look like a release.
+
 
 ## First-Time Admin Login
-Go to: ```https://localhost:8081```
 
-Enter ```admin``` as the username.
+The console is at `https://localhost:8081/admin`. Who signs in first depends
+on the mode the service is running in.
 
-Search the through startup logs for the following line:
-```sts               | {"name":"sts","hostname":"sts","pid":1,"level":40,"msg":"=======================================================\nPRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n\n  username: admin\n  password: *****************\n\nNobody in this realm's directory held a credential, so this one was generated so that the service is reachable. It is stored as a scrypt hash and CANNOT be recovered — only reset.\n\nCHANGE IT. Sign in at /admin, or POST /admin-api/users/set-password.\n=======================================================","time":"2026-09-25T21:39:17.999Z","v":0}```
+### In development mode
 
-Take note of the temporary password. 
+A plain `docker run` (*In a container*, above) starts in development mode. The
+first account is `admin`, and development mode checks no password, so any
+password signs it in.
 
-Remember the admin password. 
+### In product mode
 
-Enter the temporary password into the password field.
+The compose stack (*With PostgreSQL and OpenBao*, above) starts in product
+mode, where a default account name such as `admin` is not allowed (ASVS 5.0.0
+6.3.2). On the first start, with nobody in the directory holding a credential,
+the service makes the first administrator with:
 
-Click the Login button.
+* **A generated username**, `admin-` followed by 16 hexadecimal characters,
+  for example `admin-3f9c2a71d04e8b65`. It is derived from the cluster's shared
+  key, so every node and every restart arrives at the same name.
+* **A generated password**, written to the file `bootstrap-admin-password` in
+  the data directory, readable only by the service. It is not written to the
+  log.
 
-You will be prompted to change the password. The password must comply with the default password policy, which can be changed later.
+The file holds both, as `username:password`. Read it with:
+
+```bash
+docker compose exec sts cat data/bootstrap-admin-password
+```
+
+Everything after the first colon is the password. The startup log names the
+account and the file, once:
+
+```text
+PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.
+
+  username: admin-3f9c2a71d04e8b65
+  password: in the file /usr/src/sts/data/bootstrap-admin-password
+```
+
+Then:
+
+1. Go to `https://localhost:8081/admin` and enter the username and the
+   password from the file.
+2. Change the password when asked. The new one must meet the password policy,
+   which you can change later under Directory → Policies.
+3. Enrol a second factor when asked: product mode requires one.
+
+The file is written once and never updated, so it holds the generated password
+even after you change it. Delete it once you have signed in.
+
+Four settings change this, and each must be set before the first start:
+
+| Setting | Environment variable | Effect |
+|---|---|---|
+| `admin.bootstrapUsername` | `STS_ADMIN_BOOTSTRAP_USERNAME` | A name that is not a default one (`admin`, `root`, `sa`, `administrator`) is used as given. |
+| `admin.allowDefaultUsername` | `STS_ADMIN_ALLOW_DEFAULT_USERNAME` | On, a default name is used as given instead of a generated one. |
+| `admin.bootstrapPassword` | `STS_ADMIN_BOOTSTRAP_PASSWORD` | The password is yours instead of generated; no file is written and the log does not print it. |
+| `admin.logBootstrapPassword` | `STS_ADMIN_LOG_BOOTSTRAP_PASSWORD` | On, the generated password is printed in the log instead of written to the file. |

@@ -49,9 +49,11 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
 import config = require('../common/config');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -78,19 +80,9 @@ interface PortalConnectedAccountsDeps {
   directory: () => Json;
 }
 
-const ACT_FORM = vz.object({
-  action: vt.oneOf(['connect', 'disconnect'])
-    .describe('`connect` starts the provider\'s sign-in; `disconnect` ' +
-              'removes the connection.'),
-  id: vz.string().max(64).describe('The provider relationship\'s id.')
-});
+const ACT_FORM = ModelZod.body('account', 'connectAccount');
 
-const PAGE_QUERY = vz.object({
-  done: vz.string().max(200).optional()
-    .describe('The provider a finished connect connected, from its return.'),
-  problem: vz.string().max(400).optional()
-    .describe('Why a connect could not be finished, from its return.')
-});
+const PAGE_QUERY = ModelZod.query('account', 'getConnectedAccounts');
 
 /**
  * `/portal/connected-accounts`' account API operations (#565).
@@ -161,8 +153,7 @@ class PortalConnectedAccounts {
     log.debug("Entering PortalConnectedAccounts.linksOf().");
     const entry = this.deps.directory().existingUserEntry(username);
     const values: string[] = entry
-      ? [].concat(entry.attributes.federationlink ||
-                  entry.attributes.federationLink || []).map(String)
+      ? Classes.PersonRecord.fromEntry(entry.attributes).federationLink || []
       : [];
     const links = this.deps.links();
     const out = values.map(function (value: string): Json {
@@ -375,15 +366,7 @@ class PortalConnectedAccounts {
     log.debug("Entering PortalConnectedAccounts.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/connected-accounts',
-        operationId: 'getConnectedAccounts', tag: 'Connected accounts',
-        access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/connected-accounts',
-        summary: 'The consumer providers you can connect, and yours',
-        description: '`providers`: every consumer or social provider this ' +
-          'realm offers (#565), each one\'s relationship id, name and ' +
-          'provider, and whether your account is `connected` to it. ' +
-          '`done` and `problem`, which a provider\'s return sends back, ' +
-          'come back as `notice` and `problem`.',
+        operationId: 'getConnectedAccounts', access: 'person',
         query: PAGE_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
@@ -399,20 +382,7 @@ class PortalConnectedAccounts {
           return ctx.json(res, 200, view);
         } },
       { method: 'POST', path: ctx.BASE + '/connected-accounts',
-        operationId: 'connectAccount', tag: 'Connected accounts',
-        access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/connected-accounts',
-        summary: 'Connects or disconnects a consumer provider',
-        description: '`connect` answers `location`, the provider\'s ' +
-          'authorization address: send the browser there. It needs a ' +
-          'sign-on session whose risk is LOW or unscored, and an ' +
-          'authentication within federation.connectRecentAuthMinutes — ' +
-          'otherwise the answer is `stepUp`, a sign-in again. The answer ' +
-          'sets the `sts_fed_link` cookie, which finishes the connect only ' +
-          'in the browser holding it. `disconnect` removes your connection ' +
-          'and ends the sessions it started; it is refused (409) while the ' +
-          'connection is your only way to sign in — no password, passkey ' +
-          'or other connection.',
+        operationId: 'connectAccount', access: 'person',
         body: ACT_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

@@ -255,23 +255,22 @@ const REQUIREMENTS = [
     title: 'A confidential client authenticates with mTLS, private_key_jwt ' +
            'or client_secret_jwt',
     note: 'client_secret_basic and client_secret_post are refused at ' +
-          'registration and at the token and PAR endpoints ' +
-          '(STS-OAUTH-0580, STS-REG-0174).' },
+          'registration and at the token and PAR endpoints.' },
   { id: 'key-sizes', section: '5.2.2 items 5-6', level: 'SHALL',
     enforced: 'yes',
     title: 'RSA keys of 2048 bits or more, EC keys of 160 or more',
-    note: 'A registration whose jwks holds a smaller key is refused ' +
-          '(STS-REG-0175). This service\'s own keys already meet it.' },
+    note: 'A registration whose jwks holds a smaller key is refused. ' +
+          'This service\'s own keys already meet it.' },
   { id: 'pkce-s256', section: '5.2.2 item 7', level: 'SHALL',
     enforced: 'yes',
     title: 'PKCE with S256, for every client',
     note: 'RFC 9700 mode allows only S256 when PKCE is used; this profile ' +
-          'requires it of confidential clients too (STS-OAUTH-0573).' },
+          'requires it of confidential clients too.' },
   { id: 'redirect-uri', section: '5.2.2 items 8-10, 20', level: 'SHALL',
     enforced: 'yes',
     title: 'redirect_uri pre-registered, sent, exactly matched, and https',
     note: 'Matching is RFC 9700 mode\'s; sending it and https are this ' +
-          'profile\'s (STS-OAUTH-0574, STS-REG-0176).' },
+          'profile\'s.' },
   { id: 'explicit-consent', section: '5.2.2 item 12', level: 'SHALL',
     enforced: 'yes',
     title: 'The user approves the scope explicitly unless previously ' +
@@ -293,7 +292,7 @@ const REQUIREMENTS = [
     enforced: 'yes',
     title: 'invalid_client when the client is identified two different ways',
     note: 'A Basic header, the body\'s client_id and a client assertion\'s ' +
-          'sub must all name one client (STS-OAUTH-0581). Outside the ' +
+          'sub must all name one client. Outside the ' +
           'profile the Basic header wins and the body\'s is ignored.' },
   { id: 'access-token-lifetime', section: '5.2.2 item 21', level: 'SHOULD',
     enforced: 'yes',
@@ -303,11 +302,11 @@ const REQUIREMENTS = [
     enforced: 'yes',
     title: 'nonce is required whenever openid is requested',
     note: 'RFC 9700 mode requires it only for a response type that returns ' +
-          'an ID Token from the authorization endpoint (STS-OAUTH-0575).' },
+          'an ID Token from the authorization endpoint.' },
   { id: 'state-without-openid', section: '5.2.2.3', level: 'SHALL',
     enforced: 'yes',
     title: 'state is required when openid is not requested',
-    note: 'STS-OAUTH-0576.' },
+    note: '' },
   { id: 'loa', section: '5.2.2 item 11', level: 'SHALL', enforced: 'already',
     title: 'User authentication at an appropriate level of assurance',
     note: 'acr_values, max_age and an essential acr claim are honoured in ' +
@@ -343,15 +342,15 @@ const ADVANCED_REQUIREMENTS = [
   { id: 'signed-request-object', section: '5.2.2 item 1', level: 'SHALL',
     enforced: 'yes',
     title: 'A JWS-signed request object, by value or by reference',
-    note: 'An unsigned or absent request object is refused (RFC 9101, ' +
-          'STS-OAUTH-0340 / 0357); a push must carry `request` ' +
-          '(STS-OAUTH-0415). THE TWO HOSTED PUBLIC CLIENTS ARE EXEMPT ' +
+    note: 'An unsigned or absent request object is refused (RFC 9101); ' +
+          'a push must carry `request`. ' +
+          'THE TWO HOSTED PUBLIC CLIENTS ARE EXEMPT ' +
           '(#568): sts-admin-console and sts-user-portal hold no key to ' +
           'sign one with, and do not conform to this profile.' },
   { id: 'response-type', section: '5.2.2 item 2', level: 'SHALL',
     enforced: 'yes',
     title: 'code id_token, or code with response_mode=jwt (JARM)',
-    note: 'STS-OAUTH-0582. JARM is implemented for every response mode ' +
+    note: 'JARM is implemented for every response mode ' +
           '(query.jwt, fragment.jwt, form_post.jwt, jwt), in every profile.' },
   { id: 'detached-signature', section: '5.2.2.1', level: 'SHALL',
     enforced: 'yes',
@@ -362,7 +361,7 @@ const ADVANCED_REQUIREMENTS = [
     enforced: 'yes',
     title: 'Only sender-constrained access tokens; mTLS supported',
     note: 'A token request that would mint an unconstrained access token is ' +
-          'refused (STS-OAUTH-0583). DPoP counts unless ' +
+          'refused. DPoP counts unless ' +
           'oauth2.fapiRequireMtls is on (rcbj\'s decision on #139); ' +
           'mtls_endpoint_aliases is published where the port is TLS. TWO ' +
           'EXCEPTIONS (#446, #568): the public clients sts-admin-console ' +
@@ -377,15 +376,15 @@ const ADVANCED_REQUIREMENTS = [
     level: 'SHALL', enforced: 'yes',
     title: 'exp and nbf required; exp at most 60 minutes after nbf; nbf at ' +
            'most 60 minutes old',
-    note: 'STS-OAUTH-0584.' },
+    note: '' },
   { id: 'client-auth', section: '5.2.2 item 14', level: 'SHALL',
     enforced: 'yes',
     title: 'tls_client_auth, self_signed_tls_client_auth or private_key_jwt',
-    note: 'client_secret_jwt is refused too (STS-OAUTH-0580, STS-REG-0174).' },
+    note: 'client_secret_jwt is refused too.' },
   { id: 'request-object-aud', section: '5.2.2 item 15', level: 'SHALL',
     enforced: 'yes',
     title: 'The request object\'s aud is the issuer',
-    note: 'STS-OAUTH-0585.' },
+    note: '' },
   { id: 'no-public-clients', section: '5.2.2 item 16', level: 'SHALL',
     enforced: 'yes',
     title: 'Public clients are not supported',
@@ -399,13 +398,13 @@ const ADVANCED_REQUIREMENTS = [
   { id: 'par-pkce', section: '5.2.2 item 18', level: 'SHALL',
     enforced: 'yes',
     title: 'A pushed request uses PKCE with S256',
-    note: 'STS-OAUTH-0573, for pushed requests only.' },
+    note: 'For pushed requests only.' },
   { id: 'algorithms', section: '8.6, 8.6.1', level: 'SHALL', enforced: 'yes',
     title: 'PS256 or ES256 for every JWS; never RSA1_5',
     note: 'This server signs with PS256 by default under the profile (ID ' +
           'Token, access token, UserInfo, JARM, introspection); a client ' +
-          'algorithm outside the two is refused (STS-OAUTH-0586, ' +
-          'STS-REG-0177), and the metadata lists are narrowed to match.' }
+          'algorithm outside the two is refused, and the metadata lists are ' +
+          'narrowed to match.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -425,7 +424,7 @@ const FAPI2_REQUIREMENTS = [
   { id: 'confidential-only', section: '5.3.2.1 item 3', level: 'SHALL',
     enforced: 'yes', title: 'Confidential clients only',
     note: 'A public client is refused at registration and at the token and ' +
-          'PAR endpoints (STS-OAUTH-0580, STS-REG-0174).' +
+          'PAR endpoints.' +
           ' TWO EXCEPTIONS (#446, #568): the seeded sts-admin-console ' +
           'and sts-user-portal clients, when they are public clients, may ' +
           'use the token and PAR endpoints. Every token issued to them is ' +
@@ -434,12 +433,12 @@ const FAPI2_REQUIREMENTS = [
   { id: 'sender-constrained', section: '5.3.2.1 items 4-5', level: 'SHALL',
     enforced: 'yes',
     title: 'Only sender-constrained access tokens, by mTLS or DPoP',
-    note: 'A token request presenting neither is refused (STS-OAUTH-0583). ' +
+    note: 'A token request presenting neither is refused. ' +
           'DPoP server nonces stay with oauth2.dpopNonceRequired (item 10, ' +
           'a MAY; rcbj\'s decision on #140).' },
   { id: 'client-auth', section: '5.3.2.1 item 6', level: 'SHALL',
     enforced: 'yes', title: 'mTLS or private_key_jwt',
-    note: 'STS-OAUTH-0580, STS-REG-0174.' },
+    note: '' },
   { id: 'assertion-aud', section: '5.3.2.1 item 8', level: 'SHALL',
     enforced: 'yes',
     title: 'A client assertion\'s aud is the issuer, as a string, alone',
@@ -458,23 +457,21 @@ const FAPI2_REQUIREMENTS = [
   { id: 'jwt-timestamps', section: '5.3.2.1 item 13', level: 'SHALL',
     enforced: 'yes',
     title: 'An iat or nbf more than 60 seconds in the future is rejected',
-    note: 'Client assertions, request objects and DPoP proofs ' +
-          '(STS-OAUTH-0590).' },
+    note: 'Client assertions, request objects and DPoP proofs.' },
   { id: 'response-type', section: '5.3.2.2 item 1', level: 'SHALL',
     enforced: 'yes', title: 'response_type code only',
-    note: 'STS-OAUTH-0582, STS-REG-0178.' },
+    note: '' },
   { id: 'par-required', section: '5.3.2.2 items 2-4', level: 'SHALL',
     enforced: 'yes',
     title: 'Pushed authorization requests, client-authenticated, required',
-    note: 'An authorization request not pushed is refused (STS-OAUTH-0419); ' +
-          'an unauthenticated push is refused (STS-OAUTH-0589).' },
+    note: 'An authorization request not pushed is refused; ' +
+          'an unauthenticated push is refused.' },
   { id: 'pkce-s256', section: '5.3.2.2 item 5', level: 'SHALL',
     enforced: 'yes', title: 'PKCE with S256 for every request',
-    note: 'STS-OAUTH-0573.' },
+    note: '' },
   { id: 'par-redirect-uri', section: '5.3.2.2 item 6', level: 'SHALL',
     enforced: 'yes', title: 'redirect_uri in the pushed request',
-    note: 'OAuth 2.1 mode\'s default to the registered one does not apply ' +
-          '(STS-OAUTH-0574).' },
+    note: 'OAuth 2.1 mode\'s default to the registered one does not apply.' },
   { id: 'iss-parameter', section: '5.3.2.2 item 7', level: 'SHALL',
     enforced: 'already', title: 'The RFC 9207 iss on every response',
     note: 'In every mode.' },
@@ -488,8 +485,7 @@ const FAPI2_REQUIREMENTS = [
     enforced: 'yes',
     title: 'PS256, ES256 or EdDSA; RSA keys of 2048 bits, EC of 224',
     note: 'This server signs PS256 by default under the profile; a client ' +
-          'algorithm or key outside these is refused (STS-OAUTH-0586, ' +
-          'STS-REG-0177, STS-REG-0175). EdDSA is Ed25519 while ' +
+          'algorithm or key outside these is refused. EdDSA is Ed25519 while ' +
           'oauth2.eddsaCurve is.' },
   { id: 'tls', section: '5.2.1, 5.2.2', level: 'SHALL', enforced: 'deployment',
     title: 'TLS 1.2 or later, BCP 195\'s TLS 1.2 cipher suites',
@@ -510,22 +506,22 @@ const MESSAGE_SIGNING_REQUIREMENTS = [
   { id: 'signed-request-at-par', section: '5.3.2 item 1', level: 'SHALL',
     enforced: 'yes',
     title: 'A JAR-signed request object at the PAR endpoint',
-    note: 'A push of plain parameters is refused (STS-OAUTH-0415), except ' +
+    note: 'A push of plain parameters is refused, except ' +
           'from the two hosted public clients (#568), which hold no key ' +
           'to sign one with and do not conform to this profile.' },
   { id: 'request-object-claims', section: '5.3.2 items 2-4', level: 'SHALL',
     enforced: 'yes',
     title: 'aud the issuer; nbf at most 60 minutes old; exp at most 60 ' +
            'minutes after nbf',
-    note: 'STS-OAUTH-0584, STS-OAUTH-0585.' },
+    note: '' },
   { id: 'request-object-typ', section: '5.3.2 item 5', level: 'SHALL',
     enforced: 'already', title: 'typ oauth-authz-req+jwt is accepted',
     note: 'RFC 9101 section 10.8, in every mode.' },
   { id: 'jarm-required', section: '5.4.2 item 1', level: 'SHALL',
     enforced: 'yes',
     title: 'Signed authorization responses (JARM), required',
-    note: 'A request without a JARM response mode is refused ' +
-          '(STS-OAUTH-0591); response_modes_supported lists only JARM\'s.' },
+    note: 'A request without a JARM response mode is refused; ' +
+          'response_modes_supported lists only JARM\'s.' },
   { id: 'jarm-iss', section: '5.4.2 item 2', level: 'SHOULD',
     enforced: 'yes', title: 'iss inside the JWT, not beside it',
     note: 'A JARM response is the single `response` parameter.' },
@@ -548,29 +544,29 @@ const MESSAGE_SIGNING_REQUIREMENTS = [
            'allows',
     note: 'The backchannel authentication endpoint refuses a method the ' +
           'profile does not allow, and a client assertion signed outside ' +
-          'its algorithms (STS-OAUTH-0580, STS-OAUTH-0586).' },
+          'its algorithms.' },
   { id: 'ciba-binding-message', section: 'FAPI-CIBA 5.2.2 item 2',
     level: 'SHALL', enforced: 'yes',
     title: 'A binding_message in every authentication request',
     note: 'Nothing else in a request here makes its authorization context ' +
-          'unique, so a request without one is refused (STS-OAUTH-0663).' },
+          'unique, so a request without one is refused.' },
   { id: 'ciba-no-push', section: 'FAPI-CIBA 5.2.2 items 3-5',
     level: 'SHALL', enforced: 'yes',
     title: 'Poll and ping, never push',
     note: 'backchannel_token_delivery_modes_supported drops push; a push ' +
-          'client is refused at registration (STS-REG-0198) and at the ' +
-          'endpoint (STS-OAUTH-0662).' },
+          'client is refused at registration and at the ' +
+          'endpoint.' },
   { id: 'ciba-signed-request', section: 'FAPI-CIBA 5.2.2 (FAPI 1.0)',
     level: 'SHALL', enforced: 'yes',
     title: 'Signed and unsigned requests; a signed one lives at most 60 ' +
            'minutes, signed with the profile\'s algorithms',
     note: 'nbf and exp at most an hour apart in every mode (CIBA 7.1.1); ' +
-          'the algorithm is the profile\'s (STS-OAUTH-0586).' },
+          'the algorithm is the profile\'s.' },
   { id: 'ciba-request-context', section: 'FAPI-CIBA 5.2.2 item 8, 5.3',
     level: 'MAY', enforced: 'yes',
     title: 'request_context accepted',
     note: 'A JSON object, kept on the request for the person\'s approval ' +
-          'page to show (STS-OAUTH-0664 when it is not one).' }
+          'page to show.' }
 ];
 
 // The ambient profile of the request being answered: the named
@@ -841,8 +837,12 @@ function authorizationRefusal(query, context) {
     log.debug("Leaving authorizationRefusal(). Not code.");
     return refusal('STS-OAUTH-0582', 'unsupported_response_type',
                    'response-type',
-                   'response_type "' + String(q.response_type || '') +
-                   '" is not code, the only one this profile allows (FAPI ' +
+                   (q.response_type
+                     ? 'response_type "' + String(q.response_type) +
+                       '" is not code'
+                     : 'this request names no response_type, and code is ' +
+                       'required') +
+                   ', the only one this profile allows (FAPI ' +
                    '2.0 section 5.3.2.2 item 1)');
   }
   // FAPI 2.0 Message Signing section 5.4.2 item 1 (#141): JARM, required.
@@ -850,8 +850,11 @@ function authorizationRefusal(query, context) {
       JARM_MODES.indexOf(String(q.response_mode || '')) < 0) {
     log.debug("Leaving authorizationRefusal(). Not JARM.");
     return refusal('STS-OAUTH-0591', 'invalid_request', 'jarm-required',
-                   'response_mode "' + String(q.response_mode || '') + '" ' +
-                   'is not a JWT-secured one; this profile requires JARM ' +
+                   (q.response_mode
+                     ? 'response_mode "' + String(q.response_mode) + '" ' +
+                       'is not a JWT-secured one'
+                     : 'this request names no response_mode') +
+                   '; this profile requires JARM ' +
                    '(FAPI 2.0 Message Signing section 5.4.2 item 1) — ' +
                    'response_mode=jwt');
   }
@@ -867,19 +870,26 @@ function authorizationRefusal(query, context) {
       log.debug("Leaving authorizationRefusal(). code without JARM.");
       return refusal('STS-OAUTH-0783', 'invalid_request', 'response-type',
                      'response_type "code" is allowed only with ' +
-                     'response_mode=jwt (JARM), and this request\'s ' +
-                     'response_mode is "' + String(q.response_mode || '') +
-                     '" (Part 2 section 5.2.2 item 2)');
+                     'response_mode=jwt (JARM), and this request ' +
+                     (q.response_mode
+                       ? 'asks for response_mode "' +
+                         String(q.response_mode) + '"'
+                       : 'names no response_mode') +
+                     ' (Part 2 section 5.2.2 item 2)');
     }
     if (!(type === 'code id_token' || (type === 'code' && jarm))) {
       log.debug("Leaving authorizationRefusal(). A response type Advanced " +
                 "does not allow.");
       return refusal('STS-OAUTH-0582', 'unsupported_response_type',
                      'response-type',
-                     'response_type "' + String(q.response_type || '') +
-                     '"' + (q.response_mode ? ' with response_mode "' +
-                     q.response_mode + '"' : '') + ' is not one this ' +
-                     'profile allows: it is `code id_token`, or `code` ' +
+                     (q.response_type
+                       ? 'response_type "' + String(q.response_type) + '"' +
+                         (q.response_mode ? ' with response_mode "' +
+                         q.response_mode + '"' : '') + ' is not one this ' +
+                         'profile allows'
+                       : 'this request names no response_type, and this ' +
+                         'profile requires one') +
+                     ': it allows `code id_token`, or `code` ' +
                      'with response_mode=jwt (JARM) (Part 2 section 5.2.2 ' +
                      'item 2)');
     }
@@ -1694,6 +1704,24 @@ function applyToMetadata(metadata) {
         .filter(function (one) {
           return types.indexOf(responseTypeOf(one)) >= 0;
         });
+      // The implicit grant follows the response types that use it (#1295):
+      // RFC 9700 mode keeps it beside `id_token` and `code id_token`, and a
+      // profile that narrowed the list to `code` alone leaves nothing for it
+      // to be paired with (RFC 7591 section 2.1). Written out rather than
+      // asked of oauth2_bcp.js's impliesImplicitGrant(), because that module
+      // requires this one.
+      const usesImplicit = metadata.response_types_supported.some(
+        function (one) {
+          const words = String(one).split(/\s+/);
+          return words.indexOf('token') >= 0 ||
+                 words.indexOf('id_token') >= 0;
+        });
+      if (!usesImplicit && Array.isArray(metadata.grant_types_supported)) {
+        metadata.grant_types_supported = metadata.grant_types_supported
+          .filter(function (one) {
+            return one !== 'implicit';
+          });
+      }
     }
     SIGNING_ALG_LISTS.concat(fapi2() ? ['dpop_signing_alg_values_supported']
                                      : []).forEach(function (name) {

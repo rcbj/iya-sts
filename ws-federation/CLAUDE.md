@@ -235,6 +235,13 @@ with no override. It replaced #494's per-application name
   first among the roles of the one document and signs it.
   `federationMetadata()` serves that view, with the SAML endpoints unscoped (a
   `wtrealm` need not be a SAML provider), at both WS-Federation paths.
+  **It carries `alg:SigningMethod` and `alg:DigestMethod` like the SAML paths
+  (#1368, rcbj, 2026-11-06: it advertises them unless that violates a
+  specification, and none is violated).** They were left out for one commit,
+  on the argument that a passive requestor signs nothing and that section 2.5
+  of the Algorithm Support profile makes absence safe. That argues they are
+  optional, not that they are wrong, so it does not meet rcbj's test.
+  `sts_xml_schema_validation.js` holds this view to the published schemas.
   **The SAML paths serve the same document WITHOUT this role**: tried in one
   document everywhere first, SimpleSAMLphp's metadata validator refused the
   whole document — the role's `xsi:type` resolves only with the
@@ -264,11 +271,10 @@ whose `wtrealm` is not a registered relying party is **a 404 page,
   after the realm had been looked at; this says what is wrong.
 * **Development is unchanged**: any `wtrealm`, the realm's one issuer, and
   `seen()` files it.
-* **An entry an LDAP add made is not registered either**: the add writes no
-  `appRegisteredBy` (the registry writes it, for the console, `/admin-api`,
-  RFC 7591, an OpenID Federation and the seeds), so #494's definition reads
-  it as one that turned up. Whether an LDAP add should count is open on
-  #496; until it is decided, register through the console or `/admin-api`.
+* **An entry an LDAP add made IS registered, since #504**:
+  `stampLdapRegistration()` writes `appRegisteredBy: ldap:<the bound DN>` on an
+  add under `ou=applications`, unless the add already says who. A modify of an
+  entry that only turned up does not register it.
 
 `tests/unregistered_applications.js` (U7) holds it in both modes.
 
@@ -345,6 +351,25 @@ account already in the set re-authenticates its session.
 
 The words are `handoff.wsfed.chooseAccount.*`. `tests/multi_account_protocols.js`
 6 and `tests/multi_account_logout.js` 8.
+
+## Every refusal is `common/error_page.ts`'s page (#1327, 2026-11-05)
+
+**`wsfedError()` draws the shared error page, translated** — #1326's design
+(`common/CLAUDE.md`, `error_page.ts`): no status, header or protocol
+message changed, and nothing goes to the relying party, as before. The box
+carries the sentence for the code the caller marked
+(`wsfedErrors.refusal.<code>`, else `wsfedErrors.refusal.general`); the
+profile's "no error response" paragraph is the collapsed background; the
+ways forward of a refused `wauth`, the accepted methods and the understood
+`wa` values are drawn below it in the page's language. **The caller's
+English title and detail are unchanged and are the Summary and Detail rows
+of the diagnostics**, beside `wa`, `wtrealm`, `wreply`, `wctx` and who is
+signed in — data, escaped once (the cancelled page used to escape twice).
+WS-Federation has no language hint, so the order is #539's without one.
+**STS-WSFED-0026 echoes nothing**: no `wreply` row, and its language chooser
+returns to the realm's front door rather than to the link, because the
+refusal exists so that the address is not used. A new refusal owes a
+sentence in all seven base catalogs. `tests/wsfed_wauth_step_up.js` d3–d4.
 
 ## What no test covers yet
 

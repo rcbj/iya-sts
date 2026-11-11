@@ -1,21 +1,32 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: BUSL-1.1
 
-//! The version, M.N.O, fixed when an artifact is BUILT. A port of
-//! `common/version.js`, with the same two files and the same rule.
+//! The version, M.N.O.<build> (#1298, #1317). A port of `common/version.js`,
+//! with the same two files and the same rules, so a PEP built from the same
+//! tree with the same build arguments reports what the service does.
 //!
-//! `VERSION` holds M.N. The build number is the UTC build instant
-//! (`BUILD_NUMBER` overrides it), stamped into `version.json` when an image
-//! is built (`--stamp <dir>`), so a restarted container reports the same
-//! build. Without a stamp the version is COMPUTED at start and says so
-//! (`stamped: false`). **A version may never be the thing that stops a
-//! process starting**: an unreadable `VERSION` is 0.0, a corrupt stamp is a
-//! computed record.
+//! `VERSION` holds the release, the whole M.N.O; the build number follows it
+//! as a fourth component. **By default the build number is the UTC build
+//! instant, `YYYYMMDDHHMMSS`.** A RELEASE build is flagged with
+//! `STS_RELEASE=true` and names its number in `BUILD_NUMBER` (a non-negative
+//! integer, no leading zero): `1.0.0.0`. A release flag without a valid
+//! number is REFUSED at `--stamp` (`STS-CORE-0164`), so the image does not
+//! build; without the flag `BUILD_NUMBER` is IGNORED, so a stray CI variable
+//! cannot pass an ordinary build off as a release.
+//!
+//! The number, the commit and the build instant are stamped into
+//! `version.json` when an image is built (`--stamp <dir>`), so a restarted
+//! container reports the same build. Without a stamp the record is COMPUTED
+//! at start, its number is the start instant, it is never a release, and it
+//! says so (`stamped: false`). **A version may never be the thing that stops
+//! a process starting**: an unreadable `VERSION` is 0.0.0, a corrupt stamp
+//! is a computed record, and a stamp written by a #1298 build (no `build`)
+//! still loads, reporting the bare M.N.O it was written with.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 const VERSION_FILE: &str = "VERSION";
@@ -28,7 +39,17 @@ pub struct VersionInfo {
     pub version: String,
     pub major: String,
     pub minor: String,
+    /// Absent from a stamp written before #1298, whose third component was
+    /// a build number; such a stamp still loads.
+    #[serde(default)]
+    pub patch: String,
+    /// The build number (#1317): the UTC build instant as YYYYMMDDHHMMSS, or
+    /// a release build's own. Empty in a stamp written by a #1298 build.
+    #[serde(default)]
     pub build: String,
+    /// Whether the build was flagged as a release and named its number.
+    #[serde(default)]
+    pub release: bool,
     pub commit: String,
     pub built_at: String,
     pub stamped: bool,
@@ -44,22 +65,31 @@ fn find_root(dir: &Path) -> PathBuf {
     dir.to_path_buf()
 }
 
-fn read_major_minor(root: &Path) -> (String, String) {
+/// One component of a semantic version: digits, and no leading zero
+/// (Semantic Versioning 2.0.0, section 2).
+fn is_component(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars().all(|c| c.is_ascii_digit())
+        && (s == "0" || !s.starts_with('0'))
+}
+
+/// `VERSION`'s M.N.O, or 0.0.0 — never a failure.
+fn read_release(root: &Path) -> (String, String, String) {
     let file = root.join(VERSION_FILE);
     match std::fs::read_to_string(&file) {
         Ok(raw) => {
             let raw = raw.trim();
-            if let Some((major, minor)) = raw.split_once('.') {
-                let digits = |s: &str| {
-                    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
-                };
-                if digits(major) && digits(minor) {
-                    return (major.to_string(), minor.to_string());
-                }
+            let parts: Vec<&str> = raw.split('.').collect();
+            if parts.len() == 3 && parts.iter().all(|p| is_component(p)) {
+                return (
+                    parts[0].to_string(),
+                    parts[1].to_string(),
+                    parts[2].to_string(),
+                );
             }
             if !raw.is_empty() {
                 tracing::error!(
-                    "{}[version] ignoring malformed {}: \"{}\" (want M.N)",
+                    "{}[version] ignoring malformed {}: \"{}\" (want M.N.O)",
                     crate::log::tag("STS-CORE-0039"),
                     file.display(),
                     raw
@@ -71,11 +101,11 @@ fn read_major_minor(root: &Path) -> (String, String) {
         }
     }
     tracing::error!(
-        "{}[version] no readable {}; falling back to 0.0",
+        "{}[version] no readable {}; falling back to 0.0.0",
         crate::log::tag("STS-CORE-0040"),
         VERSION_FILE
     );
-    ("0".into(), "0".into())
+    ("0".into(), "0".into(), "0".into())
 }
 
 fn git_commit(root: &Path) -> String {
@@ -92,30 +122,117 @@ fn git_commit(root: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// The version computed now, from `VERSION`, `BUILD_NUMBER` and the clock.
-pub fn resolve(dir: &Path) -> VersionInfo {
+/// The UTC instant as YYYYMMDDHHMMSS — the default build number.
+fn utc_stamp(at: DateTime<Utc>) -> String {
+    at.format("%Y%m%d%H%M%S").to_string()
+}
+
+/// A stamped build's number and whether it is a release, from the two
+/// variables `common/version.js`'s `buildNumberFrom()` reads, decided the
+/// same way: `STS_RELEASE` is `true`, `false` or empty (anything else is
+/// refused rather than guessed at); a release needs a valid `BUILD_NUMBER`;
+/// without the flag `BUILD_NUMBER` is ignored and the instant is the number.
+/// `Ok` carries the number, the flag, and the BUILD_NUMBER that was ignored.
+pub fn build_number_from(
+    release_flag: Option<&str>,
+    build_number: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<(String, bool, String), String> {
+    let flag = release_flag.unwrap_or("").trim().to_ascii_lowercase();
+    let given = build_number.unwrap_or("").trim().to_string();
+    match flag.as_str() {
+        "true" => {
+            if is_component(&given) {
+                Ok((given, true, String::new()))
+            } else {
+                Err(format!(
+                    "STS_RELEASE=true marks a release build, and a release \
+                     names its build number: BUILD_NUMBER must be a \
+                     non-negative integer with no leading zero (e.g. \
+                     BUILD_NUMBER=0), and it is {}",
+                    if given.is_empty() {
+                        "not set".to_string()
+                    } else {
+                        format!("\"{}\"", given)
+                    }
+                ))
+            }
+        }
+        "false" | "" => Ok((utc_stamp(now), false, given)),
+        other => Err(format!(
+            "STS_RELEASE is \"{}\"; it must be true (a release build, which \
+             names its BUILD_NUMBER) or false (the default: the build number \
+             is the UTC build instant)",
+            other
+        )),
+    }
+}
+
+fn record(
+    dir: &Path,
+    now: DateTime<Utc>,
+    build: String,
+    release: bool,
+) -> VersionInfo {
     let root = find_root(dir);
-    let (major, minor) = read_major_minor(&root);
-    let now = Utc::now();
-    let build = std::env::var("BUILD_NUMBER")
-        .ok()
-        .map(|b| b.trim().to_string())
-        .filter(|b| !b.is_empty())
-        .unwrap_or_else(|| now.format("%Y%m%d%H%M%S").to_string());
+    let (major, minor, patch) = read_release(&root);
     VersionInfo {
-        version: format!("{}.{}.{}", major, minor, build),
+        version: format!("{}.{}.{}.{}", major, minor, patch, build),
         major,
         minor,
+        patch,
         build,
+        release,
         commit: git_commit(&root),
         built_at: crate::time::iso_seconds(now),
         stamped: false,
     }
 }
 
-/// Writes `version.json` into `dir` — the image build's step.
-pub fn stamp(dir: &Path) -> VersionInfo {
-    let mut info = resolve(dir);
+/// The version computed now: `VERSION`'s M.N.O with the start instant as
+/// its build number, the commit and the clock. Never a release.
+pub fn resolve(dir: &Path) -> VersionInfo {
+    let now = Utc::now();
+    record(dir, now, utc_stamp(now), false)
+}
+
+/// Writes `version.json` into `dir` — the image build's step — with the
+/// build number `STS_RELEASE` and `BUILD_NUMBER` decide. A refusal writes
+/// nothing and is returned, for `--stamp` to exit non-zero with.
+pub fn stamp(dir: &Path) -> Result<VersionInfo, String> {
+    let now = Utc::now();
+    let flag = std::env::var("STS_RELEASE").ok();
+    let given = std::env::var("BUILD_NUMBER").ok();
+    stamp_with(dir, flag.as_deref(), given.as_deref(), now)
+}
+
+/// [`stamp`] with its inputs given rather than read from the environment.
+pub fn stamp_with(
+    dir: &Path,
+    release_flag: Option<&str>,
+    build_number: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<VersionInfo, String> {
+    let (build, release, ignored) =
+        match build_number_from(release_flag, build_number, now) {
+            Ok(decided) => decided,
+            Err(problem) => {
+                return Err(format!(
+                    "{}[version] refusing to stamp a build: {}",
+                    crate::log::tag("STS-CORE-0164"),
+                    problem
+                ));
+            }
+        };
+    if !ignored.is_empty() {
+        tracing::info!(
+            "[version] BUILD_NUMBER={} is ignored: this is not a release \
+             build (STS_RELEASE is not true), so the build number is the \
+             UTC build instant",
+            ignored
+        );
+    }
+    let mut info = record(dir, now, build, release);
     info.stamped = true;
     let written = std::fs::create_dir_all(dir).and_then(|()| {
         let text = serde_json::to_string_pretty(&info)
@@ -130,7 +247,7 @@ pub fn stamp(dir: &Path) -> VersionInfo {
             error
         );
     }
-    info
+    Ok(info)
 }
 
 /// The stamped version in `dir`, or one computed now.
@@ -151,17 +268,96 @@ pub fn load(dir: &Path) -> VersionInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+
+    fn at() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 11, 4, 15, 12, 0).unwrap()
+    }
 
     #[test]
     fn stamp_then_load_round_trips() {
         let dir = std::env::temp_dir()
             .join(format!("sts-version-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(VERSION_FILE), "2.7\n").unwrap();
-        let written = stamp(&dir);
-        assert!(written.version.starts_with("2.7."));
+        std::fs::write(dir.join(VERSION_FILE), "2.7.1\n").unwrap();
+        let written = stamp_with(&dir, None, Some("7"), at()).unwrap();
+        // BUILD_NUMBER without the release flag is ignored: the instant.
+        assert_eq!(written.version, "2.7.1.20261104151200");
+        assert_eq!(written.build, "20261104151200");
+        assert_eq!(written.patch, "1");
+        assert!(!written.release);
+        assert!(written.stamped);
         let read = load(&dir);
         assert_eq!(read, written);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_release_names_its_build_number() {
+        let dir = std::env::temp_dir()
+            .join(format!("sts-version-rel-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(VERSION_FILE), "1.0.0\n").unwrap();
+        let written =
+            stamp_with(&dir, Some("true"), Some("0"), at()).unwrap();
+        assert_eq!(written.version, "1.0.0.0");
+        assert_eq!(written.build, "0");
+        assert!(written.release);
+        assert_eq!(load(&dir), written);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_release_without_a_number_is_refused_and_writes_nothing() {
+        let dir = std::env::temp_dir()
+            .join(format!("sts-version-norel-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(VERSION_FILE), "1.0.0\n").unwrap();
+        for (flag, number) in [
+            (Some("true"), None),
+            (Some("true"), Some("")),
+            (Some("true"), Some("01")),
+            (Some("true"), Some("-1")),
+            (Some("true"), Some("x")),
+            (Some("yes"), Some("0")),
+        ] {
+            let refused = stamp_with(&dir, flag, number, at()).unwrap_err();
+            assert!(refused.contains("STS-CORE-0164"), "{}", refused);
+            assert!(refused.contains("STS_RELEASE"), "{}", refused);
+        }
+        assert!(!dir.join(STAMP_FILE).exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_stamp_from_1298_still_loads() {
+        let dir = std::env::temp_dir()
+            .join(format!("sts-version-old-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(STAMP_FILE),
+            r#"{"version":"1.0.0","major":"1","minor":"0","patch":"0",
+               "commit":"abc","builtAt":"2026-11-03T00:00:00Z",
+               "stamped":true}"#,
+        )
+        .unwrap();
+        let read = load(&dir);
+        assert_eq!(read.version, "1.0.0");
+        assert_eq!(read.build, "");
+        assert!(!read.release);
+        assert!(read.stamped);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_malformed_version_is_zero_never_a_failure() {
+        let dir = std::env::temp_dir()
+            .join(format!("sts-version-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for bad in ["0.1", "v1.0.0", "1.0.0-rc1", "01.0.0", "1.0.0.0"] {
+            std::fs::write(dir.join(VERSION_FILE), bad).unwrap();
+            assert!(resolve(&dir).version.starts_with("0.0.0."), "{}", bad);
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

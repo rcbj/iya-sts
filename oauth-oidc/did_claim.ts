@@ -46,10 +46,13 @@
 //      and neither does consent turned off (`oauth2.consentRequired`): the
 //      screen lists `did` as releasing their DID, and only an answer to it
 //      releases one (STS-OAUTH-0973);
-//   7. the person has a PREFERRED DID that they PROVED
-//      (`siop.preferredSubjectOf()`: `proof: 'wallet'`, never an
+//   7. the person has a PREFERRED DID that they PROVED, or that this realm
+//      published for them at their own request (`siop.preferredSubjectOf()`:
+//      `proof: 'wallet'`, or since #1291 `realm` or `issued` — rcbj's
+//      decision 4 on #1291, "treat it as a proved DID" — never an
 //      administrator's by-value entry, and a DID rather than a JWK
-//      thumbprint) (STS-OAUTH-0975).
+//      thumbprint) (STS-OAUTH-0975). A published DID that was deactivated
+//      is no longer enrolled, so it is not preferred.
 //
 // **NOTHING ELSE MAY CARRY THE NAME.** A configured or typed claim called
 // `did`, one a client named in OIDC Core 5.5's claims request, or one a

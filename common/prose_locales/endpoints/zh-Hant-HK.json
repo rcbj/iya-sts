@@ -203,10 +203,6 @@
     "en": "e79a24977ac0a595",
     "text": "瀏覽器指紋腳本（選用）"
   },
-  "endpoints.route./oauth2/check_session.js.name": {
-    "en": "d9f2d9b37bfe6db9",
-    "text": "OP iframe 腳本"
-  },
   "endpoints.route./oauth2/autopost.js.name": {
     "en": "509aa57b5e9572d6",
     "text": "form-post 回應腳本"

@@ -55,6 +55,7 @@ import totp = require('../common/totp');
 import mode = require('../common/mode');
 import backupCodes = require('../common/backup_codes');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -64,34 +65,7 @@ type AccountCaller = import('../types/account-api').AccountCaller;
 const vz = validation.z;
 const vt = validation.types;
 
-const MFA_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['start', 'confirm', 'remove',
-                          // The recovery codes, since 2026-09-11.
-                          'generate-codes', 'confirm-codes',
-                          'discard-codes',
-                          // #64: the emailed second factor, on and off.
-                          'email-factor-on', 'email-factor-off']))
-    .describe('The step: `start` an authenticator app, `confirm` it with a ' +
-              'code, `remove` it; `generate-codes`, `confirm-codes` or ' +
-              '`discard-codes` a set of recovery codes; ' +
-              '`email-factor-on` or `email-factor-off`.'),
-  // #64: which emailed factor, for `email-factor-on`.
-  kind: vt.opt(vt.oneOf(['code', 'link']))
-    .describe('For `email-factor-on`: a mailed `code` or a sign-in `link`.'),
-  // A STRING AND NOT AN INTEGER. `007123` is a code and 7123 is not: parsing
-  // a one-time password as a number loses the leading zeros that one code in
-  // ten has. The digit count is checked in `common/totp.ts`, where the
-  // person's own enrolment says what it should be.
-  code: vz.string().max(32).optional()
-    .describe('For `confirm`: the code the app shows.'),
-  // THE PENDING SET'S HANDLE (2026-09-11), which the Confirm and Throw-away
-  // forms carry back: a handle rather than the username, so that two tabs
-  // cannot confirm each other's set; opaque, so nothing here validates more
-  // than its length.
-  handle: vz.string().max(128).optional()
-    .describe('For `confirm-codes` and `discard-codes`: the pending set\'s ' +
-              'handle, from `generate-codes`\'s answer.')
-});
+const MFA_FORM = ModelZod.body('account', 'changeMfa');
 
 interface AccountMfaDeps {
   log: typeof helpers.log;
@@ -352,7 +326,8 @@ class AccountMfa {
       log.info('portal: ' + username + ' removed their authenticator app. ' +
                'That account is down to one factor.');
       log.debug("Leaving AccountMfa.act(). Removed.");
-      const said = t.text('portal.done.totpRemoved');
+      const said = t.text('portal.done.totpRemoved') + ' ' +
+                   t.text('portal.done.endOthers');
       return ctx.json(res, 200, { ok: true,
         message: ended.sentence ? said + ' ' + ended.sentence : said,
         sessionsEnded: ended.sessionsEnded });
@@ -377,7 +352,7 @@ class AccountMfa {
                                 'the emailed second factor')
         : { sessionsEnded: 0, sentence: '' };
       const said = action === 'email-factor-on'
-        ? t.text('portal.done.emailOn') : t.text('portal.done.emailOff');
+        ? t.text('portal.done.emailOn') + ' ' + t.text('portal.done.endOthers') : t.text('portal.done.emailOff') + ' ' + t.text('portal.done.endOthers');
       log.debug("Leaving AccountMfa.act(). Email factor changed.");
       // Back to the card it was on, as the redirect's `#email-factor` did.
       return ctx.json(res, 200, { ok: true,
@@ -450,7 +425,16 @@ class AccountMfa {
         changeType: 'create', initiatingEntity: 'user', via: 'portal',
         reasonAdmin: username + ' set up an authenticator app.',
         reasonUser: 'You set up an authenticator app.' });
-      await websecurity.succeededShared('mfa-code', req, username);
+      try {
+        await websecurity.succeededShared('mfa-code', req, username);
+      } catch (e) {
+        // The app is enrolled and recorded; only the failure count was not
+        // cleared (ASVS 5.0.0 2.3.3).
+        log.warn(ctx.errorCodes.tag('STS-PORTAL-0637') + 'portal: ' +
+                 username + '\'s authenticator app is set up, and its ' +
+                 'failure count could not be cleared: ' +
+                 ((e && e.message) || e));
+      }
       log.info('portal: ' + username + ' set up an authenticator app. A ' +
                'password alone will no longer sign them in.');
       // NO RECOVERY CODES ARE ISSUED BY THIS ENROLMENT (2026-09-11): a set is
@@ -459,8 +443,8 @@ class AccountMfa {
       log.debug("Leaving AccountMfa.act(). Enrolled.");
       return ctx.json(res, 200, { ok: true,
         message: confirmed.recoveryAdvised
-          ? t.text('portal.done.totpSetUpNoCodes')
-          : t.text('portal.done.totpSetUp') });
+          ? t.text('portal.done.totpSetUpNoCodes') + ' ' + t.text('portal.done.endOthers')
+          : t.text('portal.done.totpSetUp') + ' ' + t.text('portal.done.endOthers') });
     }
 
     // THE RECOVERY CODES: GENERATE, CONFIRM, DISCARD (2026-09-11) — see the
@@ -537,7 +521,7 @@ class AccountMfa {
       }
       log.debug("Leaving AccountMfa.act(). Confirmed and stored.");
       return ctx.json(res, 200, { ok: true,
-        message: t.text('portal.done.codesSaved', { n: stored.total }) });
+        message: t.text('portal.done.codesSaved', { n: stored.total }) + ' ' + t.text('portal.done.endOthers') });
     }
 
     if (action === 'discard-codes') {
@@ -552,7 +536,7 @@ class AccountMfa {
       });
       log.debug("Leaving AccountMfa.act(). Discarded.");
       return ctx.json(res, 200, { ok: true,
-        message: t.text('portal.done.codesDiscarded') });
+        message: t.text('portal.done.codesDiscarded') + ' ' + t.text('portal.done.endOthers') });
     }
 
     // An `action` the schema allowed and this door does not know is not
@@ -573,19 +557,8 @@ class AccountMfa {
     log.debug("Entering AccountMfa.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/mfa', operationId: 'getMfa',
-        tag: 'Authenticator app', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/mfa',
-        summary: 'Your authenticator app, emailed factor and recovery codes',
-        description: '`totp`: whether an authenticator app is set up (and ' +
-          'its algorithm, digits, period, when set up and last used) and ' +
-          'whether one is offered. `setup`: an enrolment in progress — the ' +
-          'QR code as a `data:` image, the secret grouped for typing, the ' +
-          'issuer and the parameters — derived from the pending secret on ' +
-          'every call. `doors`: the password-only doors that refuse your ' +
-          'own password. `emailFactor`: the emailed second factor, or null ' +
-          'where none is offered. `codes`: your recovery codes\' state — ' +
-          'never the codes, of which only hashes are stored.',
-        query: vz.object({}),
+        access: 'person',
+        query: ModelZod.query('account', 'getMfa'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return self.view(ctx, caller, ctx.baseUrlOf(req))
@@ -594,21 +567,8 @@ class AccountMfa {
             });
         } },
       { method: 'POST', path: ctx.BASE + '/mfa', operationId: 'changeMfa',
-        tag: 'Authenticator app', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/mfa',
-        summary: 'Sets up, confirms or removes your second factors',
-        description: '`start` mints a secret and holds it (ask the view for ' +
-          'the QR code); `confirm` checks a code from the app (rate ' +
-          'limited) and enrols it; `remove` takes it off, and ends ' +
-          'every session its codes signed in (`sessionsEnded`, #722). ' +
-          '`generate-codes` answers a set of recovery codes ONCE, in ' +
-          '`view.fresh`, and stores nothing; `confirm-codes` stores their ' +
-          'hashes; `discard-codes` throws the pending set away. ' +
-          '`email-factor-on` (with `kind`) and `email-factor-off` opt in ' +
-          'and out of the emailed second factor. A refusal carries the ' +
-          'page\'s `view`.',
+        access: 'person', recentAuth: true,
         body: MFA_FORM,
-        statuses: { 429: 'Too many codes tried; try again later.' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

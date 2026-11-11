@@ -315,6 +315,10 @@
     "en": "e647419ca1d6ef3f",
     "text": "May message template ng isang realm na na-save o na-reset"
   },
+  "audit.actions.branding.logo.label": {
+    "en": "66180a1e9a6ade1e",
+    "text": "Na-upload o inalis ang sign-in na logo ng isang realm"
+  },
   "audit.actions.mail.verified.label": {
     "en": "3b2f440c71a1db39",
     "text": "May taong nag-verify ng address sa kanyang entry"
@@ -770,6 +774,10 @@
   "audit.actions.admin.truststore.change.label": {
     "en": "feb59a61d26db396",
     "text": "May client-certificate trust anchor na idinagdag o inalis"
+  },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "Binago ang signer truststore o isang paranoid na PKI setting"
   },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
@@ -1423,6 +1431,10 @@
     "en": "39413bc03154f800",
     "text": "Binigyan ng address ang isang grupo, o inalis ang address nito"
   },
+  "audit.actions.group.set-policy.label": {
+    "en": "7ca8946df0f9aee5",
+    "text": "Binigyan ng pinangalanang patakaran ang isang grupo, o inalis ang pangalan nito"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "Ginawa ang keytab ng isang tao mula sa password na hawak"
@@ -1582,6 +1594,30 @@
   "audit.actions.portal.signing-key.csrf.label": {
     "en": "51cd295b713684de",
     "text": "May signing key form na tinanggihan dahil sa CSRF token nito"
+  },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "Binawi ng isang tao ang isa sa kanyang mga pares ng susi sa paglagda"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "Naglathala ang isang tao ng sarili niyang did:web"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "Nagkaroon ng bagong bersyon ang nailathalang DID document ng isang tao"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "Pinahintulutan ng isang tao ang isang susi sa kanyang nailathalang DID"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "Dini-activate ng isang tao ang kanyang nailathalang DID"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "Dini-activate ng isang administrator ang nailathalang DID ng isang tao"
   },
   "audit.actions.portal.siop.enrol.label": {
     "en": "9c4ac2b8893fae20",
@@ -1850,5 +1886,17 @@
   "audit.actions.admin.audit-export.test.label": {
     "en": "e523fcd6d4957e6d",
     "text": "An audit export destination was tested"
+  },
+  "audit.actions.audit.export.test.label": {
+    "en": "25d9164b7269ce2d",
+    "text": "Isang test event na ipinadala sa isang destinasyon ng audit export"
+  },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "Itinapon ang isang minted na row na hindi kailanman maaaring ma-commit"
+  },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "Na-export ang configuration"
   }
 }

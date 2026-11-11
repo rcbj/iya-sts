@@ -53,6 +53,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -62,13 +63,7 @@ type AccountCaller = import('../types/account-api').AccountCaller;
 const vz = validation.z;
 const vt = validation.types;
 
-const KEYTAB_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['keytab']))
-    .describe('`keytab`, the one thing this page does.'),
-  current: vz.string().max(1024).optional()
-    .describe('Your password: the keytab is derived from it, and it ' +
-              're-proves you.')
-});
+const KEYTAB_FORM = ModelZod.body('account', 'makeKeytab');
 
 interface PortalKerberosDeps {
   log: { debug(message: string): void; info(message: string): void };
@@ -247,29 +242,15 @@ class PortalKerberos {
     log.debug("Entering PortalKerberos.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/kerberos',
-        operationId: 'getKerberos', tag: 'Kerberos', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/kerberos',
-        summary: 'Your Kerberos principal and its keys',
-        description: 'Whether this realm has a KDC and you are a principal ' +
-          'in it, the principal, and in product mode the keys\' kvno and ' +
-          'encryption types; `disabled` for an account no keytab is made ' +
-          'for.',
-        query: vz.object({}),
+        operationId: 'getKerberos', access: 'person',
+        query: ModelZod.query('account', 'getKerberos'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username, null));
         } },
       { method: 'POST', path: ctx.BASE + '/kerberos',
-        operationId: 'makeKeytab', tag: 'Kerberos', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/kerberos',
-        summary: 'Makes you a keytab from your own password',
-        description: 'Re-proves the password (rate limited in the budget ' +
-          'the password change shares), derives the keys from it and checks ' +
-          'them against the KDC\'s. The keytab is in the answer\'s ' +
-          '`view.made`, base64, ONCE: nothing can show it again. Nothing ' +
-          'about the account changes.',
+        operationId: 'makeKeytab', access: 'person',
         body: KEYTAB_FORM,
-        statuses: { 429: 'Too many attempts; try again later.' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.keytab(ctx, req, res, caller, input.body);

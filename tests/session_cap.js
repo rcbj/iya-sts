@@ -40,7 +40,6 @@ delete process.env.CONFIG_FILE;
 const config = require('../common/config');
 const realms = require('../common/realms');
 const audit = require('../common/audit');
-const scheduler = require('../cluster/scheduler');
 const authn = require('../authn/authn');
 
 const log = require('bunyan').createLogger({ name: 'session_cap',
@@ -160,20 +159,14 @@ function plant(id, subjectId, seen, chosen) {
   log.debug("Leaving plant().");
 }
 
+// The sweep's SYNCHRONOUS form, which these sections need: each runs
+// inside setting overrides cleared as its callback returns. The job runs
+// the sliced form since #704 (`sweepExpiredSessionsInSlices()`), which makes
+// the same decisions through the same `expireSession()`; `scheduler_jobs`
+// and `job_slices` drive that one through the job.
 function runSweep() {
   log.debug("Entering runSweep().");
-  const job = scheduler.job('authn.session-expiry');
-  const result = job.run({
-    realm: 'session-cap', runId: 'cap-shed', trigger: 'manual',
-    params: null,
-    stillOwner: function () {
-      return true;
-    },
-    nowMs: function () {
-      return Date.now();
-    },
-    log: log
-  });
+  const result = { ended: authn.sweepExpiredSessions() };
   log.debug("Leaving runSweep().");
   return result;
 }

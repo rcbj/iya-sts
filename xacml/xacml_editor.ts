@@ -1121,10 +1121,23 @@ class XacmlEditor {
         log.debug('Leaving XacmlEditor.applyEdit(). Nothing to rename.');
         return { ok: true, what: 'Unchanged.' };
       }
-      if (holder.variables[renamed]) {
+      const variables = holder && holder.variables;
+      if (variables && variables[renamed]) {
         log.debug('Leaving XacmlEditor.applyEdit(). Duplicate variable id.');
         return { ok: false,
                  why: 'This policy already defines $' + renamed + '.' };
+      }
+      // A PATH THAT RESOLVES IS NOT A VARIABLE. The last segment is read as
+      // the id, and a path that names a rule, or a field of a variable, still
+      // resolves. Copying that miss stored `undefined`, and writePolicy then
+      // threw reading `.kind` (STS-API-0140, #1403). A policy set has no
+      // variables map, and reading it threw the same way.
+      const defined = variables && variables[wasCalled];
+      if (!defined || !defined.kind) {
+        log.debug('Leaving XacmlEditor.applyEdit(). No such variable.');
+        return { ok: false,
+                 why: 'There is no variable $' + (wasCalled || '') +
+                      ' to rename.' };
       }
       // EVERY REFERENCE IS REWRITTEN WITH IT. The alternative — refusing to
       // rename a variable that is used — is safe and useless, because a
@@ -1132,7 +1145,7 @@ class XacmlEditor {
       // rename that left the references behind would produce a document that
       // does not load, and the store would refuse the write with a message
       // about a variable that no longer exists.
-      holder.variables[renamed] = holder.variables[wasCalled];
+      holder.variables[renamed] = defined;
       delete holder.variables[wasCalled];
       const rewritten = self.renameVariableReferences(holder, wasCalled,
                                                       renamed);
@@ -1181,13 +1194,37 @@ class XacmlEditor {
     }
 
     if (action === 'edit-match') {
+      // A MATCH IS THE ONLY NODE THIS ACTION MAY READ A VALUE FROM. The
+      // fuzzer named an AllOf (`.rules.0.target.anyOf.0.allOf.0`) and
+      // omitted `value`. An AllOf has `matches`, not `value`, so
+      // `node.value.lexical` throws (STS-API-0140, #1428). An expression
+      // edit of the wrong kind is already a refusal (#1419); this is the
+      // same rule for the action that owns a Match.
+      if (self.kindAt(path, node) !== 'match') {
+        log.debug('Leaving XacmlEditor.applyEdit(). Not a Match.');
+        return { ok: false,
+                 why: 'That path is not a Match. This action edits a ' +
+                      'Match, and an AllOf, a rule or a target is edited ' +
+                      'by its own action.' };
+      }
       const matchId = given.matchId || node.matchId;
       const definition = functions.lookup(matchId);
       if (!definition) {
         log.debug('Leaving XacmlEditor.applyEdit(). Unknown match function.');
         return { ok: false, why: 'There is no function "' + matchId + '".' };
       }
-      const type = definition.args[0].type;
+      // A MATCH FUNCTION COMPARES A VALUE. `string-bag` and the other
+      // constructors take no positional argument, so `args[0].type`
+      // throws the same way the missing value does. Refused before the
+      // node is written.
+      const first = definition.args && definition.args[0];
+      if (!first || !first.type) {
+        log.debug('Leaving XacmlEditor.applyEdit(). Not a Match function.');
+        return { ok: false,
+                 why: 'That function cannot be a Match. A Match compares ' +
+                      'a value, and this function takes none.' };
+      }
+      const type = first.type;
       const was = node.reference || {};
       // WHICH KIND OF REFERENCE. A <Match> may hold an <AttributeDesignator> or
       // an <AttributeSelector> and the schema allows exactly one of the two, so
@@ -1197,10 +1234,19 @@ class XacmlEditor {
       const wantsSelector = given.referenceKind
         ? given.referenceKind === 'selector'
         : was.kind === 'selector';
+      let lexical: string;
+      if (given.value === undefined) {
+        if (!node.value || node.value.lexical === undefined) {
+          log.debug('Leaving XacmlEditor.applyEdit(). Match has no value.');
+          return { ok: false,
+                   why: 'A Match needs a value, and this one has none.' };
+        }
+        lexical = node.value.lexical;
+      } else {
+        lexical = String(given.value);
+      }
       node.matchId = matchId;
-      node.value = { kind: 'value', type: type,
-                     lexical: given.value === undefined ? node.value.lexical
-                                                        : String(given.value) };
+      node.value = { kind: 'value', type: type, lexical: lexical };
       // THE DATATYPE FOLLOWS THE FUNCTION, always. A Match whose literal is a
       // string and whose designator is an integer does not typecheck, and
       // letting the two be chosen independently is how somebody spends ten
@@ -1337,6 +1383,34 @@ class XacmlEditor {
         action === 'set-expression-selector' ||
         action === 'set-expression-function' ||
         action === 'set-expression-variable') {
+      // An empty or root-level path resolves to the document itself, which has
+      // no parent to write the expression into — `located.parent[located.key]`
+      // would throw (reading a property of null) and the action's catch would
+      // answer 500. A fuzzed `path: ""` found it (#1356). The `remove` action
+      // above guards the same way; an expression replaces a node that HAS a
+      // parent, so the root is a refusal, not a crash.
+      if (!located.parent || located.key === null) {
+        log.debug('Leaving XacmlEditor.applyEdit(). No node to replace.');
+        return { ok: false,
+                 why: 'That path is the policy itself, which is not an ' +
+                      'expression — point the edit at an expression inside ' +
+                      'the document.' };
+      }
+      // A MATCH IS NOT AN EXPRESSION. These six actions replace the node
+      // at the path. A path that names a Match still resolves, and
+      // writing an Apply into that slot makes writeTarget() call
+      // writeExpression() on match.value, which is now absent, so it
+      // throws reading `.kind` (STS-API-0140, #1419). A rule, a target,
+      // an AnyOf and an AllOf are the same kind of miss. A Match is
+      // edited by edit-match.
+      const slot = self.kindAt(path, node);
+      if (slot !== 'expression' && slot !== 'variable') {
+        log.debug('Leaving XacmlEditor.applyEdit(). Not an expression.');
+        return { ok: false,
+                 why: 'That path is not an expression. These actions ' +
+                      'replace an expression, and a Match, a rule or a ' +
+                      'target is edited by its own action.' };
+      }
       const replacement = self.newExpression(action, given,
                                         self.variablesInScope(policy, path));
       if (!replacement.ok) {

@@ -17,7 +17,8 @@
 // THE CLIENT IS SEEDED, WHICH IS WHY THIS IS SHORT. `common/applications.js`
 // puts `sts-api-client` in the registry at startup —
 // `client_credentials`, `client_secret_basic`,
-// `scope: 'admin:read admin:write report:use'` — so a run does not register
+// `scope: 'admin:read admin:write admin:security report:use'` (admin:security
+// since #645) — so a run does not register
 // anything. It was `sts-management-api` until #1139 made that identifier the
 // management API's resource object, which is never a client.
 // The SECRET is pinned by `adminApi.clientSecret` (`ADMIN_API_CLIENT_SECRET`):
@@ -76,8 +77,8 @@ async function secretFor(base) {
     log.debug("Leaving secretFor().");
     return process.env.STS_ADMIN_API_CLIENT_SECRET;
   }
-  const reply = await request(base + '/admin-api/applications?identifier=' +
-                              encodeURIComponent('sts-api-client'));
+  // The list and a filter below: the operation takes no `identifier` (#1476).
+  const reply = await request(base + '/admin-api/applications');
   if (reply.status !== 200) {
     log.debug("Leaving secretFor().");
     return '';
@@ -122,8 +123,11 @@ async function mint(base, secret, options) {
   log.debug("Entering mint().");
   const wanted = options || {};
   const audience = wanted.audience || audienceFor(base);
-  const scope = wanted.scope === undefined ? 'admin:read admin:write'
-                                           : wanted.scope;
+  // admin:security (#645) beside the two: a job that saves a policy or
+  // grants the Security Administrator's role needs it, and sts-api-client
+  // holds SECURITY_ADMIN as seeded.
+  const scope = wanted.scope === undefined
+    ? 'admin:read admin:write admin:security' : wanted.scope;
   const form = 'grant_type=client_credentials' +
     '&scope=' + encodeURIComponent(scope) +
     '&resource=' + encodeURIComponent(audience);

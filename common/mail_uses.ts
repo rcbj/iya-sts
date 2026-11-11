@@ -427,7 +427,7 @@ class MailUses {
                 expiresMinutes: String(config.value(
                   'security.passwordResetTtlMinutes')) },
       links: { link: RESET_PATH + '?user=' + encodeURIComponent(username) +
-                     '&token=' + encodeURIComponent(issued.token) },
+                     '#token=' + encodeURIComponent(issued.token) },
       via: via || 'the forgot-password form', actor: username
     });
     if (!sent.ok) {
@@ -495,7 +495,7 @@ class MailUses {
       values: { username: username, address: who.address,
                 expiresMinutes: String(ttl) },
       links: { link: VERIFY_PATH + '?user=' + encodeURIComponent(username) +
-                     '&token=' + encodeURIComponent(token) },
+                     '#token=' + encodeURIComponent(token) },
       via: via, actor: actor || username
     });
     if (!sent.ok) {
@@ -683,7 +683,7 @@ class MailUses {
       values: { username: username, address: wanted,
                 expiresMinutes: String(ttl) },
       links: { link: VERIFY_PATH + '?user=' + encodeURIComponent(username) +
-                     '&token=' + encodeURIComponent(token) },
+                     '#token=' + encodeURIComponent(token) },
       via: via, actor: actor || username
     });
     if (!sent.ok) {
@@ -733,7 +733,7 @@ class MailUses {
                   ? 'security.passwordResetTtlMinutes'
                   : 'security.activationTtlMinutes')) },
       links: { link: (reset ? RESET_PATH : ACTIVATE_PATH) + '?user=' +
-                     encodeURIComponent(username) + '&token=' +
+                     encodeURIComponent(username) + '#token=' +
                      encodeURIComponent(token) },
       via: via, actor: actor
     });
@@ -910,6 +910,32 @@ class MailUses {
   // key names the started activity and the mail's number, so a run repeated on
   // another node inside `mail.dedupWindowS` queues it once.
   // -------------------------------------------------------------------------
+  /**
+   * Tells the realm's administrators that a certificate it relies on changed
+   * state (#1360). The audit calls this on a change only.
+   *
+   * @param facts - `{ changes, dedupKey }`
+   * @returns what the channel answered, or null when it could not send
+   */
+  pkiPinStatus(facts: Json): Json {
+    const { log, mail } = this.deps;
+    log.debug("Entering MailUses.pkiPinStatus().");
+    let out: Json = null;
+    try {
+      out = mail.send({
+        toAdministrators: true, template: 'pki-pin-status',
+        values: { changes: String(facts.changes || '') },
+        dedupKey: String(facts.dedupKey || ''),
+        via: 'the pinned certificate audit', actor: 'the service'
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.pkiPinStatus(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.pkiPinStatus().");
+    return out;
+  }
+
   /**
    * Mails a person a started post-login activity's reminder to sign in.
    *
@@ -1168,5 +1194,6 @@ export = {
   addressChanged: slot.forward('addressChanged'),
   accessRequested: slot.forward('accessRequested'),
   authzenAccessRequested: slot.forward('authzenAccessRequested'),
-  postLoginReminder: slot.forward('postLoginReminder')
+  postLoginReminder: slot.forward('postLoginReminder'),
+  pkiPinStatus: slot.forward('pkiPinStatus')
 };

@@ -95,13 +95,33 @@
     "en": "4369282d9208f4aa",
     "text": "Croire X-Forwarded-Proto et X-Forwarded-Host — ce que définit un proxy inverse qui termine TLS pour indiquer ce que le CLIENT a utilisé. ACTIVEZ-LE lorsque quelque chose se trouve devant ce service, sinon les métadonnées publieront des URL http:// à des clients qui l’ont atteint en https, et chaque preuve DPoP sera refusée pour avoir nommé le véritable point de terminaison. Laissez-le DÉSACTIVÉ lorsque rien ne s’y trouve : sans proxy, ce sont des en-têtes ordinaires que n’importe quel client peut définir, et les croire permet à un appelant de choisir ce que ce service pense être son propre émetteur et ses propres points de terminaison. Surveillance → Connexion TLS montre ce qu’une requête portait réellement et ce qui en a été cru. NOTEZ que ce service ne lit jamais un certificat client depuis un en-tête (X-Client-Cert et apparentés), dans aucun des deux modes — un certificat transmis est un certificat que n’importe qui peut falsifier."
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "Adresses des nœuds CDN"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "Les adresses ou plages CIDR depuis lesquelles se connecte un CDN placé devant ce service, séparées par des virgules. Les nœuds d'un CDN servent tous ses clients ; une requête provenant de l'une de ces plages est donc refusée si elle ne porte pas global.edgeSecret dans son en-tête X-Origin-Verify. VIDE, la valeur par défaut, n'exige rien de personne. Une valeur qui n'est ni une adresse ni une plage CIDR est ignorée et journalisée."
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "Secret d'origine du CDN"
+  },
+  "global.edgeSecret|description": {
+    "en": "150b63080ee2d16b",
+    "text": "Ce que la distribution CDN de ce déploiement envoie dans X-Origin-Verify, et qui la distingue de la distribution d'un autre client sur les mêmes nœuds. L'en-tête est supprimé une fois lu. Vide alors que global.edgeProxies est défini, il refuse toute requête provenant de ces plages. Il peut être donné sous la forme `sha256:<hex digest>`, pour que ce service n’en détienne que l’empreinte, et livré comme un fichier nommé par STS_EDGE_SECRET_FILE."
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "Adresses des proxys de confiance"
   },
   "global.trustedProxies|description": {
-    "en": "1f176030f2e4d953",
-    "text": "Les adresses ou plages CIDR depuis lesquelles se connectent les proxys et répartiteurs de charge propres à ce déploiement, séparées par des virgules (10.0.0.0/8, fd00::/8). Lu uniquement lorsque global.trustProxy est activé. VIDE, la valeur par défaut, conserve l’ancienne règle : les en-têtes transmis sont crus quel que soit l’appelant, et le limiteur de débit prend l’entrée X-Forwarded-For la plus à gauche, que le client écrit lui-même. DÉFINI, X-Forwarded-For, X-Forwarded-Proto et X-Forwarded-Host ne sont crus que d’une connexion dont le pair se trouve dans l’une de ces plages, et le client est l’entrée X-Forwarded-For la plus à droite qui n’y est pas — si bien qu’un appelant qui atteint directement un nœud ne peut choisir ni sa propre adresse de limitation de débit, ni l’idée que ce service se fait de sa propre URL. Une valeur qui n’est ni une adresse ni une plage est ignorée et journalisée, jamais élargie. Lorsque global.proxyProtocol est activé, c’est AUSSI la liste des adresses dont un en-tête PROXY protocol est cru, quoi qu’indique global.trustProxy — et là, une liste vide ne fait confiance à personne, si bien que le service refuse de démarrer."
+    "en": "0af5f57bfac2e8d3",
+    "text": "Les adresses ou plages CIDR depuis lesquelles se connectent les proxys et répartiteurs de charge propres à ce déploiement, séparées par des virgules (10.0.0.0/8, fd00::/8). Lu uniquement lorsque global.trustProxy est activé. VIDE, la valeur par défaut, conserve l’ancienne règle en mode développement : les en-têtes transmis sont crus quel que soit l’appelant, et le limiteur de débit prend l’entrée X-Forwarded-For la plus à gauche, que le client écrit lui-même. En mode produit, VIDE ne les croit de personne, si bien que le client est le pair de la connexion. DÉFINI, X-Forwarded-For, X-Forwarded-Proto et X-Forwarded-Host ne sont crus que d’une connexion dont le pair se trouve dans l’une de ces plages, et le client est l’entrée X-Forwarded-For la plus à droite qui n’y est pas — si bien qu’un appelant qui atteint directement un nœud ne peut choisir ni sa propre adresse de limitation de débit, ni l’idée que ce service se fait de sa propre URL. Une valeur qui n’est ni une adresse ni une plage est ignorée et journalisée, jamais élargie. Lorsque global.proxyProtocol est activé, c’est AUSSI la liste des adresses dont un en-tête PROXY protocol est cru, quoi qu’indique global.trustProxy — et là, une liste vide ne fait confiance à personne, si bien que le service refuse de démarrer."
   },
   "http.keepAliveTimeoutS|label": {
     "en": "d9f06661ccb4fd07",
@@ -187,13 +207,237 @@
     "en": "034b8666bc7feb89",
     "text": "Origines — schéma, hôte et port, sans chemin — que CORS traite comme PROPRES à ce déploiement, séparées par des virgules, en plus des adresses sur lesquelles écoute ce service, de global.publicBaseUrl et du débogueur intégré. Une origine indiquée ici peut lire chaque réponse que ce service donne à un navigateur, quel que soit le client nommé par la requête. VIDE, la valeur par défaut, n’en ajoute aucune : toute autre origine n’est autorisée que là où une application la liste dans appCorsOrigin. Une valeur qui n’est pas une origine est ignorée et journalisée, jamais élargie."
   },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "Répertoires depuis lesquels un fichier nommé peut être lu"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "Mode produit uniquement. Une liste de répertoires absolus séparés par des virgules. Un fichier nommé par un administrateur dans un paramètre ou une requête (un fichier CA, un fichier de jeton ou de clé SPIFFE, un fichier Sigstore, un certificat ou une clé de messagerie) n’est lu que si son chemin réel, après résolution des liens symboliques, se trouve dans l’un d’eux. Il se définit dans l’environnement ou le fichier appconfig et ne peut pas être modifié par la console ou l’API, afin qu’une requête d’administrateur ne puisse pas l’élargir. AVERTISSEMENT : ajouter / ou un autre répertoire large signifie que l’exigence 5.3.2 d’ASVS 5.0.0 n’est pas respectée."
+  },
+  "security.fileRoots|restartReason": {
+    "en": "65fd8c7be0cfb5d3",
+    "text": "il borne ce que la requête d’un administrateur peut nommer, de sorte qu’aucune requête de ce type ne peut l’élargir"
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "Laisser une personne sans rôle accéder à SCIM et Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "Mode produit uniquement. Désactivé, par défaut, une personne authentifiée sur /scim/v2 ou Shared Signals par un schéma sans portée, comme HTTP Basic ou le cookie de session, doit détenir Admin Read pour lire et Admin Write pour écrire. Activé, toute personne authentifiée le peut. AVERTISSEMENT : activé, les exigences 8.2.1 et 8.2.2 d’ASVS 5.0.0 ne sont pas respectées, car n’importe qui pourrait modifier n’importe quel compte. Utilisez plutôt des portées OAuth pour les clients de provisionnement."
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "Journaliser le mot de passe d’amorçage généré"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "Mode produit uniquement. Désactivé, par défaut, le mot de passe généré pour le premier administrateur est écrit dans le fichier bootstrap-admin-password de persistence.dataDir, lisible par ce seul service, et le journal indique où. Activé, il est écrit dans le journal du service. AVERTISSEMENT : activé, l’exigence 16.2.5 d’ASVS 5.0.0 n’est pas respectée, car un identifiant atteint le journal."
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "Permettre à un client confidentiel d’omettre PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "Mode produit uniquement. Désactivé, par défaut, une demande d’autorisation sans code_challenge est refusée pour tout client. Activé, un client confidentiel peut l’omettre et la demande est seulement journalisée. AVERTISSEMENT : activé, l’exigence 10.4.6 d’ASVS 5.0.0 n’est pas respectée."
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "Mots interdits dans un mot de passe"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "Mots supplémentaires qu’un nouveau mot de passe ne peut pas contenir, comme les noms de votre organisation, produit, projet ou service. Séparés par des virgules. Le nom du service, ainsi que le nom et le domaine du domaine de confiance, sont toujours refusés. Un mot doit comporter au moins quatre lettres ; la vérification ignore la casse et les substitutions courantes, comme 0 pour o."
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "Durée maximale d’une chaîne de jetons d’actualisation (s)"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "Limite absolue d’une autorisation renouvelée par jetons d’actualisation, comptée depuis le premier. Une fois dépassée, la personne se reconnecte, quelle que soit la fréquence d’actualisation. 0 signifie aucune limite, valeur par défaut en développement. Le mode produit utilise 30 jours par défaut."
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "Accepter un jeton de déconnexion partenaire sans type explicite"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "Désactivé, par défaut, le mode produit n’accepte le jeton de déconnexion d’un partenaire que s’il est de type logout+jwt. Activé, un jeton de type jwt ou sans type est aussi accepté, pour un partenaire qui n’envoie pas le type. La spécification OpenID ne fait que le recommander."
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "7a29e5cd3a5ff016",
+    "text": "Ancienneté maximale de la connexion pour une modification sensible (min)"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "4bfb2112a9f37a5d",
+    "text": "Depuis combien de minutes, au plus, quelqu’un doit s’être connecté pour modifier la façon dont une personne se connecte. Sur le portail : ses seconds facteurs, codes de récupération, clés d’accès, mots de passe d’application, certificats, clés de signature, identifiants auto-émis, adresse e-mail ou une offre de justificatif pour le portefeuille, ainsi que la fermeture de ses autres sessions ; elle doit d’abord se reconnecter. Pour un administrateur : modifier le mot de passe, le second facteur, la clé d’accès, les codes de récupération, l’adresse e-mail ou les mots de passe d’application d’une personne via la console ou /admin-api, qui répond par insufficient_user_authentication de la RFC 9470. 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "Autoriser un mot de passe de base par défaut en mode produit"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "Désactivé, par défaut, le mode produit ne démarre pas avec un mot de passe de base bien connu, comme sts_app du fichier compose fourni, ou un mot de passe égal au nom d’utilisateur. Activé, il démarre quand même. À réserver à une pile de test."
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "Les sessions démarrées avant cet instant sont terminées (ms)"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "Défini par « Mettre fin à toutes les sessions » sur la page Sessions. Une session démarrée avant cet instant, en millisecondes depuis 1970, est terminée. 0 signifie qu’aucune ne l’est."
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "Toujours demander le consentement pour un client public"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "Un client public ne peut pas prouver son identité : la personne est donc interrogée à chaque demande d’accès, quelle que soit sa réponse précédente. Les applications de ce service ne sont pas concernées. Activé par défaut en mode produit."
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "Authentification partenaire la plus ancienne acceptée (s)"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "Refuse une connexion fédérée dont le partenaire indique que la personne s’est authentifiée depuis plus longtemps que cette durée, selon auth_time ou AuthnInstant. Tant qu’une limite est définie, un partenaire qui n’indique pas cette date est refusé. 0, par défaut, ne le demande pas."
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "Requêtes autorisées par adresse et par minute"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "Plafond de toutes les requêtes d’une adresse, par processus. C’est un frein aux abus, distinct des limites sur les tentatives d’identifiants. 0 signifie aucun plafond, valeur par défaut en développement. Le mode produit utilise 6000 par défaut. Derrière un proxy, définissez global.trustedProxies pour que les adresses soient lues correctement."
+  },
+  "security.pbes2MinIterations|label": {
+    "en": "099bacdecdd8c71d",
+    "text": "Nombre minimal d’itérations PBKDF2 accepté dans un JWE PBES2"
+  },
+  "security.pbes2MinIterations|description": {
+    "en": "c6f00e313b689b2b",
+    "text": "Un JWE chiffré pour un mot de passe (PBES2, RFC 7518 section 4.8) indique son propre nombre d’itérations, et un nombre inférieur à celui-ci est refusé avant toute dérivation. Le mode produit vaut 600000 par défaut, le chiffre de l’OWASP pour PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4) ; le mode développement, 1000, la valeur recommandée par la RFC 7518. Un émetteur qui utilise la valeur par défaut plus petite d’une bibliothèque est refusé en mode produit tant que ce réglage n’est pas abaissé. La clé est dérivée dans le pool de threads de libuv, jamais sur la boucle d’événements, et plus de 1000000 itérations est refusé."
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "Autoriser l’export d’audit syslog en clair en mode produit"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "Désactivé, par défaut, le mode produit n’accepte que le transport tls pour une destination d’audit syslog. Activé, tcp et udp sont aussi acceptés, et le journal d’audit traverse le réseau sans chiffrement. À n’utiliser que sur un réseau de confiance."
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "Hôtes que ce service peut contacter"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "Si défini, une requête sortante qu’un partenaire, un client ou un appelant peut influencer ne peut atteindre que ces hôtes. Séparés par des virgules : un nom exact, ou un point initial pour tout un domaine, comme .example.com. Vide, par défaut, autorise tout hôte public. Les adresses internes sont refusées dans tous les cas en mode produit."
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "Appliquer HSTS aux sous-domaines"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "Ajoute includeSubDomains à Strict-Transport-Security, afin que les navigateurs utilisent HTTPS pour tous les sous-domaines du nom d’hôte de ce service. Activé par défaut en mode produit. Désactivez-le si un sous-domaine doit encore répondre en HTTP simple."
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "Accepter une assertion sans audience"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "Désactivé, par défaut, le mode produit refuse une assertion SAML 1.1 ou WS-Federation d’un partenaire sans restriction d’audience, car rien n’indique qu’elle était destinée à ce service. Activé, elle est acceptée avec un avertissement, pour un partenaire qui ne peut pas en envoyer."
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "Analyser les fichiers à la recherche de logiciels malveillants"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "Désactivé, par défaut, rien n’est analysé. Activé, chaque photo de profil, logo, photo copiée depuis un partenaire de fédération et jeu de données de risque téléversé est d’abord envoyé au service ICAP de malwareScan.url, et refusé si le service le signale ou ne peut pas répondre."
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "Adresse du service ICAP"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "Le service d’analyse, sous la forme icap://hôte:port/service ou icaps://hôte:port/service (RFC 3507). Tout antivirus disposant d’un service ICAP peut être utilisé."
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "Délai d’analyse (millisecondes)"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "Temps d’attente du service. Un fichier volumineux dispose d’une seconde de plus par mébioctet."
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "Fichier CA pour un service icaps"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "Un fichier PEM de certificats CA auxquels un service icaps peut se rattacher, en plus des racines publiques. Soumis à security.fileRoots."
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "Autoriser ICAP en clair en mode produit"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "Désactivé, par défaut, le mode produit refuse une adresse icap:// et aucun fichier n’est accepté tant qu’une adresse icaps:// n’est pas définie. Activé, les fichiers peuvent atteindre l’analyseur sans chiffrement. À n’utiliser que sur un réseau de confiance."
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "Permettre la connexion sans second facteur"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un second facteur est exigé de tous, administrateurs compris, quelle que soit la politique d’authentification, et une personne qui n’en a pas en enregistre un à la connexion. Les comptes de service exemptés le restent. Activé, la politique d’authentification décide. AVERTISSEMENT : activé, l’exigence 6.3.3 d’ASVS 5.0.0 n’est respectée que si la politique en exige un."
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "Autoriser le chiffrement de contenu JWE CBC-HMAC"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "Mode produit uniquement. Désactivé, par défaut, JWE utilise et accepte AES-GCM seul : A128CBC-HS256, A192CBC-HS384 et A256CBC-HS512 ne sont ni proposés ni acceptés, et un client qui nomme un algorithme sans enc reçoit une réponse en A256GCM. Activé, ils fonctionnent comme en développement. AVERTISSEMENT : tant que ce paramètre est activé, l’exigence 11.3.2 d’ASVS 5.0.0 n’est pas respectée ; ne l’activez que pour un partenaire incapable de lire AES-GCM."
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "Autoriser SHA-1 et MD5 là où un protocole les utilise encore"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "Mode produit uniquement. Désactivé, par défaut, ce service n’utilise ni OAEP sur SHA-1 dans le chiffrement XML ou JWE, ni la dérivation de clé PKINIT SHA-1, ni la somme de contrôle HMAC-MD5 de S4U2Self. Activé, il les utilise. AVERTISSEMENT : l’exigence 11.4.1 d’ASVS 5.0.0 interdit ces hachages ; activez ce réglage uniquement pour des partenaires ou clients qui ne prennent en charge rien de plus récent."
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "Autoriser un nom d’administrateur par défaut en production"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "53da4f7ba4ff5dcc",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, écrit avec son mot de passe dans le fichier bootstrap-admin-password de persistence.dataDir au premier démarrage (voir admin.logBootstrapPassword). Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test."
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "l’amorçage s’exécute une seule fois, entre l’ouverture du stockage persistant et la liaison de l’écouteur ; une modification ultérieure n’a donc plus rien à nommer"
+  },
   "admin.bootstrapUsername|label": {
     "en": "bdb921ce57f149ff",
     "text": "Compte administrateur d’amorçage"
   },
   "admin.bootstrapUsername|description": {
-    "en": "b174944b711d5987",
-    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; ce mot de passe est journalisé une fois et plus jamais, et c’est le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles."
+    "en": "9b6fe650632ee79d",
+    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; le nom et ce mot de passe sont écrits une seule fois dans le fichier bootstrap-admin-password de persistence.dataDir, lisible uniquement par ce service (le journal indique où, et ne les contient lui-même qu’avec admin.logBootstrapPassword activé), et sont le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -204,8 +448,8 @@
     "text": "Mot de passe de l’administrateur d’amorçage"
   },
   "admin.bootstrapPassword|description": {
-    "en": "c90454b252735521",
-    "text": "Le mot de passe donné à l’administrateur d’amorçage au lieu d’un mot de passe généré, en MODE PRODUIT et uniquement lorsque personne dans le domaine ne détient d’identifiant — le même moment unique que décrit admin.bootstrapUsername, exactement dans les mêmes conditions. Il ne peut écraser le mot de passe de personne et ne fait rien en mode développement.\n\n**POURQUOI IL EXISTE : POUR QUE LE SEUL MOYEN D’ENTRER NE SE TROUVE PAS DANS UN JOURNAL.** Un mot de passe généré est annoncé une fois et plus jamais ; le journal est donc sensible, et l’identifiant est perdu dès que cette ligne a disparu. Un opérateur disposant d’un magasin de secrets peut y placer la valeur avant le démarrage du service et la relire quand il en a besoin — c’est ce que fait le déploiement AWS, via Secrets Manager (deploy/aws/CLAUDE.md).\n\n**IL EST SOUMIS À LA POLITIQUE DE MOTS DE PASSE, et une valeur que la politique refuse est REFUSÉE plutôt que remplacée en silence.** En générer une à la place mettrait un identifiant valide dans le journal d’un déploiement dont l’opérateur a demandé qu’il n’y soit pas, et laisserait dans son magasin de secrets une valeur qui ne fonctionne pas, sans que rien ne le signale. Le refus nomme les règles enfreintes (STS-AUTHN-0205).\n\n**IL N’EST JAMAIS JOURNALISÉ** — ni au démarrage, ni sur /admin/config, ni via /admin-api. Il se trouve déjà là où l’opérateur l’a placé, et l’afficher annulerait l’intérêt de le définir."
+    "en": "2dc1b16eebe63526",
+    "text": "Le mot de passe donné à l’administrateur d’amorçage au lieu d’un mot de passe généré, en MODE PRODUIT et uniquement lorsque personne dans le domaine ne détient d’identifiant — le même moment unique que décrit admin.bootstrapUsername, exactement dans les mêmes conditions. Il ne peut écraser le mot de passe de personne et ne fait rien en mode développement.\n\n**POURQUOI IL EXISTE : POUR QUE LE SEUL MOYEN D’ENTRER NE SE TROUVE PAS DANS UN JOURNAL.** Un mot de passe généré est annoncé une fois et plus jamais ; le journal est donc sensible, et l’identifiant est perdu dès que cette ligne a disparu. Un opérateur disposant d’un magasin de secrets peut y placer la valeur avant le démarrage du service et la relire quand il en a besoin — c’est ce que fait le déploiement AWS, via Secrets Manager (deploy/aws/CLAUDE.md). Il peut être livré comme un fichier nommé par STS_ADMIN_BOOTSTRAP_PASSWORD_FILE, et donné sous la forme d’un hachage `$scrypt$` ou argon2id au lieu du mot de passe ; ce hachage est enregistré tel quel, si bien que le mot de passe en clair n’est jamais configuré.\n\n**IL EST SOUMIS À LA POLITIQUE DE MOTS DE PASSE, et une valeur que la politique refuse est REFUSÉE plutôt que remplacée en silence.** En générer une à la place mettrait un identifiant valide dans le journal d’un déploiement dont l’opérateur a demandé qu’il n’y soit pas, et laisserait dans son magasin de secrets une valeur qui ne fonctionne pas, sans que rien ne le signale. Le refus nomme les règles enfreintes (STS-AUTHN-0205).\n\n**IL N’EST JAMAIS JOURNALISÉ** — ni au démarrage, ni sur /admin/config, ni via /admin-api. Il se trouve déjà là où l’opérateur l’a placé, et l’afficher annulerait l’intérêt de le définir."
   },
   "admin.bootstrapPassword|restartReason": {
     "en": "25fddde63c972817",
@@ -680,8 +924,8 @@
     "text": "Délai d’inactivité d’une session (secondes, 0 = aucun)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "Combien de temps une session peut rester INUTILISÉE avant de se terminer, en plus de la durée de vie absolue ci-dessus. **Zéro, la valeur par défaut, signifie aucun délai d’inactivité**, ce que ce service a toujours fait. Défini, une session que quelqu’un cesse d’utiliser se termine ce nombre de secondes après sa dernière requête, selon la première des deux limites atteinte — et une requête à la console d’administration ou au portail utilisateur compte comme une utilisation de la session d’authentification unique sous-jacente, si bien qu’un opérateur qui travaille dans la console n’en est pas déconnecté par une horloge d’inactivité sur une session qu’il ne présente pas. Il s’applique en direct : il vaut pour les sessions qui existent déjà, car il est vérifié là où une session est lue plutôt qu’apposé là où elle est créée."
+    "en": "a5806c4c1917a3f7",
+    "text": "Combien de temps une session peut rester INUTILISÉE avant de se terminer, en plus de la durée de vie absolue ci-dessus. **Zéro signifie aucun délai d’inactivité**, la valeur par défaut en développement et ce que ce service y a toujours fait. Défini, une session que quelqu’un cesse d’utiliser se termine ce nombre de secondes après sa dernière requête, selon la première des deux limites atteinte — et une requête à la console d’administration ou au portail utilisateur compte comme une utilisation de la session d’authentification unique sous-jacente, si bien qu’un opérateur qui travaille dans la console n’en est pas déconnecté par une horloge d’inactivité sur une session qu’il ne présente pas. Il s’applique en direct : il vaut pour les sessions qui existent déjà, car il est vérifié là où une session est lue plutôt qu’apposé là où elle est créée. Le mode produit utilise 1800 par défaut."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -790,6 +1034,126 @@
   "authn.multipleAccounts|description": {
     "en": "e0455f389b3cfb47",
     "text": "Permet à un navigateur de détenir des sessions d’authentification unique pour plusieurs personnes à la fois, et de choisir entre elles. Activé, la connexion d’une autre personne AJOUTE une session à l’ensemble de comptes du navigateur (le témoin `sts_accounts`) au lieu de mettre fin à celle qu’il avait ; une requête qui ne dit pas à quel compte elle est destinée — aucun compte choisi dans ce flux, aucun login_hint, id_token_hint ni Subject SAML n’en nommant un — alors que plusieurs comptes sont connectés est envoyée au sélecteur de comptes à /authn/accounts, et prompt=select_account l’affiche. Chaque session conserve sa propre durée de vie, son délai d’inactivité, son état d’authentification renforcée et sa déconnexion. Activé par défaut. Désactivé, le navigateur a une seule session et la connexion d’une autre personne y met fin. Prend effet à la requête suivante dans les deux sens et ne met fin à rien : activé, la session existante d’un navigateur devient le premier compte de son ensemble ; désactivé, la session par défaut du navigateur continue seule et les autres expirent comme d’habitude."
+  },
+  "branding.layout|label": {
+    "en": "2bce09e5da84a651",
+    "text": "Mise en page de la connexion"
+  },
+  "branding.layout|description": {
+    "en": "0f84529af8e63ce7",
+    "text": "La disposition de l’écran de connexion, de ses étapes, de l’écran de consentement et des autres pages publiques dans ce domaine. centered : la carte au milieu de la page, avec le logo et le nom affiché au-dessus (la valeur par défaut, l’aspect que le service a toujours eu). split : un panneau dans la couleur d’accent portant le logo et le nom affiché à côté de la carte, au-dessus d’elle sur un écran étroit. banner : un bandeau dans la couleur d’accent en haut de la page qui les porte, avec la carte en dessous. Chaque mise en page garde le formulaire, ses champs et leur ordre exactement tels qu’ils sont."
+  },
+  "branding.accentColor|label": {
+    "en": "12376f4cbd6c30b9",
+    "text": "Couleur d’accent"
+  },
+  "branding.accentColor|description": {
+    "en": "6a7806cbc4a60f44",
+    "text": "La couleur des boutons, des liens et des anneaux de focus sur les pages publiques de ce domaine, ainsi que du panneau split et du bandeau. S’écrit #rgb ou #rrggbb. Le texte d’un bouton est noir ou blanc, selon ce qui se lit le mieux dessus ; il ne se règle donc pas séparément. Une couleur dont les liens tomberaient sous le contraste WCAG 2.2 AA (4.5:1) par rapport à la couleur de la carte est refusée (STS-AUTHN-0544)."
+  },
+  "branding.pageColor|label": {
+    "en": "d8f29ba7b8da917a",
+    "text": "Couleur de fond de la page"
+  },
+  "branding.pageColor|description": {
+    "en": "e36337b16ae8eb93",
+    "text": "Le fond derrière la carte sur les pages publiques de ce domaine. S’écrit #rgb ou #rrggbb."
+  },
+  "branding.cardColor|label": {
+    "en": "32fcd1507a366673",
+    "text": "Couleur de la carte"
+  },
+  "branding.cardColor|description": {
+    "en": "91c08312a7b2f249",
+    "text": "Le fond de la carte sur laquelle le formulaire de connexion est dessiné. S’écrit #rgb ou #rrggbb. Les couleurs du texte et d’accent doivent chacune garder un contraste WCAG 2.2 AA (4.5:1) par rapport à elle, sinon la modification est refusée (STS-AUTHN-0544)."
+  },
+  "branding.textColor|label": {
+    "en": "25e9c8090de7f831",
+    "text": "Couleur du texte"
+  },
+  "branding.textColor|description": {
+    "en": "86f81fcb12b03b41",
+    "text": "La couleur du texte sur la carte. S’écrit #rgb ou #rrggbb. Le texte plus discret (notes, indications) est mélangé à partir d’elle et de la couleur de la carte, jamais sous le contraste WCAG 2.2 AA. Une couleur sous 4.5:1 par rapport à la carte est refusée (STS-AUTHN-0544)."
+  },
+  "branding.displayName|label": {
+    "en": "2b7f6a84de917e38",
+    "text": "Nom affiché"
+  },
+  "branding.displayName|description": {
+    "en": "c7734d5c0723dde4",
+    "text": "Un nom affiché à côté du logo sur les pages publiques de ce domaine et dans le titre de l’onglet du navigateur (\"Sign in — <name>\"), en texte brut, jamais en balisage, et non traduit. Vide, aucun nom n’est affiché et le titre est celui que la page a toujours eu. 80 caractères au plus."
+  },
+  "branding.logoAlt|label": {
+    "en": "bb2a5f1e3e7d2fca",
+    "text": "Texte de remplacement du logo"
+  },
+  "branding.logoAlt|description": {
+    "en": "4252cb4ab4a31ec4",
+    "text": "Ce qu’un lecteur d’écran lit à la place du logo de ce domaine, généralement le nom de l’organisation. Obligatoire tant que le domaine a un logo : un logo ne peut pas être téléversé sans lui, et il ne peut pas être vidé tant qu’un logo est conservé (STS-AUTHN-0548). 160 caractères au plus."
+  },
+  "branding.logoLinkUrl|label": {
+    "en": "78ddaed87c9eb98d",
+    "text": "Lien du logo"
+  },
+  "branding.logoLinkUrl|description": {
+    "en": "3cd6daaebb2a7ea6",
+    "text": "Où mène le logo quand on le suit, une URL https absolue (STS-AUTHN-0551 sinon). Vide, le logo n’est pas un lien, ce qui est la valeur par défaut : une page de connexion sans rien à suivre vers l’extérieur est la plus sûre."
+  },
+  "branding.logoMaxBytes|label": {
+    "en": "26a97375a1800d8b",
+    "text": "Logo le plus grand (octets)"
+  },
+  "branding.logoMaxBytes|description": {
+    "en": "37f4c903152cd219",
+    "text": "Le plus grand logo qu’un téléversement peut porter, pour chaque domaine. Un logo plus grand est refusé (STS-AUTHN-0546). Le logo est conservé dans le stockage et répliqué vers chaque processus ; il reste donc petit : 256 Kio par défaut, 2 Mio au plus."
+  },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "Les personnes peuvent définir leur propre photo"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "Indique si une personne peut définir et remplacer sa propre photo de profil sur le portail utilisateur. Désactivé, le portail ne propose pas d'envoi et l'opération est refusée (STS-PORTAL-0634) ; une personne peut toujours retirer la photo qu'elle a."
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "Copier la photo d'un partenaire de fédération"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "Indique si une adresse d'image envoyée par un partenaire de fédération est récupérée après la connexion et conservée ici, afin que le claim picture nomme la copie de ce domaine. Désactivé, ou si la copie échoue, le claim porte l'adresse du partenaire. La récupération suit la politique sortante de fédération et aucune redirection."
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "Plus grand fichier qu'une personne peut choisir (octets)"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "Le plus grand fichier que le portail permet de choisir, 5 Mio par défaut. Le navigateur le recadre et le redimensionne avant l'envoi, ce n'est donc pas ce qui est conservé : c'est profilePhoto.maxStoredBytes."
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "Plus grande photo conservée (octets)"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "La plus grande image que ce domaine conserve, d'une personne ou d'un partenaire de fédération. Une plus grande est refusée (STS-PORTAL-0631). 1 Mio par défaut et 3 Mio au plus : l'image voyage encodée en base64 dans une requête JSON."
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "Plus petit côté de la photo d'une personne (pixels)"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "Le plus petit côté que peut avoir une photo définie par une personne. Une plus petite est refusée (STS-PORTAL-0632). Cela ne s'applique pas à la copie d'un partenaire, souvent plus petite."
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "Plus grand côté d'une photo (pixels)"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "Le plus grand côté que peut avoir une photo conservée, car chaque navigateur qui l'affiche doit la décoder. Une plus grande est refusée (STS-PORTAL-0632)."
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -932,8 +1296,8 @@
     "text": "Pas de décalage d’horloge tolérés"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "Combien de pas de part et d’autre du moment présent sont acceptés. RFC 6238 section 5.2 recommande au plus un, ce qui est la valeur par défaut et rend un code valable environ quatre-vingt-dix secondes. **Celui-ci s’applique EN DIRECT** et vaut pour chaque enrôlement existant — la tolérance d’un déploiement envers un téléphone dont l’horloge dérive est une politique plutôt que quelque chose que le code QR a indiqué à l’application. Zéro exige une horloge parfaitement synchronisée et c’est le réglage à utiliser pour montrer ce qui se passe sans."
+    "en": "16e7e0f293746c98",
+    "text": "Combien de pas de part et d’autre du moment présent sont acceptés. RFC 6238 section 5.2 recommande au plus un, ce qui est la valeur par défaut et rend un code valable environ quatre-vingt-dix secondes. **Celui-ci s’applique EN DIRECT** et vaut pour chaque enrôlement existant — la tolérance d’un déploiement envers un téléphone dont l’horloge dérive est une politique plutôt que quelque chose que le code QR a indiqué à l’application. Zéro exige une horloge parfaitement synchronisée et c’est le réglage à utiliser pour montrer ce qui se passe sans. En mode produit, la valeur par défaut est 0 : un code vaut pour une seule période de 30 secondes."
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -1376,8 +1740,120 @@
     "text": "Signature post-quantique"
   },
   "keys.postQuantumSigning|description": {
-    "en": "68ffd5da182ec911",
-    "text": "Indique si ce domaine signe, publie et vérifie les algorithmes JWS post-quantiques et composites (ML-DSA, SLH-DSA et les ML-DSA composites). **Activé par défaut.** Désactivé : aucune clé de signature post-quantique ne figure dans `/oauth2/jwks` ni dans le document DID (clés en attente, épinglées et de groupe de signataires comprises) ; aucun algorithme post-quantique ne figure dans une liste `*_alg_values_supported` ou `*_alg_values` des documents de découverte, du serveur d’autorisation, d’OpenID Federation, d’OpenID4VCI et d’OpenID4VP ; un JWS signé avec l’un d’eux est refusé partout où ce domaine en vérifie un ; un client ne peut pas en enregistrer un ; et une signature qui en exigerait encore un — pour un client enregistré pendant que ce paramètre était activé, ou une signature de message HTTP — est refusée plutôt que faite avec une clé que personne ne peut récupérer. Il existe pour les clients et les suites de tests dont les bibliothèques JOSE ne savent pas lire une clé AKP ou ne connaissent pas ces algorithmes, la suite de conformité OpenID parmi elles. **Inchangés :** COSE (clés d’accès), les signatures XML, TLS, les algorithmes de certificat, les clés de chiffrement ML-KEM (`keys.encryptionKemAlgs`), la clé alternative ML-DSA qu’un certificat `hybrid-groups` porte dans `x5c` (les clés ML-DSA nues sont retirées, les certificats ne sont pas réémis), et `oidfed.signingAlg` : un domaine qui nomme une clé de fédération ML-DSA continue d’en signer ses déclarations mais refuse une déclaration ML-DSA qu’on lui demande de vérifier, alors gardez ce paramètre classique ici."
+    "en": "0a6b412c599e2c7d",
+    "text": "Indique si ce domaine signe, publie et vérifie les algorithmes JWS post-quantiques et composites (ML-DSA, SLH-DSA et les ML-DSA composites). **Activé par défaut.** Désactivé : aucune clé de signature post-quantique ne figure dans `/oauth2/jwks` ni dans le document DID (clés en attente, épinglées et de groupe de signataires comprises) ; aucun algorithme post-quantique ne figure dans une liste `*_alg_values_supported` ou `*_alg_values` des documents de découverte, du serveur d’autorisation, d’OpenID Federation, d’OpenID4VCI et d’OpenID4VP ; un JWS signé avec l’un d’eux est refusé partout où ce domaine en vérifie un ; un client ne peut pas en enregistrer un ; et une signature qui en exigerait encore un — pour un client enregistré pendant que ce paramètre était activé, ou une signature de message HTTP — est refusée plutôt que faite avec une clé que personne ne peut récupérer. Il existe pour les clients et les suites de tests dont les bibliothèques JOSE ne savent pas lire une clé AKP ou ne connaissent pas ces algorithmes, la suite de conformité OpenID parmi elles. **Inchangés :** COSE (clés d’accès), les signatures XML, TLS, les algorithmes de certificat, les clés de chiffrement ML-KEM (`keys.encryptionKemAlgs`), la clé alternative ML-DSA qu’un certificat `hybrid-groups` porte dans `x5c` (les clés ML-DSA nues sont retirées, les certificats ne sont pas réémis). Un `oidfed.signingAlg` nommant ML-DSA signe avec la valeur par défaut du domaine à la place."
+  },
+  "keys.eddsaSigning|label": {
+    "en": "743f659a7fcaa776",
+    "text": "Signature EdDSA"
+  },
+  "keys.eddsaSigning|description": {
+    "en": "78d3ca6aec2ee4f6",
+    "text": "Indique si ce domaine signe avec EdDSA (RFC 8037, Ed25519 et Ed448) les objets JOSE dont un client a choisi l’algorithme, et publie ses clés de signature kty OKP. **Désactivé par défaut**, car la suite de conformité OpenID ne sait pas analyser une clé OKP dans un JWKS, et c’est elle que la certification OpenID Connect exécute. Désactivé : aucune clé de signature OKP dans `/oauth2/jwks` (clés en attente, épinglées et de groupe de signataires comprises) ; EdDSA ne figure pas dans `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` ni `authorization_signing_alg_values_supported` ; un client ne peut ni enregistrer ni se voir attribuer EdDSA pour une réponse ID Token, UserInfo, d’introspection ou JARM ; et une telle signature encore demandée — par un client enregistré pendant que ce réglage était activé, ou par un algorithme SSF, WS-Trust ou Provider Commands réglé sur EdDSA — est refusée plutôt que produite avec une clé que personne ne peut récupérer. **Inchangé :** l’EdDSA avec lequel un client signe (assertions client, preuves DPoP, objets de requête, preuves de portefeuille) est toujours accepté et annoncé comme accepté ; une signature dont la clé voyage dans un `x5c` ou un document DID ; l’algorithme de justificatif d’OpenID4VCI configuré par un opérateur signe toujours, donc n’y configurez pas EdDSA lorsque ce réglage est désactivé ; le document DID, COSE, les signatures XML, DKIM et TLS ne relèvent pas de la publication JWKS JOSE. Un `oauth2.accessTokenSigningAlg` ou `oidfed.signingAlg` réglé sur EdDSA signe avec la valeur par défaut du domaine à la place. Activé : EdDSA est signé et publié comme l’indique `oauth2.eddsaCurve`."
+  },
+  "keys.signingAlgorithms|label": {
+    "en": "23087da9ac3a37f0",
+    "text": "Algorithmes de signature utilisés par ce domaine"
+  },
+  "keys.signingAlgorithms|description": {
+    "en": "6ca0d3f207d8dcd4",
+    "text": "Les algorithmes JWS avec lesquels ce domaine signe et pour lesquels il publie des clés. **Vide, la valeur par défaut, conserve tous les algorithmes dont le domaine dispose par ailleurs.** Une liste doit inclure RS256 : OpenID Connect Discovery l'exige dans `id_token_signing_alg_values_supported`, et c'est la valeur par défaut des jetons d'identité et des jetons d'accès. Avec une liste : `/oauth2/jwks` ne contient aucune clé de signature d'un algorithme non listé (clés de réserve, épinglées et de groupes de signataires comprises ; une clé RSA sert à tous les algorithmes RS et PS, elle reste donc) ; un algorithme non listé ne figure pas dans les listes de signature des jetons d'identité, d'UserInfo, de l'introspection ou de JARM du document de découverte ; un client ne peut ni l'enregistrer ni se le voir attribuer pour ces réponses ; une signature encore demandée avec lui est refusée plutôt que faite avec une clé que personne ne peut récupérer ; et un `oauth2.accessTokenSigningAlg` non listé signe avec RS256 à la place. Listez aussi PS256 pour FAPI 1.0 Advanced. `keys.postQuantumSigning` et `keys.eddsaSigning` s'appliquent toujours : lister un algorithme n'active pas sa famille. **Sans changement :** ce que ce domaine accepte des clients (assertions client, preuves DPoP, objets de requête, preuves de portefeuille) ; une réponse UserInfo en JSON simple ; les clés de chiffrement ; COSE, les signatures XML, DKIM et TLS ; et les algorithmes que configurent `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` et l'algorithme de justificatif d'OpenID4VCI, indiquez donc là un algorithme listé."
+  },
+  "keys.pqcOnly|label": {
+    "en": "d27c2ce62f5e2d05",
+    "text": "Signer uniquement en post-quantique"
+  },
+  "keys.pqcOnly|description": {
+    "en": "6bfa6be713279597",
+    "text": "Indique si ce domaine signe UNIQUEMENT avec des algorithmes post-quantiques, en JOSE, COSE, XML et Data Integrity. **Désactivé par défaut.** Activé : chaque liste de signature se réduit à ses algorithmes post-quantiques, ou à tous s’il n’en nomme aucun, et une signature avec un algorithme classique est refusée. Ce que ce domaine ACCEPTE ne change pas. **RS256 reste pour les ID Tokens**, car OpenID Connect Discovery l’exige, et n’est utilisé que pour un client qui l’a enregistré ou qui n’a enregistré aucun algorithme. Les algorithmes de certificat et DKIM ne changent pas. Il ne peut pas être activé tant que `keys.postQuantumSigning` est désactivé, et un client ou une partie de confiance qui ne peut pas vérifier ML-DSA ne pourra pas lire ce que signe ce domaine."
+  },
+  "keys.acceptedSigningAlgorithms|label": {
+    "en": "13c74bb1ab9ae1ae",
+    "text": "Algorithmes JWS acceptés"
+  },
+  "keys.acceptedSigningAlgorithms|description": {
+    "en": "861a2aba4650fdfa",
+    "text": "Les algorithmes JWS que ce domaine accepte de quiconque : assertions client, preuves DPoP, objets de requête, preuves de portefeuille, déclarations de fédération, ses propres jetons. **Vide, la valeur par défaut, accepte tout ce que chaque cas d’usage accepte par ailleurs.** Exception : en mode produit, ES256K n’est accepté que là où cette liste ou `keys.signingAlgorithms` le nomme, car secp256k1 n’est pas une courbe approuvée ; une signature XML sur cette courbe suit la même règle. Une signature avec un algorithme non listé est refusée avant toute opération sur une clé. Une liste doit inclure tout ce que liste `keys.signingAlgorithms`, et RS256 si celle-ci est vide, sinon le domaine refuse ses propres jetons. Les lignes HS sont celles qu’utilise `client_secret_jwt` ; ne les retirez que si aucun client ne s’en sert."
+  },
+  "cose.algorithms|label": {
+    "en": "fe94cc0994dab40b",
+    "text": "Algorithmes COSE de signature"
+  },
+  "cose.algorithms|description": {
+    "en": "fb657d7568044786",
+    "text": "Les algorithmes COSE avec lesquels ce domaine signe les CWT de listes d’état et les justificatifs `vc+cose`, dans l’ordre. **Vide, la valeur par défaut, laisse ce que fait aujourd’hui chaque cas d’usage.** Les clés d’accès ne sont pas régies ici : voir `webauthn.algorithms`."
+  },
+  "cose.acceptedAlgorithms|label": {
+    "en": "de35db5c8aac8926",
+    "text": "Algorithmes COSE acceptés"
+  },
+  "cose.acceptedAlgorithms|description": {
+    "en": "74f312f7ccddc9ff",
+    "text": "Les algorithmes COSE que ce domaine accepte dans IssuerAuth et DeviceAuth d’un mdoc, un CWT de liste d’état et un justificatif `vc+cose`. **Vide, la valeur par défaut, accepte ce que chacun accepte déjà**, qu’une spécification peut restreindre davantage : un mdoc n’admet jamais RSA. En mode produit, ES256K (-47) n’est accepté que là où cette liste le nomme, car secp256k1 n’est pas une courbe approuvée. Les clés d’accès ne sont pas régies ici."
+  },
+  "saml.signatureAlgorithms|label": {
+    "en": "fd4f436bdda0de4a",
+    "text": "Algorithmes XML de signature"
+  },
+  "saml.signatureAlgorithms|description": {
+    "en": "01cb8501b8f096c8",
+    "text": "Les algorithmes de signature XML avec lesquels ce domaine peut signer, dans l’ordre. **Vide, la valeur par défaut, laisse `saml.signatureAlgorithm` libre.** `saml.signatureAlgorithm` reste l’algorithme choisi et doit figurer dans la liste. Un algorithme pour lequel ce domaine n’a pas de clé XML se rabat sur le premier de la liste pour lequel il en a une."
+  },
+  "saml.acceptedSignatureAlgorithms|label": {
+    "en": "a190f155d61e54ca",
+    "text": "Algorithmes XML acceptés"
+  },
+  "saml.acceptedSignatureAlgorithms|description": {
+    "en": "2bf9046fd2019c80",
+    "text": "Les SignatureMethod XML que ce domaine accepte, sur les requêtes et métadonnées de SP, les assertions RFC 7522, les assertions de partenaires et WS-Security. **Vide, la valeur par défaut, accepte tout ce qu’il vérifie par ailleurs.** `saml.allowSha1Signatures` décide toujours de SHA-1, et une méthode SHA-1 listée est refusée tant qu’il est désactivé."
+  },
+  "saml.acceptedDigestAlgorithms|label": {
+    "en": "4c713f76e897330c",
+    "text": "Condensats XML acceptés"
+  },
+  "saml.acceptedDigestAlgorithms|description": {
+    "en": "0e9213b8012dea7a",
+    "text": "Les DigestMethod XML que ce domaine accepte. **Vide, la valeur par défaut, accepte tous ceux qu’il calcule.** `saml.allowSha1Signatures` décide toujours de SHA-1."
+  },
+  "vc.cryptosuites|label": {
+    "en": "75a59ba059432f82",
+    "text": "Suites Data Integrity de signature"
+  },
+  "vc.cryptosuites|description": {
+    "en": "3be8a2fb2911c2b3",
+    "text": "Les suites cryptographiques W3C Data Integrity avec lesquelles ce domaine signe, dans l’ordre : émission par VC API, la liste d’état Bitstring, zcap et bbs-2023. **Vide, la valeur par défaut, laisse ce que fait aujourd’hui chaque cas d’usage.**"
+  },
+  "vc.acceptedCryptosuites|label": {
+    "en": "962cf7c5a55dd594",
+    "text": "Suites Data Integrity acceptées"
+  },
+  "vc.acceptedCryptosuites|description": {
+    "en": "3148c6ff243294cb",
+    "text": "Les suites cryptographiques W3C Data Integrity que ce domaine accepte : preuves de détenteur, vérification par VC API, zcap et preuves dérivées bbs-2023. **Vide, la valeur par défaut, accepte ce que chacun accepte déjà.**"
+  },
+  "pki.acceptedSignatureAlgorithms|label": {
+    "en": "86ec8af66a70814d",
+    "text": "Signatures de certificat acceptées"
+  },
+  "pki.acceptedSignatureAlgorithms|description": {
+    "en": "9a8e168d927bb934",
+    "text": "Les algorithmes de signature que ce domaine accepte sur un certificat d’un chemin qu’il valide, en nommant la ligne et non l’OID. **Vide, la valeur par défaut, accepte tout ce que la validation de chemin accepte par ailleurs**, ce que SHA-1 et MD5 ne sont pas. En lister trop peu refuse la hiérarchie de ce domaine lui-même, incluez donc ce avec quoi `pki.signatureAlgorithm` émet."
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|label": {
+    "en": "0e6e6b8920059b86",
+    "text": "Algorithmes de signature HTTP acceptés"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|description": {
+    "en": "595341df5d9412f0",
+    "text": "Les algorithmes HTTP Message Signatures (RFC 9421) que ce domaine accepte, des clients OAuth comme des clients GNAP. **Vide, la valeur par défaut, accepte tous ceux qu’il vérifie.** Une signature avec un algorithme non listé est refusée avant toute opération sur une clé."
+  },
+  "keys.jwksCertificateUrl|label": {
+    "en": "b910ac23ecc20134",
+    "text": "Nommer par URL les certificats d’une clé publiée"
+  },
+  "keys.jwksCertificateUrl|description": {
+    "en": "83d67129453bea8c",
+    "text": "Indique si `/oauth2/jwks` nomme la chaîne de certificats de chaque clé avec `x5u` (RFC 7517 section 4.6) au lieu de l’inclure dans `x5c`. **Désactivé par défaut.** Activé : une clé publie l’adresse de sa chaîne à `/pki/chain/{scope}/{sha256}.pem`, ce qui réduit fortement le jeu de clés JWK ; un client qui veut la chaîne la récupère via TLS. Une clé dont cette adresse ne peut pas servir la chaîne conserve son `x5c`. **Sans changement :** l’en-tête `x5c` ou `x5u` d’un jeton, que décide le réglage propre à chaque cas d’usage."
   },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
@@ -1398,6 +1874,18 @@
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
     "text": "la clé de chiffrement de clés est lue une seule fois, au démarrage, avant le déchiffrement des clés de signature"
+  },
+  "secrets.allowLocalSecrets|label": {
+    "en": "b746acd0225ed6a2",
+    "text": "Autoriser les secrets locaux en mode produit"
+  },
+  "secrets.allowLocalSecrets|description": {
+    "en": "ecfd7489f63a1df3",
+    "text": "Désactivé, la valeur par défaut, le mode produit prend ses clés de chiffrement de clés (keys.kekProvider, keys.cellKekProvider) dans un coffre de secrets ou un service de gestion de clés, et un mot de passe de base de données dans un coffre de secrets ; une clé de chiffrement de clés dans un fichier, ou un mot de passe de base dans un fichier ou dans la chaîne de connexion, arrête le service (ASVS 5.0.0 13.3.1). Activé, ils sont acceptés, ce qui laisse le secret sur l’hôte. Une clé de chiffrement de clés précédente peut être un fichier dans les deux cas. Le mode développement les accepte quoi que dise ce réglage."
+  },
+  "secrets.allowLocalSecrets|restartReason": {
+    "en": "3c6a25d74849bf35",
+    "text": "la clé de chiffrement de clés et le mot de passe de la base sont lus une fois, au démarrage"
   },
   "keys.kekTransitMount|label": {
     "en": "efe8c3a4233dd778",
@@ -1947,6 +2435,22 @@
     "en": "41a2ff91a0055e49",
     "text": "il décide si le port principal est lié en HTTPS (global.https), et un écouteur est lié au démarrage du processus. Un DOMAINE peut néanmoins le porter — un domaine ne lie aucun socket ; il répond donc dans le schéma avec lequel ce processus a démarré et seules les vérifications du mode changent"
   },
+  "oauth2.allowImplicitTokenResponses|label": {
+    "en": "28cd231f5d568de0",
+    "text": "Autoriser les types de réponse à jeton sous RFC 9700"
+  },
+  "oauth2.allowImplicitTokenResponses|description": {
+    "en": "7ae0908c5a3cc1b9",
+    "text": "Lever la section 2.1.2 de la RFC 9700 (no-implicit, un SHOULD NOT) là où le mode RFC 9700 est en vigueur — ce qui est toujours le cas en mode product. Activé, les types de réponse qui émettent un jeton d’accès depuis le point de terminaison d’autorisation (token, id_token token, code token, code id_token token) sont acceptés au point de terminaison d’autorisation et à l’enregistrement dynamique, et les deux documents de découverte les annoncent ainsi que l’octroi implicite. Toutes les autres exigences de la RFC 9700, et le reste du mode product, restent en vigueur, et GET /oauth2/rfc9700 et /admin/mode signalent l’exigence comme levée. Il existe pour les profils OpenID Connect Implicit, Hybrid et Dynamic OP. SANS EFFET tant que le mode OAuth 2.1 ou un profil FAPI est actif : OAuth 2.1 supprime purement et simplement l’octroi implicite, et un profil FAPI est un profil plus strict que ce paramètre n’assouplit pas. PAR APPLICATION (#1296) : il rend ces types de réponse possibles, et une application n’en utilise un que si son oauthAllowedTokenResponseTypes le liste (unauthorized_client sinon), défini par un administrateur ou par le propriétaire de l’application, ou par un client qui s’enregistre lui-même dans les limites de oauth2.dynamicRegistrationTokenResponseTypes. DÉSACTIVÉ par défaut ; à régler par domaine."
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|label": {
+    "en": "4475090bccf20d35",
+    "text": "Types de réponse à jeton qu’un client auto-enregistré peut activer"
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|description": {
+    "en": "acccf2f947729707",
+    "text": "Lesquels des types de réponse qui émettent un jeton d’accès depuis le point de terminaison d’autorisation (token, code token, id_token token, code id_token token) un client qui s’enregistre lui-même à POST /oauth2/register peut activer pour lui-même là où oauth2.allowImplicitTokenResponses lève la section 2.1.2 de la RFC 9700. Un enregistrement qui demande un type listé le voit enregistré comme son oauthAllowedTokenResponseTypes ; un enregistrement qui demande un type non listé est refusé (invalid_client_metadata), et une mise à jour RFC 7592 est soumise à la même liste. VIDE par défaut : seul un administrateur ou le propriétaire d’une application active ces types. Listez-les pour un domaine destiné à l’auto-enregistrement ouvert des flux implicite et hybride, comme le profil OpenID Connect Dynamic OP. Sans effet tant que la levée est désactivée, ou sous le mode OAuth 2.1 ou un profil FAPI."
+  },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",
     "text": "Mode OAuth 2.1"
@@ -2034,6 +2538,22 @@
   "oauth2.tokenExchangeAudience|description": {
     "en": "3f48d3e7de647a63",
     "text": "À qui peut être adressée une assertion JWT RFC 7523 ou RFC 7522 / SAML 1.1 présentée comme subject_token ou actor_token RFC 8693. AUTHORIZATION-SERVER (la valeur par défaut) est la règle propre au grant par assertion : son audience nomme ce point de terminaison de jeton ou cet émetteur, et un Recipient SAML le point de terminaison de jeton. ANY-DECLARED-RELYING-PARTY accepte aussi une audience nommant une application enregistrée dans ce domaine (et, pour SAML, un Recipient qui est un assertion consumer service enregistré sur le client qui effectue l’échange) — TRANSMISSION DE JETON : un jeton émis pour une partie de confiance est échangé contre un autre, ce que l’acte sur /admin/delegation enregistre comme tel. AVERTISSEMENT : quiconque détient un tel jeton — chaque partie de confiance pour laquelle il a été émis — peut alors l’échanger ; ne l’activez que là où c’est la conception voulue."
+  },
+  "oauth2.tokenExchangeKerberosInput|label": {
+    "en": "9fb1b4d9b1b510bc",
+    "text": "Accepter un jeton Kerberos dans un échange de jetons"
+  },
+  "oauth2.tokenExchangeKerberosInput|description": {
+    "en": "36c738a4d9dbae66",
+    "text": "Indique si un subject_token ou un actor_token RFC 8693 peut être un jeton Kerberos (un AP-REQ destiné au SPN propre de ce serveur d'autorisation, en base64url, typé par l'un des six URI du Kerberos Token Profile 1.1). L'accepteur le vérifie dans les deux modes. Un jeton de sujet délégué nomme le client qui effectue l'échange comme dernier service dans le S4U_DELEGATION_INFO de son PAC, et la chaîne devient la revendication act imbriquée du jeton émis. Désactivé, ce type de jeton est refusé."
+  },
+  "oauth2.tokenExchangeKerberosOutput|label": {
+    "en": "7711b5c35b5a2730",
+    "text": "Émettre un jeton Kerberos à partir d'un échange de jetons"
+  },
+  "oauth2.tokenExchangeKerberosOutput|description": {
+    "en": "e0da8bfdb68b27ed",
+    "text": "Indique si un requested_token_type qui nomme l'un des six URI du Kerberos Token Profile 1.1 reçoit en réponse un jeton Kerberos : un AP-REQ pour l'unique audience ou ressource, qui doit être une application qui est un service Kerberos, dans access_token avec issued_token_type égal à cet URI et token_type N_A. La chaîne act d'une délégation devient le S4U_DELEGATION_INFO du ticket. Désactivé, une telle demande est refusée."
   },
   "oauth2.tokenExchangeRefreshToken|label": {
     "en": "07090990e1118ef0",
@@ -2474,6 +2994,14 @@
   "oauth2.maxOpaqueAccessTokens|description": {
     "en": "19042efe72e28cc6",
     "text": "Combien de jetons d’accès opaques ce domaine retient. Lorsqu’il est plein, les lignes expirées sont retirées et une émission de plus est refusée (STS-OAUTH-0979) plutôt que d’évincer un jeton encore valide. S’applique lorsque oauth2.accessTokenFormat vaut opaque."
+  },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "Laisser un client sans liste utiliser tout type d’autorisation"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "dad6e01199413088",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un client qui ne déclare aucun type d’autorisation ne peut utiliser que authorization_code et refresh_token, et un client qui ne déclare aucun type de réponse (ni l’autorisation implicite) ne peut utiliser que response_type=code. Activé, il peut utiliser tout type d’autorisation et de réponse proposé par ce service. AVERTISSEMENT : l’exigence 10.4.4 d’ASVS 5.0.0 limite un client aux types dont il a besoin ; laissez ce réglage désactivé hors d’une pile de test."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -2952,8 +3480,8 @@
     "text": "Intervalle de synthèse des commandes (s)"
   },
   "oauth2.commandSummaryS|description": {
-    "en": "1045cb014a1ce125",
-    "text": "Au plus une ligne de journal par domaine à cette fréquence, comptant les commandes envoyées, retentées et mises en lettres mortes."
+    "en": "3a91e7d305fbb684",
+    "text": "La fréquence à laquelle le décompte des commandes d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug."
   },
   "oauth2.commandSweepS|label": {
     "en": "ebf638b4c702db80",
@@ -3032,8 +3560,8 @@
     "text": "Intervalle de synthèse des notifications CIBA (s)"
   },
   "oauth2.cibaNotifySummaryS|description": {
-    "en": "251c4ae1278354cf",
-    "text": "Au plus une ligne de journal par domaine à cette fréquence, comptant les pings et pushes envoyés, retentés et mis en lettres mortes."
+    "en": "27d25bd5cf11b057",
+    "text": "La fréquence à laquelle le décompte des pings et pushes d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug."
   },
   "oauth2.cibaSweepS|label": {
     "en": "722ae1b995e6c351",
@@ -3144,8 +3672,8 @@
     "text": "Algorithme de clé par défaut de l’autorité de certification"
   },
   "pki.keyAlgorithm|description": {
-    "en": "00e61f4da7498a62",
-    "text": "L’algorithme de clé avec lequel une nouvelle autorité de certification est construite lorsque le formulaire n’en indique aucun : rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 ou ed25519, ou l’un des identifiants post-quantiques (ML-DSA, SLH-DSA, les composites et ML-KEM — qui ne peut pas signer, et n’est donc qu’une clé de sujet, jamais celle d’une autorité). RSA 2048 est la valeur par défaut parce que la FEUILLE que cette hiérarchie a pour raison d’émettre signe une assertion client que la bibliothèque OAuth de quelqu’un d’autre doit vérifier, et RS256 est le seul algorithme que possède chacune de ces bibliothèques. La liste est lue depuis common/crypto_impl/key_material.js — le module qui génère la clé — de sorte qu’une valeur qu’il ne connaît pas est refusée à la construction, avec la liste à côté."
+    "en": "d0667a437e4fd5f6",
+    "text": "L’algorithme de clé avec lequel une nouvelle autorité de certification est construite lorsque le formulaire n’en indique aucun : rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 ou ed25519, ou l’un des identifiants post-quantiques (ML-DSA, SLH-DSA, les composites et ML-KEM — qui ne peut pas signer, et n’est donc qu’une clé de sujet, jamais celle d’une autorité). RSA est la valeur par défaut parce que la FEUILLE que cette hiérarchie a pour raison d’émettre signe une assertion client que la bibliothèque OAuth de quelqu’un d’autre doit vérifier, et RS256 est le seul algorithme que possède chacune de ces bibliothèques : rsa-2048 en mode développement, rsa-3072 en mode produit (ASVS 5.0.0 11.2.3). La liste est lue depuis common/crypto_impl/key_material.js — le module qui génère la clé — de sorte qu’une valeur qu’il ne connaît pas est refusée à la construction, avec la liste à côté."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -3216,8 +3744,8 @@
     "text": "Certificats et clés conservés par le stockage de l’atelier, par domaine"
   },
   "pki.maxStoredObjects|description": {
-    "en": "3057876f05b58063",
-    "text": "Nombre d’objets que le volet Certificate & Key Configuration de /admin/pki peut conserver dans un domaine. **UN STOCKAGE PLEIN REFUSE LE SUIVANT** ; auparavant il supprimait le plus ancien, et le plus ancien porte une clé privée que quelqu’un a choisi de conserver. Supprimez ce qui n’est plus utile, ou augmentez cette valeur."
+    "en": "d78b7992e9302874",
+    "text": "Nombre d’objets que l’Atelier de certificats de /admin/pki peut conserver dans un domaine. **UN STOCKAGE PLEIN REFUSE LE SUIVANT** ; auparavant il supprimait le plus ancien, et le plus ancien porte une clé privée que quelqu’un a choisi de conserver. Supprimez ce qui n’est plus utile, ou augmentez cette valeur."
   },
   "pki.personSelfServicePerIdentity|label": {
     "en": "16d37c1faeb2ce0c",
@@ -3242,6 +3770,14 @@
   "pki.personTlsClientCertificateMax|description": {
     "en": "7fd3b5724d944994",
     "text": "Nombre de certificats client TLS encore valides qu’une personne peut s’émettre elle-même sur le portail utilisateur — un par navigateur ou appareil. Un certificat révoqué ou expiré n’est pas compté. Au-delà, le portail refuse (STS-PKI-0170) plutôt que de révoquer un certificat plus ancien que quelqu’un utilise peut-être encore. L’émission est également soumise à pki.personSelfService et aux deux limites de débit en libre-service ci-dessus."
+  },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Paires de clés de signature qu’une personne peut détenir par profil"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Combien de paires de clés de signature d’assertions encore valides une personne peut détenir pour CHAQUE profil — RFC 7523 (JWT) et RFC 7522 (SAML 2.0) sont comptés séparément —, qu’elles aient été émises sur le portail utilisateur, émises par un administrateur ou téléversées. Une paire de clés révoquée ou expirée ne compte pas. Au-delà, le portail remplace son bouton Générer par une note et chaque porte refuse (STS-PKI-0223) plutôt que de révoquer une paire de clés plus ancienne que quelqu’un utilise peut-être encore."
   },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
@@ -3419,6 +3955,218 @@
     "en": "f292a8cf26b697f2",
     "text": "Nombre de certificats émis via ACME, EST ou SCEP qu’une entrée de personne ou d’application peut porter simultanément. Un certificat expiré est retiré de l’entrée avant ce décompte ; au-delà, une requête est refusée (STS-ENROLL-0040) plutôt que d’oublier un certificat plus ancien, car un certificat que quelqu’un utilise encore ne doit pas disparaître de l’entrée qui dit à qui il appartient."
   },
+  "pki.paranoid|label": {
+    "en": "69d9666085a31d95",
+    "text": "Mode PKI paranoïaque"
+  },
+  "pki.paranoid|description": {
+    "en": "96d8d3c8d4989451",
+    "text": "Mode PKI paranoïaque (#1360) : indique si chaque certificat X.509 auquel ce service se fie — lors d’une négociation TLS dans un sens comme dans l’autre, sous une signature, comme destinataire de chiffrement, dans une attestation, dans un message CMS — est soumis à l’ensemble des contrôles par la porte de validation unique (common/certificate_trust.ts) : un chemin vers une ancre que ce service connaît, la validité à l’instant présent, la révocation, et les basicConstraints, keyUsage et extendedKeyUsage que son cas d’usage demande, un contrôle que le cas d’usage n’a jamais exécuté comptant comme un refus. **`auto` est activé en mode produit et désactivé en développement** (mode.enforcesParanoidPki()) ; `on` et `off` le forcent dans l’un et l’autre mode. Tant qu’il est en vigueur, chaque ligne `pki.paranoid<UseCase>` ci-dessous est consultée ; tant qu’il ne l’est pas, chaque cas d’usage se comporte exactement comme avant #1360. Le réglage principal forcé à off en mode produit est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust ; rien ne refuse l’écriture. Un certificat qui n’indique aucun point de distribution de CRL ni répondeur OCSP, en lui-même ou dans une AC au-dessus de lui, n’a aucune vérification de révocation à effectuer : une source indiquée est appliquée, et un certificat émis par ce service est toujours vérifié dans son propre registre."
+  },
+  "pki.paranoidTlsClient|label": {
+    "en": "c0010750fb1dedac",
+    "text": "Paranoïaque : un certificat client lors d’une négociation TLS"
+  },
+  "pki.paranoidTlsClient|description": {
+    "en": "a92be9cfd66a7481",
+    "text": "Cas d’usage `tls-client` : un certificat client présenté au port principal, à un écouteur personnalisé, à LDAPS ou à l’écouteur du débogueur, et chaque consommateur de socket.authorized. Le mode paranoïaque soumet CHAQUE écouteur aux règles de chemin (pas seulement le port principal et les écouteurs personnalisés), exige extendedKeyUsage clientAuth et keyUsage digitalSignature ou keyAgreement de chaque certificat terminal, consulte la révocation sur chaque écouteur, reporte un verdict dégradé à travers la reprise de session TLS, et échoue en mode FERMÉ lorsque le contrôle lève une erreur. Ancres : le magasin de confiance des certificats clients et la racine du service. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust. Sur les sockets gRPC de SPIFFE, il ne retient aucune connexion et refuse seulement de lier en clair la SPIRE Server API ; le canal entre cellules a sa propre ligne, pki.paranoidCellPeer."
+  },
+  "pki.paranoidTlsClientSelfSigned|label": {
+    "en": "1fffd43ed19648a8",
+    "text": "Paranoïaque : un certificat client TLS auto-signé qu’un client a enregistré"
+  },
+  "pki.paranoidTlsClientSelfSigned|description": {
+    "en": "976e7f91b601714f",
+    "text": "Cas d’usage `tls-client-self-signed` : self_signed_tls_client_auth de la RFC 8705 section 2.2 et une clé GNAP prouvée par un certificat épinglé (RFC 9635 section 7.3.2). Les deux spécifications définissent la méthode comme l’ÉGALITÉ du certificat, donc aucune chaîne n’est demandée (exempté par la spécification) ; le mode paranoïaque ajoute la fenêtre de validité, keyUsage digitalSignature ou keyAgreement, et la révocation du registre. C’est le seul cas d’usage où un certificat terminal auto-signé est accepté lors d’une négociation TLS. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidOutboundTls|label": {
+    "en": "806774c88eae0cf1",
+    "text": "Paranoïaque : le certificat serveur d’une requête sortante"
+  },
+  "pki.paranoidOutboundTls|description": {
+    "en": "ad7a2574ae96644e",
+    "text": "Cas d’usage `tls-server-outbound` : chaque adresse que ce service contacte — canaux secondaires de fédération, push SSF et GNAP, signal du PEP XACML, provisionnement SCIM, courriel, base de données, magasin de secrets, SDK cloud, CRL et OCSP en https, LDAPS. Le mode paranoïaque ajoute la révocation du certificat du pair (agrafage OCSP d’abord, puis OCSP ou CRL), conditionnant la négociation avant l’écriture de tout corps de requête, extendedKeyUsage serverAuth, les règles de chemin et la vérification d’hôte de la RFC 9525 dans chaque processus, ainsi que le magasin de confiance des signataires à côté du fichier d’AC de chaque famille. Exempté par la spécification : une récupération de CRL ou d’OCSP en http simple n’a aucun certificat à contrôler (RFC 5280 section 4.2.1.13). Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidJoseSigner|label": {
+    "en": "6712f80a7d8d0d37",
+    "text": "Paranoïaque : la chaîne de certificats d’un signataire JOSE"
+  },
+  "pki.paranoidJoseSigner|description": {
+    "en": "a361abe6b62ec518",
+    "text": "Cas d’usage `jose-signer` : le x5c d’une assertion RFC 7523, private_key_jwt, un objet de requête JAR, une déclaration logicielle et le x5c d’une JWK enregistrée. Le mode paranoïaque complète une chaîne enregistrée incomplète à partir du magasin de confiance des signataires avant de la refuser, exige keyUsage digitalSignature du certificat terminal, et soumet un x5c[0] auto-signé collé dans une JWK à la règle de la porte de téléversement (aucun certificat terminal auto-signé nu). Ancres : l’AC du domaine, la racine enregistrée, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidSamlSigner|label": {
+    "en": "f542d60aa4055a78",
+    "text": "Paranoïaque : le certificat d’un signataire SAML"
+  },
+  "pki.paranoidSamlSigner|description": {
+    "en": "9185c29a838854a8",
+    "text": "Cas d’usage `saml-signer` : le certificat derrière une assertion RFC 7522, une AuthnRequest ou une LogoutRequest signée d’un fournisseur de services, l’appelant d’artefact SOAP et une signature de métadonnées de SP. Le mode paranoïaque ajoute la validité à chaque usage, une chaîne vers le magasin de confiance des signataires lorsque le certificat n’est pas auto-signé, la révocation, keyUsage digitalSignature, et REFUSE des métadonnées de SP qui n’atteignent aucune ancre (acceptées à la première utilisation auparavant). Un certificat auto-signé enregistré sur l’application est accepté par la spécification (SAML Metadata section 2.4.1.1) et listé à l’inventaire comme auto-signé. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidFederationPartner|label": {
+    "en": "1153fde809c347ea",
+    "text": "Paranoïaque : le certificat de signature d’un partenaire de fédération"
+  },
+  "pki.paranoidFederationPartner|description": {
+    "en": "c7dd276f9a86e888",
+    "text": "Cas d’usage `federation-partner` : la signature SAML ou WS-Federation d’un partenaire, le x5c d’une JWK de partenaire et un signataire de déconnexion fédérée. Le mode paranoïaque ajoute la validité à chaque usage, une chaîne vers le magasin de confiance des signataires lorsque le certificat n’est pas auto-signé, la révocation pour la déconnexion comme pour la connexion, et des contrôles de champs à la porte d’enregistrement. Un certificat auto-signé enregistré sur la relation est accepté par la spécification, comme celui d’un signataire SAML. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidWsSecurityToken|label": {
+    "en": "fdf207fb5b68e7c1",
+    "text": "Paranoïaque : un jeton X.509 WS-Security"
+  },
+  "pki.paranoidWsSecurityToken|description": {
+    "en": "d1b001f7c3cf7dad",
+    "text": "Cas d’usage `wss-x509-token` : le signataire du profil de jeton X.509 WS-Security d’une requête WS-Trust. Le mode paranoïaque exige qu’un certificat terminal externe stocké remonte au magasin de confiance des signataires et prend l’émetteur OCSP ou CRL dans le chemin du magasin de confiance, jamais dans le seul Authority Information Access du certificat terminal. Ancres : l’AC du domaine, le certificat terminal stocké, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidJoseBareKey|label": {
+    "en": "ae8a99b03823519c",
+    "text": "Paranoïaque : une JWK nue qui porte un x5c"
+  },
+  "pki.paranoidJoseBareKey|description": {
+    "en": "d55aaf11968d0119",
+    "text": "Cas d’usage `jose-bare-key` : clés d’entité OpenID Federation, clés d’émetteur SSF, clés de fournisseur de revendications et clés GNAP `cert`. Une JWK qui PORTE un x5c est validée comme un signataire JOSE en mode paranoïaque ; une JWK nue est laissée telle quelle, car OpenID Federation 1.1 section 3 définit les clés d’entité comme des JWK nues (exempté par la spécification lorsqu’aucun x5c n’est présent). Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidEncryptionRecipient|label": {
+    "en": "1fec5dc0c124d4d7",
+    "text": "Paranoïaque : le certificat d’un destinataire de chiffrement"
+  },
+  "pki.paranoidEncryptionRecipient|description": {
+    "en": "22e7d1dcaf21b830",
+    "text": "Cas d’usage `encryption-recipient` : le certificat pour lequel une assertion SAML est chiffrée et le x5c d’un destinataire JWE. Le mode paranoïaque ajoute la validité, keyUsage keyEncipherment ou keyAgreement et la révocation, et ne chiffre jamais pour un certificat simplement OBSERVÉ dans une requête (le développement le faisait, avant #1360, hors mode paranoïaque). Un certificat auto-signé enregistré sur l’application est accepté par la spécification. Une JWK nue sans x5c est exemptée (la RFC 7517 section 4.7 rend x5c facultatif). Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidClientAttestation|label": {
+    "en": "f9781b19e7a5faa5",
+    "text": "Paranoïaque : une chaîne d’authentification client par attestation"
+  },
+  "pki.paranoidClientAttestation|description": {
+    "en": "3272afd18d05a5d0",
+    "text": "Cas d’usage `client-attestation` : le certificat de l’attestateur derrière l’authentification client OAuth par attestation. Le mode paranoïaque ajoute la révocation et keyUsage digitalSignature sur le certificat terminal. Ancres : oauth2.clientAttestationTrustAnchors et le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidWebauthnAttestation|label": {
+    "en": "56518cdbf25aba42",
+    "text": "Paranoïaque : une chaîne d’attestation WebAuthn"
+  },
+  "pki.paranoidWebauthnAttestation|description": {
+    "en": "a1da1a7091f590f6",
+    "text": "Cas d’usage `webauthn-attestation` : la déclaration d’attestation d’une clé d’accès aux formats packed, tpm, android-key, android-safetynet et apple. Le mode paranoïaque rend explicites, par la porte, extendedKeyUsage et keyUsage de chaque format (l’EKU 2.23.133.8.3 de l’AIK TPM est exigé pour tpm) ; la révocation était déjà demandée. La validité est évaluée à l’instant présent, comme avant — un certificat d’attestation expiré rend la déclaration non fiable (rcbj, 2026-11-06). Ancres : webauthn.attestationTrustAnchors, les racines du FIDO Metadata Service, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidDeviceAttestation|label": {
+    "en": "eb8ad90daa8e84e6",
+    "text": "Paranoïaque : une chaîne d’attestation d’appareil"
+  },
+  "pki.paranoidDeviceAttestation|description": {
+    "en": "1e8781ffffcd5976",
+    "text": "Cas d’usage `device-attestation` : attestation de clé Android, Apple App Attest et attestation TPM d’un appareil enregistré. Le mode paranoïaque ajoute OCSP ou CRL pour les chaînes Apple et TPM lorsque la chaîne en désigne, et l’extendedKeyUsage que demande chaque format. Ancres : les réglages devices.*TrustAnchors, les racines fournies, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeSvid|label": {
+    "en": "78e43611bf44d5cf",
+    "text": "Paranoïaque : un X509-SVID présenté à la SPIRE Server API ou à la Broker API"
+  },
+  "pki.paranoidSpiffeSvid|description": {
+    "en": "9df64672b57d6dfa",
+    "text": "Cas d’usage `spiffe-svid` : le X509-SVID que présente un appelant de la SPIRE Server API ou de la Broker API, et un SVID fédéré. Le mode paranoïaque fait du SHOULD d’extendedKeyUsage de la section 4.3 de la spécification X509-SVID un MUST et contrôle les champs du certificat d’autorité d’un bundle fédéré lors de son enregistrement et de son utilisation. Exempté par la spécification : la Workload API NE DOIT PAS authentifier et reste intacte, et la révocation d’un SVID fédéré n’est pas consultée, car l’autorité fédérée ne publie rien que ce service puisse contacter. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeAttestation|label": {
+    "en": "02cc79ee469c2d68",
+    "text": "Paranoïaque : le certificat d’un attestateur de nœud SPIFFE"
+  },
+  "pki.paranoidSpiffeAttestation|description": {
+    "en": "589e499a7857c323",
+    "text": "Cas d’usage `spiffe-attestation` : les attestateurs x509pop, TPM DevID, Azure IMDS, AWS instance identity et sigstore. Le mode paranoïaque ajoute la révocation lorsque la chaîne en désigne, les keyUsage et extendedKeyUsage que demande chaque attestateur, la validité du certificat épinglé d’AWS, et exige que l’intermédiaire Azure AIA remonte à une ancre avant d’être utilisé. Exempté par la spécification : sigstore évalue la validité au notBefore du certificat (règle de la spécification du client Sigstore) ; les omissions de SCT et de Rekor restent des réglages distincts. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidPkinit|label": {
+    "en": "075d91f34c26d707",
+    "text": "Paranoïaque : un certificat client PKINIT"
+  },
+  "pki.paranoidPkinit|description": {
+    "en": "4cd0d308a974fcbd",
+    "text": "Cas d’usage `pkinit` : le certificat client d’une AS-REQ RFC 4556. Le contrôle était déjà complet (chemin vers les AC d’identité du domaine, validité avec krb5.clockSkew, id-pkinit-KPClientAuth ou l’EKU de carte à puce Microsoft, révocation) ; le mode paranoïaque en fait un appel unique de la porte, de sorte que c’est le même code que pour tout autre cas d’usage. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidEnrollmentCredential|label": {
+    "en": "ce5c0d1996e12403",
+    "text": "Paranoïaque : un certificat présenté pour s’inscrire ou se renouveler"
+  },
+  "pki.paranoidEnrollmentCredential|description": {
+    "en": "e581316f80e4f785",
+    "text": "Cas d’usage `enrollment-credential` : le certificat client que présente une requête EST et le signataire d’un renouvellement SCEP. Déjà complet pour EST ; le mode paranoïaque donne la fenêtre de validité au signataire PKCSReq auto-signé de SCEP. Exempté par la spécification : la RFC 8894 section 2.3 définit le signataire PKCSReq comme auto-signé, donc aucune chaîne ne lui est demandée. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidVcKeyAttestation|label": {
+    "en": "c9da12bd29969033",
+    "text": "Paranoïaque : une chaîne d’attestation de clé OpenID4VCI"
+  },
+  "pki.paranoidVcKeyAttestation|description": {
+    "en": "65f64443cb54f4c6",
+    "text": "Cas d’usage `vc-key-attestation` : le x5c de l’attestation de clé d’un portefeuille au point de terminaison d’identifiants OpenID4VCI. Le mode paranoïaque construit un vrai chemin avec intermédiaires (un seul saut auparavant), consulte la révocation et exige keyUsage digitalSignature du certificat terminal. Ancres : oidc4vci.keyAttestationTrustedCertificates et le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidVcIssuer|label": {
+    "en": "bf59999c71087b0a",
+    "text": "Paranoïaque : le certificat d’un émetteur d’identifiants ou d’un signataire de liste d’état"
+  },
+  "pki.paranoidVcIssuer|description": {
+    "en": "4497f64a995a4cbf",
+    "text": "Cas d’usage `vc-issuer` : la chaîne IACA vers DS d’un mdoc, un signataire de liste d’état CWT, un certificat d’émetteur de confiance OpenID4VP et le signataire d’une liste d’état étrangère. Le mode paranoïaque exige l’EKU de signataire de document ISO 18013-5 1.0.18013.5.1.2 et le profil DS (keyUsage digitalSignature, une validité de DS contenue dans celle de son IACA), la révocation pour le signataire de liste d’état, et la validité et une chaîne pour un certificat d’émetteur de confiance qui n’est pas auto-signé. Un certificat d’émetteur de confiance configuré est accepté auto-signé par la spécification, la validité et la révocation restant demandées. Ancres : oid4vp.mdocTrustAnchors, oid4vp.trustedIssuerCertificates, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidCellPeer|label": {
+    "en": "29ff42feacbce3f9",
+    "text": "Paranoïaque : l’autre cellule sur le canal inter-cellules"
+  },
+  "pki.paranoidCellPeer|description": {
+    "en": "4dbdc1d9a7d0f4c4",
+    "text": "Cas d’usage `cell-peer` : le certificat que présente l’autre cellule sur le canal inter-cellules, dans les deux sens. Le mode paranoïaque ajoute la révocation à partir du registre, extendedKeyUsage clientAuth et serverAuth (l’AC de ce service émet les deux), et les règles de chemin. Ancre : la racine du service. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidCaImport|label": {
+    "en": "db5c10402103e4d7",
+    "text": "Paranoïaque : une AC ou une paire de clés importée par un opérateur"
+  },
+  "pki.paranoidCaImport|description": {
+    "en": "d87040a5e24c74ae",
+    "text": "Cas d’usage `ca-import` : l’import, par /admin/pki, de la racine ou de l’AC émettrice d’un opérateur et d’une paire de clés épinglée. Le mode paranoïaque exige qu’une AC émettrice importée remonte à la racine du service et vérifie cA, keyCertSign, la validité et pathLen ; un certificat terminal épinglé voit ses champs contrôlés. Une racine importée reste son propre point d’ancrage. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidAnchorAdmission|label": {
+    "en": "7d8bf2554b7ae476",
+    "text": "Paranoïaque : l’admission dans un magasin de confiance"
+  },
+  "pki.paranoidAnchorAdmission|description": {
+    "en": "169bc8829426f512",
+    "text": "Cas d’usage `anchor-admission` : ce qu’acceptent /admin/tls/trust, le magasin de confiance des signataires, tls.trustAnchorsFile et pki.signerTrustAnchorsFile. Une ancre est une AC auto-signée dans sa validité dont l’auto-signature se vérifie (cA, et keyCertSign lorsque keyUsage est présent) ; un intermédiaire est une AC qui remonte à une ancre déjà détenue ; un certificat terminal est refusé par les deux magasins de confiance — un certificat terminal à épingler va sur l’entrée ou la relation qui l’utilise. Avant #1360, le magasin de confiance des clients acceptait tout ce qu’OpenSSL pouvait analyser. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidRevocationSigner|label": {
+    "en": "05be41dc43e60403",
+    "text": "Paranoïaque : un répondeur OCSP ou un signataire de CRL"
+  },
+  "pki.paranoidRevocationSigner|description": {
+    "en": "02ce618736381ac9",
+    "text": "Cas d’usage `revocation-signer` : le certificat du répondeur OCSP délégué et le signataire de CRL dans common/revocation_status.js. Déjà complet (id-kp-OCSPSigning, cRLSign) ; le mode paranoïaque passe par la porte pour que les contrôles soient le même code. Exempté par la spécification : un répondeur portant id-pkix-ocsp-nocheck n’est pas lui-même contrôlé en révocation (RFC 6960 section 4.2.2.2.1). Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidFidoMds|label": {
+    "en": "49e3f63a1962f092",
+    "text": "Paranoïaque : le signataire du BLOB du FIDO Metadata Service"
+  },
+  "pki.paranoidFidoMds|description": {
+    "en": "03950106a2822b70",
+    "text": "Cas d’usage `fido-mds` : le signataire d’un BLOB FIDO MDS3 importé. Déjà complet ; le mode paranoïaque passe par la porte pour que les contrôles soient le même code. Le contournement audité overrideSignature de l’administrateur est inchangé. Ancres : risk.mdsTrustAnchors, la racine GlobalSign Root R3, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.signerTrustAnchorsFile|label": {
+    "en": "9d4fabbc6c6918f1",
+    "text": "Magasin de confiance des signataires : un fichier PEM d’ancres et d’intermédiaires"
+  },
+  "pki.signerTrustAnchorsFile|description": {
+    "en": "32ac16c13b12ea05",
+    "text": "Un bundle PEM chargé dans le magasin de confiance des signataires du domaine PAR DÉFAUT au démarrage du processus : les autorités de certification, et les intermédiaires placés sous elles, auxquelles le certificat de signature, de chiffrement ou d’attestation d’un tiers peut remonter lorsqu’il n’est pas celui de ce service (common/signer_truststore.ts). Chaque bloc passe par la règle d’admission : une AC auto-signée est une ancre, toute autre AC un intermédiaire, et un certificat terminal est refusé nommément. Nommé mais illisible, ou sans aucun certificat, c’est FATAL (STS-PKI-0237), comme pour tls.trustAnchorsFile. Les ancres ajoutées en cours d’exécution par /admin/pki/trust sont conservées dans l’annuaire à côté. Vide par défaut."
+  },
+  "pki.signerTrustAnchorsFile|restartReason": {
+    "en": "736eb74db8a5c84f",
+    "text": "le fichier est lu une seule fois, avant toute validation"
+  },
+  "pki.pinnedCertificateWarningDays|label": {
+    "en": "bc1a8dace838ed5f",
+    "text": "Avertissement d’expiration d’un certificat épinglé (jours)"
+  },
+  "pki.pinnedCertificateWarningDays|description": {
+    "en": "7ce39ba31b8cb865",
+    "text": "Combien de temps avant le notAfter d’un certificat épinglé l’inventaire de /admin/pki/trust le marque `expiring` et la tâche quotidienne pki.pins.audit le journalise (STS-PKI-0263, une fois par changement d’état). Un certificat épinglé est un certificat enregistré sur une entrée d’application, une relation, un réglage, le x5c d’une JWK, un bundle fédéré ou la table des ancres cloud ; un certificat expiré, révoqué ou dont la chaîne manque relève de STS-PKI-0264."
+  },
   "acme.enabled|label": {
     "en": "4e21aa7b001c95d8",
     "text": "Exécuter le serveur ACME"
@@ -3456,8 +4204,8 @@
     "text": "Taille maximale du corps de requête (octets)"
   },
   "acme.maxRequestBytes|description": {
-    "en": "1e75b2f8a06b2682",
-    "text": "Un JWS aplati plus grand est refusé (HTTP 413) avant d’être analysé. Une finalisation portant une CSR post-quantique est la plus grande requête légitime ; les signatures SLH-DSA font des dizaines de kilo-octets."
+    "en": "64645666fe96987c",
+    "text": "Une JWS aplatie plus grande que cette valeur est refusée (HTTP 413) avant d’être analysée. Une finalisation portant une CSR post-quantique est la plus grande requête légitime ; les signatures de SLH-DSA font des dizaines de kilo-octets."
   },
   "acme.attemptsPerIdentity|label": {
     "en": "0357e08b72306dd7",
@@ -3594,6 +4342,14 @@
   "scep.enabled|description": {
     "en": "9d0b62856fb7cc83",
     "text": "Désactivé, chaque requête /enroll/scep reçoit la réponse 503 dans ce domaine. Les certificats déjà émis sont conservés."
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "Répondre à SCEP en production"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "Mode produit uniquement. Activé, /enroll/scep répond en mode produit. Désactivé, par défaut, il répond 503. AVERTISSEMENT : RFC 8894 impose RSAES-PKCS1-v1.5 et AES-CBC, que les exigences 11.3.1 et 11.3.2 d’ASVS 5.0.0 n’acceptent pas ; activez ce réglage uniquement pour des appareils qui ne parlent rien de plus récent."
   },
   "scep.allowedProfiles|label": {
     "en": "b2cd406490c7676d",
@@ -3744,8 +4500,8 @@
     "text": "Chiffrement du jeton d’actualisation : gestion de clé (alg)"
   },
   "oauth2.refreshTokenEncryptionAlg|description": {
-    "en": "edc32ded102e4226",
-    "text": "L’algorithme de gestion de clé JWE sous lequel chaque jeton d’actualisation est chiffré. Un jeton d’actualisation est un JWT signé scellé pour les propres clés de CE domaine et opaque pour son client : le choix est donc invisible hors de ce service. Les algorithmes RSA-OAEP utilisent la clé RSA du domaine, les ECDH-ES sa clé EC, et les autres un secret propre au domaine. Le modifier affecte les jetons émis à partir de ce moment ; les jetons déjà émis s’ouvrent toujours, car le domaine détient une clé de chaque type. RSA1_5 n’est pas proposé. Les algorithmes ML-KEM et HPKE (#82 — des drafts, voir keys.encryptionKemAlgs) scellent pour une paire de clés DÉRIVÉE du secret du domaine pour cet algorithme, jamais publiée : en choisir un ici ne nécessite donc aucune clé et ne change rien de ce que voit un client ; HPKE-10-KE (X-Wing) protège un jeton d’actualisation capturé aujourd’hui contre un futur adversaire quantique aussi bien que contre un adversaire classique."
+    "en": "93e63f4a8c7ba5b2",
+    "text": "L’algorithme de gestion de clé JWE sous lequel chaque jeton d’actualisation est chiffré. Un jeton d’actualisation est un JWT signé scellé pour les propres clés de CE domaine et opaque pour son client : le choix est donc invisible hors de ce service. Les algorithmes RSA-OAEP utilisent la clé RSA du domaine, les ECDH-ES sa clé EC, et les autres un secret propre au domaine. PBES2 n’est pas proposé : le secret est aléatoire, donc l’étirer comme un mot de passe n’apporte rien. Le modifier affecte les jetons émis à partir de ce moment ; les jetons déjà émis s’ouvrent toujours, car le domaine détient une clé de chaque type. RSA1_5 n’est pas proposé. Les algorithmes ML-KEM et HPKE (#82 — des drafts, voir keys.encryptionKemAlgs) scellent pour une paire de clés DÉRIVÉE du secret du domaine pour cet algorithme, jamais publiée : en choisir un ici ne nécessite donc aucune clé et ne change rien de ce que voit un client ; HPKE-10-KE (X-Wing) protège un jeton d’actualisation capturé aujourd’hui contre un futur adversaire quantique aussi bien que contre un adversaire classique."
   },
   "oauth2.refreshTokenEncryptionEnc|label": {
     "en": "901d0b6a281af825",
@@ -3971,6 +4727,14 @@
     "en": "2394ee67a689920d",
     "text": "Applique OpenID Connect Key Binding 1.0 (#150). Activé : le document de découverte liste la portée `bound_key`, un client qui ne déclare aucune portée peut la demander, et une requête qui la demande doit indiquer `dpop_jkt` et utiliser le flux par code (refusée sinon, STS-OAUTH-0704 et 0705) ; l’ID Token nomme alors la clé DPoP (`cnf.jwk`, `typ: dpop+id_token`), la requête de jeton doit la prouver avec `c_s256`, et chaque actualisation doit venir de la même clé. **Désactivé, il n’existe pas, et le service est OpenID Connect Core seul** : `bound_key` n’est pas annoncée, une requête qui la porte n’est pas refusée — la portée est ignorée et non accordée, comme Core traite une portée sur laquelle un OP n’agit pas — et aucun ID Token n’est lié. Désactivez-le là où des parties de confiance demandent toutes les portées annoncées et ignorent tout de Key Binding (#315). Une autorisation déjà liée avant la désactivation garde la vérification de sa clé à l’actualisation."
   },
+  "oauth2.enterpriseClaimsAlways|label": {
+    "en": "25c226f1b3654eee",
+    "text": "Claims des Enterprise Extensions dans chaque ID Token"
+  },
+  "oauth2.enterpriseClaimsAlways|description": {
+    "en": "fad892b6e39c3877",
+    "text": "Place `session_expiry` (la fin absolue de la session d’authentification unique, lorsque le jeton est émis sur une session) et `tenant` (l’identifiant de ce domaine) d’OpenID Connect Enterprise Extensions 1.0 dans CHAQUE ID Token (#148). **Désactivé par défaut :** chacun n’est placé dans un ID Token que lorsque le client le nomme dans le membre `id_token` d’une requête de claims d’OpenID Connect Core 5.5, car un claim que personne n’a demandé est ce que signale la suite de conformité OpenID, et la certification OpenID Connect exécute cette suite. Les deux restent dans `claims_supported` dans tous les cas, et `aud_sub` n’est pas concerné (il ne figure dans un ID Token que lorsqu’un administrateur en a consigné un pour ce client)."
+  },
   "oauth2.didClaim|label": {
     "en": "d0b89f9c74f06728",
     "text": "La revendication did"
@@ -4096,8 +4860,8 @@
     "text": "Intervalle de synthèse Back-Channel Logout (secondes)"
   },
   "oauth2.backchannelLogoutSummaryS|description": {
-    "en": "308efc32d526898a",
-    "text": "Au plus une ligne de journal par domaine et par intervalle, comptant ce que ce processus a envoyé, retenté, repris et mis en lettres mortes depuis la précédente — jamais une ligne par tentative ou par échec. Un avertissement (STS-OAUTH-0545) lorsque quelque chose a été mis en lettres mortes."
+    "en": "4c2470b19d5277f2",
+    "text": "La fréquence à laquelle le décompte des déconnexions d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement (STS-OAUTH-0545) ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug. Jamais une ligne par tentative."
   },
   "admin.readGroup|label": {
     "en": "990fd753159230d1",
@@ -4114,6 +4878,14 @@
   "admin.writeGroup|description": {
     "en": "5bd2e65986c9ef86",
     "text": "Le cn du groupe d’annuaire dont les membres peuvent soumettre par POST un formulaire de la console — révoquer un jeton, ajouter une revendication, modifier un paramètre, attribuer un rôle. L’ÉCRITURE IMPLIQUE LA LECTURE : un membre de ce groupe n’a pas besoin d’appartenir aussi au groupe de lecture, car un rôle capable de modifier une page qu’il ne pourrait pas voir serait un piège plutôt qu’une autorisation."
+  },
+  "admin.securityGroup|label": {
+    "en": "e208f88393e196ce",
+    "text": "Rôle Administrateur de la sécurité"
+  },
+  "admin.securityGroup|description": {
+    "en": "296a8d5721391215",
+    "text": "Le cn du groupe de l'annuaire dont les membres sont Administrateurs de la sécurité : eux seuls peuvent modifier une politique dans Annuaire → Politiques, désigner une politique sur une application, un groupe ou une personne, attribuer ce rôle, ou agir sur le compte d'une personne qui le détient. Admin Write seul ne le peut pas. LE RÔLE IMPLIQUE ADMIN READ et rien d'autre, de sorte qu'il peut être détenu par quelqu'un qui n'est pas administrateur par ailleurs. Le groupe du domaine par défaut constitue les Administrateurs de la sécurité du service, sur tous les domaines ; le groupe propre à un domaine limite ses membres à ce domaine."
   },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
@@ -4443,6 +5215,14 @@
     "en": "f24b1c4bc1251e30",
     "text": "Le <md:NameIDFormat> publié dans /federation/metadata/{id}, qui est le format dans lequel un partenaire configuré à partir de ce document envoie un sujet. La valeur par défaut est le littéral que ce service a toujours publié."
   },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "Annuaire PLC pour les connexions Bluesky"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Où une connexion Bluesky recherche le did:plc reçu, pour vérifier que le serveur de données de la personne fait confiance à l'émetteur qui l'a nommée. Une relation Bluesky est le seul lecteur."
+  },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",
     "text": "Clé de chiffrement précédente conservée pendant (secondes)"
@@ -4514,6 +5294,14 @@
   "saml2.assertionLifetimeMin|description": {
     "en": "a243fee8db63660f",
     "text": "Durée de validité d’une assertion émise : elle devient à la fois Conditions/NotOnOrAfter et le SubjectConfirmationData/NotOnOrAfter bearer. Réglez-la à 1 pour observer un fournisseur de services refuser une assertion périmée, contrôle que la plupart d’entre eux réalisent mal."
+  },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "Publier la prise en charge des algorithmes dans les métadonnées"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "Indique si les métadonnées de l’IdP portent `<alg:SigningMethod>` et `<alg:DigestMethod>` (SAML V2.0 Metadata Profile for Algorithm Support 1.0), listant les méthodes de signature XML et les condensats que ce domaine peut vérifier, par ordre de préférence. **Activé par défaut.** Un consommateur qui ne connaît pas le profil les ignore, comme l’exige la section 2.3.1 des métadonnées SAML."
   },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",
@@ -4688,8 +5476,8 @@
     "text": "Autoriser une importation MDQ sans ancre de confiance (mode produit)"
   },
   "saml2.mdqImportWithoutAnchors|description": {
-    "en": "61eeb6e71a71076d",
-    "text": "MODE PRODUIT UNIQUEMENT : indique si l’Import from MDQ d’un administrateur (la page SAML 2.0, POST /admin-api/saml2/mdq-import) peut enregistrer un fournisseur de services lorsque le domaine n’a pas de saml2.metadataTrustAnchors. DÉSACTIVÉ, la valeur par défaut : il est refusé (STS-SAML-0084). AVERTISSEMENT : ACTIVÉ, le document renvoyé par le répondeur est consommé SANS AUCUNE VÉRIFICATION DE SIGNATURE — ses certificats de signature deviennent ceux par rapport auxquels les requêtes de ce fournisseur de services sont vérifiées et ses points de terminaison deviennent la destination des assertions — si bien que quiconque peut répondre à la place de l’hôte du répondeur (son opérateur, ou quiconque se trouve sur le chemin vers celui-ci) les choisit. Seul le choix de l’entityID et du répondeur par l’administrateur tient lieu de signature. Préférez définir une ancre de confiance. Une recherche déclenchée par une REQUÊTE n’est jamais couverte par ce paramètre : elle exige une ancre quoi qu’il indique. Le mode développement importe sans ancre quoi qu’indique ce paramètre."
+    "en": "084296c20a8eb042",
+    "text": "MODE PRODUIT UNIQUEMENT : indique si l’Import from MDQ d’un administrateur (la page SAML 2.0, POST /admin-api/saml2/mdq-import) peut enregistrer un fournisseur de services lorsque le domaine n’a pas de saml2.metadataTrustAnchors. DÉSACTIVÉ, la valeur par défaut : il est refusé (STS-SAML-0084). AVERTISSEMENT : ACTIVÉ, le document renvoyé par le répondeur est consommé SANS AUCUNE VÉRIFICATION DE SIGNATURE — ses certificats de signature deviennent ceux par rapport auxquels les requêtes de ce fournisseur de services sont vérifiées et ses points de terminaison deviennent la destination des assertions — si bien que quiconque peut répondre à la place de l’hôte du répondeur (son opérateur, ou quiconque se trouve sur le chemin vers celui-ci) les choisit. Seul le choix de l’entityID et du répondeur par l’administrateur tient lieu de signature. Préférez définir une ancre de confiance. Une recherche déclenchée par une REQUÊTE n’est jamais couverte par ce paramètre : elle exige une ancre quoi qu’il indique. Le mode développement importe sans ancre quoi qu’indique ce paramètre. En mode PKI paranoïaque, une importation que ceci autorise fait du premier certificat de signature du document l'ancre de confiance de l'application, et une récupération ultérieure doit être vérifiée par rapport à elle."
   },
   "saml11.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
@@ -4842,6 +5630,22 @@
   "wstrust.acceptClientCertificate|description": {
     "en": "23d9a8fba459f61c",
     "text": "Indique si une requête vers /sts dont l’en-tête wsse:Security ne porte aucun justificatif authentifie son demandeur par le certificat client TLS de la connexion. Seul un certificat vérifié lors de la négociation et que ce domaine a délivré à une personne ou à une application (un certificat client TLS du portail utilisateur ou des Credentials de l’application, ou un certificat inscrit par ACME, EST ou SCEP) est un justificatif, dans les deux modes ; un certificat révoqué, un certificat d’un autre domaine et un certificat que son titulaire ne détient plus sont refusés avec wst:FailedAuthentication. Le jeton délivré indique qu’un certificat a été utilisé : TLSClient dans une assertion SAML 2.0, urn:ietf:rfc:2246 dans une assertion SAML 1.1, amr swk dans un JWT. Désactivé, le certificat est ignoré ici."
+  },
+  "wstrust.acceptKerberos|label": {
+    "en": "ed45753aa5e54768",
+    "text": "Accepter un jeton Kerberos"
+  },
+  "wstrust.acceptKerberos|description": {
+    "en": "a17dc237154329df",
+    "text": "Indique si une requête vers /sts peut présenter un jeton Kerberos (un AP-REQ destiné au SPN propre de ce service, dans un BinarySecurityToken de l'un des six ValueType du Kerberos Token Profile 1.1) comme justificatif du demandeur ou dans wst:OnBehalfOf ou wst14:ActAs. L'accepteur vérifie le ticket dans les deux modes. Dans l'un ou l'autre élément, ce doit être un ticket délégué : obtenu par le demandeur par S4U2Proxy (son PAC nomme le demandeur en dernier), ou acheté avec un TGT transmis à un demandeur approuvé pour la délégation. Désactivé, un tel jeton est refusé."
+  },
+  "wstrust.issueKerberos|label": {
+    "en": "285465dcff30aee0",
+    "text": "Émettre des jetons Kerberos"
+  },
+  "wstrust.issueKerberos|description": {
+    "en": "52a63db9be2c6460",
+    "text": "Indique si un wst:TokenType qui nomme l'un des six ValueType du Kerberos Token Profile 1.1 reçoit en réponse un jeton Kerberos : un AP-REQ portant un ticket de service que le KDC de ce domaine a émis pour le sujet vers le service Kerberos que nomme AppliesTo, la sous-clé de l'Authenticator étant renvoyée comme jeton de preuve sur TLS. Un ticket ActAs nomme chaque partie ayant agi dans le S4U_DELEGATION_INFO de son PAC. Désactivé, une telle demande est refusée."
   },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
@@ -5208,8 +6012,8 @@
     "text": "Différé : prêt après (ms)"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "Durée pendant laquelle un justificatif différé reste issuance_pending avant d’être prêt. Assez longue pour qu’un portefeuille doive interroger et assez courte pour qu’un test n’expire pas."
+    "en": "2456e341de78a860",
+    "text": "Le temps qu’une attestation différée met à être prête. Jusque-là, le point de terminaison différé répond 202 avec le même transaction_id et un interval. Assez long pour qu’un portefeuille doive interroger, et assez court pour qu’un test n’expire pas."
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",
@@ -5312,8 +6116,8 @@
     "text": "Algorithme de signature des justificatifs"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "6503fe55086c7b70",
-    "text": "L’algorithme JWS avec lequel sont signés les justificatifs dc+sd-jwt et jwt_vc_json — algorithmes post-quantiques compris — ainsi que les listes d’état de ce domaine, et celui qu’utilise le Domain Linkage Credential de la DID Configuration. Le credential_signing_alg_values_supported des métadonnées le nomme, /oauth2/jwks et /.well-known/did.json publient la clé, et le vérificateur de ce service s’y réfère. ldp_vc utilise bbs-2023 et n’est pas concerné. Un justificatif déjà émis conserve l’algorithme avec lequel il a été signé."
+    "en": "64dfa4a593f7ec50",
+    "text": "L’algorithme JWS avec lequel sont signés les justificatifs dc+sd-jwt et jwt_vc_json — algorithmes post-quantiques compris — ainsi que les listes d’état de ce domaine, et celui qu’utilise le Domain Linkage Credential de la DID Configuration. Le credential_signing_alg_values_supported des métadonnées le nomme, /oauth2/jwks et /.well-known/did.json publient la clé, et le vérificateur de ce service s’y réfère. ldp_vc utilise bbs-2023 et n’est pas concerné. Un justificatif déjà émis conserve l’algorithme avec lequel il a été signé. oid4vc.walletCompatibility refuse ici un algorithme post-quantique ou composite."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5496,8 +6300,24 @@
     "text": "Algorithme de signature d’une requête à identifiant client x509"
   },
   "oid4vp.x509SigningAlgorithm|description": {
-    "en": "f85d7f30b92687ec",
-    "text": "L’algorithme JWS avec lequel est signé un Request Object portant l’identifiant client x509_san_dns ou x509_hash, et donc la clé du domaine sur laquelle le certificat du vérificateur est émis. ES256 par défaut, qu’OpenID4VC HAIP impose à un portefeuille d’accepter. Aucun algorithme post-quantique n’est encore proposé : le Request Object est signé sur le chemin de la requête, et les clés post-quantiques de ce domaine signent sur le pool de threads de libuv (oid4vc/CLAUDE.md, les préfixes x509)."
+    "en": "aa2c5eaf7760ef3f",
+    "text": "L’algorithme JWS avec lequel est signé un Request Object portant l’identifiant client x509_san_dns ou x509_hash, et donc la clé du domaine sur laquelle le certificat du vérificateur est émis. ES256 par défaut, qu’OpenID4VC HAIP impose à un portefeuille d’accepter. Les algorithmes post-quantiques et composites sont aussi proposés, pour un portefeuille qui les accepte ; oid4vc.walletCompatibility les refuse, tout comme keys.postQuantumSigning désactivé."
+  },
+  "oid4vp.requestObjectSigningAlgorithm|label": {
+    "en": "f3337ef9c128d22c",
+    "text": "Algorithme de signature d’une requête signée"
+  },
+  "oid4vp.requestObjectSigningAlgorithm|description": {
+    "en": "c8e10b889bf92533",
+    "text": "L’algorithme JWS avec lequel est signé un Request Object signé sous les préfixes d’identifiant client pre-registered, decentralized_identifier, verifier_attestation et openid_federation (les préfixes x509 utilisent oid4vp.x509SigningAlgorithm). La clé du domaine correspondante est celle que la requête nomme : dans /oauth2/jwks, dans le document DID, dans le cnf d’une Verifier Attestation auto-émise et dans le jwks openid_credential_verifier de l’Entity Configuration. RS256 par défaut, ce qu’utilisait toute requête signée avant ce paramètre. Les algorithmes post-quantiques et composites sont proposés pour un portefeuille qui les accepte ; oid4vc.walletCompatibility les refuse, tout comme keys.postQuantumSigning désactivé."
+  },
+  "oid4vc.walletCompatibility|label": {
+    "en": "50234c10261cc298",
+    "text": "Mode de compatibilité avec les portefeuilles"
+  },
+  "oid4vc.walletCompatibility|description": {
+    "en": "a8207c4165957956",
+    "text": "Désactive, pour OpenID4VCI et OpenID4VP, tout algorithme JWS qu’un portefeuille utilisé aujourd’hui refuse ou qu’aucune spécification publiée ne définit pour ces protocoles : les post-quantiques et les composites (ML-DSA-44, -65 et -87 relèvent de la RFC 9964, mais aucun portefeuille ne les accepte encore ; SLH-DSA et les algorithmes ML-DSA composites sont des Internet-Drafts). Activé : aucun ne figure dans les métadonnées de l’émetteur ni du vérificateur, un justificatif dc+sd-jwt ou jwt_vc_json, un Request Object OpenID4VP ou une offre du portail n’est jamais signé avec l’un d’eux (un paramètre qui en nomme un est refusé plutôt que remplacé), et un justificatif, Key Binding JWT, VP JWT, preuve de possession ou liste d’état étrangère signé avec l’un d’eux est refusé. DÉSACTIVÉ, la valeur par défaut : tout algorithme que détient ce domaine est proposé et accepté, comme auparavant. ldp_vc (bbs-2023 et ses cryptosuites de détenteur) n’est pas concerné, ni aucun autre protocole : keys.postQuantumSigning est l’interrupteur pour tout le domaine."
   },
   "oid4vp.verifierAttestation|label": {
     "en": "43be5976a5b30428",
@@ -5784,8 +6604,8 @@
     "text": "Autres émetteurs d’attestations de confiance (PEM)"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "60a2c73b8c2c6aec",
-    "text": "Des certificats PEM, concaténés, dont le vérificateur de ce service accepte les clés pour une signature d’attestation SD-JWT VC ou jwt_vc_json EN PLUS de l’émetteur propre à ce domaine. Vide — la valeur par défaut — ne fait confiance qu’à cet émetteur, comme toujours. Un certificat est utilisé comme une CLÉ : aucune chaîne n’est construite, mais sa révocation est consultée lorsqu’il vérifie une attestation (pki.revocationCheck, depuis le 2026-09-12)."
+    "en": "bbe880b9d434d9ab",
+    "text": "Des certificats PEM, concaténés, dont le vérificateur de ce service accepte les clés pour une signature d’attestation SD-JWT VC ou jwt_vc_json EN PLUS de l’émetteur propre à ce domaine. Vide — la valeur par défaut — ne fait confiance qu’à cet émetteur, comme toujours. Un certificat est utilisé comme une CLÉ : aucune chaîne n’est construite, mais sa révocation est consultée lorsqu’il vérifie une attestation (pki.revocationCheck, depuis le 2026-09-12). Un certificat dont la clé est ML-DSA, SLH-DSA ou ML-DSA composite vérifie une attestation et une liste d’état signées avec cet algorithme (#657), sauf si oid4vc.walletCompatibility est activé."
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5794,6 +6614,30 @@
   "oid4vp.expectedVct|description": {
     "en": "8cc9cdf9a93a0260",
     "text": "Le `vct` que le vérificateur exige d’une SD-JWT VC présentée. La valeur par défaut est le type que produit cet émetteur ; modifiez-la pour accepter une attestation qu’un autre émetteur produit sous son propre type."
+  },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "Autorités émettrices de mdoc de confiance (certificats IACA, PEM)"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "Des certificats PEM, concaténés : les certificats d’AC de l’autorité émettrice (ISO/IEC 18013-5, annexe B) auxquels le certificat du signataire de document d’un mdoc présenté doit se chaîner. La chaîne est construite et vérifiée comme le dit la RFC 5280, la révocation du signataire de document est consultée (pki.revocationCheck), et un mdoc dont le signataire ne se chaîne à aucun d’eux est refusé. Vide — la valeur par défaut — ne fait confiance à aucun émetteur de mdoc, de sorte qu’une présentation mso_mdoc est refusée tant qu’aucun n’est nommé."
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "Type de document mdoc attendu (docType)"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "Le `docType` que demande une requête mso_mdoc (`meta.doctype_value`) et que le vérificateur exige du document présenté et de son Mobile Security Object. La valeur par défaut est le permis de conduire mobile de l’ISO/IEC 18013-5."
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "Espace de noms mdoc où sont lues les revendications demandées"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "L’espace de noms que nomment les chemins de revendication d’une requête mso_mdoc (`[namespace, element]`, OpenID4VP 1.0, annexe B.2.3). Chaque revendication demandée l’est comme l’élément de données du même nom, sauf birthdate (birth_date) et address (resident_address), que l’ISO/IEC 18013-5 nomme autrement. La valeur par défaut est celle du permis de conduire mobile."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -5939,6 +6783,38 @@
     "en": "89f8d541b4738289",
     "text": "Les configurations de credential dont les credentials sont liés au DID de la personne plutôt qu'à une clé. Pour chacune d'elles, la preuve du wallet doit désigner sa clé par un kid qui est une URL did:jwk ou did:key que la personne a prouvée sur sa page Self-issued IDs (une entrée d'administrateur ne suffit pas), et le credential porte ce DID : cnf.kid dans un dc+sd-jwt, credentialSubject.id, sub et cnf.kid dans un jwt_vc_json, credentialSubject.id dans un ldp_vc. Les métadonnées indiquent did:jwk et did:key pour elle. Chaque copie d'un lot porte le même DID, elles sont donc corrélables — c'est le compromis accepté. Vide, toutes les configurations sont liées à une clé, comme avant. did:web n'est pas proposé."
   },
+  "did.personPublishing|label": {
+    "en": "e68b6af2230600ec",
+    "text": "Publier un did:web pour une personne"
+  },
+  "did.personPublishing|description": {
+    "en": "841dc751d16e1137",
+    "text": "Permet à une personne de créer un did:web que ce domaine publie pour elle, sur la page Self-issued IDs de son portail (#1291) : did:web:<host>[:realm:<id>]:users:<rid>, où <rid> fait 128 bits aléatoires, si bien que personne ne peut énumérer les comptes en sondant des adresses et que deux DID d'une même personne ne peuvent pas être reliés. Son document est servi à /users/<rid>/did.json avec toutes ses versions conservées, et il peut être le DID préféré de la personne. Activé, une configuration de credential liée au DID (oid4vci.didHolderBinding) propose aussi did:web pour un DID que ce domaine héberge et que la personne a prouvé avec un wallet. Désactivé : rien de nouveau n'est publié ; un DID déjà publié est toujours servi, désactivé ou non, car son adresse est conservée pour de bon. En mode produit, un DID n'est publié que sur un global.publicBaseUrl épinglé."
+  },
+  "did.personCustody|label": {
+    "en": "057d429ef011ffab",
+    "text": "Qui détient la clé privée du DID d'une personne"
+  },
+  "did.personCustody|description": {
+    "en": "d6a546fec114599d",
+    "text": "Qui détient la clé privée d'un DID publié pour une personne. `wallet` (la valeur par défaut, et la plus sûre) : le wallet de la personne prouve sa propre clé dans un échange auto-émis (SIOPv2) et le domaine n'en publie que la moitié publique ; chaque changement de clé ultérieur est autorisé par une clé que nomme la version courante et prouvé par la nouvelle clé. `realm` : le domaine génère la clé et la garde scellée, si bien que le DID peut être préféré et divulgué dans le claim did mais ne peut jamais connecter un wallet ni lier un credential. `download` : le domaine génère la paire, montre la clé privée UNE seule fois et n'en garde que la moitié publique ; le DID n'est pas prouvé tant que la personne n'a pas prouvé la clé avec un wallet. AVERTISSEMENT : avec `download` la clé privée transite par le navigateur, et avec `realm` le domaine peut agir comme la personne ; ne les choisissez que là où c'est acceptable."
+  },
+  "did.personMaxPerPerson|label": {
+    "en": "5a10d569545ab9fe",
+    "text": "DID publiés qu'une personne peut détenir"
+  },
+  "did.personMaxPerPerson|description": {
+    "en": "ddaedbc77af9d48d",
+    "text": "Combien de DID publiés ACTIFS une personne peut détenir. Un DID désactivé ne compte pas, et son adresse continue de répondre 410 Gone. Chacun compte aussi parmi les dix sujets auto-émis qu'une personne peut enregistrer."
+  },
+  "did.personKeyAlgorithm|label": {
+    "en": "2ba095f9fc035eca",
+    "text": "Algorithme d'une clé de DID générée par le domaine"
+  },
+  "did.personKeyAlgorithm|description": {
+    "en": "63a8db054fa27772",
+    "text": "L'algorithme d'une clé que le domaine génère pour le DID d'une personne, dans les modes de garde `realm` et `download` : ES256 (P-256), ES384 (P-384) ou EdDSA (Ed25519). En garde `wallet`, le wallet choisit sa propre clé. Une clé déjà publiée garde son algorithme."
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "Servir la W3C VC API"
@@ -6022,6 +6898,18 @@
   "krb5.serviceSalt|restartReason": {
     "en": "6f0fcf17e84ec4f0",
     "text": "les clés à long terme du compte de service en sont dérivées au démarrage. Un DOMAINE DE CONFIANCE peut néanmoins le porter : la base de principaux d’un domaine est construite lorsque son Kerberos est activé et reconstruite lorsque cette valeur change, si bien que rien de la valeur du domaine n’a été consommé au démarrage"
+  },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "Proposer AES avec SHA-1 en production"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "Mode produit uniquement. Activé, ce KDC peut aussi utiliser les enctypes 17 et 18 (AES avec HMAC-SHA1-96, RFC 3962). Désactivé, par défaut, le mode produit utilise seulement 19 et 20 (RFC 8009). AVERTISSEMENT : l’exigence 11.4.1 d’ASVS 5.0.0 n’accepte pas SHA-1 ici ; activez ce réglage uniquement pour des clients Kerberos qui ne parlent rien de plus récent."
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "les clés de chaque principal sont créées au démarrage"
   },
   "krb5.enctypes|label": {
     "en": "e28806e1a9d53522",
@@ -6444,8 +7332,8 @@
     "text": "Écouteur LDAP en clair"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "Indique si l’écouteur non chiffré sur ldap.port est démarré ou non. Activé par défaut, comme ce service l’a toujours fait. Désactivé, LDAPS sur ldap.tlsPort reste le seul accès — ce que souhaite un déploiement dont les binds sont VÉRIFIÉS (mode produit), puisqu’un bind simple sur 389 envoie le mot de passe en clair. En mode produit avec ce paramètre activé, un avertissement disant exactement cela est journalisé au démarrage."
+    "en": "64c4523fa982995b",
+    "text": "Indique si l’écouteur non chiffré sur ldap.port est démarré ou non. Activé par défaut en mode développement, comme ce service l’a toujours fait, et désactivé par défaut en mode produit. Désactivé, LDAPS sur ldap.tlsPort reste le seul accès — ce que souhaite un déploiement dont les binds sont VÉRIFIÉS (mode produit), puisqu’un bind simple sur 389 envoie le mot de passe en clair. En mode produit avec ce paramètre activé, un avertissement disant exactement cela est journalisé au démarrage."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -6576,8 +7464,8 @@
     "text": "Mot de passe Digest partagé"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "Le mot de passe que partagent tous les noms d’utilisateur pour HTTP Digest — la même valeur que celle par défaut de KRB5_USER_PASSWORD, afin qu’il n’y ait qu’un fait à retenir au lieu de deux. Il ne peut pas s’agir de « n’importe quoi » comme pour un bind ou un identifiant Basic : une réponse digest est un hachage sur le mot de passe, si bien qu’un serveur sans mot de passe n’effectuerait pas du tout l’échange et le code digest d’un client ne serait pas exercé."
+    "en": "6819fb3962f9f205",
+    "text": "Le mot de passe que partagent tous les noms d’utilisateur pour HTTP Digest — la même valeur que celle par défaut de KRB5_USER_PASSWORD, afin qu’il n’y ait qu’un fait à retenir au lieu de deux. Il ne peut pas s’agir de « n’importe quoi » comme pour un bind ou un identifiant Basic : une réponse digest est un hachage sur le mot de passe, si bien qu’un serveur sans mot de passe n’effectuerait pas du tout l’échange et le code digest d’un client ne serait pas exercé. Il peut être livré comme un fichier nommé par SCIM_DIGEST_PASSWORD_FILE."
   },
   "scim.digestNonceSeconds|label": {
     "en": "1fa6981a1aebea0d",
@@ -6728,8 +7616,8 @@
     "text": "Intervalle de synthèse (secondes)"
   },
   "scimClient.summaryS|description": {
-    "en": "532d257e0c6e60fe",
-    "text": "Au plus une ligne de journal de synthèse par domaine et par intervalle."
+    "en": "ea1e0599735008ca",
+    "text": "La fréquence à laquelle le décompte des livraisons d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug."
   },
   "scimClient.reconcileCheckS|label": {
     "en": "f122dddcfc10af98",
@@ -7726,6 +8614,14 @@
   "risk.uploadMaxBytes|description": {
     "en": "65308f69a41d480e",
     "text": "La taille maximale d’un fichier téléversé, tel qu’envoyé (compressé, le cas échéant). Refusé avant la lecture du moindre octet lorsque la requête annonce davantage, et interrompu dès qu’il dépasse cette taille sinon. Le fichier des villes de DB-IP Lite fait quelques centaines de mégaoctets compressé."
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "Part maximale des lignes d’un jeu de données pouvant échouer à l’analyse (pourcentage)"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "Un fichier de jeu de données dont plus de ce pourcentage de lignes hors commentaires ne sont pas des enregistrements du format est refusé, et rien n’en est conservé. 100 accepte tout fichier contenant au moins un enregistrement, ce que faisait ce service auparavant. AVERTISSEMENT : à 100, un fichier du mauvais type peut être chargé dès qu’une ligne est analysée."
   },
   "risk.expandedMaxBytes|label": {
     "en": "c9644dc433201840",
@@ -9564,12 +10460,24 @@
     "text": "Mode de persistance"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "L’endroit où sont écrits l’annuaire intégré, le registre des domaines de confiance et les surcharges appconfig d’exécution. memory n’écrit rien et correspond à ce que ce service a toujours fait — tout disparaît au redémarrage. ldif écrit un fichier RFC 2849 par domaine plus deux fichiers JSON dans persistence.dataDir, ce qui est la réponse pour le développement local et ne nécessite aucune base de données. postgres écrit un ensemble de tables (postgres/schema.sql les liste) et constitue le stockage partagé. CE QUE CE SERVICE ÉMET — sessions, jetons, codes, artefacts, principaux Kerberos, caches anti-rejeu, compteurs et journal d’audit — est persisté en mode PRODUIT sur postgres et dans aucune autre configuration ; voir persistence.minted. Le mode développement n’en persiste rien, car la clé de signature y est régénérée à chaque démarrage et un jeton qui lui survivrait ne se vérifierait contre rien. Le stockage ldif n’en conserve rien dans aucun mode et le signale au démarrage, car il écrit des fichiers entiers à chaque vidage."
+    "en": "9017af2918cf94be",
+    "text": "L’endroit où sont écrits l’annuaire intégré, le registre des domaines de confiance et les surcharges appconfig d’exécution. memory n’écrit rien et correspond à ce que ce service a toujours fait — tout disparaît au redémarrage. ldif écrit un fichier RFC 2849 par domaine plus deux fichiers JSON dans persistence.dataDir, ce qui est la réponse pour le développement local et ne nécessite aucune base de données. postgres écrit un ensemble de tables (postgres/schema.sql les liste) et constitue le stockage partagé. mariadb est le même stockage sur MariaDB (mariadb/schema.sql), un second moteur contre lequel s’exécute la suite de tests : persistence.databaseUrl est alors une adresse mariadb://, le paquet mysql2 doit être installé, et ce qui exige PostgreSQL lui-même (les cellules, l’import en masse, la fenêtre d’annuaire) est refusé. CE QUE CE SERVICE ÉMET — sessions, jetons, codes, artefacts, principaux Kerberos, caches anti-rejeu, compteurs et journal d’audit — est persisté en mode PRODUIT sur postgres et dans aucune autre configuration ; voir persistence.minted. Le mode développement n’en persiste rien, car la clé de signature y est régénérée à chaque démarrage et un jeton qui lui survivrait ne se vérifierait contre rien. Le stockage ldif n’en conserve rien dans aucun mode et le signale au démarrage, car il écrit des fichiers entiers à chaque vidage."
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
     "text": "le stockage est ouvert et lu avant que l’écouteur ne se lie"
+  },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "Dialecte SQL du cluster"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "Les instructions qu’un magasin postgres envoie pour coordonner plusieurs processus : les réclamations, les baux, les compteurs, les fenêtres de limitation de débit, les budgets, les barrières d’écriture, le verrou d’adhésion au cluster, le battement de cœur et l’élagage du journal des modifications. native désigne celles propres à PostgreSQL (upserts conditionnels, verrous consultatifs, LISTEN/NOTIFY) et c’est ce que la production exécute. portable désigne les instructions qu’exécute un second moteur de base de données (des insertions simples qui ne font rien sur un doublon, des verrous de ligne dans sts_cluster_locks, et aucune notification de modification, si bien que le journal des modifications est interrogé chaque seconde sauf si persistence.pollInterval est défini) ; il existe pour que la suite de tests puisse éprouver ce code sur PostgreSQL. Les deux sont corrects ; portable coûte davantage d’instructions par opération."
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "le pilote du magasin choisit ses instructions lorsqu’il est construit"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -9840,8 +10748,8 @@
     "text": "Intervalle d’interrogation des modifications (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "À quelle fréquence ce processus demande au journal des modifications ce que d’autres processus ont validé. C’est le CONTRAT, et le signal LISTEN/NOTIFY n’en est qu’une optimisation ; c’est donc le délai de convergence dans le pire des cas lorsqu’une notification est perdue — un écouteur abandonné, un redémarrage de la base — et le délai habituel est de quelques millisecondes. Cinq secondes, car le signal arrive normalement en premier et un intervalle plus court n’apporte que des requêtes ; 250 ms est le minimum. C’est aussi la taille de la fenêtre des caches anti-rejeu décrite sous persistence.coordinate."
+    "en": "0620a679e69c0d43",
+    "text": "La fréquence à laquelle ce processus demande au journal des modifications ce que d’autres processus ont validé. C’est le CONTRAT, et le signal LISTEN/NOTIFY n’en est qu’une optimisation : c’est donc le délai de convergence au pire lorsqu’une notification est perdue — un écouteur interrompu, un redémarrage de la base — et le délai habituel est de quelques millisecondes. Cinq secondes, parce que le signal arrive normalement en premier et qu’un intervalle plus court n’achète que des requêtes ; 250 ms est le plancher. Lorsque le magasin n’envoie aucun signal (persistence.sqlDialect portable) et que ce réglage n’est pas défini, l’intervalle est d’une seconde. C’est aussi la taille de la fenêtre du cache anti-rejeu décrite sous persistence.coordinate."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",
@@ -10044,8 +10952,8 @@
     "text": "Intervalle de synthèse des livraisons inter-cellules (s)"
   },
   "cells.deliverySummaryS|description": {
-    "en": "4d6c6babc8c6fdfa",
-    "text": "Au plus une ligne de synthèse par domaine pour ce nombre de secondes, plutôt qu’une ligne par livraison."
+    "en": "6d3c80b9adce5ba8",
+    "text": "La fréquence à laquelle le décompte des livraisons entre cellules d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug."
   },
   "cells.deliverySweepS|label": {
     "en": "f26150d48283cebf",
@@ -10188,8 +11096,8 @@
     "text": "Nombre maximal d’exécutions simultanées"
   },
   "scheduler.maxConcurrentRuns|description": {
-    "en": "56fac41f63177db7",
-    "text": "Combien d’exécutions planifiées ou manuelles le leader mène simultanément, toutes tâches et tous domaines de confiance confondus. Un créneau est un multiple de son intervalle, si bien que chaque tâche horaire de chaque domaine arrive à échéance à la même seconde ; chaque exécution occupe une connexion au stockage pendant qu’elle revendique et travaille, et le stockage postgres en a quatre. Les autres attendent, le Run now d’une personne en premier, et démarrent à mesure que des exécutions se terminent. Il n’excède jamais le nombre de connexions du pool moins une, quelle que soit sa valeur, afin que le planificateur ne puisse pas prendre toutes les connexions aux requêtes."
+    "en": "dc2ba3cac81ad956",
+    "text": "Combien d'exécutions planifiées ou manuelles le leader mène à la fois, tous travaux et domaines de confiance confondus. 0, la valeur par défaut, signifie deux exécutions, ou une de moins que le nombre de threads de travail des requêtes (workers.requestCount) lorsque c'est davantage, de sorte qu'un thread reste disponible pour répondre aux requêtes sans travail en cours. Une valeur de 1 ou plus est utilisée à la place. Un créneau est un multiple de son intervalle, si bien que chaque travail horaire de chaque domaine est dû à la même seconde ; les autres attendent, le Run now d'une personne en premier, et démarrent à mesure que les exécutions se terminent. Elle n'est jamais supérieure au nombre de connexions du pool du stockage moins une, quelle que soit sa valeur, afin que le planificateur ne puisse pas prendre toutes les connexions aux requêtes."
   },
   "scheduler.niceBusyThreshold|label": {
     "en": "115ae6125244b30a",
@@ -11534,5 +12442,29 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2MaxConcurrentStreams. -1, la valeur par défaut, suit http.http2MaxConcurrentStreams ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
+  },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Demander avant de connecter une personne"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Indique si une personne est interrogée, une fois par application, avant que SAML 2.0 ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; saml2SsoConsent sur l’entrée d’une application le remplace pour cette application."
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Demander avant de connecter une personne"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Indique si une personne est interrogée, une fois par application, avant que SAML 1.1 ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; saml11SsoConsent sur l’entrée d’une application le remplace pour cette application."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Demander avant de connecter une personne"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Indique si une personne est interrogée, une fois par application, avant que WS-Federation ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; wsfedSsoConsent sur l’entrée d’une application le remplace pour cette application."
   }
 }

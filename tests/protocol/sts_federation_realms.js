@@ -226,8 +226,13 @@ function realmBase(realm) {
 function squash(text) {
   log.debug("Entering squash().");
   log.debug("Leaving squash().");
+  // THE SHARED ERROR PAGE (#1326, #1327) opens with the language chooser
+  // and keeps the English what and why in its diagnostics, below the
+  // translated sentence: the chooser is dropped and the window is wide
+  // enough to hold both.
   return String(text || "").replace(/<style[\s\S]*?<\/style>/g, " ")
-    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 400);
+    .replace(/<details class="language-row">[\s\S]*?<\/details>/g, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
 function htmlDecode(text) {
@@ -374,8 +379,8 @@ async function consentAt(cookies, url) {
 function startsSession(r) {
   log.debug("Entering startsSession().");
   const started = (r.setCookies || []).some(function (line) {
-    return /^sts_session=[^;]+/.test(line) &&
-           !/^sts_session=;/.test(line) && !/Max-Age=0/i.test(line);
+    return /^(?:__Host-)?sts_session=[^;]+/.test(line) &&
+           !/^(?:__Host-)?sts_session=;/.test(line) && !/Max-Age=0/i.test(line);
   });
   log.debug("Leaving startsSession(). " + started);
   return started;
@@ -440,7 +445,7 @@ async function toTheDoor(cookies, startUrl, username) {
       }
       // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
       // answered through the one helper where the walk is sent to it.
-      if (/\/authn\/login\?authn=/.test(next)) {
+      if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(next)) {
         trail.screens.push({ kind: "sign-in", at: next });
         r = await signInAt(cookies, next, username);
         continue;

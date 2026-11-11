@@ -172,6 +172,59 @@ class OverviewPages {
       '<p class="note">' + t.html('portal.directory.notEditable') + '</p>';
   }
 
+  // THE PERSON'S PROFILE PHOTO (#719). The file input is not a field: the
+  // runtime in `web_photo.ts` turns what is chosen into the square that is
+  // previewed, puts that in the hidden field, and only then enables Save, so
+  // what is saved is what the person saw.
+  /**
+   * The profile photo card.
+   *
+   * @param photo - the Overview's `photo`, null with no directory entry
+   * @param t - the translator
+   * @returns the HTML, '' with no entry
+   */
+  static photoCard(photo: Json, t: Json): string {
+    if (!photo) {
+      return '';
+    }
+    const limits = photo.limits || {};
+    const shown = photo.path
+      ? '<img class="photoshown" id="portal-photo-current" alt="' +
+        esc(t.text('portal.photo.alt')) + '" src="' + esc(photo.path) + '">' +
+        (photo.origin === 'federation'
+          ? '<p class="note">' + t.html('portal.photo.fromPartner') + '</p>'
+          : '')
+      : '<p class="sub">' + t.html('portal.photo.none') + '</p>';
+    const upload = photo.selfService
+      ? '<form method="post" action="' + BASE + '/photo" id="portal-photo">' +
+        '<label for="portal-photo-file">' + t.html('portal.photo.choose') +
+        '</label> <input type="file" id="portal-photo-file" ' +
+        'accept="image/jpeg,image/png" data-max-file="' +
+        esc(limits.maxFileBytes) + '" data-max-stored="' +
+        esc(limits.maxStoredBytes) + '" data-min-pixels="' +
+        esc(limits.minPixels) + '"><p class="note">' +
+        t.html('portal.photo.hint', {
+          max: Math.floor(Number(limits.maxFileBytes) / 1048576),
+          min: limits.minPixels }) + '</p>' +
+        '<p class="err" id="portal-photo-problem" role="alert" hidden></p>' +
+        '<div id="portal-photo-preview" hidden><p class="note">' +
+        t.html('portal.photo.preview') + '</p><img class="photoshown" ' +
+        'id="portal-photo-new" alt="' + esc(t.text('portal.photo.newAlt')) +
+        '"></div><input type="hidden" name="image" id="portal-photo-image">' +
+        '<button type="submit" id="portal-photo-save" disabled>' +
+        t.html('portal.photo.save') + '</button></form>'
+      : '<p class="note">' + t.html('portal.photo.off') + '</p>';
+    const remove = photo.path
+      ? '<form method="post" action="' + BASE + '/photo/remove"><button ' +
+        'class="secondary" type="submit">' + t.html('portal.photo.remove') +
+        '</button></form>'
+      : '';
+    return '<div class="card" id="photo"><h2>' +
+      t.html('portal.photo.heading') + '</h2><p class="note">' +
+      t.html('portal.photo.note') + '</p>' + shown + upload + remove +
+      '</div>';
+  }
+
   // THE LANGUAGE ON THE PERSON'S OWN ACCOUNT (#539): a real form and a real
   // select, posting to `/portal/language`; "Use my browser's language"
   // removes the attribute, which the header's chooser cannot do.
@@ -207,6 +260,74 @@ class OverviewPages {
       '</select><button type="submit">' + t.html('portal.language.save') +
       '</button></form><p class="note">' + t.html('portal.language.note') +
       '</p></div>';
+  }
+
+  // THE REALM'S CUSTOM ATTRIBUTES (#700): each one whose definition shows
+  // it on the portal, with the person's own values. One that the definition
+  // also lets them edit carries a real form posting to
+  // `/portal/attributes`: one box per value it holds and, for a
+  // multi-valued attribute, one empty box to add a value — a cleared box
+  // removes its value, and the operation replaces the whole set. No card at
+  // all where nothing is shown.
+  /**
+   * The custom attributes card.
+   *
+   * @param rows - the Overview's `customAttributes`
+   * @param t - the translator
+   * @returns the HTML, '' when there is nothing to show
+   */
+  static customCard(rows: Json[], t: Json): string {
+    const shown: Json[] = Array.isArray(rows) ? rows : [];
+    if (!shown.length) {
+      return '';
+    }
+    const inputType = function (syntax: string): string {
+      return syntax === 'email' ? 'email' : (syntax === 'uri' ? 'url'
+                                                              : 'text');
+    };
+    const box = function (one: Json, i: number, value: string): string {
+      const id = 'portal-attr-' + one.name + '-' + i;
+      return '<div><input type="' + inputType(String(one.syntax)) +
+        '" id="' + esc(id) + '" aria-label="' + esc(one.label) + '"' +
+        ' name="values" maxlength="1024" value="' + esc(value) +
+        '"' + (value === '' && i > 0
+          ? ' placeholder="' + esc(t.text('portal.custom.addValue')) + '"'
+          : '') + '></div>';
+    };
+    const body = shown.map(function (one: Json): string {
+      const values: string[] = (one.values || []).map(String);
+      const shownValues = values.length
+        ? (values.length > 1
+          ? '<ul class="vals">' + values.map(function (v: string): string {
+            return '<li>' + esc(v) + '</li>';
+          }).join('') + '</ul>'
+          : esc(values[0]))
+        : '<span class="unset">' + t.html('portal.custom.none') +
+          '</span>';
+      const boxes = one.multi
+        ? values.concat(['']).map(function (v: string, i: number): string {
+          return box(one, i, v);
+        }).join('')
+        : box(one, 0, values.length ? values[0] : '');
+      const form = one.editable
+        ? '<form method="post" action="' + BASE + '/attributes">' +
+          '<input type="hidden" name="attribute" value="' + esc(one.name) +
+          '">' + boxes + (one.multi
+            ? '<p class="note">' + t.html('portal.custom.multiNote') + '</p>'
+            : '') + '<button type="submit">' + t.html('portal.custom.save') +
+          '</button></form>'
+        : '<div class="sub">' + t.html('portal.custom.readOnly') + '</div>';
+      return '<tr><th title="' + esc(one.name) + '">' + esc(one.label) +
+        '</th><td>' + (one.editable ? '' : shownValues) + form +
+        (one.description
+          ? '<div class="attr">' + esc(one.description) + '</div>' : '') +
+        '<div class="attr"><code>' + esc(one.name) + '</code> &middot; ' +
+        esc(one.syntax) + '</div></td></tr>';
+    }).join('');
+    return '<div class="card" id="custom-attributes"><h2>' +
+      t.html('portal.custom.heading') + '</h2><p class="sub">' +
+      t.html('portal.custom.lead') + '</p><table>' + body +
+      '</table></div>';
   }
 
   /**
@@ -303,6 +424,10 @@ class OverviewPages {
       t.html('portal.overview.seeThem') + '</a></td></tr><tr><th>' +
       t.html('portal.overview.secondFactor') + '</th><td>' + secondFactor +
       '</td></tr></table></div>' +
+
+      OverviewPages.customCard(view.customAttributes, t) +
+
+      OverviewPages.photoCard(view.photo, t) +
 
       OverviewPages.languageCard(view.language, t) +
 
@@ -470,7 +595,8 @@ class OverviewPages {
         '</a>' + t.html('portal.signals.incompleteAfter') + '</p></div>'
       : '';
     const list = rows.length
-      ? '<table class="grid"><tr><th>' + t.html('portal.signals.when') +
+      ? '<table class="grid signals"><tr><th>' +
+        t.html('portal.signals.when') +
         '</th><th>' + t.html('portal.signals.what') + '</th><th>' +
         t.html('portal.signals.detail') + '</th></tr>' +
         rows.map(function (row: Json): string {
@@ -481,7 +607,8 @@ class OverviewPages {
             esc(row.type || '') + '</span></td><td>' +
             (Object.keys(payload).length
               ? '<details><summary>' + t.html('portal.signals.details',
-                  { n: Object.keys(payload).length }) + '</summary><pre>' +
+                  { n: Object.keys(payload).length }) + '</summary>' +
+                '<pre class="signal-payload">' +
                 esc(JSON.stringify(payload, null, 2)) + '</pre></details>'
               : '<span class="ident">' +
                 t.html('portal.signals.nothingMore') + '</span>') +

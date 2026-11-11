@@ -72,8 +72,8 @@
     "text": "PAS D’ETag NI DE changePassword, tous deux annoncés comme non pris en charge plutôt qu’à moitié implémentés. Une version construite sur un horodatage d’une résolution d’une seconde serait un contrôle de concurrence auquel un client se fierait et qui serait faux ; et aucun mot de passe n’est vérifié dans ce service, il n’y en a donc aucun à changer."
   },
   "scim.doesNotDo.member": {
-    "en": "3cce88d4d02d3509",
-    "text": "UN MEMBRE QUI NE NOMME RIEN EST ACCEPTÉ. Cet annuaire n’assure délibérément aucune intégrité référentielle — supprimer un utilisateur laisse son DN dans chaque groupe qui le listait —, si bien que refuser ici un membre orphelin rendrait cet état impossible à reproduire. /admin/groups les signale."
+    "en": "fc37b8e96ac4cde8",
+    "text": "UN MEMBRE QUI NE DÉSIGNE RIEN EST REFUSÉ (400 invalidValue). Un groupe ne liste que des personnes, des groupes et des applications qui existent, et en supprimer un le retire de chaque groupe qui le listait."
   },
   "scim.endpoints.serviceProviderConfig": {
     "en": "ec5c59eeb4453e91",
@@ -284,8 +284,8 @@
     "text": "La session d’authentification unique du navigateur dont ce service dispose déjà — celle qu’établit /authn/login et que partage WS-Federation —, proposée ici parce que la section 2 la nomme : « clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider ». C’est ce qui permet à un appel SCIM depuis une page de ce service de fonctionner sans second identifiant. Il n’y a pas de défi pour elle : un serveur ne peut pas demander un cookie dans WWW-Authenticate ; elle est donc utilisée lorsqu’elle est présente et jamais exigée."
   },
   "auth.schemes.clientcert": {
-    "en": "440fefb9a488412f",
-    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Disponible uniquement là où cette requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport à une ancre du magasin de confiance client (/admin/tls/trust) — donc sur le port principal uniquement lorsqu’il est lié en HTTPS (global.https, qu’active oauth2.rfc9700). Un certificat d’une autorité de certification externe (une ancre que quelqu’un a ajoutée) est la personne ou l’application dont l’entrée l’enregistre, octet pour octet, dans userCertificate, et rien d’autre : enregistré sur aucune entrée ou sur plusieurs, il n’est pas cet identifiant (STS-SCIM-0084, STS-SCIM-0085). Le certificat d’une personne que ce domaine a émis est classé sous son sujet sous forme RFC 4514. Il n’est pas consigné à nouveau ici : tls_server.js consigne délibérément un certificat une fois par CONNEXION, et le compter par requête annulerait cela par l’autre bout. Un certificat que ce domaine a émis pour une APPLICATION est cette application, et ne peut faire que ce que déclare son oauthAllowedScope : le scope de lecture pour lire et le scope d’écriture pour écrire, vérifié à chaque requête, de sorte qu’une application qui ne déclare ni l’un ni l’autre est refusée (STS-SCIM-0083). Le certificat d’une personne, émis ici ou enregistré sur son entrée, peut faire les deux."
+    "en": "61bd6775c16d8b0a",
+    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Disponible uniquement là où cette requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport à une ancre du magasin de confiance client (/admin/tls/trust) — donc sur le port principal uniquement lorsqu’il est lié en HTTPS (global.https, qu’active oauth2.rfc9700). Un certificat d’une autorité de certification externe (une ancre que quelqu’un a ajoutée) est la personne ou l’application dont l’entrée l’enregistre, octet pour octet, dans userCertificate, et rien d’autre : enregistré sur aucune entrée ou sur plusieurs, il n’est pas cet identifiant. Le certificat d’une personne que ce domaine a émis est classé sous son sujet sous forme RFC 4514. Il n’est pas consigné à nouveau ici : tls_server.js consigne délibérément un certificat une fois par CONNEXION, et le compter par requête annulerait cela par l’autre bout. Un certificat que ce domaine a émis pour une APPLICATION est cette application, et ne peut faire que ce que déclare son oauthAllowedScope : le scope de lecture pour lire et le scope d’écriture pour écrire, vérifié à chaque requête, de sorte qu’une application qui ne déclare ni l’un ni l’autre est refusée. Le certificat d’une personne, émis ici ou enregistré sur son entrée, peut faire les deux."
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",
@@ -296,16 +296,16 @@
     "text": "TOUS LES AUTRES SCHÉMAS PEUVENT FAIRE LES DEUX. Basic, Digest, HOBA, un cookie de session et le certificat client d’une personne ne portent aucun scope ; la politique qui les concerne est donc toute la surface. Cela vaut la peine d’être relu : un appelant qui ne peut pas obtenir de scope peut utiliser Basic à la place, c’est pourquoi chaque schéma a son propre interrupteur — un déploiement qui éprouve la gestion des scopes désactive les cinq autres."
   },
   "auth.policy.certificate": {
-    "en": "113cbb3081d556a7",
-    "text": "LE CERTIFICAT D’UNE APPLICATION EST TENU À SES SCOPES DÉCLARÉS (#1048). Un certificat client TLS que ce domaine a émis pour une application ne porte aucun scope ; il peut donc faire ce que l’oauthAllowedScope de cette application déclare parmi les deux ci-dessus, vérifié à chaque requête : une application qui ne déclare aucun des deux est refusée, une qui ne déclare que le scope de lecture ne peut que lire, et retirer une déclaration coupe aussitôt le certificat (STS-SCIM-0083)."
+    "en": "b58d444ed6dfd985",
+    "text": "LE CERTIFICAT D’UNE APPLICATION EST TENU À SES SCOPES DÉCLARÉS (#1048). Un certificat client TLS que ce domaine a émis pour une application ne porte aucun scope ; il peut donc faire ce que l’oauthAllowedScope de cette application déclare parmi les deux ci-dessus, vérifié à chaque requête : une application qui ne déclare aucun des deux est refusée, une qui ne déclare que le scope de lecture ne peut que lire, et retirer une déclaration coupe aussitôt le certificat."
   },
   "auth.policy.rfc": {
     "en": "01badc7fa9089572",
     "text": "RFC 7644 section 2 exige qu’un fournisseur soit EN MESURE d’associer un client authentifié à une politique de contrôle d’accès. Voici cette politique. Elle tient en deux lignes parce qu’en mode développement ce service n’authentifie personne au sens qui compte — c’est un tourniquet, pas une serrure — et en mode produit, où chaque justificatif est vérifié, ce qu’un appelant vérifié peut faire tient toujours en ces deux lignes."
   },
   "auth.policy.tied": {
-    "en": "695420f96b495164",
-    "text": "UN SCOPE EST LIÉ À UN CLIENT (#110). Les scopes SCIM ne sont émis que pour un client dont l’oauthAllowedScope les déclare, dans les deux modes, et un jeton n’est honoré que tant que son client déclare toujours le scope qu’il utilise — si bien que retirer la déclaration coupe les jetons déjà émis (STS-SCIM-0079)."
+    "en": "f84b2b4dc96d5708",
+    "text": "UN SCOPE EST LIÉ À UN CLIENT (#110). Les scopes SCIM ne sont émis que pour un client dont l’oauthAllowedScope les déclare, dans les deux modes, et un jeton n’est honoré que tant que son client déclare toujours le scope qu’il utilise — si bien que retirer la déclaration coupe les jetons déjà émis."
   },
   "auth.refusedByMode": {
     "en": "024ae1b294c68b2d",

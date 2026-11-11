@@ -298,7 +298,11 @@ host), only `https` with the receiver's certificate verified is used — plain
 http only with `ssf.pushAllowHttp` and verification off only with
 `ssf.pushSkipTlsVerification`, **both in development mode only** (#171);
 product reaches a privately certified receiver through `ssf.pushCaFile` — and
-every push has a timeout, a cap on the response size and **no redirects**. With push
+every push has a timeout, a cap on the response size and **no redirects**. The
+receiver's host must be in `security.outboundAllowedHosts` when that is set, in
+either mode. In product mode it is also held to the rules every outbound
+request follows: it must not resolve to an internal address, and the push goes
+to the address that was checked (`STS-SSF-0158` otherwise). With push
 turned off, SSF still works in full over poll, and `delivery_methods_supported`
 lists only poll.
 
@@ -519,7 +523,10 @@ nobody in here — a device manager, an endpoint agent, an HR system — is an
    (`fedSignalsDelivery` `poll`) is polled every `ssf.foreignPollS` seconds.
    A push stream is given `/federation/signals/{id}` and an authorization
    header only the two services know. `fedSignalsEvents` is what the stream
-   asks for.
+   asks for. The stream can then be read, updated, replaced (a PUT of every
+   setting this realm supplies), paused or enabled, its status read,
+   verified and deleted from the same page; the token asks for
+   `ssf.read ssf.manage` unless `fedSignalsScope` says otherwise.
 4. **Link people.** For a partner people sign in through, the links its
    sign-ins wrote are what its `iss_sub` subjects match: `iss` is the
    partner (or its SSF issuer) and `sub` the identifier it signs them in
@@ -532,7 +539,8 @@ nobody in here — a device manager, an endpoint agent, an HR system — is an
 A Security Event Token is acted on only if it verified: its signature against
 the keys the partner's SSF configuration names, `typ`, `iss`, the stream's
 `aud`, and a `jti` never seen before. Product mode refuses an unverified one.
-What it leads to is the `signal-response` XACML policy's decision. By
+What it leads to is the `signal-response` XACML policy's decision; a
+`session-revoked` is a revocation whatever its `initiating_entity`. By
 default:
 
 | Partner | Events | Reaction here |
@@ -647,12 +655,21 @@ specifications, and are honoured in both modes.
 
 ## Development and product mode
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a push to a receiver the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside `ssf.pushCaFile`.
+
 | | Development | Product |
 |---|---|---|
 | Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic. A token carries the read scope (`ssf.read`) or the write scope (`ssf.manage`) only when its client declares a scope granting that permission in `oauthAllowedScope` (in both modes), and is honoured only while it still does (`STS-SSF-0107`). Write includes read | required, and a Basic password is checked against the person's hashed `userPassword` |
 | Access tokens | verified | verified |
 | Subjects of automatic events | a person with no `mail` gets an invented `@example.com` address | a real value from the directory entry, or the issuer/subject pair. RISC's two identifier events are not sent when there is no real value |
 | Streams, queues, CAEP and RISC registers | in memory, lost on restart | persisted with other minted state (product mode on postgres) |
+
+**HTTP Basic in product mode.** A password carries no scope, and Basic grants
+both the read and the write scope. In product mode the person must therefore
+hold Admin Write, or the request is refused with 403 (`STS-SSF-0157`). Use an
+OAuth access token for a receiver or a transmitter.
+`security.allowUnscopedPeople` lifts the check, and ASVS 5.0.0 requirements
+8.2.1 and 8.2.2 are then not met.
 
 See [What is not checked](what-is-not-checked.md).
 

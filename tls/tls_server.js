@@ -154,7 +154,6 @@
 const https = require('https');
 const tls = require('tls');
 const fs = require('fs');
-const forge = require('node-forge');
 // The RSA keygen-and-self-sign skeleton this shares with `common/helpers.js`
 // lives in one module since 2026-08-27. What is NOT shared is anything below —
 // the extensions, and the subjectAltName that is the only place the names are.
@@ -751,7 +750,8 @@ if (typeof config.addWriteRule === 'function') {
       log.fatal(errorCodes.tag('STS-TLS-0001') + 'tls: NOT STARTING. The ' +
                 kind + ' listener\'s own TLS settings (listener' +
                 kind.charAt(0).toUpperCase() + kind.slice(1) + '.*) cannot ' +
-                'build a TLS context: ' + e.message + '.');
+                'build a TLS context: ' +
+                String((e && e.message) || e).replace(/\.+$/, '') + '.');
       process.exit(1);
     }
     if (policy.trustAnchorsFile &&
@@ -967,7 +967,7 @@ function handedInCertificate() {
 function selfSignedOrganization() {
   log.debug("Entering selfSignedOrganization().");
   log.debug("Leaving selfSignedOrganization().");
-  return String(config.value('tls.selfSignedOrganization') || 'sts');
+  return String(config.value('tls.selfSignedOrganization') || 'iya-sts');
 }
 
 function makeServerCertificate() {
@@ -1317,7 +1317,8 @@ function splitSuppliedBundle(bundlePem, certFile) {
     }
     try {
       const top = stsCrypto.parseCertificate(topPem);
-      if (top.verify(stsCrypto.parseCertificate(pem).publicKey)) {
+      if (stsCrypto.certificateSignedWith(
+        top, stsCrypto.parseCertificate(pem).publicKey)) {
         anchorPem = pem;
       }
     } catch (e) {
@@ -1346,7 +1347,8 @@ function isSelfSignedPem(pem) {
   log.debug('Entering isSelfSignedPem().');
   try {
     const cert = stsCrypto.parseCertificate(pem);
-    const self = cert.checkIssued(cert) && cert.verify(cert.publicKey);
+    const self = cert.checkIssued(cert) &&
+      stsCrypto.certificateSignedWith(cert, cert.publicKey);
     log.debug('Leaving isSelfSignedPem(). ' + self);
     return self;
   } catch (e) {
@@ -2133,7 +2135,7 @@ function notifyCertificateObservers(algorithm) {
     useCase: 'tls',
     slot: 'server',
     alg: 'RS256',
-    keyAlg: 'rsa-2048',
+    keyAlg: 'rsa-' + require('../common/mode').defaultRsaBits(),
     label: 'TLS server certificate',
     commonName: rsaIssuance.commonName,
     profile: 'tls-server',
@@ -2260,29 +2262,14 @@ function splitPemCertificates(text) {
 function describePem(pem) {
   log.debug('Entering describePem().');
   let subject = '(unreadable)';
+  // A label on a page, not a check. OpenSSL reads it, which is what the listener
+  // will verify against, and it reads the ML-DSA anchors forge could not, so an
+  // ML-DSA root is no longer labelled '(unreadable)'.
   try {
-    const cert = forge.pki.certificateFromPem(pem);
-    subject = cert.subject.attributes.map(function (attribute) {
-      return (attribute.shortName || attribute.name) + '=' + attribute.value;
-    }).join(', ');
+    subject = stsCrypto.parseCertificate(pem).subject
+      .split('\n').join(', ');
   } catch (e) {
-    // Not a certificate this parser can read. It is still handed to OpenSSL as
-    // an anchor — forge and OpenSSL do not accept exactly the same set, and
-    // refusing here on forge's opinion would reject anchors that work. The
-    // subject is a label on a page, not a check.
-    //
-    // AND THE COMMONEST CASE IS NOW A POST-QUANTUM ANCHOR. node-forge has no
-    // ML-DSA and cannot parse a certificate signed with one at all, while the
-    // OpenSSL underneath this process reads it perfectly — so ask OpenSSL
-    // before giving up, or every ML-DSA root a debugger uploads is labelled
-    // '(unreadable)' on a page whose whole job is to say what was trusted.
-    try {
-      subject = stsCrypto.parseCertificate(pem).subject
-          .split('\n').join(', ');
-    } catch (openSslError) {
-      log.warn('tls: an anchor could not be parsed for display: ' +
-               e.message + ' / ' + openSslError.message);
-    }
+    log.warn('tls: an anchor could not be parsed for display: ' + e.message);
   }
   // THE REST OF WHAT A PERSON COMPARES BY EYE (2026-09-12), for the truststore
   // page at /admin/tls/trust: the issuer, the serial and the validity. Read
@@ -2523,7 +2510,7 @@ function secureContextOptions(policy) {
 //   * a rebuild half-fails and leaves a new Root over an old branch.
 //
 // What comes out is a bundle whose four certificates look perfectly right —
-// `CN=sts Root CA` at the top, correct names all the way down — and whose
+// `CN=iya-sts Root CA` at the top, correct names all the way down — and whose
 // Root has a different KEY from the one that signed the Intermediate. OpenSSL
 // calls it `error 30 at 2 depth lookup: authority and subject key identifier
 // mismatch`; node calls it `unable to get local issuer certificate`; curl is
@@ -2558,7 +2545,7 @@ function anchorSigns(anchorPem, record) {
     // the two Roots this has to tell apart have identical subjects, so
     // comparing issuer strings — the obvious check, and the one a reader will
     // want to replace this with — passes on exactly the case that is broken.
-    return top.verify(anchor.publicKey);
+    return stsCrypto.certificateSignedWith(top, anchor.publicKey);
   } catch (e) {
     log.warn('tls: a candidate trust anchor could not be checked against the ' +
              'server certificate chain (' + e.message + '), so it is not ' +
@@ -2816,7 +2803,8 @@ function presentedBundlePem(record) {
 // It reached the suite as `tests/protocol/sts_pki_distribution_points.js` in
 // dispatch mode only: *http://…/pki/crl/process/intermediate.crl is named by
 // certificates of two different authorities — CN=sts Intermediate CA
-// (Process), O=sts and CN=sts Intermediate CA (Process), O=sts*. Measured on
+// (Process), O=sts and CN=sts Intermediate CA (Process), O=sts* (the names
+// before #1294). Measured on
 // the kept stack: the handshake and `GET /tls/server-certificate` chained to
 // an Intermediate made at 14:53:56 by the FRONT process, every worker and the
 // front process's own register held one made at 14:53:57 by worker 33. The
@@ -4707,6 +4695,42 @@ function listenerPolicies() {
  * @returns `{ added, duplicates, total }`, or with `error` and `errorCode` when
  * nothing was added
  */
+// Whether this process's truststore holds to the admission rule. The MODE IS
+// ASKED IN THE DEFAULT REALM, `truststoreOpenToAnybody()`'s reason: these are
+// one array for every listener. Lazily, as this runs at require for a file.
+function admissionApplies() {
+  log.debug("Entering admissionApplies().");
+  const trust = require('../common/certificate_trust');
+  log.debug("Leaving admissionApplies().");
+  return trust.applies('anchor-admission', realms.DEFAULT_ID);
+}
+
+// What the admission rule says of one row, given the rows beside it, what is
+// held and the service Root an intermediate may hang from. null when it holds
+// or when the rule is not in force.
+function admissionProblemOf(row, rows) {
+  log.debug("Entering admissionProblemOf().");
+  if (!admissionApplies()) {
+    log.debug("Leaving admissionProblemOf(). Not in force.");
+    return null;
+  }
+  const held = anchors.map(function (one) {
+    return one.pem;
+  }).concat(rows.map(function (one) {
+    return one.pem;
+  })).filter(function (pem) {
+    return pem !== row.pem;
+  });
+  const root = issuedClientCertificateAnchor();
+  if (root) {
+    held.push(root);
+  }
+  const problem = require('../common/pki')
+    .anchorProblemSync(row.pem, { heldAnchors: held });
+  log.debug("Leaving admissionProblemOf(). " + (problem ? problem.code : 'ok'));
+  return problem;
+}
+
 function addAnchors(text, options) {
   log.debug('Entering addAnchors().');
   const opts = options || {};
@@ -4735,6 +4759,21 @@ function addAnchors(text, options) {
         'verify against — so none was added. A block OpenSSL cannot parse is ' +
         'not an anchor it will use, and putting one in the truststore makes ' +
         'the next setSecureContext() on every listener throw.' };
+    }
+  }
+  // THE ADMISSION RULE (#1360, gap 5), under paranoid PKI mode: all or nothing
+  // for the reason above. Off, this store takes what OpenSSL can read, as it
+  // did. The file's own loader asks below; only the gated doors are strict.
+  if (opts.strict) {
+    const refused = described.map(function (one) {
+      return admissionProblemOf(one, described);
+    }).filter(Boolean);
+    if (refused.length) {
+      log.debug('Leaving addAnchors(). ' + refused.length + ' not admitted.');
+      return { added: 0, total: anchors.length, errorCode: refused[0].code,
+               error: refused.map(function (one) {
+                 return one.why;
+               }).join('; ') + '. So none was added.' };
     }
   }
   let added = 0;
@@ -4857,6 +4896,8 @@ function publicAnchor(anchor) {
     fingerprint256: anchor.fingerprint256, ca: !!anchor.ca,
     readable: !!anchor.readable,
     source: anchor.source === 'file' ? 'file' : 'runtime',
+    // Admitted once and refused by the rule now (#1360): kept, and reported.
+    unadmittable: anchor.unadmittable || '',
     // Whether this anchor survives a restart. A `file` anchor does, because
     // the file brings it back; a `runtime` one does exactly when it was
     // written to ou=trustAnchors, which fails only on a full directory or in
@@ -5056,6 +5097,15 @@ function reloadStoredAnchors() {
     anchors.push(Object.assign(described, {
       source: 'runtime', stored: true, addedAt: row.addedAt || ''
     }));
+    // KEPT AND REPORTED (#1360): admitted before the rule, or before this mode.
+    // Nothing is taken away silently; an operator removes it.
+    const refused = admissionProblemOf(described, []);
+    if (refused) {
+      anchors[anchors.length - 1].unadmittable = refused.why;
+      log.warn(errorCodes.tag('STS-TLS-0056') + 'tls: a stored trust anchor ' +
+               'is one the admission rule refuses, and it is kept: ' +
+               refused.why);
+    }
     added += 1;
   });
   if (added || removed) {
@@ -5445,6 +5495,20 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   const cert = peer.cert;
   const subject = peer.subject;
   const username = peer.username;
+  // A PERSON AT A BROWSER OWES THE SECOND FACTOR THE SCREEN WOULD ASK FOR
+  // (#1516), so product mode starts no one-factor
+  // session here for somebody who needs one; the sign-in screen's certificate
+  // door asks for it. This is the browser's door only. A certificate presented
+  // by a program (WS-Trust, a token exchange, RFC 8705, LDAP EXTERNAL, PKINIT)
+  // has nobody there to answer, and a federated sign-in is the partner's.
+  if (serviceMode.verifiesCredentials() &&
+      require('../common/credentials').mfaRequirementFor(username).required) {
+    errorCodes.mark(res, 'STS-TLS-0060');
+    log.debug('Leaving startCertificateSessionIn(). A second factor is owed.');
+    return { started: false,
+             why: 'a second factor is required, so sign in on the sign-in ' +
+                  'screen and choose your certificate there' };
+  }
   // WHICH OF THE BROWSER'S ACCOUNTS THIS IS (#561), for the answer: the
   // certificate's account live in the set is re-authenticated, any other
   // added.
@@ -5658,6 +5722,14 @@ function screenCertificateOffer(req) {
   if (!checked || !checked.ok || !identity || !identity.accepted ||
       identity.kind === 'application') {
     log.debug('Leaving screenCertificateOffer(). Not a person here.');
+    return null;
+  }
+  // UNDER PARANOID PKI MODE no name is drawn for a certificate revocation has
+  // refused, the verdict `common/app.js` put on the request (#1360).
+  if (req.certificateRevocation && req.certificateRevocation.refused &&
+      require('../common/certificate_trust')
+        .applies('tls-client', realms.DEFAULT_ID)) {
+    log.debug('Leaving screenCertificateOffer(). Refused on revocation.');
     return null;
   }
   const peer = certificatePeer(socket, identity);
@@ -6007,7 +6079,8 @@ let anchorsFileReport = { file: '', loaded: 0 };
     log.fatal(errorCodes.tag('STS-TLS-0019') +
               'tls: NOT STARTING. tls.trustAnchorsFile ' +
               '(STS_TLS_TRUST_ANCHORS_FILE) is ' +
-              '"' + file + '" and it could not be read: ' + e.message + '.');
+              '"' + file + '" and it could not be read: ' +
+              String((e && e.message) || e).replace(/\.+$/, '') + '.');
     process.exit(1);
   }
   const found = splitPemCertificates(text);
@@ -6018,7 +6091,18 @@ let anchorsFileReport = { file: '', loaded: 0 };
               'truststore would be empty while configured to be filled.');
     process.exit(1);
   }
-  found.slice(0, MAX_ANCHORS).forEach(function (pem) {
+  // Under paranoid a block the admission rule refuses is left out by name,
+  // rather than stopping the process: an expired CA in this file must not take
+  // the service down, and an anchor left out trusts less, not more.
+  const fileRows = found.slice(0, MAX_ANCHORS).map(describePem);
+  found.slice(0, MAX_ANCHORS).filter(function (pem, i) {
+    const refused = admissionProblemOf(fileRows[i], fileRows);
+    if (refused) {
+      log.error(errorCodes.tag('STS-TLS-0057') + 'tls: tls.trustAnchorsFile: ' +
+                'left out under paranoid PKI mode: ' + refused.why);
+    }
+    return !refused;
+  }).forEach(function (pem) {
     const described = describePem(pem);
     if (!anchors.some(function (one) {
       return one.fingerprint256 === described.fingerprint256;
@@ -6118,28 +6202,147 @@ function holdToPathRules(socket, label) {
     log.debug('Leaving holdToPathRules(). Nothing verified.');
     return null;
   }
+  const trust = require('../common/certificate_trust');
+  let inForce = false;
   let problem = null;
   try {
-    problem = require('../common/pki')
-      .peerChainProblem(socket.getPeerCertificate(true));
+    inForce = trust.applies('tls-client', realms.DEFAULT_ID);
+    const peer = socket.getPeerCertificate(true);
+    const held = trust.holdPeer('tls-client', peer,
+                                { realmId: realms.DEFAULT_ID });
+    if (!held.ok) {
+      problem = { check: held.check, why: held.why, code: held.code };
+    }
+    if (inForce) {
+      problem = problem || resumedProblem(socket, peer);
+      if (peer && peer.raw && (typeof socket.isSessionReused !== 'function' ||
+                               !socket.isSessionReused())) {
+        // The chain with the verdict, in one row, so another node has both
+        // when the session resumes there, whether or not a request came first.
+        if (!problem && typeof socket.isSessionReused === 'function') {
+          revocationStatus.fromSocket(socket);
+        }
+        revocationStatus.rememberHold(peer.raw, !problem);
+      }
+    }
   } catch (e) {
-    // A defect here must not make an unverified chain look verified, nor a
-    // verified one unverified for a reason nobody can read. OpenSSL's answer
-    // stands and the failure is logged.
+    // Not in force: a defect here must not make an unverified chain look
+    // verified, nor a verified one unverified for a reason nobody can read, so
+    // OpenSSL's answer stands and the failure is logged. Under paranoid PKI
+    // mode it FAILS CLOSED: a check that could not be made is a refusal.
     log.error(errorCodes.tag('STS-PKI-0198') + 'tls: the path rules could ' +
               'not be asked of a client chain on ' + label + ': ' +
               ((e && e.message) || e));
-    problem = null;
+    problem = inForce ? { check: 'path', code: 'STS-PKI-0198',
+                          why: 'the checks could not be made' } : null;
   }
   if (problem) {
     socket.authorized = false;
     socket.authorizationError = 'ERR_STS_PATH_RULES: ' + problem.why;
-    log.warn(errorCodes.tag('STS-PKI-0198') + 'tls: a client certificate ' +
-             'chain on ' + label + ' verified with OpenSSL and breaks RFC ' +
-             '5280, so it is treated as unverified: ' + problem.why + '.');
+    log.warn(errorCodes.tag(problem.code || 'STS-PKI-0198') + 'tls: a client ' +
+             'certificate chain on ' + label + ' verified with OpenSSL and ' +
+             (problem.code === 'STS-PKI-0198' ? 'breaks RFC 5280' :
+              'is refused for its use') + ', so it is treated as unverified: ' +
+             problem.why + '.');
   }
   log.debug('Leaving holdToPathRules().' + (problem ? ' Demoted.' : ''));
   return problem;
+}
+
+// A RESUMED SESSION UNDER PARANOID PKI MODE (#1360). Node hands over the leaf
+// alone, so the hold above saw one certificate. What the full handshake's hold
+// concluded is remembered with its chain, and it is the session's verdict: a
+// demoted one is demoted again. One not known here yet may be on its way from
+// the node that saw the handshake, so the socket is marked and
+// `revocation_status.awaitResumedChain()` settles it before any request is
+// answered; what has not arrived by then is demoted. The leaf's own fields, its
+// window included, are asked on every connection, and revocation by the
+// request's verdict as it always was, so neither is frozen at the full
+// handshake. null when the session is not resumed, the leaf held, or that is
+// still to be settled.
+function resumedProblem(socket, peer) {
+  log.debug("Entering resumedProblem().");
+  if (typeof socket.isSessionReused !== 'function' ||
+      !socket.isSessionReused() || !peer || !peer.raw) {
+    log.debug("Leaving resumedProblem(). Not resumed.");
+    return null;
+  }
+  const held = revocationStatus.rememberedHold(peer.raw);
+  log.debug("Leaving resumedProblem(). " + held);
+  if (held === null) {
+    socket.stsResumedHoldPending = true;
+    return null;
+  }
+  return held === true ? null : {
+    check: 'path', code: 'STS-TLS-0058',
+    why: 'its full handshake was refused, and this session resumes it'
+  };
+}
+
+// THE HOLD ON A LISTENER THAT IS NOT THE MAIN PORT (#1360): LDAPS, the debugger
+// and the channel between cells. In force it asks the rules, the leaf's fields
+// and revocation of every certificate presented, and leaves the record of
+// `observeConnectionsOn()` to the listeners it has always served. Not in force
+// it does nothing at all, which is what these listeners did.
+//
+// **A REVOCATION ANSWER IS A FETCH**, so the connection waits: paused until the
+// verdict for a stream reader, and with `certificateTrustSettled` for a server
+// node's HTTP parser reads past a pause (`settledRequest()` is its door).
+/**
+ * Holds every client certificate on this listener to the checks of paranoid
+ * PKI mode.
+ *
+ * @param server - the TLS listener
+ * @param label - its name, for the log
+ */
+function holdConnectionsOn(server, label) {
+  log.debug("Entering holdConnectionsOn(). " + label);
+  server.on('secureConnection', function (socket) {
+    log.debug("Entering the paranoid hold. " + label);
+    const trust = require('../common/certificate_trust');
+    let inForce = false;
+    try {
+      inForce = trust.applies('tls-client', realms.DEFAULT_ID);
+    } catch (e) {
+      log.debug("Caught in the paranoid hold: " + ((e && e.message) || e));
+    }
+    if (!inForce) {
+      log.debug("Leaving the paranoid hold. Not in force.");
+      return;
+    }
+    holdToPathRules(socket, label);
+    socket.pause();
+    socket.certificateTrustSettled = revocationStatus.awaitResumedChain(socket)
+      .then(function () {
+        return checkedSocket(socket);
+      }).then(function (verdict) {
+        if (verdict && verdict.refused && socket.authorized) {
+          socket.authorized = false;
+          socket.authorizationError = 'ERR_STS_REVOCATION: ' + verdict.why;
+        }
+      }, function (e) {
+        log.debug("Caught in the paranoid hold: " + ((e && e.message) || e));
+        socket.authorized = false;
+        socket.authorizationError = 'ERR_STS_REVOCATION: not established';
+      }).then(function () {
+        socket.resume();
+      });
+    log.debug("Leaving the paranoid hold.");
+  });
+  log.debug("Leaving holdConnectionsOn().");
+}
+
+/**
+ * Waits for a request's connection to be settled by `holdConnectionsOn()`.
+ *
+ * @param req - the request
+ * @returns a promise settled once the socket's verdict is in
+ */
+function settledRequest(req) {
+  log.debug("Entering settledRequest().");
+  const socket = req && req.socket;
+  log.debug("Leaving settledRequest().");
+  return Promise.resolve(socket && socket.certificateTrustSettled);
 }
 
 // ---------------------------------------------------------------------------
@@ -6319,8 +6522,36 @@ function observeConnectionsOn(server, label) {
 // STARTS A SESSION, and in active-active mode an answer sent before the
 // session committed left a sign-out on another node unable to see it.
 // ---------------------------------------------------------------------------
+// **HELD TO Sec-Fetch-* IN PRODUCT (#1484, ASVS 5.0.0 3.5.3)**, the requirement's
+// own alternative to another method: this is a GET that starts a session, so
+// that a person can sign in by opening an address. A browser's request must be
+// a top-level navigation, typed by the person (`none`) or from this origin; a
+// link from another site, an iframe or an image starts nothing. A program sends
+// no Sec-Fetch-* and holds the certificate itself, and is unaffected.
+function foreignCertificateSignIn(req) {
+  log.debug('Entering foreignCertificateSignIn().');
+  const site = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  const dest = String(req.headers['sec-fetch-dest'] || '').toLowerCase();
+  const fetched = String(req.headers['sec-fetch-mode'] || '').toLowerCase();
+  const foreign = !!(site || dest || fetched) &&
+    require('../common/mode').bindsSignInSteps() &&
+    !((site === 'none' || site === 'same-origin') && dest === 'document' &&
+      fetched === 'navigate');
+  log.debug('Leaving foreignCertificateSignIn(). ' + foreign);
+  return foreign;
+}
+
 app.get('/tls/sign-in', function (req, res) {
   log.debug('Entering GET /tls/sign-in.');
+  if (foreignCertificateSignIn(req)) {
+    errorCodes.mark(res, 'STS-TLS-0059');
+    res.set('Cache-Control', 'no-store');
+    res.status(403).json({ signedIn: false, error: 'access_denied',
+      error_description: 'Open this address directly to sign in with a ' +
+                         'certificate.' });
+    log.debug('Leaving GET /tls/sign-in. Not a navigation from here.');
+    return;
+  }
   // WHICH CELL SIGNS THE HOLDER IN (#98 D10), BEFORE the revocation check,
   // the identity gate and the session: a session is started where its person
   // is homed. `placeCertificateSignIn()` argues it; single-cell mode answers
@@ -7169,5 +7400,8 @@ module.exports = {
   handshakeFailureOf: handshakeFailureOf,
   // #201: the path rules asked of a chain OpenSSL verified; exported for
   // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
-  holdToPathRules: holdToPathRules
+  holdToPathRules: holdToPathRules,
+  anchorCertificates: anchorCertificates,
+  holdConnectionsOn: holdConnectionsOn,
+  settledRequest: settledRequest
 };

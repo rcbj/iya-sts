@@ -145,11 +145,11 @@ import mode = require('../common/mode');
 // from this repository.
 //
 // **IT USED TO BE `require('../package.json').version` AND THAT WAS A DIFFERENT
-// NUMBER.** The manifest holds M.N.0 — a valid semver with the patch pinned to
-// zero, because npm insists on three parts and the third one there is a
-// placeholder. The build number is the third part of the REAL version and the
-// manifest has nowhere to put it, so this page reported `0.9.0` for every build
-// ever made and told a reader nothing about which one they were looking at.
+// NUMBER.** The manifest held M.N.0 while the real version's third part was a
+// build number, so this page reported `0.9.0` for every build ever made. The
+// version is VERSION's M.N.O (which package.json carries too, #1298) followed
+// by the build number (#1317), and the rest of the build — release or not,
+// the build instant and the commit — rides in the tooltip from `buildInfo()`.
 // `load()` reads the record the image build stamped. See common/version.js.
 import version = require('../common/version');
 
@@ -281,19 +281,34 @@ const HOME_CSS =
   'border-bottom:1px solid #ecebe7}' +
   '.hero img{width:100%;max-width:453px;height:auto;display:inline-block}' +
   '.body{padding:22px 28px 0}' +
-  'h1{font-size:1.5em;margin:0 0 2px;color:#12107c;letter-spacing:.01em}' +
-  'p.sub{color:#666;font-size:.88em;margin:0 0 4px}' +
+  // A REALM'S COLOURS (#717): the heading, the links, the quieter text and
+  // the rules read the custom properties `/web/theme.css` sets, each
+  // falling back to the literal it replaced, as `/web/card.css` does. The
+  // warning's text is pinned to the dark it always inherited, since its
+  // pale yellow ground is not the realm's to change.
+  'h1{font-size:1.5em;margin:0 0 2px;color:var(--sts-accent,#12107c);' +
+  'letter-spacing:.01em}' +
+  'p.sub{color:var(--sts-muted,#666);font-size:.88em;margin:0 0 4px}' +
   'p.ver{color:#8a8a99;font-size:.76em;margin:0 0 16px}' +
   '.warn{background:#fff8e1;border:1px solid #ffe082;padding:9px 12px;' +
-  'border-radius:5px;font-size:.82em;margin:0 0 18px}' +
+  'border-radius:5px;font-size:.82em;margin:0 0 18px;color:#222}' +
   'ul{list-style:none;margin:0;padding:0}' +
-  'li{border-top:1px solid #eee;padding:11px 2px}' +
+  'li{border-top:1px solid var(--sts-rule,#eee);padding:11px 2px}' +
   'li:first-child{border-top:0}' +
-  'a{color:#12107c;font-weight:600;text-decoration:none}' +
+  'a{color:var(--sts-accent,#12107c);font-weight:600;' +
+  'text-decoration:none}' +
   'a:hover{text-decoration:underline}' +
-  '.note{display:block;color:#666;font-size:.8em;font-weight:400;' +
-  'margin-top:2px}' +
-  '.card>h1{margin:22px 28px 8px}.card>.err{margin:0 28px}';
+  '.note{display:block;color:var(--sts-muted,#666);font-size:.8em;' +
+  'font-weight:400;margin-top:2px}' +
+  '.card>h1{margin:22px 28px 8px}.card>.err{margin:0 28px}' +
+  // THE REALM'S BRAND HEADER (#717) on this page: the card's own layout
+  // rules (`WebCardCss.BRAND_CSS`) assume the card's flex body, which this
+  // page's block body above replaces; so the banner and the split panel
+  // are both a full-width band in the accent colour across the top here,
+  // and centered is the header above the card, as on the sign-in screen.
+  'html[data-sts-layout=banner] .sts-brand,' +
+  'html[data-sts-layout=split] .sts-brand{margin:-2rem -1rem 2rem;' +
+  'padding:14px 24px;flex-direction:row;justify-content:center}';
 
 // Read once, at require time. See the header for why a failure here is recorded
 // rather than thrown.
@@ -604,8 +619,11 @@ class Home {
         // so the row cannot claim a gate the service does not keep.
         gatesConsole: !!mode.gatesConsole()
       },
-      // With no image read at startup there is none to draw (the header).
-      logo: logoBytes
+      // With no image read at startup there is none to draw (the header);
+      // and where the realm has a sign-in logo of its own (#717), none
+      // either: the surface's runtime draws the realm's in its brand header
+      // above the card, and two logos would be one too many.
+      logo: logoBytes && !this.realmHasLogo()
         ? { src: LOGO_ROUTE, width: LOGO_WIDTH, height: LOGO_HEIGHT }
         : null,
       // THE SIX LINKS, by id; the renderer has the words for each.
@@ -622,6 +640,31 @@ class Home {
       ]
     };
     log.debug("Leaving Home.frontView().");
+    return out;
+  }
+
+  /**
+   * Whether the ambient realm has a sign-in logo of its own (#717), which
+   * takes the place of this page's image. False where it cannot be read:
+   * the front door then draws as it always did.
+   *
+   * @returns true when it has
+   */
+  realmHasLogo(): boolean {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Home.realmHasLogo().");
+    let out = false;
+    try {
+      // LAZILY, at the request: `common/branding.ts` is registered after
+      // this module (`common/protocol_stack.ts`), and its load declares a
+      // realm store and adds write rules, which stay at its own place.
+      out = !!require('../common/branding').logoRecord();
+    } catch (e) {
+      log.debug("Caught in Home.realmHasLogo(): " +
+                ((e && (e as Error).message) || e));
+      out = false;
+    }
+    log.debug("Leaving Home.realmHasLogo(). " + out);
     return out;
   }
 

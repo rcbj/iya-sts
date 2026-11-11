@@ -63,11 +63,23 @@ import PageLocale = require('../common/page_locale');
 import version = require('../common/version');
 import mode = require('../common/mode');
 import AccountApiSpec = require('./account_api_spec');
+import responseChecks = require('../common/response_models');
+import ProfilePhoto = require('../common/profile_photo');
+// What a request may name and hold (#1483): a leaf that registers nothing.
+import RequestHeaders = require('../common/request_headers');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
 type AccountCaller = import('../types/account-api').AccountCaller;
 type AccountContext = import('../types/account-api').AccountContext;
+
+// THE CODE OF EACH WAY A REQUEST'S SHAPE IS REFUSED (#1483).
+const SHAPE_CODES: Record<string, string> = {
+  'unknown-parameter': 'STS-ACCOUNT-0020',
+  'wrong-type': 'STS-ACCOUNT-0021',
+  header: 'STS-ACCOUNT-0022'
+};
 
 /**
  * The account API's base path.
@@ -210,6 +222,9 @@ interface AccountApiDeps {
  */
 class AccountApi {
   private table: AccountOperation[] | null = null;
+  // Each operation's declared parameters, built once: the check below runs
+  // on every request and the conversion from zod is not free.
+  private readonly declared: Map<AccountOperation, Json[]> = new Map();
 
   /**
    * Builds the API over its dependencies.
@@ -386,6 +401,29 @@ class AccountApi {
    * @param body - the answer
    * @returns nothing
    */
+  // How recent a sign-in must be to change how somebody signs in (#1515, ASVS
+  // 5.0.0 7.5.1), in seconds. Zero means it is not asked.
+  private recentAuthSeconds(): number {
+    const { log, config } = this.deps;
+    log.debug("Entering AccountApi.recentAuthSeconds().");
+    log.debug("Leaving AccountApi.recentAuthSeconds().");
+    return Number(config.value('account.recentAuthMinutes')) * 60;
+  }
+
+  // The latest authentication event of the session this token came from.
+  private signedInRecently(caller: AccountCaller): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AccountApi.signedInRecently().");
+    const limit = this.recentAuthSeconds();
+    const signOn: Json = (caller as Json).signOn;
+    const events = signOn && Array.isArray(signOn.events) ? signOn.events : [];
+    const latest = events.length ? events[events.length - 1] : null;
+    const at = Number((latest && latest.at) || (signOn && signOn.authTime) || 0);
+    log.debug("Leaving AccountApi.signedInRecently().");
+    return limit === 0 ||
+      (at > 0 && Date.now() / 1000 - at <= limit);
+  }
+
   json(res: Json, status: number, body: Json): unknown {
     const { log } = this.deps;
     log.debug("Entering AccountApi.json(). " + status);
@@ -440,7 +478,7 @@ class AccountApi {
           rows = rows.concat(mod.accountOperations(ctx) || []);
         }
       });
-      this.table = rows;
+      this.table = AccountApiSpec.named(rows);
     }
     log.debug("Leaving AccountApi.operations(). " + this.table.length);
     return this.table;
@@ -455,7 +493,7 @@ class AccountApi {
   document(req: Json): Json {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AccountApi.document().");
-    const doc = AccountApiSpec.document(this.operations(), {
+    const doc = AccountApiSpec.document({
       baseUrl: baseUrlOf(req), version: version.load().version });
     log.debug("Leaving AccountApi.document().");
     return doc;
@@ -512,46 +550,38 @@ class AccountApi {
     log.debug("Entering AccountApi.ownOperations().");
     const z = validation.z;
     const rows: AccountOperation[] = [
-      { method: 'GET', path: BASE, operationId: 'getIndex', tag: 'API',
-        access: 'public',
-        summary: 'Lists every operation of this API',
-        description: 'Each operation\'s method, path, access and the portal ' +
-          'page or form it is the door of. The portal reads it to know ' +
-          'which operation a form goes to.',
+      { method: 'GET', path: BASE, operationId: 'getIndex', access: 'public',
         handler: function (req: Json, res: Json): unknown {
           return self.json(res, 200, {
             api: 'IYA STS Account API', document: BASE + '/openapi.json',
             operations: self.operations().map(function (op) {
-              return { method: op.method, path: op.path,
+              return Object.assign({ method: op.method, path: op.path,
                        operationId: op.operationId, tag: op.tag,
                        access: op.access, mirrors: op.mirrors || null,
-                       summary: op.summary };
+                       summary: op.summary },
+                // WHAT THE PORTAL MAY FORWARD TO THIS OPERATION (#1483): a
+                // page's own query holds names only its address means, and
+                // the runtime asks each operation only what it declares.
+                op.method === 'GET' ? { query: self.queryNamesOf(op) } : {});
             }) });
         } },
       { method: 'GET', path: BASE + '/openapi.json',
-        operationId: 'getOpenApi', tag: 'API', access: 'public',
-        summary: 'This API\'s OpenAPI 3.1 document',
-        description: 'Built from the operation table at the moment it is ' +
-          'asked, for the realm it is asked in. It carries no secret.',
+        operationId: 'getOpenApi', access: 'public',
         handler: function (req: Json, res: Json): unknown {
           return self.json(res, 200, self.document(req));
         } },
       // NOT A PAGE'S DOOR, so it mirrors nothing: the Overview's is
       // `/account-api/overview`, and a lookup by `mirrors` must find one.
-      { method: 'GET', path: BASE + '/me', operationId: 'getMe', tag: 'API',
-        access: 'person',
-        summary: 'Who is signed in, and what every page is drawn with',
-        description: 'The person (from the token, never the request), the ' +
-          'realm, the language data — the negotiation, the portal\'s ' +
-          'catalogs and the locales offered — and the build. The portal ' +
-          'draws its frame from it.',
+      { method: 'GET', path: BASE + '/me', operationId: 'getMe', access: 'person',
         handler: function (req: Json, res: Json,
                            caller: AccountCaller | null): unknown {
           const who = caller as AccountCaller;
           return self.json(res, 200, {
             user: { username: who.username, sub: who.sub,
                     name: String((who.session.user || {}).name || ''),
-                    email: String((who.session.user || {}).email || '') },
+                    email: String((who.session.user || {}).email || ''),
+                    // This realm's copy only (#719): the frame's picture.
+                    photo: ProfilePhoto.pathFor(who.username) },
             realm: { id: realms.currentId(), prefix: realms.currentPrefix() },
             client: who.clientId, expiresAt: who.expiresAt,
             mode: mode.current(),
@@ -561,15 +591,8 @@ class AccountApi {
       // AN ANNOUNCEMENT (#1086), collected by every open portal tab. NOT A
       // PAGE'S DOOR either: the banner it feeds is drawn over every page.
       { method: 'GET', path: BASE + '/announcements',
-        operationId: 'getAnnouncements', tag: 'API', access: 'person',
-        query: z.object({ since: z.string().regex(/^[0-9]{1,16}$/)
-          .optional() }),
-        summary: 'Announcements for everybody signed in to the portal',
-        description: 'What an administrator broadcast to the user portal ' +
-          'after `since` — the `now` this operation answered your tab\'s ' +
-          'first ask with — within `ssf.announcementKeepS`, oldest first. ' +
-          'With no `since` it answers only `now`, so a tab shows what ' +
-          'arrived after it signed in. `everyMs` is how often to ask again.',
+        operationId: 'getAnnouncements', access: 'person',
+        query: ModelZod.query('account', 'getAnnouncements'),
         handler: function (req: Json, res: Json, caller: AccountCaller | null,
                            input: Json): unknown {
           const since = Number((input && input.query &&
@@ -578,13 +601,8 @@ class AccountApi {
             .announcementsFor('user-portal', since));
         } },
       { method: 'GET', path: BASE + '/locale', operationId: 'getLocale',
-        tag: 'API', access: 'public',
-        query: z.object({}),
-        summary: 'The language data a page for nobody is drawn with',
-        description: 'For the pages a person reaches with no sign-in — an ' +
-          'activation or reset link, the forgot-password form, an address ' +
-          'verification: the negotiation from the browser alone, the ' +
-          'portal\'s catalogs, the offered locales and the build.',
+        access: 'public',
+        query: ModelZod.query('account', 'getLocale'),
         handler: function (req: Json, res: Json): unknown {
           return self.json(res, 200, { locale: self.localeData(''),
                                        version: self.versionData() });
@@ -592,6 +610,46 @@ class AccountApi {
     ];
     log.debug("Leaving AccountApi.ownOperations().");
     return rows;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE OPERATION DECLARES. The document's own parameter list, the
+  // refusal and the portal's query filter all read this one list.
+  // -------------------------------------------------------------------------
+  /**
+   * An operation's declared parameters, once.
+   *
+   * @param op - the operation
+   * @returns the OpenAPI parameter list
+   */
+  parametersFor(op: AccountOperation): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountApi.parametersFor().");
+    let list = this.declared.get(op);
+    if (!list) {
+      list = AccountApiSpec.parametersOf(op);
+      this.declared.set(op, list);
+    }
+    log.debug("Leaving AccountApi.parametersFor().");
+    return list;
+  }
+
+  /**
+   * The query names an operation declares.
+   *
+   * @param op - the operation
+   * @returns the names
+   */
+  queryNamesOf(op: AccountOperation): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountApi.queryNamesOf().");
+    const names = this.parametersFor(op).filter(function (p) {
+      return p.in === 'query';
+    }).map(function (p) {
+      return String(p.name);
+    });
+    log.debug("Leaving AccountApi.queryNamesOf().");
+    return names;
   }
 
   // -------------------------------------------------------------------------
@@ -753,8 +811,16 @@ class AccountApi {
     // ENDED (the admin API's three checks, #36 and #446): each is a
     // credential that stopped being one.
     const stats = lazy.stats();
-    const person = String(claims.username ||
-                          helpers.nameForSubject(claims.sub) || '');
+    if (helpers.subjectIsGone(claims.sub) &&
+        require('../common/mode').refusesTokenForGoneSubject()) {
+      log.debug("Leaving AccountApi.authenticate(). The subject is gone.");
+      return this.unauthorized(res, 'STS-ACCOUNT-0023', 'invalid_token',
+        'The person this access token names no longer exists.');
+    }
+    // `sub` first: it cannot be reassigned and a username can (ASVS 5.0.0
+    // 10.3.3).
+    const person = String(helpers.nameForSubject(claims.sub) ||
+                          claims.username || '');
     if ((claims.jti && stats.isRevoked(String(claims.jti))) ||
         (person && lazy.accountState().isDisabled(person))) {
       log.debug("Leaving AccountApi.authenticate(). Revoked or disabled.");
@@ -967,6 +1033,27 @@ class AccountApi {
         log.debug("Leaving AccountApi.run(). Refused at the gate.");
         return undefined;
       }
+      // The audit row names who the token says this is (#1537).
+      res.locals.apiCaller = { name: (caller as Json).username };
+      if (op.recentAuth && !this.signedInRecently(caller)) {
+        log.debug("Leaving AccountApi.run(). Sign in again.");
+        return this.json(res, 200, { ok: false, stepUp: {
+          prompt: 'login', maxAge: this.recentAuthSeconds() } });
+      }
+    }
+    // WHAT THE REQUEST NAMES AND HOLDS (#1483, `/admin-api`'s #1476 rule):
+    // a query name the operation does not declare, a value its declared type
+    // does not hold and a custom header nobody defined are each a 400, asked
+    // after the gate, so a request with no token learns nothing of the table,
+    // and before the zod schema, whose non-strict object would drop the name.
+    const shape = RequestHeaders.checkRequest(this.parametersFor(op),
+      req.query || {}, req.headers || {});
+    if (!shape.ok) {
+      log.debug("Leaving AccountApi.run(). Refused its shape: " +
+                shape.problem + ".");
+      // error-code: none — the code is SHAPE_CODES's, by the kind of refusal
+      return this.refuse(res, 400, SHAPE_CODES[String(shape.problem)],
+                         String(shape.sentence));
     }
     const input = { query: req.query || {}, body: {} };
     if (op.query) {
@@ -1075,8 +1162,8 @@ class AccountApi {
       try {
         const claims = JSON.parse(Buffer.from(parts[1], 'base64url')
                                     .toString('utf8'));
-        named = String(claims.username ||
-                       helpers.nameForSubject(claims.sub) || '');
+        named = String(helpers.nameForSubject(claims.sub) ||
+                       claims.username || '');
       } catch (e) {
         // Not a JWT this cell can read: answered here, where the gate says
         // why it is no token.
@@ -1107,6 +1194,11 @@ class AccountApi {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AccountApi.registerRoutes().");
+    // EVERY ANSWER IS HELD TO ITS MODEL (#1353), this one's first of all:
+    // before the placement relays anything and before the gate refuses.
+    responseChecks.install(app, BASE, function () {
+      return AccountApiSpec.document({});
+    }, AccountApiSpec.refusalSchema());
     app.use(BASE, function (req: Json, res: Json, next: () => void) {
       log.debug("Entering the account API's cell placement.");
       self.placeRequest(req, res).then(function (relayed) {

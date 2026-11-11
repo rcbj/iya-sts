@@ -44,6 +44,7 @@
   "noneOnEntry": "項目中沒有：無聲明",
   "wouldBeGenerated": "將會產生",
   "entrysOwn": "項目自身的值",
+  "customDefinedBy": "此領域的自訂屬性（{syntax}）",
   "carries": "攜帶 {n} 個目錄屬性：",
   "carriesNone": "不攜帶任何目錄屬性。請勾選一些並按「更新」。",
   "colIn": "包含",

@@ -368,7 +368,9 @@ async function test() {
     assert.ok(/^[A-Za-z0-9_-]{43}$/.test(first.body.nonce), first.body.nonce);
     assert.strictEqual(Buffer.from(first.body.nonce, "base64url").length, 32);
     assert.ok(Number.isInteger(first.body.expiry) && first.body.expiry > 0);
-    assert.ok(/^sts_est_nonce=est\.[A-Za-z0-9_-]{43};/.test(setCookie),
+    // Prefixed on the wire in product (common/cookie_wire.ts).
+    assert.ok(/^(?:__(?:Host|Secure)-)?sts_est_nonce=est\.[A-Za-z0-9_-]{43};/
+      .test(setCookie),
               setCookie);
     assert.ok(/HttpOnly/.test(setCookie) && /Secure/.test(setCookie),
               setCookie);

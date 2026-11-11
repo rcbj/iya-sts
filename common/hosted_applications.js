@@ -148,7 +148,9 @@ const APPLICATIONS = [
   // `/vc-api` has been a product surface since #598.
   { id: 'oid4vc', label: 'Verifiable credentials',
     what: 'OpenID4VCI, OpenID4VP, DIDs and the status lists.',
-    prefixes: ['/oid4vci', '/oid4vp', '/applications',
+    // `/users` is where a person's published did:web is (#1291,
+    // `oid4vc/person_did.ts`): `/users/<rid>/did.json`.
+    prefixes: ['/oid4vci', '/oid4vp', '/applications', '/users',
                '/bbs', '/vc-api', '/.well-known/did.json',
                '/.well-known/did-configuration.json',
                '/.well-known/openid-credential-issuer',
@@ -254,12 +256,15 @@ function underPrefix(path) {
  * table lookup on every request.
  *
  * @param path - the path, without the realm prefix and without a query
- * @returns the application's id, `EVERYWHERE` for `/healthcheck` and
- *   `/web`, or null for a path no application claims
+ * @returns the application's id, `EVERYWHERE` for `/healthcheck`,
+ *   `/favicon.ico` and `/web`, or null for a path no application claims
  */
 function classify(path) {
   const p = String(path || '').split('?')[0].split('#')[0] || '/';
-  if (p === '/healthcheck' || p === '/web' || p.indexOf('/web/') === 0) {
+  // `/favicon.ico` is a browser's own request, on whichever listener its page
+  // came from, so every application's listener answers it.
+  if (p === '/healthcheck' || p === '/favicon.ico' || p === '/web' ||
+      p.indexOf('/web/') === 0) {
     return EVERYWHERE;
   }
   if (Object.prototype.hasOwnProperty.call(EXACT, p)) {

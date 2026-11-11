@@ -96,12 +96,16 @@
     "text": "Un PROPIETARIO (#607), como OWNER_READ. Autoriza el permiso owner:write: modificar, a través de /admin-api, los objetos que posee, dentro de las acciones que la regla de propietarios de la política access-control permite para cada tipo — nunca crear, eliminar ni renombrar uno, y nunca un objeto protegido de sus propietarios."
   },
   "roles.native.ADMIN_READ.what": {
-    "en": "7d6481dffa0d517c",
-    "text": "Admin Read: toda LECTURA en /admin-api. Lo tienen los grupos Admin Read y Admin Write de la consola (Admin Write implica Admin Read) y las aplicaciones listadas aquí. Autoriza el permiso admin:read."
+    "en": "a2f5894dfa0c0db6",
+    "text": "Admin Read: toda LECTURA en /admin-api. Lo tienen los grupos Admin Read, Admin Write y Administrador de seguridad de la consola (los otros dos implican Admin Read) y las aplicaciones indicadas aquí. Autoriza el permiso admin:read."
   },
   "roles.native.ADMIN_WRITE.what": {
     "en": "ecff5f0bc1a5a16a",
     "text": "Admin Write: toda operación de /admin-api que CAMBIA algo. Lo tienen el grupo Admin Write de la consola y las aplicaciones listadas aquí. Autoriza el permiso admin:write. No implica Admin Read en un token: un token puede llevar cualquiera de los dos ámbitos, y la política pide el que necesita la operación."
+  },
+  "roles.native.SECURITY_ADMIN.what": {
+    "en": "78a47eddc95e9db3",
+    "text": "Administrador de seguridad: las operaciones de /admin-api que cambian la seguridad — una política de Directorio → Políticas, una política asignada a una aplicación, un grupo o una persona, la concesión de este rol y la cuenta de una persona que lo tiene. Admin Write no llega a ellas. Lo tienen el grupo Administrador de seguridad de la consola y las aplicaciones indicadas aquí. Autoriza el permiso admin:security."
   },
   "roles.native.ADMIN_CONSOLE.what": {
     "en": "5661913dba04f59a",
@@ -164,7 +168,15 @@
     "text": "Admin Write"
   },
   "roles.console.write.what": {
-    "en": "476b1b61c16b02e4",
-    "text": "Enviar todos los formularios de esta consola — revocar un token, añadir un claim personalizado, cambiar un ajuste, crear una persona, conceder un rol. INCLUYE LA LECTURA, así que un miembro de solo este rol puede usar toda la consola."
+    "en": "933448e4b37b9349",
+    "text": "Enviar todos los formularios de esta consola — revocar un token, añadir una notificación personalizada, cambiar un ajuste, crear una persona, conceder un rol — salvo los que cambian la seguridad, que corresponden al Administrador de seguridad. INCLUYE LECTURA, de modo que un miembro solo de este rol puede usar el resto de la consola."
+  },
+  "roles.console.security.label": {
+    "en": "eb026fe212244f20",
+    "text": "Administrador de seguridad"
+  },
+  "roles.console.security.what": {
+    "en": "238007ebd246b860",
+    "text": "Cambiar la seguridad: guardar o restablecer una política en Directorio → Políticas, asignar una política a una aplicación, un grupo o una persona, conceder o retirar este rol y actuar sobre la cuenta de una persona que lo tiene. Admin Write no puede hacer nada de esto. INCLUYE LECTURA Y NO ESCRITURA, de modo que puede tenerlo alguien que no sea administrador por lo demás."
   }
 }

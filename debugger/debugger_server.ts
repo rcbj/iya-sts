@@ -111,6 +111,8 @@ import cacheRegistry = require('../common/cache_registry');
 import proxyProtocol = require('../common/proxy_protocol');
 import Http2Framing = require('../common/http2_framing');
 import Http2Express = require('../common/http2_express');
+import ConnectRefusal = require('../common/connect_refusal');
+import ParserRefusal = require('../common/parser_refusal');
 import audit = require('../common/audit');
 import websecurity = require('../common/websecurity');
 import oidcRp = require('../common/oidc_rp');
@@ -1078,6 +1080,10 @@ class DebuggerServer {
       tlsServer.trustClientCertificatesOn(server, 'the protocol debugger (' +
                                                   port + ')', undefined,
                                           { kind: 'debugger' });
+      // Under paranoid PKI mode it holds a client certificate as the main port
+      // does, with revocation, and `app`'s first middleware waits (#1360).
+      tlsServer.holdConnectionsOn(server, 'the protocol debugger (' + port +
+                                          ')');
       // NO shared session-ticket key (tls/session_tickets.ts): this
       // listener asks for a client certificate, and a session resumed on
       // another node has no remembered chain there — server.js says why.
@@ -1087,6 +1093,9 @@ class DebuggerServer {
     tlsServer.registerHttpListener(server, 'debugger');
     // An HTTP/2 body with no length is still a body (common/http2_framing.ts).
     server.prependListener('request', Http2Framing.markFramedBody);
+    // A CONNECT is answered 501, as on the main port (#1304).
+    ConnectRefusal.install(server, 'the protocol debugger (' + port + ')');
+    ParserRefusal.install(server, 'the protocol debugger (' + port + ')');
     // Before TLS, like the main port's — see common/proxy_protocol.ts.
     proxyProtocol.install(server, {
       label: 'the protocol debugger (' + port + ')', channel: 'http' });
@@ -1199,9 +1208,19 @@ class DebuggerServer {
     // Every request here is in the DEFAULT realm: this listener has no realm
     // prefix, and everything it reads — the client entry, the sessions, the
     // roster, the signing key — is the default realm's.
+    // An HTTP parser reads past a socket's pause, so a request waits here for
+    // what `holdConnectionsOn()` is still asking of its certificate (#1360).
+    app.use(function settledCertificate(req, res, next) {
+      require('../tls/tls_server').settledRequest(req).then(function () {
+        next();
+      }, next);
+    });
     app.use(function inDefaultRealm(req, res, next) {
       realms.run(realms.get(realms.DEFAULT_ID), next);
     });
+    // A cookie is scoped to a host and not a port, so this listener reads the
+    // main port's by the same wire names (#1441).
+    app.use(require('../common/cookie_wire').middleware());
 
     // THE CROSS-NODE `jti` RESERVATION FOR A DPoP PROOF (#34, 2026-09-15), the
     // same middleware `oauth2.js` registers above every route on the main app.

@@ -88,6 +88,10 @@ The two modes (`global.mode`) need different things filled in:
   `krb5.krbtgtRotationIntervalDays` (180).
 * **rc4-hmac (23)** is used in development only. Product reads
   `krb5.enctypes` without it and refuses a write that names it.
+* **AES with HMAC-SHA1-96 (17, 18)** is used in development, and in product
+  only with `krb5.allowSha1Enctypes` on (a restart). Without it product uses
+  19 and 20 (RFC 8009) and treats 17 and 18 as it treats 23. Many Kerberos
+  clients speak only 17 and 18, so check yours first.
 * **A password alone**, for a person who holds or must hold a second factor,
   gets a ticket in development and `KDC_ERR_POLICY` in product. Such a person
   uses FAST with OTP, or PKINIT.
@@ -268,13 +272,14 @@ stored key in place of `krb5.servicePassword`.
 Taken from `sts_kerberos_rc4.js`.
 
 `krb5.enctypes` lists the RFC 3961 numbers used, strongest first. The
-default is `18,17,20,19,23`. 23 (rc4-hmac) is used in development only.
+default is `18,17,20,19,23`. 23 (rc4-hmac) is used in development only, and
+17 and 18 are used in product only with `krb5.allowSha1Enctypes` on.
 
 **For the service as a whole** it is restart-only: set `KRB5_ENCTYPES` and
 restart.
 
 ```bash
-KRB5_ENCTYPES=18,20
+KRB5_ENCTYPES=20,19
 ```
 
 **For a trust realm** it can be changed at runtime. On that realm's
@@ -282,13 +287,14 @@ KRB5_ENCTYPES=18,20
 click **Save Kerberos**. Through the API:
 
 ```bash
-api realms/set '{"id":"r1","key":"krb5.enctypes","value":"18,20"}'
+api realms/set '{"id":"r1","key":"krb5.enctypes","value":"20,19"}'
 ```
 
-In a product realm `18,23` is refused, naming the setting; `18,20` is
-accepted. In a development realm `18,23` is accepted. The value in force is
-on `GET /admin-api/mode`, which lists `krb5.enctypes` with 23 dropped in
-product.
+In a product realm `18,23` is refused, naming the setting, and so is `18,20`
+unless `krb5.allowSha1Enctypes` is on; `20,19` is accepted. In a development
+realm all three are accepted. The value in force is on `GET /admin-api/mode`,
+which lists `krb5.enctypes` with 23, and 17 and 18 unless they are allowed,
+dropped in product.
 
 The job's MIT client restricts itself to RC4 with these `[libdefaults]`
 lines, to see the refusal in product and a TGT in development:

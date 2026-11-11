@@ -57,17 +57,7 @@ require('./config_file').resolveConfigFile();
 // It is BELOW this module in the dependency graph and requires nothing from
 // here, which is what keeps the graph a tree (rule 3).
 const config = require('./config');
-const forge = require('node-forge');
-const jwt = require('jsonwebtoken');
 const bunyan = require("bunyan");
-// THE VENDORED BBS SUITE IS REQUIRED AT FIRST USE (#348), through
-// `bbs2023Suite()` below: it requires `jsonld` at its top, and the two are
-// resident memory in every request worker that never makes a BBS key. By
-// hand rather than through `common/lazy_module.ts`, because this file is in
-// the parent project's Kerberos COPY closure (kerberos/CLAUDE.md) and a new
-// require here would add that file to it.
-/** @type {typeof import('./crypto_impl/bbs2023.js') | null} */
-let bbs2023Loaded = null;
 // ---------------------------------------------------------------------------
 // THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS, since
 // 2026-08-27. It is a LEAF — it requires npm packages, the vendored XML signer
@@ -79,6 +69,7 @@ let bbs2023Loaded = null;
 // is below and stays here.
 // ---------------------------------------------------------------------------
 const stsCrypto = require('./crypto');
+const signaturePolicy = require('./signature_policy');
 // THE KEYSTORE. A LEAF (rule 3) requiring `config`, `crypto`, `mode`,
 // `realms`, `secrets` and a few other leaves — and NOT this module, which is
 // what keeps it requirable from here. It answers null for every realm in
@@ -119,8 +110,7 @@ const joseKid = require('./jose_kid');
 // WHICH HOPS MAY SAY WHERE A REQUEST CAME FROM (2026-09-14, #46). A LEAF that
 // requires `net`, bunyan and `config` only. `forwardedFrom()` below asks it
 // whether a request's forwarded headers are believed at all — the connection's
-// peer must be one of `global.trustedProxies` when that is set. It is in the
-// parent project's Kerberos COPY set through this file (kerberos/CLAUDE.md).
+// peer must be one of `global.trustedProxies` when that is set.
 const clientAddress = require('./client_address');
 /**
  * The service's logger, registered so that `global.logLevel` changes take
@@ -136,21 +126,8 @@ const log = bunyan.createLogger({ name: 'sts',
  */
 function bbs2023Suite() {
   log.debug("Entering bbs2023Suite().");
-  if (!bbs2023Loaded) {
-    try {
-      bbs2023Loaded = require('./crypto_impl/bbs2023.js');
-    } catch (e) {
-      // Thrown on to the caller, as the top-level require's failure was
-      // thrown at start; logged first, because it now happens mid-request.
-      log.error(errorCodes.tag('STS-CORE-0140') + 'helpers: ' +
-                'common/crypto_impl/bbs2023.js, required at first use, did ' +
-                'not load: ' + ((e && e.message) || e));
-      log.debug("Leaving bbs2023Suite(). Threw.");
-      throw e;
-    }
-  }
   log.debug("Leaving bbs2023Suite().");
-  return bbs2023Loaded;
+  return stsCrypto.bbs;
 }
 
 // Registering it is what makes global.logLevel a setting rather than a claim:
@@ -177,7 +154,8 @@ log.info("Log initialized. logLevel=" + log.level());
 //   stage  'before signing' / 'after signing' / 'before encryption' / ...
 //   value  the object or string itself, recorded in full
 /**
- * Logs a security artifact in full, before or after it was protected.
+ * Logs a security artifact before or after it was protected: in full in
+ * development mode, and by size and digest only in product mode.
  *
  * @param what - what it is, such as `SAML assertion` or `JWT`
  * @param stage - such as `before signing` or `after encryption`
@@ -185,10 +163,31 @@ log.info("Log initialized. logLevel=" + log.level());
  */
 function logArtifact(what, stage, value) {
   log.debug("Entering logArtifact().");
+  // Nothing to do below debug, and the artifact is not serialised for a line
+  // nobody writes.
+  if (!log.debug()) {
+    log.debug("Leaving logArtifact(). Below the level.");
+    return;
+  }
+  const text = (typeof value === 'string') ? value : JSON.stringify(value);
+  // PRODUCT MODE NEVER WRITES THE ARTIFACT (ASVS 5.0.0 16.2.5): a signed
+  // token or assertion in a log is a bearer credential anybody who reads the
+  // log can replay, whatever the level. What it says instead is enough to
+  // match the line to a request: the artifact's size and the start of its
+  // SHA-256 digest. `mode.redactsRequestLog()` is the rule the request log
+  // beside this already follows.
+  if (require('./mode').redactsRequestLog()) {
+    log.debug({ artifact: what, stage: stage,
+                length: String(text || '').length,
+                sha256: stsCrypto.digest('sha256', String(text || ''), 'hex')
+                  .slice(0, 16) },
+              what + ' ' + stage + ' (not written: product mode).');
+    log.debug("Leaving logArtifact(). Redacted.");
+    return;
+  }
   log.debug({ artifact: what,
               stage: stage,
-              value: (typeof value === 'string') ? value :
-                      JSON.stringify(value) },
+              value: text },
             what + ' ' + stage + '.');
   log.debug("Leaving logArtifact().");
 }
@@ -204,7 +203,15 @@ function logArtifact(what, stage, value) {
 function headersOf(source) {
   log.debug("Entering headersOf().");
   const out = {};
-  Object.keys(source || {}).forEach(function (k) { out[k] = source[k]; });
+  // Raising the log level must not put a credential in the log (ASVS 5.0.0
+  // 16.2.5), so product mode leaves these out at any level.
+  const redact = require('./mode').redactsRequestLog();
+  Object.keys(source || {}).forEach(function (k) {
+    if (!redact || !/^(?:authorization|cookie|set-cookie|dpop|x-api-key)$/i
+      .test(k)) {
+      out[k] = source[k];
+    }
+  });
   log.debug("Leaving headersOf().");
   return out;
 }
@@ -218,6 +225,10 @@ function headersOf(source) {
  */
 function bodyOf(value) {
   log.debug("Entering bodyOf().");
+  if (require('./mode').redactsRequestLog()) {
+    log.debug("Leaving bodyOf(). Withheld.");
+    return value === undefined || value === null ? '' : '[withheld]';
+  }
   if (value === undefined || value === null) {
     log.debug("Leaving bodyOf().");
     return '';
@@ -397,6 +408,32 @@ function warmPeopleAsync(names) {
  * @param sub - the subject
  * @returns the username, or '' for a subject this service did not issue
  */
+// Has this subject's entry gone (#1543, ASVS 5.0.0 10.3.3)? True only when the
+// resolver answered and found nobody: a spent budget or a failure is not an
+// answer, and a sub this service did not mint is not its business.
+/**
+ * Tells whether a subject this service minted no longer names anybody.
+ *
+ * @param sub - the subject
+ * @returns true when its entry is gone
+ */
+function subjectIsGone(sub) {
+  log.debug("Entering subjectIsGone().");
+  const text = String(sub == null ? '' : sub).trim();
+  if (!/^urn:uuid:/i.test(text) || !subjectResolver) {
+    log.debug("Leaving subjectIsGone(). Not a question for here.");
+    return false;
+  }
+  try {
+    const gone = !subjectResolver.nameFor(text);
+    log.debug("Leaving subjectIsGone(). " + gone);
+    return gone;
+  } catch (e) {
+    log.debug("Caught in subjectIsGone(): " + ((e && e.message) || e));
+    return false;
+  }
+}
+
 function nameForSubject(sub) {
   log.debug("Entering nameForSubject().");
   const text = String(sub == null ? '' : sub).trim();
@@ -786,9 +823,11 @@ function refreshTokenJwkOf(privateKey, kind) {
  *
  * @param madeRsa - an RSA key pair already made, to use in place of generating
  * one
+ * @param madeEc - an EC key pair already made on the configured curve, the
+ * same
  * @returns `{ rsa, ec, secret, secretKid }`
  */
-function makeRefreshTokenEncryptionKeys(madeRsa) {
+function makeRefreshTokenEncryptionKeys(madeRsa, madeEc) {
   log.debug("Entering makeRefreshTokenEncryptionKeys().");
   const bits = rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits');
   const curveName = String(config.value('oauth2.refreshTokenEncryptionCurve') ||
@@ -797,7 +836,8 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
                 REFRESH_TOKEN_CURVES['P-256'];
   const rsa = madeRsa ||
               stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
-  const ec = stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
+  const ec = madeEc ||
+             stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
   const secret = stsCrypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
   const out = {
     rsa: { privateKey: rsa.privateKey,
@@ -815,6 +855,39 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
             " bits, " +
             curveName + ", kid=" + out.rsa.publicJwk.kid);
   return out;
+}
+
+// THE SAME, WITH BOTH PAIRS MADE IN NODE'S THREAD POOL (#704), for a
+// rotation: `signing.rotate` made them with `generateKeyPairSync()`, an RSA
+// key of `oauth2.refreshTokenEncryptionKeyBits` on the event loop of the
+// process running the job. The sizes are read in the realm before anything
+// is awaited, and the set is assembled by the one maker above.
+/**
+ * Makes a realm's refresh-token encryption keys with the RSA and EC pairs
+ * generated off the event loop.
+ *
+ * @param realmId - the realm whose settings size the keys
+ * @returns a promise of what `makeRefreshTokenEncryptionKeys()` answers
+ */
+async function makeRefreshTokenEncryptionKeysAsync(realmId) {
+  log.debug("Entering makeRefreshTokenEncryptionKeysAsync().");
+  const realm = realms.get(String(realmId || '')) ||
+                realms.get(realms.DEFAULT_ID);
+  const sizes = realms.run(realm, function () {
+    const curveName = String(
+      config.value('oauth2.refreshTokenEncryptionCurve') || 'P-256');
+    return { bits: rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits'),
+             curve: REFRESH_TOKEN_CURVES[curveName] ||
+                    REFRESH_TOKEN_CURVES['P-256'] };
+  });
+  const pairs = await Promise.all([
+    generateRsaPairAsync(sizes.bits),
+    stsCrypto.generateKeyPairAsync('ec', { namedCurve: sizes.curve })
+  ]);
+  log.debug("Leaving makeRefreshTokenEncryptionKeysAsync().");
+  return realms.run(realm, function () {
+    return makeRefreshTokenEncryptionKeys(pairs[0], pairs[1]);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -985,8 +1058,7 @@ function rsaBitsFor(key) {
   return Number(config.value(key)) || 2048;
 }
 
-// The service signing key is 2048 bits and not a setting.
-const STS_SIGNING_KEY_BITS = 2048;
+// The service signing key's size is not a setting (#1491): the mode decides.
 
 // ---------------------------------------------------------------------------
 // THE TWO RSA SIGNING KEYS' CERTIFICATES, AND WHY THERE ARE TWO (2026-09-22,
@@ -1018,7 +1090,7 @@ function makeRsaSigningKey(useCaseId, privateKeyPem) {
   log.debug("Entering makeRsaSigningKey(). use=" + useCaseId);
   const unit = RSA_SIGNING_UNITS[useCaseId] || RSA_SIGNING_UNITS.jose;
   const made = stsCrypto.selfSignedRsaCertificate({
-    bits: STS_SIGNING_KEY_BITS,
+    bits: require('./mode').defaultRsaBits(),
     rsaPrivateKeyPem: privateKeyPem,
     commonName: unit.commonName,
     serialPrefix: unit.serialPrefix,
@@ -1077,11 +1149,7 @@ function curveKeyFrom(spec, pair) {
     publicJwk: Object.assign({ use: 'sig', alg: spec.alg }, publicJwk,
       { kid: 'sts-' +
         (spec.curve || spec.alg).toLowerCase() + '-' +
-        forge.md.sha256.create()
-                       .update(material)
-                       .digest()
-                       .toHex()
-                       .slice(0, 8) })
+        stsCrypto.sha256Hex(Buffer.from(material)).slice(0, 8) })
   };
 }
 
@@ -1096,8 +1164,7 @@ function pqKeyFrom(alg, pair) {
     privateKey: pair.priv,
     publicJwk: pqJose.akpPublicJwk(alg, pair.pub,
       'sts-' + alg.toLowerCase() + '-' +
-      forge.md.sha256.create().update(material).digest().toHex()
-        .slice(0, 8))
+      stsCrypto.sha256Hex(Buffer.from(material)).slice(0, 8))
   };
 }
 
@@ -1204,7 +1271,7 @@ function kidOf(certB64) {
   log.debug("Entering kidOf().");
   log.debug("Leaving kidOf().");
   return 'sts-' +
-    forge.md.sha256.create().update(certB64).digest().toHex().slice(0, 12);
+    stsCrypto.sha256Hex(Buffer.from(certB64)).slice(0, 12);
 }
 
 // A key set this process can use directly, built from what a SIBLING PROCESS
@@ -1355,18 +1422,40 @@ function certifyLater(realmId, keys) {
       // did before the hierarchy existed.
       return;
     }
-    Promise.resolve(pki.certifyKeySet(realmId, keys)).then(function (done) {
-      if (done && !done.ok && (done.errors || []).length) {
-        log.debug('The "' + realmId + '" realm\'s keys were not certified: ' +
-                  done.errors.join(' '));
+    // **NOT `certifyKeySet()` DIRECTLY (2026-11-04).** A realm created at
+    // runtime makes its keys on first use, and in a cluster that is often
+    // before ITS BRANCH exists — another process builds it, a second or two
+    // later — and `certifyKeySet()` answers "no branch" and nothing asked
+    // again, so the realm's classical keys were never certified and every
+    // `x5c` it promised was left off. `pki.certifyKeySetWhenBranched()` asks
+    // for the branch first; its header argues the case.
+    // Is `keys` still the set this realm signs with? A sibling's set may have
+    // won meanwhile (`keystore.onAdopt()` drops ours), and its maker
+    // certifies that one. `keySetIfMade()` restores and never generates.
+    const current = function () {
+      let now = null;
+      try {
+        now = keySetIfMade(realmId);
+      } catch (e) {
+        log.debug("Caught in a callback in certifyLater(): " +
+                  ((e && e.message) || e));
+        now = null;
       }
-    }).catch(function (e) {
-      log.error(errorCodes.tag('STS-CORE-0024') +
-                'The "' + realmId + '" realm\'s signing keys could not be ' +
-                'certified under its Issuing CAs: ' + e.message + '. They ' +
-                'still SIGN — what they lack is a certificate chaining to ' +
-                'this service\'s Root.');
-    });
+      return !now || now === keys || now.kid === keys.kid;
+    };
+    Promise.resolve(pki.certifyKeySetWhenBranched(realmId, keys, current))
+      .then(function (done) {
+        if (done && !done.ok && (done.errors || []).length) {
+          log.debug('The "' + realmId + '" realm\'s keys were not ' +
+                    'certified: ' + done.errors.join(' '));
+        }
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-CORE-0024') +
+                  'The "' + realmId + '" realm\'s signing keys could not be ' +
+                  'certified under its Issuing CAs: ' + e.message + '. They ' +
+                  'still SIGN — what they lack is a certificate chaining to ' +
+                  'this service\'s Root.');
+      });
   });
   log.debug("Leaving certifyLater().");
 }
@@ -1691,9 +1780,13 @@ function generationsView(realmId, stored, privateOf) {
     }
     return entry;
   });
+  const parentCerts = (stored.parentCerts || []).filter(function (one) {
+    return typeof one === 'string' && one.length > 0;
+  });
   log.debug("Leaving generationsView(). " + standby.length + " standby.");
   return { generation: Number(stored.generation) || 0,
            rotated: Object.assign({}, stored.rotated || {}),
+           parentCerts: parentCerts,
            standby: standby, retiredRefresh: retiredRefresh };
 }
 
@@ -2804,18 +2897,19 @@ function prepareKeySet(realmId) {
   // awaited — `makeStsKeys()` reads the same three settings the same way.
   const bits = realms.run(realm, function () {
     return {
+      signing: require('./mode').defaultRsaBits(),
       vci: rsaBitsFor('oid4vci.requestEncryptionKeyBits'),
       refresh: rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits'),
       requestObject: rsaBitsFor('oauth2.requestObjectEncryptionKeyBits')
     };
   });
   const work = Promise.all([
-    generateRsaPairAsync(STS_SIGNING_KEY_BITS, true),
+    generateRsaPairAsync(bits.signing, true),
     generateRsaPairAsync(bits.vci),
     generateRsaPairAsync(bits.refresh),
     generateRsaPairAsync(bits.requestObject),
     // The XML signing key (#42, D2), a fifth pair.
-    generateRsaPairAsync(STS_SIGNING_KEY_BITS, true)
+    generateRsaPairAsync(bits.signing, true)
   ]).then(function (pairs) {
     // Somebody may have made or adopted the set while the threads worked; the
     // factory's order decides, and a prepared set it does not use is dropped.
@@ -3153,7 +3247,11 @@ function decryptableJweAlgs(base) {
 function offeredJweAlgs(base) {
   log.debug("Entering offeredJweAlgs().");
   const offered = config.value('keys.offerKemEncryption') === true;
-  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (alg) {
+  // Not advertised where it would be refused (#1469).
+  const legacy = require('./mode').allowsLegacyHashes();
+  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (one) {
+    return legacy || one !== 'RSA-OAEP';
+  }).filter(function (alg) {
     return offered || !stsCrypto.describeJweKemAlg(alg);
   });
   log.debug("Leaving offeredJweAlgs(). " + out.length);
@@ -3310,6 +3408,8 @@ function withoutPqSigningKeys(keys) {
 // the log, because the cause is configuration — a client registered for one
 // while it was on, or a configured algorithm — and not the request.
 const pqSignaturesRefusedSaid = new Set();
+// What `signatureRefusal()` and `usableSigningAlg()` have said, per realm.
+const signatureRefusalsSaid = new Set();
 
 function pqSignatureRefusal(alg) {
   log.debug("Entering pqSignatureRefusal(). alg=" + alg);
@@ -3330,6 +3430,443 @@ function pqSignatureRefusal(alg) {
     ': keys.postQuantumSigning is off, so it publishes no post-quantum key ' +
     'to verify the signature with.'), 'STS-KEYS-0158');
 }
+
+// ---------------------------------------------------------------------------
+// EdDSA JOSE SIGNING, SWITCHED OFF IN A REALM (#1292, 2026-11-03):
+// `keys.eddsaSigning`, OFF BY DEFAULT. The OpenID conformance suite's nimbus
+// throws `unknown key type 'OKP'` on an Ed25519 or Ed448 key in a JWKS
+// instead of skipping it (RFC 7517 section 5), and OpenID Connect
+// certification runs that suite, so by default this realm publishes no OKP
+// signing key and stops OFFERING EdDSA for what it signs.
+//
+// It mirrors the post-quantum switch above on the SIGNING side only, and
+// that difference is the decision: nimbus reads this realm's JWKS, never a
+// client's key, so an EdDSA client assertion, DPoP proof, request object or
+// wallet proof is still verified and still advertised as accepted. What is
+// narrowed is what THIS realm signs with for a client that chose the
+// algorithm — the ID Token, UserInfo, introspection and JARM responses:
+//
+//   signableJwsAlgs(list)            a list of algorithms this realm signs a
+//                                    client's response with, narrowed — for
+//                                    the four registration checks and the
+//                                    console's choices;
+//   withoutEddsaSigningAlgs(doc)     the four `*_signing_alg_values_supported`
+//                                    members that list what this realm
+//                                    signs, narrowed as the document leaves;
+//   withoutEddsaSigningKeys(jwks)    a JWK Set's keys without a kty OKP
+//                                    signing key, for `/oauth2/jwks`;
+//   signatureRefusal(alg)            `signJwt()`, `signJwtAs()` and their twins
+//                                    refuse an EdDSA signature
+//                                    (STS-KEYS-0165), which every response a
+//                                    client chose the algorithm of goes
+//                                    through.
+//
+// An algorithm an operator CONFIGURES (`signJwt()`'s `opts.algorithm`, the
+// federation key, the credential algorithm) is not refused: it is the
+// operator's choice, and the setting's row says not to make it EdDSA here.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether the ambient realm signs with EdDSA and publishes its OKP
+ * signing keys (`keys.eddsaSigning`, off by default).
+ *
+ * @returns true only when the setting is on
+ */
+function eddsaSigningOn() {
+  log.debug("Entering eddsaSigningOn().");
+  const on = signaturePolicy.eddsaOn();
+  log.debug("Leaving eddsaSigningOn(). " + on);
+  return on;
+}
+
+/**
+ * Tells whether a JWS algorithm is an EdDSA one: RFC 8037's `EdDSA`, or the
+ * fully-specified `Ed25519` and `Ed448`.
+ *
+ * @param alg - a JOSE algorithm name
+ * @returns true for an EdDSA algorithm
+ */
+function isEddsaJwsAlg(alg) {
+  log.debug("Entering isEddsaJwsAlg().");
+  const name = String(alg);
+  const spec = Object.prototype.hasOwnProperty.call(stsCrypto.JWS_ALGS, name)
+    ? stsCrypto.JWS_ALGS[name] : null;
+  log.debug("Leaving isEddsaJwsAlg().");
+  return name === 'Ed25519' || name === 'Ed448' ||
+         (!!spec && spec.family === 'okp');
+}
+
+/**
+ * The JWS algorithms of `base` this realm signs a client's response with:
+ * `offeredJwsAlgs()`, less EdDSA while `keys.eddsaSigning` is off, and only
+ * what `keys.signingAlgorithms` lists when it lists anything.
+ *
+ * @param base - the list to narrow; `JWS_SIGNING_ALGS` by default
+ * @returns the narrowed list, a new array
+ */
+function signableJwsAlgs(base) {
+  log.debug("Entering signableJwsAlgs().");
+  const on = eddsaSigningOn();
+  const out = listedSigningAlgs(offeredJwsAlgs(base)).filter(function (alg) {
+    return on || !isEddsaJwsAlg(alg);
+  });
+  log.debug("Leaving signableJwsAlgs(). " + out.length);
+  return out;
+}
+
+// The members of a metadata document that list what THIS realm signs: the
+// ID Token (OpenID Connect Discovery), UserInfo (the same), introspection
+// (RFC 9701) and the authorization response (JARM). Every other
+// `*_alg_values_supported` member lists what this realm ACCEPTS, which the
+// switch does not touch.
+const OWN_SIGNING_ALG_MEMBERS = ['id_token_signing_alg_values_supported',
+  'userinfo_signing_alg_values_supported',
+  'introspection_signing_alg_values_supported',
+  'authorization_signing_alg_values_supported'];
+
+/**
+ * Narrows the members of a metadata document that list what this realm
+ * signs (`OWN_SIGNING_ALG_MEMBERS`) to leave EdDSA out while
+ * `keys.eddsaSigning` is off. Top-level members only, replaced rather than
+ * edited, so a module's constant list is never changed.
+ *
+ * @param doc - the document
+ * @returns the same document
+ */
+function withoutEddsaSigningAlgs(doc) {
+  log.debug("Entering withoutEddsaSigningAlgs().");
+  if (!doc || typeof doc !== 'object' || eddsaSigningOn()) {
+    log.debug("Leaving withoutEddsaSigningAlgs(). Unchanged.");
+    return doc;
+  }
+  OWN_SIGNING_ALG_MEMBERS.forEach(function (name) {
+    if (Array.isArray(doc[name])) {
+      doc[name] = doc[name].filter(function (one) {
+        return typeof one !== 'string' || !isEddsaJwsAlg(one);
+      });
+    }
+  });
+  log.debug("Leaving withoutEddsaSigningAlgs(). Narrowed.");
+  return doc;
+}
+
+/**
+ * A JWK Set's keys without an EdDSA signing key while `keys.eddsaSigning`
+ * is off: a kty OKP key that is not marked `use: "enc"`, or a key whose
+ * `alg` is an EdDSA one.
+ *
+ * @param keys - the public JWKs
+ * @returns the keys to publish
+ */
+function withoutEddsaSigningKeys(keys) {
+  log.debug("Entering withoutEddsaSigningKeys().");
+  if (eddsaSigningOn()) {
+    log.debug("Leaving withoutEddsaSigningKeys(). Unchanged.");
+    return keys;
+  }
+  const out = (keys || []).filter(function (jwk) {
+    return !(jwk && ((jwk.kty === 'OKP' && jwk.use !== 'enc') ||
+                     isEddsaJwsAlg(jwk.alg)));
+  });
+  log.debug("Leaving withoutEddsaSigningKeys(). " + out.length + " of " +
+            (keys || []).length + ".");
+  return out;
+}
+
+// Said once per realm, as `pqSignatureRefusal()` is, because the cause is a
+// registration made while the setting was on, not the request.
+
+/**
+ * The refusal of an EdDSA signature a client chose, in a realm with
+ * `keys.eddsaSigning` off, or null.
+ *
+ * @param alg - the JWS algorithm
+ * @returns an Error marked STS-KEYS-0165, or null
+ */
+
+// ---------------------------------------------------------------------------
+// ONE REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE (#1348, 2026-11-05, rcbj):
+// `keys.signingAlgorithms`, EMPTY BY DEFAULT, which changes nothing. It is the
+// EdDSA switch above applied to any algorithm, at the same places:
+//
+//   signingAlgAllowlist()            the list, or null when it is empty;
+//   signingAlgListed(alg)            whether the list admits an algorithm;
+//   listedSigningAlgs(list)          a list of algorithms, narrowed;
+//   withoutUnlistedSigningAlgs(doc)  the `OWN_SIGNING_ALG_MEMBERS` of a
+//                                    metadata document, narrowed as it leaves;
+//   withoutUnlistedSigningKeys(jwks) a JWK Set's keys, narrowed, for
+//                                    `/oauth2/jwks`;
+//   signatureRefusal(alg)            `signJwt()`, `signJwtAs()` and their twins
+//                                    refuse (STS-KEYS-0166).
+//
+// **`none` IS NOT A SIGNING ALGORITHM, SO THE LIST DOES NOT GOVERN IT.** It is
+// on `userinfo_signing_alg_values_supported` because a UserInfo response may
+// be plain JSON, which Core section 5.3.2 makes the default.
+// ---------------------------------------------------------------------------
+/**
+ * The ambient realm's `keys.signingAlgorithms`. **RS256 is always in it**: the
+ * write rule below refuses a list without it, and a value an appconfig file or
+ * the environment delivers reaches no write rule.
+ *
+ * @returns the list, a new array, or null when the realm names none
+ */
+function signingAlgAllowlist() {
+  log.debug("Entering signingAlgAllowlist().");
+  const list = signaturePolicy.joseSignList();
+  if (!list) {
+    log.debug("Leaving signingAlgAllowlist(). None.");
+    return null;
+  }
+  log.debug("Leaving signingAlgAllowlist(). " + list.length);
+  return list;
+}
+
+/**
+ * Tells whether `keys.signingAlgorithms` admits an algorithm.
+ *
+ * @param alg - a JOSE algorithm name
+ * @returns true when the realm names no list, the list holds it, or it is
+ * `none`, which signs nothing
+ */
+// THE ONE PREDICATE the three narrowing helpers below ask (#1577): the list
+// when there is one, and with none, product's rule that secp256k1 is outside
+// the approved curves (ASVS 5.0.0 11.6.1, #1533), which is
+// `signaturePolicy.unapprovedCurve()` — the same answer `signatureRefusal()`
+// gets from `signCause()`. Until #1577 only this function knew the product
+// rule and nothing but tests called it, so product still offered, published
+// and signed with ES256K.
+function signingAlgListed(alg) {
+  log.debug("Entering signingAlgListed(). alg=" + alg);
+  const list = signingAlgAllowlist();
+  const listed = list ? alg === 'none' || list.indexOf(String(alg)) >= 0
+    : !signaturePolicy.unapprovedCurve(String(alg));
+  log.debug("Leaving signingAlgListed(). " + listed);
+  return listed;
+}
+
+/**
+ * Whether anything narrows by `signingAlgListed()`: a list, or product's
+ * unapproved-curve rule with none. While neither holds the helpers below
+ * answer their input unchanged, the same object.
+ *
+ * @returns true when `signingAlgListed()` can say no to a signing algorithm
+ */
+function signingAlgsNarrowed() {
+  log.debug("Entering signingAlgsNarrowed().");
+  const narrowed = !!signingAlgAllowlist() ||
+    signaturePolicy.omitsUnapprovedCurves();
+  log.debug("Leaving signingAlgsNarrowed(). " + narrowed);
+  return narrowed;
+}
+
+/**
+ * A list of algorithms narrowed to what `keys.signingAlgorithms` admits, and
+ * in product with no list, without ES256K.
+ *
+ * @param base - the list to narrow
+ * @returns the narrowed list, a new array
+ */
+function listedSigningAlgs(base) {
+  log.debug("Entering listedSigningAlgs().");
+  const narrowed = signingAlgsNarrowed();
+  const out = (base || []).filter(function (alg) {
+    return !narrowed || signingAlgListed(alg);
+  });
+  log.debug("Leaving listedSigningAlgs(). " + out.length);
+  return out;
+}
+
+/**
+ * Narrows the members of a metadata document that list what this realm signs
+ * (`OWN_SIGNING_ALG_MEMBERS`) to what `keys.signingAlgorithms` admits.
+ * Top-level members only, replaced rather than edited, so a module's constant list is
+ * never changed.
+ *
+ * @param doc - the document
+ * @returns the same document
+ */
+function withoutUnlistedSigningAlgs(doc) {
+  log.debug("Entering withoutUnlistedSigningAlgs().");
+  if (!doc || typeof doc !== 'object' || !signingAlgsNarrowed()) {
+    log.debug("Leaving withoutUnlistedSigningAlgs(). Unchanged.");
+    return doc;
+  }
+  OWN_SIGNING_ALG_MEMBERS.forEach(function (name) {
+    if (Array.isArray(doc[name])) {
+      doc[name] = listedSigningAlgs(doc[name]);
+    }
+  });
+  log.debug("Leaving withoutUnlistedSigningAlgs(). Narrowed.");
+  return doc;
+}
+
+// The algorithm an EC or OKP signing key serves when it names none: its curve
+// decides. RSA is not here, because one RSA key serves every RS and PS
+// algorithm and the list always holds RS256.
+const ALG_OF_CURVE = { 'P-256': ['ES256'], 'P-384': ['ES384'],
+  'P-521': ['ES512'], secp256k1: ['ES256K'],
+  Ed25519: ['EdDSA', 'Ed25519'], Ed448: ['EdDSA', 'Ed448'] };
+
+/**
+ * A JWK Set's keys without a signing key for an algorithm
+ * `keys.signingAlgorithms` does not admit. A key marked `use: "enc"` stays.
+ *
+ * @param keys - the public JWKs
+ * @returns the keys to publish
+ */
+// What a passkey ceremony offers, as a list of names.
+function webauthnAlgorithmsOffered() {
+  log.debug("Entering webauthnAlgorithmsOffered().");
+  const raw = config.value('webauthn.algorithms');
+  log.debug("Leaving webauthnAlgorithmsOffered().");
+  return (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).trim();
+    }).filter(Boolean);
+}
+
+// EVERY LIST A DOCUMENT CARRIES, IN ONE CALL (#1368, phase 5): a publisher asks
+// this and cannot miss one of the switches. With nothing configured the output
+// is what each of them already answered.
+function narrowSigningAlgs(doc) {
+  log.debug("Entering narrowSigningAlgs().");
+  withoutPqSigningAlgs(doc);
+  withoutEddsaSigningAlgs(doc);
+  withoutUnlistedSigningAlgs(doc);
+  signaturePolicy.narrowOwnMembers(doc, OWN_SIGNING_ALG_MEMBERS);
+  signaturePolicy.narrowAcceptedLists(doc, OWN_SIGNING_ALG_MEMBERS);
+  log.debug("Leaving narrowSigningAlgs().");
+  return doc;
+}
+
+// ONE MEMBER OF A DOCUMENT, AS A DOCUMENT WOULD PUBLISH IT. The crypto report
+// (`admin-ui/crypto_metadata.ts`) lists what discovery lists, and narrowing
+// its rows its own way drifted the first time a narrowing was added here
+// (ES256K out of the accept lists in product, ASVS 5.0.0 11.6.1): so it asks
+// this, which is `narrowSigningAlgs()` over a document holding that member
+// alone. The member's NAME decides how it is narrowed — what this realm
+// signs, or what it accepts — so it is passed as discovery spells it.
+function publishedSigningAlgs(member, list) {
+  log.debug("Entering publishedSigningAlgs().");
+  const doc = {};
+  doc[member] = (list || []).slice();
+  narrowSigningAlgs(doc);
+  log.debug("Leaving publishedSigningAlgs().");
+  return doc[member];
+}
+
+function withoutUnlistedSigningKeys(keys) {
+  log.debug("Entering withoutUnlistedSigningKeys().");
+  if (!signingAlgsNarrowed()) {
+    log.debug("Leaving withoutUnlistedSigningKeys(). Unchanged.");
+    // keys.pqcOnly leaves no list to read, and still narrows what is published.
+    return signaturePolicy.pqcOnly()
+      ? (keys || []).filter(signaturePolicy.publishedUnderPqcOnly) : keys;
+  }
+  // A key naming no algorithm is judged by what its curve serves, so product's
+  // secp256k1 key leaves with no list, as it does with a list that omits it.
+  const out = (keys || []).filter(function (jwk) {
+    if (!jwk || jwk.use === 'enc') {
+      return true;
+    }
+    if (!signaturePolicy.publishedUnderPqcOnly(jwk)) {
+      return false;
+    }
+    if (jwk.alg) {
+      return signingAlgListed(jwk.alg);
+    }
+    const served = Object.prototype.hasOwnProperty.call(ALG_OF_CURVE, jwk.crv)
+      ? ALG_OF_CURVE[jwk.crv] : null;
+    return !served || served.some(signingAlgListed);
+  });
+  log.debug("Leaving withoutUnlistedSigningKeys(). " + out.length + " of " +
+            (keys || []).length + ".");
+  return out;
+}
+
+// Said once per realm, as `pqSignatureRefusal()` is, because the cause is a
+// registration made before the list was set, not the request.
+
+/**
+ * The refusal of a signature with an algorithm `keys.signingAlgorithms` does
+ * not admit, or null.
+ *
+ * @param alg - the JWS algorithm
+ * @returns an Error marked STS-KEYS-0166, or null
+ */
+// `keyNamedElsewhere` is a signature whose verifying key travels in an `x5c` or
+// a DID document rather than in `/oauth2/jwks`, so `keys.eddsaSigning`'s reason,
+// a key nobody can fetch, does not apply to it. The list still does.
+function signatureRefusal(alg, opts) {
+  log.debug("Entering signatureRefusal(). alg=" + alg);
+  const options = opts || {};
+  const cause = signaturePolicy.signCause('jose', alg, {
+    idToken: options.certificateHeader === 'id-token' });
+  if (!cause || (options.keyNamedElsewhere && cause.code === 'STS-KEYS-0165')) {
+    log.debug("Leaving signatureRefusal(). Allowed.");
+    return null;
+  }
+  const said = cause.code + ':' + String(realms.currentId());
+  if (!signatureRefusalsSaid.has(said)) {
+    signatureRefusalsSaid.add(said);
+    log.warn(errorCodes.tag(cause.code) + 'helpers: the "' +
+             String(realms.currentId()) + '" realm refused a signature: ' +
+             cause.message + ' A client or a setting still names it.');
+  }
+  log.debug("Leaving signatureRefusal(). Refused.");
+  return errorCodes.mark(new Error(cause.message), cause.code);
+}
+
+/**
+ * The algorithm a signature this realm chose for itself is made with: the one
+ * asked for where the realm may use it, else its default. For a
+ * setting, where nothing a client did asked for the algorithm. A client's own
+ * choice is refused instead (`signatureRefusal()`).
+ *
+ * @param alg - the algorithm a setting names
+ * @returns the algorithm to sign with
+ */
+function usableSigningAlg(alg) {
+  log.debug("Entering usableSigningAlg(). alg=" + alg);
+  const cause = signaturePolicy.signCause('jose', alg);
+  if (!cause) {
+    log.debug("Leaving usableSigningAlg(). As asked.");
+    return alg;
+  }
+  const said = 'STS-KEYS-0178:' + alg + ':' + String(realms.currentId());
+  if (!signatureRefusalsSaid.has(said)) {
+    signatureRefusalsSaid.add(said);
+    log.warn(errorCodes.tag('STS-KEYS-0178') + 'helpers: the "' +
+             String(realms.currentId()) + '" realm signs with ' +
+             signaturePolicy.defaultJoseAlg() + ' where a setting names ' +
+             alg + ': ' + cause.message);
+  }
+  const instead = signaturePolicy.defaultJoseAlg();
+  log.debug("Leaving usableSigningAlg(). " + instead + " instead.");
+  return instead;
+}
+
+/**
+ * The write rule of `keys.signingAlgorithms`: a list must include RS256.
+ *
+ * @param key - the setting being written
+ * @param parsed - its value, parsed
+ * @returns `{ problem, code }`, or null
+ */
+function signingAlgorithmsWriteRule(key, parsed) {
+  log.debug("Entering signingAlgorithmsWriteRule(). " + key);
+  if (key !== 'keys.signingAlgorithms' || !Array.isArray(parsed) ||
+      !parsed.length || parsed.indexOf('RS256') >= 0) {
+    log.debug("Leaving signingAlgorithmsWriteRule().");
+    return null;
+  }
+  log.debug("Leaving signingAlgorithmsWriteRule(). No RS256.");
+  return { code: 'STS-KEYS-0167',
+           problem: '"keys.signingAlgorithms" must include RS256, or be ' +
+                    'empty: OpenID Connect Discovery requires RS256 in ' +
+                    'id_token_signing_alg_values_supported, and it is the ' +
+                    'default for ID Tokens and access tokens.' };
+}
+config.addWriteRule(signingAlgorithmsWriteRule);
 
 // ---------------------------------------------------------------------------
 // THE REQUEST OBJECT ENCRYPTION KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS
@@ -3694,11 +4231,22 @@ const xmlFallbackSaid = new Set();
  *
  * @returns `{ name, view }`, with `fellBack: true` on a fallback
  */
+// The chosen XML algorithm, or the first listed one where a list leaves it out
+// and it reached the store anyway. A hot path: no Entering/Leaving pair.
+function xmlAlgorithmWithinList(asked) {
+  const row = signaturePolicy.xmlRowNamed(asked);
+  if (!row || !signaturePolicy.signCause('xml', row.xml)) {
+    return asked;
+  }
+  const first = signaturePolicy.effective('xml', 'sign')[0];
+  return first ? String(first).split('#')[1] : asked;
+}
+
 function xmlSignatureChoice() {
   log.debug("Entering xmlSignatureChoice().");
   const keys = stsKeysFor();
-  const asked = String(mode.valueInForce('saml.signatureAlgorithm') ||
-                       'rsa-sha256');
+  const asked = xmlAlgorithmWithinList(String(
+    mode.valueInForce('saml.signatureAlgorithm') || 'rsa-sha256'));
   const rsaView = function () {
     log.debug("Entering rsaView().");
     log.debug("Leaving rsaView().");
@@ -3843,7 +4391,8 @@ const STS = /** @type {any} */ (new Proxy({}, {
 // `keystore.replaceKeySet()`, which is the one door by which a realm's keys
 // change while in use and which bumps nothing itself — the GENERATION counter
 // on the blob is what every copy is judged by (`keystore.js`,
-// serialiseGenerations()).
+// serialiseGenerations()). A higher counter replaces the set in use only when
+// `keystore.supersedes()` says it is a rotation of that set.
 // ===========================================================================
 
 // Every unit a key set holds a current key for, with where that key sits.
@@ -4495,7 +5044,7 @@ function x5cOf(certificatePem, chainPem) {
 
 // ---------------------------------------------------------------------------
 // AN XML `ds:X509Data`: THE CHAIN THROUGH THE ROOT, ONE CERTIFICATE EACH
-// (#1064).
+// (#1064), AND THE SIGNER'S CERTIFICATE AGAIN AFTER IT.
 //
 // The XML half of `x5cOf()` above, and the one writer of it: every XML
 // signature's KeyInfo (`common/crypto.js` `signXml()`, handed this as
@@ -4509,10 +5058,25 @@ function x5cOf(certificatePem, chainPem) {
 // imposes nothing on KeyInfo. But this service's own verifier, and many a
 // relying party's, take the FIRST X509Certificate as the signer's, so the
 // leaf stays first and the Root comes last.
+//
+// **AND THE SAME CERTIFICATE LAST, WHEN A CHAIN FOLLOWS IT.** pysaml2 7.5.5
+// declares `X509Data.x509_certificate` with cardinality max 1, and
+// `SamlBase._convert_element_tree_to_member` assigns that member with
+// setattr, so each later X509Certificate replaces the one before it. The
+// certificate it verifies with is the LAST. A chain that ends at the Root
+// makes that the Root, which did not sign, and every later Response fails
+// (`sts_saml_interop_pysaml2`, both realms, from the first sign-on). Before
+// certification the X509Data holds the self-signed leaf alone, which is why
+// the same job used to pass. Repeating the leaf after the Root leaves a
+// first-certificate reader on the leaf and hands that last-certificate
+// reader the leaf as well. A chain of one certificate is already the leaf
+// and is not repeated. JOSE `x5c` is untouched: nothing there keeps only
+// the last member.
 // ---------------------------------------------------------------------------
 /**
  * Writes a certificate and its stored chain as a `ds:X509Data`, completed
- * through the Root that signs it.
+ * through the Root, with the signer's certificate repeated after that Root
+ * when the chain is longer than the certificate itself.
  *
  * @param certificatePem - the signing or encryption certificate
  * @param chainPem - its stored chain, leaf-first, without the Root
@@ -4520,10 +5084,14 @@ function x5cOf(certificatePem, chainPem) {
  */
 function x509DataXml(certificatePem, chainPem) {
   log.debug("Entering x509DataXml().");
-  const out = '<ds:X509Data>' + x5cOf(certificatePem, chainPem)
-    .map(function (b64) {
-      return '<ds:X509Certificate>' + b64 + '</ds:X509Certificate>';
-    }).join('') + '</ds:X509Data>';
+  const members = x5cOf(certificatePem, chainPem);
+  // The last certificate is what a max-1 reader keeps. See above.
+  if (members.length > 1 && members[members.length - 1] !== members[0]) {
+    members.push(members[0]);
+  }
+  const out = '<ds:X509Data>' + members.map(function (b64) {
+    return '<ds:X509Certificate>' + b64 + '</ds:X509Certificate>';
+  }).join('') + '</ds:X509Data>';
   log.debug("Leaving x509DataXml().");
   return out;
 }
@@ -4645,6 +5213,96 @@ function ownPublicKeyFor(alg) {
   return { kid: signer.kid, publicKeyPem: publicKeyPem };
 }
 
+// THE PUBLIC JWK OF THE KEY A REQUEST OBJECT IS SIGNED WITH, POST-QUANTUM
+// INCLUDED (#657): what the OpenID4VP Verifier certifies (x509 prefixes), and
+// what it names in a Verifier Attestation's `cnf`, its Entity
+// Configuration's `jwks` and its DID document. The signer is the one
+// `signJwt()` (classical) or `signJwtAsync()` (post-quantum) signs `alg`
+// with, so the published key and the signature cannot name different keys.
+//
+// The synchronous door never MAKES a post-quantum key — eleven key
+// generations on this thread are keyListFor()'s reason — and refuses where
+// the realm has not made them yet; `ownPublicJwkForAsync()` makes them on
+// libuv's thread pool, and the Verifier awaits it before its synchronous
+// build (`VcVerifier.prepareSignedClientId()`).
+/**
+ * Returns the public JWK, and the internal `kid`, of the key this realm signs
+ * an algorithm with, without making a post-quantum key.
+ *
+ * @param alg - the JWS algorithm
+ * @param useCaseId - the certificate-header use case the signature is made
+ * under, which decides the signer group, as `signJwt()`'s `certificateHeader`
+ * @returns `{ kid, publicJwk }`
+ * @throws Error when this realm holds no key for the algorithm, or has not
+ * made its post-quantum keys yet
+ */
+function ownPublicJwkFor(alg, useCaseId) {
+  log.debug("Entering ownPublicJwkFor(). alg=" + alg);
+  if (!stsCrypto.isPqJwsAlg(alg)) {
+    // signJwt()'s choice, in its order.
+    const signer = pinnedJoseSigner(alg, false) ||
+                   groupSignerFor(useCaseId, alg, false) ||
+                   ownSignerFor(alg);
+    const jwk = /** @type {any} */ (stsCrypto.publicKeyOf(signer.key)
+      .export({ format: 'jwk' }));
+    jwk.kid = signer.kid;
+    jwk.use = 'sig';
+    jwk.alg = alg;
+    log.debug("Leaving ownPublicJwkFor(). Classical.");
+    return { kid: signer.kid, publicJwk: jwk };
+  }
+  const refused = pqSignatureRefusal(alg);
+  if (refused) {
+    log.debug("Leaving ownPublicJwkFor(). Post-quantum signing is off.");
+    throw refused;
+  }
+  // signingKeyFor()'s choice, in its order, without making the list.
+  const keys = stsKeysFor();
+  const signer = pinnedJoseSigner(alg, true) ||
+                 groupSignerFor(useCaseId, alg, true) ||
+                 (keys.pqKeys ? signingKeyFromList(alg, keys.pqKeys) : null);
+  if (!signer) {
+    log.debug("Leaving ownPublicJwkFor(). Not made yet.");
+    throw new Error('this realm has not made its ' + alg + ' key yet.');
+  }
+  const found = allVerificationKeys().filter(function (one) {
+    return one.publicJwk && one.publicJwk.kid === signer.kid;
+  })[0];
+  if (!found) {
+    log.debug("Leaving ownPublicJwkFor(). No public key.");
+    throw new Error('this realm holds no public key for its ' + alg +
+                    ' signing key.');
+  }
+  log.debug("Leaving ownPublicJwkFor(). Post-quantum.");
+  return { kid: signer.kid, publicJwk: found.publicJwk };
+}
+
+/**
+ * The same answer as `ownPublicJwkFor()`, with the realm's post-quantum keys
+ * made on libuv's thread pool where they are not made yet.
+ *
+ * @param alg - the JWS algorithm
+ * @param useCaseId - as for `ownPublicJwkFor()`
+ * @returns a promise of `{ kid, publicJwk }`
+ */
+function ownPublicJwkForAsync(alg, useCaseId) {
+  log.debug("Entering ownPublicJwkForAsync(). alg=" + alg);
+  if (!stsCrypto.isPqJwsAlg(alg)) {
+    try {
+      const out = ownPublicJwkFor(alg, useCaseId);
+      log.debug("Leaving ownPublicJwkForAsync(). Classical.");
+      return Promise.resolve(out);
+    } catch (e) {
+      log.debug("Leaving ownPublicJwkForAsync(). Refused.");
+      return Promise.reject(e);
+    }
+  }
+  log.debug("Leaving ownPublicJwkForAsync(). Waiting on the key list.");
+  return allSigningKeysAsync().then(function () {
+    return ownPublicJwkFor(alg, useCaseId);
+  });
+}
+
 // The curve keys of the current key set that sign `alg` — the EdDSA pair
 // narrowed by `oauth2.eddsaCurve`, as `signingKeyFromList()` narrows it.
 function classicalKeysFor(alg) {
@@ -4662,9 +5320,24 @@ function classicalKeysFor(alg) {
 function ownCandidatesFor(alg) {
   log.debug("Entering ownCandidatesFor(). alg=" + alg);
   const spec = stsCrypto.JWS_ALGS[alg];
-  if (!spec || spec.family === 'hmac' || spec.family === 'pq') {
+  if (!spec || spec.family === 'hmac') {
     log.debug("Leaving ownCandidatesFor(). None for this family.");
     return [];
+  }
+  // A POST-QUANTUM TOKEN THIS REALM SIGNED (#1368) verifies against the public
+  // half of its own key, which is what `pqPublicBytes()` reads; it answered
+  // nothing until then, so an ID Token a client asked for in ML-DSA could not
+  // come back as an `id_token_hint`. Only keys already made: a token cannot be
+  // signed by a key that does not exist yet, so this never generates one.
+  if (spec.family === 'pq') {
+    const made = (stsKeysFor().pqKeys || []).filter(function (one) {
+      return one.alg === alg;
+    }).map(function (one) {
+      return { kid: one.publicJwk.kid, certPem: one.publicJwk,
+               role: 'current' };
+    });
+    log.debug("Leaving ownCandidatesFor(). " + made.length + " post-quantum.");
+    return made;
   }
   // THE SIGNER GROUPS' KEYS OF THIS FAMILY (#68), after the per-algorithm
   // ones, so a token a group key signed verifies here — found by its kid.
@@ -5207,7 +5880,8 @@ async function mintStandbyKey(unitRow, role) {
                  createdAt: Date.now(), retiredAt: 0, retiredUntil: 0,
                  reason: '' };
   if (unitRow.kind === 'rsa') {
-    const pair = await generateRsaPairAsync(STS_SIGNING_KEY_BITS, true);
+    const pair = await generateRsaPairAsync(
+      require('./mode').defaultRsaBits(), true);
     const made = makeRsaSigningKey(unitRow.useCase, pair.privateKey);
     const kid = kidOf(made.certB64);
     log.debug("Leaving mintStandbyKey(). RSA " + kid);
@@ -5386,6 +6060,8 @@ function plainCopyOf(keys, overrides) {
     }),
     generations: {
       generation: Number(keys.generations && keys.generations.generation) || 0,
+      parentCerts: ((keys.generations && keys.generations.parentCerts) ||
+                    []).slice(),
       rotated: Object.assign({}, (keys.generations &&
                                   keys.generations.rotated) || {}),
       standby: standbyOf(keys).map(function (one) {
@@ -5412,6 +6088,20 @@ function plainCopyOf(keys, overrides) {
 // Hand a new generation to every copy, then certify its new keys.
 function replaceGeneration(realmId, next, why) {
   log.debug("Entering replaceGeneration(). realm=" + realmId);
+  // THE CERTIFICATE THIS GENERATION REPLACES. Read from the set still in
+  // use: a promotion has already swapped the copy's birth certificate, and
+  // an emergency rotation does not leave the old key on standby. Without
+  // this name, `supersedes()` would refuse the rotation and put the old
+  // set back.
+  const current = stsKeysFor.of(realmId);
+  const birth = (current &&
+                 (current.selfSignedCertB64 || current.certB64)) || '';
+  const prior = (next.generations && next.generations.parentCerts) || [];
+  const parents = prior.slice();
+  if (birth && parents.indexOf(birth) < 0) {
+    parents.push(birth);
+  }
+  next.generations.parentCerts = parents;
   next.generations.generation =
     (Number(next.generations.generation) || 0) + 1;
   const answer = keystore.replaceKeySet(realmId, next, why);
@@ -5828,15 +6518,21 @@ function retireExpiredGenerations(realmId, nowMs) {
  * @param realmId - the realm
  * @param graceMs - how long the retired set still opens tokens
  * @param why - the reason, for the log
+ * @param madeKeys - a set already made off the event loop, to install in
+ *   place of making one here
  * @returns what storing the new generation answered
  */
-function rotateRefreshTokenKeys(realmId, graceMs, why) {
+function rotateRefreshTokenKeys(realmId, graceMs, why, madeKeys) {
   log.debug("Entering rotateRefreshTokenKeys(). realm=" + realmId);
   const id = String(realmId || '');
   const keys = stsKeysFor.of(id);
   const old = refreshTokenKeysFor(keys);
   const realm = realms.get(id) || realms.get(realms.DEFAULT_ID);
-  const made = realms.run(realm, makeRefreshTokenEncryptionKeys);
+  // `madeKeys`, when given, is the set `makeRefreshTokenEncryptionKeysAsync()`
+  // made off the event loop (#704); a caller that has none gets one made here.
+  const made = madeKeys || realms.run(realm, function () {
+    return makeRefreshTokenEncryptionKeys();
+  });
   const now = Date.now();
   const copy = plainCopyOf(keys, { refreshTokenEncKeys: made });
   copy.generations.retiredRefresh = copy.generations.retiredRefresh.concat([
@@ -6233,11 +6929,27 @@ function parseBody(req) {
   if (/json/i.test(type)) {
     try {
       const parsed = JSON.parse(raw || '{}');
+      // A JSON body of the literal `null`, or a primitive, is valid JSON but
+      // not the plain object every caller of parseBody() reads — body.x and
+      // body[name]. `null.protocol` is a TypeError the fault boundary turns
+      // into a 500 (a fuzzer sends `null`); a primitive reads as undefined but
+      // is still not a body. Treat either as an empty body, which the handlers'
+      // own validation refuses with a 4xx and a recorded error code, exactly as
+      // they do {}. An ARRAY is left as it was, the one non-object a caller may
+      // legitimately send.
+      if (parsed === null || typeof parsed !== 'object') {
+        log.debug("Leaving parseBody(). A null or primitive JSON body; empty.");
+        return {};
+      }
       log.debug("Leaving parseBody(). Parsed a JSON body.");
       return parsed;
     } catch (e) {
-      log.error(errorCodes.tag('STS-CORE-0026') + 'the request body is not ' +
-                                                  'JSON: ' + e.message);
+      // A CALLER'S MISTAKE, NOT THE OPERATOR'S (2026-11-05): the endpoint
+      // answers it as an empty body, usually a correct 400, so it is logged at
+      // info. At error, a fuzz run logged it 4807 times as if the service had
+      // failed.
+      log.info(errorCodes.tag('STS-CORE-0026') + 'the request body is not ' +
+                                                 'JSON: ' + e.message);
       log.debug("Leaving parseBody(). Nothing could be parsed.");
       return {};
     }
@@ -6748,8 +7460,7 @@ function groupKidOf(groupId, slot, material) {
   log.debug("Entering groupKidOf().");
   log.debug("Leaving groupKidOf().");
   return 'sts-g-' + groupId + '-' + String(slot).toLowerCase() + '-' +
-         forge.md.sha256.create().update(material).digest().toHex()
-           .slice(0, 8);
+         stsCrypto.sha256Hex(Buffer.from(material)).slice(0, 8);
 }
 
 // One classical member: `{ group, slot, alg, kind, pairedSlot, privateKey,
@@ -7246,10 +7957,25 @@ function certificateSlotOf(entry) {
 function certificateHeaderFor(useCaseId, alg, kid) {
   log.debug("Entering certificateHeaderFor(). use=" + useCaseId +
             ", alg=" + alg);
-  const spec = stsCrypto.JWS_ALGS[alg];
-  if (!useCaseId || !spec || spec.family === 'hmac' || !kid) {
+  const signer = useCaseId ? certificateSignerFor(alg, kid) : null;
+  if (!signer) {
     log.debug("Leaving certificateHeaderFor(). Nothing to name.");
     return {};
+  }
+  log.debug("Leaving certificateHeaderFor().");
+  return certificateHeader.headerFor(useCaseId, signer);
+}
+
+// WHICH OF THE AMBIENT REALM'S KEYS `kid` IS, as `jose_certificate_header.js`
+// wants it described — or null for an HMAC, an unknown algorithm or a key this
+// realm does not hold. `certificateHeaderFor()` and its asynchronous twin
+// below share it, so they cannot disagree about whose certificate is whose.
+function certificateSignerFor(alg, kid) {
+  log.debug("Entering certificateSignerFor(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!spec || spec.family === 'hmac' || !kid) {
+    log.debug("Leaving certificateSignerFor(). Nothing to name.");
+    return null;
   }
   const keys = stsKeysFor();
   let signer = null;
@@ -7309,10 +8035,119 @@ function certificateHeaderFor(useCaseId, alg, kid) {
     }
   }
   if (!signer) {
-    log.debug("Leaving certificateHeaderFor(). Not a key of this realm.");
-    return {};
+    log.debug("Leaving certificateSignerFor(). Not a key of this realm.");
+    return null;
   }
-  log.debug("Leaving certificateHeaderFor().");
+  log.debug("Leaving certificateSignerFor().");
+  return signer;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME, FOR A SIGNER THAT CAN WAIT — AND THAT DOES NOT TAKE "NOT CERTIFIED
+// YET" FOR AN ANSWER (2026-11-04).
+//
+// `certificateHeaderFor()` answers `{}` for a key with no certificate, which
+// is right where nothing is certified on purpose (`pki.autoBuild` off) and
+// wrong where the certificate is simply not HERE yet. In a cluster a realm's
+// key may be certified by another process or node a moment before this one
+// signs, and the row reaches this process through the store; or — the defect
+// `pki.certifyKeySetWhenBranched()` closes — nobody certified it at all. So
+// where the use case asks for a header and the key has no certificate in this
+// process, this (1) reads the realm's row from the store, then (2) asks for
+// the key set to be certified (the branch first), each bounded by
+// `CERTIFICATE_WAIT_MS` so a request is never held for a whole cluster build,
+// and answers what is held then. Still nothing is logged under STS-PKI-0227,
+// once per key, and the token is signed without the header — a signer that
+// refused to issue over a header would be the tail wagging the dog, and a
+// realm with `pki.autoBuild` off has nothing to wait for.
+//
+// The OpenID4VCI credential signers call it (`vci-credential`): SD-JWT VC
+// section 3.5 finds an issuer's key by `x5c`, and a wallet that verifies a
+// stored credential offline has no other way (`sts_eudi_wallet_portal`).
+// ---------------------------------------------------------------------------
+const CERTIFICATE_WAIT_MS = 5000;
+const warnedUncertified = new Set();
+
+function withinCertificateWait(promise) {
+  log.debug("Entering withinCertificateWait().");
+  let timer = null;
+  const late = new Promise(function (resolve) {
+    // A per-request bound, not periodic work (root CLAUDE.md, *Anything
+    // periodic is a scheduler job*): cleared as soon as the work settles.
+    timer = setTimeout(function () {
+      resolve(null);
+    }, CERTIFICATE_WAIT_MS);
+  });
+  log.debug("Leaving withinCertificateWait().");
+  return Promise.race([Promise.resolve(promise).catch(function (e) {
+    log.debug("Caught in withinCertificateWait(): " + ((e && e.message) || e));
+    return null;
+  }), late]).then(function (answer) {
+    clearTimeout(timer);
+    return answer;
+  });
+}
+
+/**
+ * Builds the `x5c` or `x5u` header members for one signature, as
+ * `certificateHeaderFor()` does, but reads the store and asks for the key
+ * set to be certified first where the use case wants a header and the key
+ * has no certificate here yet.
+ *
+ * Never rejects; a key still uncertified is logged (STS-PKI-0227) and the
+ * answer carries no header.
+ *
+ * @param useCaseId - a row of `jose_certificate_header.js`'s use cases
+ * @param alg - the JWS algorithm
+ * @param kid - the signing key's `kid`
+ * @returns a promise of the header members to merge
+ */
+async function certificateHeaderForAsync(useCaseId, alg, kid) {
+  log.debug("Entering certificateHeaderForAsync(). use=" + useCaseId);
+  const signer = useCaseId ? certificateSignerFor(alg, kid) : null;
+  if (!signer || !certificateHeader.awaitsCertificate(useCaseId, signer)) {
+    log.debug("Leaving certificateHeaderForAsync(). Nothing to wait for.");
+    return signer ? certificateHeader.headerFor(useCaseId, signer) : {};
+  }
+  let pki = null;
+  try {
+    pki = require('./pki');
+  } catch (e) {
+    log.debug("Caught in certificateHeaderForAsync(): " +
+              ((e && e.message) || e));
+    pki = null;
+  }
+  if (!pki || typeof pki.buildsRealmBranches !== 'function' ||
+      !pki.buildsRealmBranches()) {
+    // Nothing in this process certifies a runtime realm's keys — no
+    // certificate authority, `pki.autoBuild` off, or an in-process caller
+    // that never started one — so there is nothing to wait for.
+    log.debug("Leaving certificateHeaderForAsync(). No builder here.");
+    return certificateHeader.headerFor(useCaseId, signer);
+  }
+  // (1) Another process or node may have certified it already.
+  await withinCertificateWait(keystore.refreshPki(signer.realm));
+  if (certificateHeader.awaitsCertificate(useCaseId, signer)) {
+    // (2) Nobody has: certify the set this process signs with.
+    await withinCertificateWait(
+      pki.certifyKeySetWhenBranched(signer.realm, stsKeysFor()));
+  }
+  if (certificateHeader.awaitsCertificate(useCaseId, signer)) {
+    const once = String(signer.realm) + ' ' + signer.kid;
+    if (!warnedUncertified.has(once)) {
+      if (warnedUncertified.size >= 512) {
+        warnedUncertified.clear();
+      }
+      warnedUncertified.add(once);
+      log.warn(errorCodes.tag('STS-PKI-0227') + 'A "' + useCaseId + '" ' +
+               'token in the "' + (signer.realm || 'default') + '" realm is ' +
+               'signed with ' + signer.slot + ' key ' + signer.kid + ', which ' +
+               'has no certificate here even after reading the store and ' +
+               'asking for one, so it carries no x5c or x5u although ' +
+               certificateHeader.useCase(useCaseId).setting + ' asks for one.');
+    }
+  }
+  log.debug("Leaving certificateHeaderForAsync().");
   return certificateHeader.headerFor(useCaseId, signer);
 }
 
@@ -7594,6 +8429,13 @@ function signJwtAs(payload, alg, secret, opts) {
   log.debug("Entering signJwtAs().");
   const options = opts || {};
   log.debug("Entering signJwtAs(). alg=" + alg);
+  // Ahead of the HMAC branch below: an HMAC signature uses no published key,
+  // but the list says what this realm signs with, HS256 included (#1348).
+  const refused = signatureRefusal(alg, options);
+  if (refused) {
+    log.debug("Leaving signJwtAs(). Refused by the policy.");
+    throw refused;
+  }
   const spec = stsCrypto.JWS_ALGS[alg];
   if (spec && spec.family === 'hmac') {
     if (!secret) {
@@ -7646,6 +8488,12 @@ function signJwtAsAsync(payload, alg, secret, opts) {
   log.debug("Entering signJwtAsAsync().");
   const options = opts || {};
   log.debug("Entering signJwtAsAsync(). alg=" + alg);
+  // See signJwtAs().
+  const refused = signatureRefusal(alg, options);
+  if (refused) {
+    log.debug("Leaving signJwtAsAsync(). Refused by the policy.");
+    return Promise.reject(refused);
+  }
   const spec = stsCrypto.JWS_ALGS[alg];
   if (spec && spec.family === 'hmac') {
     try {
@@ -7712,7 +8560,15 @@ function signJwtAsAsync(payload, alg, secret, opts) {
  */
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
-  const alg = String((opts && opts.algorithm) || 'RS256');
+  const alg = String((opts && opts.algorithm) ||
+                     signaturePolicy.defaultJoseAlg());
+  // Held to the same answer as signJwtAs() since #1368: a signature this realm
+  // publishes no key for helps nobody.
+  const refused = signatureRefusal(alg, opts);
+  if (refused) {
+    log.debug("Leaving signJwt(). Refused by the policy.");
+    throw refused;
+  }
   // The use case's signer-group key where the realm is in that model (#68),
   // else the per-algorithm key.
   // A pinned key first where the realm signs with one (#263).
@@ -7774,44 +8630,63 @@ function signJwt(payload, context, opts) {
  */
 function signJwtAsync(payload, context, opts) {
   log.debug("Entering signJwtAsync(). typ=" + (payload.typ || '(none)'));
-  const alg = String((opts && opts.algorithm) || 'RS256');
-  let signer;
-  try {
-    signer = pinnedJoseSigner(alg, false) ||
-             groupSignerFor(opts && opts.certificateHeader, alg, false) ||
-             ownSignerFor(alg);
-  } catch (e) {
-    log.debug("Leaving signJwtAsync(). No signer.");
-    return Promise.reject(e);
+  const alg = String((opts && opts.algorithm) ||
+                     signaturePolicy.defaultJoseAlg());
+  // See signJwt().
+  const refused = signatureRefusal(alg, opts);
+  if (refused) {
+    log.debug("Leaving signJwtAsync(). Refused by the policy.");
+    return Promise.reject(refused);
   }
-  const certificateHeaderMembers = withCertificateHeader(
-    (opts && opts.header) || undefined,
-    opts && opts.certificateHeader, alg, signer.kid);
-  const kid = (opts && opts.kidDid) ? opts.kidDid + '#' + signer.kid :
-    publishedKidFor(signer.kid);
-  logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
-      'signing',
-              { header: Object.assign({ alg: alg, kid: kid },
-                                      certificateHeaderMembers || {}),
-                payload: payload });
+  // A POST-QUANTUM ALGORITHM IS SIGNED HERE TOO SINCE #657: the key comes
+  // from `signingKeyForAsync()`, which makes the realm's post-quantum keys on
+  // libuv's thread pool where they are not made yet and refuses one while
+  // keys.postQuantumSigning is off (STS-KEYS-0158). Every other algorithm
+  // keeps `ownSignerFor()`'s key, which `signJwt()` signs with, so the two
+  // doors cannot pick different keys for it.
+  const pq = stsCrypto.isPqJwsAlg(alg);
+  let found;
+  if (pq) {
+    found = signingKeyForAsync(alg, opts && opts.certificateHeader);
+  } else {
+    try {
+      found = Promise.resolve(pinnedJoseSigner(alg, false) ||
+               groupSignerFor(opts && opts.certificateHeader, alg, false) ||
+               ownSignerFor(alg));
+    } catch (e) {
+      log.debug("Leaving signJwtAsync(). No signer.");
+      return Promise.reject(e);
+    }
+  }
   log.debug("Leaving signJwtAsync().");
-  return stsCrypto.signJwsAsync(payload, signer.key,
-                                { algorithm: alg, keyid: kid,
-                                  header: certificateHeaderMembers })
-    .then(function (signed) {
-      logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')',
-                  'after signing', signed);
-      if (jwtRecorder) {
-        try {
-          jwtRecorder(payload, signed, context || null);
-        } catch (e) {
-          log.error(errorCodes.tag('STS-CORE-0027') +
-                    'the JWT recorder threw and was ignored; the token ' +
-                    'itself is unaffected: ' + e.message);
-        }
+  return found.then(function (signer) {
+    const certificateHeaderMembers = withCertificateHeader(
+      (opts && opts.header) || undefined,
+      opts && opts.certificateHeader, alg, signer.kid);
+    const kid = (opts && opts.kidDid) ? opts.kidDid + '#' + signer.kid :
+      publishedKidFor(signer.kid);
+    logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
+        'signing',
+                { header: Object.assign({ alg: alg, kid: kid },
+                                        certificateHeaderMembers || {}),
+                  payload: payload });
+    return stsCrypto.signJwsAsync(payload, signer.key,
+                                  { algorithm: alg, keyid: kid,
+                                    header: certificateHeaderMembers });
+  }).then(function (signed) {
+    logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')',
+                'after signing', signed);
+    if (jwtRecorder) {
+      try {
+        jwtRecorder(payload, signed, context || null);
+      } catch (e) {
+        log.error(errorCodes.tag('STS-CORE-0027') +
+                  'the JWT recorder threw and was ignored; the token ' +
+                  'itself is unaffected: ' + e.message);
       }
-      return signed;
-    });
+    }
+    return signed;
+  });
 }
 
 /**
@@ -8546,6 +9421,7 @@ module.exports = {
   signJwtAs: signJwtAs,
   signJwtAsAsync: signJwtAsAsync,
   certificateHeaderFor: certificateHeaderFor,
+  certificateHeaderForAsync: certificateHeaderForAsync,
   publishedKidFor: publishedKidFor,
   kidNamesKey: kidNamesKey,
   warmPqKeys: warmPqKeys,
@@ -8611,6 +9487,8 @@ module.exports = {
   vciError: vciError,
   signJwt: signJwt,
   signJwtAsync: signJwtAsync,
+  ownPublicJwkFor: ownPublicJwkFor,
+  ownPublicJwkForAsync: ownPublicJwkForAsync,
   ownPublicKeyFor: ownPublicKeyFor,
   setJwtRecorder: setJwtRecorder,
   userFor: userFor,
@@ -8618,6 +9496,7 @@ module.exports = {
   hasSubjectResolver: hasSubjectResolver,
   subjectForName: subjectForName,
   nameForSubject: nameForSubject,
+  subjectIsGone: subjectIsGone,
   warmPeopleAsync: warmPeopleAsync,
   namesForSubjects: namesForSubjects,
   namesForSubjectsAsync: namesForSubjectsAsync,
@@ -8648,12 +9527,31 @@ module.exports = {
   offeredJwsAlgs: offeredJwsAlgs,
   withoutPqSigningAlgs: withoutPqSigningAlgs,
   withoutPqSigningKeys: withoutPqSigningKeys,
+  eddsaSigningOn: eddsaSigningOn,
+  isEddsaJwsAlg: isEddsaJwsAlg,
+  signableJwsAlgs: signableJwsAlgs,
+  withoutEddsaSigningAlgs: withoutEddsaSigningAlgs,
+  withoutEddsaSigningKeys: withoutEddsaSigningKeys,
+  signingAlgAllowlist: signingAlgAllowlist,
+  signingAlgListed: signingAlgListed,
+  usableSigningAlg: usableSigningAlg,
+  kidOf: kidOf,
+  groupKidOf: groupKidOf,
+  pqKeyFrom: pqKeyFrom,
+  curveKeyFrom: curveKeyFrom,
+  listedSigningAlgs: listedSigningAlgs,
+  withoutUnlistedSigningAlgs: withoutUnlistedSigningAlgs,
+  narrowSigningAlgs: narrowSigningAlgs,
+  publishedSigningAlgs: publishedSigningAlgs,
+  webauthnAlgorithmsOffered: webauthnAlgorithmsOffered,
+  withoutUnlistedSigningKeys: withoutUnlistedSigningKeys,
   browserDeviceKeysFor: browserDeviceKeysFor,
   vcApiKeysFor: vcApiKeysFor,
   vcApiKeyFor: vcApiKeyFor,
   browserDeviceSigner: browserDeviceSigner,
   browserDeviceVerifiers: browserDeviceVerifiers,
   makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,
+  makeRefreshTokenEncryptionKeysAsync: makeRefreshTokenEncryptionKeysAsync,
   requestEncryptionJwkOf: requestEncryptionJwkOf,
   VCI_REQUEST_ENC_ALG: VCI_REQUEST_ENC_ALG,
   // The count as a word, for the refusal sentences that name what they

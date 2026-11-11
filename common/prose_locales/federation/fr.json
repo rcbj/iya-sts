@@ -244,8 +244,8 @@
     "text": "LE SECRET DE CE SERVICE CHEZ LE PARTENAIRE, en clair, dans un annuaire où chaque bind réussit. C’est un VÉRITABLE identifiant auprès d’un VÉRITABLE service étranger, ce qui est une affirmation plus forte que tout le reste de cet annuaire — voir l’en-tête. Jamais écrit dans le journal d’audit et jamais affiché sur une page."
   },
   "fed.schema.attributes.fedResponseMode.what": {
-    "en": "07cfe6e4177873df",
-    "text": "COMMENT LE CODE D’AUTORISATION REVIENT : query (la valeur par défaut, le code dans la redirection) ou form_post (OAuth 2.0 Form Post Response Mode), qu’exige Sign in with Apple dès qu’un nom ou une adresse est demandé. form_post arrive sous forme de POST intersite, si bien qu’un navigateur ne lui envoie aucun cookie SameSite=Lax."
+    "en": "fdcac3938c7dc0ec",
+    "text": "COMMENT LA RÉPONSE D’AUTORISATION REVIENT. Vide, la valeur par défaut : query pour code, et form_post (OAuth 2.0 Form Post Response Mode) pour un type de réponse OpenID Connect portant un ID Token ou un jeton d’accès. form_post, qu’exige Sign in with Apple dès qu’un nom ou une adresse est demandé, arrive sous forme de POST intersite, si bien qu’un navigateur ne lui envoie aucun cookie SameSite=Lax. fragment, OpenID Connect seulement, est la valeur par défaut de ces types de réponse dans la spécification : la réponse est dans le fragment de l’URL, et une page munie d’un script ici la transmet. Il place l’ID Token dans l’historique du navigateur, ce que form_post ne fait pas : ne l’utilisez que pour un partenaire qui ne peut pas poster. query ne peut porter ni un ID Token ni un jeton d’accès."
   },
   "fed.schema.attributes.fedAllowedTenants.what": {
     "en": "1436122fe8c92048",
@@ -276,8 +276,52 @@
     "text": "La portée demandée au partenaire. `openid profile email` est la valeur par défaut pour une relation OIDC et il n’y a pas de valeur par défaut pour une relation OAuth 2.0, car ce qu’un serveur d’autorisation OAuth 2.0 vous accordera lui est entièrement propre."
   },
   "fed.schema.attributes.fedResponseType.what": {
-    "en": "b2682d37a527ee98",
-    "text": "code (la valeur par défaut) ou id_token. `id_token` avec form_post est la forme qui n’a besoin d’AUCUN canal de retour, donc d’aucun point de terminaison de jeton, d’aucun secret client et d’aucune requête sortante — c’est la seule façon de se fédérer avec un partenaire OIDC depuis un déploiement qui n’a aucun accès sortant."
+    "en": "885dc55158b43f26",
+    "text": "code (la valeur par défaut), id_token, ou l’un des quatre autres d’OpenID Connect : id_token token (implicite), code id_token, code token et code id_token token (hybrides). `id_token` avec form_post est la forme qui n’a besoin d’AUCUN canal arrière, donc d’aucun point de terminaison de jeton, d’aucun secret client ni d’aucune requête sortante — la seule façon de se fédérer avec un partenaire OIDC depuis un déploiement sans aucune sortie réseau. Un ID Token venu du point de terminaison d’autorisation doit porter le nonce, ainsi que c_hash et at_hash partout où un code ou un jeton d’accès l’accompagnait."
+  },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "OPENID CONNECT SEULEMENT. L’UNIQUE ALGORITHME avec lequel le partenaire signe les ID Tokens et les Logout Tokens de cette relation — ce qui a été enregistré chez le partenaire comme id_token_signed_response_alg (OpenID Connect Core 1.0 section 3.1.3.7 étape 7, Back-Channel Logout 1.0 section 2.6). Un jeton signé avec un autre est refusé, même si la clé du partenaire le vérifie. Vide, la valeur par défaut : tout algorithme de la famille de la clé qui vérifie et que federation.jwtAlgorithms autorise. Définissez-le : vide, il accepte un jeton signé par une autre clé du partenaire sous un autre algorithme."
+  },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "OPENID CONNECT SEULEMENT. L’algorithme avec lequel une réponse UserInfo SIGNÉE doit être signée — ce qui a été enregistré chez le partenaire comme userinfo_signed_response_alg (OpenID Connect Core 1.0 section 5.3.2). Une réponse signée est vérifiée avec les clés du partenaire, que ce champ soit défini ou non ; défini, une réponse signée avec un autre algorithme n’est pas utilisée. Vide, la valeur par défaut : une réponse JSON, ou une réponse signée avec tout algorithme de la famille de sa clé."
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "OPENID CONNECT SEULEMENT. TRUE conserve, scellé, le jeton d’actualisation que le partenaire émet à la connexion, avec la session qu’il a ouverte, et l’utilise pour garder à jour l’identité de cette session (OpenID Connect Core 1.0 section 12) : toutes les fedRefreshEverySeconds, les jetons de la session sont actualisés, un nouvel ID Token doit nommer les mêmes iss et sub, et UserInfo doit toujours répondre pour ce sub. Une actualisation que le partenaire refuse, ou une réponse qui échoue à ces vérifications, MET FIN à la session. Le jeton meurt avec la session. FALSE, la valeur par défaut : les jetons du partenaire servent une fois, à la connexion, puis sont jetés — rien ici ne détient d’identifiant auprès d’un autre service, et ce sont la déconnexion du partenaire et ses Shared Signals qui mettent fin à la session plus tôt."
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "Avec fedRefreshTokens activé : à quelle fréquence, en secondes, les jetons d’une session sont actualisés. Vide : à l’expiration du jeton d’accès (son expires_in), ou toutes les heures quand le partenaire n’indique aucune expiration. La tâche planifiée federation.partner-refresh vérifie toutes les quinze secondes."
+  },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "OPENID CONNECT SEULEMENT, avec fedDiscovery. TRUE fait que ce service S’ENREGISTRE LUI-MÊME chez le partenaire (OpenID Connect Dynamic Client Registration 1.0, RFC 7591), au registration_endpoint que nomme son document de découverte, chaque fois que la relation ne détient aucun fedClientId ou en détient un enregistré auprès d’un autre émetteur — au début d’une connexion, ou par le register-partner d’un administrateur. Le client_id et le secret que le partenaire délivre sont écrits dans fedClientId et fedClientSecret (scellé). Ce qui est enregistré est cette relation : son service consommateur d’assertions, son type de réponse, son authentification client, les algorithmes définis ici et, pour les objets de requête, la clé publique qui les signe. FALSE, la valeur par défaut : le client est enregistré chez le partenaire à la main."
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "L’émetteur auprès duquel fedClientId a été enregistré par fedRegister. Écrit par l’enregistrement ; effacez-le, avec fedClientId, pour enregistrer de nouveau à la prochaine connexion."
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "OPENID CONNECT SEULEMENT. Envoie la demande d’autorisation comme un objet de requête (OpenID Connect Core 1.0 section 6, RFC 9101) : request (par valeur) ou request_uri (par référence — le partenaire le récupère, une seule fois, à /federation/request/{id}/{handle}). Signé sous fedRequestObjectSigningAlg avec la clé de ce domaine. Vide, la valeur par défaut : une demande d’autorisation simple."
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "L’algorithme avec lequel un objet de requête est signé : RS256 (la valeur par défaut), PS256 ou ES256 sous la clé de ce domaine, ou none — un objet NON SIGNÉ, que Core 6.2 n’autorise que par référence en https ; un avertissement : le partenaire n’a alors que le TLS de la récupération pour savoir que ce service l’a écrit."
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "OPENID CONNECT SEULEMENT, avec fedDiscovery. TRUE répond à /federation/webfinger/{id}, où une PERSONNE saisit un identifiant (acct:user@host ou une URL) et où ce service demande à cet hôte quel est le fournisseur OpenID de la personne (OpenID Connect Discovery 1.0 section 2, RFC 7033). UN AVERTISSEMENT : l’hôte appelé est choisi par un appelant — la seule exception argumentée de ce genre de ce service parmi les requêtes de fédération, sous la politique sortante (aucune adresse interne en mode produit, aucune redirection, le plafond). L’émetteur trouvé doit commencer par fedPeer, ce qui le borne au partenaire qu’un administrateur a configuré ; la personne voit l’émetteur et ne continue qu’en appuyant sur un bouton. FALSE, la valeur par défaut, refuse."
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "OPENID CONNECT SEULEMENT. TRUE lit les points de terminaison du partenaire et son jwks_uri dans son document de découverte, {fedPeer}/.well-known/openid-configuration, au début de chaque connexion (OpenID Connect Discovery 1.0 section 4), dont l’issuer doit être exactement fedPeer ; fedSsoUrl, fedTokenUrl, fedUserinfoUrl et fedJwksUri ne sont alors pas lus. L’adresse est dérivée de fedPeer, qu’un administrateur a configuré, et jamais d’une requête. FALSE, la valeur par défaut : les points de terminaison sont configurés à la main."
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "OPENID CONNECT SEULEMENT. TRUE répond au point de terminaison d’initiation de connexion de cette relation, /federation/initiate-login/{id}, que le partenaire enregistre comme initiate_login_uri (OpenID Connect Core 1.0 section 4) : une connexion que le PARTENAIRE lance, en se nommant dans iss, qui doit être fedPeer. Un login_hint est transmis, et un target_link_uri n’est suivi que vers un chemin de ce service. FALSE, la valeur par défaut, la refuse : sinon n’importe quelle page pourrait lancer une connexion dans le navigateur d’une personne."
   },
   "fed.schema.attributes.fedBinding.what": {
     "en": "a10d4406a67b3b1f",
@@ -376,8 +420,8 @@
     "text": "LE SECRET DE fedSignalsClientId, SCELLÉ sous la clé de chiffrement de clé partout où les clés sont persistées et jamais affiché. Vide utilise fedClientSecret, scellé de la même façon."
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "ed55c437fcd421f1",
-    "text": "La portée demandée avec les client credentials. Vide demande `ssf.manage`, qui inclut la lecture."
+    "en": "9a4b1c668a3d1dd5",
+    "text": "La portée demandée avec les identifiants client. Vide demande `ssf.read ssf.manage`, les deux du profil d'interopérabilité CAEP (section 2.7.3)."
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

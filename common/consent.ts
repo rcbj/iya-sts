@@ -300,6 +300,13 @@ const GRANT_TOKEN_KINDS = ['access_token', 'refresh_token'];
  * withdrawn consent revokes what was issued under it and refuses the
  * refresh grant from then on.
  */
+// THE ONE SCOPE A SAML 2.0, SAML 1.1 OR WS-FEDERATION SIGN-IN IS CONSENTED
+// UNDER (ASVS 5.0.0 7.6.2, `common/sso_consent.ts`). Those protocols carry no
+// scope, so the register files the person's answer to "may this application
+// sign me in" under this one, beside the OAuth scopes of the same entry. A URN
+// so that no OAuth client's own scope can be mistaken for it.
+const SSO_SIGN_IN_SCOPE = 'urn:iya-sts:scope:sign-in';
+
 class Consent {
   /** The attribute on a person's entry that holds their consents. */
   static readonly USER_ATTRIBUTE = USER_ATTRIBUTE;
@@ -1051,10 +1058,38 @@ class Consent {
    * Under a FAPI profile a global consent does not count. `all: true` is
    * `prompt=consent`, which makes every requested scope outstanding without
    * deleting anything already agreed.
-   * @param request - `username`, `clientId`, `scope` and `all`
+   * @param request - `username`, `clientId`, `scope`, `all`, `answered`
+   *   (this request's own answer, spent) and `recorded` (what is on file)
    * @returns `{ clientId, scopes, outstanding, names }`, `names` being the
    *   outstanding scopes
    */
+  // A public client's identity cannot be assured, so a person's earlier answer
+  // does not speak for it (ASVS 5.0.0 10.7.1). This service's own applications
+  // are the exception: they are not third parties asking for anything. They
+  // are named EXACTLY: a prefix test (`sts-`) also matched every dynamically
+  // registered client, whose ids begin `sts-client-` by default.
+  //
+  // WHAT 10.7.1 DOES NOT MEAN IS THAT THE ANSWER JUST GIVEN IS IGNORED. An
+  // EARLIER answer does not speak for a public client; the one the person
+  // gave on the screen this authorization request sent them to does, once,
+  // for that request. The authorization endpoint spends it (`answered`,
+  // below) the way it spends an RFC 9396 Allow; without it the second pass
+  // asked again, and again, for ever. And a caller asking what is RECORDED
+  // rather than whether to ask (`recorded`) is not forced either.
+  alwaysAsks(clientId: string): boolean {
+    const { log, applications } = this.deps;
+    log.debug("Entering Consent.alwaysAsks().");
+    const own: string[] = (applications as any).HOSTED_SURFACE_CLIENT_IDS || [];
+    if (own.indexOf(clientId) >= 0 ||
+        !require('./config').value('oauth2.consentAlwaysForPublicClients')) {
+      log.debug("Leaving Consent.alwaysAsks(). Not asked.");
+      return false;
+    }
+    const meta: any = (applications as any).clientConfigOf(clientId) || {};
+    log.debug("Leaving Consent.alwaysAsks().");
+    return String(meta.token_endpoint_auth_method || '') === 'none';
+  }
+
   outstanding(request): any {
     const { log, applications } = this.deps;
     const self = this;
@@ -1062,7 +1097,12 @@ class Consent {
     const asked = request || {};
     const clientId = String(asked.clientId || '').trim();
     const wanted = self.scopesOf(asked.scope);
-    const all = !!asked.all;
+    // `answered`: the person agreed to exactly these scopes on the screen
+    // THIS request sent them to, and the caller has spent that answer.
+    // `recorded`: the caller asks what is on file, not whether to ask.
+    const answered = !!asked.answered;
+    const all = !!asked.all ||
+      (!answered && !asked.recorded && self.alwaysAsks(clientId));
     // AN ADMINISTRATOR'S GLOBAL CONSENT IS NOT THE USER'S APPROVAL under a
     // FAPI profile (#138, section 5.2.2 item 12) — this service's own console
     // and portal included, by rcbj's decision: the person approves each
@@ -1096,7 +1136,11 @@ class Consent {
         // it an ordinary scope. Only the person's own answer to this row
         // releases one (`oauth-oidc/did_claim.ts`).
         releasesDid: scope === 'did' &&
-          self.deps.config.value('oauth2.didClaim') === true
+          self.deps.config.value('oauth2.didClaim') === true,
+        // SINGLE SIGN-ON TO A SAML OR WS-FEDERATION APPLICATION (ASVS 5.0.0
+        // 7.6.2): the one thing asked is whether this application may sign
+        // the person in, and the screen says that in a sentence of its own.
+        signsIn: scope === SSO_SIGN_IN_SCOPE
       };
     });
     // THE POLICY DECIDES WHICH ARE OUTSTANDING (#305): each scope with
@@ -1117,7 +1161,8 @@ class Consent {
       facts: rows.map(function (one) {
         return { scope: one.scope, attributes: [
           self.deps.scopeVerdicts.resourceFact(A.SCOPE_CONSENTED,
-                                               one.consented || one.global)] };
+                                               one.consented || one.global ||
+                                               answered)] };
       })
     }) : { verdicts: [] };
     const needed: Record<string, boolean> = {};
@@ -2230,6 +2275,7 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   Consent: Consent,
+  SSO_SIGN_IN_SCOPE: SSO_SIGN_IN_SCOPE,
   /**
    * Installs the instance the facades forward to, and runs its wiring.
    *
@@ -2263,6 +2309,7 @@ export = {
   revokeGlobal: slot.forward('revokeGlobal'),
   consentsOf: slot.forward('consentsOf'),
   outstanding: slot.forward('outstanding'),
+  alwaysAsks: slot.forward('alwaysAsks'),
   record: slot.forward('record'),
   revoke: slot.forward('revoke'),
   forget: slot.forward('forget'),

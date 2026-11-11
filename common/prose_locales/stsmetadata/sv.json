@@ -255,6 +255,10 @@
     "en": "cafeffef561dcd9a",
     "text": "partial: Issue, Renew, Validate och Cancel över SOAP 1.1 och 1.2. Förfrågningssignaturer verifieras inte. OnBehalfOf och ActAs avgörs av utfärdandepolicyn (#186, reglerna som tokenutbytet och Kerberos S4U delar) — OnBehalfOf begär personifiering och ActAs delegering, posternas delegeringssemantik måste tillåta det, AppliesTo måste vara en registrerad applikation som delegeringsrelationerna tillåter, och en person som begärande kräver delegation.actorRole — och nekas med ett wst:RequestFailed-fel (avsnitt 11) i produktläge; båda elementen samtidigt ger wst:InvalidRequest; utvecklingsläge registrerar vad som skulle ha nekats. I PRODUKTläge (2026-09-12) kräver varje operation en autentiseringsuppgift — en UsernameToken verifierad mot katalogen, eller ett SAML-intyg som den här STS:en signerat och som är inom sina Conditions — och en OnBehalfOf/ActAs kräver den begärandes egen autentiseringsuppgift och ett sådant intyg inuti den; utvecklingsläge accepterar ingen, som det alltid har gjort. I båda lägena begränsas en begärd wst:Lifetime (wstrust.maxTokenLifetimeMin) och det utfärdade intygets AuthnContext namnger autentiseringsuppgiften snarare än ett lösenord. En beställare vars wsse:Security inte bär någon autentiseringsuppgift autentiseras, i båda lägena, med TLS-klientcertifikatet på anslutningen när denna sfär har utfärdat det till en person eller ett program (#1046), eller när det kommer från en extern certifikatutfärdare och är lagrat i userCertificate på exakt en av deras poster (#1061)."
   },
+  "stsmetadata.specs.wss-kerberos.coverage": {
+    "en": "a6d4bfc032b7d23e",
+    "text": "partial: alla sex ValueType för AP-REQ godtas på /sts (som den begärandes autentiseringsuppgift, och inuti OnBehalfOf eller ActAs när biljetten erhölls genom S4U2Proxy eller med en vidarebefordrad TGT) och som tokentyper enligt RFC 8693, endast för den här tjänstens egen SPN, kontrollerade av mottagaren i båda lägena; en signatur med tokenens sessionsnyckel är en autentiseringsuppgift; och med wstrust.issueKerberos (av som standard) besvaras en wst:TokenType som begär en med en biljett som den här sfärens KDC utfärdade, med undernyckeln som bevistoken. Inte gjort: en nyckel härledd från sessionsnyckeln (en DerivedKeyToken) och kryptering med den; en målsfär vars KDC inte är en betrodd sfär i den här tjänsten."
+  },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",
     "text": "minimal i utvecklingsläge: en UsernameToken accepteras när båda medlemmarna finns och inget lösenord kontrolleras, förutom att det bokstavliga \"invalid\" nekas så att ett negativt test kan framtvinga ett misslyckande. I produktläge verifieras lösenordet — en persons mot deras hashade userPassword, en applikations mot dess klienthemligheter."
@@ -296,8 +300,8 @@
     "text": "full för det som den skickar: inbäddad (enveloped) signatur, exklusiv kanonisering, RSA-SHA256 som standard och RSA-SHA384/512 eller den trasiga RSA-SHA1 via saml.signatureAlgorithm (2026-09-12; endast utvecklingsläge sedan #181); innehållskryptering med AES-GCM eller AES-CBC med en RSA-OAEP-inkapslad nyckel (rsa-oaep-mgf1p, eller XML Encryption 1.1:s rsa-oaep med SHA-256 och MGF1-SHA-256, #168) eller, endast i utvecklingsläge, en RSA-1_5-inkapslad nyckel — produktläge varken kapslar in eller packar upp RSA-1_5 (XML Encryption 1.1 avsnitt 6.1.2) — och, till en EC-mottagare, ECDH-ES-nyckelöverenskommelse med ConcatKDF och en AES-nyckelinkapsling (avsnitt 5.6.4; #168). En federationsrelation DEKRYPTERAR en partners EncryptedAssertion, EncryptedID och EncryptedAttribute med exakt de algoritmer den publicerar, och nekar AES-CBC och rsa-1_5 i varje läge. Ingen ML-KEM-metod är registrerad för XML Encryption. VERIFIERAR (sedan 2026-09-17) varje SignatureMethod i RFC 9231 och XMLDSig 1.1 som nodes OpenSSL implementerar — RSA PKCS#1 v1.5 och RSASSA-PSS (med och utan RSAPSSParams), ECDSA, EdDSA Ed25519/Ed448, DSA — och ML-DSA- och SLH-DSA-identifierarna i utkastet draft-eastlake-rfc9231bis-xmlsec-uris; sammandragen SHA-224, SHA-2, SHA-3 och RIPEMD-160; SHA-1 endast med saml.allowSha1Signatures, i utvecklingsläge. INTE verifierat, och nekat uttryckligen: MD5, MAC:arna, Whirlpool, ESIGN, förhashad EdDSA och de tillståndsbärande HSS/LMS och XMSS."
   },
   "stsmetadata.specs.rfc6749.coverage": {
-    "en": "0c6fe743b64b0d08",
-    "text": "partial: authorization_code, implicit, password, client_credentials och refresh_token. Klientautentisering accepteras, verifieras inte — UTOM i RFC 9700-läge, där en klient som är registrerad här som konfidentiell måste visa upp den client_secret som den här tjänsten utfärdat till den (avsnitt 2.5, den enda autentiseringsuppgift som kontrolleras någonstans i den här tjänsten). Det läget nekar också grant-typerna password och implicit helt och roterar uppdateringstoken. Avsnitt 3.3: ett scope är knutet till klienten (#110) — den här tjänstens egna skyddade scopes (admin:*, SCIM- och Shared Signals-scopes, felsökarbehörigheten) utfärdas endast till en klient vars oauthAllowedScope deklarerar dem, i varje läge, och i produktläge hålls varje scope till den listan eller till en dokumenterad standarduppsättning; en förfrågan utanför den ger invalid_scope."
+    "en": "56137411ddc592b3",
+    "text": "partial: authorization_code, implicit, password, client_credentials och refresh_token. Klientautentisering accepteras, verifieras inte — UTOM i RFC 9700-läge, där en klient som är registrerad här som konfidentiell måste visa upp den client_secret som den här tjänsten utfärdat till den (avsnitt 2.5, den enda autentiseringsuppgift som kontrolleras någonstans i den här tjänsten). Det läget nekar också grant-typen password helt, nekar implicit-grantens åtkomsttoken — varje svarstyp som utfärdar en från auktoriseringsslutpunkten — om inte en administratör undantar RFC 9700 avsnitt 2.1.2 för sfären, och respekterar den då bara för en applikation som har typen aktiverad (#1295, #1296), och roterar uppdateringstoken. Avsnitt 3.3: ett scope är knutet till klienten (#110) — den här tjänstens egna skyddade scopes (admin:*, SCIM- och Shared Signals-scopes, felsökarbehörigheten) utfärdas endast till en klient vars oauthAllowedScope deklarerar dem, i varje läge, och i produktläge hålls varje scope till den listan eller till en dokumenterad standarduppsättning; en förfrågan utanför den ger invalid_scope."
   },
   "stsmetadata.specs.rfc6750.coverage": {
     "en": "32af4b1d310ee331",
@@ -500,8 +504,8 @@
     "text": "full (#151), som OpenID Provider, där oauth2.providerCommands är på (av som standard): command_endpoint registrerad (DCR, konsol, API; https, inget fragment); Command Tokens av typen command+jwt och signerade som klientens ID Token, högst två minuter, med anspråken i avsnitt 5 per kommando (sub endast i kontokommandon, metadata endast i metadata, authentication_provider endast i migrate, aldrig nonce; tenant är sfärens id; aud_sub skickad och inlärd); alla tio kontokommandon och deras _async-varianter på den delade varaktiga utgående kön med svaren och felen i avsnitt 3 lästa; metadata som registrerar vad varje förlitande part stöder; de fem strömmande tenant-kommandona lästa som Server-Sent Events och återupptagna med Last-Event-ID; callback-slutpunkten för asynkrona resultat och förfrågningar om metadata och audit_tenant; ett register över kontotillstånd per förlitande part; automatisk suspend, reactivate, delete, maintain och invalidate vid katalogändringar och globala utloggningar, endast till en förlitande part som listade kommandot. Testpeeren (tests/peer/) spelar en förlitande part som besvarar varje kommando. SAKNAS: att agera som förlitande part för en annan OP."
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
-    "en": "a9d422b9ede39dbe",
-    "text": "full (#148), i varje läge. Avsnitt 2: session_expiry (sessionens absoluta slut, närhelst en token utfärdas på en session), tenant (förtroendesfärens id) och aud_sub (ett konto-id som en administratör registrerar per person per klient, konsolen och /admin-api) i ID Token och claims_supported. Avsnitt 3: tenant nekas som invalid_request när den namnger en annan sfär; domain_hint skickar personen till den federationsrelation vars fedHomeRealmDomain innehåller den. Avsnitt 4: portalens inloggning initierad av tredje part lägger till tenant, domain_hint och target_link_uri. SAKNAS: en aud_sub inlärd från klienten, som kommer med OpenID Provider Commands (#151)."
+    "en": "e8438c20973c8485",
+    "text": "full (#148), i varje läge. Avsnitt 2: session_expiry (sessionens absoluta slut, när en token utfärdas på en session) och tenant (förtroendesfärens id) i en ID Token vars claims-begäran namnger dem, eller i varje med oauth2.enterpriseClaimsAlways (#1292), och aud_sub (ett konto-id som en administratör registrerar per person per klient, konsolen och /admin-api) i ID Token; alla tre i claims_supported. Avsnitt 3: tenant nekas som invalid_request när den namnger en annan sfär; domain_hint skickar personen till den federationsrelation vars fedHomeRealmDomain innehåller den. Avsnitt 4: portalens inloggning initierad av tredje part lägger till tenant, domain_hint och target_link_uri. SAKNAS: en aud_sub inlärd från klienten, som kommer med OpenID Provider Commands (#151)."
   },
   "stsmetadata.specs.oidc-ephemeral.coverage": {
     "en": "f7656881361a49fc",
@@ -560,8 +564,8 @@
     "text": "partial: leverantörskonfigurationsdokumentet med varje OBLIGATORISK medlem i avsnitt 3, byggt genom att utöka RFC 8414-dokumentet så att de två inte kan vara oense om de tjugo medlemmar de delar. Betjänas på den välkända sökvägen, i avsnitt 4:s form med utfärdare med sökväg, och i RFC 8414:s form med infogad sökväg. Sedan #118 publicerar det subject_types_supported public och pairwise, alla fyra prompt-värden, display_values_supported, claims_locales_supported, scopes address och phone och varje anspråk de namnger. WebFinger (avsnitt 2, #119) löser upp en acct:-, e-post- eller värdresurs via den sfär vars DNS-domän det är och en https-URL via dess sökväg /realm/<id>, och slår aldrig upp personen; de infogade och tillagda upptäcktsformerna läser båda [realm/<id>][/<server>] och ger 404 för allt annat, så att varje dokument namnger en utfärdare som något utfärdar från. check_session_iframe saknas (#121)."
   },
   "stsmetadata.specs.oidc-registration.coverage": {
-    "en": "52a4926873bf6dbe",
-    "text": "partial: /oauth2/register och hantering enligt RFC 7592 accepterar och respekterar den OpenID Connect-klientmetadata som den här tjänsten implementerar — subject_type och sector_identifier_uri (hämtad och krävd att lista varje redirect_uri; avsnitt 5), token_endpoint_auth_signing_alg, id_token_signed_response_alg, id_token_encrypted_response_alg/enc, userinfo_signed_response_alg och dess krypteringsmedlemmar, förfrågningsobjektets medlemmar, och medlemmarna för front- och back-channel logout; och (#120) application_type (web, native) med sina regler för omdirigerings-URI, grant_types och response_types tillämpade, default_max_age och default_acr_values tillämpade på en förfrågan som inte namnger någon av dem, require_auth_time (auth_time bärs närhelst den är känd), jwks_uri hämtad, och initiate_login_uri startad från användarportalen med iss och login_hint (Core avsnitt 4). Inte täckt: policy_uri och tos_uri lagras och returneras men ritas inte på samtyckesskärmen."
+    "en": "f938f6e1a6211dd2",
+    "text": "partial: /oauth2/register och hantering enligt RFC 7592 accepterar och respekterar den OpenID Connect-klientmetadata som den här tjänsten implementerar — subject_type och sector_identifier_uri (hämtad och krävd att lista varje redirect_uri; avsnitt 5), token_endpoint_auth_signing_alg, id_token_signed_response_alg, id_token_encrypted_response_alg/enc, userinfo_signed_response_alg och dess krypteringsmedlemmar, förfrågningsobjektets medlemmar, och medlemmarna för front- och back-channel logout; och (#120) application_type (web, native) med sina regler för omdirigerings-URI, grant_types och response_types tillämpade, default_max_age och default_acr_values tillämpade på en förfrågan som inte namnger någon av dem, require_auth_time (auth_time bärs närhelst den är känd), jwks_uri hämtad, och initiate_login_uri startad från användarportalen med iss och login_hint (Core avsnitt 4); och (#1300) logo_uri, policy_uri och tos_uri som sparas och visas på inloggnings- och samtyckesskärmarna, där logotypen läses in av personens webbläsare och aldrig hämtas av den här tjänsten. Inte täckt: en språkmärkt logo_uri, policy_uri eller tos_uri (avsnitt 2.1) sparas som den skickades och ritas inte."
   },
   "stsmetadata.specs.oidc-logout.coverage": {
     "en": "762ca8fb1eb8c94b",
@@ -572,8 +576,8 @@
     "text": "partial men bred: utfärdarmetadata, nonce, innehavsbevis, batchutfärdande, uppskjutet utfärdande, Credential Offers (bilaga H.1/H.2/H.3), grant med förauktoriserad kod med tx_code, credential_identifiers, kryptering av förfrågan och svar (avsnitt 10), och Notification Endpoint (avsnitt 11). Nyckelattesteringar (bilaga D) i huvudet på ett jwt-bevis och som bevistypen attestation, verifierade mot konfigurerade certifikat; statuslistor för varje intyg; intyg signerade med postkvantalgoritmer. Ingen plånboksattestering (bilaga E)."
   },
   "stsmetadata.specs.oid4vp.coverage": {
-    "en": "6a7b2a600e91aab4",
-    "text": "partial: Authorization Requests som värde och som ett signerat Request Object via referens, response_mode=direct_post, en DCQL-fråga (credential_sets inräknade), och fullständig verifiering av det som kommer tillbaka i alla tre formaten — en Key Binding JWT, en VP JWT med nonce, aud och iat, en VerifiablePresentation med ett Data Integrity-bevis (B.1.3.2.5) — och varje intygs status, som varje uppvisat intyg måste namnge (oid4vp.requireStatusReference, all som standard; en ldp_vc-fråga ber om credentialStatus och ett som undanhåller den nekas). Sedan 2026-09-17 kan en presentation LOGGA IN NÅGON på /authn/wallet — via Digital Credentials API (bilaga A: openid4vp-v1-signed, expected_origins, dc_api.jwt eller dc_api, målgruppen origin:), på samma enhet med avsnitt 8.2:s response_code, och via en vanlig QR-kod endast där oid4vp.signInCrossDevice är på — men endast ett innehavarbundet intyg som den här sfären utfärdat, i något av de tre formaten, och endast som den katalogpost det utfärdades för; allt annat verifieras och loggar inte in någon. Ingen presentation_definition (DIF PE) — endast DCQL; ingen osignerad eller flersignerad DC API-förfrågan; ingen mso_mdoc; ingen plånboksattestering; ingen transaction_data. SEDAN #129 namnger en signerad förfrågan sin Client Identifier med det prefix som oid4vp.clientIdPrefix väljer (avsnitt 5.9): pre-registered, decentralized_identifier (sfärens did:web, en DID-URL som kid), verifier_attestation (en Verifier Attestation JWT i huvudet `jwt`, konfigurerad eller självattesterad), eller openid_federation (sfärens Entity Configuration), och sedan #230 x509_san_dns och x509_hash (avsnitt 5.9.3: verifierarens eget certifikat från sfärens utfärdande JOSE-CA i x5c, ett dNSName som är Response URI:ns värd, eller lövcertifikatets SHA-256), valt per sfär eller per förfrågan; en osignerad använder redirect_uri. Prefixet origin erbjuds inte (det är Digital Credentials API:s eget, satt av webbläsaren)."
+    "en": "7b2694beee176000",
+    "text": "partial: Authorization Requests som värde och som ett signerat Request Object via referens, response_mode=direct_post, en DCQL-fråga (credential_sets inräknade), och fullständig verifiering av det som kommer tillbaka i alla fyra formaten — en Key Binding JWT, en VP JWT med nonce, aud och iat, en VerifiablePresentation med ett Data Integrity-bevis (B.1.3.2.5), och sedan #935 en ISO-mdoc (B.2: dokumentsignerarens kedja till oid4vp.mdocTrustAnchors, MSO:n, varje elements hashvärde, enhetssignaturen över sessionsutskriften i B.2.6.1; deviceMac nekas) — och varje intygs status, som varje uppvisat intyg måste namnge (oid4vp.requireStatusReference, all som standard; en ldp_vc-fråga ber om credentialStatus och ett som undanhåller den nekas). Sedan 2026-09-17 kan en presentation LOGGA IN NÅGON på /authn/wallet — via Digital Credentials API (bilaga A: openid4vp-v1-signed, expected_origins, dc_api.jwt eller dc_api, målgruppen origin:), på samma enhet med avsnitt 8.2:s response_code, och via en vanlig QR-kod endast där oid4vp.signInCrossDevice är på — men endast ett innehavarbundet intyg som den här sfären utfärdat, i något av de tre formaten, och endast som den katalogpost det utfärdades för; allt annat verifieras och loggar inte in någon. Ingen presentation_definition (DIF PE) — endast DCQL; ingen osignerad eller flersignerad DC API-förfrågan; ingen mdoc via DC API eller för inloggning; ingen plånboksattestering; ingen transaction_data. SEDAN #129 namnger en signerad förfrågan sin Client Identifier med det prefix som oid4vp.clientIdPrefix väljer (avsnitt 5.9): pre-registered, decentralized_identifier (sfärens did:web, en DID-URL som kid), verifier_attestation (en Verifier Attestation JWT i huvudet `jwt`, konfigurerad eller självattesterad), eller openid_federation (sfärens Entity Configuration), och sedan #230 x509_san_dns och x509_hash (avsnitt 5.9.3: verifierarens eget certifikat från sfärens utfärdande JOSE-CA i x5c, ett dNSName som är Response URI:ns värd, eller lövcertifikatets SHA-256), valt per sfär eller per förfrågan; en osignerad använder redirect_uri. Prefixet origin erbjuds inte (det är Digital Credentials API:s eget, satt av webbläsaren)."
   },
   "stsmetadata.specs.siopv2.coverage": {
     "en": "7b5596036282fc19",
@@ -632,8 +636,8 @@
     "text": "partial: utfärdar- (issue), innehavar- (prove, derive), verifierar- (intyg och presentationer) och statustjänsterna, över tjänstens egna kryptosviter, statuslistor och VC API:ets egna nycklar, AV tills en domän slår på det (vcApi.enabled), bakom en OAuth 2.0-åtkomsttoken som bär vc-api:issue eller vc-api:verify i alla lägen, hastighetsbegränsat per klient, och ett alternativ det inte förstår avvisas. Inte byggt: zcap-auktorisering, arbetsflöden och utbyten, utmaningar, lagring av intyg och presentationer (GET och DELETE av /credentials/{id}), VCALM:s operation:path-omfång, och utfärdarinstanser konfigurerade per domän (instanserna är fasta, en per säkringsmekanism och kurva)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "0e654cb76a7429ce",
-    "text": "partial: en lista per sfär, två bitar per intyg (VALID, INVALID, SUSPENDED), serverad som en Status List Token i JWT- och CWT-form enligt Accept, med ttl och exp, en aggregeringsslutpunkt och status-anspråket i varje SD-JWT VC- och jwt_vc_json-intyg; verifieraren slår upp en betrodd utländsk utfärdares lista och nekar när inget uttalande kan göras. Och en andra lista per sfär för ÅTKOMSTTOKENS (#432): en bit per token, där varje OAuth RFC 9068-åtkomsttoken och varje GNAP-token av typen jwt-signed och jwt-encrypted bär sitt status-anspråk, annonserad som status_list_aggregation_endpoint (avsnitt 9.1) i auktoriseringsserverns metadata. Ingen historisk uppslagning (501), inga omdirigeringar följs, ingen mdoc (ingen utfärdas)."
+    "en": "b7932392e5841ca6",
+    "text": "partial: en lista per sfär, två bitar per intyg (VALID, INVALID, SUSPENDED), serverad som en Status List Token i JWT- och CWT-form enligt Accept, med ttl och exp, en aggregeringsslutpunkt och status-anspråket i varje SD-JWT VC- och jwt_vc_json-intyg; verifieraren slår upp en betrodd utländsk utfärdares lista och nekar när inget uttalande kan göras. Och en andra lista per sfär för ÅTKOMSTTOKENS (#432): en bit per token, där varje OAuth RFC 9068-åtkomsttoken och varje GNAP-token av typen jwt-signed och jwt-encrypted bär sitt status-anspråk, annonserad som status_list_aggregation_endpoint (avsnitt 9.1) i auktoriseringsserverns metadata. Ingen historisk uppslagning (501), inga omdirigeringar följs. Ingen mdoc utfärdas; verifieraren slår upp den CWT-lista som ett uppvisat mdoc:s Mobile Security Object namnger, signerad av ett certifikat i dess x5chain som kedjar till oid4vp.mdocTrustAnchors (#935)."
   },
   "stsmetadata.specs.etsi-ts-119-602.coverage": {
     "en": "d648e3ad690b8900",
@@ -656,8 +660,8 @@
     "text": "full för det Data Integrity behöver. JSON-LD-kontexter är VENDORERADE och hämtas aldrig: en kanonisering som berodde på en hämtning över nätverket vore varken reproducerbar eller säker."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, och slår upp och följer (avsnitt 7) did:key, did:jwk och sin egen did:web i båda JSON-representationerna i W3C VC API (#199), hållet mot W3C:s DID-testsvit. Ingen annan did:web hämtas; inga DID-parametrar (service, versionId, …) stöds."
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, en did:web per applikation och en did:web per person på en slumpmässig adress med alla versioner av dess nycklar sparade (#1291); den slår upp och följer (avsnitt 7) did:key, did:jwk och sin egen did:web i båda JSON-representationerna i W3C VC API (#199), prövat mot W3C:s DID-testsvit, och besvarar DID-parametrarna versionId och versionTime, med didDocumentMetadata (created, updated, versionId, nextVersionId, deactivated), för en persons publicerade DID. Ingen annan did:web hämtas; ingen annan DID-parameter (service, relativeRef, hl) stöds."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -1136,8 +1140,8 @@
     "text": "Avsnitt 3.4.3, för grupper."
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.what": {
-    "en": "6f6ca2ae30df56a4",
-    "text": "LÄSNING löser upp member, uniqueMember och memberUid på samma sätt och returnerar varje medlem efter dess id — att behandla de tre olika är hur varje posixGroup-medlemskap tyst försvinner. SKRIVNING gör om varje medlems-id till dess DN och lägger det i member, och tömmer de andra två så att en klient som tog bort alla inte finner gruppen fortfarande befolkad. En medlem som inte namnger något ACCEPTERAS och loggas: en dinglande medlem är ett tillstånd som är värt att kunna framställa."
+    "en": "c85629ec6fc43a6f",
+    "text": "LÄSNING löser upp member, uniqueMember och memberUid på samma sätt och returnerar varje medlem efter dess id — att behandla de tre olika är hur varje posixGroup-medlemskap tyst försvinner. SKRIVNING gör om varje medlems-id till dess DN och lägger det i member, och tömmer de andra två så att en klient som tog bort alla inte finner gruppen fortfarande befolkad. En medlem som inte namnger något AVVISAS (400 invalidValue): en grupp listar bara det som finns, och en borttagning tar bort en post ur varje grupp."
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.effect": {
     "en": "590332223e3866ae",
@@ -1203,9 +1207,29 @@
     "en": "bfc05d15d7d40bc2",
     "text": "ICKE-SPEC, och avsiktligt OGRINDAD. Varje förtroendesfär som den här processen kör — en förtroendesfär är en hel logisk kopia av den här tjänsten, nådd under ett segment längst fram i sökvägen och med sin egen konfiguration, signeringsnyckel, sessioner och tokens. Den bär varje sfärs id, namn, bas-URL och sökvägsprefix, själva prefixSEGMENTET (som är en inställning, så en klient kan inte gissa det), och vilka protokollfamiljer en sfär faktiskt separerar. Det sista är den del som inget annat besvarar: de flesta familjer separeras av sökvägen, men katalogen separeras av DN, Kerberos av sfärens NAMN i begäran, SPIFFE av socketadress, och TLS-certifikatet separeras inte alls — så den som antog att sökvägssegmentet var gränsen överallt skulle ha fel om fyra av dem. En klient som riktas mot en sfär kan inte konstruera en enda URL utan detta, vilket är varför det inte ligger bakom konsolens grind — samma argument som varje upptäcktsdokument här vilar på."
   },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC. Ikonen som en webbläsare självmant begär på varje sida: logotypens kvadratiska märke (common/favicon.ico). Besvaras på varje lyssnare; sparas i en dag."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Inloggningsskärmens kort och språkväljarens regler, som en enda formatmall som en statisk offentlig ytas skal länkar (common/web_card_css.ts). Besvaras på varje lyssnare; en adress med denna builds ?v= cachas för gott."
+  },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717). Domänens inloggningsfärger som de anpassade CSS-egenskaper /web/card.css läser (common/branding.ts): de fyra branding.*-färgerna och tonerna som härleds ur dem, byggda endast av validerade värden. Ett skal länkar den efter kortet bara där domänens utseende skiljer sig från tjänstens; en adress med dess sammandrag som ?v= cachelagras för gott."
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717). PNG-, JPEG- eller WebP-logotypen som laddats upp för den här domänen via /admin-api/branding/logo, serverad från detta ursprung så att inloggningssidornas img-src 'self' tillåter den och ingen tredje part får veta vem som loggar in; nosniff, sandlådad, en ETag av dess sammandrag. 404 där domänen inte har någon."
+  },
+  "stsmetadata.endpoints./web/photo/:id.what": {
+    "en": "32d1ba774784074d",
+    "text": "NON-SPEC i sig (#719), och det som OpenID Connect Core 5.1:s picture-anspråk namnger för en person med ett foto här. Den JPEG eller PNG som angetts på portalen eller en federationspartners kopia, på en slumpmässig adress som ändras med fotot; utan autentiseringsuppgift, eftersom en förlitande part hämtar den utan någon. nosniff, i sandlåda, med en ETag. 404 för en inaktiverad eller borttagen person."
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717). Ett exempel på den här domänens inloggningskort ritat med väntande färger och en layout (accent, page, card, text, layout i frågan, var och en kontrollerad som inställningarna skulle göra), för konsolen att öppna i en ny flik innan något sparas. Ingenting på den loggar in någon."
   },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
@@ -1350,6 +1374,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "UTANFÖR SPECIFIKATION. Vad rapportapplikationen, en mottagare av tjänstens egen sändare (#1042), har tagit emot: varje signal i sfären för en rapportadministratör, och för alla andra bara signalerna om dem själva. Bakom samma token som resten av /report-api."
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719). Sökvägen till den inloggade personens eget profilfoto i denna sfär, tom om personen inget har. Bakom samma token som resten av /report-api."
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",
@@ -1551,9 +1579,17 @@
     "en": "83b11af065a98038",
     "text": "ICKE-SPEC. Allt som /admin/pki ritar, som JSON: de tre CA-nivåerna med deras subjekt, serienummer, giltighet, algoritmer, tumavtryck och CERTIFIKAT; de vokabulärer som ett bygge får begära; och EN RAD PER APPLIKATION PER PROFIL för allt som innehar ett utfärdat nyckelpar, eftersom varje faktum på en sådan rad — handtaget, utgångstiden, den deklarerade utfärdaren — är per profil och en applikation kan inneha både ett för RFC 7523 och ett för RFC 7522. **INGEN PRIVAT NYCKEL FINNS NÅGONSIN I DET HÄR SVARET**: common/pki.js släpper dem på vägen ut, så en anropare här kan inte läcka rotens nyckel genom att glömma. Certifikaten finns med i sin helhet, eftersom ett certifikat är den halva av ett par som är tänkt att delas ut. PER SFÄR, liksom själva hierarkin. `revocation` ÄR REGISTRET sedan 2026-09-11 — en post per certifikatutfärdare med vad den utfärdat, vad som står på dess lista och dess CRL- och OCSP-adresser över http och ldap — och `revocationNote` bredvid är den beständiga MENINGEN: återkallelse här PUBLICERAS och KONSULTERAS aldrig, så ett certifikat som återkallats på den här sidan autentiserar fortfarande mot den här tjänsten. De är två medlemmar eftersom en tom lista och inga listor alls är olika svar och ett fält bara kunde bära ett av dem. `residency` är den andra begränsningen: i utvecklingsläge dör hierarkin med processen. Speglar GET /admin/pki."
   },
+  "stsmetadata.endpoints./admin-api/pki/trust.what": {
+    "en": "1e6d1c913b7cc28c",
+    "text": "GET /admin/pki/trust över JSON (#1360): huvudinställningen och varje användningsfalls rad med vad den lägger till och vad dess specifikation undantar, den här sfärens förtroendelager för signerare, vad sfären har fäst som den dagliga granskningen senast fann det (sidindelat med ?pinsPage=), och de avslag som valideringsdörren gjort i den här processen."
+  },
+  "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
+    "en": "977d61c6037e8400",
+    "text": "add | remove | recheck | set-row — kontrollerna på /admin/pki/trust. add tar `certificates` (ett eller flera PEM-block, vart och ett genom inträdesregeln och varje avslag namngivet), med `purposes` för att begränsa dem; remove tar en `fingerprint`; recheck kör granskningen nu; set-row tar en `pki.paranoid*`-`setting` och dess `value`, genom den vanliga inställningsskrivningen. Kräver admin:write. Skrivs till ou=signerTrustAnchors, så en ändring överlever en omstart."
+  },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
-    "en": "a0a71a2a102ad10e",
-    "text": "ICKE-SPEC. De TOLV åtgärderna bakom två konsolsidor — build, clear, issue, revoke på /admin/pki, och apply-profile, generate-keys, generate-alt-keys, issue-certificate, use-key, remove-object, clear-store, export i panelen Certificate & Key Configuration — via samma pkiAction() som de sidorna anropar. **DEN LÖSES UPP SNARARE ÄN ATT RETURNERA**: utfärdande är Web Crypto hela vägen ner, så detta är en av de två åtgärdshanterarna i det här API:t som väntar in (await) (/admin-api/ssf är den andra). `issue` LÄMNAR ÖVER DEN PRIVATA NYCKELN EN GÅNG och den här tjänsten behåller ingen andra kopia av den; `export` returnerar nyckelmaterial base64-kodat, liksom /admin-api/keys/export och av samma skäl. **`revoke` ÅTERKALLAR INGENTING**: den tar bort nyckelparet från applikationen, så att den här tjänsten slutar ACCEPTERA det som nyckeln signerar, och certifikatet fortsätter att kedja — svaret säger det med just de orden. `issue` och `revoke` tar ett `target` som är application (standard) eller person — en persons nyckelpar hamnar på personens ou=users-post som stsAssertion* och får bara göra påståenden om personen själv. Speglar POST /admin/pki, POST /admin/pki/certificate och POST /admin/pki/person."
+    "en": "42a6f7a0abbc65c4",
+    "text": "ICKE-SPEC. De TOLV åtgärderna bakom två konsolsidor — build, clear, issue, revoke på /admin/pki, och apply-profile, generate-keys, generate-alt-keys, issue-certificate, use-key, remove-object, clear-store, export i Certifikatarbetsbänken — via samma pkiAction() som de sidorna anropar. **DEN LÖSES UPP SNARARE ÄN ATT RETURNERA**: utfärdande är Web Crypto hela vägen ner, så detta är en av de två åtgärdshanterarna i det här API:t som väntar in (await) (/admin-api/ssf är den andra). `issue` LÄMNAR ÖVER DEN PRIVATA NYCKELN EN GÅNG och den här tjänsten behåller ingen andra kopia av den; `export` returnerar nyckelmaterial base64-kodat, liksom /admin-api/keys/export och av samma skäl. **För en applikation ÅTERKALLAR `revoke` INGENTING**: den tar bort nyckelparet från applikationen, så att den här tjänsten slutar ACCEPTERA det som nyckeln signerar, och certifikatet fortsätter att kedja — svaret säger det med just de orden. `issue` och `revoke` tar ett `target` som är application (standard) eller person — en person har flera nyckelpar på sin ou=users-post som stsAssertion*, vart och ett får bara göra påståenden om personen själv, och `revoke` med ett `handle` sätter ETT av dem på dess utfärdares spärrlista (#1290). Speglar POST /admin/pki, POST /admin/pki/certificate och POST /admin/pki/person."
   },
   "stsmetadata.endpoints./admin-api/certificates.what": {
     "en": "dab1f4d1b78f518a",
@@ -1835,6 +1871,10 @@
     "en": "5992e8bdddc060a8",
     "text": "ICKE-SPEC (#129). De DID:er och JWK-tumavtryck som registrerats för en person, var och en med sin etikett, vem som registrerade den och hur (bevisad av personens plånbok, eller efter värde), och en did:web med sina fästa nycklar (#693), bredvid om oid4vp.signInSelfIssued är på. POST /admin-api/users/enrol-self-issued-subject registrerar en efter värde och hämtar en did:webs dokument för att fästa dess nycklar; /admin-api/users/remove-self-issued-subject tar bort en. Speglar blocket Självutfärdade ID:n på personens /admin/users-sida."
   },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "ICKE-SPEC (#1291). Varje did:web som den här sfären publicerar åt en person: dess slumpmässiga id, DID:en, dess dokuments adress, vem som har dess nyckel (wallet, realm eller download), dess tillstånd och varje version med dess nycklar och vad som godkände den, aldrig en privat nyckel. POST /admin-api/users/deactivate-published-did avaktiverar en; en administratör skapar eller ändrar aldrig någon. Speglar blocket Publicerade DID:er på personens /admin/users-sida."
+  },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
     "text": "ICKE-SPEC (#127). De identitetsverifieringar som registrerats för en person, SIDINDELADE (`page`, `per`), nyast först: vart och etts id, källa (admin, wallet, certificate), vem som registrerade den, verifieringselementet och de anspråk den täckte med deras verifierade värden, bredvid de vokabulärer som en registrering görs av. POST /admin-api/users/record-verification registrerar en; /admin-api/users/remove-verification tar bort en. Speglar blocket Identitetsverifieringar på personens /admin/users-sida."
@@ -1944,8 +1984,8 @@
     "text": "GET /admin/spiffe/agents som JSON, filtrerad och sidindelad, med ?agent= för en av dem. Ett REGISTER snarare än konfiguration — allt på dessa poster skrevs av den här tjänsten när en agent attesterade, och inget av det verifierades."
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban, unban och delete. Bannlysningen UPPRÄTTHÅLLS vid AttestAgent, vilket är det som hindrar den från att vara en lögn; delete är att glömma snarare än att återkalla, eftersom agenten dyker upp igen i samma stund som den attesterar på nytt."
+    "en": "7312163578d55aee",
+    "text": "ban, unban, delete och join-token. Bannlysningen UPPRÄTTHÅLLS vid AttestAgent, vilket är det som hindrar den från att vara en lögn; delete är att glömma snarare än att återkalla, eftersom agenten dyker upp igen i samma stund som den attesterar på nytt. join-token skapar en join-token för en sidecar-agent (#324), som lämnas ut en enda gång, med aliaset `agentId`."
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",
@@ -2071,6 +2111,30 @@
     "en": "853d31fe2e7b16e4",
     "text": "ICKE-SPEC. Den centrala tabellen över varje felvillkor som den här tjänsten kan framställa, STS-<SUBSYSTEM>-<NNNN>, som JSON: varje kod med sitt delsystem, vad som misslyckades, vad KLIENTEN får veta i sitt eget protokolls vokabulär, och på hur många rader den förekommer i den hållna granskningsloggen i den här sfären — filtrerad efter delsystem, text och ?seen=1, sidindelad med ?page= och ?per=. EN KOD SKICKAS ALDRIG TILL EN KLIENT: den finns endast på granskningsraden och i loggraden. ENDAST LÄSNING — tabellen är källkod. Speglar GET /admin/error-codes; samma tabell är docs/error-codes.md."
   },
+  "stsmetadata.endpoints./admin-api/audit-export.what": {
+    "en": "c975b83632fa12f4",
+    "text": "ICKE-SPEC (#641). Vad Övervakning → Granskningsexport ritar: varje mål utan dess hemligheter, och den här processens kö och leveransräknare. Varje process levererar sina egna händelser."
+  },
+  "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
+    "en": "c3015da7d4779805",
+    "text": "ICKE-SPEC (#641). add, update, remove, enable, disable och test: konsolens sex handlingar, var och en granskad. En token tas emot och returneras aldrig. Testhändelsen är ingen granskningsrad."
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717). Det Serverkonfiguration → Inloggningens utseende ritar, i den efterfrågade domänen: layouten, de fyra färgerna och tonerna som härleds ur dem, deras kontrast mot WCAG 2.2 AA, visningsnamnet, den lagrade logotypen utan dess byte, och sidans inställningar."
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717). Kroppen är bilden: en PNG, en JPEG eller en WebP, avgjort av dess byte, högst branding.logoMaxBytes. Den ersätter domänens logotyp och granskas med sitt sammandrag."
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717). save skriver domänens branding-inställningar tillsammans och avvisar text eller länkar under 4,5:1 mot kortet; remove-logo tar bort logotypen och granskas."
+  },
+  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
+    "en": "80d0dc13ebf1f23b",
+    "text": "Jämför varje sparad granskningsrad med dess nyckelbaserade kontrollsumma och rapporterar de som inte längre stämmer. Ändrar ingenting."
+  },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",
     "text": "ICKE-SPEC. Vad som hänt här, i ordning, som JSON: varje autentisering, inloggningssession, LDAP-katalogoperation, konsolinteraktion, anrop till hanterings-API:t och anrop till protokollslutpunkter, nyast först, filtrerad efter kategori, åtgärd, utfall, aktör och fritext och sidindelad med ?page= och ?per=. INGEN INLOGGNINGSUPPGIFT FINNS NÅGONSIN PÅ EN RAD — inget lösenord, ingen bärartoken, inget intyg och ingen kropp; en modify namnger de attribut den ändrade och aldrig deras värden. ÅTERUPPTA EFTER `at`, inte efter `seq` (#465). `seq` är unik i tjänstens alla processer och återanvänds aldrig, och den stiger inom varje process, men varje arbetstråd numrerar från ett eget block, så talen är inte en enda ordning och \"allt efter 4102\" missar en senare händelse som en annan arbetare antecknat under ett lägre tal. `origin` avgör vid lika `seq`. Sida 2 hämtad en sekund efter sida 1 kan upprepa en rad som förskjutits dit. ENDAST LÄSNING — en av de två resurserna här som är det, den andra är /admin-api/delegation. Det finns ingen rensningsoperation, eftersom en raderingskontroll på ett oskyddat API skulle göra en granskningslogg oförmögen att besvara den enda fråga den finns för. Speglar GET /admin/audit."
@@ -2099,6 +2163,14 @@
     "en": "dc30d3b633728d57",
     "text": "ICKE-SPEC (#98 D11). En sida av en annan cells invånare, besvarad av den cellen endast där dess utlämningspolicy tillåter det."
   },
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). GET /admin/malware-scanning som JSON: om uppladdade filer skannas och ICAP-tjänsten som skannar dem. Ändrar ingenting."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). Skickar EICAR-testfilen till den konfigurerade ICAP-tjänsten och lyckas bara om tjänsten flaggar den."
+  },
   "stsmetadata.endpoints./admin-api/listeners.what": {
     "en": "6a6a1ecfd0643325",
     "text": "ICKE-SPEC (#423, #472). GET /admin/listeners som JSON: de inbyggda lyssnarna, de anpassade lyssnare som sfären ser (tjänstens och dess egna), varje värdad applikation med de lyssnare den finns på och den den annonseras på, vad som är fel, och varje lyssnares TLS-policy och klientautentisering. Den ändrar ingenting."
@@ -2114,6 +2186,10 @@
   "stsmetadata.endpoints./admin-api/config.what": {
     "en": "de1ba6721d3df738",
     "text": "NON-SPEC. Varje inställning, dess gällande värde och källan till det värdet — åsidosättning, miljövariabel, appconfig-filen eller env/defaults.js under den. Speglar GET /admin/config."
+  },
+  "stsmetadata.endpoints./admin-api/config-dump.what": {
+    "en": "56a8ec7f8dbef7bb",
+    "text": "NON-SPEC. Alla konfigurationsparametrar, globala och per realm, med varje känsligt värde maskerat. Speglar GET /admin/config-dump."
   },
   "stsmetadata.endpoints./admin-api/config/:action.what": {
     "en": "0493cb479489bbd8",
@@ -2563,6 +2639,30 @@
     "en": "2f7afe4a35fac4a3",
     "text": "skickar webbläsaren till en UTOMSTÅENDE identitetsleverantör — en <AuthnRequest>, en URL för överföring mellan webbplatser, wa=wsignin1.0 eller en OAuth 2.0-auktoriseringsbegäran, beroende på vad relationen anger"
   },
+  "stsmetadata.endpoints./federation/initiate-login/:id.what": {
+    "en": "13e887ac0bdf18ce",
+    "text": "OpenID Connect Core 1.0 avsnitt 4 (#930): slutpunkten för att initiera inloggning som en OpenID Connect-relation registrerar hos sin partner som initiate_login_uri, med GET eller POST. AVVISAS (403) om inte relationen anger fedInitiateLogin, eftersom vilken sida som helst kan skicka en webbläsare hit; `iss` är OBLIGATORISK och måste vara relationens fedPeer (annars 400); `login_hint` skickas vidare till partnern; `target_link_uri` följs endast till en sökväg på den här tjänsten och släpps annars, så slutpunkten är ingen öppen omdirigerare."
+  },
+  "stsmetadata.endpoints./federation/initiate-login/:id.effect": {
+    "en": "a3604c921948a069",
+    "text": "skickar webbläsaren till partnerns OpenID-leverantör med en vanlig auktoriseringsbegäran, som /federation/login/{id} gör"
+  },
+  "stsmetadata.endpoints./federation/request/:id/:handle.what": {
+    "en": "6d385ce6406cf9af",
+    "text": "OpenID Connect Core 1.0 avsnitt 6.2 (#930): det begäranobjekt som en auktoriseringsbegärans request_uri namnger, för en relation med fedRequestObject request_uri — application/oauth-authz-req+jwt, signerat under fedRequestObjectSigningAlg med den här realmens nyckel (eller osignerat, none). Besvaras EN GÅNG: partnerns hämtning förbrukar handtaget, och en adress som inte namnger något ger 404."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.what": {
+    "en": "0c9410e62fd9d162",
+    "text": "OpenID Connect Discovery 1.0 avsnitt 2 (#930), för en relation med fedWebFinger och fedDiscovery på: ett formulär för en identifierare (acct:user@host eller en URL), och dess svar — WebFinger hos den värden under den utgående policyn (ingen intern adress i produktläge, ingen omdirigering, taket), en utfärdare som måste börja med fedPeer, dess upptäcktsdokument, och en länk personen måste följa för att logga in där. Av, 403."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.effect": {
+    "en": "f47b0d4c3244e2de",
+    "text": "anropar den värd som den inskrivna identifieraren namnger — den enda federationsbegäran vars värd en anropare väljer"
+  },
+  "stsmetadata.endpoints./federation/fragment.js.what": {
+    "en": "4717183880c5fc95",
+    "text": "ICKE-SPECIFICERAD resurs för en specificerad slutpunkt (#930): det enda skript som påståendekonsumenttjänstens sida kör när en OpenID Connect-relation har valt fedResponseMode=fragment. Ett fragment når aldrig en server, så sidan läser det, tar bort det från adressen och historikposten och POSTar det till samma adress, där det konsumeras som ett form_post-svar. Ingen märkning kan läsa ett fragment, så det finns ingen knapp att falla tillbaka på."
+  },
   "stsmetadata.endpoints./federation/acs/:id.what": {
     "en": "b08b39ce5a2fd9d9",
     "text": "EN SÖKVÄG TAR EMOT ALLA FEM PROTOKOLLEN: fem skulle innebära fem URL:er att konfigurera hos en partner och fyra sätt att konfigurera fel, vars misslyckande är en 404 i en webbläsare EFTER en lyckad inloggning någon annanstans. **DETTA ÄR DEN ENDA SLUTPUNKTEN I DEN HÄR TJÄNSTEN SOM INTE ÄR TILLÅTANDE, OCH DEN KAN INTE VARA DET.** Det som anländer är en oautentiserad HTTP-begäran som påstår sig vara en person; det enda mellan den och en session är signaturkontrollen mot certifikatet som är konfigurerat på relationen. Alltså: signaturen måste verifieras mot DEN nyckeln och inte mot en som dokumentet hade med sig, utfärdaren måste vara den konfigurerade partnern, intyget måste vara inom sitt giltighetsfönster, och svaret måste besvara en begäran som den här tjänsten skickade om inte fedAllowUnsolicited säger annat. Varje vägran ritar en sida som namnger kontrollen och skriver fedLastError på relationen — den omdirigerar aldrig, eftersom personens inloggning redan lyckades hos partnern och den enda intressanta frågan är vad den här tjänsten ogillade i svaret. Ett KRYPTERAT intyg, en krypterad identifierare eller ett krypterat attribut, eller en JWE ID Token, dekrypteras med relationens egen nyckel under exakt de algoritmer den publicerar och dess signatur kontrolleras på det som fanns inuti (#168); varje dekrypteringsfel är en och samma kod, så svaret är inget orakel; AES-CBC och rsa-1_5 vägras i alla lägen, och ett intyg i KLARTEXT vägras i produktläge om inte relationen sätter fedAllowUnencrypted."
@@ -2630,6 +2730,10 @@
   "stsmetadata.endpoints./federation/metadata/:id.what": {
     "en": "bbe97109d1d3a58e",
     "text": "En SPSSODescriptor snarare än en IDPSSODescriptor — detta är den halva av den här tjänsten som är en tjänsteleverantör. Per relation, eftersom den här tjänsten kallar sig något annat för varje partner. OSIGNERAT, avsiktligt, och det är det enda metadatadokumentet här som är det: /saml2/metadata är signerat eftersom en tjänsteleverantör som konfigurerar sitt förtroende för den här tjänsten vinner på att kontrollera vem som skrev dokumentet, och här får partnern veta vart den ska skicka saker med just den nyckel som en signatur skulle göras med. Det ger 404 för en relation som inte är SAML, där /saml2/metadata ger 404 för ingenting — eftersom det skapar ett dokument för vilket entityID som helst som efterfrågas och detta beskriver ett arrangemang som antingen finns eller inte finns. Sedan #168 bär en SAML 2.0-relations dokument KeyDescriptor use=\"encryption\" med de EncryptionMethods den godtar, och en WS-Federation-relation får också ett: en EntityDescriptor med en fed:ApplicationServiceType RoleDescriptor (WS-Federation 1.2 avsnitt 3.1), dess PassiveRequestorEndpoint och dess krypteringsnyckel."
+  },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "NON-SPEC i den här tjänstens katalog: AT Protocols OAuth-profil saknar registrering, så adressen till detta offentliga JSON-dokument är klient-id:t, och Blueskys server hämtar det. Det innehåller ingen nyckel, och en relation som inte kan användas svarar 404."
   },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",
@@ -3043,10 +3147,6 @@
     "en": "67b6934792210c8e",
     "text": "Session Management avsnitt 3.2 (#121), medan oauth2.sessionManagement är på i sfären, och annars en 404 som namnger den inställningen. En förlitande part ramar in den och postar \"client_id session_state\"; dess skript jämför det med det OP-webbläsartillstånd det kan läsa och svarar changed, unchanged eller error. Den enda sidan här som får ramas in, och endast av ursprungen för sfärens registrerade omdirigerings-URI:er."
   },
-  "stsmetadata.endpoints./oauth2/check_session.js.what": {
-    "en": "d0428e57643dabd6",
-    "text": "OP-iframens enda skript, serverat från det här ursprunget eftersom varje sida här körs under script-src 'none' eller 'self'. Besvarar ett postMessage med changed, unchanged eller error, postat endast till det frågande ursprunget."
-  },
   "stsmetadata.endpoints./oauth2/logout.what": {
     "en": "bfeb68315a7d7f5f",
     "text": "Det som end_session_endpoint i OIDC:s discovery-dokument pekar på, på GET och POST (#124). Begäran valideras INNAN något avslutas; en id_token_hint verifieras som en ID Token som den här servern utfärdat (en som gått ut räknas fortfarande) och namnger klienten; personen ombeds bekräfta om inte den ledtråden gäller just den här sessionen; post_logout_redirect_uri följs endast när klienten har registrerat den exakt — utvecklingsläget följer fortfarande en för en klient som inte registrerat någon, produktläget gör det inte — och state skickas tillbaka med den. Vägranden är sidor, inte JSON."
@@ -3220,8 +3320,8 @@
     "text": "En Native SSO-enhetshemlighet återkallas också (#130). Återkallelse som får verkan: introspektion rapporterar sedan inactive. Klienten autentiserar sig (i utvecklingsläge endast när den visar upp en autentiseringsuppgift), återkallar endast sina egna token, och en uppdateringstoken tar med sig sitt beviljande."
   },
   "stsmetadata.endpoints./oauth2/register.what": {
-    "en": "80ba1f611099c06a",
-    "text": "Registrerar en klient och returnerar dess autentiseringsuppgifter plus en registreringsåtkomsttoken. Registreringen ÄR applikationsposten under ou=applications — det finns inget andra lager — så /admin/applications och en ldapsearch ser samma klient. I RFC 9700-läge VÄGRAR den metadata som de andra slutpunkterna skulle vägra vid användning: password-beviljandet (avsnitt 2.4), det implicita beviljandet och varje svarstyp som namnger token (2.1.2), och en http-omdirigerings-URI utanför loopback (2.6), var och en med invalid_client_metadata och avsnittet. Att registrera en behörighet som tokenslutpunkten alltid kommer att vägra är discovery-dokumentets löfte brutet i andra riktningen. PRODUKTLÄGET STÄNGER DEN (403) om inte oauth2.openRegistration är på — eller registreringen bär ett software statement som den här sfären litar på och oauth2.softwareStatementOpensRegistration är på, i vilket fall registration_endpoint förblir annonserad; med ingetdera försvinner den ur båda discovery-dokumenten och en applikation skapas på /admin eller /admin-api. Ett SOFTWARE STATEMENT (RFC 7591 avsnitt 2.3) verifieras före alla andra kontroller av metadata: utfärdat av den här sfären (typat software-statement+jwt) eller av en applikation som deklarerar utfärdaren i oauthSoftwareStatementIssuer; ett betrott statements anspråk har företräde och det återges oförändrat; annars invalid_software_statement eller unapproved_software_statement. Prefixet för client_id, de slumpmässiga storlekarna och client_secret_expires_at är inställningar (oauth2.registeredClientIdPrefix och dess grannar)."
+    "en": "2a1a65e6a8ada54e",
+    "text": "Registrerar en klient och returnerar dess autentiseringsuppgifter plus en registreringsåtkomsttoken. Registreringen ÄR applikationsposten under ou=applications — det finns inget andra lager — så /admin/applications och en ldapsearch ser samma klient. I RFC 9700-läge VÄGRAR den metadata som de andra slutpunkterna skulle vägra vid användning: password-beviljandet (avsnitt 2.4), varje svarstyp som namnger token och det implicita beviljandet om inte id_token eller code id_token behöver det (2.1.2, som en administratör kan göra undantag från per sfär med oauth2.allowImplicitTokenResponses), och en http-omdirigerings-URI utanför loopback (2.6), var och en med invalid_client_metadata och avsnittet. Att registrera en behörighet som tokenslutpunkten alltid kommer att vägra är discovery-dokumentets löfte brutet i andra riktningen. PRODUKTLÄGET STÄNGER DEN (403) om inte oauth2.openRegistration är på — eller registreringen bär ett software statement som den här sfären litar på och oauth2.softwareStatementOpensRegistration är på, i vilket fall registration_endpoint förblir annonserad; med ingetdera försvinner den ur båda discovery-dokumenten och en applikation skapas på /admin eller /admin-api. Ett SOFTWARE STATEMENT (RFC 7591 avsnitt 2.3) verifieras före alla andra kontroller av metadata: utfärdat av den här sfären (typat software-statement+jwt) eller av en applikation som deklarerar utfärdaren i oauthSoftwareStatementIssuer; ett betrott statements anspråk har företräde och det återges oförändrat; annars invalid_software_statement eller unapproved_software_statement. Prefixet för client_id, de slumpmässiga storlekarna och client_secret_expires_at är inställningar (oauth2.registeredClientIdPrefix och dess grannar)."
   },
   "stsmetadata.endpoints./oauth2/register/:client_id.what": {
     "en": "53b9b1f559379ceb",
@@ -3374,6 +3474,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "svarar 404 om inte applikationen är deklarerad för did-familjen och har en nyckel"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "DID-dokumentet för en did:web som den här sfären publicerar åt en person (#1291), där did:web-metoden slår upp did:web:<host>[:realm:<id>]:users:<rid>, <rid> 128 slumpmässiga bitar: den aktuella versionens nycklar som JsonWebKey2020-metoder under authentication och assertionMethod, eller den version som DID Cores versionId eller versionTime ber om, ur en historik som aldrig skrivs om. application/did+json, no-store. Avaktiverad — av personen, av en administratör eller medan kontot är inaktiverat — svarar den 410 Gone med { id, deactivated: true }, och en uppslagstjänst rapporterar deactivated i didDocumentMetadata. Publiceras från personens portal där did.personPublishing är på."
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "svarar 410 Gone när DID:en har avaktiverats eller kontot inaktiverats, och 404 för en adress som aldrig publicerats"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",
@@ -3744,8 +3852,8 @@
     "text": "1.2 Web (Passive) Requestor Profile: /wsfed som fördelar efter wa, inloggningsskärmen, signerad federationsmetadata på AD FS-sökvägen och wsignout1.0."
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "32437a522ad16a77",
-    "text": "RST / RSTR över SOAP på /sts, i alla fyra versionerna (1.0 till och med 1.4), som utfärdar endera SAML-dialekten med intyget signerat och valfritt krypterat till den begärandes certifikat."
+    "en": "3d88db91fab2cd5f",
+    "text": "RST/RSTR över SOAP på /sts, i alla fyra versionerna (1.0 till 1.4), som utfärdar endera SAML-dialekten med påståendet signerat och eventuellt krypterat till den begärandes certifikat, en JWT eller en Kerberos-biljett."
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

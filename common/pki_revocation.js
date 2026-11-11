@@ -859,6 +859,8 @@ function directoryBaseFor(scopeId) {
  * @namespace
  */
 module.exports = {
+  signCrl: signCrl,
+  signOcspResponse: signOcspResponse,
   REASONS: REASONS,
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
@@ -975,6 +977,85 @@ function signingParamsFor(tier) {
   }
   log.debug("Leaving signingParamsFor().");
   return { name: 'RSASSA-PKCS1-v1_5', hash: { name: sig.hash || 'SHA-256' } };
+}
+
+// ALGORITHMS PKIJS CANNOT SIGN (#1368, #1401). pkijs's `sign()` goes through
+// Web Crypto, which has no post-quantum algorithm and no Ed25519: its
+// `getSignatureParameters` throws `Parameter 'algorithm' is empty` for an
+// Ed25519 key, which is what an Ed25519 authority's CRL did. `x509.js`
+// already signs those certificates by hand. A CRL and an OCSP response do
+// the same: the algorithm named with no parameters, the TBS encoded, its
+// bytes signed by the engine.
+//
+// **THE TIER'S OWN KEY DECIDES, AND NOT `tier.signatureAlg`.** That is the
+// signature ON the tier's certificate, made by its PARENT: an ML-DSA
+// Intermediate under a classical Root carries the Root's algorithm and can
+// sign only ML-DSA, and a classical tier under a post-quantum parent is the
+// same mistake the other way round. A post-quantum key has exactly one
+// algorithm, whose id is the key's. Ed25519 is the same shape.
+const ED25519_OID = '1.3.101.112';
+
+function engineSigAlgOf(tier) {
+  log.debug("Entering engineSigAlgOf().");
+  const sig = x509.sigAlg(tier && tier.keyAlg);
+  if (!sig || (sig.kind !== 'pqc' && sig.kind !== 'okp')) {
+    log.debug("Leaving engineSigAlgOf(). pkijs signs it.");
+    return null;
+  }
+  // `sigAlg('ed25519')` carries no OID. The certificate path names this one.
+  const named = sig.oid ? sig : Object.assign({ oid: ED25519_OID }, sig);
+  log.debug("Leaving engineSigAlgOf(). " + named.id + ".");
+  return named;
+}
+
+async function engineSignature(tier, tbs) {
+  log.debug("Entering engineSignature().");
+  const sig = engineSigAlgOf(tier);
+  const value = await x509.signBytes(sig, tier.privateKeyPem, null, tbs);
+  log.debug("Leaving engineSignature().");
+  return { algorithm: new pkijs.AlgorithmIdentifier({
+             algorithmId: sig.oid }),
+           value: new asn1js.BitString({ valueHex: Uint8Array.from(value)
+             .buffer }) };
+}
+
+async function signCrl(crl, tier) {
+  log.debug("Entering signCrl().");
+  const engine = engineSigAlgOf(tier);
+  if (engine) {
+    // The TBS names the algorithm, so it is named before the bytes are made.
+    const algorithm = new pkijs.AlgorithmIdentifier({
+      algorithmId: engine.oid });
+    crl.signature = algorithm;
+    crl.signatureAlgorithm = algorithm;
+    crl.tbsView = new Uint8Array(crl.encodeTBS().toBER());
+    crl.signatureValue = (await engineSignature(tier, crl.tbsView)).value;
+    log.debug("Leaving signCrl(). " + engine.id + ".");
+    return;
+  }
+  const key = await importSigningKey(tier);
+  await crl.sign(key, signingParamsFor(tier).hash
+    ? signingParamsFor(tier).hash.name : undefined);
+  log.debug("Leaving signCrl().");
+}
+
+async function signOcspResponse(basic, tier) {
+  log.debug("Entering signOcspResponse().");
+  const engine = engineSigAlgOf(tier);
+  if (engine) {
+    basic.tbsResponseData.tbsView = new Uint8Array(
+      basic.tbsResponseData.toSchema(true).toBER());
+    const signed = await engineSignature(tier,
+                                         basic.tbsResponseData.tbsView);
+    basic.signatureAlgorithm = signed.algorithm;
+    basic.signature = signed.value;
+    log.debug("Leaving signOcspResponse(). " + engine.id + ".");
+    return;
+  }
+  const key = await importSigningKey(tier);
+  const params = signingParamsFor(tier);
+  await basic.sign(key, params.hash ? params.hash.name : undefined);
+  log.debug("Leaving signOcspResponse().");
 }
 
 async function importSigningKey(tier) {
@@ -1124,6 +1205,62 @@ async function agreedCrlNumber(scopeId, caId, candidate) {
   return null;
 }
 
+// One revocation as a CRL entry (RFC 5280 section 5.1.2.6). Hot path: called
+// once per revocation of every list built, so no Entering/Leaving pair — it
+// would add two log lines per revoked certificate to every CRL signed.
+function revokedEntryOf(one) {
+  const revoked = new pkijs.RevokedCertificate();
+  revoked.userCertificate = new asn1js.Integer({
+    valueHex: serialBytes(one.serialHex)
+  });
+  revoked.revocationDate = crlTime(one.revokedAt);
+  // THE REASON CODE, OMITTED FOR `unspecified` — see the REASONS table.
+  if (one.reasonCode) {
+    revoked.crlEntryExtensions = new pkijs.Extensions({
+      extensions: [new pkijs.Extension({
+        extnID: '2.5.29.21',
+        critical: false,
+        extnValue: new asn1js.Enumerated({ value: one.reasonCode })
+          .toBER(false)
+      })]
+    });
+  }
+  return revoked;
+}
+
+/** Revocations made CRL entries between two turns of the loop (#704). */
+const CRL_BUILD_SLICE = 500;
+
+// ONE SIGNING AT A TIME PER AUTHORITY IN A PROCESS (2026-11-10). Callers that
+// ask for the same authority's list while one is being signed share it: the
+// same DER, the same thisUpdate and so the same number, which RFC 5280
+// section 5.2.3 allows. Without it, a burst of fetches or publications in one
+// process made as many signatures, each advancing the cluster's CRL-number
+// counter against the others. Dropped once settled, so nothing is cached.
+// **Shared only while it would sign the same list**: the authority's
+// certificate and its revocations are what the running signing started from,
+// so a revocation made meanwhile gets a list of its own, never the one
+// started before it.
+const crlsInFlight = new Map();
+
+// What a CRL of this authority would say now, for crlsInFlight: its
+// certificate and every revocation, in order.
+function crlInputsOf(scopeId, caId) {
+  log.debug("Entering crlInputsOf().");
+  const authority = authorityFor(scopeId, caId);
+  if (!authority) {
+    log.debug("Leaving crlInputsOf(). No authority.");
+    return '';
+  }
+  const revoked = listFor(scopeId, caId).map(function (entry) {
+    return normalSerial(entry.serialHex) + '|' +
+      wholeSeconds(entry.revokedAt).getTime() + '|' +
+      (Number(entry.reasonCode) || 0);
+  }).sort().join(',');
+  log.debug("Leaving crlInputsOf().");
+  return String(authority.tier.certificatePem || '') + '\n' + revoked;
+}
+
 /**
  * Builds and signs one authority's CRL (RFC 5280 section 5).
  *
@@ -1136,9 +1273,34 @@ async function agreedCrlNumber(scopeId, caId, candidate) {
  */
 async function buildCrl(scopeId, caId) {
   log.debug('Entering buildCrl(). scope=' + scopeId + ' ca=' + caId);
+  const key = String(scopeId) + '/' + String(caId);
+  const inputs = crlInputsOf(scopeId, caId);
+  const running = crlsInFlight.get(key);
+  if (running && running.inputs === inputs) {
+    log.debug('Leaving buildCrl(). Sharing the signing in flight.');
+    return running.made;
+  }
+  const made = signNewCrl(scopeId, caId);
+  const entry = { inputs: inputs, made: made };
+  crlsInFlight.set(key, entry);
+  const forget = function () {
+    if (crlsInFlight.get(key) === entry) {
+      crlsInFlight.delete(key);
+    }
+  };
+  made.then(forget, function (e) {
+    log.debug('Caught in buildCrl(): ' + ((e && e.message) || e));
+    forget();
+  });
+  log.debug('Leaving buildCrl().');
+  return made;
+}
+
+async function signNewCrl(scopeId, caId) {
+  log.debug('Entering signNewCrl(). scope=' + scopeId + ' ca=' + caId);
   const authority = authorityFor(scopeId, caId);
   if (!authority) {
-    log.debug('Leaving buildCrl(). No such authority.');
+    log.debug('Leaving signNewCrl(). No such authority.');
     return errorCodes.mark({ ok: false,
              errors: ['There is no "' + caId + '" certificate authority in ' +
                       'that scope.'] }, 'STS-PKI-0055');
@@ -1152,27 +1314,24 @@ async function buildCrl(scopeId, caId) {
   crl.thisUpdate = crlTime(now);
   crl.nextUpdate = crlTime(now.getTime() + crlLifetimeMs());
 
+  // AN ENTRY AT A TIME, WITH A TURN OF THE LOOP EVERY CRL_BUILD_SLICE (#704).
+  // `publishAll()` yields between lists; inside one, every revocation became
+  // an ASN.1 object in one turn, which for an authority with a long list is
+  // the whole list on the loop of the process running
+  // `pki.crl-directory-refresh` — or answering a CRL fetch. The encoding of
+  // the finished list stays one step.
   const entries = listFor(scopeId, caId);
   if (entries.length) {
-    crl.revokedCertificates = entries.map(function (one) {
-      const revoked = new pkijs.RevokedCertificate();
-      revoked.userCertificate = new asn1js.Integer({
-        valueHex: serialBytes(one.serialHex)
-      });
-      revoked.revocationDate = crlTime(one.revokedAt);
-      // THE REASON CODE, OMITTED FOR `unspecified` — see the REASONS table.
-      if (one.reasonCode) {
-        revoked.crlEntryExtensions = new pkijs.Extensions({
-          extensions: [new pkijs.Extension({
-            extnID: '2.5.29.21',
-            critical: false,
-            extnValue: new asn1js.Enumerated({ value: one.reasonCode })
-              .toBER(false)
-          })]
+    const built = [];
+    for (let i = 0; i < entries.length; i++) {
+      if (i > 0 && i % CRL_BUILD_SLICE === 0) {
+        await new Promise(function (resolve) {
+          setImmediate(resolve);
         });
       }
-      return revoked;
-    });
+      built.push(revokedEntryOf(entries[i]));
+    }
+    crl.revokedCertificates = built;
   }
 
   // TWO EXTENSIONS, AND BOTH ARE LOAD-BEARING RATHER THAN DECORATION.
@@ -1201,7 +1360,7 @@ async function buildCrl(scopeId, caId) {
   const number = await agreedCrlNumber(scopeId, caId,
                                        crlNumberAt(scopeId, caId, Date.now()));
   if (number === null) {
-    log.debug('Leaving buildCrl(). No CRL number the cluster agrees on.');
+    log.debug('Leaving signNewCrl(). No CRL number the cluster agrees on.');
     return errorCodes.mark({ ok: false,
              errors: ['That CRL was not signed: the store that keeps CRL ' +
                       'numbers going up across this service\'s nodes could ' +
@@ -1245,22 +1404,20 @@ async function buildCrl(scopeId, caId) {
   crl.crlExtensions = new pkijs.Extensions({ extensions: extensions });
 
   try {
-    const key = await importSigningKey(tier);
-    await crl.sign(key, signingParamsFor(tier).hash
-      ? signingParamsFor(tier).hash.name : undefined);
+    await signCrl(crl, tier);
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0063') + 'pki_revocation: the "' + caId +
         '" ' +
         'CRL in "' +
               (String(scopeId) || 'default') + '" could not be signed: ' +
               e.message);
-    log.debug('Leaving buildCrl(). The signature failed.');
+    log.debug('Leaving signNewCrl(). The signature failed.');
     return errorCodes.mark({ ok: false,
              errors: ['That CRL could not be signed: ' + e.message] },
                            'STS-PKI-0063');
   }
   const der = Buffer.from(crl.toSchema(true).toBER(false));
-  log.debug('Leaving buildCrl(). ' + entries.length + ' entry(ies), ' +
+  log.debug('Leaving signNewCrl(). ' + entries.length + ' entry(ies), ' +
             der.length + ' bytes.');
   return { ok: true, der: der, count: entries.length, crlNumber: number,
            thisUpdate: now.toISOString(),
@@ -1324,22 +1481,18 @@ function serialBytes(serialHex) {
  * @param caId - the authority's CA id
  */
 function publishSoon(scopeId, caId) {
-  log.debug("Entering publishSoon().");
-  if (!directory) {
-    log.debug("Leaving publishSoon().");
-    return;
-  }
-  setImmediate(function () {
-    Promise.resolve(buildCrl(scopeId, caId)).then(function (made) {
-      if (made.ok) {
-        directory.publishCrl(scopeId, caId, made.der);
-      }
-    }).catch(function (e) {
-      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the "' +
-                caId + '" ' +
-                'CRL could not be published into the directory: ' + e.message);
-    });
-  });
+  log.debug("Entering publishSoon(). " + scopeId + "/" + caId);
+  // ONE PUBLICATION PER CHANGE, NOT TWO (2026-11-10). A revocation and a
+  // release both save the scope's row, and `pki.saveRow()` already asks
+  // publishScopeSoon() for that scope, which re-signs every list of it that
+  // changed and leaves the rest. This signed the same authority's list a
+  // second time beside it: under the fuzz gate's rebuilds, every superseded
+  // certificate was two signings and two directory writes of a list that
+  // grows, which every other process then applied from the change log
+  // (STS-STORE-0039, STS-WORKER-0027). So it asks for the same coalesced
+  // publication of the scope: a burst of revocations is one list per
+  // authority that changed.
+  publishScopeSoon(scopeId);
   log.debug("Leaving publishSoon().");
 }
 
@@ -1547,6 +1700,11 @@ async function publishAll(scopeIds, options) {
 // and the directory's own replication carries the entries everywhere else.
 // ---------------------------------------------------------------------------
 const scopesToPublish = new Map();
+// A SCOPE BEING PUBLISHED NOW, and whether another call asked meanwhile
+// (2026-11-10): at most one publication of a scope runs at a time in a
+// process, and calls made while it runs become ONE more after it, so a burst
+// of saves during a long publication is not a publication each.
+const scopesPublishing = new Map();
 
 /**
  * Publishes every CRL of one scope shortly, coalescing repeated calls.
@@ -1562,14 +1720,52 @@ function publishScopeSoon(scopeId) {
     log.debug("Leaving publishScopeSoon(). Nothing to do.");
     return;
   }
+  const running = scopesPublishing.get(id);
+  if (running) {
+    running.again = true;
+    log.debug("Leaving publishScopeSoon(). Once more after the one running.");
+    return;
+  }
   const timer = setTimeout(function () {
     scopesToPublish.delete(id);
     // The Root belongs to every scope's `authorities()` answer, so the
     // SERVICE scope itself is published by naming no branch at all.
-    publishAll(id === pki.SERVICE_SCOPE ? [] : [id]).catch(function (e) {
-      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the CRLs ' +
-                'of the "' + (id || 'default') + '" scope could not be ' +
-                'published into the directory: ' + ((e && e.message) || e));
+    //
+    // **UNLESS CURRENT (2026-11-10).** `authorities()` names the Root for
+    // every scope, so every save of every branch re-signed the Root's list,
+    // in every process: under the fuzz gate's `pki/build` calls, hundreds of
+    // signings a minute in each worker, all advancing one shared CRL-number
+    // counter. They lost to one another (STS-PKI-0185, 681 in one run), and
+    // their store round trips kept the change-log pull waiting for a
+    // connection past the read barrier's deadline (STS-STORE-0039,
+    // STS-WORKER-0027). A list the directory already holds as it would be
+    // signed now — the same revocations, verifying under the authority's
+    // current certificate, fresh for over half its lifetime — is left alone;
+    // a branch just built or rebuilt does not verify under its old list, and
+    // a revocation changes the list, so both are still published at once.
+    //
+    // A CALL MADE WHILE THIS RUNS IS ONE MORE PASS OF THIS LOOP, not a new
+    // timer: a publication that armed the next one would be a timer chain,
+    // which the root CLAUDE.md refuses outside the scheduler
+    // (tests/no_periodic_timers.js). The loop ends when a pass finishes with
+    // no call made during it.
+    const state = { again: false };
+    scopesPublishing.set(id, state);
+    const scopes = id === pki.SERVICE_SCOPE ? [] : [id];
+    (async function () {
+      do {
+        state.again = false;
+        try {
+          await publishAll(scopes, { unlessCurrent: true });
+        } catch (e) {
+          log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the ' +
+                    'CRLs of the "' + (id || 'default') + '" scope could ' +
+                    'not be published into the directory: ' +
+                    ((e && e.message) || e));
+        }
+      } while (state.again);
+    })().then(function () {
+      scopesPublishing.delete(id);
     });
   }, 50);
   if (typeof timer.unref === 'function') {
@@ -1983,9 +2179,7 @@ async function answerOcsp(scopeId, caId, requestDer) {
   // Root and nothing else can verify the signature without a second fetch.
   basic.certs = [issuerCert];
   try {
-    const key = await importSigningKey(tier);
-    const params = signingParamsFor(tier);
-    await basic.sign(key, params.hash ? params.hash.name : undefined);
+    await signOcspResponse(basic, tier);
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0067') + 'pki_revocation: an OCSP ' +
                                                'response from the "' + caId +
@@ -2034,8 +2228,8 @@ async function answerOcsp(scopeId, caId, requestDer) {
 // scope's Intermediate. Without those two branches a perfectly valid Issuing CA
 // reports `unknown` at its own parent's responder — which is the most confusing
 // answer available, because the certificate verifies and the responder disowns
-// it. The fourth is the object store, where the Certificate & Key Configuration
-// pane's leaves live rather than in the certificate register, and the fifth
+// it. The fourth is the object store, where the Certificate Workbench's
+// leaves live rather than in the certificate register, and the fifth
 // (2026-09-12) is the issued-serial record — see item 5 below.
 // ---------------------------------------------------------------------------
 /**
@@ -2101,7 +2295,7 @@ function issuedList(scopeId, caId) {
     });
   }
 
-  // 4. And whatever the Certificate & Key Configuration pane issued. Those are
+  // 4. And whatever the Certificate Workbench issued. Those are
   //    in the OBJECT STORE rather than the certificate register, and an
   //    operator who minted one from this authority expects to be able to
   //    revoke it here.

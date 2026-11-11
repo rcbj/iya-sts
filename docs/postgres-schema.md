@@ -15,20 +15,25 @@ own, `sts`.
 
 ## Where the schema is written down
 
-It is written in two places, and a test keeps them in step:
+It is written once, as TypeSpec in `models/persistence/persistence.tsp`, and
+two things are generated from it:
 
 * **`postgres/schema.sql`** is the script an owner runs once, with
   `psql -v ON_ERROR_STOP=1 -f postgres/schema.sql <url>`. It builds the tables
   and the least-privilege application role. The compose stack runs the same
-  file through `postgres/apply-schema.sh`.
-* **`persistence/persistence_postgres.js`** holds the same `CREATE` statements
-  as its exported `SCHEMA`. On every open it probes for each object
+  file through `postgres/apply-schema.sh`. It is committed, because the compose
+  stack mounts it; what is not a table or an index (comments, grants, routines,
+  the upgrade block) comes from `models/persistence/schema.template.sql`.
+* **`persistence/persistence_postgres.js`** runs the same `CREATE` statements,
+  which the image build generates. On every open it probes for each object
   (`to_regclass`) and creates only what is missing. Against a database the
   script already built, it therefore needs no `CREATE` privilege.
 
-`tests/postgres_schema.js` fails if either file holds a `CREATE` the other does
-not, or if the two version numbers differ. **A column change goes in both files
-in one commit.**
+**A table or column change goes in the model**, followed by
+`tests/tools/regenerate-model-docs.sh`, which rewrites `postgres/schema.sql`.
+`tests/model_typespec.js` fails if the committed script does not match the
+model, and `tests/postgres_schema.js` if the script and the driver disagree.
+See [Abstract data model](data-model.md#persistence).
 
 ### There are no migrations, only additions
 
@@ -799,7 +804,7 @@ login name, which is in the clear.
 | `sts_ldap_entries_realm` | `realm` | B-tree | every entry of one realm (an export, a realm's removal) |
 | `sts_ldap_entries_parent` | `realm`, `parent_key`, `dn_key` | B-tree | the children of a container, in key order, a page at a time |
 | `sts_ldap_entries_rdn` | `realm`, `parent_key`, `rdn_value` | B-tree | an entry by its name under a container: a login name under `ou=users` |
-| `sts_ldap_entries_uid_trgm` | `rdn_value` | GIN, trigram (`pg_trgm`); partial: only entries directly under an `ou=users` container | login names that **contain** some text (`/portal/delegate`'s search) |
+| `sts_ldap_entries_uid_trgm` | `rdn_value` | GIN, trigram (`pg_trgm`); partial: only entries directly under an `ou=users` container | login names that **contain** some text (`/portal/delegate`'s search, and the console's role chooser counting and paging people by part of a name) |
 | `sts_ldap_entries_created` | `realm`, `parent_key`, `created_at` | B-tree; partial: only entries directly under `ou=users` | the people created in a date range (a report filter) |
 | `sts_ldap_entries_modified` | `realm`, `parent_key`, `modified_at` | B-tree; partial: only entries directly under `ou=users` | the people changed in a date range (a report filter) |
 | `sts_ldap_entries_names` | `name_keys` (keyed digests) | GIN (`jsonb_path_ops`), `fastupdate = off` | an entry by login name, from anywhere in the tree |
@@ -882,5 +887,8 @@ tables, `sts_report_artifacts`, `sts_report_artifact_pieces` and
 * [Encryption at rest](encryption-at-rest.md): the key-encryption key and the
   data keys behind every sealed value.
 * [LDAP schema](ldap-schema.md): what is inside `sts_ldap_entries.attrs`.
+* [Abstract data model](data-model.md): the same tables as one namespace
+  of the common model. [Persistence models](data-model-persistence.md)
+  lists the columns. This page stays the explanation.
 * [A cluster in AWS](aws-cluster.md): the same schema on RDS.
 * `postgres/CLAUDE.md` and `persistence/CLAUDE.md`, for maintainers.

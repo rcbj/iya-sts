@@ -108,16 +108,16 @@ import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
   'phone', 'offline_access', 'bound_key']);
 
-// `/admin-api`'s three, as `common/roles.js` maps them to ADMIN_READ,
-// ADMIN_WRITE and ADMIN_CONSOLE — the last the console's own operations
-// under `/admin-api/console` (#454). Not settings: the management API's
-// vocabulary is fixed.
+// `/admin-api`'s four, as `common/roles.js` maps them to ADMIN_READ,
+// ADMIN_WRITE, SECURITY_ADMIN (#645) and ADMIN_CONSOLE — the last the
+// console's own operations under `/admin-api/console` (#454). Not settings:
+// the management API's vocabulary is fixed.
 /**
- * The management API's scopes: `admin:read`, `admin:write` and the console's
- * `admin:console`.
+ * The management API's scopes: `admin:read`, `admin:write`, the Security
+ * Administrator's `admin:security` (#645) and the console's `admin:console`.
  */
 const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write',
-                                    'admin:console']);
+                                    'admin:security', 'admin:console']);
 
 // `/report-api`'s two (#956). Protected like the admin scopes: issued only
 // to a client that declares them, in both modes, and the API asks again on

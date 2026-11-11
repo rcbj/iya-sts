@@ -294,7 +294,7 @@ async function theSignInScreen() {
     scope: "openid", code_challenge: challenge.challenge,
     code_challenge_method: challenge.method }), { redirect: "manual" });
   const location = started.headers.get("location") || "";
-  assert.ok(/\/authn\/login\?authn=/.test(location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(location),
     "the authorization endpoint did not send us to the sign-in screen: " +
     started.status + " " + location);
   // The cookie the authorization endpoint set, which the screen is bound

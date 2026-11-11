@@ -54,7 +54,7 @@
 // element is out of the document.
 // ---------------------------------------------------------------------------
 
-const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
+const { DOMParser, XMLSerializer } = require('../common/xml_parser');
 const { log, xmlEscape } = require('../common/helpers');
 const model = require('./xacml_model');
 const validate = require('./xacml_validate');

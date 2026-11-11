@@ -381,8 +381,9 @@ class DeviceBoundSessions {
    * at this read when a pending offer is older than
    * `authn.deviceBoundIssuanceWaitS`; nothing stores that word and no timer
    * flips it. `common/issuance_gate.js`'s `deviceBoundFactOf()` is the same
-   * reading and must stay the same: the gate cannot require this module
-   * (the Kerberos COPY closure).
+   * reading and must stay the same: the gate does not require this module
+   * (it kept the parent's Kerberos COPY closure small, until #1280; the two
+   * readings are still two).
    *
    * Precedence: a key (`jkt` and `id`) is `bound`, even if a skip header
    * arrived later; stored skip reasons are `skipped`; an offer whose age
@@ -916,7 +917,12 @@ class DeviceBoundSessions {
       refresh_url: realms.currentPrefix() + REFRESH_PATH,
       continue: true,
       scope: { include_site: site, scope_specification: spec },
-      credentials: [{ type: 'cookie', name: this.cookieNameOf(session),
+      // THE NAME THE BROWSER WILL HOLD IT BY (#1441), since it is the browser
+      // that matches this against the cookie it was sent.
+      credentials: [{ type: 'cookie',
+                      name: require('../common/cookie_wire').wireName(
+                        this.cookieNameOf(session),
+                        this.cookieAttributes(req)),
                       attributes: this.cookieAttributes(req) }],
       allowed_refresh_initiators: []
     };

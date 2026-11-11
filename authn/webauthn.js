@@ -31,50 +31,24 @@
 // decoded and handed back (`attStmt`, with the raw authenticator data and the
 // client data hash its verification procedure takes) and NOT verified here:
 // that is `authn/webauthn_attestation.ts` (#105, 2026-09-23), which needs
-// trust anchors, the FIDO Metadata Service and the realm's policy — none of
-// which this file may reach, because it is loaded on its own by the
-// debugger's cross-implementation test.
+// trust anchors, the FIDO Metadata Service and the realm's policy. (This file
+// was kept loadable ON ITS OWN, without `helpers` or `crypto.js`, for the
+// debugger's cross-implementation test, which copied it beside its own
+// scripts; #1280 ended that, so it requires them plainly. The independence
+// above is about the CODE, not the staging, and stands.)
 // ---------------------------------------------------------------------------
 
 'use strict';
 
-// The service's shared logger when this module is loaded inside the service,
-// and a silent fallback when it is loaded ON ITS OWN — which the debugger's
-// cross-implementation test does, copying this one file next to its own
-// scripts. `./helpers` is not there, and it could not usefully be: it reads
-// process.env.CONFIG_FILE relative to its own directory and pulls in the
-// service's dependencies. A verifier written to be checked by somebody else's
-// test has no business dragging the whole service in behind it.
-//
-// THE FALLBACK IS SET BEFORE THE REQUIRE IS TRIED (fixed 2026-09-16). The catch
-// used to call `log.debug` while `log` was still undefined, so a standalone
-// load threw a TypeError from inside its own fallback. The caught reason is
-// kept in `loadProblem` and reported by the silent logger's owner, if any.
-const noop = function () {};
-/** @type {any} */
-let log = { debug: noop, info: noop, warn: noop, error: noop };
-let loadProblem = '';
-try {
-  log = require('../common/helpers').log;
-} catch (e) {
-  loadProblem = 'the service logger is not reachable: ' +
-                ((e && e.message) || e);
-}
-// `common/crypto.js` for base64url, the SHA-256 of the client data and every
-// signature check (#453: every cryptographic operation of the service is
-// that file's), and the same standalone case: without it, Node's own
-// `base64url` encoding, which is what that function wraps, and node's
-// `crypto` reached by `standaloneNodeCrypto()` below.
-let stsCrypto = null;
-try {
-  stsCrypto = require('../common/crypto');
-} catch (e) {
-  loadProblem = (loadProblem ? loadProblem + '; ' : '') +
-                'common/crypto.js is not reachable: ' +
-                ((e && e.message) || e);
-}
-log.debug('authn/webauthn.js loaded' +
-          (loadProblem ? ' standalone (' + loadProblem + ').' : '.'));
+// The service's shared logger, and `common/crypto.js` for base64url, the
+// SHA-256 of the client data and every signature check (#453: every
+// cryptographic operation of the service is that file's). Both were inside a
+// try/catch with a node-crypto fallback until #1280, for a standalone copy
+// that is no longer kept.
+const log = require('../common/helpers').log;
+const stsCrypto = require('../common/crypto');
+// Every signature algorithm, once (#1368): the table below is a view of it.
+const algorithmRegistry = require('../common/crypto_impl/algorithm_registry');
 
 // --- CBOR, enough of it, decode only -----------------------------------------
 //
@@ -231,33 +205,17 @@ const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519',
  * The COSE algorithm identifiers this relying party accepts, mapped to their
  * JOSE names (ECDSA, EdDSA, RSASSA-PKCS1-v1_5, RSASSA-PSS and ML-DSA).
  */
-const COSE_ALGS = {
-  '-7': 'ES256', '-35': 'ES384', '-36': 'ES512', '-8': 'EdDSA',
-  '-257': 'RS256', '-258': 'RS384', '-259': 'RS512',
-  '-37': 'PS256', '-38': 'PS384', '-39': 'PS512',
-  '-48': 'ML-DSA-44', '-49': 'ML-DSA-65', '-50': 'ML-DSA-87',
-  '-9': 'ESP256', '-51': 'ESP384', '-52': 'ESP512', '-47': 'ES256K',
-  '-19': 'Ed25519', '-53': 'Ed448',
-  // SHA-1. INSECURE (2026-10-01): verified only where the caller passes
-  // `allowInsecure`, which `webauthn.insecureAlgorithms` (development only,
-  // off by default) decides — see `INSECURE_COSE_ALGS` below.
-  '-65535': 'RS1',
-};
+const COSE_ALGS = algorithmRegistry.coseNames();
 /**
  * The COSE algorithms that are broken, accepted only where the caller says
  * so (`allowInsecure`): SHA-1's RS1.
  */
-const INSECURE_COSE_ALGS = [-65535];
+const INSECURE_COSE_ALGS = algorithmRegistry.insecureCoseIds();
 // COSE key type AKP (RFC 9964 section 4) and its `pub` label.
 /**
  * The COSE key type AKP (RFC 9964), which an ML-DSA key has.
  */
 const COSE_KTY_AKP = 7;
-// The hash each classical algorithm signs with, for the standalone path.
-const STANDALONE_HASHES = {
-  ES256: 'sha256', ES384: 'sha384', ES512: 'sha512', RS256: 'sha256',
-  RS384: 'sha384', RS512: 'sha512',
-};
 // WebAuthn Level 3 section 7.1: a credential id longer than this SHOULD fail
 // the registration, and here it does.
 /**
@@ -268,13 +226,7 @@ const MAX_CREDENTIAL_ID_BYTES = 1023;
 
 // base64url, from common/crypto.js — see the note beside helpers.js's. This
 // was the third copy of the same three lines in this service.
-function b64uStandalone(buf) {
-  log.debug("Entering b64uStandalone().");
-  log.debug("Leaving b64uStandalone().");
-  return Buffer.from(buf).toString('base64url');
-}
-
-const b64u = stsCrypto ? stsCrypto.b64u : b64uStandalone;
+const b64u = stsCrypto.b64u;
 
 /**
  * Converts a COSE_Key map to a JWK, carrying the key's algorithm on it.
@@ -411,26 +363,10 @@ function parseClientData(buf, expectedType) {
   return { json: json, text: text, typeMatches: json.type === expectedType };
 }
 
-// THE ONE PLACE THIS FILE REACHES NODE'S `crypto` ITSELF, and only when it
-// is loaded ON ITS OWN (#453): the debugger's cross-implementation test
-// stages this one file without `common/crypto.js` beside it, and a verifier
-// with no digest and no signature check could not be checked by anybody. In
-// the service `stsCrypto` is always there and this is never called, which is
-// why the require is here, inside the function, and not at the top.
-function standaloneNodeCrypto() {
-  log.debug("Entering standaloneNodeCrypto().");
-  log.debug("Leaving standaloneNodeCrypto().");
-  return require('crypto');
-}
-
 function sha256(buf) {
   log.debug("Entering sha256().");
-  if (stsCrypto) {
-    log.debug("Leaving sha256().");
-    return stsCrypto.digest('sha256', buf);
-  }
-  log.debug("Leaving sha256(). Standalone.");
-  return standaloneNodeCrypto().createHash('sha256').update(buf).digest();
+  log.debug("Leaving sha256().");
+  return stsCrypto.digest('sha256', buf);
 }
 
 // Every check by name, in order, so a caller can report WHICH one failed. A
@@ -498,34 +434,14 @@ function coseAlgOfJwk(jwk) {
 }
 
 // Does `signature` verify over `data` under the stored `jwk`? Through
-// `common/crypto.js` in the service; a copy of this file loaded on its own
-// checks the classical algorithms with node and refuses the rest.
+// `common/crypto.js`, for every algorithm the verifier accepts.
 function verifyWithJwk(jwk, data, signature, allowInsecure) {
   log.debug("Entering verifyWithJwk().");
   const coseAlg = coseAlgOfJwk(jwk);
-  if (stsCrypto && typeof stsCrypto.verifyCoseSignature === 'function') {
-    const ok = stsCrypto.verifyCoseSignature(coseAlg, jwk, data, signature,
-      { allowInsecure: !!allowInsecure });
-    log.debug("Leaving verifyWithJwk(). " + ok);
-    return ok;
-  }
-  const crypto = standaloneNodeCrypto();
-  const name = COSE_ALGS[String(coseAlg)];
-  const bare = Object.assign({}, jwk);
-  delete bare.alg;
-  const keyObject = crypto.createPublicKey({ key: bare, format: 'jwk' });
-  if (name === 'EdDSA') {
-    log.debug("Leaving verifyWithJwk(). Standalone EdDSA.");
-    return crypto.verify(null, data, keyObject, signature);
-  }
-  if (!STANDALONE_HASHES[name]) {
-    log.debug("Leaving verifyWithJwk(). Standalone, unsupported.");
-    return false;
-  }
-  // node takes an ECDSA signature in its native DER form, which is how it
-  // arrives from the authenticator — no conversion, unlike Web Crypto.
-  log.debug("Leaving verifyWithJwk(). Standalone " + name + ".");
-  return crypto.verify(STANDALONE_HASHES[name], data, keyObject, signature);
+  const ok = stsCrypto.verifyCoseSignature(coseAlg, jwk, data, signature,
+    { allowInsecure: !!allowInsecure });
+  log.debug("Leaving verifyWithJwk(). " + ok);
+  return ok;
 }
 
 // A CBOR value as plain data: a map with text keys becomes an object, an

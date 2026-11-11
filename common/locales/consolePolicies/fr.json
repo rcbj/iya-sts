@@ -172,5 +172,16 @@
   "attributes.removeCustom": "Supprimer",
   "attributes.defineHeading": "Définir un attribut personnalisé",
   "attributes.labelPlaceholder": "Numéro de badge",
-  "attributes.define": "Définir l’attribut"
+  "attributes.define": "Définir l’attribut",
+  "attributes.portal": "Portail utilisateur",
+  "attributes.portalVisible": "L’afficher à la personne sur le portail",
+  "attributes.portalEditable": "Permettre à la personne de le modifier sur le portail",
+  "attributes.portalNote": "Désactivés par défaut. Permettre la modification l’affiche aussi.",
+  "attributes.portalStateHidden": "non affiché",
+  "attributes.portalStateVisible": "affiché",
+  "attributes.portalStateEditable": "affiché, modifiable",
+  "attributes.change": "Modifier",
+  "attributes.changeFixed": "La syntaxe et le fait qu’il contienne plusieurs valeurs ne peuvent pas être modifiés.",
+  "attributes.saveChange": "Enregistrer la modification",
+  "securityOnly": "Seul un administrateur de la sécurité peut enregistrer, réinitialiser ou appliquer une politique ici, ou en désigner une pour une application, un groupe ou une personne. Vous pouvez lire toutes les politiques ; une modification est refusée."
 }

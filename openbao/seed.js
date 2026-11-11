@@ -220,6 +220,15 @@ const ADMIN_FIELDS = [
   { field: 'krb5KrbtgtPassword', from: 'STS_KRB5_KRBTGT_PASSWORD',
     generate: false },
   { field: 'krb5ServicePassword', from: 'STS_KRB5_SERVICE_PASSWORD',
+    generate: false },
+  // ASVS 5.0.0 13.3.1: a deployment's own secrets, stored when given so the
+  // service takes them from here rather than from its environment. The
+  // bootstrap password may be given as a hash (common/credentials.ts), the
+  // edge secret as sha256:<digest>.
+  { field: 'edgeSecret', from: 'STS_EDGE_SECRET', generate: false },
+  { field: 'adminBootstrapPassword', from: 'STS_ADMIN_BOOTSTRAP_PASSWORD',
+    generate: false },
+  { field: 'scimDigestPassword', from: 'SCIM_DIGEST_PASSWORD',
     generate: false }
 ];
 

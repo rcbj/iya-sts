@@ -117,9 +117,9 @@ between cells and the SPIFFE gRPC listeners. A remote XACML PEP's
 The Root arrives so that you can see which one it is. **Receiving it does not
 make your client trust it**: a client trusts only the Roots in its own store
 (RFC 5280 section 6.1). Every install builds its own Root, and every Root is
-named `CN=sts Root CA, O=sts`. A certificate viewer that shows only the name
-can make two installs look as if they share one Root. Compare thumbprints
-instead:
+named `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts` for one built
+before #1294). A certificate viewer that shows only the name can make two
+installs look as if they share one Root. Compare thumbprints instead:
 
 ```bash
 openssl s_client -connect "$HOST:8081" -showcerts </dev/null 2>/dev/null \
@@ -297,16 +297,20 @@ Taken from `sts_portal_signing_key.js` (the portal) and
 
 **Portal:** the person signs in to `/portal/signing-key` and, under **TLS
 client certificate**:
-1. Optionally names it after the browser or device (the job uses `laptop`),
-   and picks the key algorithm.
-2. Types **A password for the downloaded file** and **The same password
-   again**. This protects the key inside the file; it is not their account
-   password.
-3. Clicks **Generate and download my TLS client certificate**, and downloads
-   the `.p12` (and the PEM files) from the page that follows. **That page is
-   the only time the files can be downloaded.**
-4. Imports the `.p12` into a browser and opens `/tls/sign-in` there, choosing
-   the certificate when the browser asks.
+1. Optionally names it after the device (the job uses `laptop`), and picks the
+   key algorithm. No file password is asked for.
+2. Clicks **Generate my TLS client certificate**. The page is drawn again with
+   the new certificate's row scrolled into view, and that row carries two
+   downloads: **the private key** (`<name>-<label>-tls-client-key.pem`,
+   unencrypted PKCS#8) and **the certificate chain**
+   (`<name>-<label>-tls-client-chain.pem`, the leaf and the two CAs above it).
+   **That is the only time the files can be downloaded.**
+3. Presents them from a client that takes a key and a certificate, such as
+   `curl --cert <chain> --key <key> https://<host>:8081/tls/sign-in`.
+
+The portal offers no PKCS#12, so a browser cannot import what it hands out. A
+certificate for a browser is issued by an administrator, whose issue answers a
+password-protected `.p12` (below).
 
 A person may hold at most `pki.personTlsClientCertificateMax` valid ones (5 by
 default). The person can revoke one with **Revoke** on the same page; after
@@ -516,7 +520,9 @@ api config/set '{"key":"http.http2","value":false}'          # every listener
 api config/set '{"key":"listenerMain.http2","value":"on"}'   # but the main port keeps it
 ```
 
-A custom listener takes `"tls": {"http2": "off"}` in its definition. To check
+A custom listener takes `"tls": {"http2": "off"}` in its definition
+(`"on"`, `"true"` and `"false"`, or the JSON `true` and `false`, work as
+well; `tests/main_port_http2.js` section 11). To check
 what a connection negotiated:
 
 ```bash
@@ -524,7 +530,15 @@ curl -s --cacert sts-chain.pem --http2 -o /dev/null -w '%{http_version}\n' "$BAS
 ```
 
 `2` is HTTP/2; `1.1` is HTTP/1.1. One HTTP/2 connection may have at most
-`http.http2MaxConcurrentStreams` (100) requests open at once.
+`http.http2MaxConcurrentStreams` (100) requests open at once. Each TLS
+listener's tab on **Server configuration → Listeners** shows that cap beside
+**HTTP/2 offered**, and `GET /admin-api/listeners` answers it as each
+listener's `http.http2MaxConcurrentStreams` (`tests/main_port_http2.js` section
+15).
+
+A `CONNECT` request is answered `501 Not Implemented` over either protocol:
+this service is not a proxy (section 13). `OPTIONS *` is answered `204` by
+the process that holds the listener, never by a request worker (section 14).
 
 ## Move the console and the API to a listener of their own
 

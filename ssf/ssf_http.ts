@@ -614,8 +614,36 @@ class SsfHttp {
    */
   pushSet(url: unknown, token: unknown,
           options?: PushOptions | null): Promise<PushResult> {
-    const { log, loadTlsServer, userAgent } = this.deps;
+    const { log } = this.deps;
+    const self = this;
     log.debug("Entering SsfHttp.pushSet().");
+    // THE ADDRESS IS VETTED AS EVERY OTHER OUTBOUND DIAL'S IS (#1492, ASVS 5.0.0
+    // 1.3.6): a stream client names this URL. This service's own receivers are
+    // the one exception, already pinned by certificate below.
+    if (!this.pushAllowed() || this.urlVerdict(url).why ||
+        this.isOwnLoopback(url)) {
+      log.debug("Leaving SsfHttp.pushSet(). Nothing to vet.");
+      return this.dialPush(url, token, options, null);
+    }
+    const federationHttp = require('../federation/federation_http');
+    log.debug("Leaving SsfHttp.pushSet(). Vetting the address.");
+    return federationHttp.vetHost(new URL(String(url).trim()).hostname)
+      .then(function (vetted: any) {
+        if (!vetted.ok) {
+          return { ok: false, status: 0, err: '', description: '',
+            errorCode: 'STS-SSF-0158',
+            why: 'the delivery endpoint cannot be dialled: ' + vetted.why };
+        }
+        return self.dialPush(url, token, options, vetted);
+      });
+  }
+
+  // The push itself, once the address has been vetted.
+  private dialPush(url: unknown, token: unknown,
+                   options: PushOptions | null | undefined,
+                   vetted: any): Promise<PushResult> {
+    const { log, loadTlsServer, userAgent } = this.deps;
+    log.debug("Entering SsfHttp.dialPush().");
     const opts = options || {};
     if (!this.pushAllowed()) {
       log.debug("Leaving SsfHttp.pushSet(). ssf.pushDelivery is off.");
@@ -812,6 +840,10 @@ class SsfHttp {
         requestOptions.checkServerIdentity = policy.checkServerIdentity;
       }
       try {
+        if (vetted && vetted.address) {
+          requestOptions.lookup = require('../federation/federation_http')
+            .pinnedLookup(vetted);
+        }
         request = (secure ? https : http).request(requestOptions,
                                                   function (response) {
           const status = response.statusCode || 0;

@@ -615,10 +615,14 @@ class SigningRotation {
     // THE REFRESH-TOKEN ENCRYPTION KEYS (D7), when named — or with every unit.
     if (!o.units || !o.units.length || o.units.indexOf('refresh:enc') >= 0 ||
         o.units.indexOf('refresh') >= 0) {
+      // The new set's RSA and EC pairs are made in node's thread pool
+      // (#704), not on the loop of the process running the job.
+      const madeKeys = await helpers.makeRefreshTokenEncryptionKeysAsync(
+        realmId);
       const r = helpers.rotateRefreshTokenKeys(realmId,
         o.emergency ? 0 : this.refreshGraceMs(),
         'a rotation of the refresh-token keys (' +
-        String(o.reason || 'scheduled') + ')');
+        String(o.reason || 'scheduled') + ')', madeKeys);
       if (!r.ok) {
         log.error(errorCodes.tag('STS-KEYS-0063') + 'signing rotation: the "' +
                   realmId + '" realm\'s refresh-token keys could not be ' +
@@ -1332,11 +1336,15 @@ class SigningRotation {
         return DAY_MS;
       },
       manual: true,
-      run: function (ctx: Json): Json {
-        const done = self.deps.applications().sweepClientSecrets(ctx.nowMs());
-        return { expiring: done.expiring.length,
-                 expired: done.expired.length,
-                 cleared: done.cleared.length };
+      // In slices (#704): `sweepClientSecretsInSlices()` unseals a few
+      // applications' secrets a turn, not the realm's every one at once.
+      run: function (ctx: Json): Promise<Json> {
+        return self.deps.applications().sweepClientSecretsInSlices(
+          ctx.nowMs()).then(function (done: Json): Json {
+          return { expiring: done.expiring.length,
+                   expired: done.expired.length,
+                   cleared: done.cleared.length };
+        });
       }
     });
     log.debug("Leaving SigningRotation.registerJobs().");

@@ -150,7 +150,7 @@ async function test() {
               "error");
   });
   check("with a button and no script — the page is a decision", function () {
-    assert.ok(/<button type="submit">/.test(r.raw));
+    assert.ok(/<button type="submit"[^>]*>/.test(r.raw));
     assert.ok(!/<script/i.test(r.raw));
   });
 

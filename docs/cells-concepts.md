@@ -459,8 +459,9 @@ cell.
 
 ## 14. Background jobs: once per cell, or once for the service
 
-A cluster job runs on one node of its cluster, and each cell is its own
-cluster. That suits cell work, but a job that changes global state would run
+A cluster job runs on one node of its cluster
+([How the cluster works](cluster-concepts.md#7-the-scheduler-each-job-runs-once-on-one-node)),
+and each cell is its own cluster. That suits cell work, but a job that changes global state would run
 once in every cell. Those jobs claim their runs in the global tier instead:
 
 ```

@@ -279,13 +279,12 @@ const config = require('./config');
 const realms = require('./realms');
 // This service's one cryptographic module (#453): the certificate parse, the
 // presented-chain key, the OCSP CertID hashes and the request nonce. A leaf
-// that requires nothing here, and already in the parent project's Kerberos
-// COPY closure through `helpers.js`.
+// that requires nothing here, and already loaded through `helpers.js`.
 const stsCrypto = require('./crypto');
 // The one helper for a verified outbound connection (#201), required LAZILY
-// where a list is fetched: this module is in the parent project's Kerberos
-// COPY closure (kerberos/CLAUDE.md), and a load-time require would add
-// `outbound_tls.js` to it.
+// where a list is fetched, which kept `outbound_tls.js` out of the parent
+// project's Kerberos COPY closure that reached this module (an obligation
+// until #1280; the arrangement stands).
 function outboundTls() {
   log.debug("Entering outboundTls().");
   log.debug("Leaving outboundTls().");
@@ -348,6 +347,19 @@ const MAX_DEPTH = 8;
 // THE POLICY IN FORCE, read per call and never cached — it is runtime and per
 // realm, exactly like every other setting here.
 // ---------------------------------------------------------------------------
+// Lazily: the door requires this module.
+function paranoidInForce() {
+  log.debug('Entering paranoidInForce().');
+  let inForce = false;
+  try {
+    inForce = !!require('./certificate_trust').inForce().inForce;
+  } catch (e) {
+    log.debug('Caught in paranoidInForce(): ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving paranoidInForce(). ' + inForce);
+  return inForce;
+}
+
 /**
  * Reads the revocation policy in force, per call and never cached.
  *
@@ -372,8 +384,13 @@ function policy() {
   if (['auto', 'on', 'off'].indexOf(requireConfigured) < 0) {
     requireConfigured = 'auto';
   }
+  // UNDER PARANOID PKI MODE, A CERTIFICATE NAMING NO SOURCE HAS NO CHECK TO
+  // PERFORM (rcbj, #1360): "if there is no CRL / OCSP information, then there
+  // is no check to perform". A source named is the promise, and stays enforced.
+  // `on` is an operator asking for more, and still refuses.
   const requireDistributionPoint = requireConfigured === 'on' ||
-    (requireConfigured === 'auto' && mode.refusesUnrevocableCertificates());
+    (requireConfigured === 'auto' && mode.refusesUnrevocableCertificates() &&
+     !paranoidInForce());
   log.debug('Leaving policy(). ' + effective);
   return {
     configured: configured,
@@ -475,7 +492,8 @@ function signedBy(cert, issuer) {
   }
   try {
     log.debug("Leaving signedBy().");
-    return cert.checkIssued(issuer) && cert.verify(issuer.publicKey);
+    return cert.checkIssued(issuer) &&
+      stsCrypto.certificateSignedWith(cert, issuer.publicKey);
   } catch (e) {
     log.debug("Caught in signedBy(): " + ((e && e.message) || e));
     log.debug("Leaving signedBy().");
@@ -502,7 +520,7 @@ function selfSigned(cert) {
     return false;
   }
   try {
-    const ok = cert.verify(cert.publicKey);
+    const ok = stsCrypto.certificateSignedWith(cert, cert.publicKey);
     log.debug("Leaving selfSigned().");
     return ok;
   } catch (e) {
@@ -642,15 +660,66 @@ function rememberChain(raw, chain) {
   presentedChains.delete(key);
   cacheRegistry.makeRoom(presentedChains, PRESENTED_CHAIN_ENTRIES,
                          { counter: presentedCount });
-  presentedChains.set(key, { chain: encoded, until: now + life });
+  // WHAT THE HOLD SAID RIDES ON THE SAME ROW (#1360). Writing the chain without
+  // it told every later resumption that nothing was known of this handshake.
+  const row = { chain: encoded, until: now + life };
+  if (held && typeof held.held === 'boolean') {
+    row.held = held.held;
+  }
+  presentedChains.set(key, row);
   log.debug("Leaving rememberChain().");
+}
+
+// WHAT THE HOLD SAID OF THIS LEAF (#1360). A resumed session gives node the leaf
+// alone, so the hold cannot walk what the full handshake showed: it reads what
+// that handshake's hold concluded, kept beside the chain, so a demoted
+// certificate stays demoted across a resumption under paranoid PKI mode.
+/**
+ * Remembers what the hold said of a leaf on a full handshake.
+ *
+ * @param raw - the leaf's DER
+ * @param ok - whether it held
+ */
+function rememberHold(raw, ok) {
+  log.debug("Entering rememberHold().");
+  const key = leafKey(raw);
+  const held = presentedChains.get(key);
+  const life = presentedChainLifetimeMs();
+  const now = Date.now();
+  if (!held || held.held !== !!ok || Number(held.until) - now <= life / 2) {
+    const row = held ? Object.assign({}, held) : { chain: [] };
+    row.until = now + life;
+    row.held = !!ok;
+    if (!held) {
+      cacheRegistry.makeRoom(presentedChains, PRESENTED_CHAIN_ENTRIES,
+                             { counter: presentedCount });
+    }
+    presentedChains.set(key, row);
+  }
+  log.debug("Leaving rememberHold().");
+}
+
+/**
+ * What the hold said of a leaf on its full handshake.
+ *
+ * @param raw - the leaf's DER
+ * @returns true, false, or null when nothing is remembered
+ */
+function rememberedHold(raw) {
+  log.debug("Entering rememberedHold().");
+  const held = presentedChains.get(leafKey(raw));
+  const known = held && Number(held.until) > Date.now() &&
+                typeof held.held === 'boolean';
+  log.debug("Leaving rememberedHold().");
+  return known ? held.held : null;
 }
 
 // A HOT PATH: one lookup per resumed connection and per pull while waiting,
 // so no Entering/Leaving pair — one would drown the log.
 function heldChain(key) {
   const found = presentedChains.get(key);
-  if (!found || !Array.isArray(found.chain) ||
+  // An empty chain is a row the hold wrote and no chain has reached yet.
+  if (!found || !Array.isArray(found.chain) || !found.chain.length ||
       !(Number(found.until) > Date.now())) {
     return null;
   }
@@ -696,26 +765,74 @@ function rememberedChain(raw) {
  */
 async function awaitResumedChain(socket) {
   log.debug("Entering awaitResumedChain().");
+  const arrived = await waitForResumedRow(socket);
+  settleResumedHold(socket);
+  log.debug("Leaving awaitResumedChain(). " + arrived);
+  return arrived;
+}
+
+// A RESUMED SESSION WHOSE HOLD IS NOT KNOWN HERE YET (#1360). The hold ran on
+// whichever node saw the full handshake and its verdict is on its way in the
+// same row as the chain, so the hold cannot answer inside the handshake that
+// resumes. It leaves the socket marked, this settles it before any request is
+// answered, and what nothing established after the wait is demoted.
+function settleResumedHold(socket) {
+  log.debug("Entering settleResumedHold().");
+  if (!socket || !socket.stsResumedHoldPending) {
+    log.debug("Leaving settleResumedHold(). Nothing pending.");
+    return;
+  }
+  socket.stsResumedHoldPending = false;
+  let held = null;
+  try {
+    held = rememberedHold(socket.getPeerCertificate().raw);
+  } catch (e) {
+    log.debug("Caught in settleResumedHold(): " + ((e && e.message) || e));
+  }
+  if (held !== true) {
+    const why = held === false
+      ? 'its full handshake was refused, and this session resumes it'
+      : 'this session resumes a handshake no record of which reached this ' +
+        'process';
+    socket.authorized = false;
+    socket.authorizationError = 'ERR_STS_PATH_RULES: ' + why;
+    log.warn(errorCodes.tag('STS-TLS-0058') + 'tls: a resumed client ' +
+             'certificate is treated as unverified: ' + why + '.');
+  }
+  log.debug("Leaving settleResumedHold(). " + held);
+}
+
+async function waitForResumedRow(socket) {
+  log.debug("Entering waitForResumedRow().");
   if (!socket || typeof socket.isSessionReused !== 'function' ||
       socket.authorized !== true || !socket.isSessionReused()) {
-    log.debug("Leaving awaitResumedChain(). Nothing to wait for.");
+    log.debug("Leaving waitForResumedRow(). Nothing to wait for.");
     return true;
   }
   let peer = null;
   try {
     peer = socket.getPeerCertificate(true);
   } catch (e) {
-    log.debug("Caught in awaitResumedChain(): " + ((e && e.message) || e));
+    log.debug("Caught in waitForResumedRow(): " + ((e && e.message) || e));
   }
+  // Node completes a leaf's issuer from the listener's own anchors, so a chain
+  // here says nothing of a verdict the hold is still waiting for.
   if (!peer || !peer.raw || !peer.raw.length ||
-      (peer.issuerCertificate && peer.issuerCertificate.raw &&
+      (!socket.stsResumedHoldPending && peer.issuerCertificate &&
+       peer.issuerCertificate.raw &&
        !peer.issuerCertificate.raw.equals(peer.raw))) {
-    log.debug("Leaving awaitResumedChain(). No certificate, or a chain.");
+    log.debug("Leaving waitForResumedRow(). No certificate, or a chain.");
     return true;
   }
   const key = leafKey(peer.raw);
-  if (heldChain(key)) {
-    log.debug("Leaving awaitResumedChain(). Held.");
+  const here = function () {
+    // A HOT PATH: one lookup per pull while waiting, so no Entering/Leaving
+    // pair. The chain alone will not do while the hold's verdict is awaited.
+    return !!heldChain(key) && (!socket.stsResumedHoldPending ||
+                                rememberedHold(peer.raw) !== null);
+  };
+  if (here()) {
+    log.debug("Leaving waitForResumedRow(). Held.");
     return true;
   }
   const budget = Number(config.value('tls.resumedChainWaitMs'));
@@ -726,7 +843,7 @@ async function awaitResumedChain(socket) {
   try {
     persistence = require('../persistence/persistence');
   } catch (e) {
-    log.debug("Caught in awaitResumedChain(): " + ((e && e.message) || e));
+    log.debug("Caught in waitForResumedRow(): " + ((e && e.message) || e));
   }
   while (Date.now() < deadline) {
     const left = deadline - Date.now();
@@ -739,13 +856,13 @@ async function awaitResumedChain(socket) {
         })
       ]);
     } catch (e) {
-      log.debug("Caught in awaitResumedChain(): " + ((e && e.message) || e));
+      log.debug("Caught in waitForResumedRow(): " + ((e && e.message) || e));
     }
-    if (heldChain(key)) {
+    if (here()) {
       log.info('revocation: a resumed TLS session\'s client-certificate ' +
                'chain arrived from another node after ' +
                (Date.now() - started) + 'ms.');
-      log.debug("Leaving awaitResumedChain(). Arrived.");
+      log.debug("Leaving waitForResumedRow(). Arrived.");
       return true;
     }
     await new Promise(function (resolve) {
@@ -759,7 +876,7 @@ async function awaitResumedChain(socket) {
              'it within ' + waitMs + 'ms (tls.resumedChainWaitMs); the ' +
              'request goes on with the leaf alone.');
   }
-  log.debug("Leaving awaitResumedChain(). Ran out.");
+  log.debug("Leaving waitForResumedRow(). Ran out.");
   return false;
 }
 
@@ -1261,12 +1378,37 @@ function ldapPolicy() {
          'ldaps';
 }
 
+// A certificate names these addresses, so where the operator has listed the
+// hosts this service may reach, they obey the list too (#1550, ASVS 5.0.0 1.3.6).
+function hostAllowed(text) {
+  log.debug("Entering hostAllowed().");
+  const listed = [].concat(config.value('security.outboundAllowedHosts') || [])
+    .join(',').split(',').map(function (one) {
+      return one.trim().toLowerCase();
+    }).filter(Boolean);
+  if (!listed.length) {
+    log.debug("Leaving hostAllowed(). No list.");
+    return true;
+  }
+  let host = '';
+  try {
+    host = new URL(text).hostname.toLowerCase();
+  } catch (e) {
+    log.debug("Caught in hostAllowed(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving hostAllowed().");
+  return !!host && listed.some(function (one) {
+    return one.charAt(0) === '.' ? host.endsWith(one) : host === one;
+  });
+}
+
 function dialability(uri) {
   log.debug("Entering dialability().");
   const text = String(uri || '');
   if (/^https?:\/\//i.test(text)) {
     log.debug("Leaving dialability().");
-    return { dial: true };
+    return hostAllowed(text) ? { dial: true }
+      : { dial: false, why: 'its host is not in security.outboundAllowedHosts' };
   }
   if (!/^ldaps?:\/\//i.test(text)) {
     log.debug("Leaving dialability().");
@@ -1570,6 +1712,18 @@ function fetchBytes(url, options) {
                                   'dialled, and this is ' + target.protocol });
   }
   const secure = target.protocol === 'https:';
+  // A CA FILE THAT CANNOT BE USED REFUSES THE FETCH under paranoid PKI mode, as
+  // the families' do, rather than falling back to node's store (#1360). Lazily:
+  // the door requires this module.
+  const httpsFile = String(config.value('pki.revocationHttpsCaFile') || '');
+  if (secure && httpsFile && !pemFileOf('pki.revocationHttpsCaFile').pems.length &&
+      require('./certificate_trust').applies('tls-server-outbound')) {
+    log.warn(errorCodes.tag('STS-PKI-0266') + 'revocation: ' + url + ' was not ' +
+             'asked: pki.revocationHttpsCaFile names "' + httpsFile + '", ' +
+             'which cannot be used.');
+    log.debug('Leaving fetchBytes(). The CA file is unusable.');
+    return { ok: false, why: 'pki.revocationHttpsCaFile cannot be used' };
+  }
   const cap = Math.max(1, Number(config.value('pki.revocationMaxCrlBytes')));
   const timeout = Math.max(1,
                            Number(config.value('pki.revocationFetchTimeoutMs')));
@@ -1611,7 +1765,10 @@ function fetchBytes(url, options) {
         // rules (`OutboundTls.verifiedOptions()`) — because an https address
         // is a claim about who answers, and a claim unchecked is none.
         ...outboundTls().verifiedOptions(
-          pemFileOf('pki.revocationHttpsCaFile').pems)
+          pemFileOf('pki.revocationHttpsCaFile').pems),
+        // Not gated by `tls-server-outbound`: this fetch IS what that gate
+        // asks, and gating it would ask for its own answer (#1360).
+        ...(/** @type {any} */ ({ stsOutboundGate: false }))
       }, function (response) {
         const status = response.statusCode || 0;
         if (status >= 300 && status < 400) {
@@ -1790,6 +1947,7 @@ function pemFileOf(settingKey) {
   let stat;
   let text;
   try {
+    require('./outbound_tls').assertNamedFile(file);
     stat = fs.statSync(file);
     const held = pemFiles.get(settingKey);
     if (held && held.file === file && held.mtimeMs === stat.mtimeMs) {
@@ -1902,6 +2060,8 @@ function fetchLdap(url, want) {
       pemFileOf('pki.revocationLdapCaFile').pems)));
     // Node's store even when the file adds nothing: `ca` names the anchors.
     tlsOptions.ca = tlsOptions.ca || tls.rootCertificates.slice(0);
+    // This fetch IS what the outbound gate asks (#1360).
+    tlsOptions.stsOutboundGate = false;
     if (!net.isIP(parsed.host)) {
       tlsOptions.servername = parsed.host;
     }
@@ -2351,7 +2511,7 @@ async function crlSignerOf(crl, signers) {
     }
     let verified = false;
     try {
-      verified = await pkijs.getCrypto(true).verifyWithPublicKey(
+      verified = await stsCrypto.verifyX509Signature(
         crl.tbsView, crl.signatureValue, candidate.subjectPublicKeyInfo,
         crl.signatureAlgorithm);
     } catch (e) {
@@ -2511,6 +2671,13 @@ async function readCrl(der, context) {
     return { ok: false, signerProblem: true,
              why: 'it was signed by a certificate whose keyUsage does not ' +
                   'include cRLSign (RFC 5280 section 4.2.1.3)' };
+  }
+  const signerHeld = revocationSignerHeld(signer.x509.raw,
+                                          { variant: 'crl', mayBeCa: true });
+  if (!signerHeld.ok) {
+    log.debug('Leaving readCrl(). The door refused its signer.');
+    return { ok: false, signerProblem: true,
+             why: 'its signer is refused: ' + signerHeld.why };
   }
   const extensions = (crl.crlExtensions && crl.crlExtensions.extensions) || [];
   const critical = extensions.filter(function (ext) {
@@ -2770,7 +2937,7 @@ async function ocspSignatureVerifies(basic, parsedCert) {
   log.debug("Entering ocspSignatureVerifies().");
   try {
     log.debug("Leaving ocspSignatureVerifies().");
-    return await pkijs.getCrypto(true).verifyWithPublicKey(
+    return await stsCrypto.verifyX509Signature(
       basic.tbsResponseData.tbsView, basic.signature,
       parsedCert.subjectPublicKeyInfo, basic.signatureAlgorithm);
   } catch (e) {
@@ -2837,6 +3004,16 @@ async function responderStatusOf(parsedCert, x509, target) {
            why: 'from its CRL: ' + result.why };
 }
 
+// A signer's own fields, under paranoid PKI mode (#1360). Lazily: the door
+// requires this module.
+function revocationSignerHeld(der, options) {
+  log.debug('Entering revocationSignerHeld().');
+  const held = require('./certificate_trust')
+    .fields('revocation-signer', der, options);
+  log.debug('Leaving revocationSignerHeld(). ' + held.ok);
+  return held;
+}
+
 // Who signed it, and whether they were entitled to. RFC 6960 section 4.2.2.2.
 async function ocspSignerOf(basic, target) {
   log.debug('Entering ocspSignerOf().');
@@ -2883,6 +3060,11 @@ async function ocspSignerOf(basic, target) {
     }
     if (!validAt(x509, now)) {
       tried.push(label + ' is outside its validity period');
+      continue;
+    }
+    const held = revocationSignerHeld(x509.raw, {});
+    if (!held.ok) {
+      tried.push(label + ' is refused: ' + held.why);
       continue;
     }
     if (await ocspSignatureVerifies(basic, certs[i])) {
@@ -3063,8 +3245,28 @@ async function readOcsp(der, target, nonceValue) {
 }
 
 // One responder, answered from the cache or asked. Never rejects.
+// What a staple's answer is said to have come from, where nothing else was named.
+const STAPLED_RESPONDER = 'the stapled OCSP response';
+
 async function ocspFrom(url, target) {
   log.debug('Entering ocspFrom(). url=' + url);
+  // WHAT THE PEER STAPLED (#1360), asked first and believed on exactly what a
+  // fetched answer is: its signature, its signer and its freshness. It is
+  // about this connection, so it is not cached under the responder's address,
+  // and a staple that is no use falls through to asking.
+  if (target.stapled) {
+    const stapled = await readOcsp(target.stapled, target, null);
+    if (stapled.ok) {
+      log.debug('Leaving ocspFrom(). Stapled.');
+      return { ok: true, answer: Object.assign({ url: url }, stapled),
+               fromCache: false, stapled: true };
+    }
+    log.debug('ocspFrom(): the staple was not used: ' + stapled.why);
+    if (url === STAPLED_RESPONDER) {
+      log.debug('Leaving ocspFrom(). A staple, and no responder to ask.');
+      return { ok: false, why: stapled.why };
+    }
+  }
   const key = url + '|' + target.issuerCert.fingerprint256 + '|' +
               target.serial;
   const hit = cached(ocspCache, key);
@@ -3086,7 +3288,8 @@ async function ocspFrom(url, target) {
     } catch (e) {
       log.warn(errorCodes.tag('STS-PKI-0122') + 'revocation: an OCSP request ' +
                                                 'for ' +
-               url + ' could not be built: ' + e.message + '.');
+               url + ' could not be built: ' +
+               String((e && e.message) || e).replace(/\.+$/, '') + '.');
       return { ok: false, why: 'the request could not be built: ' + e.message };
     }
     const fetched = await fetchBytes(url, { body: built.der,
@@ -3201,8 +3404,23 @@ function fromSocket(socket) {
       });
     }
   }
-  log.debug('Leaving fromSocket(). ' + chain.length + ' above the leaf.');
-  return { leaf: peer.raw, chain: chain, verified: socket.authorized === true };
+  // A CHAIN THAT VERIFIED ENDS AT THE LISTENER'S ANCHOR (#1360), and what lies
+  // above it is nothing anybody relies on: `endingAtClientAnchor()`. Lazily, as
+  // this module is loaded before either. Only a real socket: a worker's chain
+  // was already through here on the front process.
+  let above = chain;
+  if (real && socket.authorized === true && chain.length) {
+    try {
+      above = require('./certificate_trust').endingAtClientAnchor(chain,
+        require('../tls/tls_server').anchorCertificates().map(function (one) {
+          return one.raw;
+        }));
+    } catch (e) {
+      log.debug('Caught in fromSocket(): ' + ((e && e.message) || e));
+    }
+  }
+  log.debug('Leaving fromSocket(). ' + above.length + ' above the leaf.');
+  return { leaf: peer.raw, chain: above, verified: socket.authorized === true };
 }
 
 // ---------------------------------------------------------------------------
@@ -4003,6 +4221,10 @@ async function crlRoute(target, inHand, depth) {
 async function ocspRoute(target) {
   log.debug('Entering ocspRoute().');
   const responders = ocspRespondersOf(target.cert);
+  // A staple is an answer whether or not the certificate names a responder.
+  if (target.stapled && !responders.fetchable.length) {
+    responders.fetchable = [STAPLED_RESPONDER];
+  }
   if (!responders.fetchable.length && responders.other.length) {
     // A RESPONDER THE ISSUER NAMED AND THIS SERVICE WILL NOT ASK (#174): RFC
     // 6960 appendix A defines http and nothing else, so an `ldap:` responder
@@ -4241,8 +4463,58 @@ function noRevAvailOf(cert) {
   return { conflicts: conflicts };
 }
 
+/**
+ * Whether a certificate names anywhere its revocation could be asked: a CRL
+ * distribution point or an OCSP responder, of any scheme.
+ *
+ * @param cert - the certificate, as `x509Of()` reads it
+ * @returns whether it names a source
+ */
+function namesSource(cert) {
+  log.debug('Entering namesSource().');
+  const read = x509Of(cert);
+  if (!read) {
+    log.debug('Leaving namesSource(). Unreadable.');
+    return true;
+  }
+  const points = distributionPointsOf(read);
+  const responders = ocspRespondersOf(read);
+  const named = !!(points.fetchable.length || points.other.length ||
+                   responders.fetchable.length ||
+                   (responders.other || []).length);
+  log.debug('Leaving namesSource(). ' + named);
+  return named;
+}
+
+/**
+ * Whether anything a verdict would have to fetch names a source. A certificate
+ * this service issued answers from its register and an anchor from nothing, so
+ * neither counts.
+ *
+ * @param input - `{ leaf, chain, verified }`, as `verdictFor()` takes it
+ * @returns whether a fetch could say anything about this path
+ */
+function pathNamesSource(input) {
+  log.debug('Entering pathNamesSource().');
+  const path = walk(input);
+  const named = !path.readable || path.links.some(function (link) {
+    return link.source === 'crl' && namesSource(link.cert);
+  });
+  log.debug('Leaving pathNamesSource(). ' + named);
+  return named;
+}
+
 async function resolveForeign(link, verified, opts) {
   log.debug('Entering resolveForeign(). depth=' + link.depth);
+  if (!link.issuerCert && paranoidInForce() && !namesSource(link.cert)) {
+    // Its issuer is missing, and it names nothing anybody could have asked.
+    link.unknownKind = 'no-distribution-point';
+    link.refusable = policy().requireDistributionPoint;
+    link.why = 'it names no CRL distribution point and no OCSP responder, so ' +
+               'there is no check to perform';
+    log.debug('Leaving resolveForeign(). Nothing named.');
+    return;
+  }
   if (!link.issuerCert) {
     link.unknownKind = 'issuer-not-presented';
     link.refusable = true;
@@ -4293,6 +4565,9 @@ async function resolveForeign(link, verified, opts) {
     return;
   }
   const target = targetOf(link);
+  if (target && opts && opts.stapled && link.depth === 0) {
+    target.stapled = opts.stapled;
+  }
   if (!target) {
     link.unknownKind = 'unreadable';
     link.refusable = true;
@@ -4744,6 +5019,20 @@ async function issuersFetchedFor(leaf, offered) {
     }
     fetched.push(found);
     current = found;
+  }
+  // AN ADDRESS IN THE LEAF DECIDES NOTHING, under paranoid PKI mode (#1360): what
+  // it led to is believed only if the path reaches this realm's Root or its
+  // signer truststore. Off, it is what it always was, trust on first use. Lazily:
+  // the door requires this module.
+  const trust = require('./certificate_trust');
+  if (fetched.length && trust.applies('saml-signer') &&
+      !(await trust.reachesHeld(x509Of(leaf).raw, fetched.map(function (one) {
+        return one.raw;
+      })))) {
+    log.debug('Leaving issuersFetchedFor(). Reaches nothing held.');
+    return { certs: [], named: named,
+             problems: problems.concat(['what its Authority Information ' +
+               'Access led to reaches no anchor this realm holds']) };
   }
   log.debug('Leaving issuersFetchedFor(). ' + fetched.length + ' fetched.');
   return { certs: fetched, problems: problems, named: named };
@@ -5504,6 +5793,10 @@ module.exports = {
   CODE_REGISTERED: CODE_REGISTERED,
   decide: decide,
   fromSocket: fromSocket,
+  namesSource: namesSource,
+  pathNamesSource: pathNamesSource,
+  rememberHold: rememberHold,
+  rememberedHold: rememberedHold,
   awaitResumedChain: awaitResumedChain,
   resumedChainMiddleware: resumedChainMiddleware,
   // The walk itself, for `common/tls_client_certificates.js`, which asks the

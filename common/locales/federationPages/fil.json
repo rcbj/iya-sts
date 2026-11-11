@@ -38,5 +38,13 @@
   "profile.heading": "Ilang detalye bago gawin ang iyong account",
   "profile.lead": "Na-sign in ka ng {partner}, pero hindi nito ipinadala ang lahat ng kailangan ng serbisyong ito para gawin ang iyong account. Ibigay ang mga detalye sa ibaba para matapos.",
   "profile.submit": "Gawin ang aking account",
-  "profile.note": "Itinatago ang mga detalyeng ito sa iyong account dito. Itinatala bilang hindi verified ang email address na itina-type mo."
+  "profile.note": "Itinatago ang mga detalyeng ito sa iyong account dito. Itinatala bilang hindi verified ang email address na itina-type mo.",
+  "webfinger.title": "Hanapin ang iyong sign-in",
+  "webfinger.heading": "Hanapin kung saan ka nagsa-sign in",
+  "webfinger.lead": "I-type ang address na ginagamit mo sa pag-sign in sa {partner}, at itatanong ng serbisyong ito sa host ng address na iyon kung nasaan ang iyong account.",
+  "webfinger.label": "Ang iyong address o URL",
+  "webfinger.submit": "Hanapin",
+  "webfinger.found": "Nagsa-sign in ang {identifier} sa {issuer}.",
+  "webfinger.continue": "Magpatuloy upang mag-sign in doon",
+  "webfinger.note": "Walang mangyayari hanggang magpatuloy ka: tiyaking dito mo inaasahang mag-sign in."
 }

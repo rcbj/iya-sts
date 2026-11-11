@@ -141,6 +141,7 @@ class K8sWorkloadAttestor {
     const { log, fs } = this.deps;
     log.debug("Entering K8sWorkloadAttestor.readOptional(). " + path);
     try {
+      require('../common/outbound_tls').assertNamedFile(path);
       const text = fs.readFileSync(path, 'utf8');
       log.debug("Leaving K8sWorkloadAttestor.readOptional().");
       return text;

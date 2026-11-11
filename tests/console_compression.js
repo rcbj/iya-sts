@@ -137,6 +137,13 @@ function childMain() {
          'D. an /admin-api answer is never compressed (BREACH)',
          apiAnswer.status + ' ' + apiAnswer.coding);
 
+    // --- E. the console's catalogs are static (#1333) ---------------------
+    const all = await get(port, '/web/locales/console-all/en.json', 'gzip, br');
+    note(all.status === 200 && all.coding === 'br' &&
+         Object.keys(JSON.parse(all.plain)).length > 1000,
+         'E. every console namespace is one compressed static catalog',
+         all.status + ' ' + all.coding);
+
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

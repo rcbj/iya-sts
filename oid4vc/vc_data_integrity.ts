@@ -143,7 +143,7 @@
 
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
-import pqJose = require('../common/pq_jose');
+import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 // The closed JSON-LD loader and RDFC-1.0 (#195, #196). A library that
 // requires only `jsonld` and `common/` leaves.
@@ -174,8 +174,6 @@ interface Suite {
 
 interface VcDataIntegrityDeps {
   log: typeof helpers.log;
-  pqSignAsync: typeof pqJose.signAsync;
-  pqVerifyAsync: typeof pqJose.verifyAsync;
   clockSkewS: () => number;
   // RDFC-1.0 over the closed loader (`vc_jsonld.ts`, #195/#196).
   canonize: (document: any) => Promise<string>;
@@ -309,8 +307,6 @@ class VcDataIntegrity {
     helpers.log.debug("Leaving VcDataIntegrity.defaultDeps().");
     return {
       log: helpers.log,
-      pqSignAsync: pqJose.signAsync,
-      pqVerifyAsync: pqJose.verifyAsync,
       clockSkewS: function clockSkewS(): number {
         helpers.log.debug("Entering clockSkewS().");
         helpers.log.debug("Leaving clockSkewS().");
@@ -1006,16 +1002,19 @@ class VcDataIntegrity {
 
   private async signBytes(suite: Suite, privateKey: any, jwk: any,
                           data: Buffer): Promise<Buffer> {
-    const { log, pqSignAsync } = this.deps;
+    const { log, stsCrypto: door } = this.deps;
     log.debug("Entering VcDataIntegrity.signBytes(). suite=" + suite.id);
+    // THE DATA INTEGRITY SIGN CHOKEPOINT (#1368).
+    const unsignable = door.signaturePolicy.signCause('di', suite.id);
+    if (unsignable) {
+      log.debug("Leaving VcDataIntegrity.signBytes(). Not signed here.");
+      throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+    }
     if (suite.kind === 'pq') {
-      const priv = privateKey && typeof privateKey === 'object' &&
-        typeof privateKey.priv === 'string'
-        ? Buffer.from(privateKey.priv, 'base64url')
-        : Buffer.from(privateKey);
-      const sig = await pqSignAsync(suite.pqAlg, priv, data);
+      const sig = await this.deps.stsCrypto.signRawSignatureAsync(
+        { family: 'pq', alg: suite.pqAlg }, privateKey, data);
       log.debug("Leaving VcDataIntegrity.signBytes(). " + suite.pqAlg);
-      return Buffer.from(sig);
+      return sig;
     }
     const { stsCrypto } = this.deps;
     if (suite.kind === 'ed25519') {
@@ -1030,11 +1029,18 @@ class VcDataIntegrity {
 
   private async verifyBytes(suite: Suite, jwk: any, data: Buffer,
                             signature: Buffer): Promise<boolean> {
-    const { log, pqVerifyAsync } = this.deps;
+    const { log, stsCrypto: door } = this.deps;
     log.debug("Entering VcDataIntegrity.verifyBytes(). suite=" + suite.id);
+    // THE DATA INTEGRITY ACCEPT CHOKEPOINT (#1368), before any key operation.
+    const unaccepted = door.signaturePolicy.acceptCause('di', suite.id);
+    if (unaccepted) {
+      log.warn(errorCodes.tag(unaccepted.code) + unaccepted.message);
+      log.debug("Leaving VcDataIntegrity.verifyBytes(). Not accepted here.");
+      return false;
+    }
     if (suite.kind === 'pq') {
-      const ok = await pqVerifyAsync(suite.pqAlg,
-        Buffer.from(jwk.pub, 'base64url'), data, signature);
+      const ok = await this.deps.stsCrypto.verifyRawSignature(
+        { family: 'pq', alg: suite.pqAlg }, jwk, data, signature);
       log.debug("Leaving VcDataIntegrity.verifyBytes(). " + suite.pqAlg +
                 " " + ok);
       return !!ok;

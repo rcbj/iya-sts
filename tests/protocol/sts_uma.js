@@ -117,7 +117,10 @@ const PROTECTION = "urn:sts:uma-protection-api:uma_protection";
 const OWNER = "uma-owner";
 const PARTY = "uma-party";
 const STRANGER = "uma-stranger";
-const PASSWORD = "Uma-" + STAMP + "-9a!";
+// From nothing the realm is known by: "Uma-<stamp>" holds the realm id
+// "uma-<stamp>", which product's password policy refuses (password_policy.ts,
+// contextWords()).
+const PASSWORD = names.passwordFor();
 const RS = "uma-rs-" + STAMP;
 const RS2 = "uma-rs2-" + STAMP;
 const CLIENT = "uma-client-" + STAMP;
@@ -251,7 +254,7 @@ async function signInThrough(startUrl, who) {
   log.debug("Entering signInThrough(). " + who);
   const first = await fetch(startUrl, { redirect: "manual", headers: AGENT });
   const screenAt = first.headers.get("location") || "";
-  assert.ok(/\/authn\/login\?authn=/.test(screenAt), "the request should " +
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(screenAt), "the request should " +
     "reach the sign-in screen; it answered " + first.status + " " + screenAt +
     " " + String(await first.text()).slice(0, 300));
   const screenUrl = new URL(screenAt, base);
@@ -499,21 +502,28 @@ async function setUp() {
       "created " + who);
   }
   const apps = [
-    { id: RS, fields: { oauthGrantType: ["client_credentials",
-        "authorization_code"], oauthRedirectUri: [RS_REDIRECT],
+    { id: RS, protocols: ["oauth2"], fields: { oauthGrantType: [
+        "client_credentials", "authorization_code"],
+        oauthRedirectUri: [RS_REDIRECT],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } },
-    { id: RS2, fields: { oauthGrantType: ["client_credentials"],
+    { id: RS2, protocols: ["oauth2"], fields: { oauthGrantType: [
+        "client_credentials"],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } },
-    { id: CLIENT, fields: { oauthGrantType: [GRANT, "authorization_code"],
+    // idTokenFor asks this client for an ID token. Product mode refuses
+    // that issuance to an application declared only for oauth2: the
+    // issue-id-token family is oidc (STS-XACML-0084). Development does
+    // not apply the gate.
+    { id: CLIENT, protocols: ["oauth2", "oidc"], fields: {
+        oauthGrantType: [GRANT, "authorization_code"],
         oauthClaimsRedirectUri: [CLAIMS_REDIRECT],
         oauthRedirectUri: [CLIENT_REDIRECT],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } },
-    { id: CLIENT2, fields: { oauthGrantType: [GRANT],
+    { id: CLIENT2, protocols: ["oauth2"], fields: { oauthGrantType: [GRANT],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } }
   ];
   for (const one of apps) {
     await must("/applications/create", { identifier: one.id,
-      protocols: ["oauth2"],
+      protocols: one.protocols,
       fields: Object.assign({ oauthClientId: one.id }, one.fields) },
       "created " + one.id);
     SECRETS[one.id] = crypto.randomBytes(48).toString("base64url");
@@ -532,11 +542,13 @@ async function setUp() {
   // the resource server — sts_fga.js's arrangement.
   authzenCaller = await credentials.mint({
     subject: "CN=" + AUTHZEN_CALLER + ",OU=authzen,O=iya-sts tests" });
-  const posted = await credentials.trustAnchor(base,
-                                               authzenCaller.anchorPem);
+  // Recorded before it is posted (#1307): an add applied but answered late
+  // is still removed when the job finishes.
+  const posted = await credentials.trustRecorded(base,
+                                                 authzenCaller.anchorPem,
+                                                 addedAnchors);
   assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
     "Root CA this file built; it answered " + posted.status);
-  addedAnchors.push(authzenCaller.anchorPem);
   storedHere.push(await credentials.storeOnEntry(apiPair(), base, PREFIX,
     AUTHZEN_CALLER, authzenCaller.leaf.pem));
   await must("/groups/add-member",

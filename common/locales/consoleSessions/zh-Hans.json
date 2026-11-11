@@ -88,5 +88,6 @@
   "accounts.added": "添加的账户",
   "accounts.switched": "切换默认",
   "accounts.forgotten": "忘记的账户",
-  "accounts.expired": "过期的已记住账户"
+  "accounts.expired": "过期的已记住账户",
+  "endAll": "结束此信任域中的所有会话"
 }

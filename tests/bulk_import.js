@@ -704,7 +704,8 @@ function childEnv(dbUrl, kekFile, extra) {
     LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal', STS_MODE: 'development',
     STS_HOST: '127.0.0.1', STS_PERSISTENCE_MODE: 'postgres',
     STS_DATABASE_URL: dbUrl, STS_KEYS_SOURCE: 'persisted',
-    STS_KEYS_KEK_PROVIDER: 'file', STS_KEYS_KEK_FILE: kekFile,
+    STS_KEYS_KEK_PROVIDER: 'file',
+    STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true', STS_KEYS_KEK_FILE: kekFile,
     LDAP_PORT: '0', LDAPS_PORT: '0', LDAP_MAX_ENTRIES: '1000000',
     STS_RISK_BREACH_CHECK: 'off'
   }, extra || {});

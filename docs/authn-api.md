@@ -19,7 +19,7 @@ holds it may act on that sign-in, so it is a bearer value, like the
 
 | Operation | What it answers or does |
 |---|---|
-| `GET /authn-api/pending/{id}` | What the screen offers — the mechanisms the realm's authentication policy accepts, the passkey options, the demands of the request (two factors, a security key), the federation partners, the Kerberos and wallet doors — and `csrf`, the token every act on this sign-in carries. After a classical passkey was refused where a post-quantum one is required, `postQuantumRequired` carries the page's link (`register`) |
+| `GET /authn-api/pending/{id}` | What the screen offers — the mechanisms the realm's authentication policy accepts, the passkey options, the demands of the request (two factors, a security key), the federation partners, the Kerberos and wallet doors — and `csrf`, the token every act on this sign-in carries. After a classical passkey was refused where a post-quantum one is required, `postQuantumRequired` carries the page's link (`register`). `reauthentication` is `prompt_login` or `max_age` when a person who is already signed in was sent to sign in again for that reason, and empty otherwise |
 | `POST /authn-api/pending/{id}/password` | Sign in with a username and password (or `webauthn_only` for a passkey instead) |
 | `POST /authn-api/pending/{id}/passkey/options`, `…/passkey` | A passkey with no username: the challenge, then the ceremony's result |
 | `POST /authn-api/pending/{id}/email` | An emailed code or link as the first factor, where the policy allows it |
@@ -103,3 +103,14 @@ The answer names the next step; the page follows it.
 Refusals never carry an error code; the service records the code in its
 audit log. Sign-in attempts are rate limited exactly as they were, and a
 rate-limited attempt answers `429`.
+
+## What a request may name
+
+Each operation takes the query parameters its entry in the OpenAPI document
+lists, and the headers it declares (`X-CSRF-Token` on a POST, and
+`X-Requested-With`, which an Android WebView adds to a sign-in opened in one)
+or that a browser, proxy, CDN or tracing system adds. A query parameter it
+does not list, a value that does not fit a listed type, and any other custom
+header are each refused with a 400, naming the parameter or header and never
+its value; an empty value counts as absent. An act's binding (its JSON body,
+its `Origin` and its CSRF token) is checked after this.

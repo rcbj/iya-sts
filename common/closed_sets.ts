@@ -96,6 +96,19 @@ interface QueryParameter {
   schema?: any;
 }
 
+// `checkQueryDeclared()`'s answer: `problem` is `unknown` (a name the
+// operation does not declare) or `type` (a value its type does not hold).
+interface QueryShapeCheck {
+  ok: boolean;
+  field?: string;
+  problem?: string;
+  sentence?: string;
+}
+
+// How much of a parameter's name a refusal repeats: enough to recognise, not
+// enough to carry anything.
+const MAX_NAME_SAID = 128;
+
 // How deep `collect()` follows a schema. The request schemas here nest two or
 // three levels; the bound is for a `$ref` cycle, which a components section
 // can hold legally and which would otherwise recurse for ever.
@@ -438,6 +451,151 @@ class ClosedSets {
       }
     }
     log.debug("Leaving ClosedSets.checkQuery(). Accepted.");
+    return { ok: true };
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT A QUERY STRING MAY NAME AND HOLD (#1476, rcbj 2026-11-09). The enums
+  // above were the only thing a query was ever held to, so a parameter nobody
+  // declared answered 200 with the question ignored, and `page=abc` answered
+  // 200 with page one. An operation's `parameters` are the whole of what it
+  // takes, as they are for a request body's schema.
+  //
+  // THE VALUE IS READ AS THE HANDLERS READ IT. `parseInt()`-shaped integers
+  // (`page=2`, `-1`, `+2`), an empty value as absent (an untouched form
+  // field), and a repeated name as each of its values, the rule
+  // `checkQuery()` has always followed. A number's RANGE is not this door's
+  // business: the document says a page past the end is clamped, not refused.
+  // An object (`?page[a]=1`, qs's nesting) fits nothing but an object.
+  // -------------------------------------------------------------------------
+  /**
+   * A name the CALLER sent, as a refusal sentence says it: quoted, and
+   * percent-encoded where it carries a character markup or a string is made
+   * of (2026-11-10). A sentence that repeats `"><script>` verbatim is
+   * harmless in JSON or plain text with `nosniff`, and still sets off every
+   * scanner that looks for its probe in the answer (Qualys QID 150084, 29
+   * times in one scan); `%22%3E%3Cscript%3E` names the same thing and
+   * reflects nothing. An ordinary name is left exactly as it was.
+   *
+   * @param name - what the caller sent
+   * @returns the quoted name, at most MAX_NAME_SAID characters before
+   *   encoding
+   */
+  static saidName(name: unknown): string {
+    log.debug("Entering ClosedSets.saidName().");
+    const text = String(name === null || name === undefined ? ''
+                                                            : name)
+      .slice(0, MAX_NAME_SAID);
+    // Encoded only when it holds a character markup or a string is made
+    // of: a quote, an angle bracket, a backtick, a backslash, a control.
+    // A URL with a query, the usual SAML entity id, is left as it was.
+    const plain = !/["'<>`\\\u0000-\u001f\u007f]/.test(text);
+    log.debug("Leaving ClosedSets.saidName(). " + (plain ? 'plain'
+                                                         : 'encoded'));
+    return JSON.stringify(plain ? text : encodeURIComponent(text));
+  }
+
+  /**
+   * Whether one query value fits a parameter's declared type.
+   *
+   * @param schema - the parameter's schema
+   * @param raw - the value as express parsed it
+   * @returns true when it fits
+   */
+  static fitsQueryType(schema: any, raw: any): boolean {
+    log.debug("Entering ClosedSets.fitsQueryType().");
+    const type = schema && schema.type;
+    if (raw === undefined || raw === '') {
+      log.debug("Leaving ClosedSets.fitsQueryType(). Absent.");
+      return true;
+    }
+    // zod's `opt()` and a union document as `anyOf` (`/account-api` and
+    // `/authn-api`, #1483): a value fits when it fits a branch, so a nested
+    // value is refused here while the value of a branch is left to its zod
+    // schema, which runs next.
+    if (!type && schema && Array.isArray(schema.anyOf)) {
+      const anyBranch = schema.anyOf.some(function (branch: any) {
+        return ClosedSets.fitsQueryType(branch, raw);
+      });
+      log.debug("Leaving ClosedSets.fitsQueryType(). A branch: " + anyBranch);
+      return anyBranch;
+    }
+    if (!type || type === 'object') {
+      log.debug("Leaving ClosedSets.fitsQueryType(). Not a scalar type.");
+      return true;
+    }
+    if (Array.isArray(raw)) {
+      const each = raw.every(function (one) {
+        return ClosedSets.fitsQueryType(schema, one);
+      });
+      log.debug("Leaving ClosedSets.fitsQueryType(). Each of a repeat.");
+      return each;
+    }
+    if (typeof raw !== 'string') {
+      log.debug("Leaving ClosedSets.fitsQueryType(). A nested value.");
+      return false;
+    }
+    let fits = true;
+    if (type === 'array') {
+      const items = (schema.items && schema.items.type) ? schema.items : null;
+      fits = !items || raw.split(',').every(function (one) {
+        return ClosedSets.fitsQueryType(items, one.trim());
+      });
+    } else if (type === 'integer') {
+      fits = /^[+-]?\d+$/.test(raw.trim());
+    } else if (type === 'number') {
+      fits = raw.trim() !== '' && isFinite(Number(raw));
+    } else if (type === 'boolean') {
+      fits = /^(true|false|1|0|yes|no|on|off)$/i.test(raw.trim());
+    }
+    log.debug("Leaving ClosedSets.fitsQueryType(). " + fits);
+    return fits;
+  }
+
+  /**
+   * Checks a query string against everything an operation declares `in:
+   * query`: no name it does not declare, and no value that does not fit its
+   * declared type. The sentence names the parameter and never its value.
+   *
+   * @param parameters - the operation's parameters
+   * @param query - the request's parsed query
+   * @returns `{ ok: true }`, or `{ ok: false, field, problem, sentence }`
+   *   where `problem` is `unknown` or `type`
+   */
+  static checkQueryDeclared(parameters: QueryParameter[] | undefined,
+                            query: any): QueryShapeCheck {
+    log.debug("Entering ClosedSets.checkQueryDeclared().");
+    const declared: Record<string, QueryParameter> = Object.create(null);
+    (parameters || []).forEach(function (p) {
+      if (p && p.in === 'query' && p.name) {
+        declared[p.name] = p;
+      }
+    });
+    const names = Object.keys(query || {});
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      const said = ClosedSets.saidName(name);
+      const p = declared[name];
+      if (!p) {
+        log.debug("Leaving ClosedSets.checkQueryDeclared(). Unknown name.");
+        return { ok: false, field: name, problem: 'unknown',
+                 sentence: 'The query parameter ' + said + ' is not one ' +
+                           'this operation takes. Its parameters in the ' +
+                           'OpenAPI document list the ones it does.' };
+      }
+      if (p.schema && p.schema['x-refused-by-handler'] === true) {
+        continue;
+      }
+      if (!ClosedSets.fitsQueryType(p.schema, query[name])) {
+        const type = String((p.schema && p.schema.type) || 'declared');
+        log.debug("Leaving ClosedSets.checkQueryDeclared(). Wrong type.");
+        return { ok: false, field: name, problem: 'type',
+                 sentence: 'The query parameter ' + said + ' must be ' +
+                           (type === 'integer' ? 'an integer' :
+                            'a value of type ' + type) + '.' };
+      }
+    }
+    log.debug("Leaving ClosedSets.checkQueryDeclared(). Accepted.");
     return { ok: true };
   }
 }

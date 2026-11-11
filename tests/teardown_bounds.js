@@ -406,7 +406,8 @@ function checkTheJobTimeoutIsAboveOurs(t) {
 
   // And it must not be so large that a genuinely wedged runner is held for a
   // shift. The workflow's own header makes this argument about six hours.
-  t.check(jobMinutes <= 180,
+  // 240 since 2026-11-10, when single-node's own bound went to 150 minutes.
+  t.check(jobMinutes <= 240,
           'and it is still an outer bound rather than a licence (' +
             jobMinutes + 'm)',
           'without a number here a stuck job holds a runner for six hours, ' +
@@ -424,30 +425,59 @@ function checkTheJobTimeoutIsAboveOurs(t) {
           'the `tests` job empties STS_TEST_CONFORMANCE_MODES, so without a ' +
           '`openid-conformance` job CI would run none of the OpenID ' +
           'Foundation plans');
+  // SINCE #930 THE PLANS ARE TWO JOBS, split by lane: `openid-conformance`
+  // runs every lane but the OpenID Provider job's and
+  // `openid-conformance-oidcc` that lane alone, so the browser jobs could
+  // join without either outgrowing six hours. Each is held to the same
+  // arithmetic, and together they must cover every lane: one names
+  // `--not-lanes=conformance`, the other `--lanes=conformance`.
+  const oidccAt = workflow.indexOf('\n  openid-conformance-oidcc:');
   if (conformanceAt !== -1) {
-    const conformanceJob = workflow.slice(
-      conformanceAt, workflow.indexOf('\n  cluster:', conformanceAt));
-    const conformanceMinutes = Number(
-      (/timeout-minutes:\s*(\d+)/.exec(conformanceJob) || [])[1]);
-    // The SAML peers' bound too, unless the job empties their modes.
-    const conformancePeers =
-      /STS_TEST_SAML_PEERS_MODES:\s*""/.test(conformanceJob) ? 0 : peersBound;
-    const conformanceWorst = buildAllowance + sharedBound +
-      conformanceBound + conformancePeers + teardownBound * 2;
-    t.check(/--modes=memory\b/.test(conformanceJob) &&
-            /--conformance-only\b/.test(conformanceJob),
-            'the `openid-conformance` job runs the memory mode\'s ' +
-            'conformance jobs, by the manifest flag',
-            'the launcher runs the suite only in the modes ' +
-            'STS_TEST_CONFORMANCE_MODES names, `memory` by default');
-    t.check(conformanceMinutes * 60 > conformanceWorst &&
-            conformanceMinutes <= 360,
-            'the `openid-conformance` job timeout (' + conformanceMinutes +
-              'm) is above the image build, its mode\'s bound and two ' +
-              'teardowns (' +
-              Math.ceil(conformanceWorst / 60) + 'm) and within six hours',
-            'the launcher\'s bound must be the one that fires, and GitHub ' +
-            'cancels any job at six hours whatever it says');
+    const jobsOf = [
+      { name: 'openid-conformance', lanes: /--not-lanes=conformance\b/,
+        text: workflow.slice(conformanceAt, oidccAt !== -1 ? oidccAt
+          : workflow.indexOf('\n  cluster:', conformanceAt)) },
+      { name: 'openid-conformance-oidcc', lanes: /--lanes=conformance\b/,
+        text: oidccAt !== -1
+          ? workflow.slice(oidccAt, workflow.indexOf('\n  cluster:', oidccAt))
+          : '' }];
+    t.check(oidccAt !== -1,
+            'the workflow has an `openid-conformance-oidcc` job',
+            'without it the OpenID Provider lane, which ' +
+            '`openid-conformance` leaves out by --not-lanes, runs nowhere');
+    jobsOf.forEach(function (job) {
+      if (!job.text) {
+        return;
+      }
+      const conformanceJob = job.text;
+      const conformanceMinutes = Number(
+        (/timeout-minutes:\s*(\d+)/.exec(conformanceJob) || [])[1]);
+      // The SAML peers' bound too, unless the job empties their modes.
+      const conformancePeers =
+        /STS_TEST_SAML_PEERS_MODES:\s*""/.test(conformanceJob) ? 0
+                                                              : peersBound;
+      const conformanceWorst = buildAllowance + sharedBound +
+        conformanceBound + conformancePeers + teardownBound * 2;
+      t.check(/--modes=memory\b/.test(conformanceJob) &&
+              /--conformance-only\b/.test(conformanceJob) &&
+              job.lanes.test(conformanceJob) &&
+              !/--no-browser\b/.test(conformanceJob),
+              'the `' + job.name + '` job runs the memory mode\'s ' +
+              'conformance jobs of its lanes, by the manifest flag, with ' +
+              'the browser jobs',
+              'the launcher runs the suite only in the modes ' +
+              'STS_TEST_CONFORMANCE_MODES names, `memory` by default; the ' +
+              'two jobs split the lanes; and rcbj asked for the ' +
+              'Chrome-driven conformance jobs in CI (#930)');
+      t.check(conformanceMinutes * 60 > conformanceWorst &&
+              conformanceMinutes <= 360,
+              'the `' + job.name + '` job timeout (' + conformanceMinutes +
+                'm) is above the image build, its mode\'s bound and two ' +
+                'teardowns (' +
+                Math.ceil(conformanceWorst / 60) + 'm) and within six hours',
+              'the launcher\'s bound must be the one that fires, and ' +
+              'GitHub cancels any job at six hours whatever it says');
+    });
   }
 
   // THE `cluster` JOB (2026-09-15) runs the same launcher for ONE mode, so the

@@ -24,7 +24,7 @@
 //   POST /oauth2/par         RFC 9126 pushed authorization requests
 //   *    /oauth2/register    RFC 7591 registration + RFC 7592 management
 //   GET  /oauth2/logout      end_session_endpoint (RP-Initiated Logout)
-//   GET  /oauth2/check_session  the OP iframe, and its script beside it
+//   GET  /oauth2/check_session  the OP iframe, its script inline (#1297)
 //                            (Session Management, #121; off by default)
 //   GET  /oauth2/rfc9700     NON-SPEC: whether the RFC 9700 Security BCP mode
 //                            is on, and every requirement it does and does not
@@ -103,8 +103,6 @@
 import realms = require('../common/realms');
 // The listeners `oauth-oidc` is on, for RFC 8705's aliases (#472). A LEAF.
 import listenerMap = require('../common/listener_map');
-import forge = require('node-forge');
-import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 // WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
@@ -129,6 +127,7 @@ import httpSignatures = require('./http_signatures');
 // WHICH `kid` A JWK SET NAMES EACH SIGNING KEY UNDER (2026-09-13). A LEAF over
 // `config`, `crypto` and `error_codes`; `sendJwks()` is the one reader here.
 import joseKid = require('../common/jose_kid');
+import certificateHeader = require('../common/jose_certificate_header');
 // RFC 8705 — certificate-bound access tokens, the other mechanism RFC 9700
 // section 2.2 names. A library like dpop.ts, and read here for one thing: the
 // confirmation claim that goes on a token issued over a connection that carried
@@ -157,6 +156,11 @@ import samlAssertionGrant = require('./saml_assertion_grant');
 // #114: RFC 7523 / RFC 7522 / SAML 1.1 assertions from declared issuers as
 // RFC 8693 subject and actor tokens. A library over the two above.
 import exchangeAssertions = require('./exchange_assertions');
+// #658: a Kerberos ticket as a subject, actor or issued token, named by the
+// Kerberos Token Profile 1.1's URIs. A library that requires only `common/`
+// modules at load and every Kerberos module lazily, so this module (9) does
+// not drag the KDC's routes (15) forward.
+import krb5Tokens = require('../kerberos/krb5_tokens');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config` (and
 // bunyan).
 import mode = require('../common/mode');
@@ -427,6 +431,9 @@ import IssuerNames = require('../common/issuer_names');
 import i18n = require('../common/i18n');
 // The language of the pages drawn here for a browser (#539). A library.
 import PageLocale = require('../common/page_locale');
+// The one error page (#1326). A library: it requires `audit`, `realms` and
+// the page's language, none of which requires this module.
+import ErrorPage = require('../common/error_page');
 // A library: what an RFC 8707 resource may name in product (#505). It reaches
 // the registry, the access-token profile and the management API lazily, at
 // request time, so this require closes no cycle.
@@ -450,8 +457,6 @@ type Res = any;
 // as it did.
 interface OAuth2ServerDeps {
   realms: typeof realms;
-  forge: typeof forge;
-  jwt: typeof jwt;
   stsCrypto: typeof stsCrypto;
   app: typeof app;
   // `common/helpers.js`, member by member, as this module destructured it.
@@ -920,6 +925,12 @@ const EXCHANGE_TOKEN_TYPES = {
   'urn:ietf:params:oauth:token-type:saml2': 'saml2',
   'urn:ietf:params:oauth:token-type:saml1': 'saml1'
 };
+// #658: the Kerberos Token Profile 1.1's six token types (rcbj's decision D1
+// on #658: one vocabulary with WS-Trust), each a Kerberos ticket in an
+// AP-REQ, base64url — see `kerberos/krb5_tokens.ts`.
+Object.keys(krb5Tokens.VALUE_TYPES).forEach(function (one: string): void {
+  EXCHANGE_TOKEN_TYPES[krb5Tokens.VALUE_TYPES[one]] = 'kerberos';
+});
 const DEVICE_SECRET_TYPE = 'urn:openid:params:token-type:device-secret';
 // The `client_id` an access token carries when a wallet redeemed an OID4VCI
 // pre-authorized code without naming a client (section 6.1's anonymous
@@ -1692,8 +1703,6 @@ class OAuth2Server {
     helpers.log.debug("Leaving OAuth2Server.defaultDeps().");
     return {
       realms: realms,
-      forge: forge,
-      jwt: jwt,
       stsCrypto: stsCrypto,
       app: app,
       log: helpers.log,
@@ -2085,7 +2094,8 @@ class OAuth2Server {
       authorization_signing_alg_values_supported: jarm.SIGNING_ALGS,
       authorization_encryption_alg_values_supported:
         helpers.offeredJweAlgs(jarm.ENCRYPTION_ALGS),
-      authorization_encryption_enc_values_supported: jarm.ENCRYPTION_ENCS,
+      authorization_encryption_enc_values_supported:
+        applications.permittedEncs(jarm.ENCRYPTION_ENCS),
       // Only what the token endpoint below actually implements — the metadata
       // should not promise a grant this server would refuse. The device_code
       // grant (#150) is added below only where its endpoint is on.
@@ -2158,7 +2168,7 @@ class OAuth2Server {
       assertion_encryption_alg_values_supported:
         helpers.decryptableJweAlgs(stsCrypto.JWE_DECRYPT_ALGS),
       assertion_encryption_enc_values_supported:
-        Object.keys(stsCrypto.JWE_ENCS),
+        applications.permittedEncs(Object.keys(stsCrypto.JWE_ENCS)),
       // RFC 9396. OID4VCI's openid_credential — its other way of saying which
       // credential is wanted — and every type an application in this realm
       // declares as a resource server (`oauthAuthorizationDetailsType`).
@@ -2235,7 +2245,7 @@ class OAuth2Server {
       introspection_encryption_alg_values_supported:
         helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS),
       introspection_encryption_enc_values_supported:
-        introspectionJwt.ENCRYPTION_ENCS,
+        applications.permittedEncs(introspectionJwt.ENCRYPTION_ENCS),
       // RFC 9101 AND OPENID CONNECT DISCOVERY (2026-09-13). A request object by
       // value and by reference; a request_uri fetched only when the client
       // registered it, which is exactly what require_request_uri_registration
@@ -2256,7 +2266,7 @@ class OAuth2Server {
       request_object_encryption_alg_values_supported:
         helpers.decryptableJweAlgs(applications.REQUEST_OBJECT_ENCRYPTION_ALGS),
       request_object_encryption_enc_values_supported:
-        applications.REQUEST_OBJECT_ENCRYPTION_ENCS,
+        applications.permittedEncs(applications.REQUEST_OBJECT_ENCRYPTION_ENCS),
       // RFC 9126 SECTION 5 (2026-09-13). The endpoint, and the global policy.
       // `pushed_authorization_request_endpoint` is removed below where
       // `oauth2.pushedAuthorizationRequests` is off, because the endpoint then
@@ -2387,7 +2397,7 @@ class OAuth2Server {
     // algorithm in any `*_alg_values_supported` list — the same narrowing
     // the JWKS and the verifiers apply. Before the profile, as the two modes
     // above are, for the reason given below.
-    helpers.withoutPqSigningAlgs(metadata);
+    helpers.narrowSigningAlgs(metadata);
     // The PROFILE, last, so it can override anything above it — including what
     // RFC 9700 mode just narrowed. That order is deliberate and it is the one a
     // reader of the form expects: a profile is somebody saying "publish this",
@@ -2456,7 +2466,7 @@ class OAuth2Server {
    * @returns the algorithm
    */
   accessTokenAlg(req?: Req): string {
-    const { log, config, fapi, authorizationServers } = this.deps;
+    const { log, config, fapi, authorizationServers, stsCrypto } = this.deps;
     log.debug("Entering OAuth2Server.accessTokenAlg().");
     const profileId = req ? this.profileOf(req) : '';
     const own = profileId && profileId !== authorizationServers.DEFAULT_ID
@@ -2465,7 +2475,11 @@ class OAuth2Server {
     const set = String(config.value('oauth2.accessTokenSigningAlg') ||
                        'default');
     let alg = named || (set !== 'default' ? set : '') ||
-              fapi.defaultSigningAlg() || 'RS256';
+              fapi.defaultSigningAlg() ||
+              stsCrypto.signaturePolicy.defaultJoseAlg();
+    // Replaced for FAPI's reason just below: the server's own signature, which
+    // nothing a client did asked for (#1348, #1368). RS256 is always usable.
+    alg = helpers.usableSigningAlg(alg);
     if (!fapi.signingAlgAllowed(alg)) {
       log.debug("OAuth2Server.accessTokenAlg(): " + alg + " is not allowed " +
                 "under the FAPI profile; " + fapi.defaultSigningAlg() +
@@ -3136,7 +3150,8 @@ class OAuth2Server {
       // The ML-KEM and HPKE algorithms only where `keys.offerKemEncryption`
       // is on (helpers.offeredJweAlgs(), 2026-09-28), for all four lists.
       userinfo_encryption_alg_values_supported: helpers.offeredJweAlgs(),
-      userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
+      userinfo_encryption_enc_values_supported:
+        applications.permittedEncs(Object.keys(stsCrypto.JWE_ENCS)),
       //
       // `public`: the `sub` userFor() gives — the person's urn:uuid:<entryUUID>
       // since 2026-09-14 — the same value for every client that asks. And
@@ -3151,7 +3166,8 @@ class OAuth2Server {
       // argues the rest. A Logout Token follows the same registration.
       id_token_encryption_alg_values_supported:
         helpers.offeredJweAlgs(idTokenEncryption.ALGS),
-      id_token_encryption_enc_values_supported: idTokenEncryption.ENCS,
+      id_token_encryption_enc_values_supported:
+        applications.permittedEncs(idTokenEncryption.ENCS),
       // OIDC Core section 3.1.3.7: a client may register
       // `id_token_signed_response_alg`. This service holds a key for every
       // asymmetric algorithm in the table and can use a client's own secret for
@@ -3338,7 +3354,7 @@ class OAuth2Server {
     // own lists, and the OpenID Connect members merged since — the ID Token,
     // UserInfo and request object lists among them — are narrowed here,
     // before the profile, as there.
-    helpers.withoutPqSigningAlgs(metadata);
+    helpers.narrowSigningAlgs(metadata);
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above
@@ -3422,7 +3438,9 @@ class OAuth2Server {
                 'could not publish the JWKS: ' + e.message);
       errorCodes.mark(res, 'STS-OAUTH-0184');
       res.status(500).type('application/json')
-        .send(JSON.stringify({ error: e.message }));
+        .send(JSON.stringify({ error:
+          require('../common/mode').hidesFailureDetail()
+            ? 'server_error' : e.message }));
       log.debug("Leaving the JWKS endpoint. The keys could not be made.");
     });
     log.debug("Leaving the JWKS endpoint. Answering.");
@@ -3430,19 +3448,12 @@ class OAuth2Server {
 
   private sendJwks(req: Req, res: Res, signingKeys: Json[]): void {
     // Not `b64u` from the deps: the body declares its own, for hex.
-    const { forge, log, STS, joseKid, errorCodes,
+    const { stsCrypto, log, STS, joseKid, errorCodes,
             requestObjectKeysFor } = this.deps;
     log.debug("Entering OAuth2Server.sendJwks().");
     try {
-      const pub = forge.pki.certificateFromPem(STS.certPem).publicKey;
+      const pub = stsCrypto.rsaPublicJwkOf(STS.certPem);
 
-      const b64u = function (hex) {
-        log.debug("Entering b64u().");
-        log.debug("Leaving b64u().");
-        return Buffer.from(hex.length % 2 ? '0' + hex : hex, 'hex')
-                     .toString('base64')
-          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      };
       res.status(200)
          .type('application/json')
          .set('Cache-Control', 'no-store')
@@ -3493,9 +3504,24 @@ class OAuth2Server {
         // ML-DSA partner all leave together — filtering the finished list
         // rather than each source is what keeps a source added later from
         // being missed. The ML-KEM decryption keys stay (`use: "enc"`).
-        keys: helpers.withoutPqSigningKeys(joseKid.withThumbprintUriEntries([{
+        //
+        // **AND WITH `keys.eddsaSigning` OFF — THE DEFAULT SINCE #1292 — NO
+        // kty OKP SIGNING KEY**, by the same filter of the finished list:
+        // the OpenID conformance suite's nimbus throws on an Ed25519 or Ed448
+        // key in a rotated JWKS rather than skipping it, and OpenID Connect
+        // certification runs that suite.
+        //
+        // **AND WITH `keys.signingAlgorithms` NAMING A LIST (#1348) NO SIGNING
+        // KEY FOR AN ALGORITHM IT LEAVES OUT**, by the same filter.
+        //
+        // **AND WITH `keys.jwksCertificateUrl` ON (#1351) A KEY NAMES ITS CHAIN
+        // BY `x5u`**, by a last pass over the same finished list.
+        keys: certificateHeader.withCertificateUrls(
+          helpers.withoutUnlistedSigningKeys(
+          helpers.withoutEddsaSigningKeys(helpers.withoutPqSigningKeys(
+          joseKid.withThumbprintUriEntries([{
           kty: 'RSA', use: 'sig', kid: STS.kid,
-          n: b64u(pub.n.toString(16)), e: b64u(pub.e.toString(16)),
+          n: pub.n, e: pub.e,
           // **THE CHAIN AND NOT ONLY THE LEAF, SINCE 2026-09-11.** RFC 7517
           // section 4.7 defines `x5c` as the certificate CHAIN, leaf first —
           // and this service's signing key stopped being self-signed on that
@@ -3566,7 +3592,7 @@ class OAuth2Server {
         // one without the key.
           .concat(helpers.kemEncryptionKeysFor().map(function (one) {
             return stsCrypto.publicJweKemJwk(one.publicJwk);
-          })))
+          }))))))
       }, null, 2));
       log.debug("Leaving OAuth2Server.sendJwks().");
     } catch (e) {
@@ -3575,7 +3601,9 @@ class OAuth2Server {
       errorCodes.mark(res, 'STS-OAUTH-0184');
       res.status(500)
          .type('application/json')
-         .send(JSON.stringify({ error: e.message }));
+         .send(JSON.stringify({ error:
+           require('../common/mode').hidesFailureDetail()
+             ? 'server_error' : e.message }));
       log.debug("Leaving OAuth2Server.sendJwks(). It failed.");
     }
     log.debug("Leaving OAuth2Server.sendJwks().");
@@ -3648,6 +3676,18 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.idTokenTtl().");
     return applications.settingFor(clientId || '', 'oauth2.idTokenTtlS',
                                    config);
+  }
+
+  // A refresh token's `exp`: its own lifetime, but never past the chain's
+  // absolute limit (ASVS 5.0.0 10.4.8). Past that the token has expired like any
+  // other, so the person signs in again.
+  private refreshExpiry(clientId: Json, iat: number, chainIat: number): number {
+    const { log, config } = this.deps;
+    log.debug("Entering OAuth2Server.refreshExpiry().");
+    const own = iat + Number(this.refreshTokenTtl(clientId));
+    const limit = Number(config.value('oauth2.refreshTokenMaxChainS'));
+    log.debug("Leaving OAuth2Server.refreshExpiry().");
+    return limit > 0 ? Math.min(own, chainIat + limit) : own;
   }
 
   private refreshTokenTtl(clientId: Json): Json {
@@ -4531,7 +4571,11 @@ class OAuth2Server {
       // being renewed.
       resources: (opts.resources && opts.resources.length) ? opts.resources :
                   undefined,
-      iat: iat, nbf: iat, exp: iat + self.refreshTokenTtl(opts.client_id),
+      iat: iat, nbf: iat,
+      // ASVS 5.0.0 10.4.8: when this chain of renewals began, carried from each
+      // token to the next so renewing cannot outrun the absolute limit.
+      chain_iat: opts.chainIat || iat,
+      exp: self.refreshExpiry(opts.client_id, iat, opts.chainIat || iat),
       // RFC 9449 section 5: a refresh token issued to a PUBLIC client alongside
       // a DPoP-bound access token is itself bound to the same key — and one
       // issued to a CONFIDENTIAL client is NOT: "they are already
@@ -4837,9 +4881,11 @@ class OAuth2Server {
     // setting only decides whether a missing one is ASKED for.
     let consented = false;
     if (!prompted) {
+      // `recorded`: whether it is ON FILE, which a public client's
+      // ask-every-time rule (`consent.alwaysAsks()`) does not change.
       const asked = consent.outstanding({
         username: (user || {}).username, clientId: query.client_id,
-        scope: 'offline_access', all: false });
+        scope: 'offline_access', all: false, recorded: true });
       consented = asked.outstanding.length === 0;
     }
     if (!prompted && !consented) {
@@ -5101,12 +5147,30 @@ class OAuth2Server {
     // authenticated in — the one definition of a tenant here, which Provider
     // Commands (#151) shares. `aud_sub`: the account id this client knows
     // the person by, where an administrator recorded one.
+    //
+    // **`session_expiry` AND `tenant` ONLY WHEN ASKED FOR, SINCE #1292
+    // (2026-11-03).** Enterprise Extensions defines them as claims an ID
+    // Token MAY carry and gives a client no scope that asks for them, so
+    // the way to ask is OIDC Core 5.5's claims request: naming either in
+    // its `id_token` member is what puts it there. They were in EVERY ID
+    // Token until then (rcbj's answer on #148), which the OpenID
+    // conformance suite reports as claims nobody requested
+    // (`EnsureIdTokenDoesNotContainNonRequestedClaims`), and rcbj's
+    // instruction for certification was the default that passes.
+    // `oauth2.enterpriseClaimsAlways` puts both back in every ID Token, for
+    // a relying party built against the old behaviour.
+    const enterpriseAsked = self.requestedClaimNames(opts.claims, 'id_token');
+    const enterpriseAlways = !!config.value('oauth2.enterpriseClaimsAlways');
     const held = opts.session_id ?
       this.deps.authn.sessionById(String(opts.session_id)) : null;
-    if (held && Number(held.expires) > 0) {
+    if (held && Number(held.expires) > 0 &&
+        (enterpriseAlways ||
+         enterpriseAsked.indexOf('session_expiry') >= 0)) {
       payload.session_expiry = Math.floor(Number(held.expires) / 1000);
     }
-    payload.tenant = String(realms.current().id);
+    if (enterpriseAlways || enterpriseAsked.indexOf('tenant') >= 0) {
+      payload.tenant = String(realms.current().id);
+    }
     // OPENID CONNECT KEY BINDING SECTION 4 (#150): with `bound_key` granted
     // and a DPoP key proved, the ID Token names that key in `cnf.jwk`, and
     // its JOSE header says so (`typ: dpop+id_token`, below).
@@ -5381,8 +5445,13 @@ class OAuth2Server {
     // sign-in left at HIGH is refused here as the session itself would be.
     // Without one — client credentials, a grant with nobody behind it — the
     // gate finds the person's standing, or nothing.
-    const held = opts.session_id ? authn.sessionById(String(opts.session_id))
-                                 : null;
+    // A pre-authorized code names the session its offer was made on
+    // (#666) in `decided_on_session_id` rather than `session_id`: its
+    // tokens are judged on that session, and are not made the session's
+    // own (no `sid`, not ended with it) by this.
+    const sessionId = String(opts.session_id || opts.decided_on_session_id ||
+                             '');
+    const held = sessionId ? authn.sessionById(sessionId) : null;
     for (let i = 0; i < kinds.length; i += 1) {
       const answer = gate.check(Object.assign({
         application: String(opts.client_id || ''),
@@ -5897,6 +5966,7 @@ class OAuth2Server {
         Object.assign({}, issuing, {
           access_jti: self.jtiOf(access),
           access_exp: this.deps.nowSec() + Number(body.expires_in || 0),
+          chainIat: opts.chainIat,
           scope: hasGrantScope ? String(opts.grantScope || '') :
                  (opts.scope || ''),
           resources: hasGrantResources ? opts.grantResources :
@@ -6550,6 +6620,19 @@ class OAuth2Server {
                        verified: boolean): Json {
     helpers.log.debug("Entering OAuth2Server.consumedInput().");
     let out: Json;
+    if (assertion && assertion.format === 'kerberos') {
+      // #658: a Kerberos ticket, accepted by the acceptor in every mode.
+      out = { kind: which + ' (Kerberos AP-REQ)', identifier: identifier,
+              note: 'a Kerberos ticket for this authorization server\'s own ' +
+                    'SPN, accepted under its key in every mode' +
+                    (assertion.shape === 's4u2proxy'
+                      ? ', obtained by S4U2Proxy (its PAC\'s ' +
+                        'S4U_DELEGATION_INFO names the exchanging client last)'
+                      : assertion.shape === 'forwarded'
+                        ? ', bought with a forwarded TGT' : '') };
+      helpers.log.debug("Leaving OAuth2Server.consumedInput(). Kerberos.");
+      return out;
+    }
     if (assertion) {
       const label = assertion.format === 'jwt' ? 'RFC 7523 JWT assertion'
         : (assertion.format === 'saml11' ? 'SAML 1.1 assertion'
@@ -7899,6 +7982,24 @@ class OAuth2Server {
                   'takes ' + supported + ', or ' + DEVICE_SECRET_TYPE +
                   ' for Native SSO.' };
     }
+    // #658: a Kerberos subject or actor token is accepted only while
+    // `oauth2.tokenExchangeKerberosInput` is on (on by default: the acceptor
+    // checks it in both modes), and a Kerberos token is issued only while
+    // `oauth2.tokenExchangeKerberosOutput` is (off by default, rcbj's D6).
+    if (!problem && (krb5Tokens.isType(subjectType) ||
+                     krb5Tokens.isType(actorType)) &&
+        !krb5Tokens.settingOn('oauth2.tokenExchangeKerberosInput')) {
+      problem = { code: 'STS-OAUTH-0987', description: 'Kerberos token ' +
+                  'types are not exchanged here: ' +
+                  'oauth2.tokenExchangeKerberosInput is off.' };
+    }
+    if (!problem &&
+        krb5Tokens.isType(String(body.requested_token_type || '')) &&
+        !krb5Tokens.settingOn('oauth2.tokenExchangeKerberosOutput')) {
+      problem = { code: 'STS-OAUTH-0994', description: 'A Kerberos token ' +
+                  'is not issued here: oauth2.tokenExchangeKerberosOutput ' +
+                  'is off.' };
+    }
     log.debug("Leaving OAuth2Server.exchangeTypeProblem(). " +
               (problem ? problem.code : 'None.'));
     return problem;
@@ -8399,6 +8500,366 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.clientCredentialsAudience(). " +
               (audience.join(', ') || '(none)') + ".");
     return audience;
+  }
+
+  /**
+   * Says whether an application is the client a client_id names: its
+   * identifier, or a client_id it registers (#658).
+   *
+   * @param application - the application entry, or null
+   * @param clientId - the client_id
+   * @returns true when it is that client
+   */
+  static registersClient(application: Json, clientId: Json): boolean {
+    helpers.log.debug("Entering OAuth2Server.registersClient().");
+    const id = String(clientId || '');
+    const registered = application && application.fields
+      ? [].concat(application.fields.oauthClientId || []).map(String) : [];
+    const out = !!application && !!id &&
+      (String(application.identifier) === id || registered.indexOf(id) >= 0);
+    helpers.log.debug("Leaving OAuth2Server.registersClient(). " + out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // KERBEROS TOKENS IN THE TOKEN EXCHANGE (#658, 2026-11-02).
+  //
+  // A `subject_token` / `actor_token` typed by one of the Kerberos Token
+  // Profile 1.1's six URIs is an AP-REQ (base64url) for THIS authorization
+  // server's own SPN, accepted by `krb5_service.js`'s acceptor in every mode
+  // (`kerberos/krb5_tokens.ts`). The acceptor's rule — a ticket for one
+  // service proves nothing to another — is what makes a DELEGATED subject
+  // token one obtained for this server by Kerberos delegation:
+  //
+  //   * by S4U2Proxy: its PAC's S4U_DELEGATION_INFO names the services it
+  //     passed through, the last of them the party that asked the KDC, which
+  //     must be the exchanging client (`STS-OAUTH-0989`, every mode); the
+  //     ones before become the issued token's nested `act`, under the client;
+  //   * with a TGT the subject forwarded: FORWARDED, unconstrained delegation,
+  //     which only a client trusted for it may present (`krb5TrustedFor-
+  //     Delegation`, `STS-OAUTH-0990`);
+  //   * neither: a ticket the subject made for this server and handed over,
+  //     REFUSED IN EVERY MODE (rcbj's decision D2, `STS-OAUTH-0991`) — unless
+  //     its client IS the exchanging client's own service principal, which
+  //     is a self exchange and delegates nothing.
+  //
+  // S, the application the subject token was issued for, is the exchanging
+  // client's own (rcbj, D3): the exchange continues the Kerberos chain.
+  // ---------------------------------------------------------------------------
+  /**
+   * Accepts a Kerberos subject_token and reads who it is about.
+   *
+   * @param token - the subject_token
+   * @param type - its declared Kerberos token type
+   * @param client - the exchanging client
+   * @param kerberosOut - whether a Kerberos token is asked for, which a
+   *   subject of another realm with no entry here may be issued
+   * @returns `{ subject, verdict }`, or `{ error, code, description }`
+   */
+  async kerberosSubject(token: string, type: string, client: Json,
+                        kerberosOut: boolean): Promise<Json> {
+    const { log, stats } = this.deps;
+    log.debug("Entering OAuth2Server.kerberosSubject().");
+    const refuse = function (code: string, description: string): Json {
+      log.debug("Entering refuse().");
+      log.debug("Leaving refuse().");
+      return { error: 'invalid_request', code: code,
+               description: description };
+    };
+    const verdict = await krb5Tokens.accept(token, type,
+      { via: 'an RFC 8693 subject_token' });
+    if (!verdict.ok) {
+      log.info('oauth2: a Kerberos subject_token from "' + client.client_id +
+               '" was refused (' + verdict.errorCode + '): ' + verdict.reason);
+      log.debug("Leaving OAuth2Server.kerberosSubject(). Refused.");
+      return refuse('STS-OAUTH-0988', verdict.reason);
+    }
+    // WHETHER A PARTY IS THE EXCHANGING CLIENT is asked of the PARTY's
+    // application — does it register this client_id? — rather than by
+    // resolving the client_id to one application, which another entry
+    // registering the same client_id (a sighting) could answer first.
+    const clientApp = applications.forClientId(String(client.client_id)) ||
+      applications.get(String(client.client_id));
+    const subjectApp = verdict.isService ? applications.get(verdict.name)
+                                         : null;
+    const selfExchange = OAuth2Server.registersClient(subjectApp,
+                                                      client.client_id);
+    const transited = (verdict.transited || []).map(String);
+    const lastApp = verdict.shape === 's4u2proxy' && transited.length
+      ? applications.get(krb5Tokens.applicationOfTransited(
+        transited[transited.length - 1])) : null;
+    const clientId = lastApp && OAuth2Server.registersClient(lastApp,
+      client.client_id) ? String(lastApp.identifier)
+      : (selfExchange ? String(subjectApp.identifier)
+         : (clientApp ? String(clientApp.identifier)
+                      : String(client.client_id)));
+    if (verdict.shape === 'none' && !selfExchange) {
+      log.debug("Leaving OAuth2Server.kerberosSubject(). Not delegated.");
+      return refuse('STS-OAUTH-0991', 'The Kerberos subject_token was not ' +
+        'obtained by Kerberos delegation: its PAC carries no ' +
+        'S4U_DELEGATION_INFO and it is not FORWARDED. A ticket the subject ' +
+        'made for this authorization server and handed over is not evidence ' +
+        'that anybody may act for them; obtain one by S4U2Proxy to this ' +
+        'server, or with a TGT the subject forwarded.');
+    }
+    if (verdict.shape === 's4u2proxy') {
+      const last = transited.length ? transited[transited.length - 1] : '';
+      if (!last || !OAuth2Server.registersClient(lastApp, client.client_id)) {
+        log.debug("Leaving OAuth2Server.kerberosSubject(). Another's.");
+        return refuse('STS-OAUTH-0989', 'The Kerberos subject_token\'s ' +
+                      'S4U_DELEGATION_INFO names ' + (last || 'nobody') +
+                      ' as the service that obtained it, and the exchanging ' +
+                      'client is ' + String(client.client_id) +
+                      '. Only the party a ticket ' +
+                      'was delegated to may exchange it.');
+      }
+    } else if (verdict.shape === 'forwarded' &&
+               !krb5Tokens.trustedForDelegation(clientApp)) {
+      log.debug("Leaving OAuth2Server.kerberosSubject(). Not trusted.");
+      return refuse('STS-OAUTH-0990', 'The Kerberos subject_token was bought ' +
+                    'with a forwarded TGT, and the client ' + clientId +
+                    ' is not trusted for unconstrained delegation ' +
+                    '(krb5TrustedForDelegation).');
+    }
+    stats.recordAuthentication({
+      presented: verdict.principal, protocol: 'OAuth 2.0',
+      method: 'RFC 8693 token exchange of a Kerberos token (subject_token)',
+      client_id: client.client_id,
+      note: 'The ticket was accepted by this service\'s Kerberos acceptor ' +
+            'under its own key, in every mode (' + verdict.method + '), ' +
+            (verdict.shape === 's4u2proxy'
+              ? 'and the client obtained it by S4U2Proxy.'
+              : verdict.shape === 'forwarded'
+                ? 'and it was bought with a forwarded TGT.'
+                : 'and it is the client\'s own.')
+    });
+    const namespaced = bcp.enabled();
+    const clientSubjectOf = function (identifier: string): string {
+      log.debug("Entering clientSubjectOf().");
+      const app = identifier ? applications.get(identifier) : null;
+      const registered = app && app.fields ? app.fields.oauthClientId : null;
+      const id = String((Array.isArray(registered) ? registered[0]
+                                                   : registered) ||
+                        (app ? app.identifier : identifier));
+      log.debug("Leaving clientSubjectOf().");
+      return app ? OAuth2Server.clientActorSubject(id, namespaced)
+                 : identifier;
+    };
+    // The prior chain, least to most recent, as nested `act`: the most
+    // recent outermost (RFC 8693 section 4.1).
+    const prior = verdict.shape === 's4u2proxy' ? transited.slice(0, -1) : [];
+    let act: Json = null;
+    prior.forEach(function (one: string): void {
+      const entry: Json = {
+        sub: clientSubjectOf(krb5Tokens.applicationOfTransited(one)) };
+      if (act) {
+        entry.act = act;
+      }
+      act = entry;
+    });
+    let subject: Json;
+    if (subjectApp) {
+      subject = { sub: clientSubjectOf(String(subjectApp.identifier)),
+                  username: String(subjectApp.identifier) };
+    } else if (verdict.ownRealm) {
+      const person = this.provisionedPerson(verdict.name);
+      if (!person) {
+        log.debug("Leaving OAuth2Server.kerberosSubject(). Nobody.");
+        return refuse('STS-OAUTH-0992', 'The Kerberos subject_token names "' +
+                      verdict.name + '", who has no directory entry here, so ' +
+                      'there is nobody to issue a token about.');
+      }
+      subject = { sub: person.sub || '', username: person.username ||
+                                                   verdict.name };
+    } else if (kerberosOut) {
+      // A person of another Kerberos realm, who has no entry here and needs
+      // none for a Kerberos ticket: it carries the PAC their own realm wrote.
+      subject = { sub: '', username: verdict.name };
+    } else {
+      log.debug("Leaving OAuth2Server.kerberosSubject(). Foreign.");
+      return refuse('STS-OAUTH-0992', 'The Kerberos subject_token names ' +
+                    verdict.name + ', a principal of another Kerberos realm ' +
+                    'with no directory entry here; only a Kerberos token ' +
+                    'can be issued about them.');
+    }
+    subject.aud = [clientId];
+    subject.client_id = String(client.client_id);
+    subject.jti = String(verdict.keyIdentifier || '');
+    if (act) {
+      subject.act = act;
+    }
+    log.debug("Leaving OAuth2Server.kerberosSubject(). " + subject.username);
+    return { subject: subject, verdict: verdict };
+  }
+
+  /**
+   * Accepts a Kerberos actor_token: a ticket for this authorization server
+   * whose client is the exchanging client's own service principal.
+   *
+   * @param token - the actor_token
+   * @param type - its declared Kerberos token type
+   * @param client - the exchanging client
+   * @returns `{ claims, verdict }`, or `{ error, code, description }`
+   */
+  async kerberosActor(token: string, type: string, client: Json):
+      Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.kerberosActor().");
+    const verdict = await krb5Tokens.accept(token, type,
+      { via: 'an RFC 8693 actor_token' });
+    if (!verdict.ok) {
+      log.debug("Leaving OAuth2Server.kerberosActor(). Refused.");
+      return { error: 'invalid_request', code: 'STS-OAUTH-0988',
+               description: verdict.reason };
+    }
+    const actorApp = verdict.isService ? applications.get(verdict.name)
+                                       : null;
+    if (!OAuth2Server.registersClient(actorApp, client.client_id)) {
+      log.debug("Leaving OAuth2Server.kerberosActor(). Another's.");
+      return { error: 'invalid_request', code: 'STS-OAUTH-0993',
+               description: 'The Kerberos actor_token\'s client is ' +
+                            verdict.principal + ', not the exchanging ' +
+                            'client\'s own service principal; an ' +
+                            'actor_token is the exchanging client\'s own.' };
+    }
+    log.debug("Leaving OAuth2Server.kerberosActor().");
+    return {
+      verdict: verdict,
+      claims: { sub: OAuth2Server.clientActorSubject(String(client.client_id),
+                                                     bcp.enabled()),
+                client_id: String(client.client_id), iss: '',
+                jti: String(verdict.keyIdentifier || '') }
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A KERBEROS TOKEN ISSUED FROM AN EXCHANGE (#658): `requested_token_type`
+  // naming one of the six URIs. The one target — `audience` or `resource`,
+  // resolved as every exchange resolves it — must be an application that is
+  // a Kerberos service (an `SPN@REALM` identifier, or its
+  // `krb5ServicePrincipalName`); the ticket is this realm's KDC's, for the
+  // subject; a delegation's `act` chain, innermost first, becomes the PAC's
+  // S4U_DELEGATION_INFO, each party by `SPN@REALM` or, with no SPN, its
+  // identifier (D4). The answer is RFC 8693 section 2.2.1's with the token
+  // in `access_token`, `issued_token_type` the type asked for and
+  // `token_type` `N_A` — the section's value for a token that is not an
+  // access token — and the Authenticator's subkey, which the holder needs to
+  // use it, as `session_key` and `session_key_etype` (rcbj's D5: the one key
+  // of that one AP-REQ, sent only over TLS). `expires_in` is the AP-REQ's own
+  // window: it is good once, within the clock skew of when it was made. A
+  // target in another Kerberos realm is reached through the trusts (D8).
+  // ---------------------------------------------------------------------------
+  /**
+   * Issues the Kerberos token a token exchange asked for.
+   *
+   * @param c - `{ req, body, client, subject, subjectKerberos, act,
+   *   audiences, decision, base }`
+   * @returns `{ token, response }`, or `{ error, code, description }`
+   */
+  async kerberosExchangeToken(c: Json): Promise<Json> {
+    const { log, nameForSubject } = this.deps;
+    log.debug("Entering OAuth2Server.kerberosExchangeToken().");
+    const type = String(c.body.requested_token_type || '').trim();
+    const secure = !!(c.req && (c.req.secure ||
+                                (c.req.socket && c.req.socket.encrypted))) ||
+      /^https:/i.test(String(c.base || ''));
+    if (!secure) {
+      log.debug("Leaving OAuth2Server.kerberosExchangeToken(). Not TLS.");
+      return { error: 'invalid_request', code: 'STS-OAUTH-0996',
+               description: 'A Kerberos token is answered with its session ' +
+                            'key, which is sent only over TLS; this request ' +
+                            'arrived without it.' };
+    }
+    const audiences = (c.audiences || []).map(String);
+    if (audiences.length !== 1) {
+      log.debug("Leaving OAuth2Server.kerberosExchangeToken(). Targets.");
+      return { error: 'invalid_target', code: 'STS-OAUTH-0995',
+               description: 'A Kerberos token is for one service: name ' +
+                            'exactly one audience or resource.' };
+    }
+    const first = c.decision && c.decision.targets && c.decision.targets[0];
+    const application = (first && first.application
+      ? applications.get(String(first.application)) : null) ||
+      applications.forAudience(audiences[0]) ||
+      applications.get(audiences[0]);
+    const target = krb5Tokens.servicePrincipalOf(application) ||
+      krb5Tokens.servicePrincipalOf({ identifier: audiences[0] });
+    if (!target) {
+      log.debug("Leaving OAuth2Server.kerberosExchangeToken(). No SPN.");
+      return { error: 'invalid_target', code: 'STS-OAUTH-0995',
+               description: 'The audience "' + audiences[0] + '" is not a ' +
+                            'Kerberos service: no application registered ' +
+                            'for it has an SPN@REALM identifier or a ' +
+                            'krb5ServicePrincipalName.' };
+    }
+    // WHO EACH PARTY IS, IN KERBEROS'S WORDS.
+    const kerberosNameOf = function (sub: string): string {
+      log.debug("Entering kerberosNameOf().");
+      const raw = String(sub || '');
+      const clientId = /^urn:sts:client:/.test(raw)
+        ? raw.slice('urn:sts:client:'.length) : raw;
+      const app = applications.forClientId(clientId) ||
+        applications.get(clientId);
+      if (app) {
+        const sp = krb5Tokens.servicePrincipalOf(app);
+        log.debug("Leaving kerberosNameOf(). An application.");
+        return sp ? sp.spn + '@' + sp.realm : String(app.identifier);
+      }
+      const person = /^urn:uuid:/i.test(raw) ? nameForSubject(raw) : '';
+      log.debug("Leaving kerberosNameOf().");
+      return String(person || raw);
+    };
+    const chain: string[] = [];
+    for (let one = c.act; one && typeof one === 'object'; one = one.act) {
+      chain.unshift(kerberosNameOf(String(one.sub || '')));
+    }
+    const verdict = c.subjectKerberos;
+    let subjectName = String(c.subject.username || '');
+    let subjectRealm = '';
+    let carriedPac = null;
+    const subjectApp = subjectName ? applications.get(subjectName) : null;
+    const subjectSpn = subjectApp ? krb5Tokens.servicePrincipalOf(subjectApp)
+                                  : null;
+    if (verdict && !verdict.ownRealm) {
+      subjectName = (verdict.components || []).join('/');
+      subjectRealm = String(verdict.realm || '');
+      carriedPac = verdict.pac || null;
+    } else if (subjectSpn) {
+      subjectName = subjectSpn.spn;
+      subjectRealm = subjectSpn.realm;
+    }
+    const minted = await krb5Tokens.issue({
+      valueType: type,
+      subject: { name: subjectName, realm: subjectRealm || undefined },
+      target: target,
+      delegationInfo: chain.length
+        ? { s4u2proxyTarget: target.spn, transitedServices: chain } : null,
+      forwardable: true,
+      carriedPac: carriedPac
+    });
+    if (!minted.ok) {
+      log.info('oauth2: the KDC did not issue a Kerberos ticket (' +
+               minted.errorCode + '): ' + minted.reason);
+      log.debug("Leaving OAuth2Server.kerberosExchangeToken(). Refused.");
+      return { error: 'invalid_request', code: 'STS-OAUTH-0997',
+               description: 'The Kerberos ticket could not be issued: ' +
+                            minted.reason + '.' };
+    }
+    log.debug("Leaving OAuth2Server.kerberosExchangeToken(). " +
+              minted.servicePrincipal);
+    return {
+      token: minted,
+      response: {
+        access_token: Buffer.from(minted.bytes).toString('base64url'),
+        issued_token_type: type,
+        token_type: 'N_A',
+        expires_in: Math.max(1, Math.round((minted.expires.getTime() -
+                                            Date.now()) / 1000)),
+        session_key: Buffer.from(minted.sessionKey.key)
+          .toString('base64url'),
+        session_key_etype: minted.sessionKey.etype
+      }
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -9143,9 +9604,11 @@ class OAuth2Server {
           log.debug("Leaving stillConsented(). Consent is not required.");
           return earlier;
         }
+        // What is ON FILE (`recorded`), which a public client's
+        // ask-every-time rule does not change.
         const gone = (consentRegister.outstanding({
           clientId: String(query.client_id), username: user.username,
-          scope: earlier }) || {}).names || [];
+          scope: earlier, recorded: true }) || {}).names || [];
         log.debug("Leaving stillConsented(). " + gone.length + " withdrawn.");
         return earlier.split(/\s+/).filter(function (one: string) {
           return one && gone.indexOf(one) < 0;
@@ -9499,7 +9962,7 @@ class OAuth2Server {
   // (OpenID Connect Core 1.0 section 3.1.2.1, RP-Initiated Logout 1.0
   // section 2), then the person, the chooser's cookie, the browser and the
   // client's locale policy — `common/page_locale.ts`'s order. The error
-  // pages are not drawn with it: every refusal stays English.
+  // pages are drawn with it too since #1326 (`common/error_page.ts`).
   private pageTranslator(req: Req, application: string, uiLocales: string,
                          username: string):
                          ReturnType<typeof PageLocale.forPage> {
@@ -9647,71 +10110,258 @@ class OAuth2Server {
   // saying when. Its description carries the RFC 9700 warning. The form_post
   // variant never gets one: a POST cannot be made by markup alone.
   // ---------------------------------------------------------------------------
+  // THE MESSAGE IN THE BOX, IN THE PAGE'S LANGUAGE (#1326). The refusal's
+  // own sentence where `oauthPages` has one — keyed by the error code the
+  // refusal marked (`oauthPages.refusal.STS-OAUTH-NNNN`), or by a key the
+  // refusal names itself where one code covers two cases — and otherwise
+  // the protocol error's general sentence (`oauthPages.oauthError.<error>`),
+  // so nothing is drawn in English. The English description is still on the
+  // page, in the diagnostics, as the `error_description` an application
+  // receives: a value, not prose.
+  //
+  // The parameters a sentence may name are the request's own values, plus
+  // what the refusal added (`pageText.params`: the registered URIs, a
+  // section number).
+  /**
+   * The translated sentence for an authorization refusal.
+   *
+   * @param t - the page's translator
+   * @param code - the error code marked on the response
+   * @param error - the OAuth error value
+   * @param q - the request's parameters
+   * @param pageText - `{ key, params }` the refusal named, or undefined
+   * @returns the sentence as HTML
+   */
+  private refusalMessage(t: ReturnType<typeof PageLocale.forPage>,
+                         code: string, error: string, q: Json,
+                         pageText: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.refusalMessage(). " + code);
+    const query = q || {};
+    const named = pageText || {};
+    const params: Json = Object.assign({
+      uri: String(query.redirect_uri || ''),
+      type: String(query.response_type || ''),
+      mode: String(query.response_mode || ''),
+      method: String(query.code_challenge_method || ''),
+      client: String(query.client_id || ''),
+      requestUri: String(query.request_uri || ''),
+      prompt: String(query.prompt || ''),
+      tenant: String(query.tenant || '')
+    }, named.params || {});
+    const candidates = [named.key ? 'oauthPages.refusal.' + named.key : '',
+                        code ? 'oauthPages.refusal.' + code : '',
+                        'oauthPages.oauthError.' + String(error || ''),
+                        'oauthPages.oauthError.other'];
+    for (let i = 0; i < candidates.length; i++) {
+      if (candidates[i] && t.has(candidates[i])) {
+        log.debug("Leaving OAuth2Server.refusalMessage(). " + candidates[i]);
+        return t.html(candidates[i], params);
+      }
+    }
+    log.debug("Leaving OAuth2Server.refusalMessage(). No sentence.");
+    return '';
+  }
+
+  /**
+   * The diagnostics an authorization error page shows (#1326): the request's
+   * values and the error as an application would receive it.
+   *
+   * @param req - the request
+   * @param t - the page's translator
+   * @param q - the request's parameters
+   * @param error - the OAuth error value
+   * @param description - the English error_description
+   * @returns the rows for `ErrorPage`
+   */
+  private authorizationDiagnostics(req: Req,
+                                   t: ReturnType<typeof PageLocale.forPage>,
+                                   q: Json, error: string,
+                                   description: string): Json[] {
+    const { log, applications, sessionOf, oauth21 } = this.deps;
+    log.debug("Entering OAuth2Server.authorizationDiagnostics().");
+    const query = q || {};
+    let name = '';
+    try {
+      const client = query.client_id
+        ? applications.clientConfigOf(String(query.client_id)) : null;
+      name = String((client && client.declared && client.client_name) || '');
+    } catch (e) {
+      // A registry that cannot be read leaves the name out; the client_id
+      // is still shown.
+      log.debug("Caught in OAuth2Server.authorizationDiagnostics(): " +
+                ((e && e.message) || e));
+    }
+    const session = sessionOf(req);
+    const out = [
+      { label: t.text('errorPages.application'), value: query.client_id },
+      { label: t.text('errorPages.applicationName'), value: name },
+      { label: t.text('errorPages.redirectUri'), value: query.redirect_uri },
+      { label: t.text('errorPages.responseType'),
+        value: query.response_type },
+      { label: t.text('errorPages.responseMode'),
+        value: query.response_mode },
+      { label: t.text('errorPages.state'), value: query.state },
+      { label: t.text('errorPages.nonce'), value: query.nonce },
+      { label: t.text('errorPages.signedInAs'),
+        value: session && session.user && session.user.username },
+      { label: t.text('errorPages.error'), value: error },
+      { label: t.text('errorPages.errorDescription'),
+        value: oauth21.sanitizeDescription(description) }
+    ];
+    log.debug("Leaving OAuth2Server.authorizationDiagnostics().");
+    return out;
+  }
+
+  // The translator for an authorization error page: the request's
+  // `ui_locales` (OIDC Core section 3.1.2.1), its client, the person.
+  private authorizationTranslator(req: Req, q: Json):
+    ReturnType<typeof PageLocale.forPage> {
+    const { log, sessionOf } = this.deps;
+    log.debug("Entering OAuth2Server.authorizationTranslator().");
+    const query = q || {};
+    const session = sessionOf(req);
+    const t = this.pageTranslator(req, String(query.client_id || ''),
+      String(query.ui_locales || ''),
+      String((session && session.user && session.user.username) || ''));
+    log.debug("Leaving OAuth2Server.authorizationTranslator().");
+    return t;
+  }
+
+  // A BROWSER IS A GET WHOSE Accept NAMES text/html (2026-11-04). A client
+  // library, a test or curl sends no such Accept and keeps the JSON body it
+  // always had; a person's browser always sends one.
+  /**
+   * Whether an authorization request came from a person's browser.
+   *
+   * @param req - the request
+   * @returns true for a GET whose Accept names text/html
+   */
+  isBrowserRequest(req: Req): boolean {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.isBrowserRequest().");
+    const accept = String((req.headers && req.headers.accept) || '');
+    const out = String(req.method || 'GET').toUpperCase() === 'GET' &&
+      /text\/html/i.test(accept);
+    log.debug("Leaving OAuth2Server.isBrowserRequest(). " + out);
+    return out;
+  }
+
+  /**
+   * Answers a refusal of an authorization request that is never redirected:
+   * the shared error page for a browser (#1326), the JSON a client library
+   * gets otherwise, with the same status, error and description.
+   *
+   * @param req - the request
+   * @param res - the response, its error code already marked
+   * @param status - the HTTP status
+   * @param error - the OAuth error value
+   * @param description - its English description
+   * @returns undefined
+   */
+  refuseAuthorization(req: Req, res: Res, status: number, error: string,
+                      description: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.refuseAuthorization(). " + error);
+    if (this.isBrowserRequest(req)) {
+      log.debug("Leaving OAuth2Server.refuseAuthorization(). A page.");
+      // error-code: none — the caller marks its own condition first
+      return this.sendRefusalPage(req, res, status, error, description);
+    }
+    log.debug("Leaving OAuth2Server.refuseAuthorization(). JSON.");
+    // error-code: none — the caller marks its own condition first
+    return this.oauthError(res, status, error, description);
+  }
+
+  /**
+   * Sends a refusal that is never redirected as the error page a person
+   * reads (#1326's shared page), with the status the JSON body would have
+   * carried (RFC 6749 section 4.1.2.1: the server SHOULD inform the resource
+   * owner, and MUST NOT redirect).
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param error - the OAuth error value
+   * @param description - its English description
+   * @param pageText - `{ key, params }` the refusal named, or undefined
+   */
+  sendRefusalPage(req: Req, res: Res, status: number, error: string,
+                  description: string, pageText?: Json): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering OAuth2Server.sendRefusalPage(). error=" + error);
+    const q = req.query || {};
+    const t = this.authorizationTranslator(req, q);
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: status,
+      title: t.text('oauthPages.authorizeError.title'),
+      error: error,
+      message: this.refusalMessage(t, errorCodes.codeOf(res), error, q,
+                                   pageText),
+      background: t.html('oauthPages.authorizeError.notSent'),
+      diagnostics: this.authorizationDiagnostics(req, t, q, error,
+                                                 description)
+    });
+    log.debug("Leaving OAuth2Server.sendRefusalPage().");
+  }
+
   /**
    * Sends the page shown instead of a redirect a person must decide on: the
-   * error, and a plain link to the client.
+   * error, and a plain link (or, for form_post, a button) to the client.
    *
+   * @param req - the request
    * @param res - the response
    * @param info - `error`, `description`, `why`, `clientId`, `redirectUri`,
-   *   `state`, `target` and `form`
+   *   `state`, `target`, `form`, `q` and `pageText`
    */
-  sendRedirectInterstitial(res: Res, info: Json): Json {
-    const { log, xmlEscape, config } = this.deps;
+  sendRedirectInterstitial(req: Req, res: Res, info: Json): Json {
+    const { log, xmlEscape, config, errorCodes } = this.deps;
     log.debug("Entering OAuth2Server.sendRedirectInterstitial(). error=" +
               info.error);
+    const q = info.q || req.query || {};
+    const t = this.authorizationTranslator(req, q);
     const after = info.form ? 0 :
       Math.max(0, Number(config.value('oauth2.errorPageAutoRedirectS')) || 0);
-    const html = '<!doctype html><html lang="en"><head><meta ' +
-      'charset="utf-8">' +
-      (after > 0
+    const label = t.html('oauthPages.authorizeError.continue',
+                         { uri: String(info.redirectUri || '') });
+    // The person's choice: the link carries the same parameters the redirect
+    // would have, and a form_post request gets a button that POSTs them (#126)
+    // drawn as the link it stands for.
+    const action = info.form
+      ? '<form method="post" action="' + xmlEscape(info.redirectUri) +
+        '">' + Object.keys(info.form).map(function (name: string): string {
+          return '<input type="hidden" name="' + xmlEscape(name) +
+                 '" value="' + xmlEscape(String(info.form[name])) + '">';
+        }).join('') + '<p><button type="submit" class="as-link">' + label +
+        '</button></p></form>'
+      : '<p><a href="' + xmlEscape(info.target) + '">' + label + '</a></p>';
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: 400,
+      title: t.text('oauthPages.authorizeError.title'),
+      error: info.error,
+      message: this.refusalMessage(t, errorCodes.codeOf(res), info.error, q,
+                                   info.pageText),
+      after: action +
+        (after > 0
+          ? '<p class="sub">' + t.html('oauthPages.authorizeError.auto',
+                                       { seconds: after }) + '</p>'
+          : '') +
+        '<p class="sub">' + t.html('oauthPages.authorizeError.continueNote') +
+        '</p>',
+      background: info.requirement === 'authenticate-before-redirect'
+        ? t.html('oauthPages.authorizeError.authenticateFirst')
+        : t.html('oauthPages.authorizeError.notSent'),
+      diagnostics: this.authorizationDiagnostics(req, t, q, info.error,
+                                                 info.description),
+      extraHead: after > 0
         ? '<meta http-equiv="refresh" content="' + after + ';url=' +
           xmlEscape(info.target) + '">'
-        : '') +
-      '<title>This request could not be completed</title>' +
-      '<style>body{font-family:system-ui,sans-serif;margin:2rem;' +
-      'max-width:46rem;color:#222}code{font-family:ui-monospace,Menlo,' +
-      'monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
-      'border-radius:3px;word-break:break-all}' +
-      '.sub{color:#666;font-size:.92rem}' +
-      '.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem ' +
-      '.9rem;border-radius:4px;margin:1rem ' +
-      '0}dt{font-weight:600;margin-top:.7rem}dd{margin:.15rem 0 0 ' +
-      '0}</style></head><body><h1>This request could not be completed</h1>' +
-      '<div ' +
-      'class="warn"><strong>' + xmlEscape(info.error) + '</strong><br>' +
-      xmlEscape(info.description) + '</div>' +
-      '<p class="sub">' + xmlEscape(info.why) + '</p>' +
-      '<dl>' +
-      '<dt>The application that sent you here</dt><dd><code>' +
-      xmlEscape(info.clientId || '(it named none)') + '</code></dd>' +
-      '<dt>Where it wants you sent next</dt><dd><code>' +
-      xmlEscape(info.redirectUri) +
-      '</code></dd>' +
-      (info.state !== undefined && info.state !== ''
-        ? '<dt>The state it chose</dt><dd><code>' +
-          xmlEscape(String(info.state)) + '</code></dd>'
-        : '') +
-      '</dl>' +
-      (info.form
-        ? '<form method="post" action="' + xmlEscape(info.redirectUri) +
-          '">' + Object.keys(info.form).map(function (name: string): string {
-            return '<input type="hidden" name="' + xmlEscape(name) +
-                   '" value="' + xmlEscape(String(info.form[name])) + '">';
-          }).join('') + '<button type="submit">Continue to ' +
-          xmlEscape(info.redirectUri) + '</button></form>'
-        : '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
-          xmlEscape(info.redirectUri) + '</a></p>') +
-      (after > 0
-        ? '<p class="sub">You will be sent there automatically in ' + after +
-          ' second' + (after === 1 ? '' : 's') + '.</p>'
-        : '') +
-      '<p class="sub">Nothing has been ' +
-      'sent anywhere yet. Following that link delivers the error above to ' +
-      'the application, which is what would have happened automatically if ' +
-      'you were signed in here.</p></body></html>';
-    // error-code: none — every caller of fail() marks its own condition before this is reached
-    res.status(400).type('text/html').set('Cache-Control', 'no-store')
-       .send(html);
+        : ''
+    });
     log.debug("Leaving OAuth2Server.sendRedirectInterstitial().");
   }
 
@@ -10086,8 +10736,8 @@ class OAuth2Server {
           errorCodes.mark(res, String(got.code || 'STS-OIDFED-0052'));
           log.debug("Leaving OAuth2Server.authorizeEndpoint(). Automatic " +
                     "registration refused.");
-          return self.oauthError(res, got.status || 400, got.error,
-                                 got.description);
+          return self.refuseAuthorization(req, res, got.status || 400,
+                                          got.error, got.description);
         }
         log.debug("Leaving OAuth2Server.authorizeEndpoint(). Registered " +
                   "through the federation.");
@@ -10098,8 +10748,8 @@ class OAuth2Server {
                   (e && e.stack ? e.stack : e));
         if (!res.headersSent) {
           errorCodes.mark(res, 'STS-OIDFED-0050');
-          self.oauthError(res, 500, 'server_error',
-                          String((e && e.message) || e));
+          self.refuseAuthorization(req, res, 500, 'server_error',
+                                   String((e && e.message) || e));
         }
       });
       return undefined;
@@ -10144,7 +10794,9 @@ class OAuth2Server {
         log.debug("Leaving OAuth2Server.authorizeWithClient(). The request " +
                   "object is refused.");
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-OAUTH-0340');
-        return self.oauthError(res, 400, result.error, result.description);
+        // A browser sees the shared error page (#1326).
+        return self.refuseAuthorization(req, res, 400, result.error,
+                                        result.description);
       }
       if (result.used) {
         req.stsJar = { outer: outer, source: result.source, alg: result.alg,
@@ -10164,8 +10816,8 @@ class OAuth2Server {
                 (e && e.stack ? e.stack : e));
       if (!res.headersSent) {
         errorCodes.mark(res, 'STS-OAUTH-0373');
-        self.oauthError(res, 500, 'server_error',
-                        String((e && e.message) || e));
+        self.refuseAuthorization(req, res, 500, 'server_error',
+                                 String((e && e.message) || e));
       }
     });
     log.debug("Leaving OAuth2Server.authorizeWithClient(). Resolving a " +
@@ -10282,7 +10934,22 @@ class OAuth2Server {
                  '7591, an LDAP add under ou=applications or an OpenID ' +
                  'Federation).' };
     }
-    if (IssuerNames.registeredApplication(id)) {
+    // A client_id is an `oauthClientId` value, which may differ from the
+    // entry's identifier: an operator who adds a client_id to a Kerberos
+    // service's entry has registered that client. registeredApplication()
+    // looks up by identifier only, so the client_id is resolved to its entry
+    // first, as WS-Trust resolves an AppliesTo (2026-11-03,
+    // sts_kerberos_tokens in product mode).
+    let identifier = id;
+    try {
+      const entry: Json = applications.forClientId(id);
+      identifier = entry && entry.identifier ? String(entry.identifier) : id;
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.unregisteredClientRefusal(): " +
+                ((e && e.message) || e));
+      identifier = id;
+    }
+    if (IssuerNames.registeredApplication(identifier)) {
       log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). " +
                 "Registered.");
       return null;
@@ -10337,11 +11004,26 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.vetAuthorizationRequest().");
     const opts = options || {};
-    const refuse = function (code, error, description) {
+    // `pageText` (#1326) is `{ key, params }` for the error page's sentence,
+    // where the code alone does not choose it or it names a value the
+    // request does not carry; see `refusalMessage()`.
+    const refuse = function (code, error, description, pageText?) {
       log.debug("Entering refuse(). " + code);
       log.debug("Leaving refuse().");
       return { ok: false, redirect: false, status: 400, error: error,
-               description: description, code: code };
+               description: description, code: code, pageText: pageText };
+    };
+    // A REFUSAL ABOUT THE redirect_uri ITSELF is one a person's browser
+    // lands on, since there is nowhere trusted to send it (RFC 6749 section
+    // 4.1.2.1: the server SHOULD inform the resource owner and MUST NOT
+    // redirect). `page` lets the endpoint answer a browser with the error
+    // page rather than raw JSON (2026-11-04); status and values are the same.
+    const refuseOnPage = function (code, error, description, pageText?) {
+      log.debug("Entering refuseOnPage(). " + code);
+      const out: Json = refuse(code, error, description, pageText);
+      out.page = true;
+      log.debug("Leaving refuseOnPage().");
+      return out;
     };
 
     // --- SHAPE FIRST, AND ANSWERED HERE RATHER THAN REDIRECTED
@@ -10408,6 +11090,19 @@ class OAuth2Server {
     // checked against by the schema, because it comes off the entry and an
     // `ldapmodify` reaches the entry without passing any check at all.
     const registeredClient = applications.clientConfigOf(q.client_id);
+    // RFC 6749 section 3.1 forbids repeats; product refuses them as OAuth 2.1
+    // mode does (ASVS 5.0.0 15.3.7).
+    if (!oauth21.enabled() &&
+        require('../common/mode').refusesRepeatedTokenParameters()) {
+      const repeated = oauth21.repeatedParameterRefusal(
+          opts.repeated || oauth21.repeatedNames(req.query),
+          opts.what || 'authorization request', true);
+      if (repeated) {
+        log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A repeat.");
+        return refuse(repeated.errorCode || 'STS-OAUTH-0285', repeated.error,
+                      repeated.description);
+      }
+    }
     if (oauth21.enabled()) {
       const repeated = oauth21.repeatedParameterRefusal(
           opts.repeated || oauth21.repeatedNames(req.query),
@@ -10435,15 +11130,15 @@ class OAuth2Server {
           log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). OAuth " +
                     "2.1: no " +
                     "redirect_uri to default to (" + chosen.requirement + ").");
-          return refuse(chosen.errorCode || 'STS-OAUTH-0273', chosen.error,
-                        chosen.description);
+          return refuseOnPage(chosen.errorCode || 'STS-OAUTH-0273',
+                              chosen.error, chosen.description);
         }
         const storedProblem = validation.redirectUriProblem(chosen.uri);
         if (storedProblem) {
           log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). OAuth " +
                     "2.1: the one " +
                     "registered redirect URI is not usable.");
-          return refuse('STS-OAUTH-0274', 'invalid_request',
+          return refuseOnPage('STS-OAUTH-0274', 'invalid_request',
             'OAuth 2.1 (' + oauth21.DRAFT + ') section 4.1.1: this request ' +
             'named no redirect_uri, and the one client "' + q.client_id + '" ' +
             'has registered cannot be used — it ' + storedProblem +
@@ -10461,13 +11156,23 @@ class OAuth2Server {
     // is the schema's question since 2026-09-13 — AUTHORIZE_QUERY types it with
     // `vt.redirectUri`, which accepts http(s) and a private-use scheme named
     // for a domain and refuses everything else — so what is left here is its
-    // absence.
+    // absence, or an empty value (`vt.opt()` lets `redirect_uri=` through).
+    // THE TWO ARE TOLD APART (#1302): the OpenID Foundation's
+    // oidcc-ensure-redirect-uri-in-authorization-request sends none, and its
+    // reviewer reads the page for a sentence saying the request HAS none,
+    // which "a valid absolute redirect_uri is required" never said. The
+    // status, the error and the code are the same for both.
     if (!redirectUri) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). There is " +
                 "no usable " +
                 "redirect_uri to report to.");
-      return refuse('STS-OAUTH-0160', 'invalid_request',
-                    'A valid absolute redirect_uri is required.');
+      return refuseOnPage('STS-OAUTH-0160', 'invalid_request',
+        q.redirect_uri === undefined
+          ? 'This authorization request has no redirect_uri, and one is ' +
+            'required: without it there is nowhere to send the response.'
+          : 'A valid absolute redirect_uri is required.',
+        q.redirect_uri === undefined ? undefined
+          : { key: 'STS-OAUTH-0160-empty' });
     }
 
     // --- RFC 9700 section 2.1, and it has to be FIRST
@@ -10521,8 +11226,8 @@ class OAuth2Server {
                 "redirect_uri (" + redirectCheck.requirement +
                 "), so nothing " +
                 "is redirected anywhere.");
-      return refuse(redirectCheck.errorCode || 'STS-OAUTH-0158',
-                    redirectCheck.error, redirectCheck.description);
+      return refuseOnPage(redirectCheck.errorCode || 'STS-OAUTH-0158',
+                          redirectCheck.error, redirectCheck.description);
     }
     if (redirectCheck.how) {
       log.debug("The redirect_uri was accepted by " + redirectCheck.how + ".");
@@ -10551,12 +11256,12 @@ class OAuth2Server {
 
     // From here a refusal may be REPORTED TO THE CLIENT — the address is known
     // — and the caller decides how (`fail()` at the authorization endpoint).
-    const redirectable = function (code, error, description) {
+    const redirectable = function (code, error, description, pageText?) {
       log.debug("Entering redirectable(). " + code);
       log.debug("Leaving redirectable().");
       return { ok: false, redirect: true, error: error,
                description: description, code: code, q: q,
-               redirectUri: redirectUri };
+               redirectUri: redirectUri, pageText: pageText };
     };
 
     // RFC 6749 section 4.1.2.1, cited by section 4.11.2: an invalid combination
@@ -10611,9 +11316,19 @@ class OAuth2Server {
         types.some(function (t) { return known.indexOf(t) < 0; })) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). " +
                 "Unsupported response_type.");
+      // A REQUEST NAMING NO RESPONSE TYPE IS SAID TO NAME NONE (2026-11-04).
+      // The OpenID Foundation's oidcc-response-type-missing photographs this
+      // refusal, and it read `response_type "" is not supported`: true of
+      // the comparison, and no sentence a reader could follow. The error
+      // and the code are unchanged; only the description says which case
+      // this is.
+      const namedType = String(q.response_type || '').trim();
       return redirectable('STS-OAUTH-0162', 'unsupported_response_type',
-                          'response_type "' + (q.response_type || '') + '" ' +
-                          'is not supported.');
+        namedType
+          ? 'response_type "' + namedType + '" is not supported.'
+          : 'This request names no response_type, and every authorization ' +
+            'request must name one (RFC 6749 section 3.1.1).',
+        namedType ? { key: 'STS-OAUTH-0162-unsupported' } : undefined);
     }
     // WHAT THIS AUTHORIZATION SERVER SAYS IT DOES. `response_types_supported`
     // in the document a client read is the list this endpoint answers — the
@@ -10639,7 +11354,7 @@ class OAuth2Server {
           'The "' + self.profileOf(req) + '" authorization server advertises ' +
           'response_types_supported ' + JSON.stringify(advertisedTypes) + ' ' +
           'and this request asks for ' +
-          '"' + (q.response_type || '') + '". What its metadata says is what ' +
+          '"' + types.join(' ') + '". What its metadata says is what ' +
           'it does — the document is this authorization server rather ' +
           'than a description of one.');
       }
@@ -10859,12 +11574,18 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). An ID " +
                 "Token from the authorization endpoint with no nonce.");
       return redirectable('STS-OAUTH-0562', 'invalid_request',
-        'response_type "' + q.response_type + '" returns an ID Token from ' +
-        'the authorization endpoint, and OIDC Core makes nonce REQUIRED for ' +
-        'it (section ' + (implicit ? '3.2.2.1, the implicit flow'
-                                   : '3.3.2.1, the hybrid flow') +
-        ') — it is what the client checks the ID Token against to detect a ' +
-        'replay.');
+        // It leads with what is missing (2026-11-04): the OpenID
+        // Foundation's reviewers read this page, and it used to explain
+        // why a nonce matters without saying there was none.
+        'This request has no nonce, and response_type "' + q.response_type +
+        '" returns an ID Token from the authorization endpoint, for which ' +
+        'OIDC Core makes nonce REQUIRED (section ' +
+        (implicit ? '3.2.2.1, the implicit flow'
+                  : '3.3.2.1, the hybrid flow') +
+        '): it is what the client checks the ID Token against to detect a ' +
+        'replay.',
+        { key: implicit ? 'STS-OAUTH-0562-implicit'
+                        : 'STS-OAUTH-0562-hybrid' });
     }
     if (implicit) {
       let parsedRedirect: Json = null;
@@ -10916,6 +11637,20 @@ class OAuth2Server {
         'Client "' + q.client_id + '" declares response_types ' +
         JSON.stringify(declaredFlows.response_types) + ', and this ' +
         'request asks for "' + q.response_type + '" (RFC 7591 section 2).');
+    }
+    // A CLIENT THAT DECLARES NO RESPONSE TYPES (#1479, ASVS 5.0.0 10.4.4): in
+    // product it has RFC 7591 section 2's default, `code`, as the token
+    // endpoint holds it to the code flow. One that declared the `implicit`
+    // grant asked for the response types that grant answers with.
+    if (askedType && askedType !== 'code' && mode.narrowsUndeclaredGrants() &&
+        !(declaredFlows && declaredFlows.response_types) &&
+        !(declaredFlows && declaredFlows.grant_types &&
+          declaredFlows.grant_types.indexOf('implicit') >= 0)) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). No response " +
+                "types declared.");
+      return redirectable('STS-OAUTH-0597', 'unauthorized_client',
+        'Client "' + q.client_id + '" declares no response_types, so it may ' +
+        'use response_type=code alone (RFC 7591 section 2).');
     }
     const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
                                                          client:
@@ -11120,7 +11855,10 @@ class OAuth2Server {
     const parts = String(hint).split('.');
     if (parts.length === 5) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Encrypted.");
-      return { ok: false, why: 'the id_token_hint is encrypted (a JWE), and ' +
+      // Each verdict names its `reason` (#1326), the key of the error page's
+      // sentence in the page's language; `why` stays the English detail.
+      return { ok: false, reason: 'encrypted',
+               why: 'the id_token_hint is encrypted (a JWE), and ' +
                'this service reads only the signed ID Token it issued — send ' +
                'that, as section 3.1.2.1 has the client do.' };
     }
@@ -11132,9 +11870,24 @@ class OAuth2Server {
       log.debug("Caught in OAuth2Server.verifyIdTokenHint(): " +
                 ((e && e.message) || e));
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Unreadable.");
-      return { ok: false, why: 'the id_token_hint is not a JWT.' };
+      return { ok: false, reason: 'notJwt',
+               why: 'the id_token_hint is not a JWT.' };
     }
     const alg = String((header && header.alg) || '');
+    // AN UNSIGNED HINT IS SAID TO BE ONE (2026-11-04). The OpenID
+    // Foundation's oidcc-rp-initiated-logout-modified-id-token-hint sends
+    // the hint re-headed as `alg: none`, and the refusal read "names key ""
+    // for none": true of the lookup below, which no reader of the error page
+    // could follow. Every ID Token this service issues is signed, so an
+    // unsigned one is refused for being unsigned.
+    if (!alg || alg.toLowerCase() === 'none') {
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Unsigned.");
+      return { ok: false, reason: 'unsigned',
+               params: { alg: alg || 'none' },
+               why: 'the id_token_hint is unsigned (alg ' +
+               (alg || 'missing') + '), and every ID Token this service ' +
+               'issues is signed, so it is not one this service issued.' };
+    }
     let verified: Json = null;
     try {
       if (/^(RS|PS)(256|384|512)$/.test(alg)) {
@@ -11150,7 +11903,9 @@ class OAuth2Server {
         const held: Json[] = clientConfig.client_secrets || [];
         if (!held.length) {
           log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No secret.");
-          return { ok: false, why: 'the id_token_hint is signed with ' + alg +
+          return { ok: false, reason: 'noSecret',
+                   params: { alg: alg, client: String(clientId || '') },
+                   why: 'the id_token_hint is signed with ' + alg +
                    ' and client "' + clientId + '" has no client_secret to ' +
                    'verify it with.' };
         }
@@ -11177,9 +11932,14 @@ class OAuth2Server {
         })[0];
         if (!entry) {
           log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No such key.");
-          return { ok: false, why: 'the id_token_hint names key "' +
-                   (header.kid || '') + '" for ' + alg + ', and this service ' +
-                   'holds no such key.' };
+          return { ok: false, reason: header.kid ? 'unknownKey' : 'noKid',
+                   params: { alg: alg, kid: String(header.kid || '') },
+                   why: header.kid
+            ? 'the id_token_hint names key "' + header.kid + '" for ' + alg +
+              ', and this service holds no such key.'
+            : 'the id_token_hint is signed with ' + alg + ' and names no ' +
+              'key (no kid), so this service cannot tell which of its keys ' +
+              'to verify it with.' };
         }
         verified = await stsCrypto.verifyCompactJwsAsync(hint,
           entry.publicJwk, { algorithms: [alg] });
@@ -11189,23 +11949,41 @@ class OAuth2Server {
                 ((e && e.message) || e));
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). It did not " +
                 "verify.");
-      return { ok: false, why: 'the id_token_hint did not verify as an ID ' +
-               'Token this service issued: ' + ((e && e.message) || e) + '.' };
+      // The cause's own full stop is dropped, so the page does not end in
+      // two of them.
+      return { ok: false, reason: 'signature',
+               why: 'the id_token_hint did not verify as an ID ' +
+               'Token this service issued: ' +
+               String((e && e.message) || e).replace(/\.+$/, '') + '.' };
     }
     const claims = (verified && verified.claims) || verified || {};
     const issuer = self.issuerOf(self.asBaseOf(req));
     const audiences = [].concat(claims.aud || []).map(String);
     if (String(claims.iss || '') !== issuer) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another issuer.");
-      return { ok: false, why: 'the id_token_hint was issued by "' +
-               (claims.iss || '') + '", and this authorization server is "' +
-               issuer + '".' };
+      return { ok: false, reason: claims.iss ? 'issuer' : 'noIssuer',
+               params: { iss: String(claims.iss || ''), issuer: issuer },
+               why: (claims.iss
+        ? 'the id_token_hint was issued by "' + claims.iss + '"'
+        : 'the id_token_hint names no issuer (no iss)') +
+               ', and this authorization server is "' + issuer + '".' };
     }
     if (audiences.indexOf(String(clientId)) < 0) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another client.");
-      return { ok: false, why: 'the id_token_hint was issued to ' +
+      return { ok: false, reason: 'audience',
+               params: { aud: [].concat(claims.aud || []).join(', '),
+                         client: String(clientId || '') },
+               why: 'the id_token_hint was issued to ' +
                JSON.stringify(claims.aud) + ', not to client "' + clientId +
                '".' };
+    }
+    // ASVS 5.0.0 9.2.2: a Logout Token this realm signed for the same client
+    // is not an ID Token, so its sid may not stand in for one.
+    if (claims.events !== undefined ||
+        /logout\+jwt|at\+jwt/i.test(String(header.typ || ''))) {
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Not an ID Token.");
+      return { ok: false, reason: 'signature',
+               why: 'the id_token_hint is not an ID Token.' };
     }
     log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Verified.");
     return { ok: true, sub: String(claims.sub || ''), claims: claims };
@@ -11235,7 +12013,8 @@ class OAuth2Server {
       log.debug("Leaving the authorization endpoint. " + policy.description);
       errorCodes.mark(res, errorCodes.codeOf(policy) || 'STS-OAUTH-0419');
       log.debug("Leaving OAuth2Server.authorizeRequest().");
-      return self.oauthError(res, 400, policy.error, policy.description);
+      return self.refuseAuthorization(req, res, 400, policy.error,
+                                      policy.description);
     }
 
     // The request-level checks, in `vetAuthorizationRequest()` so that the PAR
@@ -11250,6 +12029,16 @@ class OAuth2Server {
                 vetted.code + ").");
       errorCodes.mark(res, vetted.code);
       log.debug("Leaving OAuth2Server.authorizeRequest().");
+      // A BROWSER IS SHOWN EVERY REFUSAL THAT IS NOT REDIRECTED (#1326),
+      // not only those about the redirect_uri: whatever it is, a person
+      // landed here and there is nowhere to send them. The status and the
+      // values are those of the JSON a client library gets.
+      if (self.isBrowserRequest(req)) {
+        // error-code: none — the code is vetAuthorizationRequest()'s,
+        // marked above
+        return self.sendRefusalPage(req, res, vetted.status, vetted.error,
+                                    vetted.description, vetted.pageText);
+      }
       // error-code: none — the code is vetAuthorizationRequest()'s, marked
       // above
       return self.oauthError(res, vetted.status, vetted.error,
@@ -11258,7 +12047,7 @@ class OAuth2Server {
     const q = vetted.q;
     const redirectUri = vetted.redirectUri;
 
-    const fail = function (error, description) {
+    const fail = function (error, description, pageText?) {
       log.debug("Entering fail().");
       // RFC 9700 section 4.11.2: an authorization server must authenticate the
       // user BEFORE redirecting them. With nobody signed in, an error
@@ -11281,6 +12070,7 @@ class OAuth2Server {
         const shown: Json = {
           error: error, description: description, redirectUri: redirectUri,
           clientId: q.client_id, state: q.state, why: policy.why,
+          requirement: policy.requirement, q: q, pageText: pageText,
           // The link the person can choose. It carries the same parameters the
           // redirect would have — including the RFC 9207 iss — because the
           // point is to make the redirect a DECISION rather than to change it.
@@ -11323,7 +12113,7 @@ class OAuth2Server {
                               String(q.response_mode))
             .then(function (target: Json): Json {
               // form_post.jwt (#126): the JWT as a form field, POSTed.
-              return self.sendRedirectInterstitial(res,
+              return self.sendRedirectInterstitial(req, res,
                 Object.assign(shown, { target: target.url },
                               target.formPost
                                 ? { form: { response: target.response } }
@@ -11335,7 +12125,7 @@ class OAuth2Server {
                               String((e && e.message) || e));
             });
         }
-        return self.sendRedirectInterstitial(res, shown);
+        return self.sendRedirectInterstitial(req, res, shown);
       }
       log.debug("Leaving the authorization endpoint. Reporting " + error + " " +
           "to the client" +
@@ -11360,7 +12150,7 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.authorizeRequest().");
       // error-code: none — the code is vetAuthorizationRequest()'s, marked
       // above
-      return fail(vetted.error, vetted.description);
+      return fail(vetted.error, vetted.description, vetted.pageText);
     }
     // An id_token_hint that did not verify (#118) — see withIdTokenHint().
     const idTokenHint = req.stsIdTokenHint || null;
@@ -11645,10 +12435,23 @@ class OAuth2Server {
       // -------------------------------------------------------------------
       const wantsConsent = String(q.prompt || '').split(/\s+/)
                                                  .indexOf('consent') >= 0;
+      // A PUBLIC CLIENT IS ASKED EVERY TIME (ASVS 5.0.0 10.7.1,
+      // `consent.alwaysAsks()`), AND THE ANSWER TO THIS REQUEST IS SPENT ON
+      // THIS PASS, as an RFC 9396 Allow is below: the consent screen records
+      // it under the scopes' digest, and the pass that follows consumes it.
+      // Without it the second pass asked again, and the person went round
+      // for ever. A later request finds nothing to spend and is asked.
+      const scopeAnswerDigest = consent.required() &&
+        consent.alwaysAsks(String(q.client_id || '').trim())
+        ? richAuthorization.scopeAnswerDigestOf(q.scope) : '';
+      const scopesAnswered = !!scopeAnswerDigest && !wantsConsent &&
+        richAuthorization.consumeConsented((session.user || {}).username,
+                                           q.client_id, scopeAnswerDigest);
       const decision: Json = consent.required()
         ? consent.outstanding({ username: (session.user || {}).username,
                                 clientId: q.client_id,
-                                scope: q.scope, all: wantsConsent })
+                                scope: q.scope, all: wantsConsent,
+                                answered: scopesAnswered })
         : { outstanding: [], scopes: [] };
       // RFC 9396: details of a declared type are asked about EVERY time, and an
       // Allow is spent here, on the pass that follows it — see
@@ -11816,9 +12619,14 @@ class OAuth2Server {
           clientId: String(q.client_id || ''),
           clientName: (entry && entry.name) || String(q.client_id || ''),
           scopes: decision.outstanding,
+          resources: [].concat(q.resource || []).map(String),
           authorizationDetails: detailsOutstanding
             ? richAuthorization.describe(consentDetails.details) : [],
           detailsDigest: detailsOutstanding ? detailsDigest : '',
+          // The digest a public client's Allow is recorded under, for the
+          // next pass to spend; '' for every other client.
+          scopeAnswerDigest: decision.outstanding.length
+            ? scopeAnswerDigest : '',
           // The details themselves, for their limits' controls (#432 phase 5).
           rawAuthorizationDetails: detailsOutstanding
             ? consentDetails.details : [],
@@ -11982,6 +12790,18 @@ class OAuth2Server {
       // the sign-in screen, as it was (the plan's D10).
       accountChoice: promptList.indexOf('login') >= 0 ? 'never'
         : (promptList.indexOf('select_account') >= 0 ? 'always' : ''),
+      // WHY A PERSON WHO HAS A SESSION IS ASKED TO SIGN IN AGAIN (#1302),
+      // for the screen's one-line notice: `prompt=login`, or a session
+      // older than `max_age` allows (the request's, or the client's
+      // `default_max_age`). '' on a first sign-in and for every other
+      // reason a sign-in is asked for — `select_account`, an id_token_hint
+      // naming somebody else, an acr the session did not earn — about which
+      // the screen says nothing new. Wording only: whether the person is
+      // sent to sign in was decided above.
+      reauthentication: !session ? ''
+        : (promptList.indexOf('login') >= 0 ? 'prompt_login'
+          : (stepUpReauth && stepUpAssessed &&
+             stepUpAssessed.reason === 'max_age' ? 'max_age' : '')),
       request: req,
       protocol: 'OAuth 2.0 / OIDC',
       // WHICH APPLICATION this is, so that an entry naming a federation
@@ -12031,10 +12851,19 @@ class OAuth2Server {
       'margin-top:1.6rem}.sub{color:#555;font-size:.9rem}' +
       '.ok{background:#e8f5e9;border-left:4px solid #2e7d32;padding:.6rem ' +
       '.8rem;margin:1rem ' +
-      '0}table{border-collapse:collapse;width:100%;margin:.6rem ' +
+      '0}' +
+      // A refusal as prominent as `.ok` (#1302): the same box, amber.
+      '.warn{background:#fff8e1;border-left:4px solid #b26a00;padding:.6rem ' +
+      '.8rem;margin:1rem 0}' +
+      'table{border-collapse:collapse;width:100%;margin:.6rem ' +
       '0}th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid ' +
       '#ddd;vertical-align:top}code{background:#f4f4f4;padding:.05rem ' +
-      '.25rem;border-radius:3px;word-break:break-all}</style></head><body>' +
+      '.25rem;border-radius:3px;word-break:break-all}' +
+      // The language chooser, a collapsed row (#1289).
+      'details.language-row{float:right;margin:0 0 .5rem 1rem}' +
+      // The shared error ending (#1326), drawn where a return was refused.
+      ErrorPage.FOOTER_CSS +
+      PageLocale.ROW_CSS + '</style></head><body>' +
       inner + '</body></html>';
   }
 
@@ -12080,8 +12909,8 @@ class OAuth2Server {
   // A sign-out answer that is a PAGE for the person (#124, gap 8): a refusal
   // was a JSON `oauthError` shown to a browser. `status` 400 for a refusal.
   // A page that is not a refusal passes its translator and the language
-  // chooser (#539), drawn above the heading; a refusal passes neither and
-  // stays English.
+  // chooser (#539), drawn above the heading. A refusal is drawn by
+  // `logoutRefusal()` since #1326, translated, and does not come here.
   private logoutAnswer(res: Res, status: number, title: string,
                        body: string,
                        t?: ReturnType<typeof PageLocale.forPage>,
@@ -12093,6 +12922,53 @@ class OAuth2Server {
                              '</h1>' + body, '', t, title));
     log.debug("Leaving OAuth2Server.logoutAnswer().");
     return undefined;
+  }
+
+  // A SIGN-OUT REFUSAL IS THE SHARED ERROR PAGE (#1326): the reason in the
+  // box in the page's language — RP-Initiated Logout 1.0 section 2's
+  // `ui_locales`, the client, the person — that nothing was done, the
+  // section collapsed, the way back, and the diagnostics. Until then a
+  // refusal was English and ended with nowhere to go.
+  /**
+   * Sends a refused sign-out as the shared error page.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param info - `status`, `title` and `message` (keys under
+   *   `oauthPages.logoutRefused.`), `params`, `background` (a key or ''),
+   *   `after` (a key), `clientId`, `q` (the request's parameters, where they
+   *   could be read) and `detail` (the English detail)
+   */
+  private logoutRefusal(req: Req, res: Res, info: Json): void {
+    const { log, sessionOf } = this.deps;
+    log.debug("Entering OAuth2Server.logoutRefusal(). " + info.message);
+    const q = info.q || {};
+    const session = sessionOf(req);
+    const username = String((session && session.user &&
+                             session.user.username) || '');
+    const t = this.pageTranslator(req, String(info.clientId || ''),
+                                  String(q.ui_locales || ''), username);
+    const key = function (name: string): string {
+      return 'oauthPages.logoutRefused.' + name;
+    };
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: info.status,
+      title: t.text(key(info.title)),
+      message: t.html(key(info.message), info.params || {}),
+      after: '<p>' + t.html(key(info.after || 'nothingDone')) + '</p>',
+      background: info.background ? t.html(key(info.background)) : '',
+      diagnostics: [
+        { label: t.text('errorPages.application'), value: info.clientId },
+        { label: t.text('errorPages.postLogoutRedirectUri'),
+          value: q.post_logout_redirect_uri },
+        { label: t.text('errorPages.state'), value: q.state },
+        { label: t.text('errorPages.signedInAs'), value: username },
+        { label: t.text('errorPages.detail'), value: info.detail }
+      ]
+    });
+    log.debug("Leaving OAuth2Server.logoutRefusal().");
   }
 
   // The value the confirmation form carries (#124): a digest of the session's
@@ -12177,7 +13053,7 @@ class OAuth2Server {
   //
   // `ui_locales` is honoured since #539 (section 2's "End-User's preferred
   // languages and scripts for the user interface"): the confirmation and
-  // signed-out pages are drawn in it; a refusal stays English.
+  // signed-out pages are drawn in it, and since #1326 a refusal too.
   // ---------------------------------------------------------------------------
   private logoutEndpoint(req: Req, res: Res): Json {
     const { log, validation, errorCodes, xmlEscape } = this.deps;
@@ -12189,11 +13065,9 @@ class OAuth2Server {
       if (type !== 'application/x-www-form-urlencoded') {
         errorCodes.mark(res, 'STS-OAUTH-0604');
         log.debug("Leaving the logout endpoint. A POST that is not a form.");
-        return self.logoutAnswer(res, 400, 'This sign-out request could not ' +
-          'be read', '<p>A sign-out sent with POST is a form ' +
-          '(application/x-www-form-urlencoded, RP-Initiated Logout 1.0 ' +
-          'section 2). This one was <code>' + xmlEscape(type || '(none)') +
-          '</code>. You are still signed in.</p>');
+        return self.logoutRefusal(req, res, { status: 400,
+          title: 'unreadableTitle', message: 'notForm',
+          params: { type: type || '(none)' } });
       }
       const raw = typeof req.body === 'string' ? req.body
         : (Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '');
@@ -12211,17 +13085,19 @@ class OAuth2Server {
       log.debug("Leaving the logout endpoint. The request is malformed: " +
                 asked.code + " on \"" + asked.field + "\".");
       errorCodes.mark(res, 'STS-OAUTH-0171');
-      return self.logoutAnswer(res, 400, 'This sign-out request could not ' +
-        'be read', '<p>' + xmlEscape(asked.detail) + '</p><p>Nothing has ' +
-        'been done: you are still signed in.</p>');
+      return self.logoutRefusal(req, res, { status: 400,
+        title: 'unreadableTitle', message: 'malformed',
+        detail: asked.detail });
     }
     self.logoutRequest(req, res, asked.value).catch(function (e: Json) {
       log.error(errorCodes.tag('STS-OAUTH-0605') + 'the logout endpoint ' +
                 'failed: ' + ((e && e.stack) || e));
       if (!res.headersSent) {
         errorCodes.mark(res, 'STS-OAUTH-0605');
-        self.logoutAnswer(res, 500, 'The sign-out failed', '<p>' +
-          xmlEscape(String((e && e.message) || e)) + '</p>');
+        self.logoutRefusal(req, res, { status: 500, title: 'failedTitle',
+          message: 'failed', after: 'mayNotHaveFinished',
+          q: req.query, detail: require('../common/mode').hidesFailureDetail()
+            ? '' : String((e && e.message) || e) });
       }
     });
     log.debug("Leaving the logout endpoint. Handed on.");
@@ -12243,10 +13119,10 @@ class OAuth2Server {
       if (!verdict.ok) {
         errorCodes.mark(res, 'STS-OAUTH-0602');
         log.debug("Leaving OAuth2Server.logoutRequest(). The hint.");
-        return self.logoutAnswer(res, 400, 'This sign-out request was ' +
-          'refused', '<p>RP-Initiated Logout 1.0 section 2: ' +
-          xmlEscape(verdict.why) + '</p><p>Nothing has been done: you are ' +
-          'still signed in.</p>');
+        return self.logoutRefusal(req, res, { status: 400,
+          title: 'refusedTitle', message: 'hint.' + verdict.reason,
+          params: verdict.params, background: 'hintBackground',
+          clientId: hintClient, q: q, detail: verdict.why });
       }
       hinted = verdict.claims;
       clientId = hintClient;
@@ -12255,6 +13131,24 @@ class OAuth2Server {
     // --- 3. the return -----------------------------------------------------
     let returnTo = '';
     let refusedNote = '';
+    // A RETURN THAT IS NOT FOLLOWED IS ONE THING, SAID ONE WAY (#1302,
+    // #1331, rcbj 2026-11-05: "be consistent in how we handle this").
+    // Whatever the reason — no client named, an address the client did not
+    // register, a private-use address nobody vouches for, a client that
+    // registered nothing — the request named a post_logout_redirect_uri and
+    // will not be sent there, and EVERY page this sign-out draws leads with
+    // the amber box saying so: the question (section 2's "MUST ask"), the
+    // page after it is declined, and the signed-out page, which is then
+    // "partly refused". The sentence is the reason's own
+    // (`oauthPages.signedOut.<key>`), in the page's language, names only
+    // the address the request sent (never a registered one, #1331), and is
+    // in the present tense so the same words are true before and after the
+    // person answers. Until 2026-11-05 only the unregistered address had
+    // the box; the rest were one grey English sentence, and the question
+    // page showed none of it.
+    let unfollowed: { uri: string, key: string } | null = null;
+    // Its English description, for the page's diagnostics (#1326).
+    let refusedDetail = '';
     const target = q.post_logout_redirect_uri;
     // A REQUEST THAT NAMES NO CLIENT IS NOT RETURNED ANYWHERE, in every mode
     // (#187). RP-Initiated Logout 1.0 section 2: without an id_token_hint
@@ -12271,11 +13165,10 @@ class OAuth2Server {
       errorCodes.mark(res, 'STS-OAUTH-0785');
       log.info('oauth2: a post_logout_redirect_uri was not followed ' +
                '(STS-OAUTH-0785): the request named no client.');
-      refusedNote = '<p class="sub">You were not returned to <code>' +
-        xmlEscape(String(target)) + '</code>: RP-Initiated Logout 1.0 ' +
-        'section 2 — a sign-out that carries neither an id_token_hint nor ' +
-        'a client_id is not redirected, because nothing confirms the ' +
-        'address belongs to the application that sent you here.</p>';
+      unfollowed = { uri: String(target), key: 'noClient' };
+      refusedDetail = 'RP-Initiated Logout 1.0 section 2: a sign-out that ' +
+        'carries neither an id_token_hint nor a client_id is not ' +
+        'redirected.';
     } else if (target && self.logoutTargetConsidered(target)) {
       const check = bcp.checkPostLogoutRedirectUri({ target: String(target),
                                                      client: client });
@@ -12285,9 +13178,19 @@ class OAuth2Server {
         errorCodes.mark(res, check.errorCode || 'STS-OAUTH-0123');
         log.info('oauth2: a post_logout_redirect_uri was not followed (' +
                  (check.errorCode || '') + '): ' + check.description);
-        refusedNote = '<p class="sub">You were not returned to <code>' +
-          xmlEscape(String(target)) + '</code>: ' +
-          xmlEscape(check.description) + '</p>';
+        // The OpenID Foundation's
+        // oidcc-rp-initiated-logout-bad-post-logout-redirect-uri asks its
+        // reviewer for a page saying the request is invalid because the
+        // address is not a registered one (#1302). The session still ends
+        // (sections 2 and 4 allow it).
+        const code = String(check.errorCode || '');
+        unfollowed = { uri: String(target),
+                       key: code === 'STS-OAUTH-0123' ? 'notRegistered'
+                         : code === 'STS-OAUTH-0290' ? 'privateUse'
+                         : (code === 'STS-OAUTH-0286' ||
+                            code === 'STS-OAUTH-0603') ? 'clientRegisteredNone'
+                         : 'notFollowed' };
+        refusedDetail = String(check.description || '');
       }
     }
     // --- 4. confirmation ---------------------------------------------------
@@ -12321,6 +13224,23 @@ class OAuth2Server {
     // language it was.
     const t = self.pageTranslator(req, clientId, String(q.ui_locales || ''),
       String((session && session.user && session.user.username) || ''));
+    // The box (above), in that language: what was wrong first, then the
+    // address asked for and the section. Drawn ABOVE everything else on
+    // whichever page this is: the refusal is the news. Each key is a whole
+    // sentence, named in full so the catalogs' check can find it.
+    if (unfollowed) {
+      const sentences: Json = {
+        noClient: t.html('oauthPages.signedOut.noClient', unfollowed),
+        notRegistered: t.html('oauthPages.signedOut.notRegistered',
+                              unfollowed),
+        privateUse: t.html('oauthPages.signedOut.privateUse', unfollowed),
+        clientRegisteredNone: t.html(
+          'oauthPages.signedOut.clientRegisteredNone', unfollowed),
+        notFollowed: t.html('oauthPages.signedOut.notFollowed', unfollowed)
+      };
+      refusedNote = '<div class="warn" role="alert" ' +
+        'id="logout-return-refused">' + sentences[unfollowed.key] + '</div>';
+    }
     // The chooser on a page drawn once the request has been ACTED on returns
     // to the front door: asking for the sign-out again would act again (a
     // second pass of a declined one is a fresh confirmation, of a finished
@@ -12331,6 +13251,7 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.logoutRequest(). Declined.");
       return self.logoutAnswer(res, 200,
         t.text('oauthPages.logout.stillTitle'),
+        refusedNote +
         '<p>' + t.html('oauthPages.logout.nothingEnded') + '</p>' + (returnTo
           ? '<p><a href="' + xmlEscape(returnTo) + '">' +
             t.html('oauthPages.logout.returnToApp') + '</a></p>' : ''),
@@ -12338,18 +13259,31 @@ class OAuth2Server {
     }
     const hintIsThisSession = !!(hinted && session && hinted.sid &&
                                  String(hinted.sid) === String(session.id));
+    // A GET THAT IS NOT A TOP-LEVEL NAVIGATION ENDS NOTHING (#1443, ASVS 5.0.0
+    // 3.5.3): an image or a script is asked, as a request with no verified
+    // hint is. A client that sends no Sec-Fetch-* is unaffected, and
+    // RP-Initiated Logout's own flow is a navigation.
+    const fetchDest = String((req.headers || {})['sec-fetch-dest'] || '');
+    const fetchMode = String((req.headers || {})['sec-fetch-mode'] || '');
+    const notNavigating = req.method === 'GET' &&
+      ((!!fetchDest && fetchDest !== 'document') ||
+       (!!fetchMode && fetchMode !== 'navigate'));
     const mustAsk = !confirmed && (
+      (session && notNavigating) ||
       (session && !(hintIsThisSession &&
                     self.logoutHintMatches(session, q.logout_hint))) ||
       (!session && req.method === 'POST' && !cookiePresented));
     if (choices.length > 1) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking which " +
                 "account.");
-      return self.logoutConfirmPage(req, res, q, null, client, t, choices);
+      return self.logoutConfirmPage(req, res, q, null, client, t, choices,
+                                    undefined, refusedNote);
     }
     if (mustAsk) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking.");
-      return self.logoutConfirmPage(req, res, q, session, client, t);
+      return self.logoutConfirmPage(req, res, q, session, client, t,
+        undefined, self.logoutAskReason(q, session, hinted, returnTo,
+                                        !!unfollowed), refusedNote);
     }
     // --- 5. the sign-out ---------------------------------------------------
     // The same session WS-Federation's wsignout1.0 ends, through the same
@@ -12359,8 +13293,64 @@ class OAuth2Server {
     // The session the request resolved to, where the browser holds several
     // (#561); `endSession()` ignores it with the setting off.
     const ended = endSession(req, res, several && session ? session.id : '');
+    if (session) {
+      authn.clearSiteDataAfterSignOut(req, res);
+    }
+    // WHAT THE PAGE'S ENDING SHOWS where the return was refused (#1326).
+    const partly = unfollowed ? {
+      clientId: clientId, uri: unfollowed.uri, state: q.state,
+      username: String((session && session.user &&
+                        session.user.username) || ''),
+      detail: refusedDetail
+    } : null;
     return self.logoutFinish(req, res, ended, backchannelMark, returnTo,
-                             refusedNote, t, frontDoor);
+                             refusedNote, t, frontDoor, partly);
+  }
+
+  // WHY THE PAGE ASKS, named for the case at hand (#1301). The page used to
+  // say only that the request "did not prove it came from an application",
+  // which never said WHAT was missing, nor that a person asked without a
+  // hint is not sent on to the address the request named — the OpenID
+  // Foundation's oidcc-rp-initiated-logout-no-id-token-hint reviewer reads
+  // the page for exactly that. One catalog key per reason, each a whole
+  // sentence (word order differs between the languages), checked in the
+  // order `logoutRequest()`'s `mustAsk` tests them:
+  //
+  //   * no session: a POST without the sign-on cookie (cross-site);
+  //   * no id_token_hint — with the address the request named where it will
+  //     NOT be followed (`returnTo` empty: no client named, or not one the
+  //     client registered), without it where there is none, or where a
+  //     named client registered it and the confirmed sign-out returns there;
+  //   * a hint with no `sid`, or one for another session;
+  //   * otherwise the `logout_hint` named somebody else.
+  //
+  // Wording only: what is asked, followed and answered is unchanged.
+  // A request whose return is refused has the box above the question, which
+  // already says there was no hint; the grey line is then left out rather
+  // than repeat it (`null`).
+  private logoutAskReason(q: Json, session: Json, hinted: Json,
+                          returnTo: string, boxed?: boolean):
+                          { key: string, params: Json } | null {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.logoutAskReason().");
+    let key = 'oauthPages.logout.whyLogoutHint';
+    let params: Json = {};
+    const target = String(q.post_logout_redirect_uri || '');
+    if (!session) {
+      key = 'oauthPages.logout.whyNoCookie';
+    } else if (!hinted) {
+      if (target && !returnTo && boxed) {
+        log.debug("Leaving OAuth2Server.logoutAskReason(). The box says it.");
+        return null;
+      }
+      key = 'oauthPages.logout.whyNoHint';
+    } else if (!hinted.sid) {
+      key = 'oauthPages.logout.whyHintNoSid';
+    } else if (String(hinted.sid) !== String(session.id)) {
+      key = 'oauthPages.logout.whyHintOtherSession';
+    }
+    log.debug("Leaving OAuth2Server.logoutAskReason(). " + key);
+    return { key: key, params: params };
   }
 
   // The page that asks (#124, #115). A real form that POSTs back here with
@@ -12369,7 +13359,9 @@ class OAuth2Server {
   private logoutConfirmPage(req: Req, res: Res, q: Json, session: Json,
                             client: Json,
                             t: ReturnType<typeof PageLocale.forPage>,
-                            accounts?: Json[]): Json {
+                            accounts?: Json[],
+                            reason?: { key: string, params: Json } | null,
+                            refused?: string): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutConfirmPage().");
     const names = ['post_logout_redirect_uri', 'client_id',
@@ -12420,7 +13412,7 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.logoutConfirmPage(). Which account.");
       return this.logoutAnswer(res, 200,
         t.text('oauthPages.logout.confirmTitle'),
-        '<p>' + (app
+        (refused || '') + '<p>' + (app
           ? t.html('oauthPages.logout.askWhichApp',
                    { app: String(app), count: accounts.length })
           : t.html('oauthPages.logout.askWhich',
@@ -12438,7 +13430,7 @@ class OAuth2Server {
              : t.html('oauthPages.logout.ask'));
     log.debug("Leaving OAuth2Server.logoutConfirmPage().");
     return this.logoutAnswer(res, 200, t.text('oauthPages.logout.confirmTitle'),
-      '<p>' + ask + '</p>' +
+      (refused || '') + '<p>' + ask + '</p>' +
       '<form method="post" action="logout">' + carried +
       '<input type="hidden" name="confirm_for" value="' +
       xmlEscape(this.logoutConfirmFor(session)) + '">' +
@@ -12446,8 +13438,11 @@ class OAuth2Server {
       t.html('oauthPages.logout.signOut') + '</button> ' +
       '<button type="submit" name="confirm" value="no">' +
       t.html('oauthPages.logout.stay') +
-      '</button></form><p class="sub">' + t.html('oauthPages.logout.why') +
-      '</p>', t, chooser);
+      '</button></form>' +
+      // No line where the box above already says why (`reason` null).
+      (reason === null ? '' : '<p class="sub">' +
+        t.html((reason && reason.key) || 'oauthPages.logout.whyNoHint',
+               (reason && reason.params) || {}) + '</p>'), t, chooser);
   }
 
   // After the session has ended: the front-channel page, the return, or a
@@ -12456,10 +13451,32 @@ class OAuth2Server {
                        backchannelMark: Json, returnTo: string,
                        refusedNote: string,
                        t: ReturnType<typeof PageLocale.forPage>,
-                       chooser: string): Json {
+                       chooser: string, partly?: Json): Json {
     const { log, xmlEscape, frontchannel, backchannel, config } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.logoutFinish().");
+    // A REFUSED ADDRESS HEADS THE PAGE (2026-11-04): where the request's
+    // post_logout_redirect_uri was not followed, the page is titled for the
+    // refusal, not "Signed out" — the OpenID Foundation's reviewer of
+    // oidcc-rp-initiated-logout-bad-post-logout-redirect-uri reads the
+    // heading first, and a success heading over the warning box read as a
+    // success page. The green banner below still says the session ended.
+    const partlyRefused = !!partly;
+    const titleKey = partlyRefused ? 'oauthPages.signedOut.partlyRefused'
+      : 'oauthPages.signedOut.title';
+    // AND IT ENDS AS EVERY ERROR PAGE DOES (#1326): the start-over note, the
+    // portal and the diagnostics with the incident ID. Reserved here and sent
+    // below in the same synchronous run, as `audit.reserveIncident()` asks.
+    const ending = partly
+      ? ErrorPage.footer(t, [
+          { label: t.text('errorPages.application'), value: partly.clientId },
+          { label: t.text('errorPages.postLogoutRedirectUri'),
+            value: partly.uri },
+          { label: t.text('errorPages.state'), value: partly.state },
+          { label: t.text('errorPages.signedInAs'), value: partly.username },
+          { label: t.text('errorPages.detail'), value: partly.detail }
+        ], this.deps.audit.reserveIncident(res), new Date())
+      : '';
     const backchannelRows = session
       ? backchannel.deliveriesFor([session.id], backchannelMark) : [];
     const notifications = frontchannel.enabled()
@@ -12479,15 +13496,16 @@ class OAuth2Server {
       // The front- and back-channel tables are those modules' own markup,
       // and English (#539).
       const inner = chooser + '<h1>' +
-        t.html('oauthPages.signedOut.heading') + '</h1><p class="sub">' +
-        t.html('oauthPages.signedOut.frontSub') + '</p><div ' +
-        'class="ok">' + (session
+        t.html(partlyRefused ? titleKey : 'oauthPages.signedOut.heading') +
+        '</h1><p class="sub">' +
+        t.html('oauthPages.signedOut.frontSub') + '</p>' + refusedNote +
+        '<div class="ok">' + (session
           ? t.html('oauthPages.signedOut.frontEnded',
                    { username: session.user.username })
           : t.html('oauthPages.signedOut.frontNone')) +
-        '</div>' + refusedNote +
+        '</div>' +
         frontchannel.render(notifications) +
-        backchannel.render(backchannelRows) +
+        backchannel.render(backchannelRows) + ending +
         (checked
           ? '<h2>' + t.html('oauthPages.signedOut.returnHeading') +
             '</h2><p><a href="' +
@@ -12513,7 +13531,7 @@ class OAuth2Server {
       res.status(200)
          .type('text/html')
          .set('Cache-Control', 'no-store')
-         .send(self.logoutPage(inner, refresh, t));
+         .send(self.logoutPage(inner, refresh, t, t.text(titleKey)));
       log.debug("Leaving OAuth2Server.logoutFinish(). " + notifiable.length + " " +
                 "relying part" +
                 (notifiable.length === 1 ? 'y was' : 'ies were') +
@@ -12525,13 +13543,13 @@ class OAuth2Server {
       return res.redirect(302, returnTo);
     }
     log.debug("Leaving OAuth2Server.logoutFinish().");
-    return self.logoutAnswer(res, 200, t.text('oauthPages.signedOut.title'),
-      '<div class="ok">' + (session
+    return self.logoutAnswer(res, 200, t.text(titleKey),
+      refusedNote + '<div class="ok">' + (session
         ? t.html('oauthPages.signedOut.ended',
                  { username: session.user.username })
-        : t.html('oauthPages.signedOut.none')) + '</div>' + refusedNote +
+        : t.html('oauthPages.signedOut.none')) + '</div>' +
       backchannel.render(backchannel.deliveriesFor(
-        session ? [session.id] : [], backchannelMark)), t, chooser);
+        session ? [session.id] : [], backchannelMark)) + ending, t, chooser);
   }
 
   // ---------------------------------------------------------------------------
@@ -12767,7 +13785,7 @@ class OAuth2Server {
   // somewhere deeper.
   private async protectUserinfo(body: Json, registered: Json, base: Json,
                                 claims: Json): Promise<Json> {
-    const { jwt, stsCrypto, log, introspectionJwt } = this.deps;
+    const { stsCrypto, log, introspectionJwt } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.protectUserinfo().");
     const signAlg = String(registered.userinfo_signed_response_alg || 'none');
@@ -12778,8 +13796,8 @@ class OAuth2Server {
     // refusing is the difference between reading the registration as written
     // and making every client spell out something the spec already decided.
     const encEnc = encAlg
-      ? String(registered.userinfo_encrypted_response_enc || 'A128CBC-HS256') :
-                   '';
+      ? String(registered.userinfo_encrypted_response_enc ||
+               applications.defaultJweEnc()) : '';
 
     if (signAlg === 'none' && !encAlg) {
       log.debug("Leaving OAuth2Server.protectUserinfo(). Plain JSON.");
@@ -13217,6 +14235,9 @@ class OAuth2Server {
       client_id: fingerprint.client_id,
       fingerprint: fingerprint,
       jtis: jtis,
+      // The refresh family this code began (#1467, ASVS 5.0.0 10.4.2): a
+      // replay ends what was refreshed from it too, not only the first set.
+      family: self.familyOfIssued(issued),
       // Only under `oauth2.codeReplayIdempotent` (#614): nothing else reads
       // the tokens again, and the replay refusal revokes by jti.
       ...(self.deps.bcp.codeRedemptionRelaxed() ? { response: issued } : {})
@@ -13326,12 +14347,33 @@ class OAuth2Server {
     return { code: code, record: record, claim: claim };
   }
 
+  // The refresh family of a token set, or '' where it has no refresh token.
+  private familyOfIssued(response: Json): string {
+    const { log, stsCrypto, refreshTokenCrypto, bcp } = this.deps;
+    log.debug("Entering OAuth2Server.familyOfIssued().");
+    const token = response && response.refresh_token;
+    let family = '';
+    try {
+      const claims = !token ? null
+        : (refreshTokenCrypto.isEncrypted(token)
+          ? refreshTokenCrypto.claimsOfIssued(token)
+          : stsCrypto.decodeJws(token));
+      family = claims ? String(bcp.familyOfRefresh(claims) || '') : '';
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.familyOfIssued(): " +
+                ((e && e.message) || e));
+      family = '';
+    }
+    log.debug("Leaving OAuth2Server.familyOfIssued().");
+    return family;
+  }
+
   // The jtis of a token set this service issued, to revoke it later: read
   // once, as the set is recorded (#614), with `jwt.decode` rather than
   // `jwt.verify`, because these are this service's own tokens and the
   // signature was made two lines before.
   private issuedJtis(response: Json): string[] {
-    const { log, jwt, errorCodes, refreshTokenCrypto } = this.deps;
+    const { log, stsCrypto, errorCodes, refreshTokenCrypto } = this.deps;
     log.debug("Entering OAuth2Server.issuedJtis().");
     log.debug("Leaving OAuth2Server.issuedJtis().");
     const done = { response: response };
@@ -13346,7 +14388,7 @@ class OAuth2Server {
           // it and reads a JWS unchanged.
           const claims = refreshTokenCrypto.isEncrypted(token)
             ? refreshTokenCrypto.claimsOfIssued(token)
-            : jwt.decode(token);
+            : stsCrypto.decodeJws(token);
           return (claims && claims.jti) || '';
         } catch (e) {
           // Not decodable, which cannot happen for a token this service minted
@@ -13369,7 +14411,7 @@ class OAuth2Server {
   // by; the code itself is not needed past its presentation.
   private replayOrRefuseRedemption(res: Res, code: string, fingerprint: Json,
                                    respond: Json): Json {
-    const { jwt, log, STS, mode, stats, bcp, errorCodes,
+    const { log, STS, mode, stats, bcp, errorCodes,
             refreshTokenCrypto } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.replayOrRefuseRedemption().");
@@ -13477,6 +14519,23 @@ class OAuth2Server {
                'the repeat is refused and what the code bought revoked.');
     }
     if (!replay.ok || nothingToReplay) {
+      if (done.family) {
+        // WHAT WAS REFRESHED FROM IT (#1489, ASVS 5.0.0 10.4.2), through the
+        // same act as the first set below: `stats.revoke()` fills the grant's
+        // CAEP session-revoked and, for a replay, its risk-level-change.
+        self.deps.bcp.grantMembersOf(done.family).forEach(function (jti: string) {
+          stats.revoke(jti, 'RFC 9700 section 4.5: an authorization code was ' +
+                            'presented twice',
+                       { initiatingEntity: 'policy',
+                         replay: 'authorization-code-replay' });
+        });
+        self.deps.bcp.revokeFamily(done.family, done.client_id).catch(
+          function (e) {
+            log.error(errorCodes.tag('STS-OAUTH-0518') + 'oauth2: the refresh ' +
+                      'family of a replayed code could not be revoked: ' +
+                      ((e && e.message) || e));
+          });
+      }
       (replay.ok ? done.jtis : (replay.revoke || [])).forEach(function (jti) {
         // A POLICY's act and a security event (#239): the grant is reported
         // ended by `policy`, with the risk it was replayed under.
@@ -14181,6 +15240,20 @@ class OAuth2Server {
     // OAUTH 2.1 — two refusals about the SHAPE of the request, before anything
     // in it is believed: a repeated parameter (sections 3.1 and 3.2) and more
     // than one client authentication method (section 2.4).
+    // RFC 6749 section 3.2: a parameter MUST NOT appear more than once. Product
+    // refuses it outright, as OAuth 2.1 mode does below (ASVS 5.0.0 15.3.7).
+    if (!oauth21.enabled() &&
+        require('../common/mode').refusesRepeatedTokenParameters()) {
+      const repeated = oauth21.repeatedParameterRefusal(
+          oauth21.repeatedNames(null, typeof req.body === 'string' ? req.body :
+                                      ''), 'token request', true);
+      if (repeated) {
+        log.debug("Leaving the token endpoint. A repeated parameter.");
+        errorCodes.mark(res, repeated.errorCode || 'STS-OAUTH-0285');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, repeated.error, repeated.description);
+      }
+    }
     if (oauth21.enabled()) {
       const repeated = oauth21.repeatedParameterRefusal(
           oauth21.repeatedNames(null, typeof req.body === 'string' ? req.body :
@@ -14756,6 +15829,20 @@ class OAuth2Server {
     // that declares no list is not.
     const declaredFlows = client.client_id
       ? applications.declaredFlowsOf(client.client_id) : null;
+    // A CLIENT THAT DECLARES NOTHING (#1453, ASVS 5.0.0 10.4.4): in product it
+    // has the RFC 7591 section 2 default, the code flow, and its refresh.
+    const undeclared = !!client.client_id &&
+      !(declaredFlows && declaredFlows.grant_types);
+    if (undeclared && mode.narrowsUndeclaredGrants() &&
+        ['authorization_code', 'refresh_token'].indexOf(
+          String(body.grant_type || '')) < 0) {
+      log.debug("Leaving the token endpoint. A grant no list declares.");
+      errorCodes.mark(res, 'STS-OAUTH-0598');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 400, 'unauthorized_client',
+        'Client "' + client.client_id + '" declares no grant_types, so it ' +
+        'may use authorization_code and refresh_token alone.');
+    }
     if (declaredFlows && declaredFlows.grant_types &&
         declaredFlows.grant_types.indexOf(
           String(body.grant_type || '')) < 0) {
@@ -15131,7 +16218,7 @@ class OAuth2Server {
           grant: grant,
           dpopJkt: dpopJkt,
           certificate: !!mtls.peerCertificate(req),
-          certificateVerified: mtls.peerVerified(req),
+          certificateVerified: mtls.peerVerified(req).verified,
           exempt: senderConstraints.mtlsExemptClient(opts.client_id),
           mtlsAvailable: mtls.available()
         });
@@ -15706,6 +16793,16 @@ class OAuth2Server {
           }).join(', ') +
           ' cannot be authorized by it.');
       }
+      // The session the offer was made on (#666) is read synchronously by
+      // the issuance check, so it is admitted to the session window first,
+      // as the refresh grant admits its token's. A miss decides on the
+      // standing, as no session would.
+      await authn.warmSessionAsync(String(record.sessionId || ''))
+        .catch(function (e: Json): void {
+          log.debug("Caught in OAuth2Server.tokenGrant(): " +
+                    ((e && e.message) || e));
+          // Not admitted: the check finds no session and reads the standing.
+        });
       const issued = await issue({
         jkt: dpopJkt,
         user: preAuthUser, client_id: client.client_id, scope: VCI_SCOPE,
@@ -15720,6 +16817,12 @@ class OAuth2Server {
         // the parameter and threw it away would be the bug this closes.
         audience: self.audienceClaim(requestedResources),
         grant: 'pre-authorized code',
+        // THE SESSION THE OFFER WAS MADE ON (#666): the issuance policy
+        // decides the risk question on ITS risk. Without it the gate fell
+        // back on the person's standing held in this process, which may be
+        // an earlier, refused sign-in's HIGH. An offer made on no session,
+        // or on one that has ended, still falls back on the standing.
+        decided_on_session_id: String(record.sessionId || ''),
         authorization_details: grantIdentifiers(askedFor.details, preAuthUser)
       });
       // Remember which access token belongs to a deferred issuance, so the
@@ -16024,7 +17127,7 @@ class OAuth2Server {
         provedJkt: dpopJkt,
         tokenThumbprint: mtls.boundThumbprintOf(claims),
         certificate: !!mtls.peerCertificate(req),
-        certificateVerified: mtls.peerVerified(req),
+        certificateVerified: mtls.peerVerified(req).verified,
         // RFC 8705 section 7.1 again, read off the same decision the binding
         // check above made: `refreshBound` is false exactly when the client
         // authenticated by certificate on this request AND owns this token, and
@@ -16171,6 +17274,7 @@ class OAuth2Server {
         // the paragraph on refreshToken() in tokenSet() — RFC 6749 section 6.
         grantScope: claims.scope || '',
         grantResources: grantedResources,
+        chainIat: claims.chain_iat,
         // The session the REFRESHED token came from, looked up by the refresh
         // token's own jti. Nothing on the wire carries it — a refresh token
         // names no session — so without this every second-generation token
@@ -17131,7 +18235,27 @@ class OAuth2Server {
       // path below refuses it and development reads it as it always read a
       // non-JWT.
       let subjectFromOpaque = false;
-      if (!subjectIsSaml && subjectToken.indexOf('.') < 0) {
+      // A KERBEROS SUBJECT TOKEN (#658): accepted by the acceptor in every
+      // mode, its subject the ticket's client, its chain the PAC's
+      // S4U_DELEGATION_INFO. See kerberosSubject().
+      let subjectKerberos: Json = null;
+      if (krb5Tokens.isType(subjectType)) {
+        const fromKerberos = await self.kerberosSubject(subjectToken,
+          subjectType, client,
+          krb5Tokens.isType(String(body.requested_token_type || '')));
+        if (fromKerberos.error) {
+          errorCodes.mark(res, fromKerberos.code);
+          log.debug("Leaving OAuth2Server.tokenGrant(). " + fromKerberos.code);
+          // error-code: none — marked above: 0988 to 0992, by the problem.
+          return self.oauthError(res, 400, fromKerberos.error,
+                                 fromKerberos.description);
+        }
+        subject = fromKerberos.subject;
+        subjectKerberos = fromKerberos.verdict;
+        ownSubject = true;
+      }
+      if (!subjectIsSaml && !subjectKerberos &&
+          subjectToken.indexOf('.') < 0) {
         const foundSubject = opaqueAccessToken.lookup(subjectToken);
         if (foundSubject.kind === 'inactive' &&
             foundSubject.why === 'expired') {
@@ -17155,7 +18279,7 @@ class OAuth2Server {
           subjectFromOpaque = true;
         }
       }
-      if (!subjectIsSaml && !subjectFromOpaque) {
+      if (!subjectIsSaml && !subjectFromOpaque && !subjectKerberos) {
         try {
           subject = helpers.verifyOwnJws(subjectJws);
           ownSubject = true;
@@ -17225,6 +18349,11 @@ class OAuth2Server {
                   "it without verifying.");
         try {
           subject = jsonFromB64u(subjectJws.split('.')[1]) || {};
+          // RFC 7519 section 4.1.2: `sub` is a StringOrURI. Anything else is
+          // no subject, and this server does not mint a token about it.
+          if (typeof subject.sub !== 'string') {
+            delete subject.sub;
+          }
         } catch (e2) {
           log.error(errorCodes.tag('STS-OAUTH-0225') + 'the subject_token ' +
                                                        'could not be read at ' +
@@ -17249,7 +18378,8 @@ class OAuth2Server {
       // A VERIFIED TOKEN MUST BE THE TYPE IT WAS DECLARED AS (#130). One this
       // realm cannot verify — development's token from anywhere — is held
       // only to the list of types, above: its shape is somebody else's.
-      const subjectKind = subjectVerified && !subjectAssertion ?
+      const subjectKind = subjectVerified && !subjectAssertion &&
+        !subjectKerberos ?
         self.ownTokenKind(subjectToken, subject) : '';
       const subjectMismatch = subjectKind &&
         self.kindProblem(String(body.subject_token_type).trim(), subjectKind,
@@ -17299,6 +18429,25 @@ class OAuth2Server {
       // names; `act.sub` is then taken from the verified assertion.
       const actorType = String(body.actor_token_type || '').trim();
       let actorAssertion: Json = null;
+      // A KERBEROS ACTOR TOKEN (#658): a ticket for this authorization
+      // server's SPN whose client is the exchanging client's own service
+      // principal — the Kerberos form of #550's rule that an actor_token is
+      // the exchanging client's own. See kerberosActor().
+      let actorKerberos: Json = null;
+      if (body.actor_token && krb5Tokens.isType(actorType)) {
+        const kerberosActor = await self.kerberosActor(
+          String(body.actor_token), actorType, client);
+        if (kerberosActor.error) {
+          errorCodes.mark(res, kerberosActor.code);
+          log.debug("Leaving OAuth2Server.tokenGrant(). " + kerberosActor.code);
+          // error-code: none — marked above: 0988 or 0993.
+          return self.oauthError(res, 400, kerberosActor.error,
+                                 kerberosActor.description);
+        }
+        actorKerberos = kerberosActor.verdict;
+        actorClaims = kerberosActor.claims;
+        act = { sub: actorClaims.sub };
+      }
       if (body.actor_token && exchangeAssertions.isAssertionType(actorType)) {
         let actorOwn = false;
         if (actorType === exchangeAssertions.TYPES.jwt) {
@@ -17341,7 +18490,7 @@ class OAuth2Server {
           }
         }
       }
-      if (body.actor_token && !actorAssertion) {
+      if (body.actor_token && !actorAssertion && !actorKerberos) {
         // THE ACTOR IS VERIFIED BY THE SAME RULE, for the same reason: `act`
         // is the record, inside the token that comes out, of who acted on the
         // subject's behalf, and a name read out of an unverified token puts a
@@ -17551,7 +18700,8 @@ class OAuth2Server {
         delegationPolicy.mayActNames(mayAct, actorIdentity);
       // An assertion's subject was recorded where it was verified (#114,
       // `assertionSubject()`), with what vouched for it.
-      if (!subjectAssertion) {
+      // A Kerberos subject was recorded where it was accepted (#658).
+      if (!subjectAssertion && !subjectKerberos) {
         stats.recordAuthentication({
           presented: subject.username || subject.sub || 'urn:sts:exchanged',
           protocol: 'OAuth 2.0', method: 'token exchange (RFC 8693)',
@@ -17831,7 +18981,11 @@ class OAuth2Server {
           authorizedBy: delegationPolicy.rowText(decision),
           reason: decision.why,
           consumed: [OAuth2Server.consumedInput('subject_token',
-                                                subjectAssertion,
+                                                subjectAssertion ||
+                                                (subjectKerberos
+                                                  ? { format: 'kerberos',
+                                                      shape: subjectKerberos
+                                                        .shape } : null),
                                                 String(subject.jti || ''),
                                                 subjectVerified)],
           produced: [], sessionId: ''
@@ -17974,7 +19128,8 @@ class OAuth2Server {
       // `exchange`, as for every grant.
       const exchangeBound = richAuthorization.exchangeBoundProblem(
         requestedDetails, subject && subject.authorization_details,
-        ownSubject && subjectVerified && !subjectAssertion);
+        ownSubject && subjectVerified && !subjectAssertion &&
+        !subjectKerberos);
       if (exchangeBound) {
         errorCodes.mark(res, String(errorCodes.codeOf(exchangeBound) ||
                                     'STS-FGA-0017'));
@@ -17984,78 +19139,102 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_authorization_details',
                                exchangeBound.description);
       }
-      const exchanged = await issue({
-        jkt: dpopJkt,
-        sub: subject.sub || 'urn:sts:exchanged',
-        user: Object.assign(userFor(subject.username),
-                            subject.sub ? { sub: subject.sub } : {}),
-        client_id: client.client_id,
-        // AN EXCHANGE THAT NAMES NO `scope` CARRIES THE SUBJECT'S FORWARD
-        // (#156). RFC 8693 section 2.1 leaves the scope of the new token to
-        // the server's policy, and this server's is the one rule for every
-        // exchange — an access, refresh or ID Token, a JWT or SAML assertion
-        // (#114): the `scope` asked for, which may narrow and never widen
-        // (above); else the subject_token's `scope` claim; else none. Either
-        // way it then goes through tokenSet()'s narrowing like every other
-        // grant — the client's declared scopes (#110), the roles (#302), and
-        // RFC 9068's audience plan, which takes the OpenID Connect scopes off
-        // a token for another resource server. What survives is the response's
-        // `scope` member, left out when nothing did, and an ID Token comes
-        // back only when `openid` survived (idTokenFollowsIssuedScope).
-        // A requested scope the policy narrowed (#549) is the list that
-        // survived — empty included, so a dropped permission never brings
-        // the subject's own scope back in its place.
-        scope: exchangeScope !== null ? exchangeScope
-          : String(subject.scope || ''),
-        idTokenFollowsIssuedScope: true,
-        audience: self.audienceClaim(issuedAudiences), act: act,
-        // RFC 9396 on an exchange: the details asked for, as for a direct
-        // grant. The audience rule is tokenSet()'s backstop, as the header
-        // above says.
-        authorization_details: grantIdentifiers(requestedDetails,
-                                                userFor(subject.username)),
-        // Section 2.2.1's `refresh_token` member — and this flag is the ONLY
-        // thing this branch decides about it. It is minted by the same
-        // refreshToken(), through the same tokenSet(), as the token every other
-        // grant here hands back, which is what makes "treat it as any other
-        // refresh token" true by construction rather than by six things having
-        // been remembered: the same `typ: 'Refresh'`, the same jti in the same
-        // revocation set, the same `oauth2.refreshTokenTtlS`, the same RFC 9700
-        // family bookkeeping and rotation on redemption, and the same
-        // confirmations — an exchange made with a DPoP proof or over a client
-        // certificate mints a BOUND refresh token, which is the whole of RFC
-        // 9449 section 5 and RFC 8705 section 3 on the long-lived half of a
-        // grant.
-        withRefresh: wantsRefresh,
-        // RFC 8707, reached through RFC 8693 section 2.1, and only relevant now
-        // that there is a refresh token to carry it: `resources` is what the
-        // refresh grant compares a renewal against, so an exchange addressed to
-        // one audience must not be renewable into a token carrying this
-        // service's default. A grant cannot widen itself by being renewed, and
-        // an exchange is a grant like the rest. The AUDIENCES go on it rather
-        // than `requestedResources` alone, because `aud` on the token being
-        // minted is the union of both and the two must not come to describe
-        // different resource servers.
-        resources: wantsRefresh ? issuedAudiences : undefined,
-        grant: 'token exchange'
-      });
-      // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN THE
-      // `access_token` MEMBER, and that member holds an access token here
-      // whatever was asked for — so it says access token even when a refresh
-      // token was requested and came back beside it.
-      //
-      // The other reading of section 2.1 is that a client asking for a refresh
-      // token should be handed one IN `access_token` with `issued_token_type`
-      // naming it — the section does say that member is called `access_token`
-      // for historical reasons and need not carry one. That is deliberately not
-      // what happens here. A client would then hold a `typ: 'Refresh'` JWT
-      // under the name every other grant in this service uses for the
-      // credential a resource server is presented with, and this service's own
-      // protected endpoints would refuse it. The refresh token goes where every
-      // other grant puts one, which is what "the same as any other refresh
-      // token" means, and the client gets both halves of a grant out of one
-      // exchange rather than a credential it has to know not to present.
-      exchanged.issued_token_type = ACCESS_TOKEN_TYPE;
+      // A KERBEROS TOKEN ASKED FOR (#658): `requested_token_type` naming one of
+      // the Kerberos Token Profile's six URIs is answered with that token in
+      // `access_token` (RFC 8693 section 2.2.1), not an access token: see
+      // kerberosExchangeToken(). No refresh token and no ID Token ride along.
+      const kerberosAsked = krb5Tokens.isType(
+        String(body.requested_token_type || ''));
+      let kerberosMinted: Json = null;
+      let exchanged: Json;
+      if (kerberosAsked) {
+        const minted = await self.kerberosExchangeToken({
+          req: req, body: body, client: client, subject: subject,
+          subjectKerberos: subjectKerberos, act: act,
+          audiences: issuedAudiences, decision: decision, base: base });
+        if (minted.error) {
+          errorCodes.mark(res, minted.code);
+          log.debug("Leaving OAuth2Server.tokenGrant(). " + minted.code);
+          // error-code: none — marked above: 0995 to 0997.
+          return self.oauthError(res, 400, minted.error, minted.description);
+        }
+        kerberosMinted = minted.token;
+        exchanged = minted.response;
+      } else {
+        exchanged = await issue({
+          jkt: dpopJkt,
+          sub: subject.sub || 'urn:sts:exchanged',
+          user: Object.assign(userFor(subject.username),
+                              subject.sub ? { sub: subject.sub } : {}),
+          client_id: client.client_id,
+          // AN EXCHANGE THAT NAMES NO `scope` CARRIES THE SUBJECT'S FORWARD
+          // (#156). RFC 8693 section 2.1 leaves the scope of the new token to
+          // the server's policy, and this server's is the one rule for every
+          // exchange — an access, refresh or ID Token, a JWT or SAML assertion
+          // (#114): the `scope` asked for, which may narrow and never widen
+          // (above); else the subject_token's `scope` claim; else none. Either
+          // way it then goes through tokenSet()'s narrowing like every other
+          // grant — the client's declared scopes (#110), the roles (#302), and
+          // RFC 9068's audience plan, which takes the OpenID Connect scopes off
+          // a token for another resource server. What survives is the
+          // response's `scope` member, left out when nothing did, and an ID
+          // Token comes back only when `openid` survived
+          // (idTokenFollowsIssuedScope). A requested scope the policy narrowed
+          // (#549) is the list that survived — empty included, so a dropped
+          // permission never brings the subject's own scope back in its place.
+          scope: exchangeScope !== null ? exchangeScope
+            : String(subject.scope || ''),
+          idTokenFollowsIssuedScope: true,
+          audience: self.audienceClaim(issuedAudiences), act: act,
+          // RFC 9396 on an exchange: the details asked for, as for a direct
+          // grant. The audience rule is tokenSet()'s backstop, as the header
+          // above says.
+          authorization_details: grantIdentifiers(requestedDetails,
+                                                  userFor(subject.username)),
+          // Section 2.2.1's `refresh_token` member — and this flag is the ONLY
+          // thing this branch decides about it. It is minted by the same
+          // refreshToken(), through the same tokenSet(), as the token every
+          // other grant here hands back, which is what makes "treat it as any
+          // other refresh token" true by construction rather than by six things
+          // having been remembered: the same `typ: 'Refresh'`, the same jti in
+          // the same revocation set, the same `oauth2.refreshTokenTtlS`, the
+          // same RFC 9700 family bookkeeping and rotation on redemption, and
+          // the same confirmations — an exchange made with a DPoP proof or over
+          // a client certificate mints a BOUND refresh token, which is the
+          // whole of RFC 9449 section 5 and RFC 8705 section 3 on the long-
+          // lived half of a grant.
+          withRefresh: wantsRefresh,
+          // RFC 8707, reached through RFC 8693 section 2.1, and only relevant
+          // now that there is a refresh token to carry it: `resources` is what
+          // the refresh grant compares a renewal against, so an exchange
+          // addressed to one audience must not be renewable into a token
+          // carrying this service's default. A grant cannot widen itself by
+          // being renewed, and an exchange is a grant like the rest. The
+          // AUDIENCES go on it rather than `requestedResources` alone, because
+          // `aud` on the token being minted is the union of both and the two
+          // must not come to describe different resource servers.
+          resources: wantsRefresh ? issuedAudiences : undefined,
+          grant: 'token exchange'
+        });
+        // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN
+        // THE `access_token` MEMBER, and that member holds an access token here
+        // whatever was asked for — so it says access token even when a refresh
+        // token was requested and came back beside it.
+        //
+        // The other reading of section 2.1 is that a client asking for a
+        // refresh token should be handed one IN `access_token` with
+        // `issued_token_type` naming it — the section does say that member is
+        // called `access_token` for historical reasons and need not carry one.
+        // That is deliberately not what happens here. A client would then hold
+        // a `typ: 'Refresh'` JWT under the name every other grant in this
+        // service uses for the credential a resource server is presented with,
+        // and this service's own protected endpoints would refuse it. The
+        // refresh token goes where every other grant puts one, which is what
+        // "the same as any other refresh token" means, and the client gets both
+        // halves of a grant out of one exchange rather than a credential it has
+        // to know not to present.
+        exchanged.issued_token_type = ACCESS_TOKEN_TYPE;
+      }
 
       // -----------------------------------------------------------------------
       // THE DELEGATION ACT, for /admin/delegation.
@@ -18188,11 +19367,16 @@ class OAuth2Server {
         // refused it. See `common/delegation_policy.ts`.
         authorizedBy: delegationPolicy.rowText(decision),
         consumed: ([OAuth2Server.consumedInput('subject_token',
-                                               subjectAssertion,
+                                               subjectAssertion ||
+                                               (subjectKerberos
+                                                 ? { format: 'kerberos',
+                                                     shape: subjectKerberos
+                                                       .shape } : null),
                                                String(subject.jti || ''),
                                                subjectVerified)] as Json[])
-          .concat(actorClaims ? [actorAssertion
-            ? OAuth2Server.consumedInput('actor_token', actorAssertion,
+          .concat(actorClaims ? [actorAssertion || actorKerberos
+            ? OAuth2Server.consumedInput('actor_token', actorAssertion ||
+                                         { format: 'kerberos', shape: '' },
                                          String(actorClaims.jti || ''), true)
             : {
               kind: 'actor_token',
@@ -18201,7 +19385,15 @@ class OAuth2Server {
                                     : 'read without verifying') + ' — its ' +
                     '`sub` is what goes into the `act` claim'
             }] : []),
-        produced: [{
+        produced: [kerberosMinted ? {
+          kind: 'Kerberos AP-REQ',
+          identifier: kerberosMinted.keyIdentifier,
+          note: 'its Kerberosv5APREQSHA1 key identifier; the ticket inside ' +
+                'is for ' + kerberosMinted.servicePrincipal +
+                (act ? ', and its PAC\'s S4U_DELEGATION_INFO names every ' +
+                       'party that acted, ' + String(act.sub || '') +
+                       ' last' : '')
+        } : {
           kind: 'access_token',
           identifier: issuedJti,
           note: act
@@ -18336,7 +19528,7 @@ class OAuth2Server {
   }
 
   private async parRequest(req: Req, res: Res): Promise<Json> {
-    const { realms, jwt, log, STS, parseBody, bodyValues,
+    const { realms, log, STS, parseBody, bodyValues,
             hasScope, dpop, mtls, mode, config, bcp, oauth21, fapi,
             applications, validation, errorCodes, requestObject,
             par, oauthMonitor, websecurity } = this.deps;
@@ -20045,9 +21237,11 @@ class OAuth2Server {
           log.debug("Leaving stillConsented(). Consent is not required.");
           return earlier;
         }
+        // What is ON FILE (`recorded`), which a public client's
+        // ask-every-time rule does not change.
         const gone = (consentRegister.outstanding({
           clientId: clientId, username: hinted.username,
-          scope: earlier }) || {}).names || [];
+          scope: earlier, recorded: true }) || {}).names || [];
         log.debug("Leaving stillConsented(). " + gone.length + " withdrawn.");
         return earlier.split(/\s+/).filter(function (one: string) {
           return one && gone.indexOf(one) < 0;
@@ -21231,8 +22425,19 @@ class OAuth2Server {
     // Into the directory, under ou=applications. The response below is composed
     // from `record` rather than read back, because the two are the same object
     // and a read-back would only be able to differ.
-    applications.register(clientId, record,
-                          { softwareStatement: resolved.statement });
+    const stored = applications.register(clientId, record,
+                                         { softwareStatement:
+                                             resolved.statement });
+    // NOT STORED IS NOT REGISTERED (ASVS 5.0.0 2.3.3): the register refuses
+    // metadata it cannot use and says why in the log, and answering 201 with
+    // credentials for a client nobody holds would hand the caller a
+    // registration that does not exist. RFC 7591 section 3.2.2.
+    if (!stored) {
+      log.debug("Leaving OAuth2Server.registerClient(). Not stored.");
+      errorCodes.mark(res, 'STS-OAUTH-1003');
+      return self.oauthError(res, 400, 'invalid_client_metadata',
+                             'the client metadata could not be registered.');
+    }
     res.status(201).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(record, null, 2));
     log.debug("Leaving the client registration endpoint. Registered " +
@@ -21505,7 +22710,7 @@ class OAuth2Server {
    */
   registerRoutes(app: any): void {
     const self = this;
-    const { realms, forge, jwt, stsCrypto, log, logArtifact, STS,
+    const { realms, stsCrypto, log, logArtifact, STS,
             baseUrlOf, b64u, jsonFromB64u, nowSec, randomId, xmlEscape,
             parseBody, bodyValues, plainOauthError, signJwt, signJwtAs,
             allSigningKeys, allSigningKeysAsync, signJwtAsAsync, userFor,
@@ -21780,14 +22985,18 @@ class OAuth2Server {
     // still 'none'), and X-Frame-Options, which can only say DENY or
     // SAMEORIGIN, is removed so it cannot overrule the narrower CSP.
     //
-    // THE NINTH SCRIPTED PAGE, argued from scratch (the root CLAUDE.md's
-    // table): the iframe's whole job is to ANSWER A `postMessage`, and no
-    // markup can, so there is no submit button to fall back on — with script
-    // off it answers nothing, and a relying party's `postMessage` goes
-    // unanswered, which the specification already treats as the iframe
-    // being unusable. `script-src 'self'` naming the one sibling resource.
+    // ITS SCRIPT IS INLINE, UNDER THE SHA-256 OF ITS EXACT TEXT (#1297,
+    // rcbj's option A; `oauth-oidc/CLAUDE.md` 3ax): the root CLAUDE.md's one
+    // named exception to "`script-src 'self'`, never inline". The iframe's
+    // whole job is to ANSWER A `postMessage`, and no markup can, so there is
+    // no submit button to fall back on — with script off it answers nothing,
+    // which the specification already treats as the iframe being unusable.
+    // It was a sibling `check_session.js` until #1297; two requests before
+    // the listener existed lost the OpenID conformance suite's single
+    // `postMessage`, sent 500 ms after its own iframe loads. The hash admits
+    // that one text and nothing else — narrower than `'self'`.
     //
-    // Off (the default), both paths answer a 404 of their own that names the
+    // Off (the default), the path answers a 404 of its own that names the
     // setting — NOT Express's `Cannot GET`, which is how
     // tests/protocol/sts_metadata.js tells a path nobody routed from an
     // endpoint answering 404.
@@ -21799,32 +23008,18 @@ class OAuth2Server {
         log.debug("Leaving the OP iframe. Session Management is off.");
         return self.sessionManagementOff(res);
       }
+      // The list's script with `authn.multipleAccounts` on (#561); the page
+      // and the hash in its policy are always the same one's.
+      const accounts = authn.multipleAccounts();
       res.set('Content-Security-Policy',
               app.framedContentSecurityPolicy(
                 sessionManagement.frameAncestors(),
-                { 'script-src': "'self'", 'style-src': null }));
+                { 'script-src': sessionManagement.scriptHashFor(accounts),
+                  'style-src': null }));
       res.removeHeader('X-Frame-Options');
       res.status(200).type('text/html').set('Cache-Control', 'no-store')
-         .send(sessionManagement.iframePage());
+         .send(sessionManagement.iframePage(accounts));
       log.debug("Leaving the OP iframe.");
-      return undefined;
-    });
-
-    app.get(sessionManagement.SCRIPT_PATH, function (req, res) {
-      log.debug("Entering the OP iframe's script.");
-      if (!sessionManagement.enabled()) {
-        errorCodes.mark(res, 'STS-OAUTH-0601');
-        log.debug("Leaving the OP iframe's script. Session Management is off.");
-        return self.sessionManagementOff(res);
-      }
-      res.set('Content-Security-Policy',
-              app.contentSecurityPolicy({ 'style-src': null,
-                                          'img-src': null }));
-      res.status(200).type('application/javascript')
-         .set('Cache-Control', 'no-store')
-         // The list's script with `authn.multipleAccounts` on (#561).
-         .send(sessionManagement.scriptFor(authn.multipleAccounts()));
-      log.debug("Leaving the OP iframe's script.");
       return undefined;
     });
 

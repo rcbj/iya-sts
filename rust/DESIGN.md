@@ -1,9 +1,10 @@
 # The Rust runtime — design (#444)
 
-**Status: PROPOSED, 2026-10-05; decisions D1–D4 settled the same day. Nothing in this directory is built, shipped or
-tested yet.** This is phase 0 of [#444](https://github.com/rcbj/iya-sts/issues/444):
-the design the conversion is held to. Every later phase updates this file in the
-same commit that changes the decision it records.
+**Status: re-planned 2026-11-05 (section 11). On `develop`, only the remote PEP
+runs on Rust. `feature/444` holds phases 1 and 2 and part of phase 3, and has not
+moved since 2026-10-05.** This is the design
+[#444](https://github.com/rcbj/iya-sts/issues/444) is held to. Every later phase
+updates this file in the same commit that changes the decision it records.
 
 ## 1. What is being converted, and what is not
 
@@ -13,9 +14,10 @@ same commit that changes the decision it records.
 | `/admin-api` and its OpenAPI document | Node (`mgmt-api/`) | **Rust**, same contract |
 | The scheduler, every scheduled job, every cache, the store, the cluster | Node | **Rust**, in the runtime process |
 | Remote XACML PEP (`xacml-pep/`) | Node container | **Rust**, `xacml-pep` binary, same container contract |
-| Admin console `/admin`, user portal `/portal` | Node, in the service process, calling ~73 modules in process | **TypeScript single-page applications**, compiled to static files when the image is built, **served by the runtime**, talking to it **only through the management API** (owner, 2026-10-05). No Node process at runtime. **The console's source and build stay Node.js / TypeScript for good, and it is converted on the Node service first (#446)** |
-| Embedded debugger (`debugger/`) | Parent project's build output served by Node | **Unchanged.** It is another project's artifact. The runtime starts it as a child process, as today. |
-| `tests/protocol/` (the protocol half of the suite) | Runs against a URL | **Unchanged.** It is the oracle for equivalent behaviour. |
+| The APIs behind the static surfaces: `/admin-api`, `/account-api`, `/report-api`, `/authn-api`, `/home-api`, `/gnap-api` | Node | **Rust**, same contract (section 5). This includes the server code that still sits in `admin-ui/` and `portal/`, because it is API logic and not UI |
+| Static surfaces: the console, portal and reports applications, the sign-in screens, the front door, sign-out, consent, the GNAP, federation and description pages | **Already static** (#446, #568, #569, #956): `web_*.ts`, built by `build-typescript.sh`, 67,753 code lines | **Stay TypeScript, not converted.** The build stays Node and only its output is in the runtime's image. The runtime serves the shells, bundles and `/web` files |
+| Embedded debugger (`debugger/`) | Node | **Out of scope of #444 (owner, 2026-11-05).** This plan neither converts it nor sizes it |
+| Every test suite (`tests/`, `tests/protocol/`) | JavaScript | **Stays JavaScript; none is converted to Rust (owner, 2026-11-05, D6).** The protocol suite is the oracle for equivalent behaviour |
 
 ### The requirements this design must meet (from #444)
 
@@ -27,11 +29,21 @@ same commit that changes the decision it records.
 
 ### Size
 
-About 400,000 lines of non-test service code, plus 386,000 lines of tests. The
-largest parts are `common/` (226k), `admin-ui/` (83k, which becomes a TypeScript SPA),
-`oauth-oidc/` (66k), and `xacml/`, `gnap/`, `spiffe/`, `mgmt-api/` and
-`kerberos/` at 27k–30k each. The conversion cannot be one change. It is a
-sequence of phases, each of which leaves a service that passes the suite
+Measured on `develop` at 2ba3b1b6d (2026-11-05), in code lines: no blanks, no
+comments, no Entering/Leaving lines. The branch point is 2835656a9 (2026-10-05).
+
+| Service code | At the branch point | Now |
+|---|---|---|
+| Server, to be Rust or data | 469,460 | 584,094 |
+| of which data tables (error codes, settings) | | 43,152 |
+| of which Node-only plumbing that goes away (worker pools, `server.js`, …) | | 8,319 |
+| of which the debugger's host, out of scope | | 1,960 |
+| **Server logic to port** | | **530,663** |
+| Browser (`web_*`), which stays TypeScript | 0 | 67,753 |
+
+The static surfaces took about 34,000 lines out of `admin-ui/`'s server code,
+but the service as a whole still grew 24%. The conversion cannot be one change.
+It is a sequence of phases, each of which leaves a service that passes the suite
 (section 10).
 
 ## 2. The end state
@@ -42,8 +54,9 @@ sequence of phases, each of which leaves a service that passes the suite
          ┌──────────────────────────────▼──────────────────────────────┐
          │                     sts-runtime (Rust)                       │
          │  listeners · TLS · realm layer · CSP · every protocol family │
-         │  /admin-api  /account-api  · scheduler · caches · store      │
-         │  /admin/*, /portal/*  ── the two SPAs' static files          │
+         │  /admin-api /account-api /report-api /authn-api · scheduler  │
+         │  caches · store · the static surfaces' files (/admin/*,      │
+         │  /portal/*, /report/*, /authn/*, /, /web/*, …)               │
          └──────────────────────────────▲──────────────────────────────┘
                                         │ same origin; both SPAs hold a
                                         │ DPoP-bound token (#446, #568)
@@ -129,6 +142,9 @@ Nobody runs this service yet, and the conversion should finish quickly.** That
 removes the hardest constraint a migration has, and this section is shaped by
 its absence:
 
+**Reconfirmed by the owner on 2026-11-05 (D11)**, after the repository went public
+and the version became 1.0.0 (#1298).
+
 * **No coexistence.** The Rust runtime does not join the Node cluster, and
   Node does not dispatch to it. The two are separate images. The Node service
   stays on `develop`, working, until the cutover, and is then deleted.
@@ -152,14 +168,24 @@ report. The Node image keeps passing every job on `develop` until the cutover.
 
 About 175 of the suite's files set up their realms, users and settings through
 `/admin-api` before they test anything. So the management API's realm, user,
-application and settings operations come early (phase 3), before the families
-whose jobs depend on them can pass.
+application and settings operations come early (phase 4), with the directory and
+the registers they write to, before the families whose jobs depend on them can
+pass.
+
+**What can run against Rust as it stands** (a heuristic scan of each file's
+requires, 2026-11-05):
+
+| Suite | Files | Shape | Against Rust |
+|---|---|---|---|
+| `tests/protocol/` | 315 | 282 only talk to the service; 24 fork or spawn something; 4 read source; 5 require service modules | About 90% as written. The other 33 need a look in phase 2b |
+| `tests/*.js` (in-process) | 813 (393k lines) | 520 require service modules; 191 fork or spawn; 13 read source; 89 other | Almost none. They guard the Node service until the cutover (D12) |
 
 ### 3.2 The cutover
 
-Phase 9 switches `Dockerfile`, the compose files and CI to the Rust runtime
-with the two SPAs built into it, deletes the Node runtime and its in-process
-tests, and from then on the full suite runs against Rust in every mode.
+Phase 10 switches `Dockerfile`, the compose files and CI to the Rust runtime with
+the static surfaces built into it and deletes the Node runtime. From then on the
+protocol suite, still JavaScript, runs against Rust in every mode. What happens
+to the in-process tests is D12.
 
 ## 4. The organisation of the code
 
@@ -187,6 +213,8 @@ rust/
     sts-xacml/                   the engine: no I/O; shared by the runtime and the PEP
     sts-enrollment/              ACME, EST, SCEP over one CertEnrollment core
     sts-risk/  sts-attribute-sources/  sts-mail/  sts-cells/
+    sts-authzen/  sts-uma/
+    sts-report/                  /report-api: its sources, query, jobs and formats
     sts-mgmt-api/                /admin-api and /account-api, and their OpenAPI document
   bins/
     sts-runtime/                 main(): the composition root, listen(), shutdown
@@ -306,26 +334,42 @@ sleep loop outside `sts-cluster`.
 
 ### 5.1 What exists, and the gap
 
-`/admin-api` has ~460 operations declared as one route table
-(`mgmt-api/admin_api.ts` plus ten feature-local `*_api.ts` tables), each
-calling the same `admin-core` action or view function the console calls. Rule
-7 (a console control has an API operation in the same commit) is enforced
-from outside by `tests/protocol/admin_api.js`, `sts_admin_api_operations.js`
-and `sts_admin_console.js`. **The console's WRITES are already clean**: 31
-actions take `(body, actor)` and are shared with the API.
+**The browser half of the separation is finished.** No `web_*.ts` module requires
+a server module, because `bundle_surface` would fail the image build, and a scan
+finds no server module requiring a `web_*.ts`. Every static application is a client of its API
+alone, so **no UI work is needed to move these surfaces to Rust, provided the
+APIs keep their contracts.**
 
-**What is not clean, and what this conversion has to close:**
+Counted from the running service's OpenAPI documents (2026-11-05):
 
-1. **The console's reads** are ~170 view calls. Some are JSON views in
-   `admin-core/admin_views.ts`, while ~40–90 in `admin.ts` build JSON and HTML
-   together, and some page modules read stores directly. **The API even
-   imports console modules** (`admin-ui/*_admin.ts`) for their JSON views.
-2. **The portal does not use `/admin-api` at all.** Every self-service function
-   is an in-process call, and the admin-scoped operations are the wrong shape
-   for a person acting on their own entry.
-3. **The API audits a client, never a person** (`actor: ''`).
+| API | Operations | Server code behind it | Operations with a structured success schema |
+|---|---|---|---|
+| `/admin-api` | 664 (this file said ~460) | 80,594 (`mgmt-api/`, `admin-core/`, `admin-ui/` server files, `sts_metadata.ts`) | about 570, depth unchecked |
+| `/account-api` | 80 | 9,560 (`account-api/`, `portal/` server files) | 4 |
+| `/report-api` | 23 | 9,666 (`report/`) | 1 |
+| `/authn-api` | 46 | counted with `authn/` | 31 |
+
+**These API layers are about 19% of the server logic, and each is a thin layer
+over the families.** They call the engine in process, so none can move ahead of
+what it calls. The separation makes the UIs free to carry over and gives a
+contract to hold the Rust to. It does not shorten the engine's port.
+
+**What is still not clean on the server side:**
+
+1. **Some API logic lives in the UI directories.** `admin-ui/` still holds 19,366
+   server code lines (`admin.ts`, `crypto_metadata.ts`, `pki_admin.ts`,
+   `delegation_map.ts`, …), and most of the service's other directories require them. `portal/` holds
+   8,645, the providers `/account-api` gathers. All of it is ported as API logic.
+2. **The contract is weak where the static surfaces most need it.** A document
+   with no response schema cannot catch a Rust answer of the wrong shape. Phase 2b
+   closes this (decision 8 below).
+3. **Pictures are laid out on the server.** `delegation_map.ts`,
+   `federation_diagram.ts`, `geo_map.ts` and `federation/federation_graph.ts` lay
+   out server-side, some with `@dagrejs/dagre`. Moving each layout into the browser
+   on Node, before the port, avoids porting it (phase 2b).
 4. **The hook slots** (`setDirectoryReader`, `setScimReader`, the SSF reporters,
-   `setTruststore`, …) are in-process callbacks.
+   `setTruststore`, …) are in-process callbacks. They become constructor
+   arguments (section 4.2).
 
 ### 5.2 The decisions
 
@@ -365,10 +409,13 @@ actions take `(body, actor)` and are shared with the API.
    (section 4.4).
 7. **Rule 7 is unchanged and gains a twin**: a portal control has an
    `/account-api` operation in the same commit.
-8. **The OpenAPI document is a contract.** `GET /admin-api/openapi.json` is
-   snapshotted before the first operation moves. The Rust document, built with
-   `utoipa` from the same declarations, must equal it, except for the
-   operations a phase adds.
+8. **The OpenAPI documents are the contract.** The documents of `/admin-api`,
+   `/account-api`, `/report-api` and `/authn-api` are snapshotted before the first
+   operation moves, and response schemas are added on Node wherever the table in
+   section 5.1 shows them missing. Each Rust document, built with `utoipa` from
+   the same declarations, must equal its snapshot, except for the operations a
+   phase adds. A JavaScript job checks each answer the suite receives against the
+   schema, on Node first and then on Rust.
 
 **The console is converted first, on the Node service (#446, owner,
 2026-10-05)**: every page becomes a pure client of Node's `/admin-api`,
@@ -422,7 +469,7 @@ in CMS, RS1 unless `webauthn.insecureAlgorithms`, SHA-1 in XML unless
 | **JWE content** | A128/192/256GCM, A128CBC-HS256, A192CBC-HS384, A256CBC-HS512; `zip` | `openssl` ciphers; `flate2` for `zip` |
 | **HPKE internals** | DHKEM P-256/384/521, X25519, X448; ML-KEM-512/768/1024, MLKEM768-P256, MLKEM1024-P384, MLKEM768-X25519; HKDF-SHA256/384/512, SHAKE128/256, TurboSHAKE128/256; AES-128/256-GCM, ChaCha20Poly1305, export-only; base and psk | `openssl` where it has the suite; the `sha3` crate for SHAKE and TurboSHAKE (OpenSSL has no TurboSHAKE); the KEM combiners composed in `sts-crypto` |
 | **XML-DSig** | RSA PKCS#1 v1.5 (SHA-1/224/256/384/512, RIPEMD-160); RSASSA-PSS (MGF1 over SHA-1/2/3, RIPEMD-160); ECDSA (SHA-1/2/3, RIPEMD-160) with the product curve list including brainpool; EdDSA Ed25519/Ed448; DSA-SHA1/256; ML-DSA-44/65/87 and all 12 SLH-DSA sets (draft-eastlake-rfc9231bis); digests SHA-1/2/3, RIPEMD-160; exclusive and inclusive C14N 1.0 with and without comments; enveloped, base64, XPath, XPath Filter 2 | **A port of this repository's own `common/crypto_impl/xmldsig.js`** (it is ours since #363) onto `libxml` (libxml2: the DOM, XPath and `xmlC14NExecute` for both C14N 1.0 forms), with signature methods from the `sts-crypto` registry. `libxmlsec1` is not used: it knows none of the post-quantum URIs |
-| **XML-Enc** | AES-128/192/256-GCM and -CBC (3DES read by the engine); RSA-OAEP-MGF1P, RSA-OAEP (xenc11, SHA-1/256/384/512), RSA-1_5 by mode; ECDH-ES with ConcatKDF on P-256/384/521 with AES-KW; the engine's ML-KEM and FrodoKEM methods | The same port; ciphers from `openssl`. **FrodoKEM has no OpenSSL implementation**: `oqs` (liboqs) is the candidate, and the decision is recorded in phase 4 |
+| **XML-Enc** | AES-128/192/256-GCM and -CBC (3DES read by the engine); RSA-OAEP-MGF1P, RSA-OAEP (xenc11, SHA-1/256/384/512), RSA-1_5 by mode; ECDH-ES with ConcatKDF on P-256/384/521 with AES-KW; the engine's ML-KEM and FrodoKEM methods | The same port; ciphers from `openssl`. **FrodoKEM has no OpenSSL implementation**: `oqs` (liboqs) is the candidate, and the decision is recorded in phase 2b |
 | **Post-quantum primitives** | ML-DSA-44/65/87; all 12 SLH-DSA sets; ML-KEM-512/768/1024; hedged and pure only | `openssl` (3.5), as today. RustCrypto `ml-dsa`, `slh-dsa` and `ml-kem` run as the second implementation in the cross-check tests, never in the service |
 | **Composite and hybrid** | 18 X.509 composites (draft-ietf-lamps-pq-composite-sigs-19, OIDs 1.3.6.1.5.5.7.6.37–54); X-Wing; QSF hybrids ML-KEM-768 + P-256/P-384/X25519, ML-KEM-1024 + P-384/P-521/X448; ITU-T X.509 9.8 alternative keys across a chain | Composed in `sts-crypto` and `sts-pki` from `openssl` halves; X-Wing from `openssl` ML-KEM-768 and X25519 with the `sha3` combiner |
 | **X.509 / PKI** | rsa-2048/3072/4096, ec-p256/384/521, ed25519, every ML-DSA and SLH-DSA set, composites, ML-KEM subject keys; sha1/256/384/512-rsa, -rsapss, -ecdsa; CRL and OCSP (RSA, RSA-PSS, ECDSA, Ed25519; CertID SHA-1/2); CMS for SCEP (RSA/ECDSA SHA-256/384/512, AES-CBC, RSAES-PKCS1-v1_5, RSAES-OAEP); PKCS#10 classical and PQ; PKCS#12 and encrypted PKCS#8 (PBES2, AES-256-CBC, PBKDF2-SHA256, 100,000 iterations); PKCS#7 for AWS IID | RustCrypto formats: `der`, `spki`, `x509-cert` (with its builder over the `signature` traits, so a PQ or composite signer plugs in), `x509-ocsp`, `cms`, `pkcs8`, `pkcs5`; `pkcs12` from `openssl` |
@@ -477,40 +524,47 @@ the vectors are checked in.
   until the cutover deletes it.
 * **The error-code table and every code in it.** The 57 suite files that
   assert codes keep asserting them.
-* **The protocol suite.** Phases add Rust tests. They never edit a
-  `tests/protocol/` copy, and they make a `local: true` job pass, never change
-  its assertion to suit Rust.
+* **The protocol suite, and its language.** It stays JavaScript. A phase makes a
+  `local: true` job pass and never changes its assertion to suit Rust. A crate
+  may have unit tests of its own for new Rust code, but no existing test is
+  converted to Rust (D6).
 * **The containers seen from outside**: `iya-sts` and `xacml-pep` keep their
-  names, ports, health checks and environment. The service image gains a
-  second process (the surfaces), started by the runtime.
+  names, ports, health checks and environment.
 
 ## 9. Decisions needed from the owner
 
 | # | Decision | Recommendation |
 |---|---|---|
-| **D1** | **Kerberos.** Eight codec files are locked copies of the parent project's `common/krb5/`, and the parent's tests COPY `krb5_kdc`, `krb5_service`, `spnego` and their closure from this repository. | **DECIDED by the owner, 2026-10-05: the files may be modified and DECOUPLED from the parent project.** The Kerberos phase ports them to `sts-kerberos` and the parent's COPY closure is retired. Interoperability is proved against a real Windows domain controller by the owner's existing compatibility tests, as well as by the protocol suite |
+| **D1** | **Kerberos.** Eight codec files are locked copies of the parent project's `common/krb5/`, and the parent's tests COPY `krb5_kdc`, `krb5_service`, `spnego` and their closure from this repository. | **DECIDED by the owner, 2026-10-05: the files may be modified and DECOUPLED from the parent project.** The Kerberos phase ports them to `sts-kerberos`. The parent's COPY closure was retired as an obligation on 2026-11-02 (#1280): nothing here is owed to the parent, and `krb5_kdc`, `krb5_service` and `spnego` may be converted like any other module. Interoperability is proved against a real Windows domain controller by the owner's existing compatibility tests, as well as by the protocol suite |
 | **D2** | ~~The store during the migration.~~ | **Moot (owner, 2026-10-05)**: no installation survives, so there is no coexistence and no store shared between the two implementations (section 3) |
 | **D3** | **The logging rule.** `#[tracing::instrument]` instead of hand-written Entering/Leaving lines. | **DECIDED by the owner, 2026-10-05, on one condition: the END RESULT of logging and tracing stays intact** — the same bunyan JSON lines, levels and fields, an entry and an exit line per named function at `debug`, error codes at the front of a line. `sts-core`'s logging layer formats `instrument`'s span events as `Entering NAME().` / `Leaving NAME().`, and a test holds it |
 | **D4** | ~~One copy of the tables shared by both implementations.~~ | **Moot (owner, 2026-10-05)**: with no coexistence, the settings and error-code tables simply move into the runtime, and the console reads settings descriptions through `/admin-api` (section 4.4) |
 | **D5** | **OpenSSL as the primary crypto provider.** | Accept it (section 6) |
-| **D6** | **The in-process half of the suite** (`tests/*.js`, about 150k lines) does not run against Rust. | Rewrite each file as Rust tests in the phase that moves what it tests, and delete it from `tests/` in that commit, with `tests/CLAUDE.md`'s table updated |
+| **D6** | **Converting the test suites.** | **DECIDED by the owner, 2026-11-05: no test suite is converted to Rust.** This reverses the earlier recommendation to rewrite the in-process half as Rust tests. What becomes of those tests at the cutover is D12 |
 | **D7** | **`/account-api`** as a second API rather than more `/admin-api` operations. | Accept it. A person acting on their own entry is a different authority from an operator acting on anyone's, and one API holding both would put that difference in a parameter |
-| **D8** | **The embedded debugger** stays the parent project's Node build, run as a child process. | Accept it |
+| **D8** | **The embedded debugger.** | **DECIDED by the owner, 2026-11-05: out of scope of #444** |
 | **D9** | **Where the SPAs' tokens live.** | **DECIDED by the owner, 2026-10-05, and REVERSED FOR THE CONSOLE the same day (#446)**: the console is a public client whose tokens are in the browser, in memory, bound to a non-extractable DPoP key; it is exempt from FAPI's confidential-client rule; and `adminApi.authRequired=false` is development-only. **REVERSED FOR THE PORTAL on #568 (2026-10-12)**: the same pattern, the public client `sts-user-portal`, its tokens audienced to `/account-api` (section 2) |
 | **D10** | **Script on the console and portal.** | **DECIDED by the owner, 2026-10-05: `script-src 'self'` on `/admin/` and `/portal/` only**, reversing the works-without-script rule for those two surfaces (section 2) |
+| **D11** | **Does "no installation survives" (section 3) still hold?** The repository is public, the version is 1.0.0, and the image is published. | **DECIDED by the owner, 2026-11-05: it still holds.** No coexistence, no data compatibility, no migration tool |
+| **D12** | **The in-process tests at the cutover.** Nearly all of the 813 files require or start the Node service, so they cannot test Rust, and D6 rules out porting them to Rust. | **DECIDED by the owner, 2026-11-05:** they keep guarding Node until the cutover and are then removed with the modules they test. Before that, the behaviours only they cover are listed, and each that can be asserted over the wire gets a JavaScript `local: true` protocol job. The list is made in phase 2b; the jobs are not yet sized |
+| **D13** | **New features during the conversion.** The server code grew by about 115,000 lines last month. Porting cannot catch up while that continues (section 11). | **DECIDED by the owner, 2026-11-05, as the planning assumption:** features freeze from the start of phase 3, except security fixes and what a release needs, and each fix lands in Node and in any Rust already ported. **OpenID certification fixes and post-quantum fixes across the subsystems continue through the freeze** (section 11) |
+| **D14** | **`feature/444`: keep or restart.** | **DECIDED by the owner, 2026-11-05: keep it**, and merge `develop` into it in phase 2b (5 files conflict). All 212 of its tests pass, run without the vector and database gates, and those gates run during the merge |
 
 ## 10. How each phase is proved
 
 ### 10.1 The suite, in every mode it runs today
 
 A phase is finished when the suite jobs for the families it moved pass
-against the Rust image (section 3.1). After the cutover, `./run-tests.sh`
-passes in all four modes with the same job count as the Node service had.
+against the Rust image (section 3.1). After the cutover, `./run-tests.sh`'s
+protocol half passes in all four modes with the same job count as the Node
+service had. The static surfaces are proved the same way: the suite's Selenium
+jobs drive the unchanged bundles against the Rust APIs.
 
 ### 10.2 Differential tests, new
 
 * **Crypto vectors**: every row of section 6, both directions (section 6).
-* **The OpenAPI contract**: the document matches the snapshot (section 5.2).
+* **The OpenAPI contract**: each of the four documents matches its snapshot, and
+  every answer the suite receives matches its schema (section 5.2).
 * **Shadow traffic, optional**: for a family whose behaviour is hard to
   enumerate (SAML, WS-*), the suite's recorded requests are replayed against
   both implementations and the responses compared after removing what is
@@ -519,28 +573,86 @@ passes in all four modes with the same job count as the Node service had.
 ### 10.3 The security surfaces
 
 For every row of the root `CLAUDE.md` turnstiles table, and every `mode.js`
-predicate a phase moves, the phase adds a Rust test that the refusal happens,
-with its code, in the mode it happens in today.
+predicate a phase moves, a test shows that the refusal happens, in the mode it
+happens in today. That test is a JavaScript protocol job wherever the refusal can
+be seen over the wire. Because a code is recorded and never sent, a job reads the
+code from the audit row. A crate's unit test covers only what the wire cannot
+show.
 
 ## 11. The phases
 
-Each phase is one or more pull requests to `develop`, sized to be reviewed.
-The order follows dependency: nothing is ported before what it calls.
+Re-planned 2026-11-05. Each phase is one or more pull requests, sized to be
+reviewed. The order follows dependency: nothing is ported before what it calls.
 
-| Phase | What moves | Why here |
-|---|---|---|
-| **0** | This document | |
-| **1** | **The workspace and its conventions; `sts-xacml` (the engine, held to the vendored OASIS suite, 454/455 today); the `xacml-pep` binary replacing the Node container.** | The PEP is the one component that can be replaced END TO END with no coexistence machinery: it is already a separate container with an HTTP contract (`/xacml/pep/*`, `POST /xacml/pip`, mTLS), and `tests/protocol/sts_xacml_remote_pep.js` already holds that container to it. It proves the conventions on something real, and the engine crate is reused by the runtime in phase 6 |
-| **2** | `sts-core` (settings, error codes, mode, logging), `sts-crypto` complete with the vector tests, `sts-pki`. | Every family depends on them. Nothing in production calls them yet |
-| **3** | `sts-store` (memory, ldif, postgres), `sts-cluster` (membership, leases, fencing, claims, `Scheduler`), `sts-cache`, `sts-http`, the `sts-runtime` binary and image, realms, and the `/admin-api` operations every suite job sets itself up with (realms, users, groups, applications, settings). | Every later phase's suite jobs stand on these |
-| **4** | First families, the self-contained ones: `pki` (revocation and `/crypto/metadata`), `oidfed`, `ssf`, `scim`, `xacml` (the PDP side), the enrollment trio. Each with its jobs, caches and `/admin-api` operations. The portal pages of each family switch to API calls in Node in the same phase; the console's pages switch under #446, on its own schedule. | Small surfaces, few session interactions |
-| **5** | `sts-directory`: the directory and LDAP on 389/636. | Almost everything reads the directory; it moves before the big families |
-| **6** | `sts-authn` (the session), `sts-oauth`, `logout`. | The centre of the service. The largest phase, and likely split |
-| **7** | SAML 2.0 and 1.1, WS-Trust, WS-Federation, federation. | The XML families, on the XML-DSig port |
-| **8** | OID4VC, GNAP, SPIFFE, Kerberos (decoupled from the parent project, D1), risk, attribute sources, mail, cells. | |
-| **9** | **The cutover** (section 3.2): the Rust image, with the console and portal SPAs built into it, replaces the Node service in the Dockerfile, compose files and CI; the Node runtime and its in-process tests are deleted. | |
+**What changed in the order, and why.** The directory and the registers now come
+before the first families, because the suite's setup operations write to them.
+Sessions and OAuth come next, because every static application signs in through
+them with a DPoP-bound token, so no UI can run on Rust until they exist. API
+operations land with the family they call rather than in a phase of their own.
 
-Phase sizes are not equal. Phase 6 alone is larger than phases 1–4 together.
-**Each phase is estimated before it starts, against the credit available
+**A "week" below is a week at the rate `develop` actually sustained from
+2026-10-05 to 2026-11-05**: about 182,000 code lines in 31 days, or about 40,000
+a week, tested and merged. The low figure assumes that rate per Node line. The
+high figure assumes about 19,000 Node lines a week, allowing for Rust's expansion
+(`sts-crypto`, `sts-xml` and `sts-pki` run about 1.3 Rust lines per Node line) and
+slower parity debugging. `feature/444` did add about 39,000 lines of code in
+one nine-hour day, but it had vector tests to work against and no suite to pass,
+so it is not used as the rate.
+
+| Phase | What moves | Node code lines | Weeks |
+|---|---|---|---|
+| **0, 1** | Done. The design, the workspace, `sts-xacml`, the `xacml-pep` binary | | |
+| **2** | **Mostly done on `feature/444`:** `sts-core`, `sts-crypto`, `sts-xml`, `x509.js`. `common/pki.js` is not | (see 6) | |
+| **2b** | **Re-baseline.** Merge `develop` into `feature/444` (5 files conflict). Regenerate the tables (error codes went from 4,104 to 5,432). Bring crypto up to date against the vectors (its Node code grew 14,475 → 18,414). Snapshot the four OpenAPI documents and add the missing response schemas. Move the server-laid pictures into the browser. Triage the 33 protocol files that may not run against Rust, and make D12's list | 19,000 to re-check | 1–2 |
+| **3** | **Runtime spine.** `sts-store` (memory, ldif, postgres, and now MariaDB, #677), `sts-cluster`, `sts-cache`, `sts-http`, TLS, realms, and the static-surface host: shells, bundles, `/web`, one CSP builder. `persistence/` has more than doubled since `feature/444` began (11,066 → 25,376) | 58,000 | 1.5–3 |
+| **4** | **Directory, LDAP and registers.** Applications, roles, policies, ownership, audit export, mail, and the `/admin-api` operations every suite job sets itself up with. **Milestone: the suite can set itself up against Rust** | 56,000 | 1.5–3 |
+| **5** | **Sessions, sign-in, credentials, OAuth/OIDC, logout**, with `/authn-api`. **Milestone: the unchanged console, portal and reports bundles sign in against Rust** | 84,000 | 2–4.5 |
+| **6** | **PKI and enrollment:** `pki.js`, revocation, ACME, EST, SCEP | 29,000 | 0.7–1.5 |
+| **7** | **The XML families and federation:** SAML, WS-Trust, WS-Federation, federation, OpenID Federation | 34,000 | 1–2 |
+| **8** | **XACML's PDP side, AuthZEN, UMA, GNAP.** The engine crate exists; the rest is new or grown | 40,000 | 1–2 |
+| **9** | **OID4VC, SPIFFE, Kerberos (D1), SSF, SCIM, risk, cells** | 94,000 | 2.5–5 |
+| **3–9** | **The API layers, landing with their families:** `/admin-api` (664 operations), `/account-api` (80), `/report-api` (23). **`/report-api` finishes first and `/admin-api` last** | 100,000 | 2.5–5 |
+| **10** | **The cutover** (section 3.2): images, compose, CI, Terraform, every mode, Selenium, the OpenID conformance suite, the Windows domain controller test bed, performance, docs. Node is deleted | | 2–4 |
+| | **Port subtotal** | **about 495,000** | **16–32** |
+| 3–10 | **OpenID certification fixes and post-quantum fixes, continuing through the freeze** | | 2–5 |
+| | **Total remaining** | | **18–37** |
+
+**That is 4 to 8.5 months; plan on about 6.5.** It should produce 500,000–650,000
+lines of Rust on top of the roughly 47,000 written so far. By this count about 7%
+of the server logic is ported, plus the data tables. The estimate has low to
+moderate confidence: no phase past 3 has been attempted, the rate is a Node rate,
+and the suite has never been run against a Rust runtime. **Re-estimate at the end
+of phase 4**, when the number of passing jobs gives a measured rate.
+
+**The target moves.** The server code grew by about 115,000 lines last month, or
+about 26,000 a week, which is most of the throughput the estimate assumes. If the
+work were split evenly between features and porting, the remainder would shrink
+by only about 7,000 lines a week, and the port would take well over a year. So
+the estimate holds only with a freeze (D13).
+
+**What continues through the freeze.** Commits matching certification or
+post-quantum keywords added about 39,000 raw service lines in the last month, or
+about 5,000 code lines a week: about 13% of the assumed throughput, which is where
+the 2–5 weeks comes from. The keyword match is loose and these fixes have no tickets
+yet, so this is a rough figure from last month's rate, not a sized list. Size it
+again once the tickets exist.
+
+* **Every fix lands in Node first.** It also lands in Rust if that subsystem's
+  phase has started, with a job or a vector that holds both to it.
+* **OpenID certification fixes** mostly touch what phase 5 ports.
+  Fixes made before phase 5 starts are made once, so finish as many as possible
+  by then. A result earned on the Node service does not prove the Rust one, so
+  phase 10 runs the same plans against Rust.
+* **Post-quantum fixes** in `common/crypto.js` and `crypto_impl/` are the cheapest
+  to carry, because the Node-versus-Rust vectors fail when the two disagree. Those
+  in a subsystem's own code, such as `authn/` and `oid4vc/`, land only in Node
+  until that subsystem's phase starts.
+
+**The largest risks:** behaviour only the in-process tests pin down (D12);
+libraries for the less common options (FrodoKEM, BBS, JSON-LD, ZCAP); and the
+Node worker model's barrier and read-your-write guarantees, which must hold in a
+different concurrency model.
+
+**Each phase is estimated again before it starts, against the credit available
 then, and is not started if it cannot be finished.** A half-ported family is
 worse than an unported one.

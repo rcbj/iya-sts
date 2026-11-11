@@ -53,6 +53,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -74,15 +75,9 @@ const PER_PAGE = 20;
 // `grant` is a grant identifier this service minted (base64url, a cell's
 // stamp included where there is one), checked against the person's own
 // grants, which is the rule that matters.
-const REVOKE_FORM = vz.object({
-  grant: vt.base64url.describe('The grant to end, from the list.'),
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('The page of the list the form was on.')
-});
+const REVOKE_FORM = ModelZod.body('account', 'revokeGnapGrant');
 
-const GNAP_QUERY = vz.object({
-  page: vt.opt(vt.integer(1, 100000))
-});
+const GNAP_QUERY = ModelZod.query('account', 'getGnapGrants');
 
 /**
  * `/portal/gnap`'s account API operations: the GNAP grants a person gave,
@@ -182,16 +177,7 @@ class PortalGnap {
     log.debug("Entering PortalGnap.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/gnap',
-        operationId: 'getGnapGrants', tag: 'GNAP grants', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/gnap',
-        summary: 'The GNAP grants you gave',
-        description: 'One page (`paging`) of `rows`: each grant whose ' +
-          'resource owner you are — the client, its state or why it ended, ' +
-          'its access rights (RFC 9635 objects or references), the tokens ' +
-          'issued under it, when it was granted and until when, and ' +
-          'whether you may revoke it. The same view an administrator\'s ' +
-          'user page draws. Under cells, `cells` says when another cell ' +
-          'may hold more.',
+        operationId: 'getGnapGrants', access: 'person',
         query: GNAP_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
@@ -199,14 +185,7 @@ class PortalGnap {
                           self.view(caller.username, input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/gnap',
-        operationId: 'revokeGnapGrant', tag: 'GNAP grants',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/gnap',
-        summary: 'Revokes a GNAP grant you gave',
-        description: 'The client\'s own RFC 9635 section 5.4 act, performed ' +
-          'for you: every token issued under the grant stops working, the ' +
-          'grant is finalized as revoked, and CAEP session-revoked is ' +
-          'sent. A grant that is not yours is refused.',
-        body: REVOKE_FORM,
+        operationId: 'revokeGnapGrant', access: 'person', body: REVOKE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.revoke(ctx, req, res, caller, input.body);

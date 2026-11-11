@@ -928,7 +928,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.mtlsTrust` | `STS_GNAP_MTLS_TRUST` | `auto` | yes | How a key proved by mutual TLS is trusted: `pki` or `pinned` ([mutual TLS trust](#mutual-tls-trust)). `auto` is `pki` in product and `pinned` in development. **Warning:** `pinned` gives up chain validation and rotation at the authority. |
 | `gnap.subIdFormats` | `STS_GNAP_SUB_ID_FORMATS` | `opaque,iss_sub,email,account,uri,phone_number,aliases` | yes | `sub_id_formats_supported` in RFC 9493's spellings; a format is released only when the entry holds the fact it needs. |
 | `gnap.assertionFormats` | `STS_GNAP_ASSERTION_FORMATS` | `id_token,saml2` | yes | `assertion_formats_supported`, built by the same code the OIDC and SAML families use. |
-| `gnap.assertionMaxAgeS` | `STS_GNAP_ASSERTION_MAX_AGE_S` | `300` | yes | How long past its `exp` an assertion this realm signed is still accepted as a user hint (section 2.4). |
+| `gnap.assertionMaxAgeS` | `STS_GNAP_ASSERTION_MAX_AGE_S` | `300` (`0` in product unless set) | yes | How long past its `exp` an assertion this realm signed is still accepted as a user hint (section 2.4). Product mode allows none unless an operator sets a value. |
 | `gnap.keyRotation` | `STS_GNAP_KEY_ROTATION` | `true` | yes | `key_rotation_supported` (section 6.1.1); off answers `key_rotation_not_supported`. |
 | `gnap.tokenManagement` | `STS_GNAP_TOKEN_MANAGEMENT` | `true` | yes | Whether access tokens carry a manage URI and management token (section 6). |
 | `gnap.bearerTokens` | `STS_GNAP_BEARER_TOKENS` | `true` | yes | Off refuses the `bearer` flag with `invalid_flag` for every client; `gnapBearerTokens` FALSE refuses one. |
@@ -959,6 +959,9 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.ownerLookupCacheS` | `STS_GNAP_OWNER_LOOKUP_CACHE_S` | `60` | yes | How long the owner a resource server's gnapOwnerLookupUri named for an identifier is held before it is asked again (#432 phase 5): a grant asks at its request, on its approval page and at issue. A failed lookup is never held. 0 asks every time; a longer one keeps a former owner able to approve for that long after the resource server says otherwise. |
 | `gnap.caepEvents` | `STS_GNAP_CAEP_EVENTS` | `true` | yes | Sends CAEP `session-revoked` on a revoked grant or token and `token-claims-change` on a modified grant. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | Scopes a GNAP web application's Shared Signals stream to people who approved a grant to it; `gnapScopedSignals` FALSE opts one out. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |
+
+In product mode an expired user assertion gets no grace unless an operator sets
+`gnap.assertionMaxAgeS`, in the environment or on the console.
 
 Every setting is on `/admin/gnap` and in [*Every setting*](configuration.md#every-setting). See
 [Configuration](configuration.md) for how a value resolves and where it is
@@ -1037,6 +1040,8 @@ changed — the console page, or `POST /admin-api/config/set`.
   controller document list them all. A zcap token on a post-quantum suite is
   signed with the realm's ML-DSA-44 or SLH-DSA-SHA2-128s key, which rotates the
   same way.
+
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a push to a finish URI the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside `gnap.pushCaFile`.
 
 ## Error codes
 

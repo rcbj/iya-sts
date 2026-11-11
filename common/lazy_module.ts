@@ -41,9 +41,10 @@
 //
 // A LIBRARY (rule 3): it requires only the error-code table, a leaf, so any
 // module can require it without joining a cycle; its logger is handed in.
-// NOT for `common/helpers.js` or anything else in the parent project's
-// Kerberos COPY closure (kerberos/CLAUDE.md): a require from there would add
-// this file to that closure, so those files defer by hand.
+// `common/helpers.js` and the other files that were in the parent project's
+// Kerberos COPY closure defer by hand instead, because a require from there
+// would have added this file to that closure (an obligation until #1280;
+// those hand-rolled deferrals still work and may move to this one).
 // ---------------------------------------------------------------------------
 
 import errorCodes = require('./error_codes');

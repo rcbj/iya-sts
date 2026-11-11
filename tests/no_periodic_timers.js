@@ -48,7 +48,7 @@ const log = require('bunyan').createLogger({ name: 'no_periodic_timers',
 
 // What is not the service's own source.
 const SKIP = new RegExp('(^|/)(node_modules|tests|coverage|debugger/embedded|' +
-                        'common/crypto_impl|node-ldapjs|deploy|xacml-pep|docs|' +
+                        'node-ldapjs|deploy|xacml-pep|docs|' +
                         '\\.claude|types|companion)(/|$)');
 
 // The scheduler itself is the one place a repeating timer belongs.
@@ -70,6 +70,18 @@ const ALLOWED = {
     'heartbeat' },
   'persistence/persistence_postgres.js|connect|timeout': { permanent:
     'a reconnect retry within one attempt to reach the database' },
+  'persistence/cluster_portable.js|attempt|timeout': { permanent:
+    'not periodic: a jittered pause before a transaction the engine refused ' +
+    'with a deadlock or a lock timeout is run again, a few times at most ' +
+    '(#677, inTransaction())' },
+  'persistence/store_portable.js|go|timeout': { permanent:
+    'not periodic: a jittered pause before a transaction MariaDB refused ' +
+    'with a deadlock or a lock timeout is run again, a few times at most ' +
+    '(#677, retrying())' },
+  'persistence/risk_portable.js|go|timeout': { permanent:
+    'not periodic: a jittered pause before a statement or transaction ' +
+    'MariaDB refused with a deadlock or a lock timeout is run again, a few ' +
+    'times at most (#677, retrying())' },
   'ldap/ldap_cluster_connections.ts|noteLocalChange|timeout': { permanent:
     'a debounce: one publish for a burst of connection changes' },
   'attribute-sources/attribute_sources.ts|lookup|timeout': { permanent:

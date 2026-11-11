@@ -168,6 +168,9 @@ import clusterClaims = require('../cluster/cluster_claims');
 import identityAssurance = require('../common/identity_assurance');
 // SIOPv2 (#129): an enrolment, when the browser collects one.
 import siop = require('./siop');
+// A published DID's wallet acts (#1291): a library over `siop.ts`, built
+// just after it, registering one route of its own that nothing here reads.
+import personDid = require('./person_did');
 // The audit row an enrolment writes (#693). `app.js` loads it first, so this
 // is a cache hit and moves nothing in the require order.
 import audit = require('../common/audit');
@@ -176,8 +179,15 @@ const { log } = helpers;
 
 type Json = any;
 
-// What the console and the audit log call a sign-in that came through here.
+// What the console, the audit log, the person's Recent sign-ins and the risk
+// engine's door call a sign-in that came through here — ONE PER KIND OF
+// TRANSACTION (#667). A self-issued ID Token (SIOPv2, `response_type=
+// id_token`) is signed by a key the person enrolled, not a credential this
+// realm issued, and until #667 both answered `VIA`, so `/portal/sign-ins`
+// said "OpenID4VP (a wallet)" for a sign-in the log already called SIOPv2
+// and the risk model counted the two as one door. `viaOf()` chooses.
 const VIA = 'OpenID4VP (a wallet)';
+const VIA_SELF_ISSUED = 'SIOPv2 (a self-issued ID)';
 
 // The cookie that ties a sign-in to the browser that started it.
 const BINDING_COOKIE = 'sts_wallet_binding';
@@ -188,6 +198,9 @@ const CLAIM_SKEW_MS = 60 * 1000;
 
 // Where an enrolment is started from and returns to (#129).
 const ENROL_HOME = '/portal/self-issued';
+// Where a person gets a credential issued again (#653): the portal's wallet
+// page, `portal/portal_wallet.ts`.
+const REISSUE_HOME = '/portal/wallet';
 
 // The query parameters the two shells and the start view take, and
 // `wallet`, which the start passes to the Verifier's own rule
@@ -206,7 +219,13 @@ const QUERY = validation.z.looseObject({
   enrol: validation.types.opt(validation.types.oneOf(['1'])),
   // The portal's own account, on an enrolment (2026-10-20): which of this
   // browser's sessions the enrolment is for (startable(), below).
-  login_hint: validation.types.opt(validation.types.opaque)
+  login_hint: validation.types.opt(validation.types.opaque),
+  // A PUBLISHED DID'S WALLET ACT (#1291), on an enrolment: what the proved
+  // key is FOR — `publish` (the key of a new DID), `authorize-add.<rid>` or
+  // `authorize-rotate.<rid>` (a key the DID names now authorizing a
+  // change), or `key.<rid>` (the new key). `oid4vc/person_did.ts` decides
+  // whether the person may start it and finishes it.
+  did_act: validation.types.opt(validation.types.opaque)
 });
 
 type RouteApp = typeof app;
@@ -226,6 +245,7 @@ interface VcSigninDeps {
   clusterClaims: typeof clusterClaims;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
+  personDid: typeof personDid;
   audit: typeof audit;
 }
 
@@ -253,6 +273,26 @@ class VcSignin {
    * What the console and the audit log call a sign-in that came through here.
    */
   static readonly VIA = VIA;
+  /**
+   * What the same surfaces call a sign-in with a self-issued ID Token
+   * (SIOPv2) through here (#667).
+   */
+  static readonly VIA_SELF_ISSUED = VIA_SELF_ISSUED;
+
+  /**
+   * The `via` of a transaction's sign-in: SIOPv2's for a self-issued ID
+   * Token, OpenID4VP's for a presentation (#667).
+   *
+   * @param tx - the Verifier's transaction
+   * @returns the label
+   */
+  static viaOf(tx: any): string {
+    helpers.log.debug("Entering VcSignin.viaOf().");
+    const selfIssued = !!tx && tx.responseType === 'id_token';
+    helpers.log.debug("Leaving VcSignin.viaOf(). " +
+                      (selfIssued ? 'SIOPv2.' : 'OpenID4VP.'));
+    return selfIssued ? VIA_SELF_ISSUED : VIA;
+  }
   /**
    * The cookie that ties a sign-in to the browser that started it.
    */
@@ -292,6 +332,7 @@ class VcSignin {
       clusterClaims: clusterClaims,
       identityAssurance: identityAssurance,
       siop: siop,
+      personDid: personDid,
       audit: audit
     };
   }
@@ -575,7 +616,9 @@ class VcSignin {
     const { log, authn } = this.deps;
     log.debug("Entering VcSignin.waitPathFor().");
     log.debug("Leaving VcSignin.waitPathFor().");
-    return authn.WALLET_WAIT_PATH + '?authn=' +
+    // In the fragment in product (#1487): this page reads it from there.
+    const opener = require('../common/mode').hidesStepIds() ? '#' : '?';
+    return authn.WALLET_WAIT_PATH + opener + 'authn=' +
       encodeURIComponent(ctx.record.id) + '&state=' +
       encodeURIComponent(state) +
       (ctx.mfaId ? '&mfa=' + encodeURIComponent(ctx.mfaId) : '') +
@@ -638,6 +681,25 @@ class VcSignin {
           this.refusedView('Sign in before enrolling a wallet',
                            { enrol: true }));
         log.debug("Leaving VcSignin.startable(). No session to enrol for.");
+        return null;
+      }
+    }
+    // A PUBLISHED DID'S WALLET ACT (#1291) is an enrolment's, and is
+    // refused here — before a wallet is asked to prove anything — where the
+    // person may not start it: the realm does not publish, the custody is
+    // not the wallet's, the DID is not theirs or not active, or a new key
+    // comes with no authorization by a key the DID names now.
+    if (query.did_act !== undefined && query.did_act !== '') {
+      const problem = enrolFor
+        ? this.deps.personDid.actProblem(enrolFor, String(query.did_act))
+        : { code: 'STS-VC-0093', error: 'A DID act is an enrolment\'s, ' +
+            'started from the portal of the person signed in here.' };
+      if (problem) {
+        errorCodes.mark(res, problem.code);
+        this.refuse(res, 403, String(problem.error),
+          this.refusedView('That DID act cannot be started',
+                           { enrol: true }, { retry: ENROL_HOME }));
+        log.debug("Leaving VcSignin.startable(). The DID act was refused.");
         return null;
       }
     }
@@ -774,7 +836,7 @@ class VcSignin {
       : (ctx.mfaId ? '?mfa=' + encodeURIComponent(ctx.mfaId) : '');
     let tx: any = null;
     try {
-      tx = verifier.buildVpRequest(req, {
+      tx = await verifier.buildVpRequestAsync(req, {
         responseType: selfIssued ? 'id_token' : 'vp_token',
         signIn: {
           authnId: record.id,
@@ -800,6 +862,10 @@ class VcSignin {
     tx.signIn.mfaId = ctx.mfaId;
     if (enrolFor) {
       tx.signIn.enrol = { username: enrolFor };
+      // What the proved key is for (#1291), checked by startable().
+      if (query.did_act) {
+        tx.signIn.enrol.didAct = String(query.did_act);
+      }
     }
     verifier.saveTransaction(tx);
     this.bindingCookie(res, binding);
@@ -1226,7 +1292,13 @@ class VcSignin {
           retry: retry,
           verdict: (selfIssued ? 'selfIssued' : 'presentation') +
                    (tx.verdict.ok ? '.verified' : '.notVerified'),
-          checks: this.checksOf(tx) }));
+          checks: this.checksOf(tx),
+          // WHERE A NEW CREDENTIAL IS ISSUED (#653), for one this realm
+          // disowned and a new one would replace: the person's own wallet
+          // page. Unprefixed, as every path in a view is; the surface adds
+          // the realm's.
+          reissue: outcome.disowned && outcome.disowned.reissue
+            ? REISSUE_HOME : '' }));
       log.debug("Leaving VcSignin.finish(). " + outcome.errorCode + ".");
       return;
     }
@@ -1268,6 +1340,32 @@ class VcSignin {
     // proof pinned, a subject already theirs is proved again (re-pinned)
     // rather than refused, and the outcome is AUDITED, as the removal and
     // the administrator's enrolment always were.
+    // A PUBLISHED DID'S WALLET ACT (#1291): the proved key publishes a
+    // DID, authorizes a change of one, or is the change's new key —
+    // `person_did.ts` decides and audits each; nothing is enrolled here.
+    if (ctx.enrol && tx.signIn.enrol.didAct) {
+      const act = String(tx.signIn.enrol.didAct);
+      const done = this.deps.personDid.finishWalletAct(username, act,
+        outcome, { base: this.deps.personDid.baseFor(req),
+                   transaction: this.tagOf(tx.state),
+                   location: VcSignin.locationOf(tx) });
+      if (!done.ok) {
+        errorCodes.mark(res, done.code);
+        // error-code: none — marked on the line above: the library's code
+        this.refuse(res, 400, String(done.error),
+          this.refusedView('The DID was not changed', ctx));
+        log.debug("Leaving VcSignin.finish(). The DID act was refused.");
+        return;
+      }
+      const rid = done.record ? String(done.record.rid) : '';
+      authn.answerJson(res, 200, { ok: true, next: 'redirect',
+        location: authn.locationOf(res, ENROL_HOME + '?did=' +
+          encodeURIComponent(String(done.step)) +
+          (rid ? '&rid=' + encodeURIComponent(rid) : '')) });
+      log.debug("Leaving VcSignin.finish(). The DID act: " + done.step +
+                ".");
+      return;
+    }
     if (ctx.enrol) {
       const enrolled = siop.enrol(username, outcome.subject,
                                   'enrolled with a wallet', 'self (SIOPv2)',
@@ -1317,9 +1415,16 @@ class VcSignin {
     // handed on: the issuance policy decides on it with the roles, and a
     // step-up it names is asked for after the wallet, as a demanded second
     // factor is.
-    const assessed = await authn.assessSignIn(req, username, VIA,
+    // Its own door and its own credential for a self-issued ID Token
+    // (#667): the enrolled key's subject is the credential's identifier, so
+    // the model learns that key apart from any presented credential.
+    const via = VcSignin.viaOf(tx);
+    const credential: Json = selfIssued
+      ? { kind: 'wallet', id: String(outcome.subject || '') }
+      : { kind: 'wallet' };
+    const assessed = await authn.assessSignIn(req, username, via,
       { application: record.application || '',
-        credential: { kind: 'wallet' },
+        credential: credential,
         // A key may answer as the second factor (#259).
         deviceAwaited: true });
 
@@ -1351,10 +1456,11 @@ class VcSignin {
     }
 
     const session = authn.startSession(res, username, outcome.amr || ['pop'],
-      outcome.acr || '1', VIA, {
+      outcome.acr || '1', via, {
         request: req,
-        // Which credential answered (#62 P0): a wallet presentation.
-        credential: { kind: 'wallet' },
+        // Which credential answered (#62 P0): a wallet presentation, or the
+        // enrolled key of a self-issued ID Token (#667).
+        credential: credential,
         // The sign-in's assessment (#62 P3).
         risk: assessed || undefined,
         application: record.application || '',
@@ -1381,7 +1487,8 @@ class VcSignin {
               (record.protocol || 'unnamed') + ' one' +
               (record.application ? ' for "' + record.application + '"' :
                                     '') + '.',
-        summary: username + ' was signed in with a wallet'
+        summary: username + ' was signed in with a wallet' +
+                 (selfIssued ? ' (a self-issued ID Token)' : '')
       });
     if (!session) {
       log.info('oid4vp-signin: the issuance policy refused a session for ' +
@@ -1433,7 +1540,9 @@ class VcSignin {
     if (!res.headersSent) {
       errorCodes.mark(res, code);
       authn.answerJson(res, 500, { ok: false, next: 'refused',
-        errors: [String((e && e.message) || e)] });
+        errors: [require('../common/mode').hidesFailureDetail()
+          ? 'The sign-in could not be completed.'
+          : String((e && e.message) || e)] });
     }
     log.debug("Leaving VcSignin.failed().");
   }
@@ -1517,6 +1626,8 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   VIA: VcSignin.VIA,
+  VIA_SELF_ISSUED: VcSignin.VIA_SELF_ISSUED,
+  viaOf: VcSignin.viaOf,
   BINDING_COOKIE: VcSignin.BINDING_COOKIE,
   enabled: slot.forward('enabled'),
   // The `/authn-api/wallet` operations (#574), which `authn/authn_api.ts`

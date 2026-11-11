@@ -68,22 +68,18 @@
 import realms = require('../common/realms');
 // Required, as it always was, although nothing here signs with it directly
 // any more; the require keeps the load order of this module unchanged.
-import jwt = require('jsonwebtoken');
 // One signer, one verifier and one JWE for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
+import ClosedSets = require('../common/closed_sets');
 import app = require('../common/app');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
-import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
 type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
-  function () {
-    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
-  }, helpers.log);
+const bbs2023: Bbs2023 = stsCrypto.bbs;
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('../oauth-oidc/dpop');
 import mode = require('../common/mode');
@@ -94,6 +90,7 @@ import cacheRegistry = require('../common/cache_registry');
 // THE PATH RULES (#201): a key attestation's `x5c` leaf is held to them
 // through the one synchronous issuer door. A leaf library that requires
 // nothing here.
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 // The register the admin console counts credentials in. The three builders
 // below sign with jsonwebtoken (or with BBS) directly rather than through
@@ -102,6 +99,9 @@ import pki = require('../common/pki');
 // instead.
 import stats = require('../common/admin_stats');
 import vcConfigs = require('./vc_configs');
+// Which JWS algorithms are offered, signed with and accepted, and the wallet
+// compatibility mode (#657).
+import VcAlgorithms = require('./vc_algorithms');
 import vcDid = require('./vc_did');
 // WHICH claims a credential carries, and what each one's value is. A library
 // like dpop.js — it registers nothing, so its place in the require order does
@@ -143,9 +143,11 @@ import capabilities = require('../cluster/cluster_capabilities');
 // would be bound to a credential it could never present.
 const LDP_HOLDER_ALGS = ['ES256', 'ES384', 'EdDSA', 'ML-DSA-44'];
 
-// THE ALGORITHMS A KEY ATTESTATION MAY BE SIGNED WITH: its signer is named by
-// a certificate, whose key this service reads into a node KeyObject — every
-// asymmetric algorithm but the post-quantum ones, which it cannot.
+// THE ALGORITHMS A KEY ATTESTATION MAY BE SIGNED WITH: every asymmetric classical
+// one, and a post-quantum one only where a configured attester's certificate
+// holds such a key (`attestationAlgs()`, #1368), so a realm with none advertises
+// exactly what it always did. A post-quantum signer's key comes out of its
+// certificate as an AKP JWK, since node reads no composite key into a KeyObject.
 const ATTESTATION_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.filter(function (alg) {
   return stsCrypto.JWS_ALGS[alg].family !== 'pq';
 });
@@ -171,6 +173,7 @@ interface VcIssuerDeps {
   signingKeyFor: typeof helpers.signingKeyFor;
   requestEncryptionKeyFor: typeof helpers.requestEncryptionKeyFor;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
+  certificateHeaderForAsync: typeof helpers.certificateHeaderForAsync;
   publishedKidFor: typeof helpers.publishedKidFor;
   stsCrypto: typeof stsCrypto;
   config: typeof config;
@@ -211,6 +214,13 @@ interface VcIssuerDeps {
   // loads the audit log and the persistence layer behind it.
   provenSubjectsOf: (username: string) => any[];
   enrolledSubjectsOf: (username: string) => any[] | null;
+  // A did:web THIS REALM PUBLISHES FOR A PERSON (#1291), from
+  // `person_did.ts`: the key a `<did>#<key>` names in the current version,
+  // with the versioned DID URL a credential names (`{ jwk, kid, did }`),
+  // `{ error }` where it names none, or null for a DID this realm does not
+  // publish — and whether the realm publishes them now.
+  hostedProofKey: (kid: string) => any;
+  personPublishing: () => boolean;
   selfIssuedOwnerOf: (subject: string) => string;
   nameForSubject: (subject: string) => string;
   accountDisabled: (username: string) => boolean;
@@ -504,6 +514,7 @@ class VcIssuer {
       signingKeyFor: helpers.signingKeyFor,
       requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
       certificateHeaderFor: helpers.certificateHeaderFor,
+      certificateHeaderForAsync: helpers.certificateHeaderForAsync,
       publishedKidFor: helpers.publishedKidFor,
       stsCrypto: stsCrypto,
       config: config,
@@ -541,6 +552,21 @@ class VcIssuer {
         helpers.log.debug("Entering provenSubjectsOf().");
         helpers.log.debug("Leaving provenSubjectsOf().");
         return require('./siop').provenSubjectsOf(username);
+      },
+      // `person_did.ts` LAZILY, for `siop.ts`'s reason.
+      hostedProofKey: function hostedProofKey(kid: string): any {
+        helpers.log.debug("Entering hostedProofKey().");
+        const personDid = require('./person_did');
+        const key = personDid.keyOfDidUrl(kid, { current: true });
+        helpers.log.debug("Leaving hostedProofKey().");
+        return key && !key.error
+          ? { jwk: key.jwk, did: key.did,
+              kid: personDid.versionedKid(kid) } : key;
+      },
+      personPublishing: function personPublishing(): boolean {
+        helpers.log.debug("Entering personPublishing().");
+        helpers.log.debug("Leaving personPublishing().");
+        return config.value('did.personPublishing') === true;
       },
       enrolledSubjectsOf: function enrolledSubjectsOf(username: string):
         any[] | null {
@@ -728,7 +754,7 @@ class VcIssuer {
       display: [{
         name: String(config.value('oid4vci.issuerDisplayName') || ''),
         locale: 'en-US',
-        logo: { uri: base + '/images/logo.png', alt_text: 'IdP Tools' }
+        logo: { uri: base + '/images/logo.png', alt_text: 'Iya STS' }
       }]
     };
     meta.credential_configurations_supported[VCI_CONFIG_ID] = {
@@ -738,8 +764,11 @@ class VcIssuer {
       cryptographic_binding_methods_supported: ['jwk'],
       credential_signing_alg_values_supported:
         this.deps.vciSigningAlgsFor(VCI_CONFIG_ID),
+      // `oid4vc.walletCompatibility` narrows it (#657); ldp_vc's holder
+      // suites below are not this mode's.
       proof_types_supported:
-        this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
+        this.proofTypesSupported(
+          VcAlgorithms.offered(stsCrypto.JWS_ASYMMETRIC_ALGS)),
       display: [{
         name: 'Identity Credential',
         locale: 'en-US',
@@ -768,8 +797,11 @@ class VcIssuer {
       cryptographic_binding_methods_supported: ['jwk'],
       credential_signing_alg_values_supported:
         this.deps.vciSigningAlgsFor(VCI_JWT_CONFIG_ID),
+      // `oid4vc.walletCompatibility` narrows it (#657); ldp_vc's holder
+      // suites below are not this mode's.
       proof_types_supported:
-        this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
+        this.proofTypesSupported(
+          VcAlgorithms.offered(stsCrypto.JWS_ASYMMETRIC_ALGS)),
       display: [{
         name: 'Identity Credential (JWT VC, no selective disclosure)',
         locale: 'en-US',
@@ -803,7 +835,7 @@ class VcIssuer {
       }],
       // NOT the same list as the two above, and the difference is the format's
       // rather than a choice: an ldp_vc credential is signed over canonicalized
-      // JSON-LD, so it can only carry terms the vendored context defines. The
+      // JSON-LD, so it can only carry terms the identity context defines. The
       // claims a selection asks for and this format cannot express are named on
       // /admin/vc rather than being quietly missing here.
       claims: vcClaims.advertisedClaims('ldp_vc')
@@ -878,6 +910,14 @@ class VcIssuer {
             vcConfigs.HOLDER_BINDING_DID) {
           entry.cryptographic_binding_methods_supported =
             vcConfigs.DID_BINDING_METHODS.slice();
+          // AND did:web (#1291), where this realm publishes DIDs for
+          // people: one it hosts and the person proved binds a JOSE
+          // credential, whose cnf.kid names the version. Not an ldp_vc,
+          // which has no cnf to name it.
+          if (this.deps.personPublishing() &&
+              this.deps.vciFormatOf(id) !== 'ldp_vc') {
+            entry.cryptographic_binding_methods_supported.push('did:web');
+          }
         }
         // OPENID4VCI 1.0 SECTION 12.2.4 (#187): a configuration's `display`
         // and `claims` are members of its `credential_metadata` object in
@@ -904,6 +944,21 @@ class VcIssuer {
     // classical algorithms, which are what this realm then signs and
     // verifies. Last, so a list built above cannot be missed.
     helpers.withoutPqSigningAlgs(meta);
+    // What a configuration signs with is the sign list's, and what a proof may
+    // be signed with is the accept list's (#1368). A name with no JOSE row,
+    // bbs-2023 or a COSE identifier, is not a JOSE list's to narrow.
+    const policy = stsCrypto.signaturePolicy;
+    const signs = 'credential_signing_alg_values_supported';
+    policy.narrowAcceptedLists(meta, [signs]);
+    Object.keys(meta.credential_configurations_supported).forEach(function (id) {
+      const one = meta.credential_configurations_supported[id];
+      if (Array.isArray(one[signs])) {
+        one[signs] = one[signs].filter(function (alg: unknown) {
+          return typeof alg !== 'string' ||
+            !stsCrypto.JWS_ALGS[alg] || policy.signCause('jose', alg) === null;
+        });
+      }
+    });
 
     log.debug("Leaving VcIssuer.vciMetadata(). " +
               Object.keys(meta.credential_configurations_supported).length +
@@ -964,8 +1019,10 @@ class VcIssuer {
       res.status(404).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify({ error: 'not_found', error_description:
-           'No credential issuer here has an identifier whose path is "' +
-           asked + '". Its document is at ' + wellKnown + ' followed by ' +
+           // The path as ClosedSets.saidName() says a name (2026-11-10).
+           'No credential issuer here has an identifier whose path is ' +
+           ClosedSets.saidName(asked) + '. Its document is at ' + wellKnown +
+           ' followed by ' +
            'that path (OpenID4VCI 1.0 section 12.2.2); a realm\'s is ' +
            wellKnown + '/realm/<id>.' }));
       log.debug("Leaving VcIssuer.inInsertedPathRealm(). No such issuer.");
@@ -1134,13 +1191,59 @@ class VcIssuer {
     log.debug("Entering VcIssuer.proofTypesSupported().");
     const jwt: any = { proof_signing_alg_values_supported: algs };
     const attestation: any = { proof_signing_alg_values_supported:
-                                 ATTESTATION_ALGS };
+                                 this.attestationAlgs() };
     if (config.value('oid4vci.keyAttestationRequired') === true) {
       jwt.key_attestations_required = {};
       attestation.key_attestations_required = {};
     }
     log.debug("Leaving VcIssuer.proofTypesSupported().");
     return { jwt: jwt, attestation: attestation };
+  }
+
+  // A certificate's key as a KeyObject, or null for one node cannot read, which
+  // is then tried only as a post-quantum key.
+  private static classicalKeyOf(cert: any): any {
+    helpers.log.debug("Entering VcIssuer.classicalKeyOf().");
+    try {
+      helpers.log.debug("Leaving VcIssuer.classicalKeyOf().");
+      return cert.publicKey;
+    } catch (e) {
+      helpers.log.debug("Caught in VcIssuer.classicalKeyOf(): " +
+                        ((e && (e as Error).message) || e));
+      helpers.log.debug("Leaving VcIssuer.classicalKeyOf(). Unreadable.");
+      return null;
+    }
+  }
+
+  // A certificate's post-quantum key as `{ alg, publicJwk }`, or null for a
+  // classical one.
+  private static postQuantumKeyOf(cert: any): any {
+    helpers.log.debug("Entering VcIssuer.postQuantumKeyOf().");
+    try {
+      helpers.log.debug("Leaving VcIssuer.postQuantumKeyOf().");
+      return pki.pqJwkFromCertificate(cert.toString());
+    } catch (e) {
+      helpers.log.debug("Caught in VcIssuer.postQuantumKeyOf(): " +
+                        ((e && (e as Error).message) || e));
+      helpers.log.debug("Leaving VcIssuer.postQuantumKeyOf(). None.");
+      return null;
+    }
+  }
+
+  // What a key attestation may be signed with in this realm, in the order
+  // metadata lists it: the classical ones, then its attesters' post-quantum ones.
+  private attestationAlgs(): string[] {
+    const { log } = this.deps;
+    log.debug("Entering VcIssuer.attestationAlgs().");
+    const out = ATTESTATION_ALGS.slice();
+    this.attesterKeys().forEach(function (t) {
+      const pq = VcIssuer.postQuantumKeyOf(t.cert);
+      if (pq && pq.alg && out.indexOf(pq.alg) < 0) {
+        out.push(pq.alg);
+      }
+    });
+    log.debug("Leaving VcIssuer.attestationAlgs(). " + out.length);
+    return out;
   }
 
   private attesterKeys(): any[] {
@@ -1180,8 +1283,9 @@ class VcIssuer {
    * @returns what it attests
    * @throws Error, with the reason, when it does not verify
    */
-  verifyKeyAttestation(token: string, opts: { proofJwk?: any;
-                                               expRequired?: boolean }): any {
+  async verifyKeyAttestation(token: string,
+                             opts: { proofJwk?: any;
+                                     expRequired?: boolean }): Promise<any> {
     const { log, jsonFromB64u, stsCrypto, vciNonces } = this.deps;
     log.debug("Entering VcIssuer.verifyKeyAttestation().");
     const parts = String(token || '').split('.');
@@ -1200,14 +1304,29 @@ class VcIssuer {
       throw new Error('a key attestation\'s typ must be ' +
                       'key-attestation+jwt, not "' + header.typ + '".');
     }
-    if (ATTESTATION_ALGS.indexOf(header.alg) < 0) {
+    const attestationAlgs = this.attestationAlgs();
+    if (attestationAlgs.indexOf(header.alg) < 0) {
       throw new Error('the key attestation is signed with "' + header.alg +
                       '", and this issuer accepts ' +
-                      ATTESTATION_ALGS.join(', ') + '.');
+                      attestationAlgs.join(', ') + '.');
     }
     const trusted = this.attesterKeys();
-    const candidates: any[] = trusted.map(function (t) {
-      return { label: t.label, key: t.cert.publicKey };
+    // A configured certificate that signs the attestation itself has no path to
+    // walk, and under paranoid its own fields still have to hold.
+    const held = trusted.filter(function (t) {
+      return CertificateTrust.fields('vc-key-attestation', t.cert.raw,
+                                     { mayBeCa: true }).ok;
+    });
+    const candidates: any[] = held.map(function (t) {
+      return { label: t.label, key: VcIssuer.classicalKeyOf(t.cert) };
+    });
+    // A POST-QUANTUM ATTESTER'S KEY, as a step of its own (#1368): an AKP JWK
+    // out of its certificate, as node reads no composite key into a KeyObject.
+    held.forEach(function (t) {
+      const pq = VcIssuer.postQuantumKeyOf(t.cert);
+      if (pq) {
+        candidates.push({ label: t.label, key: pq.publicJwk });
+      }
     });
     let last = 'no certificate in oid4vci.keyAttestationTrustedCertificates ' +
                'verifies it';
@@ -1228,18 +1347,37 @@ class VcIssuer {
         log.debug("Caught in VcIssuer.verifyKeyAttestation(): " +
                   ((e && e.message) || e));
       }
-      trusted.forEach(function (t) {
-        const direct = pki.verifyIssuedDirectly(der,
-                                                [{ certificate: t.cert }]);
-        if (direct.ok) {
-          candidates.unshift({ label: 'a certificate ' + t.label +
-                                      ' issued',
-                               key: direct.chain[0].x509.publicKey });
-        } else if (direct.check !== 'no-path') {
-          refusedX5c = refusedX5c || '; the x5c certificate ' + t.label +
-                       ' issued is refused: ' + direct.reason;
+      if (CertificateTrust.applies('vc-key-attestation')) {
+        // UNDER PARANOID, A REAL PATH: the wallet's intermediates count, and
+        // revocation is asked, which is why this function waits.
+        const path = await CertificateTrust.path('vc-key-attestation', der,
+          header.x5c.slice(1).map(function (one: unknown) {
+            return Buffer.from(String(one), 'base64');
+          }), trusted.map(function (t) {
+            return t.cert.raw;
+          }));
+        if (path.ok) {
+          candidates.unshift({ label: 'a certificate a trusted attester ' +
+                                      'issued',
+                               key: VcIssuer.classicalKeyOf(
+                                 path.chain[0].x509) });
+        } else {
+          refusedX5c = '; the x5c is refused: ' + path.reason;
         }
-      });
+      } else {
+        trusted.forEach(function (t) {
+          const direct = CertificateTrust.direct('vc-key-attestation', der,
+                                                 [{ certificate: t.cert }]);
+          if (direct.ok) {
+            candidates.unshift({ label: 'a certificate ' + t.label +
+                                        ' issued',
+                                 key: direct.chain[0].x509.publicKey });
+          } else if (direct.check !== 'no-path') {
+            refusedX5c = refusedX5c || '; the x5c certificate ' + t.label +
+                         ' issued is refused: ' + direct.reason;
+          }
+        });
+      }
     }
     let claims: any = null;
     let by = '';
@@ -1372,6 +1510,13 @@ class VcIssuer {
       throw new Error('unsupported proof alg "' + header.alg + '"; this ' +
         'issuer accepts ' + stsCrypto.JWS_ASYMMETRIC_ALGS.join(', ') + '.');
     }
+    // Not one the wallet compatibility mode turns off (#657, STS-VC-0153);
+    // the metadata does not advertise it then either.
+    const compatRefused = VcAlgorithms.acceptanceRefusal(String(header.alg),
+                                                         'the proof');
+    if (compatRefused) {
+      throw compatRefused;
+    }
     if (claims.aud !== credentialIssuer) {
       throw new Error('the proof aud ("' + claims.aud + '") is not this ' +
                       'credential issuer ("' +
@@ -1436,9 +1581,9 @@ class VcIssuer {
     // the key; required where `oid4vci.keyAttestationRequired` says so.
     let attestation = null;
     if (header.key_attestation) {
-      attestation = this.verifyKeyAttestation(String(header.key_attestation),
-                                              { proofJwk: named.jwk,
-                                                expRequired: true });
+      attestation = await this.verifyKeyAttestation(
+        String(header.key_attestation),
+        { proofJwk: named.jwk, expRequired: true });
     } else if (this.deps.config.value('oid4vci.keyAttestationRequired') ===
                true) {
       throw new Error('this issuer requires a key attestation ' +
@@ -1460,9 +1605,10 @@ class VcIssuer {
   // relationship, and DID Core section 5.3.1 defines `authentication` as how
   // the DID subject is to be authenticated, which a proof of possession is
   // — a did:jwk whose key says `use: "enc"` has none, and is refused here
-  // rather than bound. A did:web is refused outright: holder binding to one
-  // is not built (oid4vc/CLAUDE.md, a host may change its document between
-  // the proof and a relying party's check). Answers `{ jwk, kid, did }`.
+  // rather than bound. A did:web is refused (a host may change its document
+  // between the proof and a relying party's check), except one THIS REALM
+  // PUBLISHES for the person (#1291), resolved from its own history, whose
+  // `kid` comes back naming the version. Answers `{ jwk, kid, did }`.
   // ---------------------------------------------------------------------------
   private async proofKeyOfKid(kid: unknown):
     Promise<{ jwk: any; kid: string; did: string }> {
@@ -1471,11 +1617,34 @@ class VcIssuer {
     const text = typeof kid === 'string' ? kid : '';
     const hash = text.indexOf('#');
     const did = hash > 0 ? text.slice(0, hash) : text;
+    // A did:web THIS REALM PUBLISHES FOR THE PERSON (#1291), where the realm
+    // publishes them: resolved from the realm's own history, never by a
+    // fetch, in its CURRENT version — and the credential names that
+    // version (`<did>?versionId=<n>#<key>`), which stays resolvable from
+    // the same history whatever the DID becomes later. That is what makes
+    // the binding sound here, and why any OTHER did:web is still refused:
+    // its host may change the document between the proof and a relying
+    // party's check.
+    const hosted = /^did:web:/.test(did) && this.deps.personPublishing()
+      ? this.deps.hostedProofKey(text) : null;
+    if (hosted) {
+      if (hosted.error || !hosted.kid) {
+        log.debug("Leaving VcIssuer.proofKeyOfKid(). A hosted DID with no " +
+                  "such key.");
+        throw VcIssuer.proofError('STS-VC-0143', 'the proof\'s kid ' +
+          text.slice(0, 160) + ' names no key of the current version of ' +
+          'the DID: ' + String(hosted.error || 'a version is named') + '.');
+      }
+      log.debug("Leaving VcIssuer.proofKeyOfKid(). A DID this realm " +
+                "publishes.");
+      return { jwk: hosted.jwk, kid: hosted.kid, did: hosted.did };
+    }
     if (/^did:web:/.test(did)) {
       log.debug("Leaving VcIssuer.proofKeyOfKid(). A did:web.");
       throw VcIssuer.proofError('STS-VC-0142', 'the proof\'s kid names a ' +
-        'did:web, and this issuer binds a credential to a did:jwk or a ' +
-        'did:key only.');
+        'did:web this realm does not publish for a person, and this issuer ' +
+        'binds a credential to a did:jwk, a did:key, or such a did:web ' +
+        'only.');
     }
     if (hash <= 0 || hash === text.length - 1 ||
         !/^did:(jwk|key):/.test(did) || !vcDidResolver.isDid(did)) {
@@ -1541,7 +1710,7 @@ class VcIssuer {
   private async buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer,
                              issuerDid, status, signingAlg?: string,
                              holderKid?: string) {
-    const { log, logArtifact, b64u, certificateHeaderFor, stsCrypto,
+    const { log, logArtifact, b64u, certificateHeaderForAsync, stsCrypto,
             VCI_VCT } = this.deps;
     // An extension, not the spec: draft-ietf-oauth-sd-jwt-vc defines no
     // DID-based issuer signature mechanism. When one is configured the iss
@@ -1613,11 +1782,16 @@ class VcIssuer {
     // a payload that has none.
     // `oid4vci.credentialCertificateHeader` decides the `x5c` / `x5u` — and
     // SD-JWT VC section 3.5 names `x5c` as one of the ways a verifier may find
-    // the issuer's key, which is the case this setting exists for.
+    // the issuer's key, which is the case this setting exists for. The
+    // ASYNCHRONOUS form (2026-11-04): a realm made a moment ago in a cluster
+    // may not have its key's certificate in this process yet, and a
+    // credential that silently left `x5c` off could not be verified offline
+    // by the wallet holding it (`helpers.certificateHeaderForAsync()`).
     const issuerJwt = await stsCrypto.signJwsAsync(payload, signer.key, {
       algorithm: signer.alg,
-      header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
-                                                 signer.kid),
+      header: Object.assign(await certificateHeaderForAsync('vci-credential',
+                                                            signer.alg,
+                                                            signer.kid),
                             { alg: signer.alg, typ: 'dc+sd-jwt',
                               kid: signer.headerKid })
     });
@@ -1651,7 +1825,7 @@ class VcIssuer {
   private async buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer,
                                issuerDid, status, signingAlg?: string,
                                holderKid?: string) {
-    const { log, logArtifact, certificateHeaderFor, stsCrypto,
+    const { log, logArtifact, certificateHeaderForAsync, stsCrypto,
             VCI_JWT_TYPES, VC_CONTEXT } = this.deps;
     // As for ldp_vc, naming the issuer by DID is ordinary in a W3C credential
     // rather than an extension — this is VCDM, and the DID goes in both the
@@ -1675,7 +1849,10 @@ class VcIssuer {
     // contained in the credentialSubject", and a DID there is the VCDM's own
     // holder binding; `cnf.kid` names the method the presentation must be
     // signed with, as `cnf.jwk` named the key.
-    const holderDid = holderKid ? String(holderKid).split('#')[0] : '';
+    // `?versionId=` too (#1291): the credential is about the DID, and its
+    // `cnf.kid` names the version.
+    const holderDid = holderKid
+      ? String(holderKid).replace(/[?#].*$/, '') : '';
     const subjectId = holderDid || subjectClaims.sub ||
                       ('urn:uuid:' + stsCrypto.randomUuid());
 
@@ -1722,10 +1899,12 @@ class VcIssuer {
                             kid: signer.headerKid },
                   payload: payload });
 
+    // `buildSdJwtVc()`'s reason for the asynchronous form.
     const token = await stsCrypto.signJwsAsync(payload, signer.key, {
       algorithm: signer.alg,
-      header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
-                                                 signer.kid),
+      header: Object.assign(await certificateHeaderForAsync('vci-credential',
+                                                            signer.alg,
+                                                            signer.kid),
                             { alg: signer.alg, typ: 'JWT',
                               kid: signer.headerKid })
     });
@@ -1745,7 +1924,7 @@ class VcIssuer {
   // context this process actually loaded rather than against a list.
   //
   // vc_claims.ts names a JSON-LD term per configurable attribute, and those
-  // names were read off contexts/idptools_identity_v1.json by hand. Two files
+  // names were read off contexts/iya_identity_v1.json by hand. Two files
   // agreeing by hand is a drift waiting to happen, and the way this one would
   // announce itself is the worst available: jsonld canonicalizes with `safe:
   // true`, so an undefined term THROWS, inside a cryptosuite, at the moment a
@@ -1771,9 +1950,10 @@ class VcIssuer {
     } catch (e) {
       log.debug("Caught in VcIssuer.identityContextTerms(): " +
                 ((e && e.message) || e));
-      // Cannot happen while the context is vendored — bbs2023.js reads it at
-      // require time and this service does not start without it — but a caught
-      // failure here costs one claim and an uncaught one costs the credential.
+      // Cannot happen while the context ships with the service — bbs2023.js
+      // reads it at require time and this service does not start without it
+      // — but a caught failure here costs one claim and an uncaught one costs
+      // the credential.
       log.error(errorCodes.tag('STS-VC-0004') +
                 'the identity JSON-LD context could not be read; no ' +
                 'configured claim will be put in an ldp_vc credential this ' +
@@ -1794,7 +1974,7 @@ class VcIssuer {
         log.error(errorCodes.tag('STS-VC-0005') +
                   'vc_claims.js maps a configured attribute to the JSON-LD ' +
                   'term "' + term +
-                  '", which contexts/idptools_identity_v1.json does not ' +
+                  '", which contexts/iya_identity_v1.json does not ' +
                   'define; it is left out of this credential rather than ' +
                   'failing the signature.');
         delete members[term];
@@ -1852,7 +2032,7 @@ class VcIssuer {
     // BOUND TO THE PERSON'S DID (#693 phase 2b), the subject is that DID —
     // a did:jwk or a did:key the person proved — rather than the did:jwk of
     // the key; the holder's proof at presentation is still by its key.
-    const subjectId = holderKid ? String(holderKid).split('#')[0]
+    const subjectId = holderKid ? String(holderKid).replace(/[?#].*$/, '')
                                 : this.deps.vcDataIntegrity.didJwkOf(holderJwk);
     const unsecured: Record<string, any> = {
       '@context': ['https://www.w3.org/ns/credentials/v2',
@@ -1869,6 +2049,12 @@ class VcIssuer {
       unsecured.credentialStatus = status.credentialStatus;
     }
     logArtifact('ldp_vc credential', 'before signing', unsecured);
+    // bbs-2023 is a Data Integrity suite like any other (#1368).
+    const unsignable = stsCrypto.signaturePolicy.signCause('di', 'bbs-2023');
+    if (unsignable) {
+      log.debug("Leaving VcIssuer. bbs-2023 is not signed here.");
+      throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+    }
     const issued = await bbs2023.issue(unsecured, {
       verificationMethod: bbsVerificationMethod,
       created: new Date(now * 1000).toISOString()
@@ -1886,8 +2072,8 @@ class VcIssuer {
       // the document canonicalising differently than it did at signing — the
       // statements or the header differ — or the key: same statements, same
       // header, and a signature that does not verify under this public key.
-      // Both halves are here rather than in the vendored module, which may
-      // not be edited in this repository.
+      // Both halves are here rather than in bbs2023.js, which was a vendored
+      // copy when this was written and is kept a plain cryptosuite (#663).
       const signedStatements = (issued.statements || []) as string[];
       const checkedStatements = (check.statements || []) as string[];
       const differing = signedStatements.filter(function (one, i) {
@@ -2035,6 +2221,21 @@ class VcIssuer {
     // checked it when the offer was made, and the configured algorithm may
     // have changed since. A JOSE algorithm only — ldp_vc is bbs-2023.
     const chosen = String(signingAlg || '');
+    // THE WALLET COMPATIBILITY MODE (#657) refuses a post-quantum or
+    // composite algorithm here, before a status index is allocated, and
+    // signs nothing in its place (STS-VC-0152): the offer's choice, else the
+    // configured one. ldp_vc is bbs-2023 and not this mode's.
+    if (format !== 'ldp_vc') {
+      const effective = chosen || String(this.deps.config.value(
+        'oid4vci.credentialSigningAlgorithm') || 'RS256');
+      const refused = VcAlgorithms.signingRefusal(effective, chosen ?
+        'the offer\'s signingAlg' : 'oid4vci.credentialSigningAlgorithm');
+      if (refused) {
+        log.debug("Leaving VcIssuer.buildCredentialFor(). Wallet " +
+                  "compatibility mode.");
+        throw refused;
+      }
+    }
     if (chosen && vciSigningAlgsFor(configId).indexOf(chosen) < 0) {
       throw new Error('the offer chose ' + chosen + ', which ' + configId +
                       ' credentials are not signed with: ' +
@@ -2197,7 +2398,8 @@ class VcIssuer {
   // sends as one DID in every proof; nothing here makes them unlinkable,
   // which is why the binding is a configuration's choice.
   // ---------------------------------------------------------------------------
-  private didBindingRefusal(person: string, kids: string[]): any {
+  private didBindingRefusal(person: string, kids: string[],
+                            format?: string): any {
     const { log, nameForSubject, accountDisabled, provenSubjectsOf,
             enrolledSubjectsOf, selfIssuedOwnerOf } = this.deps;
     log.debug("Entering VcIssuer.didBindingRefusal(). " + kids.length +
@@ -2227,13 +2429,40 @@ class VcIssuer {
     const proved = (provenSubjectsOf(username) || []).map(function (one) {
       return String(one && one.subject || '');
     });
-    const enrolled = (enrolledSubjectsOf(username) || []).map(function (one) {
+    const rows = enrolledSubjectsOf(username) || [];
+    const enrolled = rows.map(function (one) {
       return String(one && one.subject || '');
     });
     for (const kid of kids) {
-      const did = String(kid).split('#')[0];
+      // A versioned DID URL (#1291) names its DID before the `?`.
+      const did = String(kid).replace(/[?#].*$/, '');
+      // A did:web THIS REALM PUBLISHES (#1291) binds a JOSE credential,
+      // whose `cnf.kid` names the version; an ldp_vc has no `cnf` and its
+      // subject is the bare DID, so nothing in it would say which version
+      // of the keys the holder proved.
+      if (/^did:web:/.test(did) && format === 'ldp_vc') {
+        return refuse('STS-VC-0166', 'invalid_proof', 'An ldp_vc names ' +
+          'its holder by the DID alone, with no version of its keys, so ' +
+          'it is not bound to a did:web; prove with a did:jwk or did:key, ' +
+          'or ask for a dc+sd-jwt or jwt_vc_json.');
+      }
       if (proved.indexOf(did) >= 0) {
         continue;
+      }
+      // A DID this realm published whose key no wallet proved (#1291):
+      // `realm` custody's key never leaves the realm, and an `issued` one
+      // is proved — becoming `wallet` — on the portal first.
+      const row = rows.filter(function (one: any) {
+        return one && one.subject === did;
+      })[0];
+      if (row && (row.proof === 'realm' || row.proof === 'issued')) {
+        return refuse('STS-VC-0165', 'invalid_proof', 'The proof\'s DID ' +
+          'was published for you with a key ' + (row.proof === 'realm'
+            ? 'this realm keeps, which no wallet holds, so a credential is ' +
+              'not bound to it.'
+            : 'this realm handed over, and nobody has proved it with a ' +
+              'wallet. Prove it on your portal\'s Self-issued IDs page, ' +
+              'then ask again.'));
       }
       if (enrolled.indexOf(did) >= 0) {
         return refuse('STS-VC-0149', 'invalid_proof', 'The proof\'s DID ' +
@@ -2315,7 +2544,7 @@ class VcIssuer {
         // A copy bound to the PERSON'S DID (#693) keeps that DID, in every
         // format.
         const boundTo = holderKids && holderKids[i]
-          ? String(holderKids[i]).split('#')[0] : '';
+          ? String(holderKids[i]).replace(/[?#].*$/, '') : '';
         const holderDid = boundTo || (format === 'ldp_vc' && holderJwks[i]
           ? String(didOf(holderJwks[i]) || '') : '');
         vcIssued.record({
@@ -3456,14 +3685,14 @@ class VcIssuer {
         holderKids = proven.map(function (one) {
           return String(one.kid || '');
         });
-        attestationProofs.forEach((token) => {
-          const read = this.verifyKeyAttestation(token, {});
+        for (const token of attestationProofs) {
+          const read = await this.verifyKeyAttestation(token, {});
           read.keys.forEach(function (key) {
             holderJwks.push(key);
             attestations.push(read);
             holderKids.push('');
           });
-        });
+        }
         if (holderJwks.length > vciBatchSize()) {
           throw new Error('the key attestations attest ' + holderJwks.length +
                           ' keys, and this issuer issues at most ' +
@@ -3493,7 +3722,8 @@ class VcIssuer {
       const bindKids: string[] = bindsDid ? holderKids : [];
       if (bindsDid) {
         const refusal = this.didBindingRefusal(
-          this.signInSubjectOf(presented), holderKids);
+          this.signInSubjectOf(presented), holderKids,
+          this.deps.vciFormatOf(requestedConfigId));
         if (refusal) {
           log.info(errorCodes.tag(refusal.errorCode) + 'oid4vci: a ' +
                    'credential bound to the person\'s DID was refused. ' +
@@ -3613,6 +3843,14 @@ class VcIssuer {
       } catch (e) {
         log.debug("Caught in the OID4VCI credential endpoint: " +
                   ((e && e.message) || e));
+        if (e && e.code === 'STS-VC-0152') {
+          // Wallet compatibility mode (#657): a refusal of the request,
+          // section 8.3.1.2, logged with its code where it was found.
+          errorCodes.mark(res, 'STS-VC-0152');
+          log.debug("Leaving the OID4VCI credential endpoint. Wallet " +
+                    "compatibility mode.");
+          return vciError(res, 400, 'credential_request_denied', e.message);
+        }
         log.error(errorCodes.tag('STS-VC-0079') + 'the credential could not ' +
                   'be built: ' + e.message);
         errorCodes.mark(res, 'STS-VC-0079');
@@ -3712,7 +3950,8 @@ class VcIssuer {
         .map(String);
       if (deferredKids.length) {
         const refusal = this.didBindingRefusal(
-          String(record.signInSubject || ''), deferredKids);
+          String(record.signInSubject || ''), deferredKids,
+          this.deps.vciFormatOf(String(record.configId || '')));
         if (refusal) {
           log.info(errorCodes.tag(refusal.errorCode) + 'oid4vci: a deferred ' +
                    'credential bound to the person\'s DID was refused at ' +
@@ -3745,6 +3984,13 @@ class VcIssuer {
       } catch (e) {
         log.debug("Caught in the OID4VCI deferred credential endpoint: " +
                   ((e && e.message) || e));
+        if (e && e.code === 'STS-VC-0152') {
+          // Wallet compatibility mode (#657), as at the credential endpoint.
+          errorCodes.mark(res, 'STS-VC-0152');
+          log.debug("Leaving the OID4VCI deferred credential endpoint. " +
+                    "Wallet compatibility mode.");
+          return vciError(res, 400, 'credential_request_denied', e.message);
+        }
         log.error(errorCodes.tag('STS-VC-0079') + 'the deferred credential ' +
                   'could not be built: ' + e.message);
         errorCodes.mark(res, 'STS-VC-0079');
@@ -3822,7 +4068,10 @@ class VcIssuer {
       }
 
       record.event = event;
-      record.description = body.event_description || '';
+      // A string in OpenID4VCI 1.0 section 11.1, and shown to an administrator
+      // as one (#1353).
+      record.description = typeof body.event_description === 'string'
+        ? body.event_description : '';
       record.notifiedAt = new Date().toISOString();
       // THROUGH THE STORE, so the notification is not a fact only this process
       // knows: `notificationIds` is `realms.map({persist})` and its journal
@@ -3927,7 +4176,6 @@ const slot = new InstanceSlot<VcIssuer>(
 // requiring this module used to register them.
 // `jwt` is referenced so the compiler keeps its require (an unused
 // `import = require` is dropped from the output).
-void jwt;
 
 // #46: a pre-authorized code and a c_nonce are spent once across the cluster,
 // and Transaction Code failures are counted against one budget — the c_nonce

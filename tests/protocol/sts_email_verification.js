@@ -109,10 +109,10 @@ function realmBase() {
   return base + "/realm/" + REALM;
 }
 
-async function call(method, url, body) {
+async function call(method, url, body, extra) {
   log.debug("Entering call().");
   const r = await fetch(url, { method: method, redirect: "manual",
-    headers: { "Content-Type": "application/json" },
+    headers: Object.assign({ "Content-Type": "application/json" }, extra || {}),
     body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await r.text();
   let json = null;
@@ -202,7 +202,7 @@ function linkParams(link) {
   try {
     const u = new URL(link);
     out = { user: u.searchParams.get("user") || "",
-            token: u.searchParams.get("token") || "" };
+            token: new URLSearchParams(u.hash.slice(1)).get("token") || "" };
   } catch (e) {
     log.debug("Caught in linkParams(): " + ((e && e.message) || e));
     // Not a URL: nothing to spend, which the assertion reading it says.
@@ -463,7 +463,7 @@ async function aPersonsOwnChange() {
   });
   const fields = linkParams(link);
   r = await call("GET", realmBase() + "/account-api/verify-email?" +
-                 form(fields));
+    form({ user: fields.user }), undefined, { "X-Link-Token": fields.token });
   check("2. opening it spends nothing: it draws a button", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     assert.ok(r.json && r.json.address === next && r.json.token,
@@ -585,7 +585,8 @@ async function theRecoveryCodeReset() {
   void replay;
   const resetFields = linkParams(resetLink);
   r = await call("GET", realmBase() + "/account-api/reset-password?" +
-                 form(resetFields));
+                 form({ user: resetFields.user }), undefined,
+                 { "X-Link-Token": resetFields.token });
   const done = await call("POST", realmBase() + "/account-api/reset-password",
     { user: resetFields.user, token: resetFields.token,
       password: NEW_PASSWORD, confirm: NEW_PASSWORD });

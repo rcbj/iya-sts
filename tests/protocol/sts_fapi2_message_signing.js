@@ -238,7 +238,7 @@ async function follow(b, first, who, onConsent) {
     if (where.indexOf(base) !== 0) {
       break;
     }
-    if (/\/authn\/login\?authn=/.test(where) && who) {
+    if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(where) && who) {
       const signed = await signIn(b, where, who);
       r = signed;
       continue;

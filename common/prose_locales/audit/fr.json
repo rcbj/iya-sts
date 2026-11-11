@@ -315,6 +315,10 @@
     "en": "e647419ca1d6ef3f",
     "text": "Le modèle de message d’un domaine a été enregistré ou réinitialisé"
   },
+  "audit.actions.branding.logo.label": {
+    "en": "66180a1e9a6ade1e",
+    "text": "Le logo de connexion d’un domaine a été téléversé ou supprimé"
+  },
   "audit.actions.mail.verified.label": {
     "en": "3b2f440c71a1db39",
     "text": "Une personne a vérifié l’adresse de son entrée"
@@ -770,6 +774,10 @@
   "audit.actions.admin.truststore.change.label": {
     "en": "feb59a61d26db396",
     "text": "Une ancre de confiance de certificat client a été ajoutée ou retirée"
+  },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "Le magasin de confiance des signataires ou un réglage de PKI paranoïaque a été modifié"
   },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
@@ -1423,6 +1431,10 @@
     "en": "39413bc03154f800",
     "text": "Un groupe a reçu une adresse, ou son adresse lui a été retirée"
   },
+  "audit.actions.group.set-policy.label": {
+    "en": "7ca8946df0f9aee5",
+    "text": "Un groupe a reçu une politique nommée, ou le nom a été effacé"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "Le keytab d’une personne a été créé à partir d’un mot de passe fourni"
@@ -1582,6 +1594,30 @@
   "audit.actions.portal.signing-key.csrf.label": {
     "en": "51cd295b713684de",
     "text": "Un formulaire de clé de signature a été refusé en raison de son jeton CSRF"
+  },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "Une personne a révoqué l’une de ses paires de clés de signature"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "Une personne a publié son propre did:web"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "Le document DID publié d’une personne a reçu une nouvelle version"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "Une personne a autorisé une clé sur son DID publié"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "Une personne a désactivé son DID publié"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "Un administrateur a désactivé le DID publié d’une personne"
   },
   "audit.actions.portal.siop.enrol.label": {
     "en": "9c4ac2b8893fae20",
@@ -1850,5 +1886,17 @@
   "audit.actions.admin.audit-export.test.label": {
     "en": "e523fcd6d4957e6d",
     "text": "Une destination d’export d’audit a été testée"
+  },
+  "audit.actions.audit.export.test.label": {
+    "en": "25d9164b7269ce2d",
+    "text": "Un événement de test envoyé à une destination d’export d’audit"
+  },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "Une ligne frappée qui ne pouvait jamais être validée a été abandonnée"
+  },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "La configuration a été exportée"
   }
 }

@@ -56,6 +56,7 @@ import credentials = require('../common/credentials');
 import webauthnPolicy = require('../authn/webauthn_policy');
 import authn = require('../authn/authn');
 import webauthnCeremonies = require('../authn/webauthn_ceremonies');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -86,53 +87,11 @@ function text(max: number): Json {
   return vz.string().max(max).optional();
 }
 
-const FORM = vz.object({
-  action: vt.opt(vt.oneOf(ACTIONS))
-    .describe('What to do; `remove` where none is named.'),
-  id: text(64).describe('`remove`: the device.'),
-  challenge: text(128)
-    .describe('`prove`, `link-finish`: the challenge being answered.'),
-  proof: text(65536).describe('`prove`: the device-key-proof+jwt JWS.'),
-  app_attest_key_id: text(128)
-    .describe('`prove`: an App Attest key id, beside its object.'),
-  app_attest_object: text(65536)
-    .describe('`prove`: an App Attest attestation object.'),
-  device: text(64)
-    .describe('`prove`, `link-begin`: an existing device to add the key ' +
-              'to; a new device where empty.'),
-  credential_id: text(1400)
-    .describe('`link-begin`: the passkey (built into this device) to link.'),
-  credential: text(65536)
-    .describe('`link-finish`: the WebAuthn assertion, as JSON.'),
-  label: text(128).describe('The device\'s name.'),
-  key_label: text(128).describe('`prove`: the key\'s name.'),
-  platform: text(32).describe('The device\'s platform.'),
-  model: text(128).describe('The device\'s model.'),
-  os: text(128).describe('The device\'s operating system.')
-});
+const FORM = ModelZod.body('account', 'actOnDevices');
 
-const JSON_CHALLENGE = vz.object({
-  purpose: vz.enum(['key']).optional()
-    .describe('What the challenge is for; `key`, the only one.')
-});
+const JSON_CHALLENGE = ModelZod.body('account', 'deviceChallenge');
 
-const JSON_PROOF = vz.object({
-  challenge: vz.string().min(1).max(128)
-    .describe('The challenge `devices/challenge` issued.'),
-  proof: vz.string().max(65536).optional()
-    .describe('The device-key-proof+jwt JWS.'),
-  app_attest: vz.object({
-    key_id: vz.string().max(128),
-    attestation: vz.string().max(65536)
-  }).optional().describe('Or an Apple App Attest key and object.'),
-  device_id: vz.string().max(64).optional()
-    .describe('An existing device of yours to add the key to.'),
-  label: vz.string().max(128).optional(),
-  key_label: vz.string().max(128).optional(),
-  platform: vz.string().max(32).optional(),
-  model: vz.string().max(128).optional(),
-  os: vz.string().max(128).optional()
-});
+const JSON_PROOF = ModelZod.body('account', 'deviceProof');
 
 /**
  * `/portal/devices`' account API operations: where a person sees and manages
@@ -618,57 +577,29 @@ class PortalDevices {
     log.debug("Entering PortalDevices.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/devices',
-        operationId: 'getDevices', tag: 'Devices', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/devices',
-        summary: 'Your devices, and how to register one',
-        description: 'Each device you own: its applications, whether its ' +
-          'Native SSO secret is live, its keys and their attestation, how ' +
-          'it was registered and when it was last used. Then the key-proof ' +
-          'step (`proof`: the challenge held, with the `audience` and ' +
-          '`proofTyp` a proof names), the passkeys built into a device that ' +
-          'can be linked (`link`) or the link ceremony armed (`linking`), ' +
-          'and whether this browser may be remembered.',
-        query: vz.object({}),
+        operationId: 'getDevices', access: 'person',
+        query: ModelZod.query('account', 'getDevices'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(ctx, req, caller));
         } },
       { method: 'POST', path: ctx.BASE + '/devices',
-        operationId: 'actOnDevices', tag: 'Devices', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/devices',
-        summary: 'Registers, links, remembers or removes a device',
-        description: '`challenge` then `prove` registers a device by a key ' +
-          'proof (or an App Attest object); `link-begin` then `link-finish` ' +
-          'links a passkey built into it by a fresh assertion; ' +
-          '`remember-browser` remembers this browser (a cookie on the ' +
-          'answer); `remove` removes a device and its Native SSO secret. A ' +
-          'refusal carries the page\'s `view`.',
+        operationId: 'actOnDevices', access: 'person',
         body: FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/devices/challenge',
-        operationId: 'deviceChallenge', tag: 'Devices', access: 'person',
-        summary: 'A key-proof challenge, for a device app',
-        description: 'Issues a challenge bound to the sign-on session this ' +
-          'token was issued on: `{ ok, challenge, audience, typ, ' +
-          'expires_at, proof_endpoint }`. The device signs a JWS of type ' +
-          '`typ` over `{ nonce: challenge, aud: audience, iat }` with the ' +
-          'key it registers, and posts it to `proof_endpoint`.',
+        operationId: 'deviceChallenge', access: 'person',
         body: JSON_CHALLENGE,
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return self.challenge(ctx, req, res, caller);
         } },
       { method: 'POST', path: ctx.BASE + '/devices/proof',
-        operationId: 'deviceProof', tag: 'Devices', access: 'person',
-        summary: 'A device app\'s key proof',
-        description: 'Answers a challenge with a key proof or an Apple App ' +
-          'Attest object, registering the device (or adding the key to ' +
-          '`device_id`). Answers 201 `{ ok, device, key }`.',
+        operationId: 'deviceProof', access: 'person',
         body: JSON_PROOF,
-        statuses: { 201: 'The device is registered: `{ ok, device, key }`.' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.proof(ctx, req, res, caller, input.body);

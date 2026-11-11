@@ -14,5 +14,7 @@
   "backupCode.label": "Uno de los códigos de recuperación que ha recibido",
   "passwordFactor.sub": "Segundo factor para <code>{name}</code>, después de su cartera.",
   "passwordFactor.meta": "Su cartera ya presentó una credencial que este servicio le emitió. Si todo va bien, la sesión registra amr {amr} y acr \"mfa\".",
-  "secondFactor.walletInstead": "Usar en su lugar su cartera"
+  "secondFactor.walletInstead": "Usar en su lugar su cartera",
+  "login.reauthPromptLogin": "La aplicación le ha pedido que vuelva a iniciar sesión (prompt=login).",
+  "login.reauthMaxAge": "La aplicación le ha pedido que vuelva a iniciar sesión porque su último inicio de sesión es más antiguo de lo que permite (max_age)."
 }

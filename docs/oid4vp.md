@@ -7,7 +7,8 @@ title: OpenID4VP
 iya-sts is a **Verifier** for
 [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
 using DCQL queries. It verifies what a wallet presents, check by check, in all
-three credential formats its [issuer](oid4vci.md) mints. A
+three credential formats its [issuer](oid4vci.md) mints, and in a fourth it
+does not mint: an ISO/IEC 18013-5 mdoc (`mso_mdoc`) from an issuer you trust. A
 verified presentation is also **a way to sign in**: *Sign in with a wallet* on
 the sign-in screen, including through the
 [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/). The
@@ -84,7 +85,7 @@ request **by reference** uses the configured `oid4vp.clientId` and a Request
 Object ([RFC 9101](https://www.rfc-editor.org/rfc/rfc9101)) signed with this
 realm's key, whose certificate chain is named as
 `oid4vp.requestObjectCertificateHeader` says. The `client_metadata` advertises
-all three formats. The `dcql_query` states what this request wants.
+all four formats, an mdoc's algorithms as COSE identifiers. The `dcql_query` states what this request wants.
 
 ### What the Verifier checks
 
@@ -112,10 +113,72 @@ Data Integrity proof (`challenge` = the nonce, `domain` = the audience) made by
 the holder's `did:jwk`. Three cryptosuites are accepted for that proof:
 `ecdsa-jcs-2019`, `eddsa-jcs-2022` and `mldsa44-jcs-2024`.
 
+For an **ISO mdoc** (`mso_mdoc`, OpenID4VP Appendix B.2 and ISO/IEC 18013-5
+section 9.3.1), the presentation is a base64url `DeviceResponse` with one
+document:
+
+* the document signer certificate in `issuerAuth`'s `x5chain` chains to a
+  certificate in `oid4vp.mdocTrustAnchors`, and is checked for revocation;
+* `issuerAuth` verifies against that certificate's key;
+* the Mobile Security Object names the document's `docType`, which is
+  `oid4vp.expectedDoctype`, and is valid now, and it was signed while the
+  document signer certificate was valid;
+* every disclosed element hashes to the digest the Mobile Security Object
+  holds for it;
+* the `deviceSignature` verifies against the Mobile Security Object's device
+  key over the session transcript (Appendix B.2.6.1), which binds this
+  request's Client Identifier, nonce, Response URI and, for
+  `direct_post.jwt`, the key the response was encrypted to. A `deviceMac` is
+  refused;
+* a device-signed element is accepted only where the issuer authorized it;
+* every element the query asked for, in `oid4vp.mdocNamespace`, is present.
+
 The Key Binding JWT accepts every asymmetric algorithm the issuer binds
 credentials to. A holder may bind a credential to an ML-DSA-44 key, and this
 realm may sign credentials with ML-DSA, SLH-DSA or a composite; the Verifier
-checks all of them.
+checks all of them, unless the realm is in
+[wallet compatibility mode](#wallet-compatibility-mode).
+
+### Post-quantum algorithms
+
+For the `dc+sd-jwt` and `jwt_vc_json` formats, and for the Request Object, the
+Verifier speaks eleven post-quantum and composite JWS algorithms beside the
+classical ones:
+
+| Algorithm | Defined by |
+|---|---|
+| `ML-DSA-44`, `ML-DSA-65`, `ML-DSA-87` | RFC 9964 (registered for JOSE) |
+| `SLH-DSA-SHA2-128s`, `SLH-DSA-SHAKE-128s` | draft-ietf-cose-sphincs-plus |
+| `ML-DSA-44-ES256`, `ML-DSA-65-ES256`, `ML-DSA-87-ES384`, `ML-DSA-44-Ed25519`, `ML-DSA-65-Ed25519`, `ML-DSA-87-Ed448` | draft-ietf-jose-pq-composite-sigs |
+
+Each can sign the Request Object (`oid4vp.x509SigningAlgorithm` for the x509
+prefixes, `oid4vp.requestObjectSigningAlgorithm` for the others), and each is
+accepted on a credential this realm or a [trusted issuer](#trusted-issuers)
+signed, on that issuer's status list, and on a Key Binding JWT or VP JWT.
+`ldp_vc` is not affected: its credential is `bbs-2023`, and its holder
+cryptosuites are listed above.
+
+No wallet in use today accepts these algorithms, and OpenID4VC HAIP has a
+wallet accept ES256. Sign Request Objects with one only for a wallet you know
+reads it.
+
+### Wallet compatibility mode
+
+`oid4vc.walletCompatibility` (off by default) turns every algorithm in the
+table above off for OpenID4VCI and OpenID4VP in the realm. They are the ones
+a wallet would refuse today, or that only an Internet-Draft defines. With it
+on:
+
+* The issuer's and the Verifier's metadata name none of them for the JOSE
+  formats.
+* A Request Object or a credential named for one is refused, with
+  `STS-VC-0152` in the log. Nothing is signed with another algorithm in its
+  place: set a classical one.
+* A credential, Key Binding JWT, VP JWT, proof of possession or foreign status
+  list signed with one is refused (`STS-VC-0153`).
+
+`ldp_vc` and every other protocol are unchanged. `keys.postQuantumSigning`
+is the switch that turns post-quantum signing off for the whole realm.
 
 ### Trusted issuers
 
@@ -124,6 +187,17 @@ certificates in `oid4vp.trustedIssuerCertificates` add issuers whose SD-JWT VC
 or `jwt_vc_json` signatures are accepted. A certificate is used as a key. No
 chain is built, but the certificate's revocation is consulted when it verifies
 a credential, under `pki.revocationCheck` (see [PKI](pki.md)).
+
+A certificate may hold a post-quantum key: ML-DSA, `SLH-DSA-SHA2-128s`,
+`SLH-DSA-SHAKE-128s`, or a composite ML-DSA key. It then verifies credentials
+and status lists signed with that algorithm. A certificate whose key is an
+SLH-DSA parameter set with no JOSE algorithm is ignored, with `STS-VC-0154` in
+the log.
+
+An mdoc's issuers are trusted differently: `oid4vp.mdocTrustAnchors` holds
+Issuing Authority CA (IACA) certificates, and the document signer must chain
+to one of them. The setting is empty by default, so no mdoc is accepted until
+you add one.
 
 ### Status checks
 
@@ -363,6 +437,18 @@ An ordinary sign-out of one application disowns nothing, and the person signs
 back in with the wallet they hold. A credential minted on an access token that
 had already been disowned is never put in the register.
 
+**A refusal says which of these happened, and when.** When a credential this
+realm issued is refused for its status, the wallet's `invalid_request`
+answer from `/oid4vp/response` and the browser's refusal page both name the
+act (a global sign-out, the holder's removal, an administrator's revocation
+or a status change), who or what did it, and the time. Apart from a
+suspension, both also say where to get a new credential issued: the
+person's **Wallet** page in the portal, `/portal/wallet`. The wallet gets
+the absolute address, and the browser page a link. A suspension instead says
+that an administrator may reinstate it. A credential issued in a batch has
+one status-list entry per copy, and a global sign-out disowns every copy,
+so each copy gives the same answer.
+
 ### DID Core and domain linkage
 
 | Path | What it is |
@@ -441,6 +527,12 @@ never the Self-Issued OP itself.
   client allowed the `did` scope that the person consented to — see
   [Configure OIDC flows](configure-oidc-flows.md#release-a-persons-did-as-a-claim)
   for every condition. It is never released in a SAML assertion.
+* **A did:web this realm publishes.** Where `did.personPublishing` is on, a
+  person can have this realm create and publish a `did:web` for them on
+  `/portal/self-issued`. It is enrolled as one of their self-issued subjects,
+  its key is resolved from the realm's own history rather than fetched, and
+  the pin follows each new version of its keys. See
+  [Published DIDs](person-dids.md).
 * **With a presentation** (`response_type=vp_token id_token`), the ID Token
   must be signed by the presentation's holder key.
 * **A verification start** takes `response_type` `id_token` (or `vp_token
@@ -495,16 +587,26 @@ wallet is configured with.
 * **When the certificate changes, `x509_hash` changes.** That happens on
   renewal, key rotation, or when `oid4vp.x509SigningAlgorithm` changes. A
   wallet configured with the hash must then be given the new one.
-* **Not offered: a post-quantum signing algorithm.** The Request Object is
-  signed on the request path, and this realm's post-quantum keys sign in
-  the worker pool.
+* **Post-quantum.** `oid4vp.x509SigningAlgorithm` may name any algorithm in
+  [the table above](#post-quantum-algorithms). The certificate is then over
+  the realm's key for it: an ML-DSA, SLH-DSA or composite key, under the
+  same classical Issuing CA.
+
+#### The other signed prefixes
+
+A signed request under `pre-registered`, `decentralized_identifier`,
+`verifier_attestation` or `openid_federation` is signed with
+`oid4vp.requestObjectSigningAlgorithm` (RS256 by default). The key is the
+realm's key for that algorithm. `/oauth2/jwks` publishes it, the DID document
+lists it, a self-issued Verifier Attestation names it in `cnf`, and the Entity
+Configuration's `openid_credential_verifier` metadata carries it in `jwks`. A
+configured Verifier Attestation must name that key too.
 
 ### Not implemented
 
 * The unsigned and multi-signed request forms of the Digital Credentials API
   (Appendix A.3.1, A.3.2.2), and `transaction_data`.
-* A trusted issuer certificate with a post-quantum key, and an `ldp_vc` holder
-  key of any post-quantum kind other than ML-DSA-44.
+* An `ldp_vc` holder key of any post-quantum kind other than ML-DSA-44.
 
 ## Development and product mode
 
@@ -520,6 +622,8 @@ The Verifier's checks, the sign-in rules, the browser binding and the status
 check are the same in both modes. See
 [What is not checked](what-is-not-checked.md).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, an mdoc's document signer must carry the ISO 18013-5 extendedKeyUsage, and its chain is asked about revocation. A certificate in `oid4vp.trustedIssuerCertificates` must be in date, must not be known to be revoked, and must chain to this realm's signer truststore unless it is self-signed. One that fails is left out and named in the log. A chain naming no list is refused here, as `pki.revocationCheck` says. `pki.paranoidVcIssuer` turns this row off.
+
 ## Configuration
 
 | Setting | Environment variable | Default | Runtime? | What it does |
@@ -533,8 +637,11 @@ check are the same in both modes. See
 | `oid4vp.kbMaxAgeS` | `OID4VP_KB_MAX_AGE_S` | `600` | yes | How old a Key Binding JWT's `iat` may be. |
 | `oid4vp.claims` | `OID4VP_CLAIMS` | `given_name,family_name` | yes | The Verifier's starting request, and what its Reset returns to. |
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims the Verifier request page lets a request name. |
-| `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:idptools:sd-jwt-vc:identity` | yes | The `vct` required of a presented SD-JWT VC. |
+| `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:iya:sts:sd-jwt-vc:identity` | yes | The `vct` required of a presented SD-JWT VC. |
 | `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | *(empty)* | yes | PEM certificates of other issuers whose signatures are accepted. |
+| `oid4vp.mdocTrustAnchors` | `OID4VP_MDOC_TRUST_ANCHORS` | *(empty)* | yes | IACA certificates an mdoc's document signer must chain to. |
+| `oid4vp.expectedDoctype` | `OID4VP_EXPECTED_DOCTYPE` | `org.iso.18013.5.1.mDL` | yes | The `docType` an mso_mdoc request asks for and requires. |
+| `oid4vp.mdocNamespace` | `OID4VP_MDOC_NAMESPACE` | `org.iso.18013.5.1` | yes | The namespace an mso_mdoc request's claims are asked for in. |
 | `oid4vp.presentationRequestTtlS` | `OID4VP_PRESENTATION_REQUEST_TTL_S` | `600` | yes | How long a presentation request waits for a wallet's response. |
 | `oid4vp.maxTransactions` | `OID4VP_MAX_TRANSACTIONS` | `5000` | yes | How many waiting requests a realm keeps; past it the oldest is dropped. |
 | `oid4vp.statusListMaxCacheS` | `OID4VP_STATUS_LIST_MAX_CACHE_S` | `3600` | yes | The longest a foreign issuer's status list is kept; `0` fetches every time. |
@@ -553,7 +660,9 @@ check are the same in both modes. See
 | `oid4vp.siopIdTokenMaxAgeS` | `OID4VP_SIOP_ID_TOKEN_MAX_AGE_S` | `300` | yes | How old a self-issued ID Token's `iat` may be. |
 | `oid4vp.clientIdPrefix` | `OID4VP_CLIENT_ID_PREFIX` | `pre-registered` | yes | How a signed request an administrator starts names this Verifier: `pre-registered`, `decentralized_identifier`, `verifier_attestation`, `openid_federation`, `x509_san_dns` or `x509_hash`. A sign-in's is `oid4vp.signInClientIdPrefix`. |
 | `oid4vp.x509DnsName` | `OID4VP_X509_DNS_NAME` | *(empty)* | yes | The DNS name of the `x509_san_dns` Client Identifier. It must be the Response URI's host. Empty: the host of `global.publicBaseUrl`, else (development only) the request's host. |
-| `oid4vp.x509SigningAlgorithm` | `OID4VP_X509_SIGNING_ALGORITHM` | `ES256` | yes | The algorithm an `x509_san_dns` or `x509_hash` request is signed with: `ES256`, `ES384`, `ES512`, `PS256`, `RS256` or `EdDSA`. |
+| `oid4vp.x509SigningAlgorithm` | `OID4VP_X509_SIGNING_ALGORITHM` | `ES256` | yes | The algorithm an `x509_san_dns` or `x509_hash` request is signed with: `ES256`, `ES384`, `ES512`, `PS256`, `RS256`, `EdDSA` or one of the [post-quantum algorithms](#post-quantum-algorithms). |
+| `oid4vp.requestObjectSigningAlgorithm` | `OID4VP_REQUEST_OBJECT_SIGNING_ALGORITHM` | `RS256` | yes | The algorithm a signed request under the other prefixes is signed with: an RS, PS or ES algorithm, `EdDSA`, or one of the [post-quantum algorithms](#post-quantum-algorithms). |
+| `oid4vc.walletCompatibility` | `OID4VC_WALLET_COMPATIBILITY` | `false` | yes | [Wallet compatibility mode](#wallet-compatibility-mode): no post-quantum or composite algorithm in OpenID4VCI or OpenID4VP. |
 | `oid4vp.verifierAttestation` | `OID4VP_VERIFIER_ATTESTATION` | *(empty)* | yes | A Verifier Attestation JWT for the `verifier_attestation` prefix. **Warning:** empty, this realm attests itself. |
 | `oid4vp.signInRegisterMaxEntries` | `OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES` | `10000` | yes | Rows the sign-in register keeps per realm; past it the oldest is dropped, which fails closed. **The oldest still-valid credential then signs nobody in**, and its holder has to be issued another; raise it for a realm that issues more. |
 

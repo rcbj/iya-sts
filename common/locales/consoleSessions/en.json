@@ -88,5 +88,6 @@
   "accounts.added": "accounts added",
   "accounts.switched": "default switched",
   "accounts.forgotten": "accounts forgotten",
-  "accounts.expired": "remembered accounts expired"
+  "accounts.expired": "remembered accounts expired",
+  "endAll": "End every session in this realm"
 }

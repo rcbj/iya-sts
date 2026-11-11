@@ -766,8 +766,10 @@ class GeoMap {
     });
 
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" id="geo-map" ' +
+      // Its `max-width` is `#geo-map` in the console's stylesheet, not a
+      // `style=""` the console's policy would drop (2026-11-10).
       'viewBox="0 0 ' + WIDTH + ' ' + height + '" width="100%" ' +
-      'style="max-width:' + WIDTH + 'px" role="img" aria-labelledby=' +
+      'role="img" aria-labelledby=' +
       '"geo-map-title" font-family="system-ui, sans-serif">' +
       '<title id="geo-map-title">' + xmlEscape(spec.title || 'Sign-ins') +
       '</title><rect x="0" y="0" width="' + WIDTH + '" height="' + height +

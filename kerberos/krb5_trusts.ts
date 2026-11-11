@@ -57,17 +57,19 @@
 // whether a cross-realm path is acceptable (`pathProblem()`), and how
 // `transited` is written and read (`encodeTransited()`, `decodeTransited()`).
 // The KDC (`krb5_kdc.js`) and the principal database (`krb5_principals.js`)
-// reach it LAZILY, so the parent project's in-process Kerberos jobs, which
-// copy the closure of those two files, load it only when a cross-realm name
-// is asked about — and owe a COPY line for it, compiled (kerberos/CLAUDE.md).
+// reach it LAZILY, so a process loads it only when a cross-realm name is
+// asked about. (History: the parent project's in-process Kerberos jobs copy
+// the closure of those two files, and this file was owed to them as a COPY
+// line, compiled; nothing is owed since #1280.)
 //
 // THE DIRECTORY SLOT (rule 3e). `setDirectory()` is filled by
 // `ldap/ldap_server.js` with three functions over `ou=kerberosTrusts`. A
 // require from here to the directory would drag every `/admin/ldap/*` page
 // ahead of the KDC's routes (the directory is a JavaScript route module at
 // 21, the KDC at 15), and the directory's own require of this file closes
-// the other way round; and the parent's closure would gain the whole
-// directory for a feature its jobs do not drive. **WITHOUT A DIRECTORY** —
+// the other way round; and the parent's closure would have gained the whole
+// directory for a feature its jobs do not drive (an obligation until #1280).
+// **WITHOUT A DIRECTORY** —
 // an in-process test that never loads it, or the parent's jobs — the records
 // live in a per-realm map of this process (`realms.map()`), seeded the same
 // way on first read, so the development trust with PARTNER.COM still exists
@@ -82,9 +84,10 @@ import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
 import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
+import Classes = require('../common/domain_classes');
 import kcrypto = require('./krb5_crypto');
 // The vendored PAC codec (#430 Phase 2), for SID filtering: it requires only
-// the rest of the codec, which is already in the parent project's closure.
+// the rest of the codec, which the KDC already loads.
 import kpac = require('./krb5_pac');
 
 // A stored record, a directory row, a view: JSON this file wrote.
@@ -114,8 +117,8 @@ interface Krb5TrustsDeps {
   keystore: () => Json;
   principals: () => Json;
   // LAZILY too: the audit log, which every filtered ticket writes a row to
-  // (rcbj, 2026-10-19). Already in the parent's COPY closure through
-  // krb5_kdc.js; lazy so a register built in a test never reaches it at load.
+  // (rcbj, 2026-10-19). Already loaded through krb5_kdc.js; lazy so a
+  // register built in a test never reaches it at load.
   audit: () => Json;
 }
 
@@ -539,17 +542,6 @@ class Krb5Trusts {
     return attributes;
   }
 
-  private firstValue(attributes: Json, name: string): string {
-    this.deps.log.debug("Entering Krb5Trusts.firstValue().");
-    const found = attributes[name] !== undefined ? attributes[name] :
-                  attributes[name.toLowerCase()];
-    this.deps.log.debug("Leaving Krb5Trusts.firstValue().");
-    return Array.isArray(found) ? String(found[0] === undefined ? '' :
-                                         found[0])
-                                : (found === undefined || found === null ?
-                                   '' : String(found));
-  }
-
   // The record and its opened secrets, or null for an entry that is not one
   // (said once per realm and partner, STS-KRB-0224). `stamp` is a digest of
   // the two stored values, so a cached principal is rebuilt the moment
@@ -557,9 +549,14 @@ class Krb5Trusts {
   private readEntry(stored: Json): Json | null {
     const { log, errorCodes, stsCrypto, realms } = this.deps;
     log.debug("Entering Krb5Trusts.readEntry().");
-    const attributes = (stored && stored.attributes) || {};
-    const data = this.firstValue(attributes, 'stsKrb5TrustData');
-    const keys = this.firstValue(attributes, 'stsKrb5TrustKeys');
+    // The record and its keys as the domain model reads them (#1390). The
+    // keys are the concept's secret, named here because this is the read
+    // that opens them; both forms of an entry, the directory's arrays and
+    // the in-process map's plain values, come out the same.
+    const trust = Classes.KerberosTrust.fromEntry(
+      (stored && stored.attributes) || {}, { secrets: ['keys'] });
+    const data = trust.data || '';
+    const keys = trust.keys || '';
     let record: Json = null;
     let secrets: Json = null;
     let why = '';
@@ -823,6 +820,13 @@ class Krb5Trusts {
     if (input.generate === true) {
       const keys: Record<string, string> = {};
       enctypes.forEach(function (etype: number): void {
+        if (!Number.isInteger(etype) || !kcrypto.isSupportedEtype(etype)) {
+          // validate() has already recorded STS-KRB-0220 for this enctype and
+          // the request will refuse; skip it here rather than let etypeById()
+          // throw on a NaN (a fuzzed `enctypes: ["x"]`) into the fault
+          // boundary, which the invariant counts as an uncaught 5xx.
+          return;
+        }
         const profile = kcrypto.etypeById(etype);
         keys[String(etype)] = Buffer.from(
           kcrypto.randomBytes(profile.keyBytes)).toString('base64');
@@ -835,6 +839,12 @@ class Krb5Trusts {
       const keys: Record<string, string> = {};
       let wrong = '';
       enctypes.forEach(function (etype: number): void {
+        if (!Number.isInteger(etype) || !kcrypto.isSupportedEtype(etype)) {
+          // See the generate branch above: validate() already refused this
+          // enctype, so skip it rather than throw a NaN into the fault
+          // boundary.
+          return;
+        }
         const value = input.keys[String(etype)];
         const bytes = typeof value === 'string' ?
           Buffer.from(value, 'base64') : null;

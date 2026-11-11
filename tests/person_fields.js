@@ -148,10 +148,10 @@ function childMain() {
            JSON.stringify(cn));
       const partial = update('pf-alice', { c: 'zz', title: 'Lead' });
       note(partial.ok === false && codeOf(partial) === 'STS-ADMIN-0839' &&
-             partial.changed.join() === 'title' &&
-             valuesOf('pf-alice', 'title').join() === 'Lead' &&
+             partial.changed.length === 0 &&
+             valuesOf('pf-alice', 'title').join() !== 'Lead' &&
              valuesOf('pf-alice', 'c').join() === 'SE',
-           'B. a refused value is reported and the rest saved (0839)',
+           'B. a refused value is reported and nothing is saved (0839)',
            JSON.stringify(partial) + ' ' + codeOf(partial));
       const withheld = update('pf-alice', { memberOf: 'cn=x' });
       note(withheld.ok === false && codeOf(withheld) === 'STS-ADMIN-0839' &&

@@ -159,7 +159,7 @@ async function theRestart(cells, realm) {
         "sign-in screen", function () {
           assert.ok(first.status >= 300 && first.status < 400,
             first.status + " " + kit.said(first.text));
-          assert.ok(/\/authn\/login\?authn=/.test(first.location),
+          assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(first.location),
             first.location);
         });
   const screen = await kit.browse(jar, first.location);
@@ -187,7 +187,11 @@ async function theRestart(cells, realm) {
                     pin.indexOf(cells.ids.a) < 0, pin);
         });
   check("and no session was started at cell A", function () {
-    assert.deepStrictEqual(posted.set, ["sts_cell"],
+    // A name is read without the `__Host-` / `__Secure-` prefix product
+    // mode puts on every `sts_` cookie (common/cookie_wire.ts).
+    assert.deepStrictEqual(posted.set.map(function (n) {
+      return n.replace(/^__(Host|Secure)-/, "");
+    }), ["sts_cell"],
       "the restart set " + JSON.stringify(posted.set));
   });
 
@@ -197,7 +201,7 @@ async function theRestart(cells, realm) {
         "a sign-in screen again", function () {
           assert.ok(again.status >= 300 && again.status < 400,
             again.status + " " + kit.said(again.text));
-          assert.ok(/\/authn\/login\?authn=/.test(again.location),
+          assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(again.location),
             again.location);
         });
   // SINCE #571 THE SCREEN IS A SHELL, answered only for a sign-in the
@@ -223,7 +227,7 @@ async function theRestart(cells, realm) {
           assert.ok(signedIn.status >= 300 && signedIn.status < 400,
             signedIn.status + " " + kit.said(signedIn.text));
           assert.ok(signedIn.set.filter(function (n) {
-            return n !== "sts_cell";
+            return n.replace(/^__(Host|Secure)-/, "") !== "sts_cell";
           }).length > 0, "no session cookie: " +
             JSON.stringify(signedIn.set));
         });
@@ -318,7 +322,7 @@ async function thePushedRequest(cells, realm) {
         "only have refused it", function () {
           assert.ok(started.status >= 300 && started.status < 400,
             started.status + " " + kit.said(started.text));
-          assert.ok(/\/authn\/login\?authn=/.test(started.location),
+          assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(started.location),
             started.location);
         });
   const atHome = await kit.browse(new kit.Jar(),

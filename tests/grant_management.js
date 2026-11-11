@@ -203,7 +203,7 @@ async function body(t) {
                Math.floor(clock / 1000) + 60);
   g.apply(third.plan);
   clock += 3600 * 1000;
-  g.purge();
+  await g.purge();
   t.check(g.current(third.plan.id) === null,
           '4e. the purge removes a grant past its last token');
 

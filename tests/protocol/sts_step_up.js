@@ -428,7 +428,7 @@ function toSignIn(r) {
   log.debug("Entering toSignIn().");
   log.debug("Leaving toSignIn().");
   return (r.status === 302 || r.status === 303) &&
-         /\/authn\/login\?authn=/.test(r.location);
+         /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location);
 }
 
 // The redirect to the client's registered address, as its parameters, or
@@ -942,22 +942,36 @@ async function enrolAnAuthenticator(alice) {
   const secret = String(setup.grouped || "").replace(/\s+/g, "");
   assert.ok(secret.length >= 32,
     "no secret on the setup page: " + page.text.slice(0, 400));
+  const confirmedAt = Date.now();
   r = await portal.act("/portal/mfa", { action: "confirm",
-                                        code: codeFor(secret) });
+                                        code: codeFor(secret, confirmedAt) });
   check("(" + ALICE + " enrols an authenticator app at the realm's " +
         "/portal/mfa, confirmed with a code this job computed)", function () {
     assert.ok(r.status === 200 && r.json && r.json.ok,
       r.status + " " + r.text.slice(0, 300));
   });
   log.debug("Leaving enrolAnAuthenticator().");
-  return secret;
+  return { secret: secret, step: Math.floor(confirmedAt / 30000) };
+}
+
+// Resolves once the current thirty-second step is later than `used`, so the
+// current step's code is one the verifier has not yet accepted.
+async function waitForStepAfter(used) {
+  log.debug("Entering waitForStepAfter(). used=" + used);
+  while (Math.floor(Date.now() / 30000) <= used) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 1000);
+    });
+  }
+  log.debug("Leaving waitForStepAfter().");
 }
 
 async function stepUpToMfa(held) {
   log.debug("Entering stepUpToMfa().");
   log.info("=== e. step-up to mfa, end to end ===");
   const alice = held.alice;
-  const secret = await enrolAnAuthenticator(alice);
+  const enrolled = await enrolAnAuthenticator(alice);
+  const secret = enrolled.secret;
 
   const cold = browser("no-session");
   const coldAsk = await cold.go("GET",
@@ -977,10 +991,14 @@ async function stepUpToMfa(held) {
       first.location);
     assert.ok(!/[?&]code=/.test(first.location), first.location);
   });
-  // Thirty seconds ahead: the window forgives one step either side, and the
-  // step the enrolment's confirmation code spent is refused as a replay.
+  // The step the enrolment's confirmation code spent is refused as a replay,
+  // so the code is the NEXT step's — waited for, never computed ahead: a
+  // future step's code is forgiven only by a window of one, and product
+  // mode's `totp.window` is 0 (strongerInProduct(0, 1) in common/config.js).
+  // Taken just after the step turns, it has the whole step to arrive in.
+  await waitForStepAfter(enrolled.step);
   const done = await signInScreen(alice, first.location, ALICE,
-                                  codeFor(secret, Date.now() + 30000));
+                                  codeFor(secret));
   check("the sign-in screen DEMANDS the second factor: its view says the " +
         "request demands one, which the page draws as the checkbox checked " +
         "and disabled", function () {

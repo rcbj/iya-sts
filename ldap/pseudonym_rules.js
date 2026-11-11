@@ -50,25 +50,29 @@ function pseudonymProblem(value, options) {
   const text = String(value == null ? '' : value).trim();
   const fold = text.toLowerCase();
   const email = !!opts.email;
-  const fail = function (sentence) {
+  // The code is named at each call, where tests/error_codes.js looks for it.
+  const fail = function (code, sentence) {
     log.debug("Leaving pseudonymProblem(). Refused.");
-    return { ok: false, code: 'STS-LDAP-0199', sentence: sentence };
+    return { ok: false, code: code, sentence: sentence };
   };
   if (!text || text.length > MAX_LENGTH) {
-    return fail('A pseudonym is one name of at most 254 characters.');
+    return fail('STS-LDAP-0199',
+                'A pseudonym is one name of at most 254 characters.');
   }
   if (DN_RESERVED.test(text)) {
-    return fail('A pseudonym cannot contain a character a distinguished ' +
+    return fail('STS-LDAP-0199',
+                'A pseudonym cannot contain a character a distinguished ' +
                 'name reserves.');
   }
   if (DN_SHAPED.test(text) || /^urn:uuid:/i.test(text) ||
       UUID_SHAPED.test(text) || DID_SHAPED.test(text) ||
       SPIFFE_SHAPED.test(text)) {
-    return fail('A pseudonym cannot be a distinguished name, a subject, ' +
+    return fail('STS-LDAP-0199',
+                'A pseudonym cannot be a distinguished name, a subject, ' +
                 'a DID, or a SPIFFE identity.');
   }
   if (fold === RESERVED_NAME || LANE_NAME.test(text)) {
-    return fail('That name is reserved.');
+    return fail('STS-LDAP-0199', 'That name is reserved.');
   }
   const own = opts.ownNames || [];
   if (own.indexOf(fold) !== -1) {
@@ -78,7 +82,8 @@ function pseudonymProblem(value, options) {
   }
   const count = Number(opts.liveCount);
   if (count >= CAP) {
-    return fail('A person holds at most eight pseudonyms.');
+    return fail('STS-LDAP-0199',
+                'A person holds at most eight pseudonyms.');
   }
   log.debug("Leaving pseudonymProblem().");
   return { ok: true, email: email };

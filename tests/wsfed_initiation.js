@@ -257,6 +257,31 @@ function childMain() {
          'cleanup list `/logout` reads names it',
          JSON.stringify(targets));
 
+    // #747: what an administrator declared outranks the wreply observed, every
+    // value of it, and a realm with none keeps the wreply.
+    const SIGN_OUT = ['https://rp.example/out-a',
+                      'https://rp.example/out-b?x=1'];
+    const declared = applications.updateApplication(RP_OPEN, {
+      attribute: 'wsfedSignOutUri', mode: 'add', value: SIGN_OUT[0] });
+    const declared2 = applications.updateApplication(RP_OPEN, {
+      attribute: 'wsfedSignOutUri', mode: 'add', value: SIGN_OUT[1] });
+    const declaredTargets = session ? wsfed.cleanupTargetsFor(session) : [];
+    const pings = declaredTargets.filter(function (one) {
+      return one.realm === RP_OPEN;
+    }).map(function (one) { return one.url; });
+    note(declared.ok && declared2.ok && pings.length === 2 &&
+         pings[0] === SIGN_OUT[0] + '?wa=wsignoutcleanup1.0' &&
+         pings[1] === SIGN_OUT[1] + '&wa=wsignoutcleanup1.0',
+         'c6. a declared wsfedSignOutUri is what a cleanup is sent to, every ' +
+         'value of it', JSON.stringify([declared.errors, pings]));
+    applications.updateApplication(RP_OPEN, {
+      attribute: 'wsfedSignOutUri', mode: 'remove', value: SIGN_OUT[0] });
+    applications.updateApplication(RP_OPEN, {
+      attribute: 'wsfedSignOutUri', mode: 'remove', value: SIGN_OUT[1] });
+    note(wsfed.cleanupTargetsFor(session).some(function (one) {
+      return one.realm === RP_OPEN && one.wreply === REPLY_OPEN;
+    }), 'c7. and with none it goes back to the wreply');
+
     // --- d. the ?wtrealm= form, on a session that exists ---------------------
     r = await alice.go('GET', '/wsfed/initiate?' + new URLSearchParams(
       { wtrealm: RP_OPEN, wctx: 'second' }).toString());
@@ -370,7 +395,11 @@ function childMain() {
       mail: 'paula@wsfed-initiation.example' } });
     credentials.setPassword(PERSON_P, PASSWORD_P);
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     config.setOverride('risk.assessSignIns', false);
+    // Product asks before single sign-on (ASVS 5.0.0 7.6.2); what is tested
+    // here is who may start a sign-in, so the question is switched off.
+    config.setOverride('wsfed.ssoConsent', false);
     try {
       note(config.value('global.mode') === 'product',
            'g0 (product). (the process is in product mode)',
@@ -411,7 +440,11 @@ function childMain() {
       r = await paula.go('GET', link(RP_OPEN, { wctx: 'risk' }));
       const stepToP = String(r.headers.location || '');
       let recordP = null;
-      new URL(stepToP, 'http://127.0.0.1').searchParams.forEach(function (v) {
+      // Product carries the step in the fragment (#1454), development in the
+      // query.
+      const stepUrlP = new URL(stepToP, 'http://127.0.0.1');
+      new URLSearchParams(stepUrlP.search.slice(1) + '&' +
+                          stepUrlP.hash.slice(1)).forEach(function (v) {
         recordP = recordP || authn.pendingFor(v);
       });
       note(heldP && r.status === 303 && /\/authn\/login/.test(stepToP) &&
@@ -442,6 +475,8 @@ function childMain() {
       }
     } finally {
       config.clearOverride('risk.assessSignIns');
+      config.clearOverride('wsfed.ssoConsent');
+      config.clearOverride('authn.allowOptionalSecondFactor');
       config.clearOverride('global.mode');
     }
 

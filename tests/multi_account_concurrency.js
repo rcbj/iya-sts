@@ -254,7 +254,7 @@ function picker(b, returnTo) {
   const path = authn.beginAuthentication({
     returnTo: returnTo, details: [], protocol: 'OAuth 2.0 / OIDC',
     application: '', request: b.req(returnTo) });
-  const m = /[?&]authn=([^&]+)/.exec(String(path));
+  const m = /[?&#]authn=([^&]+)/.exec(String(path));
   const id = m ? decodeURIComponent(m[1]) : '';
   log.debug("Leaving picker().");
   return { path: path, id: id, record: id ? authn.pendingForAccounts(id)
@@ -452,7 +452,7 @@ function partRevoked(t) {
   const where = authn.beginAuthentication({
     returnTo: '/oauth2/authorize?client_id=rev', details: [],
     protocol: 'OAuth 2.0 / OIDC', application: '', request: resumed });
-  const id = decodeURIComponent((/[?&]authn=([^&]+)/.exec(where) || [])[1] ||
+  const id = decodeURIComponent((/[?&#]authn=([^&]+)/.exec(where) || [])[1] ||
                                 '');
   const record = id ? authn.pendingFor(id) : null;
   t.check(/^\/authn\/login\?/.test(where) && !!record &&
@@ -487,7 +487,7 @@ function partRevoked(t) {
                     { action: 'select', account: keyOf(bob, '') });
   const picked = answerOf(pick.res) || {};
   t.check(picked.next === 'redirect' &&
-          /^\/authn\/login\?authn=/.test(String(picked.location)) &&
+          /^\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(picked.location)) &&
           !/sts_account=/.test(String(picked.location)),
           '4. choosing bob, revoked after the picker was drawn, goes to the ' +
           'sign-in with no ticket', JSON.stringify(picked));

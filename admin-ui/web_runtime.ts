@@ -61,6 +61,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
+import WebSafeDom = require('../common/web_safe_dom');
 import SpaClient = require('../common/web_spa_client');
 import WebAnnouncements = require('../common/web_announcements');
 import WebPages = require('./web_pages');
@@ -78,11 +79,12 @@ type Json = any;
 // The console's client: public, DPoP-bound (`sender_constraints.ts`,
 // `DPOP_BOUND_PUBLIC_CLIENTS`).
 const CLIENT_ID = 'sts-admin-console';
-// What it asks for: an ID Token for who signed in, the two scopes the
-// management API takes, narrowed at issuance to the roles the person holds,
-// and the console's own (#454), which every person signing in here is
-// issued through the ADMIN_CONSOLE role this client confers.
-const SCOPE = 'openid admin:read admin:write admin:console';
+// What it asks for: an ID Token for who signed in, the three scopes the
+// management API takes (admin:security since #645), narrowed at issuance to
+// the roles the person holds, and the console's own (#454), which every
+// person signing in here is issued through the ADMIN_CONSOLE role this
+// client confers.
+const SCOPE = 'openid admin:read admin:write admin:security admin:console';
 // The key the sign-in's one-use values cross the redirect under.
 const SIGNIN_KEY = 'sts-console-signin';
 // How long before an access token's expiry it is refreshed, in seconds.
@@ -119,6 +121,8 @@ class ConsoleRuntime extends SpaClient {
   // The announcement banner's poller (#1086), once the shell is in hand.
   private announcements: WebAnnouncements | null = null;
   private formTable: Json;
+  // `{ path: names }` of each GET operation's query (#1476).
+  private declaredQueries: Json;
   private view: Json;
   // The path and query of the page last drawn: a `popstate` that changes
   // neither is a fragment's, which the browser has already answered.
@@ -128,6 +132,7 @@ class ConsoleRuntime extends SpaClient {
   // (#508): its one-use values, the requests waiting on it and the channel
   // the popup answers on. Null when none is.
   private reauth: Json;
+  private freshSignIn: boolean;
   // The form being sent, so a sign-in that has to leave the page knows
   // which one was pressed (#508).
   private submitting: Json;
@@ -172,10 +177,12 @@ class ConsoleRuntime extends SpaClient {
     this.shellPrefix = '';
     this.me = null;
     this.formTable = null;
+    this.declaredQueries = null;
     this.view = null;
     this.drawnAt = '';
     this.spec = null;
     this.reauth = null;
+    this.freshSignIn = false;
     this.submitting = null;
     this.dirty = false;
     this.openSection = null;
@@ -275,7 +282,7 @@ class ConsoleRuntime extends SpaClient {
   async finishSignIn(): Promise<void> {
     // A JARM answer is opened and checked first (#568, `SpaClient`).
     const query = await this.openAuthorizationResponse(
-      ConsoleRuntime.queryOf(this.env.location.search));
+      this.callbackParameters());
     // A POPUP'S SIGN-IN (#508) is the opener's to redeem: it holds the
     // verifier and the key, and this window hands the answer back.
     if (String(query.state || '').indexOf(POPUP_STATE_PREFIX) === 0) {
@@ -297,7 +304,7 @@ class ConsoleRuntime extends SpaClient {
       return;
     }
     if (!saved || saved.unreadable || !query.code ||
-        query.state !== saved.state) {
+        query.state !== saved.state || !await this.issuerMatches(query)) {
       // THE RETURN TAB of a same-device wallet holds no PKCE record. The
       // tab that opened the console still does, and it redeems the code.
       if (query.code && query.state &&
@@ -494,7 +501,9 @@ class ConsoleRuntime extends SpaClient {
     }
     r.verifier = this.random(32);
     r.state = POPUP_STATE_PREFIX + this.random(16);
-    r.url = await this.authorizeUrl(r.state, r.verifier);
+    r.url = await this.authorizeUrl(r.state, r.verifier,
+      this.freshSignIn ? { prompt: 'login' } : undefined);
+    this.freshSignIn = false;
   }
 
   /**
@@ -561,7 +570,8 @@ class ConsoleRuntime extends SpaClient {
     // sign-in again, or the popup's own page, can be drawn before
     // `GET /admin-api/console` has answered with any catalog.
     const t = this.t;
-    bar.innerHTML = '<strong id="reauth-title">' +
+    WebSafeDom.render(bar,
+      '<strong id="reauth-title">' +
       (t.has('consoleRuntime.reauth.title')
         ? t.html('consoleRuntime.reauth.title') : 'Your session has ended.') +
       '</strong> <span>' +
@@ -585,7 +595,7 @@ class ConsoleRuntime extends SpaClient {
             ? t.html('consoleRuntime.reauth.here')
             : 'Sign in on this page')) + '</button>' +
       (message ? ' <span class="reauth-note">' + kit.esc(message) +
-                 '</span>' : '');
+                 '</span>' : ''));
   }
 
   /**
@@ -761,7 +771,7 @@ class ConsoleRuntime extends SpaClient {
     const doc = this.env.document;
     const main = doc && doc.querySelector ? doc.querySelector('.main') : null;
     if (main && typeof main.insertAdjacentHTML === 'function') {
-      main.insertAdjacentHTML('afterbegin', kit.flash(html));
+      WebSafeDom.insert(main, 'afterbegin', kit.flash(html));
     }
   }
 
@@ -783,6 +793,13 @@ class ConsoleRuntime extends SpaClient {
     }
     if (['password', 'file', 'hidden', 'submit', 'button', 'reset',
          'image'].indexOf(type) >= 0) {
+      return false;
+    }
+    // WHAT PEOPLE TYPE STAYS OUT OF STORAGE (ASVS 5.0.0 14.3.3): names and mail
+    // are personal data, and this survives until the page returns. Choices
+    // carry none of it.
+    if (['checkbox', 'radio', 'select-one', 'select-multiple']
+      .indexOf(type) < 0) {
       return false;
     }
     const auto = el.getAttribute
@@ -1117,6 +1134,11 @@ class ConsoleRuntime extends SpaClient {
       if (/invalid_token/.test(challenge) && await this.refresh()) {
         continue;
       }
+      // RFC 9470: this change needs a recent sign-in, so the one that comes
+      // next must really ask (#1538).
+      if (/insufficient_user_authentication/.test(challenge)) {
+        this.freshSignIn = true;
+      }
       break;
     }
     this.accessToken = '';
@@ -1202,6 +1224,17 @@ class ConsoleRuntime extends SpaClient {
     return path + (this.env.location.search || '');
   }
 
+  /**
+   * The names an operation declares, for `WebPages.operationQuery()`.
+   *
+   * @param operation - the operation's path
+   * @returns its names, or undefined when the table is not in hand
+   */
+  private declaredQueryOf(operation: string): string[] | undefined {
+    const known = this.declaredQueries && this.declaredQueries[operation];
+    return known || undefined;
+  }
+
   // The shell answer belongs to a realm (its sections, its chooser, its
   // banners), so it is fetched again when the realm changes; and the
   // operation table, which is the same everywhere, once.
@@ -1211,8 +1244,17 @@ class ConsoleRuntime extends SpaClient {
    * @returns whether they are in hand
    */
   async ensureShell(): Promise<boolean> {
-    if (!this.shell || this.shellPrefix !== this.prefix) {
-      const shell = await this.apiJson('GET', '/admin-api/console');
+    // THE STARTUP'S REQUESTS GO TOGETHER (#1333): one after another they were
+    // the larger part of a sign-in, each waiting out the round trips of the
+    // last. Only what truly needs an earlier answer waits for it.
+    const wantsShell = !this.shell || this.shellPrefix !== this.prefix;
+    const pendingIndex = this.formTable ? null : this.apiJson('GET',
+      '/admin-api/console/operations');
+    if (wantsShell) {
+      const answers = await Promise.all([
+        this.apiJson('GET', '/admin-api/console?catalogs=files'),
+        this.apiJson('GET', '/admin-api/me')]);
+      const shell = answers[0];
       this.shellRefusal = null;
       if (!shell || shell.status !== 200) {
         // REFUSED, NOT A SIGN-IN BEGUN (#751): an account switched to that
@@ -1227,10 +1269,15 @@ class ConsoleRuntime extends SpaClient {
         return false;
       }
       this.shell = shell.json;
+      this.shell.locale = await this.withCatalogs(this.shell.locale);
       this.applyLocale(this.shell.locale);
       this.shellPrefix = this.prefix;
-      const me = await this.apiJson('GET', '/admin-api/me');
+      const me = answers[1];
       this.me = me && me.status === 200 ? me.json : {};
+      // The account menu's photo (#719), which the frame reads off the gate.
+      if (this.shell.gate) {
+        this.shell.gate.photo = String((this.me || {}).photo || '');
+      }
       // AN ADMINISTRATOR'S ANNOUNCEMENT (#1086): this tab collects what the
       // console's receiver took in, from now on, for the realm the shell is.
       this.startAnnouncements();
@@ -1243,17 +1290,62 @@ class ConsoleRuntime extends SpaClient {
         self.redrawAccountMenu();
       });
     }
-    if (!this.formTable) {
+    if (pendingIndex) {
       // THE OPERATIONS OF BOTH KINDS (#454): the index, `GET /admin-api`,
       // lists the management operations alone, and a form here may post to
       // one of the console's own form helpers.
-      const index = await this.apiJson('GET', '/admin-api/console/operations');
+      const index = await pendingIndex;
       if (!index || index.status !== 200) {
         return false;
       }
       this.formTable = WebForms.table(index.json.operations || []);
+      // What each GET declares (#1476): a page's own address holds names
+      // its operation would refuse, and asking only these is what keeps
+      // `notice`, `error` and the like on the address alone.
+      this.declaredQueries = {};
+      (index.json.operations || []).forEach((op: Json) => {
+        if (op.method === 'GET' && Array.isArray(op.query)) {
+          this.declaredQueries[op.path] = op.query;
+        }
+      });
     }
     return true;
+  }
+
+  /**
+   * Reads the static catalog files the shell named into the shape the
+   * translator takes. A file that cannot be had falls back to the one request
+   * that carries them all, so a page is never drawn in bare keys.
+   *
+   * @param locale - the shell's `locale`
+   * @returns the locale with its catalogs
+   */
+  async withCatalogs(locale: Json): Promise<Json> {
+    const files = (locale && locale.catalogFiles) || null;
+    if (!files) {
+      return locale;
+    }
+    const self = this;
+    const tags = Object.keys(files);
+    const read = await Promise.all(tags.map(async function (tag) {
+      try {
+        const res = await self.env.fetch(self.env.location.origin +
+          files[tag]);
+        return res && res.ok ? await res.json() : null;
+      } catch (e) {
+        return null;
+      }
+    }));
+    if (read.indexOf(null) < 0) {
+      const catalogs: Json = {};
+      tags.forEach(function (tag, i) {
+        catalogs[tag] = read[i];
+      });
+      return Object.assign({}, locale, { catalogs: catalogs });
+    }
+    const whole = await this.apiJson('GET', '/admin-api/console');
+    return whole && whole.status === 200 && whole.json && whole.json.locale
+      ? whole.json.locale : locale;
   }
 
   // The page's frame from the shell, its body from the renderer, and the
@@ -1293,11 +1385,12 @@ class ConsoleRuntime extends SpaClient {
         WebShell.sectionKeyOf(shell.sections, active));
     }
     this.env.document.title = title + ' — IYA STS admin';
-    this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
+    WebSafeDom.render(this.env.document.body,
+      ConsoleRuntime.realmLinks(
       WebShell.frame(shell, {
         title: title, active: active, up: up, inner: messages + inner,
         path: this.here(), t: this.t, openSection: this.openSection,
-        accounts: this.accounts, subject: this.subject }), this.prefix);
+        accounts: this.accounts, subject: this.subject }), this.prefix));
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
     // EVERY DRAWING replaces the panels a tab's `:target` named — a page
@@ -1313,6 +1406,7 @@ class ConsoleRuntime extends SpaClient {
     this.targetFragment();
     this.markOpenTabs();
     this.wireCopyButtons();
+    this.wireViewDownloads();
     this.wireOrderedChoices();
     this.loadPageScripts();
     this.revealActiveNav();
@@ -1498,7 +1592,8 @@ class ConsoleRuntime extends SpaClient {
    */
   drawProblem(title: string, detail: string): void {
     this.env.document.title = title + ' — IYA STS admin';
-    this.env.document.body.innerHTML = '<div class="shell"><div ' +
+    WebSafeDom.render(this.env.document.body,
+      '<div class="shell"><div ' +
       'class="main"><div class="card"><h1>' + kit.esc(title) + '</h1>' +
       kit.note(kit.esc(detail)) + '<p><a href="' +
       kit.esc(this.prefix + '/admin') + '">' +
@@ -1506,7 +1601,7 @@ class ConsoleRuntime extends SpaClient {
       (this.t.has('consoleRuntime.openConsole')
         ? this.t.html('consoleRuntime.openConsole') : 'Open the console') +
       '</a></p>' +
-      '</div></div></div>';
+      '</div></div></div>');
   }
 
   // A PERSON THE CONSOLE WILL NOT OPEN FOR (#751). A person holding no
@@ -1543,11 +1638,12 @@ class ConsoleRuntime extends SpaClient {
         WebShell.accountItems(this.accounts, this.subject, t) + '</div>'
       : '';
     this.env.document.title = title + ' — IYA STS admin';
-    this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
+    WebSafeDom.render(this.env.document.body,
+      ConsoleRuntime.realmLinks(
       '<div class="shell"><div class="main"><div class="card"><h1>' +
       kit.esc(title) + '</h1>' + kit.note(kit.esc(text)) + menu +
       WebShell.signOutControl({ session: true }, t) +
-      '</div></div></div>', this.prefix);
+      '</div></div></div>', this.prefix));
   }
 
   // The page row by its path; a drill-down is the same row with its
@@ -1600,7 +1696,8 @@ class ConsoleRuntime extends SpaClient {
                  'this console.'), null);
       return;
     }
-    const opQuery = WebPages.operationQuery(page.path, query);
+    const opQuery = WebPages.operationQuery(page.path, query,
+      this.declaredQueryOf(page.operation));
     const qs = new URLSearchParams(opQuery).toString();
     const answer = await this.apiJson('GET', page.operation +
                                       (qs ? '?' + qs : ''));
@@ -1678,7 +1775,9 @@ class ConsoleRuntime extends SpaClient {
       ? Object.assign({}, this.view.json, { state: state })
       : this.view.json;
     const write = !!(this.me && this.me.write);
-    const ctx = kit.context(query, write, this.t);
+    // #645: the Security Administrator's role, which a policy page asks.
+    const security = !!(this.me && this.me.security);
+    const ctx = kit.context(query, write, this.t, security);
     const drilled = page.drill && query[page.drill.param];
     const up = drilled
       ? { href: page.path + kit.queryWith(kit.listViewOf(page.path, query),
@@ -2824,7 +2923,8 @@ class ConsoleRuntime extends SpaClient {
     }
     const query = ConsoleRuntime.queryOf(url.search);
     delete query.format;
-    const mapped = WebPages.operationQuery(row.path, query);
+    const mapped = WebPages.operationQuery(row.path, query,
+      this.declaredQueryOf(row.operation));
     if (format === 'svg') {
       mapped.format = 'svg';
     }
@@ -2956,6 +3056,17 @@ class ConsoleRuntime extends SpaClient {
     const kept = this.accounts.enabled ? this.storedAccount() : null;
     this.accessToken = '';
     this.refreshToken = '';
+    // THE TAB'S OWN STORAGE GOES FIRST (#1440, ASVS 5.0.0 14.3.1), so a
+    // sign-out that never answers still leaves nothing behind.
+    try {
+      this.env.sessionStorage.clear();
+    } catch (e) {
+      // Storage refused (a private window): there is nothing held in it.
+    }
+    // EXCEPT WHOSE TAB IT WAS (#561): a name and no credential. Without it
+    // the next visit sends no login_hint and, with one other account still
+    // signed in, the tab silently becomes that account's.
+    this.keepAccount(kept);
     this.env.location.assign(this.url('/logout') +
       (kept && kept.username
         ? '?login_hint=' + encodeURIComponent(kept.username) : ''));
@@ -3099,9 +3210,10 @@ class ConsoleRuntime extends SpaClient {
     const el = doc && doc.getElementById
       ? doc.getElementById(WebShell.ACCOUNTS_ID) : null;
     if (el) {
-      el.innerHTML = ConsoleRuntime.realmLinks(
+      WebSafeDom.render(el,
+        ConsoleRuntime.realmLinks(
         WebShell.accountItems(this.accounts, this.subject, this.t),
-        this.prefix);
+        this.prefix));
     }
   }
 
@@ -3225,6 +3337,25 @@ class ConsoleRuntime extends SpaClient {
   // THE COPY BUTTONS, which `/admin/copy.js` revealed and served: drawn
   // hidden so that without script the page is the page it was, revealed
   // here, and a click writes the text to the clipboard.
+  /**
+   * Wires the buttons that save the page's own view as a JSON file.
+   *
+   * @returns nothing
+   */
+  wireViewDownloads(): void {
+    const self = this;
+    const buttons = this.env.document
+      .querySelectorAll('button[data-download-view]');
+    for (let i = 0; i < buttons.length; i++) {
+      const button = buttons[i];
+      button.addEventListener('click', function () {
+        self.saveText(button.getAttribute('data-download-view') || 'view.json',
+                      'application/json',
+                      JSON.stringify(self.view.json, null, 2));
+      });
+    }
+  }
+
   /**
    * Reveals and wires the copy buttons on the page drawn.
    *

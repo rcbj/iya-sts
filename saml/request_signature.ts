@@ -119,7 +119,7 @@ import config = require('../common/config');
 import mode = require('../common/mode');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
 
 const DS_NS = 'http://www.w3.org/2000/09/xmldsig#';
 
@@ -138,6 +138,8 @@ interface AssessSpec {
   messageField: string;
   // The application entry's fields.
   fields?: Record<string, unknown>;
+  // The use case the signer is held to: `saml-signer` unless named (#1360).
+  purpose?: string;
 }
 
 // What `assess()` answers.
@@ -588,6 +590,21 @@ class RequestSignature {
         : stsCrypto.verifyXmlSignature(spec.xml, {
           element: spec.rootLocalName, certPem: certPem });
       if (verdict.ok) {
+        // A SIGNATURE IS WORTH WHAT THE CERTIFICATE IS, under paranoid PKI mode
+        // (#1360): the registered certificate is in date, may sign and is not
+        // revoked. Registering it on a service provider's entry or a partner's
+        // relationship made it that party's trust anchor (rcbj), self-signed or
+        // issued by anybody.
+        const held = require('../common/certificate_trust').pinnedSync(
+          spec.purpose || 'saml-signer', certPem, { named: true });
+        if (!held.ok) {
+          answer.outcome = 'failed';
+          answer.errorCode = held.code;
+          answer.why = 'the signature verified against a registered ' +
+                       'certificate that is refused: ' + held.why;
+          log.debug("Leaving RequestSignature.assess(). The certificate.");
+          return answer;
+        }
         answer.outcome = 'verified';
         answer.sigAlg = verdict.signatureMethod || answer.sigAlg;
         answer.why = 'verified against registered certificate ' + (i + 1) +

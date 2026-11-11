@@ -50,6 +50,7 @@ import helpers = require('../common/helpers');
 // The one place this service hashes (#453).
 import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
+import Classes = require('../common/domain_classes');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import audit = require('../common/audit');
@@ -185,6 +186,17 @@ interface AttributeSourcesDeps {
  * The register of attribute sources, and the refresh that reads them onto
  * people's entries.
  */
+// Every member `AttributeSources.normalise()` writes, by its JSON kind.
+const DEFINITION_KINDS: Record<string, string> = {
+  dialect: 'string', host: 'string', port: 'number', database: 'string',
+  user: 'string', passwordProvider: 'string', passwordRef: 'string',
+  passwordField: 'string', caFile: 'string', caCertificates: 'string',
+  trustPublicRoots: 'boolean', serverName: 'string', table: 'string',
+  keyColumn: 'string', keyAttribute: 'string', columns: 'map', refresh: 'list',
+  scheduleS: 'number', timeoutMs: 'number', onFailure: 'string',
+  enabled: 'boolean'
+};
+
 class AttributeSources {
   deps: AttributeSourcesDeps;
 
@@ -229,19 +241,50 @@ class AttributeSources {
   // THE REGISTER.
   // ===========================================================================
 
+  // A stored definition held to what `normalise()` writes. An LDAP client can
+  // write this attribute, so one entry with an extra member or a wrong type
+  // made the whole register unanswerable, and could throw where a member is
+  // used (#1353). A member of the wrong kind is left out, as if never set.
+  private static definitionFrom(parsed: Json): Json {
+    const out: Json = {};
+    const given = parsed && typeof parsed === 'object' &&
+      !Array.isArray(parsed) ? parsed : {};
+    Object.keys(DEFINITION_KINDS).forEach(function (name) {
+      const value = given[name];
+      const kind = DEFINITION_KINDS[name];
+      const kept = kind === 'list'
+        ? Array.isArray(value) && value.every(function (one) {
+          return typeof one === 'string';
+        })
+        : (kind === 'map'
+          ? value && typeof value === 'object' && !Array.isArray(value) &&
+            Object.keys(value).every(function (key) {
+              return typeof value[key] === 'string';
+            })
+          : (kind === 'number' ? Number.isFinite(value)
+            : typeof value === kind));
+      if (kept) {
+        out[name] = value;
+      }
+    });
+    return out;
+  }
+
   // One entry's definition: the JSON value, with the id from its `cn`.
   private recordOf(entry: { attributes: Record<string, string[]> }):
       Json | null {
     const { log } = this.deps;
     log.debug("Entering AttributeSources.recordOf().");
-    const at = entry.attributes || {};
-    const data = (at.stsattributesourcedata || at.stsAttributeSourceData ||
-                  [])[0];
-    const cn = (at.cn || [])[0];
+    // The domain model's reading (#1390), whatever case the directory
+    // answered in, which is why neither spelling is named here any more.
+    const held = Classes.AttributeSource.fromEntry(entry.attributes || {});
+    const data = held.data;
+    const cn = (held.cn || [])[0];
     try {
       const parsed = JSON.parse(String(data || '{}'));
       log.debug("Leaving AttributeSources.recordOf().");
-      return Object.assign(parsed, { id: String(cn || parsed.id || '') });
+      return Object.assign(AttributeSources.definitionFrom(parsed),
+        { id: String(cn || (parsed && parsed.id) || '') });
     } catch (e) {
       log.debug("Caught in AttributeSources.recordOf(): " +
                 ((e && e.message) || e));
@@ -1097,16 +1140,23 @@ class AttributeSources {
          (only || 'the on-demand sources') + ': ' +
          (result.changed.join(', ') || 'nothing changed'));
     log.debug("Leaving AttributeSources.refreshPersonAct().");
-    return { ok: result.failures.length === 0, changed: result.changed,
-             failures: result.failures,
-             errors: result.failures.map(function (one) {
-               return one.source + ': ' + one.why;
-             }),
-             message: username + ' was read: ' +
-                      (result.changed.length ? result.changed.join(', ') +
-                        ' changed' : 'nothing changed') +
-                      (result.failures.length ? '; ' + result.failures.length +
-                        ' source(s) failed' : '') + '.' };
+    const answer: Json = {
+      ok: result.failures.length === 0, changed: result.changed,
+      // Each failure's code was logged where it happened; the first is the
+      // mark the handler records, and none is answered (#1355).
+      failures: result.failures.map(function (one) {
+        return { source: one.source, why: one.why };
+      }),
+      errors: result.failures.map(function (one) {
+        return one.source + ': ' + one.why;
+      }),
+      message: username + ' was read: ' +
+               (result.changed.length ? result.changed.join(', ') +
+                 ' changed' : 'nothing changed') +
+               (result.failures.length ? '; ' + result.failures.length +
+                 ' source(s) failed' : '') + '.' };
+    return result.failures.length
+      ? errorCodes.mark(answer, result.failures[0].code) : answer;
   }
 }
 

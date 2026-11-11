@@ -59,7 +59,7 @@ const { log } = require('../common/helpers');
 const config = require('../common/config');
 // The mode, from a module this file's closure already holds: `helpers.js` is
 // required on the line above and requires `mode.js` itself, so it adds no
-// file to the parent project's copy set.
+// file to what this file loads.
 const mode = require('../common/mode');
 const msgs = require('./krb5_messages.js');
 const kcrypto = require('./krb5_crypto.js');
@@ -86,11 +86,11 @@ const errorCodes = require('../common/error_codes');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an Authenticator is
 // spent through after the replay cache below accepts it — see accept(), step
 // 7. A LIBRARY that registers no route and requires persistence lazily, so it
-// moves no route and closes no cycle. **IT IS ONE FILE ADDED TO THE PARENT
-// PROJECT'S COPY SET**, `cluster/cluster_claims.js`: everything it requires
-// (config, realms, error_codes, cluster_capabilities, and persistence lazily)
-// is already in that closure through `common/app.js`. kerberos/CLAUDE.md
-// records what is owed.
+// moves no route and closes no cycle. Everything it requires (config,
+// realms, error_codes, cluster_capabilities, and persistence lazily) is
+// already loaded through `common/app.js`. (History: it added one file,
+// `cluster/cluster_claims.js`, to the parent project's COPY set; nothing is
+// owed since #1280.)
 const clusterClaims = require('../cluster/cluster_claims');
 const capabilities = require('../cluster/cluster_capabilities');
 
@@ -823,6 +823,33 @@ async function acceptInRealm(tokenBytes, opts) {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // WHAT THE TICKET SAID, FOR A CALLER THAT READS MORE THAN THE CLIENT
+  // (#658). A Kerberos token presented to WS-Trust or the RFC 8693 token
+  // exchange is the same AP-REQ, accepted here by the same checks; what
+  // those callers read beside the client is the ticket's own record — its
+  // times, its flags (FORWARDED says it came from a forwarded TGT), its
+  // authorization data (the PAC, whose S4U_DELEGATION_INFO names the
+  // services it was delegated through) and the service it was issued for.
+  // Nothing here is re-derived or decided: it is the decrypted EncTicketPart
+  // as it is, carried on the result. No require was added for it.
+  // ---------------------------------------------------------------------
+  const ticketFacts = {
+    cname: ticketPart.cname,
+    crealm: ticketPart.crealm,
+    sname: apReq.ticket.sname,
+    realm: apReq.ticket.realm,
+    flags: msgs.ticketFlagNames(ticketPart.flags),
+    authtime: ticketPart.authtime,
+    starttime: ticketPart.starttime || null,
+    endtime: ticketPart.endtime,
+    renewTill: ticketPart.renewTill || null,
+    authorizationData: ticketPart.authorizationData || [],
+    etype: apReq.ticket.encPart.etype,
+    ctime: authenticator.ctime,
+    cusec: authenticator.cusec
+  };
+
   if (!mutualWanted) {
     log.debug("Leaving acceptInRealm().");
     // Nothing to send back. Worth noting rather than silently returning
@@ -846,6 +873,7 @@ async function acceptInRealm(tokenBytes, opts) {
       initiatorSubkey: authenticator.subkey || null,
       sessionKey: sessionKey,
       sessionKeyEtype: ticketPart.key.etype,
+      ticket: ticketFacts,
       mutual: false,
       note: 'mutual authentication was not requested, so this service sends ' +
             'nothing back and the client has no proof it reached the real ' +
@@ -889,7 +917,8 @@ async function acceptInRealm(tokenBytes, opts) {
     // is computed rather than chosen.
     initiatorSubkey: authenticator.subkey || null,
     sessionKey: sessionKey,
-    sessionKeyEtype: ticketPart.key.etype
+    sessionKeyEtype: ticketPart.key.etype,
+    ticket: ticketFacts
   };
 }
 

@@ -164,6 +164,12 @@ async function run(t) {
 
   // ONE REQUEST PER FAMILY, the same way each family's caller makes it, and
   // an answer reduced to { ok, code, why }.
+  // The listeners here are on loopback, which product refuses to dial, and this
+  // test is about their certificates, not the address check.
+  const realVetHost = fedHttp.vetHost;
+  fedHttp.vetHost = async function () {
+    return { ok: true, address: '127.0.0.1', family: 4 };
+  };
   const dial = {
     GNAP: async function (origin) {
       const r = await gnapHttp.pushFinish(origin + '/push', { hash: 'h',
@@ -231,7 +237,8 @@ async function run(t) {
               'refused', r.why);
       set(f.t.caFileKey, path.join(dir, 'missing.crt'));
       r = await dial[f.name](TRUSTED);
-      t.check(!r.ok && /could not be read/.test(r.why) &&
+      // A missing file answers as one outside the directories since #1481.
+      t.check(!r.ok && /fileRoots/.test(r.why) &&
               (f.name === 'XACML' || r.code === 'STS-CORE-0104'),
               f.name + ': a CA file that cannot be read refuses the request ' +
               '(STS-CORE-0104)', r.code + ' ' + r.why);
@@ -410,6 +417,7 @@ async function run(t) {
             'own CA — holds the chain to the path rules and not the name',
             JSON.stringify(chainOnly));
   } finally {
+    fedHttp.vetHost = realVetHost;
     touched.forEach(function (key) {
       try {
         config.clearOverride(key);

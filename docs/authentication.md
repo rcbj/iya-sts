@@ -90,6 +90,38 @@ sign-in whose person has none is refused (`STS-AUTHN-0180`).
 timeout and where it is visible. [Signing out](signing-out.md) covers how one
 ends.
 
+### How repeated password guesses are slowed
+
+Three controls apply where passwords are checked, and none of them locks anyone
+out:
+
+* **Rate limits.** `security.rateLimitPerIdentity` and
+  `security.rateLimitPerAddress` limit attempts per
+  `security.rateLimitWindowS`, shared across the cluster. Over a limit, the
+  answer is 429 until the window ends. The defaults are 5 per identity and 20
+  per address. At SCIM, Shared Signals, WS-Trust and Kerberos only refused
+  attempts count, and across N nodes the limit can be passed by at most N - 1,
+  because those doors learn of a cluster-wide refusal from their own next
+  failure. If many people sign in from one address, raise the address limit.
+* **A growing wait.** Each refused password makes the next attempt for that
+  person wait longer, doubling from 0.25 s to at most 4 s. A successful sign-in
+  or 15 quiet minutes clears it.
+* **Risk scoring.** A refused password raises the account's
+  [risk score](risk-scoring.md).
+
+An account is never disabled for failed attempts. The per-identity limit counts
+attempts, so somebody flooding one name can make it answer 429 while they keep
+going. A browser that has already signed in as that person is not refused by that
+limit, and a passkey is not subject to it, so the owner keeps a way in. A browser
+the service has not seen before has to wait until the flood stops.
+
+The doors programs use (WS-Trust UsernameToken, SCIM and SSF Basic, and Kerberos
+pre-authentication) count failed attempts only, under the same limits.
+
+A password made by `reset-password`, by `set-password` with `generate: true`,
+or, in product mode, when a person is created, must be changed at the next
+sign-in.
+
 ### Other ways to establish a session
 
 Other doors end in the same session:
@@ -154,12 +186,17 @@ in. Attempts are rate-limited per identity and per address, across the
 cluster (`security.rateLimit*`).
 
 * **Password policy.** A realm's policy is a directory entry drawn at
-  *Directory → Policies* (`/admin/policies`): minimum length (12), symbols (1),
-  an uppercase letter, a digit, and none of the last five passwords. It is
+  *Directory → Policies* (`/admin/policies`): minimum length (12) and none of the
+  last five passwords. A policy may not ask for symbols, an uppercase letter or
+  a number, because a password of any composition is accepted. It is
   enforced in product mode wherever a password is set, and it shapes every
   password the service generates. See
   [Different password rules for different applications or
   groups](#different-password-rules-for-different-applications-or-groups).
+* **Words that identify you.** In product mode a new password may not contain
+  the service's names, the realm's name or domain, or a word in
+  `security.passwordContextWords`. See
+  [Words a password may not contain](password-words.md).
 * **Forced change.** `pwdReset: TRUE` on an entry (from
   [draft-behera-ldap-password-policy](https://datatracker.ietf.org/doc/html/draft-behera-ldap-password-policy))
   means the password must be changed before it is used. The sign-in screen
@@ -208,7 +245,6 @@ than `default`:
 curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   https://sts.example.com/admin-api/policies/save-password-policy \
   -d '{"profile":"admins","precedence":10,"minLength":20,"history":10,
-       "minSymbols":1,"requireUppercase":true,"requireDigit":true,
        "generatedLength":32}'
 ```
 
@@ -980,7 +1016,12 @@ so it works from a phone, a script or a test job (`POST
   no self-service reset** for a lost phone: the shared secret lives on a device
   this service cannot reach, and a second factor anybody can remove is no
   second factor, so an operator clearing the enrolment is the only way back.
-  Clearing drops an account to one factor, never to none.
+  Clearing drops an account to one factor, never to none. In product mode the
+  operator must also say how the person's identity was verified (`evidence`, at
+  least 8 characters), which goes on the audit row; without it the clear is
+  refused (`STS-ADMIN-0916`). The same applies to clearing a passkey, recovery
+  codes or the emailed factor, and to **Remove every passkey** and **Disable
+  all MFA**.
 
 ### Recovery codes
 
@@ -1185,6 +1226,12 @@ a security key, and no session is started until they do. A passwordless sign-in
 is refused (`STS-AUTHN-0171`). If both mechanisms are switched off, the sign-in
 is refused and the settings are named (`STS-AUTHN-0172`).
 
+**In product mode this is the rule for everybody**, administrators included,
+whatever the policy's `requireSecondFactor` or
+`requireSecondFactorForAdministrators` says. An exempt service account stays
+exempt. `authn.allowOptionalSecondFactor` gives the decision back to the policy,
+and `/admin/mode` then shows the requirement as not met.
+
 ### A second factor for administrators
 
 Whether the people who can change everything must use a second factor depends
@@ -1204,9 +1251,11 @@ its own.
 > who signs in with a password alone can be impersonated by anyone who has the
 > password.
 
-**The default realm's built-in administrator (`admin.bootstrapUsername`, `admin`
-by default) is only ever offered a second factor, even under `always`.** It is
-the account you recover a service through when it has no other administrator.
+**The default realm's built-in administrator (`admin.bootstrapUsername`) is
+only ever offered a second factor, even under `always`.** It is the account you
+recover a service through when it has no other administrator. In product mode,
+unless `authn.allowOptionalSecondFactor` is on, it must set one up like
+everybody else (above).
 
 An administrator who holds a factor is always asked for it, whatever this field
 says. The offer is made at a sign-in of elevated risk too, because the console
@@ -1217,7 +1266,10 @@ is never locked out on risk (#226), and that offer is recorded under
 
 **This screen is the only door that can ask for the second factor.** A
 federated assertion, a SPNEGO ticket or a Kerberos AS-REQ, and a TLS client
-certificate do not reach it, and an existing session is not ended.
+certificate do not reach it, and an existing session is not ended. In product
+mode `GET /tls/sign-in` starts no session for a person who owes a second factor
+(`STS-TLS-0060`); they choose their certificate on the sign-in screen instead,
+which then asks for it. See [Authentication pathways](authentication-pathways.md).
 
 ### The password-only doors, and app passwords
 
@@ -1244,6 +1296,12 @@ What such a person uses there is an **app password**:
   /admin-api/users/revoke-app-password`, with a CAEP `credential-change` for
   each make and revoke. Its last use is recorded. A disabled account refuses
   it; a password reset leaves it working.
+
+**An app password works without a second factor, and that is intentional.**
+These doors are for programs and protocols that have no way to ask for one, so
+an app password is what stands in for it, including now that product mode
+requires a second factor of everybody. It is a generated secret, scoped to named
+doors, revocable one at a time, and never accepted at a browser sign-in.
 
 `authn.passwordAloneDoors` lists doors that accept the password alone anyway.
 **Each door listed is one factor for every such person** — use it only for a
@@ -1278,9 +1336,16 @@ lock and ends nothing.
 | A `webauthn.rpId` that does not fit the host | The host is used, and the log says why | The ceremony is refused, naming the problem |
 | The TOTP secret on the entry | Stored as base32 | Sealed under the key-encryption key |
 | TOTP codes, recovery codes, WebAuthn ceremonies, disabled accounts | Verified | Verified |
+| A second factor | Asked as the authentication policy says | Required of everybody, administrators included, unless `authn.allowOptionalSecondFactor` is on |
+| A TOTP code | Accepted one step either side of now (`totp.window` 1) | Accepted in the current time step only (`totp.window` 0) |
+| An unused session | Lasts its lifetime | Ends after 30 idle minutes (`authn.sessionIdleTimeoutS`) |
+| Changing a factor on the portal, ending another session, an administrator changing a person's credentials | Not asked | Needs a sign-in within `account.recentAuthMinutes` (15) |
+| An administrator clearing a person's second factor or passkeys | No reason asked | Must say how the person was verified (`evidence`) |
 
-A second factor is still asked for only at the sign-in screen in product mode.
-See [What is not checked](what-is-not-checked.md).
+A second factor is asked for only at the sign-in screen. `GET /tls/sign-in`
+refuses, rather than asks, in product mode, and a federation partner is not
+asked at all. See [What is not checked](what-is-not-checked.md) and
+[Authentication pathways](authentication-pathways.md).
 
 ## Configuration
 
@@ -1292,19 +1357,23 @@ See [What is not checked](what-is-not-checked.md).
 | `authn.maxSessions` | `STS_AUTHN_MAX_SESSIONS` | `100000` | yes | The most sessions a realm holds. At the cap a new row is refused; nothing is ended to make room for somebody else. |
 | `authn.maxSessionsPerSubject` | `STS_AUTHN_MAX_SESSIONS_PER_SUBJECT` | `32` | yes | How many countable sessions one subject may hold. At the cap their own oldest countable session is ended. An arrival does not count. |
 | `authn.sessionShedPerSweep` | `STS_AUTHN_SESSION_SHED_PER_SWEEP` | `100` | yes | How many of a subject's own surplus sessions one session-expiry run ends in that realm. |
-| `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `0` | yes | How long a session may go unused before it ends; `0` means no idle timeout. |
+| `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `1800` in product mode, `0` in development mode | yes | How long a session may go unused before it ends; `0` means no idle timeout. |
 | `authn.sessionSweepS` | `STS_AUTHN_SESSION_SWEEP_S` | `30` | yes | Interval of the scheduler job that ends expired sessions and reports them; `0` switches it off. |
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long an interrupted request waits at the sign-in screen. |
 | `authn.mfaStepTtlS` | `STS_AUTHN_MFA_STEP_TTL_S` | `300` | yes | How long a person who passed the password step has to present a second factor. |
 | `authn.unauthenticatedSessions` | `STS_AUTHN_UNAUTHENTICATED_SESSIONS` | `false` | yes | Show *Continue without signing in*, which starts an unauthenticated session. |
+| `authn.allowOptionalSecondFactor` | `STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR` | `false` | yes | Product mode only. On, the authentication policy decides who needs a second factor; off, everybody does. On, ASVS 5.0.0 requirement 6.3.3 is not met unless the policy requires one. |
+| `authn.sessionsEndedBefore` | `STS_AUTHN_SESSIONS_ENDED_BEFORE` | `0` | yes | Set by **End every session in this realm** on `/admin/sessions`. A sign-on session started before this instant, in milliseconds since 1970, has ended. |
+| `account.recentAuthMinutes` | `STS_ACCOUNT_RECENT_AUTH_MINUTES` | `15` in product mode, `0` in development mode | yes | How recent a sign-in must be to change a factor on the portal, end another session, or have an administrator change a person's credentials; `0` means it is not asked. |
+| `security.passwordContextWords` | `STS_SECURITY_PASSWORD_CONTEXT_WORDS` | *(empty)* | yes | Extra words a new password may not contain ([Words a password may not contain](password-words.md)). |
 | `security.rateLimitWindowS` | `STS_SECURITY_RATE_WINDOW_S` | `60` | yes | The length of a fixed rate-limit window. |
 | `security.rateLimitPerIdentity` | `STS_SECURITY_RATE_PER_IDENTITY` | `5` | yes | Credential attempts one identity may make in a window, from any address. |
 | `security.rateLimitPerAddress` | `STS_SECURITY_RATE_PER_ADDRESS` | `20` | yes | Credential attempts one address may make in a window, for any identity. |
 | `security.activationTtlMinutes` | `STS_SECURITY_ACTIVATION_TTL_MINUTES` | `1440` | yes | How long an activation link stays valid. |
 | `security.passwordResetTtlMinutes` | `STS_SECURITY_PASSWORD_RESET_TTL_MINUTES` | `60` | yes | How long an administrator's password reset link stays valid. |
-| `security.passwordHashLogN` | `STS_SECURITY_PASSWORD_HASH_LOG_N` | `15` | yes | scrypt cost (as a power of two) for newly stored secrets, tokens and recovery codes; floor 14. A person's password is hashed as the password policy says (scrypt at 2^15, r=8, p=1 by default). |
+| `security.passwordHashLogN` | `STS_SECURITY_PASSWORD_HASH_LOG_N` | `15` | yes | scrypt cost (as a power of two) for newly stored secrets, tokens and recovery codes; floor 14. A person's password is hashed as the password policy says (scrypt at 2^15, r=8, p=1 by default, and at least p=3 in product mode). |
 | `security.passwordHashR` | `STS_SECURITY_PASSWORD_HASH_R` | `8` | yes | scrypt block size for a newly stored hash. |
-| `security.passwordHashP` | `STS_SECURITY_PASSWORD_HASH_P` | `1` | yes | scrypt parallelism for a newly stored hash. |
+| `security.passwordHashP` | `STS_SECURITY_PASSWORD_HASH_P` | `1` (`3` in product) | yes | scrypt parallelism for a newly stored hash. |
 | `credentials.factorScanLimit` | `STS_CREDENTIALS_FACTOR_SCAN_LIMIT` | `5000` | yes | How many entries the second-factor columns on `/admin/users` and `GET /admin-api/mfa` read before they stop. |
 
 ### WebAuthn settings
@@ -1352,7 +1421,7 @@ See [What is not checked](what-is-not-checked.md).
 | `totp.algorithm` | `STS_TOTP_ALGORITHM` | `SHA1` | yes | The HMAC digest, for new enrolments. |
 | `totp.digits` | `STS_TOTP_DIGITS` | `6` | yes | Digits per code, for new enrolments. |
 | `totp.period` | `STS_TOTP_PERIOD` | `30` | yes | Seconds per time step, for new enrolments. |
-| `totp.window` | `STS_TOTP_WINDOW` | `1` | yes | Steps of clock skew accepted either side; applies to everybody. |
+| `totp.window` | `STS_TOTP_WINDOW` | `0` in product mode, `1` in development mode | yes | Steps of clock skew accepted either side; applies to everybody. |
 | `totp.secretBytes` | `STS_TOTP_SECRET_BYTES` | `20` | yes | Length of a new shared secret. |
 | `totp.enrolmentTtlMinutes` | `STS_TOTP_ENROLMENT_TTL_MINUTES` | `10` | yes | How long a shown but unconfirmed secret stays available. |
 

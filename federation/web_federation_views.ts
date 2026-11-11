@@ -66,6 +66,9 @@ class WebFederationViews {
     if (v.kind === 'refused') {
       return WebFederationViews.refused(v);
     }
+    if (v.kind === 'webfinger') {
+      return WebFederationViews.webfinger(v, ctx.t);
+    }
     if (v.kind === 'off') {
       return WebFederationViews.off();
     }
@@ -97,6 +100,9 @@ class WebFederationViews {
     }
     if (kind === 'refused') {
       return 'Refused';
+    }
+    if (kind === 'webfinger') {
+      return ctx.t.text('federationPages.webfinger.title');
     }
     if (kind === 'noRelationship') {
       return 'No such relationship';
@@ -343,6 +349,43 @@ class WebFederationViews {
       'type="submit" id="federation-profile-submit">' +
       t.html('federationPages.profile.submit') + '</button></div></form>' +
       '<p class="meta">' + t.html('federationPages.profile.note') + '</p>';
+  }
+
+  /**
+   * A person's OpenID Provider found from an identifier they type (#930):
+   * the form asking for it, or the issuer found and a link that continues
+   * there — nothing continues on its own.
+   *
+   * @param v - the `webfinger` view: `step` (`ask` or `found`), `partner`,
+   *   `action`, `identifier`, `issuer`, `continueHref`
+   * @param t - the translator
+   * @returns the body
+   */
+  static webfinger(v: Json, t: Json): string {
+    if (v.step === 'found') {
+      return '<h1 id="federation-webfinger">' +
+        t.html('federationPages.webfinger.heading') + '</h1><p ' +
+        'id="federation-webfinger-found">' +
+        t.html('federationPages.webfinger.found',
+               { identifier: String(v.identifier || ''),
+                 issuer: String(v.issuer || '') }) + '</p>' +
+        '<p><a class="btn" id="federation-webfinger-continue" href="' +
+        esc(v.continueHref) + '">' +
+        t.html('federationPages.webfinger.continue') + '</a></p>' +
+        '<p class="meta">' + t.html('federationPages.webfinger.note') +
+        '</p>';
+    }
+    return '<h1 id="federation-webfinger">' +
+      t.html('federationPages.webfinger.heading') + '</h1><p>' +
+      t.html('federationPages.webfinger.lead',
+             { partner: String(v.partner || '') }) + '</p>' +
+      '<form method="get" id="federation-webfinger-form" action="' +
+      esc(v.action) + '"><label for="federation-webfinger-resource">' +
+      t.html('federationPages.webfinger.label') + '</label><input ' +
+      'type="text" id="federation-webfinger-resource" name="resource" ' +
+      'required maxlength="512" autocomplete="username"><div ' +
+      'class="row"><button type="submit" id="federation-webfinger-submit">' +
+      t.html('federationPages.webfinger.submit') + '</button></div></form>';
   }
 
   /**

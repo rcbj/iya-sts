@@ -229,8 +229,10 @@ function startOnce(t, dir, label, rowsFile, kek, extra) {
       env: Object.assign(clean, rowsFile ? {
         // PRODUCT MODE with a key-encryption key read from a file: the
         // configuration whose minted state (and so this record) persists.
-        STS_MODE: 'product', STS_KEYS_SOURCE: 'persisted',
-        STS_KEYS_KEK_PROVIDER: 'file', STS_KEYS_KEK_FILE: kek
+        STS_TLS_SELF_SIGNED_KEY_BITS: '2048',
+        STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_KEYS_SOURCE: 'persisted',
+        STS_KEYS_KEK_PROVIDER: 'file', STS_KEYS_KEK_FILE: kek,
+        STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true'
       } : {}, { LOG_LEVEL: 'fatal', LCR_ROOT: ROOT,
                 LCR_OUT: out, LCR_ROWS: rowsFile || '',
                 SPIFFE_GRPC_PORT: '0' }, extra || {}),

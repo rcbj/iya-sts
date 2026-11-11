@@ -435,9 +435,29 @@
     "en": "3bc74315dcf2fb5e",
     "text": "信任領域目錄"
   },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "服務的圖示"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "公開介面的卡片樣式表"
+  },
+  "endpoints.route./web/theme.css.name": {
+    "en": "955c14dc632bdf90",
+    "text": "領域登入外觀的樣式表"
+  },
+  "endpoints.route./web/branding/logo.name": {
+    "en": "2ce72d622f586a26",
+    "text": "領域的登入標誌"
+  },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "個人的個人資料相片"
+  },
+  "endpoints.route./web/branding/preview.name": {
+    "en": "54aca7174dc0a2b0",
+    "text": "登入外觀的預覽"
   },
   "endpoints.route./web/locales/catalogs.json.name": {
     "en": "54bbd31e0a5afc5b",
@@ -566,6 +586,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "報表應用程式的 Shared Signals 收件匣"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "報表應用程式的使用者選單繪製的內容"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",
@@ -754,6 +778,14 @@
   "endpoints.route./admin-api/pki.name": {
     "en": "bc458d477b4de7d9",
     "text": "此領域持有的憑證授權單位"
+  },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "偏執 PKI 模式、簽署者信任存放區與已釘選的內容"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "變更簽署者信任存放區或某個偏執列，或重新檢查釘選"
   },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
@@ -955,6 +987,10 @@
     "en": "ec5770a23a0c10c0",
     "text": "單一個人的自行簽發（SIOPv2）主體"
   },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "單一個人已發布的 DID"
+  },
   "endpoints.route./admin-api/users/verifications.name": {
     "en": "aa12d03c659af2a0",
     "text": "單一個人的身分驗證紀錄"
@@ -1044,8 +1080,8 @@
     "text": "已證明的代理程式"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "封鎖、解除封鎖或遺忘代理程式"
+    "en": "db7439843e5d6273",
+    "text": "封鎖、解除封鎖或遺忘代理程式，或簽發加入權杖"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",
@@ -1151,6 +1187,26 @@
     "en": "b485a2ff39ac01b5",
     "text": "錯誤代碼"
   },
+  "endpoints.route./admin-api/audit-export.name": {
+    "en": "6215b564a1d4430f",
+    "text": "稽核匯出"
+  },
+  "endpoints.route./admin-api/audit-export/:action.name": {
+    "en": "b9a19e739aa5ebd6",
+    "text": "變更稽核匯出目的地"
+  },
+  "endpoints.route./admin-api/branding.name": {
+    "en": "4f6e7c69e356bf65",
+    "text": "登入外觀"
+  },
+  "endpoints.route./admin-api/branding/logo.name": {
+    "en": "febcf32d571a0fbf",
+    "text": "上傳登入標誌"
+  },
+  "endpoints.route./admin-api/branding/:action.name": {
+    "en": "d7fa23e10dac9b1d",
+    "text": "變更登入外觀"
+  },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",
     "text": "稽核記錄"
@@ -1174,6 +1230,10 @@
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
     "text": "定義自訂接聽程式，或將應用程式對應到它們"
+  },
+  "endpoints.route./admin-api/config-dump.name": {
+    "en": "9d414a56d337e804",
+    "text": "設定傾印"
   },
   "endpoints.route./admin-api/config/:action.name": {
     "en": "7e8873a02dca9738",
@@ -1523,6 +1583,22 @@
     "en": "561e36f4539a01de",
     "text": "開始聯盟登入"
   },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "由夥伴發起的登入（initiate_login_uri）"
+  },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "以參照傳遞的請求物件"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "透過 WebFinger 尋找某人的 OpenID 提供者"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "斷言取用服務的片段指令碼"
+  },
   "endpoints.route./federation/acs/:id.name": {
     "en": "fff6118cbd019f5e",
     "text": "斷言取用者服務／wreply／redirect_uri"
@@ -1558,6 +1634,10 @@
   "endpoints.route./federation/metadata/:id.name": {
     "en": "1bd56e73b838da2d",
     "text": "本服務「自己的」SAML 中繼資料，依夥伴"
+  },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Bluesky 關係的用戶端中繼資料 (#746)"
   },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",
@@ -1863,10 +1943,6 @@
     "en": "267337fd3ad0ab7f",
     "text": "OP iframe（check_session_iframe）"
   },
-  "endpoints.route./oauth2/check_session.js.name": {
-    "en": "d9f2d9b37bfe6db9",
-    "text": "OP iframe 指令碼"
-  },
   "endpoints.route./oauth2/logout.name": {
     "en": "9901e3b8fd763f16",
     "text": "工作階段結束（end_session_endpoint）"
@@ -2131,6 +2207,10 @@
     "en": "7d0bcaaf2c946cba",
     "text": "應用程式的 DID 文件"
   },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "個人已發布的 DID 文件"
+  },
   "endpoints.route./.well-known/did-configuration.json.name": {
     "en": "ea3b5de3683521ad",
     "text": "網域連結認證"
@@ -2382,5 +2462,17 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（會索取用戶端憑證，但從不強制要求）"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "惡意軟體掃描"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "測試惡意軟體掃描器"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "檢查稽核日誌完整性"
   }
 }

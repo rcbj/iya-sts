@@ -30,15 +30,17 @@
 // received unless the relationship is enabled AND its signals are.
 //
 // **2. A STREAM AT THE PARTNER, AND BOTH DELIVERIES.** This realm creates,
-// reads, updates and deletes its stream at the configuration endpoint
-// (section 8.1.1), sets its status, adds and removes subjects and asks for
-// verification, with an access token from client credentials (falling back to
-// the sign-in relationship's own client) or a bearer the administrator
+// reads, updates, replaces and deletes its stream at the configuration
+// endpoint (section 8.1.1), reads and sets its status, adds and removes
+// subjects and asks for verification, with an access token from client
+// credentials (falling back to the sign-in relationship's own client; asked
+// for again once when the partner answers 401) or a bearer the administrator
 // pasted, both sealed on the entry. POLL (RFC 8936) is the `ssf.foreign-poll`
 // cluster job, per realm, acknowledging what it received on the next request;
 // PUSH (RFC 8935) is `POST /federation/signals/{id}`, authenticated by the
-// authorization header this realm gave the partner when it created the
-// stream (kept only as its digest, compared in constant time).
+// authorization header this realm gave the partner when it created (or
+// last replaced) the stream (kept only as its digest, compared in constant
+// time).
 //
 // **3. NOTHING ACTS ON A SET UNLESS IT VERIFIED** (#117's rule): the
 // signature against the keys at the configuration document's `jwks_uri` (the
@@ -111,9 +113,10 @@ const PUSH_PATH = '/federation/signals';
  * The acts on a relationship's signals, as `federationAction()` names them.
  */
 const ACTIONS = ['signals-discover', 'signals-create-stream',
-  'signals-read-stream', 'signals-update-stream', 'signals-delete-stream',
-  'signals-set-status', 'signals-add-subject', 'signals-remove-subject',
-  'signals-verify', 'signals-poll-now', 'signals-unblock'];
+  'signals-read-stream', 'signals-update-stream', 'signals-replace-stream',
+  'signals-delete-stream', 'signals-read-status', 'signals-set-status',
+  'signals-add-subject', 'signals-remove-subject', 'signals-verify',
+  'signals-poll-now', 'signals-unblock'];
 
 // Per realm and persisted, keyed by the relationship: the stream's state; what
 // arrived (which is also the jti history); and which account lock a
@@ -296,6 +299,7 @@ class SsfTransmitters {
       : { fedId: String(fedId), config: null, streamId: '', stream: null,
           streamAud: [], pollEndpoint: '', pushSecretDigest: '',
           delivery: '', verifyState: '', verifiedAt: 0, state: 'new',
+          streamStatus: '',
           lastPollAt: 0, lastPollResult: '', lastError: '',
           counts: { received: 0, verified: 0, refused: 0, acted: 0 },
           createdAt: this.deps.now() };
@@ -338,11 +342,34 @@ class SsfTransmitters {
       }
       headers.Authorization = 'Bearer ' + token.token;
     }
-    const answer: Json = await fedHttp().fetchPublished(url, {
-      method: method, headers: headers, accept: 'application/json',
-      body: body === undefined ? undefined : JSON.stringify(body),
-      contentType: 'application/json',
-      timeoutMs: this.setting('ssf.foreignTimeoutMs') });
+    const timeoutMs = this.setting('ssf.foreignTimeoutMs');
+    const send = function (): Promise<Json> {
+      log.debug("Entering send().");
+      log.debug("Leaving send().");
+      return fedHttp().fetchPublished(url, {
+        method: method, headers: headers, accept: 'application/json',
+        body: body === undefined ? undefined : JSON.stringify(body),
+        contentType: 'application/json', timeoutMs: timeoutMs });
+    };
+    let answer: Json = await send();
+    // A TOKEN THE PARTNER NO LONGER KNOWS (#932). The cached access token
+    // is dropped and ONE fresh one asked for: a transmitter that restarted,
+    // rotated its token store or revoked the token early answers 401
+    // (RFC 6750 section 3.1, invalid_token) to a token whose expires_in has
+    // not run out here. A pasted bearer is the administrator's to replace,
+    // so it is not asked again.
+    if (Number(answer.status) === 401 && withToken !== false &&
+        this.deps.federation().signalsCredentialOf(record).method !==
+          'bearer') {
+      tokens.delete(this.tokenKey(record));
+      const fresh = await this.accessToken(record);
+      if (fresh.ok) {
+        log.debug("SsfTransmitters.call(): refused 401; asking again with " +
+                  "a fresh token.");
+        headers.Authorization = 'Bearer ' + fresh.token;
+        answer = await send();
+      }
+    }
     let json: Json = null;
     try {
       json = answer.body && answer.body.length
@@ -489,8 +516,16 @@ class SsfTransmitters {
         'name the issuer ' + issuer + ' (it names ' + String(doc.issuer) +
         ') and a jwks_uri and configuration_endpoint (SSF 1.0 section 7.1).');
     }
-    const keys: Json = await this.deps.jwks().ensure(String(doc.jwks_uri),
-                                                     '');
+    // DISCOVERY FETCHES THE KEYS AFRESH (#932): it is the act an
+    // administrator takes when the partner changed, and a key set cached
+    // from before would keep a new key unknown for
+    // `oauth2.clientJwksRefetchS` — every SET signed with it unverified
+    // until then.
+    const keyCache: Json = this.deps.jwks();
+    if (typeof keyCache.forget === 'function') {
+      keyCache.forget(String(doc.jwks_uri));
+    }
+    const keys: Json = await keyCache.ensure(String(doc.jwks_uri), '');
     if (!keys.ok) {
       state.lastError = 'discovery: the jwks_uri: ' + keys.why;
       this.save(state);
@@ -581,29 +616,15 @@ class SsfTransmitters {
       return this.refusal('STS-SSF-0113', 'The partner does not offer ' +
         delivery + ' delivery (fedSignalsDelivery).');
     }
-    const asked: Json = { delivery: { method: delivery === 'push' ? PUSH
-                                                                   : POLL },
-                          description: 'iya-sts federation relationship ' +
-                                       record.fedId };
-    let secret = '';
-    if (delivery === 'push') {
-      if (!ctx || !ctx.base) {
-        log.debug("Leaving SsfTransmitters.createStream(). No base.");
-        return this.refusal('STS-SSF-0113', 'A push stream needs this ' +
-          'realm\'s address, which comes from the request.');
-      }
-      secret = stsCrypto.randomBytes(32).toString('base64url');
-      asked.delivery.endpoint_url = String(ctx.base) + PUSH_PATH + '/' +
-                                    encodeURIComponent(record.fedId);
-      asked.delivery.authorization_header = 'Bearer ' + secret;
+    const supplied = this.receiverSupplied(record, delivery, ctx);
+    if (!supplied.ok) {
+      log.debug("Leaving SsfTransmitters.createStream(). No base.");
+      return supplied;
     }
-    const events = [].concat(record.fedSignalsEvents || []).map(String);
-    if (events.length) {
-      asked.events_requested = events;
-    }
+    const secret = supplied.secret;
     const answer = await this.call(record, 'POST',
                                    state.config.configuration_endpoint,
-                                   asked);
+                                   supplied.asked);
     if (!answer.ok || !answer.json || !answer.json.stream_id) {
       state.lastError = 'create stream: ' + answer.why;
       this.save(state);
@@ -625,6 +646,40 @@ class SsfTransmitters {
     return { ok: true, signals: this.view(record),
              message: 'Stream ' + state.streamId + ' created at ' +
                       state.config.issuer + '.' };
+  }
+
+  // EVERY RECEIVER-SUPPLIED PROPERTY (SSF 1.0 section 8.1.1): `delivery`,
+  // `events_requested` and `description` — what a creation sends, and what
+  // a replacement must send in full (section 8.1.1.4). A push delivery gets
+  // a NEW authorization header each time, which only this realm and the
+  // partner know: `secret` is it, kept by the caller as its digest once the
+  // partner accepted it.
+  private receiverSupplied(record: Json, delivery: string,
+                           ctx: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering SsfTransmitters.receiverSupplied(). " + delivery);
+    const asked: Json = { delivery: { method: delivery === 'push' ? PUSH
+                                                                   : POLL },
+                          description: 'iya-sts federation relationship ' +
+                                       record.fedId };
+    let secret = '';
+    if (delivery === 'push') {
+      if (!ctx || !ctx.base) {
+        log.debug("Leaving SsfTransmitters.receiverSupplied(). No base.");
+        return this.refusal('STS-SSF-0113', 'A push stream needs this ' +
+          'realm\'s address, which comes from the request.');
+      }
+      secret = stsCrypto.randomBytes(32).toString('base64url');
+      asked.delivery.endpoint_url = String(ctx.base) + PUSH_PATH + '/' +
+                                    encodeURIComponent(record.fedId);
+      asked.delivery.authorization_header = 'Bearer ' + secret;
+    }
+    const events = [].concat(record.fedSignalsEvents || []).map(String);
+    if (events.length) {
+      asked.events_requested = events;
+    }
+    log.debug("Leaving SsfTransmitters.receiverSupplied().");
+    return { ok: true, asked: asked, secret: secret };
   }
 
   private adoptStream(state: Json, stream: Json): void {
@@ -658,8 +713,9 @@ class SsfTransmitters {
   /**
    * Performs an act on the stream at the partner: `read-stream`,
    * `update-stream` (to the relationship's `fedSignalsEvents`),
-   * `delete-stream`, `set-status`, `add-subject`, `remove-subject` or
-   * `verify`.
+   * `replace-stream` (every receiver-supplied property, a push stream's
+   * header new), `delete-stream`, `read-status`, `set-status`,
+   * `add-subject`, `remove-subject` or `verify`.
    *
    * @param record - the relationship
    * @param action - the act, without its `signals-` prefix
@@ -695,6 +751,43 @@ class SsfTransmitters {
         this.adoptStream(state, answer.json);
       }
       what = 'events_requested set to fedSignalsEvents';
+    } else if (action === 'replace-stream') {
+      // SSF 1.0 section 8.1.1.4: a PUT of the stream_id and EVERY
+      // receiver-supplied property, the delivery as the stream already has
+      // it. A push stream's header is new, and the digest held changes only
+      // once the partner has accepted it — a refused replacement leaves the
+      // stream pushing with the header it had.
+      const delivery = state.delivery === 'push' ? 'push' : 'poll';
+      const supplied = this.receiverSupplied(record, delivery, ctx);
+      if (!supplied.ok) {
+        log.debug("Leaving SsfTransmitters.streamAct(). No base.");
+        return supplied;
+      }
+      answer = await this.call(record, 'PUT',
+        state.config.configuration_endpoint,
+        Object.assign({ stream_id: state.streamId }, supplied.asked));
+      if (answer.ok && answer.json) {
+        this.adoptStream(state, answer.json);
+      }
+      if (answer.ok && supplied.secret) {
+        state.pushSecretDigest = SsfTransmitters.digest('Bearer ' +
+                                                        supplied.secret);
+      }
+      what = 'stream replaced (' + delivery + ', events_requested ' +
+             'fedSignalsEvents)';
+    } else if (action === 'read-status') {
+      // SSF 1.0 section 8.1.2.1.
+      let statusUrl = '';
+      if (state.config.status_endpoint) {
+        const u = new URL(state.config.status_endpoint);
+        u.searchParams.set('stream_id', state.streamId);
+        statusUrl = u.toString();
+      }
+      answer = await this.call(record, 'GET', statusUrl);
+      if (answer.ok && answer.json && answer.json.status) {
+        state.streamStatus = String(answer.json.status);
+      }
+      what = 'status read';
     } else if (action === 'delete-stream') {
       answer = await this.call(record, 'DELETE', this.streamUrl(state));
       if (answer.ok || answer.status === 404) {
@@ -705,6 +798,7 @@ class SsfTransmitters {
         state.pollEndpoint = '';
         state.pushSecretDigest = '';
         state.delivery = '';
+        state.streamStatus = '';
         state.state = 'discovered';
       }
       what = 'stream deleted';
@@ -719,6 +813,10 @@ class SsfTransmitters {
         state.config.status_endpoint,
         { stream_id: state.streamId, status: status,
           reason: String(b.reason || 'set by an administrator') });
+      if (answer.ok) {
+        state.streamStatus = String((answer.json && answer.json.status) ||
+                                    status);
+      }
       what = 'status set to ' + status;
     } else if (action === 'add-subject' || action === 'remove-subject') {
       let subject: Json = b.subject;
@@ -745,7 +843,7 @@ class SsfTransmitters {
       what = (action === 'add-subject' ? 'subject added'
                                        : 'subject removed');
     } else if (action === 'verify') {
-      state.verifyState = stsCrypto.randomBytes(12).toString('base64url');
+      state.verifyState = stsCrypto.randomBytes(16).toString('base64url');
       answer = await this.call(record, 'POST',
         state.config.verification_endpoint,
         { stream_id: state.streamId, state: state.verifyState });
@@ -1148,6 +1246,9 @@ class SsfTransmitters {
       ? got.jwks.keys : [];
     const candidates = keys.filter(function (k: Json) {
       return !header.kid || k.kid === header.kid;
+    }).filter(function (k: Json) {
+      // A transmitter's key that carries an x5c is held to it (#1360).
+      return require('../common/certificate_trust').bareKey(k).ok;
     });
     let why = candidates.length ? '' : 'no key ' + (header.kid ? 'with kid ' +
       header.kid + ' ' : '') + 'at the partner\'s jwks_uri';
@@ -1304,6 +1405,23 @@ class SsfTransmitters {
         state.verifyState = '';
         this.save(state);
         out.push({ event: short, reaction: 'verified', done: false });
+      } else if (short === 'verification' && !body.state) {
+        // A TRANSMITTER-INITIATED VERIFICATION (SSF 1.0 section 8.1.4,
+        // #932): it carries no state, answers no request of this realm's,
+        // and proves only that the stream delivers. Acknowledged, recorded,
+        // and the stream's last verification left as it was.
+        out.push({ event: short, reaction: '', done: false,
+                   why: 'transmitter-initiated: no state to match' });
+      } else if (short === 'stream-updated') {
+        // SECTION 8.1.5 (#932): the partner says its stream's status
+        // changed. What is held is what it says, as a read of the status
+        // would answer.
+        if (body.status) {
+          state.streamStatus = String(body.status);
+          this.save(state);
+        }
+        out.push({ event: short, reaction: 'status-recorded', done: false,
+                   status: String(body.status || '') });
       }
       log.debug("Leaving SsfTransmitters.actOn(). SSF.");
       return out;
@@ -1313,12 +1431,14 @@ class SsfTransmitters {
       return [{ event: short, reaction: '', done: false,
                 why: 'not a CAEP or RISC event' }];
     }
-    if (family === 'caep' && short === 'session-revoked' &&
-        body.initiating_entity === 'policy') {
-      log.debug("Leaving SsfTransmitters.actOn(). An expiry.");
-      return [{ event: short, reaction: '', done: false,
-                why: 'an expiry at the partner, not a revocation' }];
-    }
+    // A session-revoked IS A REVOCATION WHOEVER INITIATED IT (#932). Until
+    // then one with `initiating_entity` `policy` was dropped as "an expiry
+    // at the partner", because this service's own transmitter sends
+    // `policy` for a lifetime that ran out. CAEP 1.0 section 2 makes
+    // `policy` "a policy evaluation", which is a device found
+    // non-compliant as often as a lifetime: the event still says the
+    // session "has been revoked" (section 3.1), and the reactions are the
+    // signal-response policy's to decide, as for every other entity.
     const federation = this.deps.federation();
     const pep = this.deps.signalPep();
     const RESPONSE = pep.RESPONSE || {};
@@ -1777,9 +1897,9 @@ class SsfTransmitters {
   // -------------------------------------------------------------------------
   /**
    * Performs one of a relationship's Shared Signals acts: `signals-discover`,
-   * `-create-stream`, `-read-stream`, `-update-stream`, `-delete-stream`,
-   * `-set-status`, `-add-subject`, `-remove-subject`, `-verify`, `-poll-now`
-   * or `-unblock` (with `user`).
+   * `-create-stream`, `-read-stream`, `-update-stream`, `-replace-stream`,
+   * `-delete-stream`, `-read-status`, `-set-status`, `-add-subject`,
+   * `-remove-subject`, `-verify`, `-poll-now` or `-unblock` (with `user`).
    *
    * @param body - `action`, `id` (the relationship) and the act's fields
    * @param ctx - `via`, `actor` and `base`
@@ -1887,6 +2007,7 @@ class SsfTransmitters {
       streamAud: state.streamAud || [], pollEndpoint: state.pollEndpoint,
       pushEndpoint: PUSH_PATH + '/' + encodeURIComponent(record.fedId),
       pushEndpointSet: !!state.pushSecretDigest, state: state.state,
+      streamStatus: state.streamStatus || '',
       verifiedAt: iso(state.verifiedAt), lastPollAt: iso(state.lastPollAt),
       lastPollResult: state.lastPollResult || '',
       lastError: state.lastError || '', counts: state.counts || {},

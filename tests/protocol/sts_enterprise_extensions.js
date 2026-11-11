@@ -14,7 +14,9 @@
 //      refused.
 //   3. THE ID TOKEN: tenant is the realm's id, session_expiry the session's
 //      absolute end (after iat, and the same across two tokens of one
-//      session), aud_sub the value recorded for this client.
+//      session), aud_sub the value recorded for this client — the first two
+//      only when the claims request's `id_token` member names them (#1292),
+//      and absent from a token whose request did not.
 //   4. tenant ON THE REQUEST: another realm's refused invalid_request at the
 //      client's redirect URI; this realm's accepted.
 //   5. domain_hint: a domain a federation relationship lists in
@@ -223,7 +225,7 @@ async function follow(who, first) {
     // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
     // signed in through the one helper where the flow is sent to it.
     if ((r.status === 302 || r.status === 303) &&
-        /\/authn\/login\?authn=/.test(r.location)) {
+        /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location)) {
       r = await signInHere(who, r.location, PERSON);
       continue;
     }
@@ -269,9 +271,9 @@ function authorizeUrl(client, extra) {
            verifier: verifier };
 }
 
-async function idTokenFor(browser, client) {
+async function idTokenFor(browser, client, extra) {
   log.debug("Entering idTokenFor().");
-  const asked = authorizeUrl(client);
+  const asked = authorizeUrl(client, extra);
   const landed = await follow(browser, await hop(browser, "GET", asked.url));
   assert.ok(/^https:\/\/rp\.enterprise\.example\/cb\?/.test(landed.location),
             "the authorization response: " + landed.status + " " +
@@ -323,10 +325,22 @@ async function test() {
 
   log.info("=== 3. the ID Token ===");
   const browser = jar();
-  const first = await idTokenFor(browser, client);
-  const second = await idTokenFor(browser, client);
-  check("tenant is the realm's id, aud_sub the recorded value, and " +
-        "session_expiry the session's absolute end", function () {
+  // Since #1292 the two are in an ID Token only when the claims request
+  // names them (OIDC Core 5.5), and `oauth2.enterpriseClaimsAlways` is off.
+  const named = { claims: JSON.stringify({ id_token: {
+    session_expiry: null, tenant: null } }) };
+  const first = await idTokenFor(browser, client, named);
+  const second = await idTokenFor(browser, client, named);
+  const unasked = await idTokenFor(browser, client);
+  check("an ID Token whose request names neither carries neither, and " +
+        "still carries aud_sub", function () {
+    assert.strictEqual(unasked.tenant, undefined, JSON.stringify(unasked));
+    assert.strictEqual(unasked.session_expiry, undefined,
+                       JSON.stringify(unasked));
+    assert.strictEqual(unasked.aud_sub, "acct-" + TAG);
+  });
+  check("asked for: tenant is the realm's id, aud_sub the recorded value, " +
+        "and session_expiry the session's absolute end", function () {
     assert.strictEqual(first.tenant, REALM, JSON.stringify(first));
     assert.strictEqual(first.aud_sub, "acct-" + TAG);
     assert.ok(Number(first.session_expiry) > Number(first.iat),

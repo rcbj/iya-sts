@@ -186,3 +186,37 @@ now, by the recipe:
   console elsewhere, English and French) and `tests/home_static_surface.js`
   (the shell, its policy and attributes in and out of a realm, the bundle,
   the API, and the bundle drawing the live view).
+
+## A realm's sign-in appearance (#717, 2026-11-04)
+
+rcbj's D4 on #717: the front door takes a realm's appearance, and **the
+realm's logo replaces this page's image when the realm has one**. The shell
+links `/web/card.css`, so `ShellDocument` already adds the realm's
+`/web/theme.css` and the brand facts, and `WebSurface.put()` already draws
+the brand header — the logo and the display name — above the card
+(`common/CLAUDE.md`, `branding.ts`). What this module adds is that the page
+stays coherent:
+
+* **One logo, never two.** `frontView()` answers `logo: null` where the
+  ambient realm holds a sign-in logo (`realmHasLogo()`, which requires
+  `common/branding.ts` lazily, at the request: that module is registered
+  after this one and its load declares a realm store). The frame then draws
+  no band, and the realm's logo in the header is the only one. A realm with
+  no logo of its own keeps this page's image, a display name alone being
+  drawn above the card beside it. **The view still carries facts**: `logo`
+  is "the image this page draws", and that is now none.
+* **`/home.css` reads the custom properties** — the heading, the links, the
+  quieter text and the rules — each falling back to the literal it
+  replaced, so a realm that set nothing renders exactly as before. The
+  warning's text is pinned to the `#222` it always inherited, because its
+  pale yellow ground is not the realm's to change. The band behind this
+  page's own image keeps the image's colour.
+* **The layouts**: this page's block body replaces the card's flex body, so
+  `WebCardCss.BRAND_CSS`'s split panel and banner would both land as a
+  boxed band inside the page's padding; `/home.css` makes both a
+  full-width band in the accent colour across the top, and `centered` is the
+  header above the card, as on the sign-in screen.
+
+`tests/branding_surfaces.js` holds it: the default realm's shell without a
+theme and its view with the image, a realm's shell with the theme after the
+card and its view and card without the image.

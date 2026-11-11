@@ -92,6 +92,13 @@ class ExplorerPage {
   'padding:8px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;',
   'font-size:.76em;white-space:pre-wrap;word-break:break-word;margin:.5em 0}',
   '.curl{color:#555}',
+  '.responses h4{font-size:.8em;margin:.9em 0 .2em;color:#555}',
+  '.response summary{font-size:.8em;cursor:pointer;padding:2px 0}',
+  'table.model{border-collapse:collapse;font-size:.76em;margin:.3em 0 .7em;',
+  'width:100%}',
+  'table.model th,table.model td{border:1px solid #e2e2ea;padding:3px 6px;',
+  'text-align:left;vertical-align:top}',
+  'table.model th{background:#f4f4f8}',
   '.resulthead{display:flex;gap:.8em;align-items:baseline;margin:.6em 0 0}',
   '.status{font-weight:700;font-size:.82em}',
   '.status.ok{color:#0b6b4f}.status.bad{color:#b00020}',
@@ -117,8 +124,10 @@ class ExplorerPage {
     const t = ctx.t;
     const spec = String(json.realmPrefix || '') + json.api + '/openapi.json';
     // `(no scope)` is drawn in <code> and stays as it is (#539).
-    return '<style>' +
-      ExplorerPage.STYLE.replace(/(^|})body\{[^}]*\}/g, '$1') + '</style>' +
+    // ITS RULES ARE THE CONSOLE'S STYLESHEET'S, scoped under `.api-explorer`
+    // (`ExplorerPage.scoped()`), not a `<style>` drawn with the page: the
+    // console's policy allows no inline style (2026-11-10).
+    return '<div class="api-explorer">' +
       '<p class="lede">' + t.html('consoleExplorer.lede', {
         who: json.who || t.text('consoleExplorer.you'),
         scope: json.scope || '(no scope)' }) + '</p>' +
@@ -128,7 +137,33 @@ class ExplorerPage {
       'data-token="" data-console-fetch="1" ' +
       'data-script="' + kit.esc(json.script) + '">' +
       '<p class="lede">' + t.html('consoleExplorer.reading', { spec: spec }) +
-      '</p></div>';
+      '</p></div></div>';
+  }
+
+  /**
+   * The explorer's rules for a page that is not the explorer's alone: each
+   * selector under `prefix`, and `body`'s rule left out (the console's
+   * stylesheet, 2026-11-10). STYLE has no at-rule, so a rule is
+   * `selectors{declarations}` and nothing else.
+   *
+   * @param prefix - the container, `.api-explorer`
+   * @returns the scoped CSS
+   */
+  static scoped(prefix: string): string {
+    return ExplorerPage.STYLE.split('}').filter(function (rule: string) {
+      return rule.indexOf('{') > 0;
+    }).map(function (rule: string): string {
+      const at = rule.indexOf('{');
+      const selectors = rule.slice(0, at).split(',').map(function (one) {
+        return one.trim();
+      });
+      if (selectors.length === 1 && selectors[0] === 'body') {
+        return '';
+      }
+      return selectors.map(function (one: string): string {
+        return prefix + ' ' + one;
+      }).join(',') + rule.slice(at) + '}';
+    }).join('');
   }
 }
 

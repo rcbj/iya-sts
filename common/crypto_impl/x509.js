@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
 // File: x509.js
 //
 // ---------------------------------------------------------------------------
@@ -51,16 +53,22 @@ var pqx = require("./pqc_x509");
 var pkijs = require("pkijs");
 var asn1js = require("asn1js");
 
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "x509",
   level: (function () {
     try {
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in x509 log level: " + logLevelProblem);
+}
 
 var derToPem = jose.derToPem;
 var pemToDer = jose.pemToDer;
@@ -1385,6 +1393,18 @@ function serialFromHex(hex) {
   for (var i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(clean.substr(i * 2, 2), 16);
   }
+  // DER WANTS THE SHORTEST FORM (X.690 8.3.2), so leading zero bytes a
+  // caller's serial carries are dropped while the next byte keeps the value
+  // positive (2026-11-05). A random eight-byte serial beginning 00 3f… was
+  // written as 02 08 00 3f…, and OpenSSL refused the certificate with
+  // "illegal padding" — tests/federation_oidc_rp.js, about once in five
+  // hundred runs.
+  var first = 0;
+  while (first < bytes.length - 1 && bytes[first] === 0 &&
+         bytes[first + 1] < 0x80) {
+    first++;
+  }
+  bytes = bytes.subarray(first);
   // A leading byte of 0x80 or more would be read as a negative integer.
   var value = bytes[0] >= 0x80
     ? new Uint8Array([0].concat(Array.prototype.slice.call(bytes)))
@@ -2879,6 +2899,9 @@ async function verifyChain(pems) {
     try {
       link.signatureValid = await verifySignature(certs[i], issuer);
     } catch (e) {
+      // Reported on the link rather than thrown: one unverifiable link must
+      // not hide what the rest of the chain says.
+      log.debug("Caught in verifyChain(): " + ((e && e.message) || e));
       link.error = e.message;
     }
     // The alternative signature is reported BESIDE the conventional one and
@@ -2888,6 +2911,8 @@ async function verifyChain(pems) {
     try {
       link.alternative = await verifyAlternativeSignature(certs[i], issuer);
     } catch (e) {
+      // Reported beside the conventional result, for the reason above.
+      log.debug("Caught in verifyChain(): " + ((e && e.message) || e));
       link.alternative = { present: true, valid: null, reason: e.message };
     }
     var now = new Date();

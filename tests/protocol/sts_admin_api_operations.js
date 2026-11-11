@@ -2408,14 +2408,6 @@ async function theFederationRegisterRoundTrips() {
   // writes its own lines into it, so a value added there is not the only thing
   // in the list.
   //
-  // WHAT THIS PAIR CANNOT CATCH, and it is worth writing down beside the
-  // check that does not make it: the operations DOCUMENT an enum of three
-  // fields and federation.js's update() does not enforce it. A single-valued
-  // field sent to `remove-value` takes the single-valued branch and is
-  // ASSIGNED the value — so a caller asking for a value to be taken off
-  // fedSsoUrl gets 200 and a fedSsoUrl set to it. Asserting that here would
-  // either lock in the behaviour or fail against the service as it stands, so
-  // it is reported rather than encoded.
   const multiField = ((await relationship(id)).editable || []).filter(
       function (row) {
     return row.editable === "multi" && row.name !== "description" &&
@@ -2445,6 +2437,18 @@ async function theFederationRegisterRoundTrips() {
     "and this relationship is about to be deleted, so the only place it can " +
     "be caught is here. " + multiField.name + " still holds " +
     JSON.stringify((await relationship(id)).fields[multiField.name]));
+
+  // A SINGLE-VALUED FIELD HAS NO LIST (#747): it answered 200 and was ASSIGNED
+  // the value, so taking a value off fedSsoUrl set fedSsoUrl to it.
+  const peerBefore = (await relationship(id)).fields.fedPeer;
+  const notAList = await post("/federation/remove-value",
+    { id: id, field: "fedPeer", value: "https://not-a-list.example" });
+  assert.ok(notAList.status >= 400 &&
+            JSON.stringify((await relationship(id)).fields.fedPeer) ===
+            JSON.stringify(peerBefore),
+    "`remove-value` on a single-valued field should change nothing and say " +
+    "so; it answered " + notAList.status + " and fedPeer holds " +
+    JSON.stringify((await relationship(id)).fields.fedPeer));
 
   // The secret is write-only through this door, on every read of it.
   const listed = await get("/federation");
@@ -2852,12 +2856,12 @@ async function theSamlRegistriesRoundTrip() {
   // certificates are what a service provider's request signatures are
   // verified against now, so a value that is not an RSA certificate is
   // refused at the door — which is asserted too.
-  const credentials = require("../tools/pep-credential.js");
-  const minted = await credentials.mint({
-    rootSubject: "CN=admin-api-operations saml2 " + REALM +
-                 ",O=iya-sts tests",
-    subject: "CN=admin-api-operations-saml2-sp,O=iya-sts tests" });
-  const certificate = String(minted.anchorPem)
+  // A SERVICE PROVIDER'S OWN SIGNING CERTIFICATE, self-signed and allowed to
+  // sign. It was the test CA's until paranoid PKI mode refused a certificate
+  // whose keyUsage does not permit signing at this door (#1360).
+  const minted = await require("../tools/trust_kit.js").mint({
+    cn: "admin-api-operations saml2 " + REALM });
+  const certificate = String(minted.pem)
     .replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
   await refused("/saml2/set-signing-certificate",
     { sp: sp, value: "MIIBtest" + "A".repeat(40) },
@@ -2869,7 +2873,7 @@ async function theSamlRegistriesRoundTrip() {
     /X\.509 certificate|not an X\.509|not base64/i,
     "a signing certificate that is not a certificate");
   const set = await ok("/saml2/set-signing-certificate",
-    { sp: sp, value: minted.anchorPem }, "recorded a signing certificate");
+    { sp: sp, value: minted.pem }, "recorded a signing certificate");
   assert.strictEqual(set.changed, true,
     "`set-signing-certificate` should report that it CHANGED something. This " +
     "handler answers 200 with `changed: false` when the body named a field " +
@@ -3681,7 +3685,9 @@ async function theIssuedListGroupsByIssuance() {
 // accepted write and what keeps the ledger's pairing check true for them.
 // `root` names the default realm's scope, for the one token minted there.
 // ---------------------------------------------------------------------------
-const MINT_PASSWORD = "admin-api-operations-Passw0rd!-" + REALM;
+// From nothing the realm is known by: product refuses a password holding the
+// realm id (password_policy.ts, contextWords()), which this one did.
+const MINT_PASSWORD = names.passwordFor();
 const MINT_CLIENT_SECRET = "admin-api-operations-client-secret-" + REALM;
 const mintedParties = {};
 
@@ -4549,11 +4555,16 @@ async function theAdminRolesRoundTrip() {
   const rolesAvailable = (before.body.roles || []).map(function (r) {
     return typeof r === "string" ? r : r.role;
   }).filter(Boolean);
-  assert.ok(rolesAvailable.length === 2,
-    "there should be exactly TWO console roles — read and write. They are " +
-    "the whole of this console's authorization model, and a third would be a " +
-    "design change rather than a configuration one. It published " +
-    JSON.stringify(rolesAvailable));
+  // THREE SINCE #645 (2026-11-02): the Security Administrator joined read
+  // and write, which was the design change this assertion said a third role
+  // would be. It names the set rather than counting it, so a fourth, or one
+  // of the three renamed, still fails here.
+  assert.deepStrictEqual(rolesAvailable.slice().sort(),
+    ["read", "security", "write"],
+    "there should be exactly THREE console roles — read, write and " +
+    "security (#645). They are the whole of this console's authorization " +
+    "model, and another would be a design change rather than a " +
+    "configuration one. It published " + JSON.stringify(rolesAvailable));
   assert.ok(String(before.body.groupsDn || "").indexOf("dc=" + REALM) >= 0,
     "READ FROM INSIDE " + REALM + ", THE ROSTER IS THAT REALM'S (#32): each " +
     "realm has administrators of its own, and the default realm's are the " +
@@ -5351,6 +5362,15 @@ const NOT_DRIVEN_HERE = {
   // grace period and not after it, and the retirement job removes it.
   "POST /federation/rotate-key": "sts_federation_encryption.js drives it, " +
     "and checks the grace period and the retirement",
+  // A PARTNER'S DISCOVERY AND DYNAMIC REGISTRATION (#930). Both DIAL the
+  // partner — its discovery document and JWKS, its registration endpoint —
+  // so a walk with no partner could drive only their refusals.
+  // `sts_oidcc_rp_conformance.js` drives both against the conformance
+  // suite's OpenID Provider, where what they fetch and register is judged.
+  "POST /federation/check-partner": "sts_oidcc_rp_conformance.js drives it " +
+    "against the suite's provider; it dials the partner",
+  "POST /federation/register-partner": "sts_oidcc_rp_conformance.js drives " +
+    "it against the suite's provider; it registers at the partner",
   // THE KRBTGT KEY (#169). Driven by `sts_kerberos_krbtgt_rotation.js`, in a
   // throwaway realm with a KDC of its own: a rotation is checked by a TGT
   // from before it still buying a service ticket, which a walk asking for a
@@ -5708,6 +5728,137 @@ async function theKeyListMarksPostQuantumKeys() {
   log.debug("Leaving theKeyListMarksPostQuantumKeys().");
 }
 
+// ---------------------------------------------------------------------------
+// THE SIGN-IN LOGO (#717). `POST /branding/logo` takes the IMAGE as its body,
+// so it carries no JSON example for the replay above. It is driven here, in
+// the throwaway realm: a real 16x16 PNG is stored with its alternative text,
+// read back through `GET /branding` and from the realm's own
+// `/web/branding/logo`, a file that is no image is refused 415, and the logo
+// is removed and read back once more.
+// ---------------------------------------------------------------------------
+// A PNG's chunk checksum: CRC-32 over the type and the data (ISO 3309).
+function crc32(bytes) {
+  log.debug("Entering crc32().");
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) {
+    c ^= bytes[i];
+    for (let k = 0; k < 8; k++) {
+      c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
+  }
+  log.debug("Leaving crc32().");
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+// A whole, decodable PNG of one colour: what a browser would draw.
+function onePng(side) {
+  log.debug("Entering onePng().");
+  const zlib = require("zlib");
+  const chunk = function (type, data) {
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(data.length, 0);
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc32(body), 0);
+    return Buffer.concat([head, body, sum]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(side, 0);
+  ihdr.writeUInt32BE(side, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const rows = [];
+  for (let y = 0; y < side; y++) {
+    const row = Buffer.alloc(1 + side * 3);
+    for (let x = 0; x < side; x++) {
+      row[1 + x * 3] = 0x0b;
+      row[2 + x * 3] = 0x53;
+      row[3 + x * 3] = 0x94;
+    }
+    rows.push(row);
+  }
+  const out = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(Buffer.concat(rows))),
+    chunk("IEND", Buffer.alloc(0))]);
+  log.debug("Leaving onePng().");
+  return out;
+}
+
+// THE TWO ACTS ASVS LEVEL 2 ADDED (#1490, #1517-#1525). The malware check is
+// refused here because no ICAP service is set in this realm. Ending every
+// sign-on session is a call to make only in this run's own throwaway realm;
+// this job's token came from the client-credentials grant, so it survives.
+async function theMalwareCheckAndSessionEndAnswer() {
+  log.debug("Entering theMalwareCheckAndSessionEndAnswer().");
+  log.info("=== The malware check is refused, every session can be ended ===");
+  await refused("/malware-scanning/test", {}, /ICAP|malware|scan/i,
+                "a check with no ICAP service set");
+  const ended = await ok("/sessions/end-all", {},
+                         "ended every session of the realm");
+  assert.ok(/ended/.test(String(ended.message)),
+            "POST /sessions/end-all should say so: " + JSON.stringify(ended));
+  const read = await get("/sessions");
+  assert.strictEqual(read.status, 200,
+    "GET /sessions should answer after every session has ended: " +
+    String(read.raw).slice(0, 300));
+  log.debug("Leaving theMalwareCheckAndSessionEndAnswer().");
+}
+
+async function theSignInLogoRoundTrips() {
+  log.debug("Entering theSignInLogoRoundTrips().");
+  log.info("=== The sign-in logo: upload, read back, refuse, remove ===");
+  const image = onePng(16);
+  const upload = async function (bytes, type, alt) {
+    const r = await common.httpJson(api + "/branding/logo" +
+      (alt ? "?alt=" + encodeURIComponent(alt) : ""), {
+        method: "POST", headers: { "Content-Type": type }, body: bytes });
+    record("POST", "/branding/logo", false,
+           r.status === 200 && !!r.body && r.body.ok !== false);
+    return r;
+  };
+  const stored = await upload(image, "image/png", "Admin API operations");
+  assert.ok(stored.status === 200 && stored.body && stored.body.logo &&
+            stored.body.logo.type === "image/png",
+    "POST /branding/logo should store a 16x16 PNG; it answered " +
+    stored.status + " " + String(stored.raw).slice(0, 300));
+  const read = await get("/branding");
+  assert.ok(read.status === 200 && read.body.logo &&
+            read.body.logo.sha256 === stored.body.logo.sha256 &&
+            read.body.logoAlt === "Admin API operations",
+    "GET /branding should show the logo just stored and its text: " +
+    String(read.raw).slice(0, 300));
+  const served = await fetch(base + read.body.logo.src);
+  const bytes = Buffer.from(await served.arrayBuffer());
+  assert.ok(served.status === 200 &&
+            served.headers.get("content-type") === "image/png" &&
+            bytes.equals(image),
+    "the realm's /web/branding/logo should serve the bytes stored; it " +
+    "answered " + served.status + " " + served.headers.get("content-type"));
+  // ON THE WIRE (#1337): a policy lacking `frame-ancestors` is replaced as the
+  // response is sent, which only a real response shows.
+  const logoPolicy = String(served.headers.get("content-security-policy"));
+  assert.ok(/(^|;\s*)sandbox(\s*;|\s*$)/.test(logoPolicy) &&
+            /frame-ancestors 'none'/.test(logoPolicy),
+    "the logo should be sent sandboxed and unframable; its policy is " +
+    logoPolicy);
+  const refusedFile = await upload(Buffer.from("<svg></svg>"),
+                                   "image/png", "");
+  assert.strictEqual(refusedFile.status, 415,
+    "a file whose bytes are no PNG, JPEG or WebP should be refused 415, " +
+    "whatever it declares; it answered " + refusedFile.status);
+  await ok("/branding/remove-logo", {}, "removed the logo");
+  const gone = await get("/branding");
+  assert.ok(gone.status === 200 && gone.body.logo === null,
+    "GET /branding should show no logo after the removal: " +
+    String(gone.raw).slice(0, 300));
+  log.info("[branding] OK — a PNG stored, read back from the API and the " +
+           "realm's own address sandboxed, a non-image refused 415, and " +
+           "removed.");
+  log.debug("Leaving theSignInLogoRoundTrips().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving every operation of the management API at " + rootApi);
@@ -5743,9 +5894,11 @@ async function test() {
     await theTruststoreRoundTrips();
     await theCertificateDetailsAnswer();
     await theKeyListMarksPostQuantumKeys();
+    await theSignInLogoRoundTrips();
     await theKerberosPrincipalsRoundTrip();
     const candidate = await theConfigurationDoorsRoundTrip(doc);
     await theConfigurationChangeReachesTheStore(candidate);
+    await theMalwareCheckAndSessionEndAnswer();
     await theRootIsReplacedLast(doc);
     everyDocumentedOperationWasDriven(doc);
     everyAcceptedWriteWasReadBack();

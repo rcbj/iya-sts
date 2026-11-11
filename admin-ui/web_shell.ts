@@ -124,11 +124,13 @@ class WebShell {
     // constantly, and an answer that is one page away is an answer somebody
     // guesses instead.
     //
-    // The number is what gets quoted; the tooltip carries the provenance —
-    // the build instant, the commit where there is one, and whether this is a
-    // stamped artifact or a checkout being run. That last distinction is the
-    // one worth a tooltip rather than a footnote: two instances reporting
-    // different build numbers mean nothing if neither was ever built.
+    // The version (M.N.O.<build>, #1317) is what gets quoted; the tooltip
+    // carries the rest of the build — whether it is a release build, the
+    // build instant, the commit where there is one, and
+    // whether this is a stamped artifact or a checkout being run. That last
+    // distinction is the one worth a tooltip rather than a footnote: two
+    // instances reporting different build times mean nothing if neither was
+    // ever built.
     '<div title="' + kit.esc(shell.version.buildInfo) + '">' +
     t.html('console.shell.version', { version: shell.version.version }) +
     (shell.version.stamped ? '' : t.html('console.shell.notStamped')) +
@@ -981,7 +983,9 @@ class WebShell {
     const html = '<details class="usermenu">' +
       '<summary title="' +
       kit.esc(t.text('console.shell.menu.title', { user: gate.username })) +
-      '">' + kit.esc(gate.username) + '</summary>' +
+      '">' + (gate.photo
+        ? '<img class="menuphoto" alt="" src="' + kit.esc(gate.photo) + '">'
+        : '') + kit.esc(gate.username) + '</summary>' +
       '<div class="usermenupanel">' +
       '<p class="usermenuwho">' +
       t.html('console.shell.menu.who', { user: gate.username }) + '</p>' +

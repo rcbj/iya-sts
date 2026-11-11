@@ -267,6 +267,22 @@
     "en": "335d6e9891f39e35",
     "text": "federation.releaseIndexTtlMs ({{ms}} ms) pagkatapos itong mabuo, o agad kapag may federation relationship na isinulat sa pamamagitan ng serbisyong ito."
   },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "Mga range ng CDN edge"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "Ang global.edgeProxies, na na-parse sa isang BlockList, upang hindi na muling i-parse ng request ang setting para magpasya kung galing ito sa CDN edge na dapat magdala ng secret ng deployment na ito."
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Istruktural: isang na-parse na kopya ng setting."
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "Hanggang magbago ang teksto ng global.edgeProxies."
+  },
   "caches.store.global.trusted-proxies.title": {
     "en": "9c82ac7525550c6d",
     "text": "Mga pinagkakatiwalaang proxy range"
@@ -1126,6 +1142,22 @@
   "caches.store.persistence.write-shadow.lifetime": {
     "en": "9c59c7826b7934f6",
     "text": "Walang expiry: nire-refresh sa bawat flush, isang entry bawat directory entry at realm na isinulat. Walang laman sa memory mode."
+  },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "Pagbawi ng mga naka-pin na sertipiko"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "Ang huling nakuha tungkol sa isang naka-pin na sertipiko, para sa mga pintong sumasagot sa isang tick sa ilalim ng paranoid PKI mode. Naka-key sa fingerprint ng sertipiko."
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "Ipinapatupad: 1024 entry; ang pinakalumang sulat ay tinatanggal at kinukuha muli kapag kailangan."
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 minuto"
   },
   "caches.store.revocation.ca-certificates.title": {
     "en": "c65adefa5d027d1a",

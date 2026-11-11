@@ -2,6 +2,8 @@
   "login.title": "Logga in — autentiseringstjänst",
   "login.heading": "Logga in",
   "login.at": "Autentiseringstjänst på <code>{base}</code>",
+  "login.reauthPromptLogin": "Programmet bad dig att logga in igen (prompt=login).",
+  "login.reauthMaxAge": "Programmet bad dig att logga in igen eftersom din senaste inloggning är äldre än det tillåter (max_age).",
   "login.linkAccount": "<strong>Koppla ditt konto.</strong> En federationspartner loggade in dig som <code>{name}</code>, och det kontot är ännu inte kopplat till den. Logga in här som {name} för att koppla dem; Avbryt kopplar ingenting.",
   "login.username": "Användarnamn",
   "login.password": "Lösenord",
@@ -197,5 +199,7 @@
   "postLogin.subAttestation": "{name}, din postkvantnyckel attesterades inte med postkvantalgoritmer. Registrera en som är det.",
   "postLogin.failed": "Din enhet skapade inte nyckeln ({error}).",
   "postLogin.failedHelp": "Om din enhet eller webbläsare inte kan skapa en ML-DSA-nyckel kan du registrera den på en separat säkerhetsnyckel som stöder ML-DSA, eller be en administratör: där din policy för nycklar låter en administratör registrera en nyckel åt dig kan hen göra det, och hen kan uppgradera din nyckel från konsolen.",
-  "postLogin.failedSkip": "Du kan också hoppa över detta tills vidare."
+  "postLogin.failedSkip": "Du kan också hoppa över detta tills vidare.",
+  "client.policy": "Integritetspolicy",
+  "client.tos": "Användarvillkor"
 }

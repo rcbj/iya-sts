@@ -56,11 +56,18 @@ A call is refused (`401`, or `403` where noted) when the token:
 - was issued by another realm, or by another issuer or audience (`403`);
 - has expired or been revoked;
 - belongs to a disabled account;
+- in product mode, names in `sub` a person who no longer exists
+  (`invalid_token`);
 - was issued on a sign-on session that has since ended (a sign-out, or the
   session running out);
 - is presented without its proof, or as a Bearer token;
 - does not carry `account:manage` (`403`);
 - was issued to a client that no longer declares that scope (`403`).
+
+The person is found by the token's `sub`, which is never reassigned, and only
+then by its `username` claim, which a rename or a reuse can move to somebody
+else. In product mode a `sub` that names nobody is refused rather than matched
+by username.
 
 The access policy is then asked, as it was for the portal's pages:
 resource `user-portal`, action `read` for a GET and `manage-own` for
@@ -110,6 +117,7 @@ of the following:
 | `{ "ok": true, "go": "/portal/…" }` | Done; the portal moves to that page. |
 | `{ "ok": false, "errors": ["…"] }` | Refused, with a 4xx status. A `view` may come with it. |
 | `{ "ok": false, "stepUp": { "acrValues": "…" } }` | Sign in again, more strongly, then retry (CIBA and GNAP approvals). |
+| `{ "ok": false, "stepUp": { "prompt": "login", "maxAge": … } }` | Sign in again, then retry. Changing how a person signs in needs a sign-in within `account.recentAuthMinutes` (15 by default in product mode, not asked in development): a second factor, recovery codes, a passkey, an app password, a certificate, a signing key, a self-issued ID or published DID, the email address, or a wallet credential offer. |
 | `{ "ok": true, "location": "https://…" }` | Continue at another site (linking a claim source). |
 
 Request bodies are JSON (`Content-Type: application/json`) and are checked
@@ -129,3 +137,13 @@ link names.
 - [Management API](management-api.md): the administrator's API, `/admin-api`.
 - [Signing out](signing-out.md): the portal's Sign out ends the sign-on
   session, and with it every token issued on it.
+
+## What a request may name
+
+Each operation takes the query parameters its entry in the OpenAPI document
+lists, and the headers it declares (`DPoP`, and `X-Requested-With`, which an
+Android WebView adds) or that a browser, proxy, CDN or tracing system adds. A
+query parameter it does not list, a value that does not fit a listed type, and
+any other custom header are each refused with a 400
+(`STS-ACCOUNT-0020`, `0021`, `0022`), naming the parameter or header and never
+its value. An empty value counts as absent.

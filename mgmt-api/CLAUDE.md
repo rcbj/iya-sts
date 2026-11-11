@@ -1,5 +1,12 @@
 # mgmt-api/
 
+**The Management API and Admin Console API OpenAPI documents are written in
+`models/api/management.tsp` and `console.tsp` since #1390**, and `response_models*.ts`
+and the schemas in `admin_api_spec.ts` are gone. A route row keeps the path, the
+handler, what it mirrors and its parameters; `AdminApiSpec.named()` gives it the
+summary and the request-body schema from the model when the table is built. To change
+an operation or a schema, edit the `.tsp`.
+
 The management API at `/admin-api`, its generated OpenAPI document, and the
 browser-side explorer.
 
@@ -205,6 +212,22 @@ to fetch twenty-one resources and assemble one — and it gained `homes`, which
 says which console page draws each group, and `homeProblems`, which is empty
 unless a group exists that no page draws. `admin-ui/CLAUDE.md` argues the whole
 move; this file's half of it is the paragraph above.
+
+
+### `GET /admin-api/config-dump`: one masked export of the parameters
+
+Every parameter, global and per realm, for the console page, `utilities/config-dump.js`
+and any other caller. **The masking is in `admin-core/config_dump.ts`, on the
+server, once**, so no door can show what another hides. A name that says it
+holds a secret is masked unless its suffix says it only points at one, which
+errs towards hiding for a parameter added later. Directory objects are not in
+it, by rcbj's scope.
+
+**`GET /config`, `GET /realms`, `GET /mode`, every page's settings block and the
+`/config` acts' answers mask the same values (#1478).** A section's Save posts every field, so a posted
+value equal to the row's mask means "leave it" (`isEchoOfMask()`).
+`config.describe()` stays exact. A job needing a development fixture password
+reads `tests/protocol/service_facts.js`' table.
 
 
 ### `/admin-api/users/new` is the same shape, and the users resource is the first to mirror TWO console paths
@@ -1183,6 +1206,16 @@ Three things a caller has to be told and the description does tell:
 three arithmetics produced the number; and on a Kerberos row the revoke does
 MORE than the row names, because that protocol has no per-ticket revocation.
 
+**`POST /admin-api/sessions/end-all` (#1520, ASVS 5.0.0 7.4.5) WALKS
+NOTHING.** It writes one instant, `authn.sessionsEndedBefore`, as a realm
+override, and `Authn.sessionEnded()` reads a session started before it as
+expired: the cost is one setting whatever the population, which a walk of a
+realm of millions could not promise (the constant-cost rule). Each session then
+ends as an expired one does, and the act itself writes one `session.end` row
+naming every sign-on session. It revokes no token, deliberately, and its answer says to use
+`tokens/revoke-all` as well: the two are different acts and an administrator
+may want one without the other.
+
 **`GET /admin-api/tokens` grew a `session` parameter beside it**, which is the
 join between the two resources: every browser-session row carries the
 `sessionId` a token issued under it records.
@@ -1498,6 +1531,24 @@ clear does not. The caller asked to clear a specific thing and it was not there.
 the refusal that matters: it will not remove the last way in. An operator must
 not be able to do what the owner is stopped from doing.
 
+**IN PRODUCT A CLEAR NEEDS A STATEMENT AND A RECENT SIGN-IN, AND THEY ARE TWO
+DIFFERENT CHECKS.** The statement (`evidence`, #1504, #1558, ASVS 5.0.0 6.4.4)
+is asked in `admin-core/admin_actions.ts`'s `evidenceRefusal()` by every
+factor-clearing act — `clear-totp`, `clear-key`, `clear-backup-codes`,
+`clear-email-factor`, `disable-mfa`, `disable-primary-keys` — because the
+console and this API both reach it there, and it goes on the audit row:
+clearing a lost factor is how an account is taken over, so the row says how
+the person was identified. The recency (#1538, ASVS 5.0.0 7.5.1) is this
+module's: `REAUTHENTICATED_ACTIONS` in `admin_api.ts`, answered 401
+`insufficient_user_authentication` with `max_age` as RFC 9470 says
+(`STS-API-0145`), so the console re-signs in in its popup and resends. It is
+asked only of a token with a person behind it; a `client_credentials` caller
+has nobody to ask. **The same six acts are on that list since #1577**:
+`disable-mfa` and `disable-primary-keys` had the statement and not the
+recency, so the two widest removals were the two a stale sign-in could make.
+The console needs nothing per action — `web_runtime.ts` reads the challenge
+off any 401.
+
 
 ## `GET /admin-api/tls-connection` — MONITORING → TLS CONNECTION (#597, 2026-10-12)
 
@@ -1801,13 +1852,31 @@ is `requiredAttributes`, `oneOf` a list or a comma-separated string (the
 OWN, `define-person-attribute` and `remove-person-attribute`, described by the
 kind (`PolicyKind.extraActions`: summary, description and request body) and
 answered through `policiesAction()`'s `act` verb — the same resource, the same
-console form target, so rule 7 needed no new operation. `GET
+console form target, so rule 7 needed no new operation. **#700 added a third,
+`update-person-attribute`** (a definition's label, description and portal
+flags; syntax and cardinality fixed), described and answered the same way. `GET
 /admin-api/policies` grew `missing=count`, a walk of the realm's people asked
 only on request. **Since #1241 both policies routes may answer late**: `GET`
 is `adminViews.policiesViewAsync()` (the people naming each named attribute
-profile, a holder question asked asynchronously), and `POST` awaits a
-`policiesAction()` whose kind's `reset()` answered a promise (the delete of a
-named attribute profile, refused while named, STS-LDAP-0197).
+profile, a holder question asked asynchronously), and `POST` returns the
+promise of a `policiesAction()` whose kind's `reset()` answered a promise
+(the delete of a named attribute profile, refused while named,
+STS-LDAP-0197). Express does not wait on that promise; the handler's
+`.then` sends. An in-process caller waits on the return
+(`tests/admin_api_nominated_actor.js`).
+
+## A PERSON'S KEY PAIRS: SEVERAL, AND `revoke` REVOKES ONE (#1290, 2026-11-03)
+
+Rule 7 for #1290: the console's person controls changed and so did the
+operations behind them, with no new action. `POST /admin-api/pki/issue` and
+`/pki/upload-certificate` with `target=person` ADD a key pair (an optional
+`label`; `STS-PKI-0223` at `pki.personSigningKeyMax`), and `/pki/revoke` with
+`target=person` REVOKES the one named by `handle` (its `kid` or thumbprint, or
+its serial) with `reason` — on the CRL, the private half dropped, the
+declaration cleared with the last valid one. The person arm no longer takes
+anything off, and there is no per-key clear for administrators: a clear is
+what the ticket retired. The application arm of `revoke` is unchanged.
+`GET /admin-api/users?user=` answers `credentials.keyPairs[].keys` per profile.
 
 ## `upload-certificate` AND `regenerate-secret` (2026-09-13)
 
@@ -2427,6 +2496,25 @@ override's value in force and its source. That is the same view model the
 console's Shared Signals section draws. Pausing and enabling a stream is
 `POST /admin-api/ssf/status`, as it always was.
 
+## `admin:security`: A SECURITY CHANGE TAKES THE SECURITY ADMINISTRATOR (#645, 2026-11-02)
+
+The gate asks `securityChangeOf()` — `common/security_operations.ts` over the
+console operation the request mirrors — before it picks the scope. A
+security change wants `admin:security` and `requiredRoles: [SECURITY_ADMIN]`
+in place of `admin:write` / ADMIN_WRITE, never takes the owner path, and is
+**refused in the gate** (`STS-API-0138`, in words) when the kept scopes lack
+`admin:security` or the effective roles lack SECURITY_ADMIN — the policy
+below is asked too, but with `xacml.enforceAccess` off it allows everything,
+and this must not be one setting away from gone. A security change depends
+on the BODY, so the OpenAPI document says `admin:security` only for
+`/admin-api/policies/{action}`, where every action is one, and the scheme's
+description names the rest. `/me` answers `security`. `sts-api-client` and
+`sts-admin-console` declare it; **an entry seeded before #645 is not
+migrated** (no migrations), and needs a delegated permission grant of
+`urn:sts:admin-api:admin:security` — `docs/security-administrator.md` says
+so. The harness's token asks for it (`tests/tools/admin-api-token.js`).
+`admin-ui/CLAUDE.md` 8a-ii has the role.
+
 ## 3cc. THE CONSOLE'S OWN OPERATIONS ARE A SECOND KIND (#454, 2026-10-06)
 
 **Since #446 the console is a static application whose one data source is
@@ -2772,3 +2860,95 @@ An answer carries `tokenSet` and `secretHeaderSet` and never the sealed
 values. The OpenAPI example is a syslog destination
 (`{ id, type, host, transport }`) and names no token. `common/CLAUDE.md`
 (3da) is the delivery. The console page is `admin-ui/CLAUDE.md`.
+
+## A person's published DIDs: one read and one act (#1291, 2026-11-03)
+
+`GET /admin-api/users/published-dids?user=` (`mirrors: 'GET /admin/users'`,
+`admin_views.publishedDidsJson()`) lists the did:web this realm publishes for
+the person — id, DID, document address, custody, state, provenance, versions
+with their keys and authorizations, never a private key — and
+`POST /admin-api/users/deactivate-published-did` (`did`: the DID or its
+`rid`) is the console's Deactivate, one act (rule 7) in `admin_actions.ts`
+that `oid4vc/person_did.ts` decides and audits (`admin.did.deactivated`, the
+administrator as the actor). **An administrator never creates or changes
+one** — rcbj's design on #1291: that is the person's act — so there is no
+publish, add or rotate here, and `remove-self-issued-subject` on a published
+DID DEACTIVATES it rather than leaving a document published for a subject
+that is gone. The operations walk drives the act's example
+(`sts_admin_api_operations.js`): the example names a DID nobody holds, which
+is refused about the referent (`STS-VC-0172`).
+
+## Sign-in appearance (#717, 2026-11-04)
+
+`mgmt-api/branding_api.ts` spreads three rows onto the management API, tag
+Configuration, mirroring Server configuration → Sign-in appearance, each
+calling `common/branding.ts` in the AMBIENT realm:
+
+* `GET /admin-api/branding` (`getBranding`): `Branding.describe()`, plus
+  `realm`, `previewUrl` and `logo.src` under the realm's own prefix (the
+  core's addresses are unprefixed, which in a realm would name the default
+  realm's), and the page's `settings`.
+* `POST /admin-api/branding/logo` (`uploadBrandingLogo`): THE BODY IS THE
+  IMAGE, `handlerOwnsBody`, `requestBodyTypes` image/png, image/jpeg,
+  image/webp and application/octet-stream, `alt` a query parameter. ABOVE
+  `/branding/:action`, as `/risk/upload` is above `/risk/:action`. The body
+  parsers have already read it, bounded at 5 MB: octet-stream is the raw
+  parser's Buffer, an `image/*` type the text parser's string with the
+  BYTES kept in `req.rawBody` — the string is not the image. The
+  `branding.logoMaxBytes` cap (2 MiB at most) is then the core's.
+* `POST /admin-api/branding/:action`, `save` (`saveBranding`, the eight
+  realm-carried `branding.*` keys, `additionalProperties: false`, no colour
+  `pattern` so the core's `color` type is the one judge and its code is the
+  one recorded) and `remove-logo` (`removeBrandingLogo`). `action` and the
+  gate's `actor` are taken out of the body before `saveSettings()`, which
+  refuses any key that is not an appearance setting.
+
+**POST, NOT PUT AND DELETE.** #717's design named `PUT` and `DELETE` on
+`/branding/logo`. The route table registers GET and POST only, and so do the
+document builder, both walking jobs and the static console's form
+resolution (`web_forms.ts`); a third verb for one resource would have been
+the only one. The logo is an action of `/branding`, and the unknown-action
+sentence names all three (`save, logo, remove-logo`), risk's `upload`
+precedent, so `tests/protocol/admin_api.js` and
+`sts_admin_api_operations.js` see `logo`.
+
+`GET` is `admin:read`, every POST `admin:write`; nothing here is a security
+change and nothing is refused to a realm administrator in their own realm.
+A save is recorded as `/config/set` records one — no audit row of its own;
+the upload and the removal are audited by the core with the caller's name
+(`res.locals.apiCaller`). An unknown action and an unexpected failure are
+marked `STS-API-0038` (the configuration action code); the save and the
+logo carry the core's codes (`STS-AUTHN-0544`–`0548`, `0551`,
+`STS-CORE-0004`, `STS-CORE-0006`). The walk drives `logo` with a real PNG in
+its throwaway realm (`theSignInLogoRoundTrips()`), since a bytes body has no
+JSON example to replay. `tests/branding_api.js` holds the rows in process.
+
+## WHAT A REQUEST MAY NAME (#1476, rcbj 2026-11-09)
+
+**The table's `parameters` are the whole of what an operation takes.** The
+wrapper in `registerRoutes()` refuses, before the handler and after the
+enums, a query name the operation does not declare (`STS-API-0142`), a value
+its type does not hold (`STS-API-0143`, `ClosedSets.checkQueryDeclared()`) and
+a custom header (`STS-API-0144`, `common/request_headers.ts`, which carries the
+rule and the provider families). **Parsing is the handlers': `parseInt`-shaped
+integers, an empty value as absent, a repeat as each of its values, no range
+check, because the document clamps a page rather than refusing it.**
+
+**A handler reading a query name it does not declare is a bug now**, and
+#1476's audit was the reason this was safe to turn on: a static taint of every
+handler, a live read of `req.query` through a Proxy with a filled query, and
+every name the console and `tests/` send. Reads it found no meaning for were
+deliberately left undeclared: `ldap/directory`'s `format` (a debug line),
+`mfa`'s `protocol` and `kind` (`AdminViews.unfiltered()`, a shared reader
+that decides a cache), `passkey-report/export`'s `page`, `per` and `from`
+(`listOf()` parses them for the list and the export ignores them), and
+`format` on the management halves of the delegation drawings, which
+`consoleOnly()` refuses first.
+
+`declareImplicitParameters()` adds `DPoP` and `cell` to every row once, in
+`wire()`, reading them from the model's `x-iya-every-operation`
+(`openapi.every.json`; `models/CLAUDE.md`), where they are stated once. **`consoleOnly()` now runs before the query check**, so `format=svg`
+at a management address is still told where the drawing is rather than called
+an unknown name. `tests/admin_api_request_names.js` holds the rules, the
+wrapper and every `x-sts-` name; `schemathesis_kit.js`'s
+`probeStrictRequests()` holds the running service.

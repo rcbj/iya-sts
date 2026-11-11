@@ -108,7 +108,8 @@ Every user-facing page carries a small **Language** form. It works without
 JavaScript. Choosing a language:
 
 - remembers it in the `sts_lang` cookie, which lasts a year, is `HttpOnly` and
-  is `SameSite=Lax`;
+  is `SameSite=Lax` (prefixed in product mode, as
+  [every cookie](product-security.md) is);
 - if you are signed in, also sets your own `preferredLanguage`, because your
   entry outranks the cookie;
 - returns you to the page you were on. The return address is always a path on

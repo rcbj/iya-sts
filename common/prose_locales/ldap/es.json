@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Los valores de response_type que puede pedir este cliente — el response_types de RFC 7591 sección 2, de un registro o escrito por un administrador, cada valor un tipo de respuesta (\"code\", \"code id_token\"). El endpoint de autorización rechaza cualquier otro (unauthorized_client), en todos los modos; una lista vacía no restringe nada. Lo que el cliente ha pedido realmente es oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "Los tipos de respuesta que emiten un token de acceso desde el punto de autorización — token, code token, id_token token, code id_token token — que este cliente puede usar donde rige el modo RFC 9700 (el modo producto siempre lo hace). Se respetan solo mientras el dominio exime la sección 2.1.2 de RFC 9700 (oauth2.allowImplicitTokenResponses, nunca bajo OAuth 2.1 ni FAPI); entonces un tipo no listado aquí se rechaza (unauthorized_client). VACÍO por defecto, y vacío significa ninguno. Lo escribe un administrador o el propietario de la aplicación mientras el dominio permite estos tipos, o un registro dinámico dentro de oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 sección 2.1.2 dice que los clientes NO DEBERÍAN usarlos."
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "Un tipo de concesión que se vio usar a este cliente en el endpoint de token. Un registro, no un permiso: oauthGrantType es lo que puede usar."
@@ -580,8 +584,8 @@
     "text": "EL URI BASE DEL QUE CUELGA CADA PERMISO QUE DEFINE ESTA APLICACIÓN, y lo que hace que un nombre de permiso sea único globalmente aquí. Un permiso se identifica con este valor seguido de su nombre — la base `https://example.com/` y el nombre `write` son el permiso `https://example.com/write` —, que es lo que un cliente pone en un `scope` y a lo que luego se DIRIGE la audiencia del token de acceso. Entra ID lo llama Application ID URI y lo escribe `api://<guid>`; la forma es la misma y nada aquí exige ese esquema.\n\nSE NORMALIZA PARA QUE TERMINE EN UN SEPARADOR cuando se escribe mediante este módulo — se agrega una `/` final cuando no hay `/`, `#` ni `:` al final — porque base + nombre es una simple concatenación y `https://example.com` + `write` produciría de otro modo `https://example.comwrite`. Un `ldapmodify` llega a este atributo como a cualquier otro y no se normaliza, así que una base escrita a mano significa exactamente lo que dice.\n\nDE VALOR ÚNICO, y es el único atributo de este grupo que no podría ampliarse sin decidir algo: dos bases significarían que cada permiso de la entrada tendría dos identificadores, y la búsqueda que convierte un ámbito en una audiencia tendría que elegir uno para poner en `aud`."
   },
   "applications.schema.attributes.oauthPermission.what": {
-    "en": "0c47fe049bbc6c7b",
-    "text": "UN PERMISO QUE EXPONE ESTA APLICACIÓN, un valor cada uno. El valor es el NOMBRE del permiso — `read`, `write`, `Widgets.ReadWrite.All` — seguido opcionalmente de `|` y una descripción: `write|Change widgets on somebody's behalf`. El PRIMER `|` es el delimitador y cada uno posterior pertenece a la descripción, así que una descripción puede contener el carácter y un nombre no.\n\nEl nombre debe ser un token de ámbito OAuth válido (RFC 6749 sección 3.3 — sin espacios, sin comillas dobles, sin barras invertidas), porque eso es lo que un cliente pondrá en un parámetro `scope` y lo que vuelve en el claim `scope` del token. Nada lo impone cuando lo escribe un `ldapmodify`; este módulo y ambas consolas sí.\n\nUN PERMISO DEBE EXISTIR ANTES DE QUE PUEDA CONCEDERSE, que es la única regla de orden que tiene esta funcionalidad y se comprueba en updateApplication() para que el formulario de la consola y la API de administración no puedan discrepar al respecto. Se comprueba en la CONCESIÓN y no aquí: este atributo es la definición, y una definición que nadie ha usado todavía es el primer paso habitual y no un error."
+    "en": "7eb690e390462f2d",
+    "text": "UN PERMISO QUE EXPONE ESTA APLICACIÓN, un valor cada uno. El valor es el NOMBRE del permiso — `read`, `write`, `Widgets.ReadWrite.All` — seguido opcionalmente de `|` y una descripción: `write|Change widgets on somebody's behalf`. El PRIMER `|` es el delimitador y cada uno posterior pertenece a la descripción, así que una descripción puede contener el carácter y un nombre no.\n\nEl nombre debe ser un token de ámbito OAuth válido (RFC 6749 sección 3.3 — sin espacios, sin comillas dobles, sin barras invertidas), porque eso es lo que un cliente pondrá en un parámetro `scope` y lo que vuelve en el claim `scope` del token. También se rechaza un nombre o una descripción que contenga un código de error de operador: ambos se devuelven en cada página que enumera el permiso, y un código se registra en lugar de enviarse. Nada impone ninguna de las dos reglas cuando un `ldapmodify` escribe el valor; este módulo y ambas consolas sí.\n\nUN PERMISO DEBE EXISTIR ANTES DE QUE PUEDA CONCEDERSE, que es la única regla de orden que tiene esta funcionalidad y se comprueba en updateApplication() para que el formulario de la consola y la API de administración no puedan discrepar al respecto. Se comprueba en la CONCESIÓN y no aquí: este atributo es la definición, y una definición que nadie ha usado todavía es el primer paso habitual y no un error."
   },
   "applications.schema.attributes.oauthRoleGatedPermission.what": {
     "en": "fa1c86d8fb8ce2fb",
@@ -732,8 +736,8 @@
     "text": "CALLBACK DE SOLICITUD DE ACCESO AUTHZEN (#1180): una URL https que este cliente, como PEP de AuthZEN, puede nombrar como callback.endpoint de una solicitud de acceso — una por valor, comparada exactamente. Una solicitud que nombre cualquier otra se rechaza; este servicio nunca llama a una URL de callback tomada solo de una solicitud. La define un administrador, nunca el llamador."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 sección 3: los valores acr que esta aplicación, como servidor de recursos, exige de la autenticación que respalda un token de acceso — separados por espacios, el preferido primero. Un token cuyo acr no cumple ninguno recibe el desafío 401 insufficient_user_authentication con estos como acr_values. Los niveles 0 < 1 < mfa están ordenados; hwk, phr y phrh se cumplen con una contraseña más una llave de seguridad; cualquier otro valor, solo con ese acr exacto. VACÍO no exige nada."
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 sección 3: los valores acr que esta aplicación, como servidor de recursos, exige de la autenticación que respalda un token de acceso — separados por espacios, el preferido primero. Un token cuyo acr no cumple ninguno recibe el desafío 401 insufficient_user_authentication con estos como acr_values. Los niveles 0 < 1 < mfa están ordenados; hwk se cumple con una contraseña más una llave de seguridad; phr y phrh, solo con la autenticación resistente al phishing que nombran (#723); cualquier otro valor, solo con ese acr exacto. VACÍO no exige nada."
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1083,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "DÓNDE INICIA UN TERCERO UN INICIO DE SESIÓN EN ESTE CLIENTE: el initiate_login_uri de OpenID Connect Core sección 4, al que /launch/{app} y el portal de usuario envían a una persona con iss, login_hint y target_link_uri. Solo https, sin fragmento."
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "EL LOGOTIPO DEL CLIENTE: el logo_uri de la sección 2 de OpenID Connect Registration, dibujado en las pantallas de inicio de sesión y de consentimiento junto al nombre del cliente. El navegador de la persona lo carga desde esta dirección; este servicio nunca lo obtiene. Una URL https absoluta."
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "LA POLÍTICA DE PRIVACIDAD DEL CLIENTE: el policy_uri de la sección 2 de OpenID Connect Registration, enlazado desde las pantallas de inicio de sesión y de consentimiento. Una URL https absoluta."
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "LAS CONDICIONES DEL SERVICIO DEL CLIENTE: el tos_uri de la sección 2 de OpenID Connect Registration, enlazado desde las pantallas de inicio de sesión y de consentimiento. Una URL https absoluta."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "SI UN INTERCAMBIO DE TOKENS RFC 8693 REALIZADO POR ESTE CLIENTE RECIBE UN `refresh_token` JUNTO AL TOKEN DE ACCESO INTERCAMBIADO, prevaleciendo sobre oauth2.tokenExchangeRefreshToken solo para él. Una de tres palabras: `never`, `when-requested` (el valor predeterminado de todo el servicio — el cliente lo pide con el `requested_token_type` de RFC 8693 sección 2.1 y solo lo recibe si lo pidió) o `always`.\n\nSE LEE EN EL CLIENTE QUE REALIZA EL INTERCAMBIO y no en la audiencia, porque el token de actualización se entrega al cliente: es la credencial de esa parte para guardar, revocar y finalmente canjear. El sujeto SOBRE el que trata el intercambio no tiene ninguna entrada en este registro en el caso interesante, ya que todo el sentido de un intercambio es un subject_token de otra parte.\n\n**SE APLICA A LAS FAMILIAS OAUTH 2.0 Y OPENID CONNECT Y A NINGUNA OTRA, y a diferencia de todos los demás atributos de aquí, eso SE HACE CUMPLIR.** Una entrada declarada para ninguna de las dos es rechazada por ambas puertas de la consola y por la API de administración, que nombran la familia que hay que marcar primero — porque un valor aquí es una política sobre el endpoint de token, y una entrada que ninguna solicitud de token puede nombrar la llevaría como si estuviera en vigor. El bloque de encima de esta fila lo argumenta. `ldapmodify` llega a este atributo como a cualquier otro y no se comprueba.\n\nUN VALOR QUE NO SEA UNA DE LAS TRES PALABRAS NO ES UN ERROR EN EL MOMENTO DE LA ESCRITURA NI PASA EN SILENCIO: settingFor() emite una advertencia que nombra la entrada, el atributo y lo que contiene, y decide el ajuste de todo el servicio — la misma honestidad de tres estados que recibe cualquier otra anulación de esta entrada."
@@ -1244,8 +1260,8 @@
     "text": "TRUE o FALSE: si se responde al wsignin1.0 propio de esta parte que confía, anulando wsfed.spInitiatedSso. Un wsignin1.0 es una URL sin firmar, así que FALSE cierra la puerta en lugar de demostrar quién la abrió."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "ADONDE SE ENVÍA UN PING wsignoutcleanup1.0 para esta aplicación — el URI de cierre de sesión de WS-Federation, y el que esta tabla no tenía hasta el 2026-08-30. DECLARADO, no observado, lo que lo hace hermano de samlSingleLogoutService y no de wsfedReplyUrl: una limpieza se envía cuando termina una SESIÓN, y para entonces la solicitud que habría llevado un wreply ha terminado hace mucho.\n\n**EL CIERRE DE SESIÓN TODAVÍA NO LO LEE**, y eso se dice en lugar de darse a entender. `cleanupTargetsFor()` construye su lista a partir de `session.wsfedRealms`, que registra el wreply al que realmente fue cada respuesta de inicio de sesión — así que lo que este servicio contacta hoy es lo que OBSERVÓ, y este atributo es lo que un operador DECLARÓ. Son dos hechos distintos y el segundo es el que una persona que configura una aplicación puede indicar por adelantado. Conectarlo como respaldo para un dominio en el que se inició sesión sin wreply es el siguiente paso obvio y deliberadamente no se da aquí: este cambio añade el campo y el almacenamiento, y cambiar adónde va una limpieza es un cambio en lo que hace el protocolo."
+    "en": "677e7babd8d711d3",
+    "text": "ADONDE SE ENVÍA UN PING wsignoutcleanup1.0 para esta aplicación — el URI de cierre de sesión de WS-Federation, y el que esta tabla no tenía hasta el 2026-08-30. DECLARADO, no observado, lo que lo hace hermano de samlSingleLogoutService y no de wsfedReplyUrl: una limpieza se envía cuando termina una SESIÓN, y para entonces la solicitud que habría llevado un wreply ha terminado hace mucho.\n\n**UNA DIRECCIÓN DECLARADA TIENE PRIORIDAD SOBRE UNA OBSERVADA** (#747). `cleanupTargetsFor()` notifica cada valor de aquí para un dominio en el que inició sesión la sesión, y el wreply al que fue la respuesta de inicio de sesión, que registra `session.wsfedRealms`, solo si esto está vacío."
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",
@@ -1262,6 +1278,10 @@
   "applications.schema.attributes.krb5ClaimsPac.what": {
     "en": "0abf4d44f51d3755",
     "text": "LOS CLAIMS PAC PROPIOS DE ESTE SERVICIO, como un array JSON de filas como las de la página de claims PAC de Kerberos del dominio. Se añaden a los claims que lleva un ticket de servicio para uno de los SPN de esta aplicación (los del TGT a partir del cual se emitió), y una fila de la aplicación sustituye al claim con el mismo nombre. Solo mientras krb5.pacClaims esté activado."
+  },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "LOS CLAIMS JWT DEL TOKEN DE ACCESO GNAP PROPIOS DE ESTE CLIENTE, como un array JSON de filas como los demás conjuntos de claims personalizados. Se añaden a un token jwt-signed y al JWT dentro de un token jwt-encrypted emitido a este cliente, y una fila de la aplicación sustituye a la fila del dominio con el mismo nombre. Los claims propios del token (access, flags, label, grant_id y los nombres JWT) no se pueden sustituir. Los tokens macaroon, biscuit y zcap no llevan estas filas."
   },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
@@ -1990,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Lo que el PEP dijo de sí mismo cuando se registró."
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE o FALSE: ¿se pregunta a una persona, una vez, antes de que SAML 2.0 inicie su sesión en esta aplicación desde una sesión que ya tiene?, reemplazando saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE conviene a una aplicación que se espera que todos en el dominio usen; un consentimiento global en la entrada responde por todos y conserva el registro de quién aceptó."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE o FALSE: ¿se pregunta a una persona, una vez, antes de que SAML 1.1 inicie su sesión en esta aplicación desde una sesión que ya tiene?, reemplazando saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE conviene a una aplicación que se espera que todos en el dominio usen; un consentimiento global en la entrada responde por todos y conserva el registro de quién aceptó."
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE o FALSE: ¿se pregunta a una persona, una vez, antes de que WS-Federation inicie su sesión en esta aplicación desde una sesión que ya tiene?, reemplazando wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE conviene a una aplicación que se espera que todos en el dominio usen; un consentimiento global en la entrada responde por todos y conserva el registro de quién aceptó."
   }
 }

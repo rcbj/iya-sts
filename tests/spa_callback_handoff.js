@@ -55,7 +55,8 @@ function idTokenFor(sub, nonce) {
   };
   log.debug('Leaving idTokenFor().');
   return b64u({ alg: 'none' }) + '.' +
-    b64u({ sub: sub, nonce: nonce }) + '.sig';
+    b64u({ sub: sub, nonce: nonce,
+                   aud: ['sts-admin-console', 'sts-user-portal', 'sts-report'] }) + '.sig';
 }
 
 /**

@@ -118,6 +118,7 @@ const ROWS: Row[] = [
     why: 'the public surfaces\' card and locale catalogs, the same files ' +
          'in every cell (#570)' },
   { prefix: '/logo.png', strategy: 'local', why: 'a static image' },
+  { prefix: '/favicon.ico', strategy: 'local', why: 'a static image' },
   { prefix: '/home.js', strategy: 'local',
     why: 'the front door\'s script, the same file in every cell (#579)' },
   { prefix: '/home.css', strategy: 'local',
@@ -129,6 +130,22 @@ const ROWS: Row[] = [
   { prefix: '/policy', strategy: 'local', why: 'a static page' },
   { prefix: '/did.json', strategy: 'local',
     why: 'the realm\'s DID document is the global tier\'s' },
+  // A PERSON'S PUBLISHED did:web (#1291): `/users/<rid>/did.json`. The
+  // index `did.personDids` is CELL-tier, beside the entry it names, and the
+  // id is random, so nothing in an unstamped one says where it lives: the id
+  // is stamped with the minting cell's tag when it is drawn
+  // (`oid4vc/person_did.ts`), as an offer or a link handle is, and a resolver
+  // reaching any cell is relayed to that one. Not `browser`: a resolver
+  // carries no affinity cookie, and a pinned browser fetching somebody
+  // else's DID must still reach the cell that holds it.
+  { prefix: '/users', strategy: 'artifact', segment: 2,
+    why: 'a person\'s DID document is served where its id was minted ' +
+         '(#1291)' },
+  // A PERSON'S PROFILE PHOTO (#719), the row above's argument: the image is
+  // cell-tier, the id random and stamped, and a relying party carries no
+  // affinity cookie. More specific than `/web`, whose files are in every cell.
+  { prefix: '/web/photo', strategy: 'artifact', segment: 3,
+    why: 'a person\'s photo is served where its id was minted (#719)' },
   { prefix: '/applications', strategy: 'local',
     why: 'an application\'s DID document is drawn from its entry, and ' +
          'ou=applications is the global tier\'s' },
@@ -319,11 +336,21 @@ const ROWS: Row[] = [
     why: 'a partner\'s browser flow, served where the browser is pinned' },
   { prefix: '/federation/metadata', strategy: 'local',
     why: 'a relationship\'s metadata is the global tier\'s' },
+  { prefix: '/federation/atproto/client', strategy: 'local',
+    why: 'a Bluesky relationship\'s client metadata is drawn from its entry, ' +
+         'and federation relationships are the global tier\'s (#746)' },
   { prefix: '/federation/jwks', strategy: 'local',
     why: 'a relationship\'s keys are the global tier\'s' },
   // THE FEDERATION PAGES' SCRIPT (#580): the same file in every cell.
   { prefix: '/federation/pages.js', strategy: 'local',
     why: 'the federation pages\' script, the same file in every cell (#580)' },
+  // THE FRAGMENT PAGE'S SCRIPT (#930): a static file, as the one above.
+  { prefix: '/federation/fragment.js', strategy: 'local',
+    why: 'the fragment page\'s script, the same file in every cell (#930)' },
+  // A REQUEST OBJECT BY REFERENCE (#930): its handle is found where it was
+  // minted, whichever cell the partner's fetch reaches.
+  { prefix: '/federation/request', strategy: 'artifact', segment: 4,
+    why: 'a Request Object handle is found where it was minted (#930)' },
   { prefix: '/federation/link', strategy: 'artifact', browser: true,
     segment: 3, why: 'a link handle is found where it was minted (D10)' },
   { prefix: '/federation/stepup', strategy: 'artifact', browser: true,

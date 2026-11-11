@@ -74,8 +74,9 @@
 // somebody.
 //
 // A PERSON may hold a signing key pair now (`common/person_assertions.js`,
-// `stsAssertion*` on their own entry), and sign an assertion saying *this is
-// me, issue a token for me*. **That is RFC 7523 read literally rather than
+// `stsAssertion*` on their own entry — several since #1290, any VALID one
+// accepted, found by `kid`), and sign an assertion saying *this is me, issue
+// a token for me*. **That is RFC 7523 read literally rather than
 // extended**: section 3 claim 1 asks only that `iss` be "a unique identifier
 // for the JWT issuer", and claim 2 says the `sub` of an authorization grant
 // "typically identifies an authorized accessor or resource owner". A resource
@@ -349,10 +350,10 @@ function keysFrom(jwksText) {
  *
  * @param presented - the assertion as presented
  * @param opts - `secret`, a client secret for a symmetric JWE
- * @returns `{ ok: true, jws, encrypted, ... }`, or `{ ok: false, errorCode,
- *   description }`
+ * @returns a promise of `{ ok: true, jws, encrypted, ... }`, or of
+ *   `{ ok: false, errorCode, description }`
  */
-function unwrapAssertion(presented, opts) {
+async function unwrapAssertion(presented, opts) {
   log.debug('Entering unwrapAssertion().');
   const options = opts || {};
   const compact = String(presented || '').trim();
@@ -456,7 +457,10 @@ function unwrapAssertion(presented, opts) {
   let lastError = '';
   for (let i = 0; i < candidates.length && !opened; i++) {
     try {
-      opened = stsCrypto.decryptJweCompact(compact, Object.assign({
+      // ASYNC, so that a PBES2 key is derived off the event loop (ASVS
+      // 5.0.0 11.4.4). One candidate at a time: a second derivation runs
+      // only when the first key did not open it.
+      opened = await stsCrypto.decryptJweCompactAsync(compact, Object.assign({
         // Every `enc` this service knows. Narrowing here would be this service
         // advertising a content encryption algorithm it then refused, and the
         // list it advertises is exactly this one.
@@ -562,18 +566,24 @@ function unwrapAssertion(presented, opts) {
 //
 // **AND A PERSON'S KEY LIVES SOMEWHERE ELSE ENTIRELY**, which is why this
 // function is told WHICH KIND of party it is reading rather than trying every
-// name it knows. `stsAssertionJwks` is on a person's own entry and
-// `oauthAssertionJwks` is on an application's; the store is schemaless, so a
-// function that read both lists off whatever it was handed would accept an
-// `oauthAssertionJwks` somebody put on a person — and that is precisely the
-// crossing the two attribute sets exist to prevent, made once here instead of
-// being hoped for.
+// name it knows. A person's key pairs are `stsAssertionKeyPair` records on
+// their own entry and `oauthAssertionJwks` is on an application's; the store
+// is schemaless, so a function that read both lists off whatever it was
+// handed would accept an `oauthAssertionJwks` somebody put on a person — and
+// that is precisely the crossing the two attribute sets exist to prevent,
+// made once here instead of being hoped for.
+//
+// **A PERSON'S FIELDS ARE `person_assertions.recordFor()`'s RECORD**, never
+// the raw entry, and what is read off it is `jwks`: the JWKS of the person's
+// VALID key pairs only (#1290). A person may hold several, each found by its
+// `kid`; one that was revoked or has expired is not in it, so an assertion
+// signed with it finds no registered key and is refused as such.
 /**
- * Returns the keys a party may sign with: a person's from `stsAssertionJwks` on
- * their entry, an application's from `oauthAssertionJwks`, its `jwks` or its
- * fetched `jwks_uri`.
+ * Returns the keys a party may sign with: a person's valid key pairs (the
+ * `jwks` of their `person_assertions` record), an application's from
+ * `oauthAssertionJwks`, its `jwks` or its fetched `jwks_uri`.
  *
- * @param fields - the party's entry
+ * @param fields - the party's entry, or a person's record
  * @param kind - `person` or `application`
  * @returns `{ keys, problems, ... }`
  */
@@ -581,11 +591,12 @@ function keysForParty(fields, kind) {
   log.debug('Entering keysForParty(). kind=' + (kind || 'application'));
   const found = [];
   const problems = [];
-  const names = String(kind) === 'person'
-    ? ['stsAssertionJwks']
-    : ['oauthJwks', 'oauthAssertionJwks'];
+  const person = String(kind) === 'person';
+  const names = person ? ['jwks'] : ['oauthJwks', 'oauthAssertionJwks'];
   names.forEach(function (name) {
-    const text = fields && fields[name];
+    const held = fields && fields[name];
+    const text = person && held && typeof held === 'object'
+      ? JSON.stringify(held) : held;
     if (!text) {
       return;
     }
@@ -595,7 +606,8 @@ function keysForParty(fields, kind) {
       return;
     }
     read.keys.forEach(function (one) {
-      found.push(Object.assign({ source: name }, one));
+      found.push(Object.assign({ source: person ? 'stsAssertionKeyPair'
+                                                : name }, one));
     });
   });
   // A REGISTERED `jwks_uri`, AS FETCHED (#120). Read only where the client
@@ -747,6 +759,31 @@ function issuerEntry(iss) {
 // key pair by `/admin/pki` can present its certificate instead of registering
 // a JWKS, and this service can tell that it issued it.
 // ---------------------------------------------------------------------------
+// A CERTIFICATE IS ONLY ITS OWN HOLDER'S KEY (#1488, ASVS 5.0.0 9.1.3). That a
+// leaf chains to this realm's authority says this service issued it to
+// somebody; which application it is for is in its `urn:sts:application:` name,
+// and it verifies nobody else's assertion.
+/**
+ * Says whether a certificate from this realm's authority was issued to a party.
+ *
+ * @param held - `keyFromChain()`'s answer, or a candidate carrying its names
+ * @param named - the party's application identifier or client_id
+ * @returns true when the certificate names that application
+ */
+function certificateNamesParty(held, named) {
+  log.debug('Entering certificateNamesParty().');
+  const wanted = String(named || '');
+  let names = false;
+  if (held && held.subjectKind === 'application' && held.subjectName &&
+      wanted) {
+    const entry = applications.forClientId(wanted);
+    names = held.subjectName === wanted ||
+            (!!entry && entry.identifier === held.subjectName);
+  }
+  log.debug('Leaving certificateNamesParty(). ' + names);
+  return names;
+}
+
 /**
  * Returns the key an `x5c` header carries, only after the chain has been shown
  * to reach this realm's own Root CA.
@@ -773,7 +810,8 @@ async function keyFromChain(header) {
   const rest = chain.slice(1).map(pem);
   let checked;
   try {
-    checked = await pki.verifyLeaf(undefined, leafPem, rest);
+    checked = await require('../common/certificate_trust')
+      .realmLeaf('jose-signer', undefined, leafPem, rest);
   } catch (e) {
     log.debug('Leaving keyFromChain(). The path would not build.');
     return { errorCode: 'STS-OAUTH-0034', error: 'the x5c chain could not be ' +
@@ -916,8 +954,8 @@ async function verify(opts) {
   }
 
   // --- RFC 7523 section 3 claim 10: it may be encrypted ---------------------
-  const unwrapped = unwrapAssertion(presented,
-                                    { secret: options.clientSecret });
+  const unwrapped = await unwrapAssertion(presented,
+                                          { secret: options.clientSecret });
   if (!unwrapped.ok) {
     log.debug('Leaving verify(). It would not decrypt.');
     return { ok: false, errorCode: unwrapped.errorCode, error: GRANT_ERROR,
@@ -1031,7 +1069,7 @@ async function verify(opts) {
                           'key pair issued from /admin/pki — or, for a ' +
                           'person asserting about THEMSELVES, issue that ' +
                           'person a key pair from the same page, which ' +
-                          'writes `stsAssertionJwks` onto their entry. ' +
+                          'adds a `stsAssertionKeyPair` to their entry. ' +
                           '`oauth2.jwtBearerRequireRegisteredIssuer` turns ' +
                           'this refusal off, and reading what it says before ' +
                           'doing so is the point of it having a description.' };
@@ -1122,7 +1160,8 @@ async function verify(opts) {
   const usedX5c = usedKey && usedKey.source !== 'x5c' && usedKey.jwk &&
                   Array.isArray(usedKey.jwk.x5c) ? usedKey.jwk.x5c : [];
   if (usedX5c.length) {
-    keyChain = await pki.verifySignerChain(undefined, {
+    keyChain = await require('../common/certificate_trust')
+        .signerChain('jose-signer', {
       certificate: usedX5c[0], chain: usedX5c.slice(1), key: usedKey.jwk,
       source: 'the key "' + (usedKey.kid || '(no kid)') + '" in ' +
               usedKey.source + ' for "' + iss + '"'
@@ -1238,6 +1277,14 @@ async function verify(opts) {
                           'on it as `oauthAssertionIssuer` — which is a ' +
                           'thing an operator did, and is exactly the ' +
                           'difference.' };
+  }
+  if (usedKey && usedKey.source === 'x5c' && !signedByPerson &&
+      !certificateNamesParty(usedKey, party ? party.identifier : iss)) {
+    log.debug('Leaving verify(). The certificate is not the issuer\'s.');
+    return { ok: false, errorCode: 'STS-OAUTH-1001', error: GRANT_ERROR,
+             description: 'the certificate in x5c was not issued to "' + iss +
+                          '". A certificate from this realm\'s authority ' +
+                          'verifies only the application it names.' };
   }
   if (claims.exp === undefined || claims.exp === null) {
     log.debug("Leaving verify().");
@@ -1503,6 +1550,7 @@ function extraClaimsFrom(claims) {
  * @namespace
  */
 module.exports = {
+  certificateNamesParty: certificateNamesParty,
   GRANT_TYPE: GRANT_TYPE,
   PROTOCOL_CLAIMS: PROTOCOL_CLAIMS,
   enabled: enabled,

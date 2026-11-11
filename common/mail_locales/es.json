@@ -75,6 +75,11 @@
       "text": "Se concedió de inmediato, sin aprobador, un acceso de emergencia a una solicitud que lo designa a usted, {{username}}, como uno de sus aprobadores: {{subject}} puede {{action}} {{resource}} en la aplicación {{application}}, a través de {{requester}}, durante poco tiempo.\n\nLa justificación indicada: {{justification}}\n\nLa política permite el acceso de emergencia a esto. Revíselo y revóquelo si no estaba justificado:\n\n{{link}}\n",
       "html": "<p>Se concedió de inmediato, sin aprobador, un acceso de emergencia a una solicitud que lo designa a usted, <strong>{{username}}</strong>, como uno de sus aprobadores: <strong>{{subject}}</strong> puede <strong>{{action}}</strong> <strong>{{resource}}</strong> en la aplicación <strong>{{application}}</strong>, a través de {{requester}}, durante poco tiempo.</p><p>La justificación indicada: {{justification}}</p><p>La política permite el acceso de emergencia a esto. <a href=\"{{link}}\">Revíselo</a> y revóquelo si no estaba justificado.</p>"
     },
+    "pki-pin-status": {
+      "subject": "{{service}}: cambió el estado de un certificado en el que confía este dominio",
+      "text": "La auditoría diaria de los certificados en los que confía este dominio encontró estos cambios:\n\n{{changes}}\n\nLa página de confianza de PKI de la consola de administración muestra cada uno. Recibe este mensaje porque tiene Admin Write en este dominio.\n",
+      "html": "<p>La auditoría diaria de los certificados en los que confía este dominio encontró estos cambios:</p><p>{{changes}}</p><p>La página de confianza de PKI de la consola de administración muestra cada uno. Recibe este mensaje porque tiene Admin Write en este dominio.</p>"
+    },
     "administrator-alert": {
       "subject": "{{service}}: {{act}} para {{username}}",
       "text": "Este servicio, no una persona, realizó una acción sobre la cuenta {{username}} el {{when}}: {{act}}.\n\n{{why}}\n\nRecibe este mensaje porque tiene Admin Write en este dominio.\n",

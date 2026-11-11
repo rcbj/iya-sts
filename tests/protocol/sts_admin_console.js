@@ -788,6 +788,10 @@ const SURVEY = `
         index: i,
         method: (f.getAttribute('method') || 'GET').toUpperCase(),
         action: f.getAttribute('action'),
+        // A FORM THAT OPENS A NEW TAB (#717's preview): the walk of GET forms
+        // follows it into that tab, which the network inspector, attached
+        // to the first tab only, does not see.
+        target: f.getAttribute('target') || '',
         // NOT the form's own action property. A form's named controls
         // SHADOW the properties of the form element itself, and every console
         // form carries an input named "action" -- so reading f.action hands
@@ -1511,7 +1515,7 @@ async function theGateBehaves(driver) {
   });
   check("and the page sends a browser with no session to sign in, carrying " +
         "the request waiting behind it", function () {
-    assert.ok(/\/authn\/login\?authn=/.test(landed),
+    assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(landed),
       "the browser should have landed on the sign-in screen carrying an " +
       "`authn` id — that id is what sends the person back to /admin/tokens " +
       "afterwards instead of to the top of the console. It landed on " +
@@ -1671,6 +1675,18 @@ async function everyPageIsDrawn(driver, pages) {
       assert.ok(page.title && page.title.length > 0,
         "and it should have a title; it has " + JSON.stringify(page.title));
     });
+    if (path === "/admin/api-explorer") {
+      // WHAT AN OPERATION ANSWERS IS ON THE PAGE (#1353): the document has
+      // carried the models all along, and only the page can show they are read.
+      const head = await driver.wait(until.elementLocated(By.css(".ophead")),
+                                     30000);
+      await clickInView(driver, head);
+      const rows = await driver.wait(until.elementsLocated(
+        By.css(".responses table.model tr")), 10000);
+      check("the explorer shows an operation's response model", function () {
+        assert.ok(rows.length > 1, "it drew " + rows.length + " row(s).");
+      });
+    }
     const scripted = SCRIPTED_PAGES[path];
     // EVERY PAGE IS THE SAME DOCUMENT SINCE #446, under one policy: the
     // console's script from this origin and nothing inline, its calls to
@@ -2042,6 +2058,82 @@ async function everyLinkResolves(driver, links) {
   log.debug("Leaving everyLinkResolves().");
 }
 
+// A GET FORM WITH target="_blank" (#717's Preview, the one such form): the
+// browser answers it in a NEW TAB, so the tab this walk watches makes no
+// request and stays where it was — which read as "a GET form that reaches
+// nothing". It is followed into that tab instead, and three things are asked
+// of what it opened: the address is the form's own action, IN THIS REALM and
+// prefixed once (the page drew the API's already-prefixed address and the
+// runtime prefixed it again, `/realm/x/realm/x/web/...`, a 404); the fields
+// are in its query; and that address answers under 400. The status is asked
+// with a fetch from the new tab, since the inspector is not attached there.
+async function getFormInANewTab(driver, path, index, form, values) {
+  log.debug("Entering getFormInANewTab(). " + path + " form " + index);
+  const home = await driver.getWindowHandle();
+  const before = await driver.getAllWindowHandles();
+  await driver.executeScript(
+    "const f = document.forms[arguments[0]];" +
+    "const v = arguments[1];" +
+    "Object.keys(v).forEach(function (n) {" +
+    "  if (f.elements[n]) { f.elements[n].value = String(v[n]); }" +
+    "});" +
+    "f.requestSubmit();", index, values);
+  let opened = null;
+  await driver.wait(async function () {
+    const now = await driver.getAllWindowHandles();
+    opened = now.find(function (h) {
+      return before.indexOf(h) < 0;
+    }) || null;
+    return opened !== null;
+  }, 15000, "the GET form " + index + " on " + path + " has target=_blank " +
+     "and opened no tab");
+  let url = "";
+  let status = 0;
+  try {
+    await driver.switchTo().window(opened);
+    await driver.wait(async function () {
+      const state = await driver.executeScript(
+        "return document.readyState;");
+      return state === "complete";
+    }, 15000, "the tab the GET form " + index + " on " + path +
+       " opened never finished loading");
+    url = await driver.getCurrentUrl();
+  } finally {
+    await driver.close();
+    await driver.switchTo().window(home);
+  }
+  // THE STATUS IS ASKED FROM THE CONSOLE'S TAB, NOT THE NEW ONE: the page a
+  // GET form opens may forbid every fetch (the branding preview answers
+  // `default-src 'none'`), and a fetch its policy refuses reads as 0. The
+  // console's own policy allows `connect-src 'self'`.
+  status = await driver.executeAsyncScript(
+    "const done = arguments[arguments.length - 1];" +
+    "fetch(arguments[0], { credentials: 'same-origin' })" +
+    "  .then(function (r) { done(r.status); }," +
+    "        function () { done(0); });", url);
+  const expected = new URL(form.resolvedAction).pathname;
+  const landed = new URL(url);
+  check(path + " GET form " + index + " opens its tab", function () {
+    assert.strictEqual(landed.pathname, expected,
+      "the form's new tab should be at its own action, " + expected +
+      "; it went to " + url);
+    assert.ok(expected.indexOf("/realm/" + REALM + "/") === 0 &&
+              expected.indexOf("/realm/" + REALM + "/realm/") < 0,
+      "the form's action should be in this realm, prefixed once: " +
+      expected);
+    assert.ok(status > 0 && status < 400,
+      "the tab's address answered " + status + ": " + url);
+    Object.keys(values).forEach(function (name) {
+      if (values[name] !== "") {
+        assert.strictEqual(landed.searchParams.get(name),
+                           String(values[name]),
+          "the tab's address should carry " + name + "; it is " + url);
+      }
+    });
+  });
+  log.debug("Leaving getFormInANewTab().");
+}
+
 // ---------------------------------------------------------------------------
 // EVERY GET FORM, FILLED IN AND SUBMITTED — AND NOTHING EVER CHECKED THESE.
 //
@@ -2053,9 +2145,9 @@ async function everyLinkResolves(driver, links) {
 //
 // A GET form is submitted by the BROWSER building a query string out of its own
 // successful controls — which is the rule this suite would otherwise have to
-// re-implement, and the rule the page-size control depends on: `per` is drawn
-// as a select AND as a hidden input on some pages, and which one wins is a
-// browser behaviour, not a server one.
+// re-implement. A name drawn on two of a form's controls reaches the address
+// twice, and the console joins the two, so `per=300,300` is a value no
+// operation takes (#1476): that is asserted form by form below.
 //
 // Two things are asserted for each: the submission lands on a URL carrying the
 // fields, and the page that comes back is still the page (drawn in the shell,
@@ -2075,6 +2167,21 @@ async function everyGetFormSubmits(driver, pages) {
       if (form.method !== "GET") {
         continue;
       }
+      check(path + " GET form " + i + " names each field once", function () {
+        const seen = {};
+        form.controls.forEach(function (control) {
+          if (!control.name || control.disabled ||
+              control.type === "checkbox" || control.type === "radio" ||
+              control.type === "select-multiple") {
+            return;
+          }
+          assert.ok(!seen[control.name],
+            "`" + control.name + "` is on this GET form twice, so the " +
+            "address would hold the two joined by a comma.");
+          seen[control.name] = true;
+        });
+      });
+
       // What this form would send. For a select the value chosen is one that
       // DIFFERS from what is already selected where the control offers one —
       // the realm switcher is the case that forces it: its options are the
@@ -2096,6 +2203,13 @@ async function everyGetFormSubmits(driver, pages) {
           values[control.name] = "";
         }
       });
+
+      if (form.target === "_blank") {
+        await getFormInANewTab(driver, path, i, form, values);
+        submitted += 1;
+        await open(driver, realm(path));
+        continue;
+      }
 
       const from = mark();
       await fillAndPress(driver, i, values);
@@ -2477,13 +2591,16 @@ async function theNewUserPageDescribesAPerson(driver) {
   // **AND IT ASKS THE OPERATION THE PAGE IS DRAWN FROM (#568).** The portal
   // is a static application: `/portal/activate` answers its document, 200,
   // for any token at all, and the link is checked by the page's operation,
-  // `GET /account-api/activation`, with the link's own query. That is what
-  // the person's browser asks when the link is opened.
+  // `GET /account-api/activation`, with the link's own query and, since
+  // #1454, the fragment's token in `X-Link-Token`. That is what the person's
+  // browser asks when the link is opened.
   const linked = new URL(String(link).trim(), root("/"));
   const opened = await fetch(new URL(linked.pathname.replace(
     /\/portal\/activate$/, "/account-api/activation") + linked.search,
     linked).href, { redirect: "manual",
-                    headers: { accept: "application/json" } });
+                    headers: { accept: "application/json",
+                               "X-Link-Token": new URLSearchParams(
+                                 linked.hash.slice(1)).get("token") || "" } });
   const view = await opened.json().catch(function () {
     return {};
   });
@@ -5448,21 +5565,37 @@ async function theFieldGridIsPressed(driver) {
 }
 
 // ---------------------------------------------------------------------------
-// A PERSON'S CREDENTIALS SECTION: ISSUE, UPLOAD, TAKE OFF (2026-09-13).
+// A PERSON'S CREDENTIALS SECTION: ISSUE, UPLOAD, REVOKE (2026-09-13; several
+// key pairs per profile, revoked one at a time, since #1290).
 //
-// The application section's three presses, on `/admin/users?user=`, and the one
+// The application section's presses, on `/admin/users?user=`, and the one
 // thing about them neither the in-process test nor the API job can see: WHERE
 // THE BROWSER LANDS. Issue posts to `/admin/pki/person`, which answers with a
 // PAGE — the private key once, and a way back to this person — rather than a
-// redirect; Upload and Take off post to `/admin/pki` and must come back to this
-// person's section in this realm. The certificate uploaded is the one the
-// Issue page just showed, which is a certificate this realm issued to THIS
-// person — the only kind of this realm's certificate a person may register.
+// redirect; Upload and Revoke post to `/admin/pki` and must come back to this
+// person's section in this realm.
+//
+// **SINCE #1290 A PERSON HOLDS SEVERAL KEY PAIRS PER PROFILE**, each a row
+// with its state, and the take-off form is gone: Issue and Upload ADD a key
+// pair under an optional name, and a key pair is removed by REVOKING its row,
+// with a reason. So the section is driven as that: Issue adds key pair A,
+// named; Upload registers key pair B; A's row is revoked for keyCompromise
+// and B's stays valid.
+//
+// B IS ISSUED THROUGH THE API FIRST, AND THAT IS WHAT THE UPLOAD NEEDS. The
+// only certificate of this realm's a person may register is one this realm
+// issued to THEM, and an issue writes it onto the entry — so an upload of it
+// replaces that record ("the same certificate uploaded twice is one key
+// pair", `person_assertions.write()`) with the private key no longer held
+// here. Issuing B in the browser as well would press Issue twice and prove
+// nothing more.
 // ---------------------------------------------------------------------------
 async function thePersonCredentialsSectionIsPressed(driver) {
   log.debug("Entering thePersonCredentialsSectionIsPressed().");
-  log.info("=== A person's Credentials section: issue, upload, take off ===");
+  log.info("=== A person's Credentials section: issue, upload, revoke ===");
   const person = names.usernameFor("console-person-creds");
+  const LABEL_ISSUED = "console-laptop";
+  const LABEL_UPLOADED = "console-uploaded";
   const created = await apiPostJson(realm("/admin-api/users/create"),
     { username: person, invent: false, credential: "none",
       attributes: { cn: "Console Person Credentials", givenName: "Console",
@@ -5476,6 +5609,7 @@ async function thePersonCredentialsSectionIsPressed(driver) {
                       { organisation: "Console Person Credentials" });
   }
   const pageUrl = realm("/admin/users?user=" + encodeURIComponent(person));
+  // The RFC 7522 profile's view: `{ purpose, label, held, keys: [...] }`.
   const samlOf = async function () {
     log.debug("Entering samlOf().");
     const reply = await apiJson("/realm/" + REALM + "/admin-api/users?user=" +
@@ -5483,6 +5617,15 @@ async function thePersonCredentialsSectionIsPressed(driver) {
     log.debug("Leaving samlOf().");
     return (((reply.body || {}).credentials || {}).keyPairs || [])
       .filter(function (one) { return one.purpose === "saml"; })[0] || {};
+  };
+  // One key pair of that view, by its handle (a thumbprint for RFC 7522).
+  const keyIn = function (view, handle) {
+    log.debug("Entering keyIn(). handle=" + handle);
+    const found = (view.keys || []).filter(function (one) {
+      return one.handle === handle;
+    })[0] || {};
+    log.debug("Leaving keyIn().");
+    return found;
   };
   const onThePage = function (url) {
     log.debug("Entering onThePage().");
@@ -5494,7 +5637,9 @@ async function thePersonCredentialsSectionIsPressed(driver) {
            // act returns to the fragment its form was pressed under (#446).
            (u.hash === "#credentials" || u.hash === "#tab-credentials");
   };
-  const formFor = async function (action, purpose) {
+  // The form posting `action` for this person's `purpose` key pairs; with
+  // `handle`, the Revoke form on that one key pair's row.
+  const formFor = async function (action, purpose, handle) {
     log.debug("Entering formFor(). action=" + action);
     const index = await driver.executeScript(`
       const forms = Array.from(document.forms);
@@ -5502,11 +5647,13 @@ async function thePersonCredentialsSectionIsPressed(driver) {
         const a = forms[i].elements['action'];
         const p = forms[i].elements['purpose'];
         const t = forms[i].elements['target'];
+        const h = forms[i].elements['handle'];
         if (a && a.value === arguments[0] && t && t.value === 'person' &&
-            p && p.value === arguments[1]) { return i; }
+            p && p.value === arguments[1] &&
+            (!arguments[2] || (h && h.value === arguments[2]))) { return i; }
       }
       return -1;
-    `, action, purpose);
+    `, action, purpose, handle || "");
     log.debug("Leaving formFor(). " + index);
     return index;
   };
@@ -5524,11 +5671,17 @@ async function thePersonCredentialsSectionIsPressed(driver) {
 
   // --- Issue ---------------------------------------------------------------
   const issue = await formFor("issue", "saml");
-  check("it draws an Issue form for the RFC 7522 key pair, posting to " +
-        "/admin/pki/person", function () {
+  check("it draws an Issue form for the RFC 7522 key pairs, posting to " +
+        "/admin/pki/person, with a name for the key pair", function () {
     assert.ok(issue >= 0, "no person issue form for saml on " + pageUrl);
   });
-  await fillAndPress(driver, issue, {});
+  const issueHasLabel = await driver.executeScript(
+    "const f = document.forms[arguments[0]];" +
+    "return !!(f && f.elements['label']);", issue);
+  check("the Issue form asks for a name", function () {
+    assert.ok(issueHasLabel, "the person issue form has no label field");
+  });
+  await fillAndPress(driver, issue, { label: LABEL_ISSUED });
   const issuedAt = await driver.getCurrentUrl();
   // textContent and not the survey's visible text: the key is inside a
   // warning box, which this console folds, and a closed fold is not rendered.
@@ -5546,6 +5699,9 @@ async function thePersonCredentialsSectionIsPressed(driver) {
     return a ? a.href : '';
   `);
   const afterIssue = await samlOf();
+  const issuedKey = (afterIssue.keys || []).filter(function (one) {
+    return one.label === LABEL_ISSUED;
+  })[0] || {};
   check("Issue answered with a PAGE carrying the private key once, the " +
         "certificate, and a way back to THIS person in THIS realm",
         function () {
@@ -5563,52 +5719,133 @@ async function thePersonCredentialsSectionIsPressed(driver) {
       "no certificate on the key page");
     assert.ok(backHref && onThePage(backHref), "the way back is " + backHref);
     assert.ok(issuedAt.indexOf("PRIVATE") < 0, "the key is in the address");
-    assert.strictEqual(afterIssue.source, "issued",
-      JSON.stringify(afterIssue).slice(0, 300));
+  });
+  check("and ADDED one RFC 7522 key pair under the name typed: issued, " +
+        "valid, its private key held here", function () {
+    const said = JSON.stringify(afterIssue).slice(0, 600);
+    assert.strictEqual((afterIssue.keys || []).length, 1, said);
+    assert.strictEqual(afterIssue.held, true, said);
+    assert.ok(issuedKey.handle, "no key pair named " + LABEL_ISSUED + ": " +
+              said);
+    assert.strictEqual(issuedKey.source, "issued", said);
+    assert.strictEqual(issuedKey.state, "valid", said);
+    assert.strictEqual(issuedKey.privateKeyHeld, true, said);
   });
 
-  // --- Upload (the certificate this realm just issued to this person) -------
+  // --- Upload (a certificate this realm issued to this person) ------------
+  const second = await apiPostJson(realm("/admin-api/pki/issue"),
+    { identifier: person, target: "person", purpose: "saml",
+      label: "console-to-upload" });
+  assert.ok(second.status === 200 && second.body && second.body.ok &&
+            /BEGIN CERTIFICATE/.test(String(second.body.certificatePem || "")),
+    "issuing the person a second RFC 7522 key pair answered " +
+    second.status + " " + String(second.raw).slice(0, 300));
+  const uploadHandle = String(second.body.handle || second.body.thumbprint);
   await open(driver, pageUrl + "#credentials");
   const upload = await formFor("upload-certificate", "saml");
-  await fillAndPress(driver, upload, { certificate: certificatePem },
+  check("it draws an Upload form for the RFC 7522 key pairs", function () {
+    assert.ok(upload >= 0, "no person upload form for saml on " + pageUrl);
+  });
+  await fillAndPress(driver, upload,
+                     { label: LABEL_UPLOADED,
+                       certificate: second.body.certificatePem },
                      { noTyping: true });
   const afterUpload = await driver.getCurrentUrl();
   const uploaded = await samlOf();
+  const uploadedKey = keyIn(uploaded, uploadHandle);
   check("Upload, posted to /admin/pki, came back to THIS person's section " +
-        "and replaced the key pair with the certificate alone", function () {
-    assert.ok(upload >= 0, "no person upload form for saml on " + pageUrl);
+        "and registered the certificate as a key pair of theirs, with no " +
+        "private key held", function () {
+    const said = JSON.stringify(uploaded).slice(0, 600);
     assert.strictEqual(outcomeOf(afterUpload, "error"), "",
       "the upload was refused: " + outcomeOf(afterUpload, "error"));
     assert.ok(onThePage(afterUpload), "landed on " + afterUpload);
-    assert.ok(/replaced the RFC 7522/.test(outcomeOf(afterUpload, "notice")),
+    assert.ok(/was ADDED to the RFC 7522/
+                .test(outcomeOf(afterUpload, "notice")),
       "the notice says " +
       JSON.stringify(outcomeOf(afterUpload, "notice")).slice(0, 200));
-    assert.strictEqual(uploaded.source, "uploaded-realm-ca",
-      JSON.stringify(uploaded).slice(0, 300));
-    assert.strictEqual(uploaded.privateKeyHeld, false);
+    assert.strictEqual(uploadedKey.source, "uploaded-realm-ca", said);
+    assert.strictEqual(uploadedKey.label, LABEL_UPLOADED, said);
+    assert.strictEqual(uploadedKey.state, "valid", said);
+    assert.strictEqual(uploadedKey.privateKeyHeld, false, said);
+  });
+  check("and the key pair issued before it is still there, issued and " +
+        "valid: two RFC 7522 key pairs", function () {
+    const said = JSON.stringify(uploaded).slice(0, 600);
+    assert.strictEqual((uploaded.keys || []).length, 2, said);
+    assert.strictEqual(keyIn(uploaded, issuedKey.handle).source, "issued",
+                       said);
+    assert.strictEqual(keyIn(uploaded, issuedKey.handle).state, "valid",
+                       said);
   });
 
-  // --- Take off -------------------------------------------------------------
+  // --- Revoke one row -------------------------------------------------------
   const redrawn = await open(driver, pageUrl + "#credentials");
-  check("the redrawn section names where the SAML key pair came from",
-        function () {
+  check("the redrawn section draws a row per key pair, with its name and " +
+        "where it came from", function () {
     assert.ok(redrawn.text.indexOf("uploaded-realm-ca") >= 0,
       "the page does not draw the provenance after the upload");
+    assert.ok(redrawn.text.indexOf(LABEL_ISSUED) >= 0 &&
+              redrawn.text.indexOf(LABEL_UPLOADED) >= 0,
+      "the page does not draw both key pairs' names");
   });
-  const takeOff = await formFor("revoke", "saml");
-  await fillAndPress(driver, takeOff, {});
-  const afterTakeOff = await driver.getCurrentUrl();
-  const cleared = await samlOf();
-  check("Take off came back to the section and cleared the SAML key pair",
+  const revoke = await formFor("revoke", "saml", issuedKey.handle);
+  const otherRevoke = await formFor("revoke", "saml", uploadHandle);
+  check("each valid row carries a Revoke form of its own, with a reason",
         function () {
-    assert.ok(takeOff >= 0, "no person take-off form for saml on " + pageUrl);
-    assert.ok(onThePage(afterTakeOff), "landed on " + afterTakeOff);
-    assert.strictEqual(cleared.held, false,
-      JSON.stringify(cleared).slice(0, 300));
+    assert.ok(revoke >= 0 && otherRevoke >= 0 && revoke !== otherRevoke,
+      "no Revoke form per row for saml on " + pageUrl + ": " +
+      JSON.stringify({ revoke: revoke, otherRevoke: otherRevoke }));
+  });
+  const reasons = await driver.executeScript(
+    "const f = document.forms[arguments[0]];" +
+    "const r = f && f.elements['reason'];" +
+    "return r && r.options ? Array.from(r.options).map(function (o) {" +
+    "  return o.value; }) : [];", revoke);
+  check("the reason is chosen from the two the portal's rows offer",
+        function () {
+    assert.ok(reasons.indexOf("keyCompromise") >= 0 &&
+              reasons.indexOf("cessationOfOperation") >= 0,
+      "the Revoke form offers " + JSON.stringify(reasons));
+  });
+  await fillAndPress(driver, revoke, { reason: "keyCompromise" });
+  const afterRevoke = await driver.getCurrentUrl();
+  const revoked = await samlOf();
+  const revokedKey = keyIn(revoked, issuedKey.handle);
+  const keptKey = keyIn(revoked, uploadHandle);
+  check("Revoke came back to the section and revoked THAT key pair for " +
+        "keyCompromise, and the other stayed valid", function () {
+    const said = JSON.stringify(revoked).slice(0, 600);
+    assert.strictEqual(outcomeOf(afterRevoke, "error"), "",
+      "the revocation was refused: " + outcomeOf(afterRevoke, "error"));
+    assert.ok(onThePage(afterRevoke), "landed on " + afterRevoke);
+    assert.ok(/was revoked \(keyCompromise\)/
+                .test(outcomeOf(afterRevoke, "notice")),
+      "the notice says " +
+      JSON.stringify(outcomeOf(afterRevoke, "notice")).slice(0, 200));
+    assert.strictEqual(revokedKey.state, "revoked", said);
+    assert.strictEqual(revokedKey.reason, "keyCompromise", said);
+    assert.ok(revokedKey.revokedAt, "no revocation time: " + said);
+    assert.strictEqual(keptKey.state, "valid", said);
+    assert.strictEqual(revoked.held, true, said);
+    assert.strictEqual((revoked.keys || []).length, 2, said);
+  });
+  const afterRevokeDrawn = await open(driver, pageUrl + "#credentials");
+  const revokeLeft = await formFor("revoke", "saml", issuedKey.handle);
+  const revokeKept = await formFor("revoke", "saml", uploadHandle);
+  check("the redrawn row says revoked (keyCompromise) and offers no Revoke; " +
+        "the other row still does", function () {
+    assert.ok(/revoked \(keyCompromise/.test(afterRevokeDrawn.text),
+      "the page does not draw the revoked row with its reason");
+    assert.strictEqual(revokeLeft, -1,
+      "the revoked row still carries a Revoke form");
+    assert.ok(revokeKept >= 0, "the valid row lost its Revoke form");
   });
   log.info("[person credentials] OK — Issue showed the private key once and " +
-           "linked back, Upload came back to this person holding this " +
-           "realm's certificate, and Take off cleared it.");
+           "linked back, adding a named key pair; Upload came back to this " +
+           "person and registered this realm's certificate beside it; and " +
+           "Revoke on one row revoked it for keyCompromise while the other " +
+           "stayed valid.");
   log.debug("Leaving thePersonCredentialsSectionIsPressed().");
 }
 
@@ -7553,9 +7790,9 @@ async function theBrowserConsoleIsClean(driver) {
                       entry.level) === "SEVERE";
       }).map(function (entry) { return String(entry.message); })
       // The browser asks for /favicon.ico on its own, on every origin, and
-      // this service serves none. It is the browser's request rather than the
-      // console's, so it says nothing about what a page loaded — and it would
-      // otherwise be the one permanent entry that made this check useless.
+      // this service serves one but an origin a job visits may not. It is the
+      // browser's request rather than the console's, so it says nothing about
+      // what a page loaded.
       .filter(function (message) {
         return message.indexOf("/favicon.ico") < 0;
       })

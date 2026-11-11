@@ -24,6 +24,7 @@
   "seconds.hours": "{n, plural, other {{shown} 小时}}",
   "seconds.days": "{n, plural, other {{shown} 天}}",
   "chooser.showing": "显示第 {from}&ndash;{to} 个，共 {n} 个{searched, select, yes {{n, plural, other {匹配项}}} other {列表项}}。",
+  "chooser.showingMore": "显示第 {from}&ndash;{to} 个，共超过 {n} 个匹配项。",
   "chooser.count": "共 {n} 个{searched, select, yes {{n, plural, other {匹配项}}} other {列表项}}。",
   "chooser.previous": "&larr; 前 {n} 个",
   "chooser.previous.title": "这些之前的二十个",

@@ -198,10 +198,10 @@ function sessionCookieOf(res) {
   log.debug("Entering sessionCookieOf().");
   const lines = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
   const line = lines.filter(function (one) {
-    return /^sts_session=[^;]+/.test(one);
+    return /^(?:__Host-)?sts_session=[^;]+/.test(one);
   })[0] || "";
   log.debug("Leaving sessionCookieOf().");
-  return (/^sts_session=([^;]*)/.exec(line) || [])[1] || "";
+  return (/^(?:__Host-)?sts_session=([^;]*)/.exec(line) || [])[1] || "";
 }
 
 // One GET of the sign-in door, with an optional Authorization header, read
@@ -234,8 +234,13 @@ async function negotiateWith(token) {
 function text(body) {
   log.debug("Entering text().");
   log.debug("Leaving text().");
+  // THE SHARED ERROR PAGE (#1326, #1327) opens with the language chooser
+  // and keeps the English what and why in its diagnostics, below the
+  // translated sentence: the chooser is dropped and the window is wide
+  // enough to hold both.
   return String(body || "").replace(/<style[\s\S]*?<\/style>/g, " ")
-    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
+    .replace(/<details class="language-row">[\s\S]*?<\/details>/g, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
 // THE STATE A SPNEGO BODY CARRIES (#575): `/authn/spnego`'s first 401, its

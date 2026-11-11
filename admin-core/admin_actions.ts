@@ -133,6 +133,8 @@
 // of thing only a test that drives the surface can find, and
 // tests/protocol/sts_admin_api_operations.js did, on the first run after.
 import helpers = require('../common/helpers');
+import configDump = require('./config_dump');
+import DomainClasses = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 // A policy save's or reset's message is filled from `policy_kinds.ts`'s
 // templates, so the server can translate it (#543).
@@ -395,6 +397,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'remove-self-issued-subject',
                        // The preferred DID (#693, phase 2).
                        'set-preferred-self-issued-subject',
+                       // A DID this realm published for them, deactivated
+                       // (#1291).
+                       'deactivate-published-did',
                        // Devices (#130, 2026-09-23).
                        'remove-device',
                        // CIBA's test control (#131, 2026-09-23).
@@ -501,6 +506,14 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // marks one subject the person PROVED, a DID, as the one the `did` claim
   // releases (`subject`; empty clears the mark). `siop.setPreferred()`.
   'set-preferred-self-issued-subject',
+  // A PUBLISHED DID (#1291): `deactivate-published-did` deactivates one of
+  // the did:web this realm publishes for the person (`did`, the DID or its
+  // random id): its address answers 410 Gone for good, its history stays
+  // resolvable, and it no longer signs them in, nor is it preferred or
+  // released. An administrator never creates or changes one — that is the
+  // person's act on /portal/self-issued. `oid4vc/person_did.ts` decides and
+  // audits it (`admin.did.deactivated`).
+  'deactivate-published-did',
   // A DEVICE (#130, 2026-09-23): `remove-device` deletes one of the person's
   // device entries (`id`), and its Native SSO secret with it — the apps on
   // it are asked to sign in again. `common/devices.ts` keeps them.
@@ -703,6 +716,9 @@ const SAML11_RP_KIND = saml11.RP_KIND;
  * The actions the MFA resource answers, all of them handed to `usersAction()`.
  */
 const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
+
+// The shortest statement of how a person's identity was verified (#1504).
+const MIN_EVIDENCE_LENGTH = 8;
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // PERMISSION_ACTIONS gives at its own site: this repository's own
@@ -911,6 +927,11 @@ const SIGNALS_CONSOLE_ACTIONS = ['clear'];
  * The actions `truststoreAction()` answers: `add` and `remove`.
  */
 const TRUSTSTORE_ACTIONS = ['add', 'remove'];
+
+/**
+ * The actions `pkiTrustAction()` answers (#1360).
+ */
+const PKI_TRUST_ACTIONS = ['add', 'remove', 'recheck', 'set-row'];
 
 /**
  * The actions `spiffeEntriesAction()` answers.
@@ -1800,11 +1821,27 @@ class AdminActions {
     }
     const asked = body || {};
     const action = String(asked.action || '');
+    if (action === 'end-all') {
+      const instant = Date.now();
+      require('../common/config').setOverride('authn.sessionsEndedBefore',
+                                              String(instant));
+      this.deps.auditLog.record({
+        category: 'session', action: 'session.end',
+        actor: (opts && opts.by) || '', target: 'every sign-on session',
+        outcome: 'success',
+        summary: 'ended every sign-on session in this realm',
+        detail: { startedBefore: instant }
+      });
+      log.debug("Leaving AdminActions.sessionsAction(). Ended all.");
+      return { ok: true, message: 'Every sign-on session in this realm has ' +
+        'ended. Issued tokens are not revoked by this: use Revoke all on ' +
+        'the Tokens page as well.' };
+    }
     if (action !== 'revoke') {
       log.debug("Leaving AdminActions.sessionsAction(). Unknown action.");
       return this.refused('STS-ADMIN-0500',
                           { ok: false, errors: ['Unknown action "' + action +
-        '". There is one: revoke.'] });
+        '". There are two: revoke, end-all.'] });
     }
     const key = String(asked.key || '').trim();
     const selected = String(asked.select || '').trim();
@@ -2338,7 +2375,8 @@ class AdminActions {
   // the path an administrator's password reset takes) — so a person who
   // did not expect a key on their account hears of it at once.
   private adminKeyEnrolled(who, done, ctx) {
-    const { log, credentials, auditLog, accountSignals } = this.deps;
+    const { log, credentials, auditLog, accountSignals,
+            errorCodes } = this.deps;
     log.debug("Entering AdminActions.adminKeyEnrolled().");
     if (!done || !done.ok) {
       auditLog.record({
@@ -2356,14 +2394,6 @@ class AdminActions {
     const enrolled = credentials.keysOf(who).filter(function (one) {
       return one.credentialId === String(done.credentialId || '');
     })[0] || null;
-    accountSignals.credentialChanged({ username: who,
-      credentialType: accountSignals.keyCredentialType(enrolled),
-      fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
-      friendlyName: String((enrolled && enrolled.label) || ''),
-      changeType: 'create', initiatingEntity: 'admin', via: ctx.via,
-      reasonAdmin: 'An administrator (' + (ctx.actor || 'unnamed') +
-                   ') enrolled a passkey for ' + who + '.',
-      reasonUser: 'An administrator enrolled a passkey on your account.' });
     const algorithm = credentials.keyAlgorithm(enrolled || {});
     auditLog.record({
       category: 'authentication', action: 'admin.passkey.enrolled',
@@ -2378,6 +2408,23 @@ class AdminActions {
                 aaguid: String((enrolled && enrolled.aaguid) || ''),
                 enrolledBy: (done.enrolledBy || {}).username || '',
                 held: done.held } });
+    // THE AUDIT ROW BEFORE THE SIGNAL (ASVS 5.0.0 2.3.3): the key is already
+    // enrolled, so a signal that throws must not leave it unrecorded.
+    try {
+      accountSignals.credentialChanged({ username: who,
+        credentialType: accountSignals.keyCredentialType(enrolled),
+        fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+        friendlyName: String((enrolled && enrolled.label) || ''),
+        changeType: 'create', initiatingEntity: 'admin', via: ctx.via,
+        reasonAdmin: 'An administrator (' + (ctx.actor || 'unnamed') +
+                     ') enrolled a passkey for ' + who + '.',
+        reasonUser: 'An administrator enrolled a passkey on your account.' });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-ADMIN-0918') + 'admin: the passkey ' +
+                'enrolled for "' + who + '" was recorded, and the account ' +
+                'signal about it could not be sent: ' +
+                ((e && e.message) || e));
+    }
     log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
              ctx.via + ') enrolled a passkey for "' +
              who + '", who now holds ' + done.held + '.');
@@ -2981,11 +3028,13 @@ class AdminActions {
       return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name the ' +
           'person in `user`.'] });
     }
+    const self = this;
     const audited = function (name, summary, detail, outcome?) {
       log.debug("Entering audited().");
       auditLog.record({ category: 'admin', action: name, actor: ctx.actor,
         target: who, outcome: outcome || 'success', summary: summary,
-        detail: Object.assign({ username: who, via: ctx.via }, detail || {}) });
+        detail: Object.assign({ username: who, via: ctx.via,
+          evidence: self.evidenceOf(body) || undefined }, detail || {}) });
       log.debug("Leaving audited().");
     };
 
@@ -3101,7 +3150,7 @@ class AdminActions {
       const signedOut = this.signOutEverywhere(who, ctx,
                                                'a password reset link');
       const path = '/portal/reset-password?user=' + encodeURIComponent(who) +
-                   '&token=' + encodeURIComponent(issued.token);
+                   '#token=' + encodeURIComponent(issued.token);
       audited('admin.password.reset-link',
               'an administrator issued a password reset link for ' + who,
               { expiresAt: issued.expiresAt, passwordRemoved: removed.removed,
@@ -3175,6 +3224,13 @@ class AdminActions {
                         signedOut.message };
     }
 
+    if (action === 'disable-primary-keys' || action === 'disable-mfa') {
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). No evidence.");
+        return unproved;
+      }
+    }
     if (action === 'disable-primary-keys') {
       const result = credentials.removePrimaryKeys(who);
       // A refusal leaves the keys where they are, so no session ends.
@@ -3638,9 +3694,49 @@ class AdminActions {
         return siop.enrolByValue(who, subject, body.label, ctx.actor)
           .then(answer);
       }
+      // A DID THIS REALM PUBLISHED FOR THEM (#1291) is DEACTIVATED, never
+      // just removed from the list: its address is kept and answers 410,
+      // and the subject goes with it — `deactivate-published-did`'s act.
+      const personDid = require('../oid4vc/person_did');
+      if (personDid.isHosted(siop.normalise(subject))) {
+        const done = personDid.deactivate(who, siop.normalise(subject),
+                                          ctx.actor, 'admin');
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  ", a published DID deactivated.");
+        return answer(done.ok ? { ok: true, removed: done.record.did }
+                              : { ok: false, code: done.code,
+                                  error: done.error });
+      }
       log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
                 ".");
       return answer(siop.remove(who, subject, ctx.actor));
+    }
+
+    if (action === 'deactivate-published-did') {
+      // LAZILY: `person_did.ts` is built with the verifiable credentials
+      // family, and this module is the console's.
+      const personDid = require('../oid4vc/person_did');
+      const asked = String(body.did == null ? '' : body.did).trim();
+      if (!asked) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  " named no DID.");
+        return this.refusedBy('STS-VC-0172', { ok: false, errors: [
+          'Which published DID? Send `did`: the DID, or its random id, as ' +
+          'GET /admin-api/users/published-dids lists it.'] });
+      }
+      const done = personDid.deactivate(who, asked, ctx.actor, 'admin');
+      if (!done.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  " was refused.");
+        // error-code: none — the library decided the code, on done.code
+        return this.refusedBy(done.code, { ok: false, errors: [done.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                ".");
+      return { ok: true, username: who, deactivated: done.record.did,
+               message: done.record.did + ' is deactivated: its address ' +
+                        'answers 410 Gone, its history stays resolvable, ' +
+                        'and it no longer signs ' + who + ' in.' };
     }
 
     if (action === 'set-preferred-self-issued-subject') {
@@ -3957,6 +4053,41 @@ class AdminActions {
                  'sign-in through ' + parsed.relationship + ' does not ' +
                  'find them, and every session that partner signed them in ' +
                  'to is being ended.' };
+  }
+
+  // WHAT THE ADMINISTRATOR DID TO PROVE WHO THIS IS (#1504, ASVS 5.0.0
+  // 6.4.4). A factor is cleared for somebody who has lost it, and that request
+  // is how an account is taken over, so product mode refuses to clear one until
+  // the administrator has said how the person's identity was verified.
+  private evidenceRefusal(body: any): any {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.evidenceRefusal().");
+    if (!require('../common/mode').requiresEvidenceToClearFactor() ||
+        this.evidenceOf(body).length >= MIN_EVIDENCE_LENGTH) {
+      log.debug("Leaving AdminActions.evidenceRefusal(). Nothing owed.");
+      return null;
+    }
+    log.debug("Leaving AdminActions.evidenceRefusal(). Refused.");
+    return this.refused('STS-ADMIN-0916', { ok: false, errors: ['Say in ' +
+      '`evidence` how this person\'s identity was verified, in at least ' +
+      MIN_EVIDENCE_LENGTH + ' characters. It is recorded in the audit log.'] });
+  }
+
+  // The evidence as given, bounded because it goes on an audit row.
+  private evidenceOf(body: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.evidenceOf().");
+    log.debug("Leaving AdminActions.evidenceOf().");
+    return String((body && body.evidence) || '').trim().slice(0, 500);
+  }
+
+  // The evidence as the end of a sentence, for a module that writes its own row.
+  private evidenceNote(body: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.evidenceNote().");
+    const evidence = this.evidenceOf(body);
+    log.debug("Leaving AdminActions.evidenceNote().");
+    return evidence ? '; identity verified by: ' + evidence : '';
   }
 
   /**
@@ -4305,7 +4436,7 @@ class AdminActions {
                mailError: mailed ? (mailed.errors || []).join(' ') : undefined,
                // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE PERSON'S BROWSER.
                activationUrl: '/portal/activate?user=' +
-                              encodeURIComponent(who) + '&token=' +
+                              encodeURIComponent(who) + '#token=' +
                               encodeURIComponent(issued.token),
                message: 'An activation link for ' + who + ' is valid until ' +
                         issued.expiresAt +
@@ -4356,6 +4487,11 @@ class AdminActions {
                                      'person whose authenticator app is ' +
                                           'being cleared.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       const result = credentials.removeTotp(who);
       // THE SESSIONS THE APP'S CODES SIGNED IN END (#722) — before the
       // audit row below, which counts them.
@@ -4370,6 +4506,7 @@ class AdminActions {
         summary: (result.ok ? 'cleared' : 'could not clear') +
                  ' the authenticator app enrolment for ' + who,
         detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
                   sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
@@ -4433,6 +4570,11 @@ class AdminActions {
                                      'the person whose recovery codes are ' +
                                           'being cleared.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       const result = credentials.removeBackupCodes(who);
       // THE SESSIONS A RECOVERY CODE SIGNED IN END (#722).
       const ended = result.ok
@@ -4446,6 +4588,7 @@ class AdminActions {
         summary: (result.ok ? 'cleared' : 'could not clear') +
                  ' the recovery codes for ' + who,
         detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
                   sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
@@ -4482,8 +4625,13 @@ class AdminActions {
                                      'the person whose emailed second ' +
                                      'factor is being turned off.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       const result = require('../common/mail_factor').clear(who, ctx.actor,
-        ctx.via, 'turned off by an administrator');
+        ctx.via, 'turned off by an administrator' + this.evidenceNote(body));
       // THE SESSIONS THE EMAILED SECOND FACTOR SIGNED IN END (#722), and
       // only when it was on: a person who had none has none to end.
       const ended = result.ok && result.removed
@@ -4670,6 +4818,11 @@ class AdminActions {
                                      'the person whose security key is being ' +
                                           'removed.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       // THROUGH `removeKey()` AND NOT A WRITE OF ITS OWN — see the header: that
       // function carries the refusal that matters.
       const going = credentials.keysOf(who).filter(function (one) {
@@ -4700,7 +4853,7 @@ class AdminActions {
                                                 'failure',
         summary: (result.ok ? 'removed' : 'could not remove') +
                  ' a security key for ' + who,
-        detail: { username: who, via: ctx.via,
+        detail: { evidence: this.evidenceOf(body), username: who, via: ctx.via,
                   credentialId: String(body.credentialId || ''),
                   sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
@@ -4953,8 +5106,10 @@ class AdminActions {
     //
     // It is `credentials.setPassword()`: hashed there, never here, and never
     // written as an attribute — which is also why `userPassword` is refused
-    // by the attribute door on `create`. It does NOT set `pwdReset` and it
-    // does NOT sign the person out, which is what `reset-password` does
+    // by the attribute door on `create`. A GENERATED password sets `pwdReset`
+    // (#1446, ASVS 5.0.0 6.4.1): it may be used once, to choose another, and
+    // cannot become the long-term password. One the administrator typed does
+    // not. Neither signs the person out, which is what `reset-password` does
     // besides the password. What it shares with that door, since #960, is
     // the recovery note: a passkey holder's next password sign-in is held
     // by `recoveryAssurance` until a passkey signs them in.
@@ -4997,6 +5152,9 @@ class AdminActions {
                   "refused.");
         return this.refusedBy('STS-ADMIN-0525', set);
       }
+      if (generate) {
+        credentials.setPasswordResetRequired(who, true);
+      }
       // A passkey holder's recovery, noted the way `reset-password` notes
       // it (#960). False — no passkey, assurance `any`, or a write already
       // logged — does not fail the action: the password is set either way.
@@ -5025,7 +5183,8 @@ class AdminActions {
                message: generate
                  ? 'A password for ' + who + ' has been generated and set. ' +
                    'IT IS SHOWN ONCE — this service stores a scrypt hash and ' +
-                   'cannot produce it again, only replace it.'
+                   'cannot produce it again, only replace it. It must be ' +
+                   'changed at the next sign-in.'
                  : 'The password for ' + who + ' is set. It is stored as a ' +
                    'hash and cannot be shown again.' };
     }
@@ -5195,6 +5354,11 @@ class AdminActions {
             answer.passwordSet = true;
             answer.generated = generated;
             if (generated) {
+              // MUST BE CHANGED AT FIRST USE (#1446, ASVS 5.0.0 6.4.1), in
+              // product; development keeps it, as every fixture signs in with it.
+              if (mode.verifiesCredentials()) {
+                credentials.setPasswordResetRequired(result.username, true);
+              }
               // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE HASH.
               answer.password = password;
               credentialSaid = ' A password has been GENERATED for them and ' +
@@ -5233,7 +5397,7 @@ class AdminActions {
           } else {
             answer.activationUrl = '/portal/activate?user=' +
                                    encodeURIComponent(result.username) +
-                                   '&token=' +
+                                   '#token=' +
                                    encodeURIComponent(issued.token);
             if (mailed) {
               answer.mailError = (mailed.errors || []).join(' ');
@@ -5386,12 +5550,6 @@ class AdminActions {
               'this ' +
               'one has no schema, so it is here because you asked for it') +
               '.' +
-          (result.dangling.length
-            ? ' ' + result.dangling.length + ' of those member value(s) name ' +
-              'nothing this directory holds and are written anyway: nothing ' +
-              'here does referential integrity, and the Dangling column ' +
-              'above is where they show up.'
-            : '') +
           ' IT GRANTS NOTHING. No endpoint in this service checks a group, ' +
           'and the only two that decide anything are the console roles on ' +
           '/admin/rbac. What it does change is what a directory client sees ' +
@@ -5482,8 +5640,9 @@ class AdminActions {
     log.debug("Leaving AdminActions.groupsAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The five are: create, add-member, ' +
-                                 'set-mail, add-owner, remove-owner. ' +
+                                 'The six are: create, add-member, ' +
+                                 'set-mail, set-policy, add-owner, ' +
+                                 'remove-owner. ' +
                                  'Removing ' +
                                  'a member is /admin/rbac for the two ' +
                                  'console roles, and an ldapmodify or a SCIM ' +
@@ -5725,7 +5884,8 @@ class AdminActions {
         return change.attribute === 'oauthTokenEndpointAuthMethod';
       })[0];
       const projected = methodChange ? methodChange.values
-        : valuesOf(entry.fields.oauthTokenEndpointAuthMethod);
+        : valuesOf(DomainClasses.OAuthClient.fromEntry(entry.fields)
+          .tokenEndpointAuthMethods);
       const determination = applications.oauthConfidentialOf({
         registered: !!entry.registered,
         fields: { oauthTokenEndpointAuthMethod: projected }
@@ -5822,7 +5982,8 @@ class AdminActions {
     // has already been written, which is what lets the family's own check
     // see the new declaration.
     if (!errors.length && withProtocols) {
-      const previous = valuesOf(entry.fields.appAllowedProtocol);
+      const previous = valuesOf(DomainClasses.Application
+        .fromEntry(entry.fields).allowedProtocols);
       const posted = valuesOf(protocols && protocols.length
         ? protocols : body.protocols);
       const addedFamilies = posted.filter(function (id) {
@@ -6061,12 +6222,41 @@ class AdminActions {
       }
     });
     if (errors.length) {
+      // ALL OR NOTHING (#1555, ASVS 5.0.0 2.3.3): a save that is partly refused
+      // puts back what it had already changed.
+      const notRestored = changed.filter(function (name) {
+        const held = rows[name.toLowerCase()].values.map(String);
+        const now = (personEditor.editorFor(who).attributes
+          .filter(function (one) {
+            return one.name === name;
+          })[0] || { values: [] }).values.map(String);
+        const results = rows[name.toLowerCase()].multi
+          ? held.filter(function (one) {
+            return now.indexOf(one) < 0;
+          }).map(function (value) {
+            return personEditor.update(who, { attribute: name, mode: 'add',
+                                              value: value }, context);
+          }).concat(now.filter(function (one) {
+            return held.indexOf(one) < 0;
+          }).map(function (value) {
+            return personEditor.update(who, { attribute: name, mode: 'remove',
+                                              value: value }, context);
+          }))
+          : [personEditor.update(who, { attribute: name, mode: 'set',
+                                        value: held[0] || '' }, context)];
+        return !results.every(function (one) {
+          return one.ok;
+        });
+      });
       log.debug("Leaving AdminActions.updatePersonFields(). " +
                 errors.length + " refusal(s).");
-      return this.refused('STS-ADMIN-0839', { ok: false, changed: changed,
-        errors: (changed.length
-          ? ['Saved ' + changed.join(', ') + '; the rest was refused:']
-          : []).concat(errors) });
+      return this.refused('STS-ADMIN-0839', { ok: false,
+        changed: notRestored,
+        errors: (notRestored.length
+          ? ['Part of this was refused, and these could not be put back: ' +
+             notRestored.join(', ') + '.']
+          : ['Nothing was saved, because part of it was refused:'])
+          .concat(errors) });
     }
     log.debug("Leaving AdminActions.updatePersonFields(). " +
               changed.length + " attribute(s) changed.");
@@ -6589,8 +6779,8 @@ class AdminActions {
       parts.push('Already held: ' + names(peps.held) + '.');
     }
     (peps.failed || []).forEach(function (one: any) {
-      parts.push('Not granted: ' + String(one.name || '?') + ' (' +
-                 String(one.code || '') + ') — ' + String(one.why || ''));
+      parts.push('Not granted: ' + String(one.name || '?') + ' — ' +
+                 String(one.why || ''));
     });
     if (!parts.length) {
       parts.push('No remote PEP holds REMOTE_PEPS in this realm (group "' +
@@ -6700,8 +6890,8 @@ class AdminActions {
       // A METADATA DOCUMENT GIVEN WITH THE CREATE IS CONSUMED (#37), exactly
       // as an upload on the SAML 2.0 page is, so the form's promise — paste
       // it here to configure a service provider this service cannot reach —
-      // is kept. A document that is refused leaves the entry created and says
-      // why; the create itself is not undone.
+      // is kept. A document that is refused undoes the create (#1555, ASVS 5.0.0
+      // 2.3.3): the application asked for was one configured by that document.
       const created = this.applicationFieldsFrom(body);
       const pasted = String(created.samlSpMetadata || '');
       let consumed = null;
@@ -6709,14 +6899,17 @@ class AdminActions {
         consumed = spMetadata.consume(result.application.identifier, pasted,
                                       'upload');
       }
-      const consumedSentence = !consumed ? ''
-        : consumed.ok
-          ? ' ' + consumed.message
-          : ' The metadata document given with it was stored and NOT ' +
-            'consumed: ' + (consumed.errors || []).join(' ');
+      if (consumed && !consumed.ok) {
+        applications.deleteApplication(result.application.identifier);
+        log.debug("Leaving AdminActions.applicationsAction(). Undone.");
+        return this.refused('STS-ADMIN-0917', { ok: false, errors: ['Nothing was ' +
+          'created, because the metadata document was refused: ' +
+          (consumed.errors || []).join(' ')] });
+      }
+      const consumedSentence = consumed ? ' ' + consumed.message : '';
       log.debug("Leaving AdminActions.applicationsAction().");
       return { ok: true,
-               application: consumed && consumed.ok
+               application: consumed
                  ? (applications.get(result.application.identifier) ||
                     result.application)
                  : result.application,
@@ -8128,9 +8321,8 @@ class AdminActions {
         'Register the service provider first.'] });
     }
     const wanted = applications.samlCertificateBase64(value);
-    const before = row.fields ? row.fields.samlSigningCertificate : [];
-    const current = (Array.isArray(before) ? before : (before ? [before] : []))
-      .map(function (one) { return String(one); });
+    const current = row.fields ? DomainClasses.SamlServiceProvider
+      .fromEntry(row.fields).signingCertificate || [] : [];
     let last = null;
     let changed = false;
     if (wanted) {
@@ -10029,15 +10221,27 @@ class AdminActions {
 
     if (action === 'set') {
       const key = String(body.key || '').trim();
+      // The mask posted back says "leave it" (#1478): writing it would make
+      // it the password.
+      if (this.configKnows(key) &&
+          configDump.isEchoOfMask(config.describe(this.configSettingFor(key)),
+                                  body.value)) {
+        log.debug("Leaving AdminActions.configAction(). set kept a secret.");
+        return { ok: true, key: key,
+                 setting: this.maskedSettingFor(key),
+                 message: key + ' is unchanged: the value posted was its ' +
+                          'mask.' };
+      }
       const result = config.setOverride(key, body.value);
       if (!result.ok) {
         log.debug("Leaving AdminActions.configAction(). set refused.");
         return this.refusedBy('STS-ADMIN-0564', result);
       }
       log.debug("Leaving AdminActions.configAction(). set ok.");
+      const shown = this.maskedSettingFor(key);
       return { ok: true, key: key,
-               setting: config.describe(this.configSettingFor(key)),
-               message: key + ' is now "' + config.text(key) + '". It ' +
+               setting: shown,
+               message: key + ' is now "' + shown.text + '". It ' +
                         'applies to the next token, assertion, ticket or ' +
                         'search. ' + this.overrideDurability([key]) };
     }
@@ -10048,10 +10252,15 @@ class AdminActions {
       // rows submits the editable ones and nothing else — which is why an
       // absent key is silently skipped rather than treated as an attempt to
       // clear it.
-      const wanted = Object.keys(body).filter(function (name) {
+      const posted = Object.keys(body).filter(function (name) {
         return name !== 'action' && self.configKnows(name);
       });
-      if (!wanted.length) {
+      // A section's Save posts every field, its masked ones included (#1478).
+      const wanted = posted.filter(function (name) {
+        return !configDump.isEchoOfMask(
+          config.describe(self.configSettingFor(name)), body[name]);
+      });
+      if (!posted.length) {
         log.debug("Leaving AdminActions.configAction(). set-many named " +
                   "nothing.");
         return this.refused('STS-ADMIN-0565', { ok: false, errors: ['No ' +
@@ -10105,7 +10314,7 @@ class AdminActions {
           "changed.");
       return { ok: true, applied: wanted, changed: changed,
                settings: wanted.map(function (key) {
-                 return config.describe(self.configSettingFor(key));
+                 return self.maskedSettingFor(key);
                }),
                message: changed.length
                  ? changed.length + ' setting(s) changed: ' +
@@ -10123,11 +10332,12 @@ class AdminActions {
         return this.refusedBy('STS-ADMIN-0564', result);
       }
       log.debug("Leaving AdminActions.configAction(). reset ok.");
+      const shown = this.maskedSettingFor(key);
       return { ok: true, key: key,
-               setting: config.describe(this.configSettingFor(key)),
+               setting: shown,
                message: key + ' is back to its ' + config.sourceOf(key) + ' ' +
                    'value, "' +
-                        config.text(key) + '".' };
+                        shown.text + '".' };
     }
 
     if (action === 'reset-all') {
@@ -10150,6 +10360,19 @@ class AdminActions {
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
       'The four are: set, set-many, reset, reset-all.'] });
+  }
+
+  /**
+   * One setting as an operation's answer shows it, its secrets masked.
+   *
+   * @param key - the setting's name
+   * @returns the described setting
+   */
+  maskedSettingFor(key) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminActions.maskedSettingFor().");
+    log.debug("Leaving AdminActions.maskedSettingFor().");
+    return configDump.maskRow(config.describe(this.configSettingFor(key)));
   }
 
   // Whether this service has a setting of that name. Asked before `describe()`,
@@ -10586,6 +10809,130 @@ class AdminActions {
   }
 
   /**
+   * Answers the controls on `/admin/pki/trust` (#1360). Resolves rather than
+   * returning: admission verifies a self-signature with the engine, and a
+   * recheck walks revocation.
+   *
+   * @param body - `{ action, certificates, kind, purposes, fingerprint,
+   *   setting, value }`
+   * @param context - `{ actor, via }`
+   * @returns a promise of the answer
+   */
+  async pkiTrustAction(body, context) {
+    const { log, auditLog, config } = this.deps;
+    log.debug("Entering AdminActions.pkiTrustAction().");
+    const asked = body || {};
+    const action = String(asked.action || '');
+    const actor = String((context || {}).actor || '');
+    const via = String((context || {}).via || 'console');
+    if (PKI_TRUST_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.pkiTrustAction(). Unknown action.");
+      return this.refused('STS-ADMIN-0910', { ok: false, errors: [
+        'Unknown action "' + action + '". The four are: ' +
+        PKI_TRUST_ACTIONS.join(', ') + '.'] });
+    }
+    const trust = require('../common/certificate_trust');
+    const signers = require('../common/signer_truststore');
+    const realmId = realms.currentId();
+    const record = function (summary, detail) {
+      log.debug("Entering record().");
+      auditLog.audit({ action: 'admin.pki.trust.change', actor: actor,
+                       protocol: 'PKI', channel: 'http', target: realmId,
+                       summary: summary + ' through the ' + via,
+                       detail: Object.assign({ via: via }, detail) });
+      log.debug("Leaving record().");
+    };
+    if (action === 'add') {
+      const purposes = [].concat(asked.purposes || []).map(String);
+      const unknown = purposes.filter(function (one) {
+        return !trust.PURPOSES.some(function (row) {
+          return row.id === one;
+        });
+      });
+      if (unknown.length) {
+        log.debug("Leaving AdminActions.pkiTrustAction(). A bad use case.");
+        return this.refused('STS-ADMIN-0914', { ok: false, errors: [
+          'This service has no use case named ' + unknown.join(', ') + '.'] });
+      }
+      const raw = Array.isArray(asked.certificates)
+        ? asked.certificates.join('\n') : String(asked.certificates || '');
+      const result = await signers.add(realmId, raw, {
+        kind: asked.kind ? String(asked.kind) : '', purposes: purposes,
+        addedBy: actor });
+      const refusals = result.refused.map(function (one) {
+        return one.why;
+      });
+      if (!result.added.length && !result.duplicates) {
+        log.debug("Leaving AdminActions.pkiTrustAction(). add refused.");
+        return this.refused(errorCodes.codeOf(result) || 'STS-ADMIN-0911',
+                            { ok: false, errors: refusals });
+      }
+      if (result.added.length) {
+        record('The signer truststore was given ' + result.added.length +
+               ' certificate(s)', {
+          action: 'add',
+          fingerprints: result.added.map(function (one) {
+            return one.fingerprint256;
+          })
+        });
+      }
+      log.debug("Leaving AdminActions.pkiTrustAction(). added.");
+      return { ok: true, added: result.added, duplicates: result.duplicates,
+               refused: result.refused.map(function (one) {
+                 return { subject: one.subject, why: one.why };
+               }),
+               message: 'Added ' + result.added.length + ', ' +
+                 result.duplicates + ' already held' +
+                 (refusals.length ? '; refused: ' + refusals.join('; ') : '') +
+                 '.' };
+    }
+    if (action === 'remove') {
+      const gone = signers.remove(realmId, String(asked.fingerprint || ''));
+      if (!gone.removed) {
+        log.debug("Leaving AdminActions.pkiTrustAction(). remove refused.");
+        return this.refused('STS-ADMIN-0912',
+                            { ok: false, errors: [gone.why] });
+      }
+      record('A signer truststore entry was removed',
+             { action: 'remove', fingerprint: String(asked.fingerprint) });
+      log.debug("Leaving AdminActions.pkiTrustAction(). removed.");
+      return { ok: true, message: 'Removed.' };
+    }
+    if (action === 'recheck') {
+      const found = await trust.auditRealm(realmId);
+      log.debug("Leaving AdminActions.pkiTrustAction(). rechecked.");
+      return { ok: true, pins: found.pins, truststore: found.truststore,
+               changes: found.changes,
+               message: 'Rechecked ' + found.pins + ' pinned certificate(s) ' +
+                 'and ' + found.truststore + ' truststore entr' +
+                 (found.truststore === 1 ? 'y' : 'ies') + '; ' + found.changes +
+                 ' changed.' };
+    }
+    const setting = String(asked.setting || '');
+    if (setting !== 'pki.paranoid' && !trust.PURPOSES.some(function (row) {
+      return row.setting === setting;
+    })) {
+      log.debug("Leaving AdminActions.pkiTrustAction(). Not a paranoid row.");
+      return this.refused('STS-ADMIN-0913', { ok: false, errors: [
+        '"' + setting + '" is not a paranoid PKI setting.'] });
+    }
+    // THE ORDINARY WRITE: its checks, its persistence, and the write rule that
+    // logs a check turned off in product.
+    const written = config.setOverride(setting, asked.value);
+    if (!written.ok) {
+      log.debug("Leaving AdminActions.pkiTrustAction(). The write refused.");
+      return this.refusedBy('STS-ADMIN-0914', written);
+    }
+    record('The setting ' + setting + ' was changed',
+           { action: 'set-row', setting: setting,
+             value: String(asked.value) });
+    log.debug("Leaving AdminActions.pkiTrustAction(). set-row.");
+    return { ok: true, setting: setting,
+             message: setting + ' was changed.' +
+               this.overrideDurability([setting]) };
+  }
+
+  /**
    * Adds an anchor to the client-certificate truststore, or removes one; an add
    * is persisted where a store is installed, and the result says which.
    *
@@ -10911,13 +11258,18 @@ class AdminActions {
    * Bans, unbans or deletes an attested agent, or mints a join token.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - `{ via, actor }`: who asked, for the audit row (#695:
+   *   all four acts were recorded with an empty actor, and a join token
+   *   with the gRPC door's protocol and channel)
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeAgentsAction(body) {
+  spiffeAgentsAction(body, context?) {
     const { log, spiffeRegistry } = this.deps;
     log.debug("Entering AdminActions.spiffeAgentsAction(). action=" +
               (body.action || '(none)'));
+    const ctx = context || {};
+    const actor = String(ctx.actor || '');
     const action = String(body.action || '');
     const id = String(body.agent || '').trim();
     if (SPIFFE_AGENT_ID_ACTIONS.indexOf(action) >= 0 && !id) {
@@ -10928,7 +11280,8 @@ class AdminActions {
                                         'is under /spire/agent/.'] });
     }
     if (action === 'ban' || action === 'unban') {
-      const result = spiffeRegistry.setAgentBanned(id, action === 'ban', '');
+      const result = spiffeRegistry.setAgentBanned(id, action === 'ban',
+                                                  actor);
       log.debug("Leaving AdminActions.spiffeAgentsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
       if (!result.ok) {
@@ -10944,7 +11297,7 @@ class AdminActions {
                  : 'That agent may attest again.' };
     }
     if (action === 'delete') {
-      const result = spiffeRegistry.deleteAgent(id, '');
+      const result = spiffeRegistry.deleteAgent(id, actor);
       log.debug("Leaving AdminActions.spiffeAgentsAction(). delete " +
                 (result.ok ? 'ok' : 'refused') + ".");
       if (!result.ok) {
@@ -10968,11 +11321,19 @@ class AdminActions {
       const blank = rawTtl === undefined || rawTtl === null ||
                     String(rawTtl).trim() === '';
       const ttl = blank ? 0 : Number(rawTtl);
-      if (!blank && !(Number.isFinite(ttl) && ttl > 0)) {
+      // The upper bound keeps now + ttl inside the range a Date can hold
+      // (ECMAScript dates run to 8.64e12 seconds past the epoch), so the ISO
+      // expiry built below cannot throw RangeError on a fuzzed ttl such as
+      // 1e308. It is the representable limit, not a policy ceiling, and it is
+      // measured from now: 8.64e12 alone still overflowed once added to it.
+      const latestTtl = 8640000000000 - Math.ceil(Date.now() / 1000);
+      if (!blank && !(Number.isSafeInteger(ttl) && ttl > 0 &&
+                      ttl <= latestTtl)) {
         log.debug("Leaving AdminActions.spiffeAgentsAction(). Bad ttl.");
         return this.refused('STS-ADMIN-0858', { ok: false,
-          errors: ['ttl must be a positive number of seconds. Omit it to ' +
-                   'use spiffe.joinTokenTtl.'] });
+          errors: ['ttl must be a whole positive number of seconds within ' +
+                   'the representable range. Omit it to use ' +
+                   'spiffe.joinTokenTtl.'] });
       }
       // Loaded here, at request time. This module is built at step 18 and
       // the SPIFFE family at step 23; a require at the top of the file
@@ -10980,7 +11341,10 @@ class AdminActions {
       const spiffeApi = require('../spiffe/spiffe_api');
       const minted = spiffeApi.issueJoinToken({
         ttl: ttl,
-        agentId: String(body.agentId || '').trim()
+        agentId: String(body.agentId || '').trim(),
+        actor: actor,
+        protocol: 'SPIFFE',
+        channel: ctx.via === 'api' ? 'api' : 'console'
       });
       if (!minted.ok) {
         log.debug("Leaving AdminActions.spiffeAgentsAction(). Join token " +
@@ -11114,6 +11478,57 @@ class AdminActions {
     const id = String(body.id || body.relationship || '').trim();
     const context = ctx || { via: 'console', actor: '', base: '' };
 
+    // AN OPENID CONNECT PARTNER CHECKED (#930): its discovery document and
+    // key set dialled and reported, nothing written. Required lazily, for
+    // the reason the signals module is: it is loaded at 10c, long before
+    // this, and requiring it here is a cache hit that moves no route.
+    if (action === 'check-partner') {
+      const record = federation.get(id);
+      if (!record) {
+        log.debug("Leaving AdminActions.federationAction(). No such " +
+                  "relationship to check.");
+        return this.refusedBy('STS-ADMIN-0575', {
+          ok: false, errors: ['There is no relationship called "' + id +
+                              '".'] });
+      }
+      const checked = await require('../federation/federation_sp')
+        .checkPartner(record);
+      log.debug("Leaving AdminActions.federationAction(). check-partner " +
+                (checked.ok ? 'ok' : 'refused') + ".");
+      if (!checked.ok) {
+        return this.refusedBy(checked.errorCode || 'STS-FED-0209', {
+          ok: false, errors: [String(checked.why || 'the check failed')] });
+      }
+      // `errorCode` is `checkPartner()`'s to this layer and never sent (#1355).
+      const answer = Object.assign({ ok: true, errors: [] }, checked);
+      delete answer.errorCode;
+      return answer;
+    }
+
+    // THE PARTNER REGISTERED AGAIN (#930): an OpenID Connect relationship
+    // with fedDiscovery and fedRegister on registers itself at the partner
+    // now, whatever client it holds.
+    if (action === 'register-partner') {
+      const record = federation.get(id);
+      if (!record) {
+        log.debug("Leaving AdminActions.federationAction(). No such " +
+                  "relationship to register.");
+        return this.refusedBy('STS-ADMIN-0575', {
+          ok: false, errors: ['There is no relationship called "' + id +
+                              '".'] });
+      }
+      const done = await require('../federation/federation_sp')
+        .registerPartner(String(context.base || ''), record);
+      log.debug("Leaving AdminActions.federationAction(). register-partner " +
+                (done.ok ? 'ok' : 'refused') + ".");
+      if (!done.ok) {
+        return this.refusedBy(done.errorCode || 'STS-FED-0212', {
+          ok: false, errors: [String(done.why || 'the registration failed')] });
+      }
+      return { ok: true, errors: [], clientId: done.clientId,
+               issuer: done.issuer };
+    }
+
     if (action.indexOf('signals-') === 0) {
       const result = await loadSignals().act(body, context);
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +
@@ -11207,7 +11622,8 @@ class AdminActions {
       const result = federation.update(id, {
         field: String(body.field || ''),
         value: String(body.value == null ? '' : body.value),
-        mode: action === 'remove-value' ? 'remove' : 'add'
+        mode: action === 'remove-value' ? 'remove' : 'add',
+        valueOfList: action !== 'set'
       });
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -11273,8 +11689,11 @@ class AdminActions {
     // THE LIST IS BUILT, NOT WRITTEN: the Shared Signals acts are the
     // transmitter module's own table (#373), and the parity check reads this
     // sentence's count against what it names.
+    // `check-partner` and `register-partner` (#930) are answered above
+    // and were missing here, which hid them from the parity check.
     const known = ['create', 'set', 'add-value', 'remove-value', 'enable',
-      'disable', 'rotate-key', 'delete']
+      'disable', 'rotate-key', 'check-partner', 'register-partner',
+      'delete']
         .concat(loadSignals().ACTIONS || []);
     return this.refused('STS-ADMIN-0500', { ok: false,
              errors: ['Unknown action "' + action + '". The ' +
@@ -11861,6 +12280,8 @@ export = {
   setTruststore: slot.forward('setTruststore'),
   TRUSTSTORE_ACTIONS: TRUSTSTORE_ACTIONS,
   truststoreAction: slot.forward('truststoreAction'),
+  pkiTrustAction: slot.forward('pkiTrustAction'),
+  PKI_TRUST_ACTIONS: PKI_TRUST_ACTIONS,
   KERBEROS_PRINCIPAL_ACTIONS: KERBEROS_PRINCIPAL_ACTIONS,
   kerberosPrincipalsAction: slot.forward('kerberosPrincipalsAction'),
   KERBEROS_TRUST_ACTIONS: KERBEROS_TRUST_ACTIONS,

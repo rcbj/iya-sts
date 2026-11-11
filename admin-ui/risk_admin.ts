@@ -358,7 +358,15 @@ class RiskAdmin {
       redistribution: registry.redistribution,
       lookup: lookup,
       authenticatorLookup: authenticatorLookup,
-      assessments: assessed.assessments,
+      // The page draws the decision and not the code it was refused under,
+      // which stays on the stored assessment and the audit row (#1355).
+      assessments: Object.assign({}, assessed.assessments, {
+        rows: assessed.assessments.rows.map(function (row: Json): Json {
+          const shown = Object.assign({}, row);
+          delete shown.errorCode;
+          return shown;
+        })
+      }),
       assessmentsPaging: adminViews.pagingJson(assessmentsPaging),
       subjects: assessed.subjects,
       subjectsPaging: adminViews.pagingJson(subjectsPaging),
@@ -426,6 +434,23 @@ class RiskAdmin {
     const realm = String(b.realm || '').trim();
     if (!dataset) {
       return refuse('Name the dataset.');
+    }
+    // An import is checked by the datasets module's own admission. The
+    // other four went to the store with whatever they were given, and the
+    // fuzz run on d96b74093 sent a realm holding a NUL: PostgreSQL refused
+    // the query and the action was answered 500. A dataset nobody declared
+    // or a realm that does not exist is a refusal here, before the store is
+    // asked, and the value is not repeated back.
+    if (action !== 'import') {
+      if (!Object.prototype.hasOwnProperty.call(datasets.CATALOGUE,
+                                                dataset)) {
+        return refuse('There is no dataset by that name. The ' +
+                      Object.keys(datasets.CATALOGUE).length + ' are: ' +
+                      Object.keys(datasets.CATALOGUE).join(', ') + '.');
+      }
+      if (realm && realm !== 'default' && !this.deps.realms.get(realm)) {
+        return refuse('There is no realm by that name.');
+      }
     }
     let result: Json;
     if (action === 'import') {

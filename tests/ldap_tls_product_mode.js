@@ -123,7 +123,8 @@ function has(report, dn) {
 function productDirectoryHoldsNoDemoData(t) {
   log.debug("Entering productDirectoryHoldsNoDemoData().");
   t.log.info('=== a product directory: containers, and no invented people ===');
-  const run = inAChild({ STS_MODE: 'product' }, DIRECTORY +
+  const run = inAChild({ STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true' },
+                       DIRECTORY +
     'return { entries: out };');
   t.check(run.report && run.report.entries, 'a product-mode directory builds',
           'exit ' + run.status + ' ' + run.output.slice(-300));
@@ -217,7 +218,7 @@ function productInventsNothingAndAuditsTruthfully(t) {
   // every person in product mode, and invents none of them: the create
   // SUPPLIES the three, and what is checked is that nothing else was made
   // up (no displayName) and that what was supplied is what was stored.
-  const run = inAChild({ STS_MODE: 'product' },
+  const run = inAChild({ STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true' },
     'const d = require(R + "/ldap/ldap_server.js");const credentials = ' +
     'require(R + "/common/credentials");const audit = require(R + ' +
     '"/common/audit.js");const made = d.createUser("probe-person", { origin: ' +
@@ -354,7 +355,7 @@ function listenersHonourTheBindAddress(t) {
           'and the directory still counts as ' +
           'started', JSON.stringify(o) + off.output.slice(-300));
 
-  const warned = inAChild({ STS_MODE: 'product', LDAP_PORT: '0',
+  const warned = inAChild({ STS_MODE: 'product', LDAP_PLAIN_LISTENER: 'true', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', LDAP_PORT: '0',
                             LDAPS_PORT: '0',
                             STS_HOST: '127.0.0.1', LOG_LEVEL: 'warn' },
     'const ldap = require(R + "/ldap/ldap_server.js");' +

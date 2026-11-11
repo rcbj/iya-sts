@@ -1453,6 +1453,21 @@ const SPECS: Spec[] = [
               'an application (#1046), or where it is from an outside ' +
               'certificate authority and stored in userCertificate on ' +
               'exactly one of their entries (#1061).' },
+  { id: 'wss-kerberos', name: 'WS-Security Kerberos Token Profile 1.1',
+    where: 'OASIS wss',
+    url: 'https://docs.oasis-open.org/wss-m/wss/v1.1.1/os/wss-KerberosTokenProfile-v1.1.1-os.html',
+    coverage: 'partial: all six AP-REQ ValueTypes are accepted at /sts (as ' +
+              'the requester\'s credential, and inside OnBehalfOf or ActAs ' +
+              'when the ticket was obtained by S4U2Proxy or with a ' +
+              'forwarded TGT) and as RFC 8693 token types, for this ' +
+              'service\'s own SPN only, checked by the acceptor in both ' +
+              'modes; a signature with the token\'s session key is a ' +
+              'credential; and with wstrust.issueKerberos (off by default) ' +
+              'a wst:TokenType asking for one is answered with a ticket this ' +
+              'realm\'s KDC issued, the subkey as the proof token. Not ' +
+              'done: a key derived from the session key (a DerivedKeyToken) ' +
+              'and an encryption with it; a target realm whose KDC is not a ' +
+              'trust realm of this service.' },
   { id: 'wss-username', name: 'WS-Security UsernameToken Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss/v1.1/wss-v1.1-spec-os-UsernameTokenProfile.pdf',
@@ -1711,9 +1726,13 @@ const SPECS: Spec[] = [
               'client registered here as confidential must present the ' +
               'client_secret this service issued it (section 2.5, the one ' +
               'credential checked anywhere in this service). That mode also ' +
-              'refuses the password and implicit grants outright and rotates ' +
-              'refresh tokens. Section 3.3: a scope is tied to the client ' +
-              '(#110) — this service\'s own protected scopes (admin:*, the ' +
+              'refuses the password grant outright, refuses the implicit ' +
+              'grant\'s access token — every response type issuing one from ' +
+              'the authorization endpoint — unless an administrator waives ' +
+              'RFC 9700 section 2.1.2 for the realm, and then honours it ' +
+              'only for an application that has the type enabled (#1295, ' +
+              '#1296), and rotates refresh tokens. Section 3.3: a scope is ' +
+              'tied to the client (#110) — this service\'s own protected scopes (admin:*, the ' +
               'SCIM and Shared Signals scopes, the debugger permission) are ' +
               'issued only to a client whose oauthAllowedScope declares ' +
               'them, in every mode, and in product mode every scope is held ' +
@@ -2640,10 +2659,12 @@ const SPECS: Spec[] = [
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-enterprise-extensions-1_0.html',
     coverage: 'full (#148), in every mode. Section 2: session_expiry (the ' +
-              'session\'s absolute end, whenever a token is issued on a ' +
-              'session), tenant (the trust realm\'s id) and aud_sub (an ' +
+              'session\'s absolute end, when a token is issued on a ' +
+              'session) and tenant (the trust realm\'s id) in an ID Token ' +
+              'whose claims request names them, or in every one with ' +
+              'oauth2.enterpriseClaimsAlways (#1292), and aud_sub (an ' +
               'account id an administrator records per person per client, ' +
-              'console and /admin-api) in the ID Token and ' +
+              'console and /admin-api) in the ID Token; all three in ' +
               'claims_supported. Section 3: tenant refused as ' +
               'invalid_request when it names another realm; domain_hint ' +
               'sends the person to the federation relationship whose ' +
@@ -2998,9 +3019,12 @@ const SPECS: Spec[] = [
               'request that names neither, require_auth_time (auth_time is ' +
               'carried whenever known), jwks_uri fetched, and ' +
               'initiate_login_uri launched from the user portal with iss ' +
-              'and login_hint (Core section 4). Not covered: policy_uri and ' +
-              'tos_uri are stored and returned but not drawn on the consent ' +
-              'screen.' },
+              'and login_hint (Core section 4); and (#1300) logo_uri, ' +
+              'policy_uri and tos_uri kept and shown on the sign-in and ' +
+              'consent screens, the logo loaded by the person\'s browser and ' +
+              'never fetched by this service. Not covered: a language-tagged ' +
+              'logo_uri, policy_uri or tos_uri (section 2.1) is kept as sent ' +
+              'and not drawn.' },
   { id: 'oidc-logout', name: 'OpenID Connect RP-Initiated Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
@@ -3042,9 +3066,13 @@ const SPECS: Spec[] = [
     coverage: 'partial: Authorization Requests by value and as a signed ' +
               'Request Object by reference, response_mode=direct_post, a ' +
               'DCQL query (credential_sets included), and full verification ' +
-              'of what comes back in all three formats — a Key Binding JWT, ' +
+              'of what comes back in all four formats — a Key Binding JWT, ' +
               'a VP JWT with nonce, aud and iat, a VerifiablePresentation ' +
-              'with a Data Integrity proof (B.1.3.2.5) — and each ' +
+              'with a Data Integrity proof (B.1.3.2.5), and since #935 an ' +
+              'ISO mdoc (B.2: the document signer chained to ' +
+              'oid4vp.mdocTrustAnchors, the MSO, each element\'s digest, ' +
+              'the device signature over the B.2.6.1 session transcript; ' +
+              'deviceMac refused) — and each ' +
               'credential\'s status, which every presented credential must ' +
               'name (oid4vp.requireStatusReference, all by default; an ' +
               'ldp_vc query asks for credentialStatus and one that ' +
@@ -3058,7 +3086,8 @@ const SPECS: Spec[] = [
               'in any of the three formats, and only as the directory entry ' +
               'it was issued for; anything else verifies and signs nobody ' +
               'in. No presentation_definition (DIF PE) — DCQL only; no ' +
-              'unsigned or multi-signed DC API request; no mso_mdoc; no ' +
+              'unsigned or multi-signed DC API request; no mdoc through ' +
+              'the DC API or for a sign-in; no ' +
               'wallet attestation; no transaction_data. SINCE #129 a signed ' +
               'request names its Client Identifier by the prefix ' +
               'oid4vp.clientIdPrefix chooses (section 5.9): pre-registered, ' +
@@ -3292,8 +3321,11 @@ const SPECS: Spec[] = [
               'every GNAP jwt-signed and jwt-encrypted token carrying its ' +
               'status claim, advertised as status_list_aggregation_endpoint ' +
               '(section 9.1) in the authorization server metadata. No ' +
-              'historical resolution (501), no redirects followed, no mdoc ' +
-              '(none is issued).' },
+              'historical resolution (501), no redirects followed. No mdoc is ' +
+              'issued; the Verifier resolves the CWT list a presented ' +
+              'mdoc\'s Mobile Security Object names, signed by a certificate ' +
+              'in its x5chain that chains to oid4vp.mdocTrustAnchors ' +
+              '(#935).' },
   { id: 'etsi-ts-119-602',
     name: 'ETSI TS 119 602 V1.1.1, Lists of trusted entities (LoTE)',
     where: 'ETSI',
@@ -3337,11 +3369,16 @@ const SPECS: Spec[] = [
   { id: 'did-core', name: 'W3C DID Core 1.0 (did:web, did:key, did:jwk)',
     where: 'W3C', url: 'https://www.w3.org/TR/did-1.0/',
     coverage: 'partial: this service PUBLISHES a did:web document with two ' +
-              'verification methods, and resolves and dereferences (section ' +
-              '7) did:key, did:jwk and its own did:web in both JSON ' +
-              'representations at the W3C VC API (#199), held to ' +
-              'the W3C DID test suite. No other did:web is fetched; no DID ' +
-              'parameters (service, versionId, …) are supported.' },
+              'verification methods, a did:web per application, and a ' +
+              'did:web per person at a random address with every version ' +
+              'of its keys kept (#1291); it resolves and dereferences ' +
+              '(section 7) did:key, did:jwk and its own did:web in both JSON ' +
+              'representations at the W3C VC API (#199), held to the W3C DID ' +
+              'test suite, and answers the versionId and versionTime DID ' +
+              'parameters, with didDocumentMetadata (created, updated, ' +
+              'versionId, nextVersionId, deactivated), for a person\'s ' +
+              'published DID. No other did:web is fetched; no other DID ' +
+              'parameter (service, relativeRef, hl) is supported.' },
   { id: 'did-config', name: 'DIF Well Known DID Configuration',
     where: 'DIF',
     url: 'https://identity.foundation/well-known-did-configuration/resources/did-configuration/',
@@ -4623,8 +4660,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'each member id into its DN and puts it in member, and clears ' +
           'the other two so that a client which removed everybody does not ' +
           'find the group still populated. A member naming nothing is ' +
-          'ACCEPTED and logged: a dangling member is a state worth being ' +
-          'able to produce.' },
+          'REFUSED (400 invalidValue): a group lists only what is there, ' +
+          'and a delete takes an entry out of every group.' },
   { path: '/scim/v2/.search', group: 'SCIM', name: 'Search across both ' +
                                                    'resource types',
     specs: ['rfc7644'],
@@ -4805,6 +4842,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'console\'s gate — the same argument every discovery document here ' +
           'rests on.' },
 
+  { path: '/favicon.ico', group: 'Service', name: 'The service\'s icon',
+    specs: [],
+    what: 'NON-SPEC. The icon a browser asks for by itself on every page: ' +
+          'the square mark of the logo (common/favicon.ico). Answered on ' +
+          'every listener; kept for a day.' },
   { path: '/web/card.css', group: 'Service',
     name: 'The public surfaces\' card stylesheet', specs: [],
     what: 'NON-SPEC (#570). The sign-in screen\'s card and the language ' +
@@ -4812,6 +4854,36 @@ const ENDPOINTS: EndpointEntry[] = [
           'shell links (common/web_card_css.ts). Answered on every ' +
           'listener; an address carrying this build\'s ?v= is cached for ' +
           'good.' },
+  { path: '/web/theme.css', group: 'Service',
+    name: 'A realm\'s sign-in appearance stylesheet', specs: [],
+    what: 'NON-SPEC (#717). The realm\'s sign-in colours as the CSS custom ' +
+          'properties /web/card.css reads (common/branding.ts): the four ' +
+          'branding.* colours and the tones derived from them, built only ' +
+          'from validated values. A shell links it after the card only ' +
+          'where the realm\'s appearance differs from the service\'s; an ' +
+          'address carrying its digest as ?v= is cached for good.' },
+  { path: '/web/branding/logo', group: 'Service',
+    name: 'A realm\'s sign-in logo', specs: [],
+    what: 'NON-SPEC (#717). The PNG, JPEG or WebP logo uploaded for this ' +
+          'realm through /admin-api/branding/logo, served from this origin ' +
+          'so the sign-in pages\' img-src \'self\' admits it and no third ' +
+          'party learns who is signing in; nosniff, sandboxed, an ETag of ' +
+          'its digest. 404 where the realm has none.' },
+  { path: '/web/photo/:id', group: 'Service',
+    name: 'A person\'s profile photo', specs: [],
+    what: 'NON-SPEC in itself (#719), and what OpenID Connect Core 5.1\'s ' +
+          'picture claim names for a person with a photo here. The JPEG or ' +
+          'PNG they set on the portal or a federation partner\'s copy, at a ' +
+          'random address that changes with the photo; no credential, ' +
+          'because a relying party fetches it with none. nosniff, sandboxed, ' +
+          'an ETag. 404 for a disabled or deleted person.' },
+  { path: '/web/branding/preview', group: 'Service',
+    name: 'A sign-in appearance preview', specs: [],
+    what: 'NON-SPEC (#717). A sample of this realm\'s sign-in card drawn ' +
+          'with pending colours and a layout (accent, page, card, text, ' +
+          'layout in the query, each checked as the settings would be), ' +
+          'for the console to open in a new tab before saving. Nothing on ' +
+          'it signs anybody in.' },
   { path: '/web/locales/catalogs.json', group: 'Service',
     name: 'The locale catalog index', specs: ['bcp47'],
     what: 'NON-SPEC (#570). Which catalogs exist (tag, endonym, status, the ' +
@@ -5084,6 +5156,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'in the realm for a report administrator, only the signals about ' +
           'themselves for anybody else. Behind the same token as the rest ' +
           'of /report-api.' },
+  { path: '/report-api/me', group: 'Reporting',
+    name: 'What the reports application\'s user menu draws', specs: [],
+    what: 'NON-SPEC (#719). The path of the signed-in person\'s own profile ' +
+          'photo on this realm, empty where they have none. Behind the same ' +
+          'token as the rest of /report-api.' },
   { path: '/report-api/announcements', group: 'Reporting',
     name: 'Announcements for the reports application', specs: ['ssf'],
     what: 'NON-SPEC (#1086). What an open reports tab collects every ' +
@@ -5457,26 +5534,47 @@ const ENDPOINTS: EndpointEntry[] = [
           'at all are different answers and one field could only carry one ' +
           'of them. `residency` is the other limit: in development mode the ' +
           'hierarchy dies with the process. Mirrors GET /admin/pki.' },
+  { path: '/admin-api/pki/trust', group: 'Management API',
+    name: 'Paranoid PKI mode, the signer truststore and what is pinned',
+    specs: ['rfc5280', 'openapi'],
+    what: 'GET /admin/pki/trust over JSON (#1360): the master and every use ' +
+          'case\'s row with what it adds and what its specification exempts, ' +
+          'this realm\'s signer truststore, what the realm has pinned as the ' +
+          'daily audit last found it (paged with ?pinsPage=), and the ' +
+          'refusals the validation door has made in this process.' },
+  { path: '/admin-api/pki/trust/:action', group: 'Management API',
+    name: 'Change the signer truststore, a paranoid row, or recheck the pins',
+    specs: ['rfc5280', 'openapi'],
+    what: 'add | remove | recheck | set-row — the controls on ' +
+          '/admin/pki/trust. add takes `certificates` (one or more PEM ' +
+          'blocks, each through the admission rule and each refusal named), ' +
+          'with `purposes` to restrict them; remove takes one `fingerprint`; ' +
+          'recheck runs the audit now; set-row takes a `pki.paranoid*` ' +
+          '`setting` and its `value`, through the ordinary settings write. ' +
+          'Needs admin:write. Written to ou=signerTrustAnchors, so a change ' +
+          'survives a restart.' },
   { path: '/admin-api/pki/:action', group: 'Management API',
     name: 'Build a hierarchy, issue a key pair, author a certificate',
     specs: ['rfc5280'],
     what: 'NON-SPEC. The TWELVE actions behind two console pages — build, ' +
           'clear, issue, revoke on /admin/pki, and apply-profile, ' +
           'generate-keys, generate-alt-keys, issue-certificate, use-key, ' +
-          'remove-object, clear-store, export on the Certificate & Key ' +
-          'Configuration pane — through the same pkiAction() those pages ' +
+          'remove-object, clear-store, export on the Certificate Workbench — ' +
+          'through the same pkiAction() those pages ' +
           'call. **IT RESOLVES RATHER THAN RETURNING**: issuing is Web ' +
           'Crypto all the way down, so this is one of the two action ' +
           'handlers in this API that await (/admin-api/ssf is the other). ' +
           '`issue` HANDS THE PRIVATE KEY OVER ONCE and this service keeps no ' +
           'second copy of it; `export` returns key material base64\'d, like ' +
-          '/admin-api/keys/export and for its reason. **`revoke` REVOKES ' +
-          'NOTHING**: it takes the key pair off the application, so this ' +
-          'service stops ACCEPTING what that key signs, and the certificate ' +
-          'goes on chaining — the reply says so in those words. `issue` and ' +
-          '`revoke` take a `target` of application (the default) or person — ' +
-          'a person\'s key pair goes onto their ou=users entry as ' +
-          'stsAssertion* and may only assert about themselves. Mirrors POST ' +
+          '/admin-api/keys/export and for its reason. **For an application ' +
+          '`revoke` REVOKES NOTHING**: it takes the key pair off the ' +
+          'application, so this service stops ACCEPTING what that key signs, ' +
+          'and the certificate goes on chaining — the reply says so in those ' +
+          'words. `issue` and `revoke` take a `target` of application (the ' +
+          'default) or person — a person holds several key pairs on their ' +
+          'ou=users entry as stsAssertion*, each may only assert about ' +
+          'themselves, and `revoke` with a `handle` puts ONE of them on its ' +
+          'authority\'s CRL (#1290). Mirrors POST ' +
           '/admin/pki, POST /admin/pki/certificate and POST ' +
           '/admin/pki/person.' },
   { path: '/admin-api/certificates', group: 'Management API',
@@ -6114,6 +6212,15 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin-api/users/remove-self-issued-subject takes one away. ' +
           'Mirrors the Self-issued IDs block on the person\'s /admin/users ' +
           'page.' },
+  { path: '/admin-api/users/published-dids', group: 'Management API',
+    name: 'One person\'s published DIDs', specs: ['did-core'],
+    what: 'NON-SPEC (#1291). Each did:web this realm publishes for a ' +
+          'person: its random id, the DID, its document\'s address, who ' +
+          'holds its key (wallet, realm or download), its state, and every ' +
+          'version with its keys and what authorized it, never a private ' +
+          'key. POST /admin-api/users/deactivate-published-did deactivates ' +
+          'one; an administrator never creates or changes one. Mirrors the ' +
+          'Published DIDs block on the person\'s /admin/users page.' },
   { path: '/admin-api/users/verifications', group: 'Management API',
     name: 'One person\'s identity verifications', specs: ['oidc-ida'],
     what: 'NON-SPEC (#127). The identity verifications recorded for a ' +
@@ -6393,12 +6500,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'everything on these entries was written by this service when an ' +
           'agent attested, and none of it was verified.' },
   { path: '/admin-api/spiffe/agents/:action', group: 'Management API',
-    name: 'Ban, unban or forget an agent',
+    name: 'Ban, unban or forget an agent, or mint a join token',
     specs: ['openapi', 'spire-server-api'],
-    what: 'ban, unban and delete. The ban is ENFORCED at AttestAgent, which ' +
-          'is what keeps it from being a lie; delete is forgetting rather ' +
-          'than revoking, since the agent reappears the moment it attests ' +
-          'again.' },
+    what: 'ban, unban, delete and join-token. The ban is ENFORCED at ' +
+          'AttestAgent, which is what keeps it from being a lie; delete is ' +
+          'forgetting rather than revoking, since the agent reappears the ' +
+          'moment it attests again. join-token mints a join token for a ' +
+          'sidecar agent (#324), answered once, its alias `agentId`.' },
   { path: '/admin-api/spiffe/brokers', group: 'Management API',
     name: 'The SPIFFE Broker API\'s brokers',
     specs: ['openapi', 'spiffe-broker-api'],
@@ -6794,6 +6902,29 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#641). add, update, remove, enable, disable and ' +
           'test: the console\'s six acts, each audited. A token is taken ' +
           'and never returned. The test event is not an audit row.' },
+  { path: '/admin-api/branding', group: 'Management API',
+    name: 'Sign-in appearance', specs: ['openapi'],
+    what: 'NON-SPEC (#717). What Server configuration → Sign-in ' +
+          'appearance draws, in the realm asked: the layout, the four ' +
+          'colours and the tones derived from them, their contrast against ' +
+          'WCAG 2.2 AA, the display name, the stored logo without its ' +
+          'bytes, and the page\'s settings.' },
+  { path: '/admin-api/branding/logo', group: 'Management API',
+    name: 'Upload the sign-in logo', specs: ['openapi'],
+    what: 'NON-SPEC (#717). The body is the image: a PNG, a JPEG or a ' +
+          'WebP, which its bytes decide, at most branding.logoMaxBytes. ' +
+          'It replaces the realm\'s logo and is audited with its digest.' },
+  { path: '/admin-api/branding/:action', group: 'Management API',
+    name: 'Change the sign-in appearance', specs: ['openapi'],
+    what: 'NON-SPEC (#717). save writes the realm\'s branding settings ' +
+          'together, refusing text or links below 4.5:1 against the card; ' +
+          'remove-logo removes the logo and is audited.' },
+  { path: '/admin-api/audit/integrity', group: 'Management API',
+    name: 'Check the audit log\'s integrity',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#1552). Compares each held audit row with its ' +
+          'keyed checksum and reports any that no longer match. It ' +
+          'changes nothing.' },
   { path: '/admin-api/audit', group: 'Management API', name: 'Audit log',
     specs: ['rfc4511'],
     what: 'NON-SPEC. What happened here, in order, as JSON: every ' +
@@ -6855,6 +6986,17 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
           'answered by that cell only where its release policy permits.' },
+  { path: '/admin-api/malware-scanning', group: 'Management API',
+    name: 'Malware scanning',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#1501). GET /admin/malware-scanning over JSON: ' +
+          'whether uploaded files are scanned and the ICAP service that ' +
+          'scans them. It changes nothing.' },
+  { path: '/admin-api/malware-scanning/:action', group: 'Management API',
+    name: 'Test the malware scanner',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#1501). Sends the configured ICAP service the EICAR ' +
+          'test file and succeeds only if the service flags it.' },
   { path: '/admin-api/listeners', group: 'Management API',
     name: 'Listeners',
     specs: ['openapi'],
@@ -6883,6 +7025,12 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. Every setting, its effective value, and the source of ' +
           'that value — override, environment variable, the appconfig file ' +
           'or env/defaults.js under it. Mirrors GET /admin/config.' },
+  { path: '/admin-api/config-dump', group: 'Management API',
+    name: 'Configuration dump',
+    specs: [],
+    what: 'NON-SPEC. Every configuration parameter, global and per realm, ' +
+          'with every sensitive value masked. Mirrors GET ' +
+          '/admin/config-dump.' },
   { path: '/admin-api/config/:action', group: 'Management API',
     name: 'Configuration actions',
     specs: [],
@@ -7496,7 +7644,7 @@ const ENDPOINTS: EndpointEntry[] = [
 
   // --- WS-Trust ---
   { path: '/sts', group: 'WS-Trust', name: 'Security Token Service',
-    specs: ['ws-trust', 'wss-username', 'saml2', 'xmldsig'],
+    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'saml2', 'xmldsig'],
     what: 'POST a SOAP RequestSecurityToken; dispatches on wst:RequestType ' +
           '(Issue, Renew, Validate, Cancel) and returns an RSTR. GET ' +
           'describes the endpoint. Add ?encrypt=1 to have the issued ' +
@@ -7909,6 +8057,53 @@ const ENDPOINTS: EndpointEntry[] = [
           'this service that refuse for a configuration reason. PKCE is ' +
           'always sent on the two OAuth-shaped protocols and there is no ' +
           'setting to stop it.' },
+  { path: '/federation/initiate-login/:id', group: 'Federation',
+    name: 'A sign-in the partner starts (initiate_login_uri)',
+    specs: ['oidc'],
+    effect: 'sends the browser to the partner OpenID Provider with an ' +
+            'ordinary authorization request, as /federation/login/{id} does',
+    what: 'OpenID Connect Core 1.0 section 4 (#930): the login initiation ' +
+          'endpoint an OpenID Connect relationship registers at its partner ' +
+          'as initiate_login_uri, GET or POST. REFUSED (403) unless the ' +
+          'relationship sets fedInitiateLogin, because any page can send a ' +
+          'browser here; `iss` is REQUIRED and must be the relationship\'s ' +
+          'fedPeer (400 otherwise); `login_hint` is passed on to the ' +
+          'partner; `target_link_uri` is followed only to a path on this ' +
+          'service and dropped otherwise, so the endpoint is no open ' +
+          'redirector.' },
+  { path: '/federation/request/:id/:handle', group: 'Federation',
+    name: 'A Request Object by reference',
+    specs: ['oidc', 'rfc9101'],
+    what: 'OpenID Connect Core 1.0 section 6.2 (#930): the Request Object ' +
+          'an authorization request names in request_uri, for a ' +
+          'relationship with fedRequestObject request_uri — ' +
+          'application/oauth-authz-req+jwt, signed under ' +
+          'fedRequestObjectSigningAlg with this realm\'s key (or unsigned, ' +
+          'none). Answered ONCE: the handle is spent by the partner\'s ' +
+          'fetch, and an address that names nothing is a 404.' },
+  { path: '/federation/webfinger/:id', group: 'Federation',
+    name: 'Find a person\'s OpenID Provider by WebFinger',
+    specs: ['oidc-discovery', 'rfc7033'],
+    effect: 'dials the host the typed identifier names — the one ' +
+            'federation request whose host a caller chooses',
+    what: 'OpenID Connect Discovery 1.0 section 2 (#930), for a ' +
+          'relationship with fedWebFinger and fedDiscovery on: a form for ' +
+          'an identifier (acct:user@host or a URL), and its answer — ' +
+          'WebFinger at that host under the outbound policy (no internal ' +
+          'address in product mode, no redirect, the cap), an issuer that ' +
+          'must begin with fedPeer, its discovery document, and a link the ' +
+          'person must follow to sign in there. Off, 403.' },
+  { path: '/federation/fragment.js', group: 'Federation',
+    name: 'The assertion consumer service\'s fragment script',
+    specs: ['oidc', 'oauth-multiple-response-types'],
+    what: 'NON-SPEC resource of a spec endpoint (#930): the one script the ' +
+          'assertion consumer service\'s page runs when an OpenID Connect ' +
+          'relationship chose fedResponseMode=fragment. A fragment never ' +
+          'reaches a server, so the page reads it, removes it from the ' +
+          'address and the history entry, and POSTs it to the same ' +
+          'address, where it is consumed as a form_post response is. No ' +
+          'markup can read a fragment, so there is no button to fall back ' +
+          'on.' },
   { path: '/federation/acs/:id', group: 'Federation',
     name: 'Assertion consumer service / wreply / redirect_uri',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'saml11',
@@ -8086,6 +8281,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'fed:ApplicationServiceType RoleDescriptor (WS-Federation 1.2 ' +
           'section 3.1), its PassiveRequestorEndpoint and its encryption ' +
           'key.' },
+  { path: '/federation/atproto/client/:id', group: 'Federation',
+    name: 'A Bluesky relationship\'s client metadata (#746)', specs: [],
+    what: 'NON-SPEC in this service\'s catalogue: the AT Protocol\'s OAuth ' +
+          'profile has no registration, so the address of this public JSON ' +
+          'document is the client id, and Bluesky\'s server fetches it. It ' +
+          'holds no key, and a relationship that is not usable answers 404.' },
   { path: '/federation/jwks/:id', group: 'Federation',
     name: 'An OpenID Connect relationship\'s encryption key (#168)',
     specs: ['oidc-registration', 'rfc7515', 'rfc7516', 'oidc'],
@@ -8931,12 +9132,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'state it can read and answers changed, unchanged or error. The ' +
           'one page here that may be framed, and only by the origins of the ' +
           'realm\'s registered redirect URIs.' },
-  { path: '/oauth2/check_session.js', group: 'OAuth 2.0 / OIDC',
-    name: 'OP iframe script', specs: ['oidc-session'],
-    what: 'The OP iframe\'s one script, served from this origin because ' +
-          'every page here runs under script-src \'none\' or \'self\'. ' +
-          'Answers a postMessage with changed, unchanged or error, posted ' +
-          'to the asking origin only.' },
   { path: '/oauth2/logout', group: 'OAuth 2.0 / OIDC', name: 'Session end ' +
       '(end_session_endpoint)',
     specs: ['oidc', 'oidc-logout', 'oidc-bclogout'],
@@ -8957,7 +9152,7 @@ const ENDPOINTS: EndpointEntry[] = [
             'rfc7800', 'rfc9700', 'oidc-native-sso', 'oidc-ciba',
             'rfc8628', 'oidc-key-binding',
             'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068',
-            'oauth-attestation'],
+            'oauth-attestation', 'wss-kerberos'],
     what: 'authorization_code, refresh_token, client_credentials, password, ' +
           'token-exchange, RFC 8628\'s device_code (#150), and OID4VCI\'s ' +
           'pre-authorized_code with tx_code ' +
@@ -9352,8 +9547,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'entry under ou=applications — there is no second store — so ' +
           '/admin/applications and an ldapsearch see the same client. In RFC ' +
           '9700 mode it REFUSES metadata the other endpoints would refuse in ' +
-          'use: the password grant (section 2.4), the implicit grant and any ' +
-          'response type naming token (2.1.2), and an http redirect URI off ' +
+          'use: the password grant (section 2.4), any response type naming ' +
+          'token and the implicit grant unless id_token or code id_token ' +
+          'needs it (2.1.2, which an administrator may waive per realm with ' +
+          'oauth2.allowImplicitTokenResponses), and an http redirect URI off ' +
           'the loopback (2.6), each with invalid_client_metadata and the ' +
           'section. Recording a permission the token endpoint will always ' +
           'refuse is the discovery document\'s promise broken in the other ' +
@@ -9594,6 +9791,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'generated on the application\'s Configuration tab or with ' +
           'POST /admin-api/applications/generate-did-key, which hands the ' +
           'private key out once.' },
+  { path: '/users/:rid/did.json',
+    group: 'Decentralized Identifiers',
+    name: 'A person\'s published DID document', specs: ['did-core'],
+    effect: 'answers 410 Gone once the DID is deactivated or the account ' +
+            'is disabled, and 404 for an address never published',
+    what: 'The DID document of a did:web this realm publishes for a person ' +
+          '(#1291), where the did:web method resolves ' +
+          'did:web:<host>[:realm:<id>]:users:<rid>, <rid> 128 random bits: ' +
+          'the current version\'s keys as JsonWebKey2020 methods under ' +
+          'authentication and assertionMethod, or the version DID Core\'s ' +
+          'versionId or versionTime asks for, from a history that is never ' +
+          'rewritten. application/did+json, no-store. Deactivated — by the ' +
+          'person, by an administrator, or while the account is disabled — ' +
+          'it answers 410 Gone with { id, deactivated: true }, and a ' +
+          'resolver reports deactivated in didDocumentMetadata. Published ' +
+          'from the person\'s portal where did.personPublishing is on.' },
   { path: '/.well-known/did-configuration.json', group: 'Decentralized ' +
                                                         'Identifiers',
     name: 'Domain Linkage Credential', specs: ['did-config', 'vcdm', 'rfc7519'],
@@ -10264,10 +10477,11 @@ const PROTOCOLS: Protocol[] = [
           'dispatching on wa, the sign-in screen, signed federation ' +
           'metadata at the AD FS path, and wsignout1.0.' },
   { name: 'WS-Trust', groups: ['WS-Trust'],
-    specs: ['ws-trust', 'wss-username', 'xmldsig'],
+    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'xmldsig'],
     what: 'RST / RSTR over SOAP at /sts, in all four versions (1.0 through ' +
           '1.4), issuing either SAML dialect with the assertion signed and ' +
-          'optionally encrypted to the requestor\'s certificate.' },
+          'optionally encrypted to the requestor\'s certificate, a JWT, ' +
+          'or a Kerberos ticket.' },
   { name: 'Kerberos', groups: ['Kerberos'],
     specs: ['rfc4120', 'rfc3961', 'ms-pac', 'ms-kkdcp'],
     what: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four ' +
@@ -10957,11 +11171,15 @@ class StsMetadata {
       // WHICH BUILD PRODUCED THIS DOCUMENT. The endpoint list below is read
       // from the running router, so it describes the process that answered —
       // and this says which process that was. Downloaded, the two travel
-      // together, which is the point: an endpoint list with no build number on
+      // together, which is the point: an endpoint list with no build on
       // it is a claim about a service and not about a release of one.
       version: APP_VERSION.version,
+      // `version` is M.N.O.<build> (#1317); `build` breaks it out — the
+      // build number, whether it is a release build, the commit and the
+      // instant.
       build: {
-        number: APP_VERSION.build,
+        number: APP_VERSION.build || undefined,
+        release: APP_VERSION.release === true,
         commit: APP_VERSION.commit || undefined,
         at: APP_VERSION.builtAt,
         // See the management API index for what this distinction is worth.

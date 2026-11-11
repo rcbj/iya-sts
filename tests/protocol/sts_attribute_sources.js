@@ -212,7 +212,7 @@ async function authorize(b, state) {
       .digest("base64url"), code_challenge_method: "S256" };
   let r = await b.go("GET", R + "/oauth2/authorize?" + form(params));
   if ((r.status === 302 || r.status === 303) &&
-      /\/authn\/login\?authn=/.test(r.location)) {
+      /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location)) {
     // THE SCREEN OVER `/authn-api` (#571), with this browser's jar and
     // User-Agent; the answer is read as the form's 303 was.
     const posted = await authnSignin.signInWithJar(base + R, r.location,
@@ -301,7 +301,20 @@ function pgClient(urlText, database) {
 
 async function mysqlAdmin(spec, database) {
   log.debug("Entering mysqlAdmin(). " + (database || "(the URL's)"));
-  const mysql = require("mysql2/promise");
+  // SAID IN A SENTENCE (#695): a tests image built before mysql2 joined
+  // tests/package.json — a `--no-build` run on an old image — otherwise
+  // fails here with a bare MODULE_NOT_FOUND that names no cause.
+  let mysql;
+  try {
+    mysql = require("mysql2/promise");
+  } catch (e) {
+    log.debug("Caught in mysqlAdmin(): " + ((e && e.message) || e));
+    log.debug("Leaving mysqlAdmin(). No mysql2.");
+    throw new Error("this tests image has no mysql2, which the MariaDB " +
+                    "pass needs (tests/package.json): it was built before " +
+                    "mysql2 was added. Run without --no-build, or rebuild " +
+                    "the tests image. (" + ((e && e.message) || e) + ")");
+  }
   const url = new URL(spec.url);
   const named = database || url.pathname.replace(/^\//, "");
   const conn = await mysql.createConnection({

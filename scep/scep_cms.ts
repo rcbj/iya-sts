@@ -979,6 +979,19 @@ class ScepCms {
                           message.signer.x509.validTo + ').',
                           FAIL_INFO.badTime);
     }
+    // Under paranoid the signer's own fields are asked too. RFC 8894 section
+    // 2.3 makes a PKCSReq's signer self-signed, so there is no path here; a
+    // renewal's path and revocation are `authenticatePresentedCertificate()`'s,
+    // whose refusal is STS-SCEP-0040. Lazily: nothing else in this codec reaches
+    // the certificate authority.
+    const held = require('../common/certificate_trust').fields(
+      'enrollment-credential', message.signer.x509.raw,
+      { variant: 'scep', mayBeCa: true });
+    if (!held.ok) {
+      log.debug("Leaving ScepCms.verifySigner(). The door refused it.");
+      return this.refusal(held.code, 'The signer\'s certificate is refused: ' +
+                          held.why, FAIL_INFO.badMessageCheck);
+    }
     log.debug("Leaving ScepCms.verifySigner(). " + digest.label + ", " +
               sig.label);
     return { ok: true, digest: digest.id };

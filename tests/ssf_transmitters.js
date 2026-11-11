@@ -43,7 +43,14 @@
 //      revokes what was issued on the session it names, its account-disabled
 //      everything the person delegated, through `logout.revokeGrantsOf()`;
 //      ssf.signalsRevokeGrants off skips it, development observes it, and a
-//      signals-only partner's and an unverified SET's revoke nothing.
+//      signals-only partner's and an unverified SET's revoke nothing;
+//   L. what the conformance suite's receiver plans ask (#932): discovery
+//      fetches the keys afresh, the token asks for ssf.read and ssf.manage,
+//      a 401 asks for one fresh token, a replacement sends every
+//      receiver-supplied property and moves the push header, the status is
+//      read, a stream-updated is recorded, a stateless verification is
+//      acknowledged and verifies nothing, and a session-revoked a policy
+//      initiated ends the session.
 // ===========================================================================
 
 const fs = require('fs');
@@ -192,7 +199,7 @@ function childMain() {
                         ? o.body : '{}') : null,
                       raw: o.body || '',
                       auth: (o.headers || {}).Authorization || '' });
-      if (/ssf-configuration/.test(url)) {
+      if (/^https:\/\/tx\.test\/.*ssf-configuration/.test(url)) {
         return answer(200, Object.assign({}, doc, { issuer: docIssuer }));
       }
       if (url === 'https://tx.test/token') {
@@ -211,10 +218,54 @@ function childMain() {
         const next = polls.shift() || { sets: {}, moreAvailable: false };
         return answer(200, next);
       }
+      // L (#932): a second partner, keeping to the CAEP interoperability
+      // profile — a token per request to its token endpoint, a token it has
+      // forgotten answered 401, a PUT and a status endpoint.
+      if (/^https:\/\/cf\.test\/\.well-known\/ssf-configuration/.test(url)) {
+        return answer(200, cfDoc);
+      }
+      if (url === 'https://cf.test/token') {
+        cfTokens += 1;
+        return answer(200, { access_token: 'cf-token-' + cfTokens,
+                             expires_in: 3600 });
+      }
+      if (/^https:\/\/cf\.test\//.test(url)) {
+        const bearer = String((o.headers || {}).Authorization || '');
+        if (cfForgotten.indexOf(bearer) >= 0) {
+          return answer(401, { error: 'invalid_token' });
+        }
+      }
+      if (url === 'https://cf.test/stream' && o.method === 'POST') {
+        return answer(201, { stream_id: 'cf-1', aud: 'realm-rx',
+                             delivery: JSON.parse(o.body).delivery });
+      }
+      if (url === 'https://cf.test/stream' && o.method === 'PUT') {
+        return answer(200, Object.assign({ aud: 'realm-rx' },
+                                         JSON.parse(o.body)));
+      }
+      if (/^https:\/\/cf\.test\/stream\?/.test(url)) {
+        return answer(200, { stream_id: 'cf-1', aud: 'realm-rx',
+          delivery: { method: 'urn:ietf:rfc:8935' } });
+      }
+      if (url === 'https://cf.test/status?stream_id=cf-1') {
+        return answer(200, { stream_id: 'cf-1', status: 'paused' });
+      }
       return answer(404, { error: 'not here' });
     } };
+    const CF = 'https://cf.test';
+    const cfDoc = { issuer: CF, jwks_uri: CF + '/jwks',
+      configuration_endpoint: CF + '/stream', status_endpoint: CF + '/status',
+      verification_endpoint: CF + '/verify',
+      delivery_methods_supported: ['urn:ietf:rfc:8935',
+                                   'urn:ietf:rfc:8936'] };
+    let cfTokens = 0;
+    const cfForgotten = [];
+    const jwksForgotten = [];
     const jwks = { ensure: function () {
       return Promise.resolve({ ok: true, jwks: { keys: [jwk] }, why: '' });
+    }, forget: function (uri) {
+      jwksForgotten.push(uri);
+      return true;
     } };
     // The sessions a partner started, and a local one, and another
     // partner's; and a sign-out that records what it is asked to end.
@@ -579,8 +630,182 @@ function childMain() {
          JSON.stringify([rowOf(switchedOff.jti).reactions,
                          rowOf(watched.jti).reactions]));
 
+    // --- L. what the conformance suite's receiver plans ask (#932) --------
+    const cfMade = federation.create({ fedId: 'conf',
+      fedRole: 'service-provider', fedProtocol: 'ssf', fedPeer: CF });
+    [['fedEnabled', 'TRUE'], ['fedSignalsTokenUrl', CF + '/token'],
+     ['fedSignalsClientId', 'cf-rx'], ['fedSignalsClientSecret', 'cf-s'],
+     ['fedSignalsDelivery', 'push'], ['fedSignalEmailMatch', 'TRUE']]
+      .forEach(function (one) {
+        setField('conf', one[0], one[1]);
+      });
+    federation.update('conf', { field: 'fedSignalsEvents', mode: 'add',
+                                value: CAEP + 'session-revoked' });
+    const cfRel = function () {
+      return federation.get('conf');
+    };
+    const ctx = { actor: 'tester', base: 'https://rx.test/realm/r' };
+    const cfFound = await rx.act({ action: 'signals-discover', id: 'conf' },
+                                 ctx);
+    const cfCreated = await rx.act({ action: 'signals-create-stream',
+                                     id: 'conf' }, ctx);
+    const cfTokenCall = requests.filter(function (r) {
+      return r.url === CF + '/token';
+    })[0] || { raw: '' };
+    const created = requests.filter(function (r) {
+      return r.url === CF + '/stream' && r.method === 'POST';
+    })[0] || { body: {} };
+    note(cfMade.ok && cfFound.ok && cfCreated.ok &&
+         jwksForgotten.indexOf(CF + '/jwks') >= 0 &&
+         /scope=ssf\.read\+ssf\.manage/.test(cfTokenCall.raw) &&
+         created.body.delivery.endpoint_url ===
+           'https://rx.test/realm/r/federation/signals/conf' &&
+         JSON.stringify(created.body.events_requested) ===
+           JSON.stringify([CAEP + 'session-revoked']),
+         'L1. discovery fetches the keys afresh; the token asks for both ' +
+         'of the CAEP interoperability profile\'s scopes; a push stream ' +
+         'asks for fedSignalsEvents at the realm\'s push endpoint',
+         JSON.stringify([cfMade.errors, cfFound.errors, cfCreated.errors,
+                         jwksForgotten, cfTokenCall.raw, created.body]));
+
+    // A token the partner has forgotten: one 401, one fresh token, and the
+    // request again.
+    cfForgotten.push('Bearer cf-token-1');
+    const cfRead = await rx.act({ action: 'signals-read-stream', id: 'conf' },
+                                ctx);
+    const reads = requests.filter(function (r) {
+      return /^https:\/\/cf\.test\/stream\?/.test(r.url) &&
+             r.method === 'GET';
+    });
+    note(cfRead.ok && reads.length === 2 &&
+         reads[0].auth === 'Bearer cf-token-1' &&
+         reads[1].auth === 'Bearer cf-token-2',
+         'L2. a 401 from the partner drops the cached token and the request ' +
+         'is sent once more with a fresh one',
+         JSON.stringify([cfRead.errors, reads.map(function (r) {
+           return r.auth;
+         })]));
+
+    // The replacement: every receiver-supplied property, and a new header.
+    const oldHeader = created.body.delivery.authorization_header;
+    const cfReplaced = await rx.act({ action: 'signals-replace-stream',
+                                      id: 'conf' }, ctx);
+    const put = requests.filter(function (r) {
+      return r.url === CF + '/stream' && r.method === 'PUT';
+    })[0] || { body: { delivery: {} } };
+    const newHeader = put.body.delivery.authorization_header;
+    const pushWith = async function (header) {
+      const r = res();
+      await rx.pushRoute({ params: { id: 'conf' },
+                           headers: { authorization: header }, body: 'x' }, r);
+      return r.statusCode;
+    };
+    const oldStatus = await pushWith(oldHeader);
+    const newStatus = await pushWith(newHeader);
+    note(cfReplaced.ok && put.body.stream_id === 'cf-1' &&
+         put.body.delivery.method === 'urn:ietf:rfc:8935' &&
+         put.body.delivery.endpoint_url ===
+           created.body.delivery.endpoint_url &&
+         JSON.stringify(put.body.events_requested) ===
+           JSON.stringify([CAEP + 'session-revoked']) &&
+         !!put.body.description && !!newHeader && newHeader !== oldHeader &&
+         oldStatus === 401 && newStatus === 400,
+         'L3. a replacement PUTs the stream_id and every receiver-supplied ' +
+         'property, and the push endpoint then takes only the new header ' +
+         '(the old one 401, the new one past it to the SET)',
+         JSON.stringify([cfReplaced.errors, put.body, oldStatus,
+                         newStatus]));
+
+    const cfStatus = await rx.act({ action: 'signals-read-status',
+                                    id: 'conf' }, ctx);
+    note(cfStatus.ok && cfStatus.signals.streamStatus === 'paused',
+         'L4. the status is read from the status endpoint and held',
+         JSON.stringify([cfStatus.errors, cfStatus.signals &&
+                         cfStatus.signals.streamStatus]));
+
+    // A stream-updated, and a verification the partner started.
+    const SSF = 'https://schemas.openid.net/secevent/ssf/event-type/';
+    const cfSet = function (uri, payload) {
+      return sign({ iss: CF, aud: 'realm-rx',
+        jti: crypto.randomBytes(8).toString('hex'),
+        iat: Math.floor(Date.now() / 1000),
+        sub_id: { format: 'opaque', id: 'cf-1' },
+        events: { [uri]: payload } });
+    };
+    const updated = await rx.receive(cfRel(), cfSet(SSF + 'stream-updated',
+      { status: 'disabled', reason: 'maintenance' }), 'push');
+    const unsolicited = await rx.receive(cfRel(),
+      cfSet(SSF + 'verification', {}), 'push');
+    const cfRows = rx.report({ relationship: 'conf' }).received;
+    note(updated.ok && unsolicited.ok &&
+         rx.view(cfRel()).streamStatus === 'disabled' &&
+         cfRows.some(function (r) {
+           return (r.reactions || []).some(function (x) {
+             return x.event === 'verification' &&
+                    /transmitter-initiated/.test(x.why || '');
+           });
+         }) && !rx.view(cfRel()).verifiedAt,
+         'L5. a stream-updated records the status the partner gives; a ' +
+         'verification with no state is acknowledged and recorded, and ' +
+         'verifies nothing',
+         JSON.stringify([updated, unsolicited, cfRows]));
+
+    // A session-revoked a POLICY initiated is a revocation (CAEP 1.0
+    // sections 2 and 3.1), no longer dropped as an expiry.
+    session('s5', 'partner', 'sid-5');
+    const byPolicy = set('session-revoked', { format: 'complex',
+      user: { format: 'iss_sub', iss: ISS, sub: 'ext-alice' },
+      session: { format: 'opaque', id: 'sid-5' } },
+      {}, { initiating_entity: 'policy',
+            reason_admin: { en: 'Policy Violation: C076E822' } });
+    await rx.receive(rel(), sign(byPolicy), 'push');
+    note(ended.indexOf('s5') >= 0,
+         'L6. a session-revoked whose initiating_entity is policy ends the ' +
+         'session it names', JSON.stringify(ended));
+
     // --- J. forgetting ------------------------------------------------------
     fedBlocks.block('partner', 'ft-alice', { event: 'test' });
+
+    // EVERY REACTION THIS FILE'S REAL RECEIVER WROTE, AGAINST THE PAGE'S MODEL
+    // (#1353): a stream-updated's `status` was recorded and undeclared, so the
+    // operator's Signals page answered 500 once a partner sent one.
+    {
+      const Ajv = require('ajv');
+      const spec = require(ROOT + '/mgmt-api/admin_api_spec');
+      const adminApi = require(ROOT + '/mgmt-api/admin_api');
+      const document = spec.buildSpec(adminApi.ROUTES, { authRequired: true });
+      const resolve = function (one) {
+        return one.$ref ? document.components.schemas[
+          one.$ref.split('/').pop()] : one;
+      };
+      let answer = null;
+      Object.keys(document.paths).forEach(function (one) {
+        const get = document.paths[one].get;
+        if (get && get.operationId === 'getPartnerSignals') {
+          answer = get.responses['200'].content['application/json'].schema;
+        }
+      });
+      const validateRow = new Ajv({ strict: false, allErrors: true }).compile({
+        allOf: [resolve(resolve(answer).properties.received).items],
+        components: document.components });
+      const seen = rx.arrivals();
+      const refused = seen.filter(function (row) {
+        return !validateRow(row);
+      });
+      const members = {};
+      seen.forEach(function (row) {
+        (row.reactions || []).forEach(function (one) {
+          Object.keys(one).forEach(function (name) {
+            members[name] = true;
+          });
+        });
+      });
+      note(seen.length > 0 && refused.length === 0 && members.status,
+           'M1. every arrival the real receiver recorded, of every reaction ' +
+           'above, meets the model the Signals page is held to',
+           JSON.stringify(refused.slice(0, 2)) + ' members ' +
+           Object.keys(members).join(','));
+    }
     const forgot = await rx.forget(rel(), { actor: 'tester' });
     note(forgot.blocks === 1 && !fedBlocks.blockOf('partner', 'ft-alice') &&
          rx.stateOf('partner').state === 'new',

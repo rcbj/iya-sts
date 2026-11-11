@@ -210,7 +210,10 @@ const POOL_COOKIE = (function () {
 })();
 
 // What a document actually set, with the pool's routing pin taken out. A
-// document that set nothing else answers "".
+// document that set nothing else answers "". The pin is matched with or
+// without a `__Host-` / `__Secure-` prefix: product mode prefixes every
+// `sts_` cookie on the wire (common/cookie_wire.ts, ASVS 5.0.0 3.3.1), the
+// pin included, so the bare name alone exempted it only in development.
 function applicationCookies(header) {
   log.debug("Entering applicationCookies().");
   const list = String(header || "").split(/,(?=[^;]+=)/)
@@ -219,7 +222,9 @@ function applicationCookies(header) {
       if (!one) {
         return false;
       }
-      return !(POOL_COOKIE && one.indexOf(POOL_COOKIE + "=") === 0);
+      const name = one.slice(0, Math.max(one.indexOf("="), 0))
+        .replace(/^__(Host|Secure)-/, "");
+      return !(POOL_COOKIE && name === POOL_COOKIE);
     });
   log.debug("Leaving applicationCookies().");
   return list.join(", ");
@@ -1155,7 +1160,13 @@ const WELL_KNOWN_ELSEWHERE = {
   "/.well-known/hoba/register":
     "NOT a document — it is where a client REGISTERS a HOBA key, and it is a " +
     "POST that changes state. sts_admin_console.js and the SCIM jobs are " +
-    "where that surface is driven."
+    "where that surface is driven.",
+  // The exact path only. app.get(METADATA_PATH) and app.get(METADATA_PATH +
+  // '/*') both name the constant, and the extractor records its value once.
+  "/.well-known/uma2-configuration":
+    "off by default (uma.enabled); the discovery document answers 501 until " +
+    "UMA is turned on, and sts_uma.js reads it in a realm where it is on. " +
+    "NO_PUBLIC_METADATA's UMA 2.0 row is the same fact."
 };
 
 // ---------------------------------------------------------------------------

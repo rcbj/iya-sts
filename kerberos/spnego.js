@@ -94,9 +94,10 @@
 // So this file registers NOTHING since #595. It keeps `page()` and
 // `checksTable()`, which `spnego_authn.ts` draws the sign-in's continuation
 // and terminal-refusal 401s with, and it stays a file of its own — rather
-// than moving the two into `spnego_authn.ts` — because it is in the parent
-// project's COPY closure (`kerberos/CLAUDE.md`): removing code from it owes
-// the parent nothing, and a new file would.
+// than moving the two into `spnego_authn.ts` — because it was in the parent
+// project's COPY closure, where removing code from it owed the parent
+// nothing and a new file would have (an obligation until #1280; the
+// arrangement stands, and the next change may move it).
 // ---------------------------------------------------------------------------
 const { log, xmlEscape } = require('../common/helpers');
 
@@ -113,7 +114,7 @@ const { log, xmlEscape } = require('../common/helpers');
 // drawn first in the card and extra CSS, from a caller that draws the page in
 // another language — `kerberos/spnego_authn.ts`'s sign-in. Absent, the page is
 // byte-for-byte what it was. Strings rather than a translator, so this file
-// requires nothing new and the parent's COPY closure does not grow.
+// requires nothing new (the parent's COPY closure was owed until #1280).
 // ---------------------------------------------------------------------------
 function page(title, inner, framing) {
   log.debug('Entering page().');
@@ -149,16 +150,23 @@ function page(title, inner, framing) {
     'class="card">' + (frame.top || '') + inner + '</div></body></html>\n';
 }
 
-function checksTable(checks) {
+// `labels` (#1327): the table's own words in the page's language — `check`,
+// `result`, `detail`, `passed`, `failed`, already escaped HTML — for the
+// refusal drawn on the shared error page. Absent, the words are the English
+// ones, as they always were. The checks' names and details are the
+// acceptor's, shown as data in every language.
+function checksTable(checks, labels) {
   log.debug('Entering checksTable().');
+  const l = labels || { check: 'Check', result: 'Result', detail: 'Detail',
+                        passed: 'passed', failed: 'FAILED' };
   const rows = (checks || []).map(function (c) {
     return '<tr><td>' + xmlEscape(c.name) + '</td><td class="' +
-      (c.ok ? 'pass">passed' : 'fail">FAILED') + '</td><td>' +
+      (c.ok ? 'pass">' + l.passed : 'fail">' + l.failed) + '</td><td>' +
       xmlEscape(c.detail == null ? '' : String(c.detail)) + '</td></tr>';
   }).join('');
   log.debug('Leaving checksTable().');
-  return '<table><tr><th>Check</th><th>Result</th><th>Detail</th></tr>' +
-    rows + '</table>';
+  return '<table><tr><th>' + l.check + '</th><th>' + l.result + '</th><th>' +
+    l.detail + '</th></tr>' + rows + '</table>';
 }
 
 module.exports = {

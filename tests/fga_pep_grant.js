@@ -110,7 +110,8 @@ function run(t) {
 }
 
 // The holders: a person, a service account, an application, one that holds
-// both already, one whose write will be refused, and a dangling member.
+// both already, and one whose write will be refused. (A dangling member was
+// the sixth until 2026-11-10, when a group stopped accepting one.)
 function setUp(t, k) {
   log.debug("Entering setUp().");
   const { ldap, applications, serviceAccounts } = k;
@@ -142,8 +143,11 @@ function setUp(t, k) {
   k.authzenAdmin.act({ action: 'set-scope', caller: 'fgag-held',
                        applications: ['other-app', APP] },
                      { actor: 'test', via: 'test' });
-  ldap.addGroupMember(k.remoteGroup,
-                      'cn=fgag-ghost,' + ldap.usersDn(), { actor: 'test' });
+  // NO DANGLING HOLDER SINCE 2026-11-10: a group lists only what is there
+  // (`ldap_server.js` membersNamingNothing()), so `cn=fgag-ghost` can no
+  // longer be added to the group, and a delete takes a member out of every
+  // group. The grant's answer for a holder that names nobody is now reached
+  // only by a store written before then, which this file cannot make.
   log.debug("Leaving setUp().");
 }
 
@@ -205,20 +209,18 @@ function sectionE(t, k) {
   const failed = (peps.failed || []).filter(function (one) {
     return /fgag-/.test(String(one.name));
   });
-  t.check(failed.length === 2 && failed.every(function (one) {
-    return one.code === 'STS-FGA-0025' && !!one.why;
+  t.check(failed.length === 1 && failed.every(function (one) {
+    return !('code' in one) && !!one.why;
   }) && failed.some(function (one) {
     return one.name === 'fgag-refused' &&
            /could not be written/.test(one.why) &&
            /which is kept/.test(one.why);
-  }) && failed.some(function (one) {
-    return /fgag-ghost/.test(one.name) &&
-           /names no person, service account or application/.test(one.why);
-  }), 'E6. the refused write and the dangling member are failed, each ' +
-     'with STS-FGA-0025 and why', JSON.stringify(failed));
+  }), 'E6. the refused write is failed, with why and no code',
+     JSON.stringify(failed));
   t.check(/Granted the remote PEP\(s\)/.test(r.message) &&
           /Already held: fgag-held/.test(r.message) &&
-          /Not granted: fgag-refused \(STS-FGA-0025\)/.test(r.message),
+          /Not granted: fgag-refused — /.test(r.message) &&
+          !/STS-FGA-/.test(r.message),
           'E7. the answer\'s message names who was granted, who held it ' +
           'and who could not be', r && r.message);
 
@@ -283,7 +285,7 @@ function sectionA(t, k) {
      'the application', ok.length + ' row(s): ' + ok.map(function (row) {
        return row.target;
      }).join(' | '));
-  t.equal(bad.length, 2,
+  t.equal(bad.length, 1,
           'A2. and one carrying STS-FGA-0025 per holder that was not');
   log.debug("Leaving sectionA().");
 }
@@ -329,9 +331,9 @@ function sectionL(t, k) {
   })[0] || {};
   t.check(row.member === false && row.scoped === false &&
           view.group === k.remoteGroup &&
-          view.authzenGroup === k.authzenGroup && view.unlocated === 1,
-          'L2. the tab\'s view lists it without either, beside the groups ' +
-          'and the dangling member', JSON.stringify(view));
+          view.authzenGroup === k.authzenGroup && view.unlocated === 0,
+          'L2. the tab\'s view lists it without either, beside the groups, ' +
+          'and no holder it cannot locate', JSON.stringify(view));
   const again = k.act('fga-enable');
   // The holder whose write was refused in E is granted now too: the
   // directory takes its write this time, and re-enabling is the retry.

@@ -65,7 +65,7 @@ the test suite delivers to Mailpit.
 |---|---|
 | `mail.smtpHost`, `mail.smtpPort` | The relay. 587 is submission with STARTTLS, and 465 is implicit TLS (RFC 8314). |
 | `mail.smtpTls` | `starttls` requires the upgrade, and a relay that does not offer it is refused (`STS-MAIL-0014`). `implicit` uses TLS from the first byte. **There is no cleartext option and no option to skip verification, in either mode.** |
-| `mail.smtpCaFile` | A PEM trust anchor for a relay whose certificate does not chain to the system store. |
+| `mail.smtpCaFile` | A PEM trust anchor for a relay whose certificate does not chain to the system store, beside that store rather than instead of it. |
 | `mail.smtpServerName` | The name the relay's certificate must carry, when it is not `mail.smtpHost`. |
 | `mail.smtpAuth` | `none`, `plain`, `login` or `xoauth2`, sent only after TLS is up. |
 | `mail.smtpUser` and the SMTP password secret | See [Secrets](#secrets). For `xoauth2`, the secret is either an access token or JSON with `clientId`, `clientSecret`, `refreshToken` and `accessUrl`. |
@@ -229,6 +229,7 @@ saved** (`STS-MAIL-0016`):
   **The link is built on `global.publicBaseUrl`**, never on the address a
   request arrived at. In product mode a message with a link is refused until
   that setting is set (`STS-MAIL-0015`).
+- **The HTML part is held to an allow-list**: text formatting, tables and links, checked by a sanitization library. A template the library would change is refused.
 - **The HTML part loads nothing and runs nothing**: no image, stylesheet,
   frame, form, script, event handler, `src`, `style`, CSS `url()`, or `data:`
   or `javascript:` URI. A message that loads nothing when it is opened tells

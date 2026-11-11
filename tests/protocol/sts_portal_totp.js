@@ -98,6 +98,13 @@ var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");
 base = String(base).replace(/\/+$/, "");
 var api = base + "/admin-api";
 
+// WHAT THE OPERATOR SAYS THEY DID TO VERIFY THE PERSON, sent with every clear
+// of a second factor. Product mode refuses a clear without it (#1504, ASVS
+// 5.0.0 6.4.4: STS-ADMIN-0916, at least eight characters, recorded in the
+// audit log); development mode accepts and records it, so it is sent in both.
+const CLEAR_EVIDENCE = "Protocol job: identity checked against the " +
+  "fixture this job created";
+
 // Suffixed per run, because the directory is append-only in practice and two
 // runs against one long-lived mock must not see each other's people.
 var OWNER = usernameFor("totp-owner");
@@ -164,6 +171,18 @@ function codeFor(secret, atMs, opts) {
                  (digest[offset + 3] & 0xff);
   log.debug("Leaving codeFor().");
   return String(binary % Math.pow(10, digits)).padStart(digits, "0");
+}
+
+// Resolves once the current thirty-second step is later than `used`, so the
+// current step's code is one the verifier has not yet accepted.
+async function waitForStepAfter(used) {
+  log.debug("Entering waitForStepAfter(). used=" + used);
+  while (Math.floor(Date.now() / 30000) <= used) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 1000);
+    });
+  }
+  log.debug("Leaving waitForStepAfter().");
 }
 
 // ---------------------------------------------------------------------------
@@ -394,7 +413,7 @@ async function signIn(door, who, onSecondFactor) {
     "the portal's shell should answer " + PORTAL_DOOR + "; it answered " +
     r.status + " -> " + r.location);
   r = await b.go("GET", portalAuthorizeUrl());
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
     "the authorization endpoint should send a browser with no sign-on " +
     "session to the sign-in screen; it answered " + r.status + " -> " +
     r.location);
@@ -634,7 +653,8 @@ async function enrolling() {
       "rescan.");
   });
 
-  const code = codeFor(secret);
+  const confirmedAt = Date.now();
+  const code = codeFor(secret, confirmedAt);
   r = await b.portal.act("/portal/mfa", { action: "confirm", code: code });
   check("A CODE THIS JOB COMPUTED FROM THE SECRET IS ACCEPTED — which is the " +
         "only thing an authenticator app ever does, and the claim tests/" +
@@ -693,7 +713,8 @@ async function enrolling() {
   });
 
   log.debug("Leaving enrolling().");
-  return { browser: b, secret: secret, confirmationCode: code };
+  return { browser: b, secret: secret, confirmationCode: code,
+           confirmationStep: Math.floor(confirmedAt / 30000) };
 }
 
 // ===========================================================================
@@ -738,11 +759,14 @@ async function theSignInDemandsIt(enrolment) {
       "was refused with the wrong reason: " + x.status + " " +
       String(x.text).slice(0, 300));
 
-    // THE NEXT STEP. Computed thirty seconds ahead rather than waiting: the
-    // window forgives a step either side, so a code from the next step is
-    // accepted now — which is the whole point of the window and lets this run
-    // in milliseconds instead of half a minute.
-    const next = codeFor(enrolment.secret, Date.now() + 30000);
+    // THE NEXT STEP, WAITED FOR. It was computed thirty seconds ahead, which
+    // only a window of one step forgives; product mode's `totp.window` is 0
+    // (strongerInProduct(0, 1) in common/config.js), so there a future step's
+    // code is refused. Waiting for the clock to pass the confirmation's step
+    // and sending the current step's code is right in both modes, at a cost
+    // of at most thirty seconds.
+    await waitForStepAfter(enrolment.confirmationStep);
+    const next = codeFor(enrolment.secret);
     x = await send(next);
     return x;
   });
@@ -901,10 +925,11 @@ async function anActivationLinkCanSetOneUp() {
   // token (#568). Opening the link is asking that.
   const linked = new URL(url, base);
   const linkQuery = "?user=" +
-    encodeURIComponent(linked.searchParams.get("user") || "") + "&token=" +
-    encodeURIComponent(linked.searchParams.get("token") || "");
+    encodeURIComponent(linked.searchParams.get("user") || "");
+  const linkHeader =
+    { "X-Link-Token": new URLSearchParams(linked.hash.slice(1)).get("token") };
   const opened = await portal.nobody(base, "GET",
-                                     "/account-api/activation" + linkQuery);
+    "/account-api/activation" + linkQuery, undefined, linkHeader);
   let page = { status: opened.status,
                text: opened.json
                  ? await drawForNobody("/portal/activate", opened.json) : "" };
@@ -943,7 +968,7 @@ async function anActivationLinkCanSetOneUp() {
   // reading a flag: what somebody who abandons this step actually does is open
   // the link a second time.
   const reopened = await portal.nobody(base, "GET",
-                                      "/account-api/activation" + linkQuery);
+    "/account-api/activation" + linkQuery, undefined, linkHeader);
   check("AND THE ACTIVATION LINK IS STILL LIVE — somebody who ticks the box " +
         "and then cannot find their phone is not stranded with a spent link " +
         "and half an account", function () {
@@ -966,7 +991,7 @@ async function anActivationLinkCanSetOneUp() {
   });
 
   const spent = await portal.nobody(base, "GET",
-                                    "/account-api/activation" + linkQuery);
+    "/account-api/activation" + linkQuery, undefined, linkHeader);
   check("and NOW the link is spent", function () {
     assert.strictEqual(spent.status, 400,
       "the link still works after the setup finished; it answered " +
@@ -1023,7 +1048,8 @@ async function anOperatorCanClearIt() {
   log.debug("Entering anOperatorCanClearIt().");
   log.info("=== 5. clearing an authenticator through /admin-api ===");
   await enrolledPerson(CLEARED);
-  const cleared = await apiPost("/mfa/clear-totp", { username: CLEARED });
+  const cleared = await apiPost("/mfa/clear-totp",
+    { username: CLEARED, evidence: CLEAR_EVIDENCE });
   check("POST /admin-api/mfa/clear-totp accepts it", function () {
     assert.strictEqual(cleared.status, 200,
       "it answered " + cleared.status + " " +
@@ -1032,7 +1058,8 @@ async function anOperatorCanClearIt() {
                        String(cleared.raw).slice(0, 200));
   });
 
-  const again = await apiPost("/mfa/clear-totp", { username: CLEARED });
+  const again = await apiPost("/mfa/clear-totp",
+    { username: CLEARED, evidence: CLEAR_EVIDENCE });
   check("and clearing one nobody holds is a 400 rather than a silent 200 — " +
         "the caller asked to clear a specific thing and it was not there",
         function () {

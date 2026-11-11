@@ -243,5 +243,13 @@
   "passwordHint": "kailangan para sa PKCS#12; ine-encrypt ang private na kalahati ng iba",
   "downloadKey": "I-download",
   "publicOnly": "<strong>Ang PAMPUBLIKONG kalahati lang.</strong> Tinutukoy ng RFC 9964 ang mga pampublikong member ng isang AKP key at gumagalaw pa ang paghawak sa private seed, kaya walang interoperable na private encoding na maibibigay. Mas masama ang file na walang library na nakakabasa kaysa sa pagsasabi nito.",
-  "passwordNote": "<strong>KAILANGAN ang password para sa PKCS#12 at opsyonal para sa tatlong iba</strong>, kung saan ine-encrypt nito ang private na kalahati (PKCS#8 para sa PEM at DER, PBES2 bilang .jwe para sa JWK). Iwanan itong blangko at lalabas nang malinaw ang private key, na kadalasang gusto mo sa development at hindi kailanman gusto mo saanman."
+  "passwordNote": "<strong>KAILANGAN ang password para sa PKCS#12 at opsyonal para sa tatlong iba</strong>, kung saan ine-encrypt nito ang private na kalahati (PKCS#8 para sa PEM at DER, PBES2 bilang .jwe para sa JWK). Iwanan itong blangko at lalabas nang malinaw ang private key, na kadalasang gusto mo sa development at hindi kailanman gusto mo saanman.",
+  "algorithmsHeading": "Mga algorithm, ayon sa surface",
+  "algorithmsLead": "Bawat signature algorithm sa bawat surface, kung pumipirma at tumatanggap nito ang realm na ito ngayon, at kung bakit hindi. Ito ang sagot na sinusunod ng mga pumipirma at nagve-verify.",
+  "algorithmsSettings": "Itakda ang mga listahan sa pahina ng mga setting.",
+  "tocAlgorithms": "ang mga algorithm",
+  "thAlgName": "Algorithm",
+  "thAlgSigns": "Pumipirma",
+  "thAlgAccepts": "Tumatanggap",
+  "thAlgWhyNot": "Bakit hindi"
 }

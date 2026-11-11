@@ -57,8 +57,6 @@
   "body.renaming": "<strong>重命名角色组不会移动任何人。</strong>成员仍留在原来的组中，而该组在名称更改的那一刻就不再授予任何权限——新名称在有人加入之前也不授予任何权限。<code>/admin-api</code> 有意不受这四项设置中任何一项的控制：当没有角色持有者能登录时，它是重新进入的途径，这也是开启访问控制不会破坏驱动管理 API 的测试套件的原因。",
   "rbacMemberCell.neverHereTitle": "此人在目录中有条目，但此处还没有人以其身份完成过身份验证，因此 Users 中没有关于此人的页面。",
   "rbacMemberCell.neverHere": "从未来过",
-  "rbacMemberCell.danglingTitle": "此 DN 处没有任何内容。角色仍然有效——一旦有人以此名称完成身份验证或该条目被创建，它就会解析——但在此之前，任何目录客户端都无法看到它指向谁。",
-  "rbacMemberCell.dangling": "悬空",
   "rbacClaimedMark.title": "其自身条目的 memberOf 指向此组，而该组并未反向列出此人。此处没有任何机制维护 memberOf——是某个客户端写入的——但它同样授予该角色，因此出现在此列表中。“撤销”按钮无法移除它：该值位于人员条目上，而此控制台只写入组。",
   "rbacClaimedMark.mark": "通过其自身的 memberOf",
   "rbacCaveat.before": "<strong>这两个组是本服务中唯一会授予权限的组，而它们授予的就是此控制台。</strong>此处的其他所有组仍然不授予任何权限——请参阅",

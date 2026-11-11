@@ -95,13 +95,33 @@
     "en": "4369282d9208f4aa",
     "text": "相信 X-Forwarded-Proto 和 X-Forwarded-Host——终止 TLS 的反向代理会设置它们，以说明客户端实际使用的是什么。当本服务前面有其他组件时请开启，否则元数据会向通过 https 访问的客户端发布 http:// URL，并且每个 DPoP 证明都会因指向真实端点而被拒绝。前面没有任何组件时请保持关闭：没有代理时，这些只是任何客户端都能设置的普通标头，相信它们就等于让调用方决定本服务认为自己的颁发者和端点是什么。监控 → TLS 连接显示请求实际携带了什么，以及其中哪些被采信。请注意，在任何模式下，本服务都绝不会从标头（X-Client-Cert 及类似标头）中读取客户端证书——转发而来的证书是任何人都能伪造的证书。"
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "CDN 边缘节点地址"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "位于本服务前端的 CDN 用于连接的地址或 CIDR 范围，以逗号分隔。CDN 的边缘节点为其所有客户服务，因此来自这些范围的请求，除非在 X-Origin-Verify 标头中携带 global.edgeSecret，否则会被拒绝。留空（默认值）时不对任何人提出要求。既不是地址也不是 CIDR 范围的值会被忽略并记录到日志。"
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "CDN 源站密钥"
+  },
+  "global.edgeSecret|description": {
+    "en": "150b63080ee2d16b",
+    "text": "本部署自身的 CDN 分发在 X-Origin-Verify 中发送的内容，用于将其与同一边缘节点上其他客户的分发区分开来。该标头在读取后即被移除。设置了 global.edgeProxies 而此项为空时，来自这些范围的所有请求都会被拒绝。它可以写成 `sha256:<hex digest>`，这样本服务只保存摘要；也可以作为 STS_EDGE_SECRET_FILE 指定的文件交付。"
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "启动时读取一次"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "受信任的代理地址"
   },
   "global.trustedProxies|description": {
-    "en": "1f176030f2e4d953",
-    "text": "本部署自己的代理和负载均衡器发起连接所用的地址或 CIDR 范围，以逗号分隔（10.0.0.0/8, fd00::/8）。仅在 global.trustProxy 开启时读取。留空（默认）保持旧规则：转发标头对任何调用方都采信，速率限制器采用最左侧的 X-Forwarded-For 条目，而它是客户端自己写的。设置后，仅当连接的对端位于这些范围之一时才采信 X-Forwarded-For、X-Forwarded-Proto 和 X-Forwarded-Host，客户端则是最右侧不在这些范围内的 X-Forwarded-For 条目——因此直接访问某个节点的调用方既不能自选速率限制地址，也不能左右本服务对自身 URL 的认知。不是地址或范围的值会被忽略并记录日志，绝不会被放宽。开启 global.proxyProtocol 时，无论 global.trustProxy 如何设置，它同时也是采信 PROXY 协议标头的来源列表——在那种情况下空列表表示不信任任何人，因此服务会拒绝启动。"
+    "en": "0af5f57bfac2e8d3",
+    "text": "本部署自己的代理和负载均衡器发起连接所用的地址或 CIDR 范围，以逗号分隔（10.0.0.0/8, fd00::/8）。仅在 global.trustProxy 开启时读取。留空（默认）在开发模式下保持旧规则：转发标头对任何调用方都采信，速率限制器采用最左侧的 X-Forwarded-For 条目，而它是客户端自己写的。在产品模式下，留空则不采信任何来源的转发标头，因此客户端就是连接的对端。设置后，仅当连接的对端位于这些范围之一时才采信 X-Forwarded-For、X-Forwarded-Proto 和 X-Forwarded-Host，客户端则是最右侧不在这些范围内的 X-Forwarded-For 条目——因此直接访问某个节点的调用方既不能自选速率限制地址，也不能左右本服务对自身 URL 的认知。不是地址或范围的值会被忽略并记录日志，绝不会被放宽。开启 global.proxyProtocol 时，无论 global.trustProxy 如何设置，它同时也是采信 PROXY 协议标头的来源列表——在那种情况下空列表表示不信任任何人，因此服务会拒绝启动。"
   },
   "http.keepAliveTimeoutS|label": {
     "en": "d9f06661ccb4fd07",
@@ -187,13 +207,237 @@
     "en": "034b8666bc7feb89",
     "text": "CORS 视为本部署自身的源——协议方案、主机和端口，不带路径——以逗号分隔，与本服务监听的地址、global.publicBaseUrl 和嵌入式调试器并列。此处列出的源可以读取本服务给浏览器的每个应答，无论请求指定的是哪个客户端。留空（默认）不添加任何源：其他每个源只有在某个应用将其列入 appCorsOrigin 时才被允许。不是源的值会被忽略并记录日志，绝不会被放宽。"
   },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "可读取指定文件的目录"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "仅限产品模式。以逗号分隔的绝对目录列表。管理员在设置或请求中指定的文件（CA 文件、SPIFFE 令牌或密钥文件、Sigstore 文件、邮件证书或密钥）仅当其跟随符号链接后的真实路径位于其中某个目录内时才读取。此项在环境或 appconfig 文件中设置，不能通过控制台或 API 更改，因此管理员的请求无法扩大其范围。警告：添加 / 或其他宽泛目录将不满足 ASVS 5.0.0 要求 5.3.2。"
+  },
+  "security.fileRoots|restartReason": {
+    "en": "65fd8c7be0cfb5d3",
+    "text": "它限定了管理员的请求可以指定的内容，因此任何此类请求都不得扩大它"
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "允许无角色的人员访问 SCIM 和 Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "仅限产品模式。默认关闭时，通过不携带作用域的方案（如 HTTP Basic 或会话 Cookie）向 /scim/v2 或 Shared Signals 进行身份验证的人员，需要 Admin Read 才能读取、Admin Write 才能写入。开启时，任何已通过身份验证的人员均可。警告：开启后不满足 ASVS 5.0.0 要求 8.2.1 和 8.2.2，因为任何人都可更改任何账户。请改用 OAuth 作用域供配置客户端使用。"
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "记录生成的引导密码"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "仅限产品模式。默认关闭时，为首位管理员生成的密码写入 persistence.dataDir 中仅此服务可读的 bootstrap-admin-password 文件，日志说明位置。开启时写入服务日志。警告：开启后不满足 ASVS 5.0.0 要求 16.2.5，因为凭据进入了日志。"
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "允许机密客户端省略 PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "仅限产品模式。默认关闭时，任何客户端不带 code_challenge 的授权请求都会被拒绝。开启时，机密客户端可以省略，请求仅被记录。警告：开启后不满足 ASVS 5.0.0 要求 10.4.6。"
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "密码不得包含的词"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "新密码不得包含的其他词，例如组织、产品、项目或部门名称。以逗号分隔。服务名称以及信任域的名称和域名始终被拒绝。词至少需要四个字母；检查会忽略大小写和常见字符替换（如用 0 代替 o）。"
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "刷新令牌链的最长持续时间（秒）"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "通过刷新令牌续期的授权的绝对上限，从第一个令牌开始计算。超过后用户须重新登录，无论客户端刷新多少次。0 表示无限制，这是开发模式的默认值。产品模式默认 30 天。"
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "接受无显式类型的合作方注销令牌"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "默认关闭时，产品模式仅接受类型为 logout+jwt 的合作方注销令牌。开启后，也接受类型为 jwt 或无类型的令牌，适用于不发送类型的合作方。OpenID 规范仅建议使用该类型。"
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "7a29e5cd3a5ff016",
+    "text": "进行敏感更改所需的登录新近程度（分钟）"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "4bfb2112a9f37a5d",
+    "text": "要更改某人的登录方式，必须在多少分钟内登录过。在门户上：本人的第二因素、恢复代码、通行密钥、应用密码、证书、签名密钥、自签发 ID、电子邮件地址或钱包凭据提供，以及结束本人的其他会话；须先重新登录。对管理员而言：通过控制台或 /admin-api 更改某人的密码、第二因素、通行密钥、恢复代码、电子邮件地址或应用密码，/admin-api 会以 RFC 9470 的 insufficient_user_authentication 作答。0 表示不要求，这是开发模式的默认值。产品模式默认 15。"
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "在产品模式下允许默认数据库密码"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "默认关闭时，产品模式不会使用众所周知的数据库密码（如随附 compose 文件的 sts_app）或与用户名相同的密码启动。开启后仍会启动。仅用于测试环境。"
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "在此时刻之前开始的会话已结束（毫秒）"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "由“会话”页面上的“结束所有会话”设置。在此时刻（自 1970 年起的毫秒数）之前开始的登录会话已结束。0 表示没有。"
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "始终征求公共客户端的同意"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "公共客户端无法证明其身份，因此每次请求访问时都会询问用户，无论之前如何回答。本服务自身的应用程序除外。产品模式默认开启。"
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "接受的最早合作方身份验证（秒）"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "如果合作方根据 auth_time 或 AuthnInstant 表明用户的身份验证早于此时长，则拒绝联合登录。设置限制后，未说明时间的合作方将被拒绝。默认 0 表示不检查。"
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "每个地址每分钟允许的请求数"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "每个进程对单个地址所有请求的上限。这是防滥用的措施，与凭据尝试限制不同。0 表示无上限，这是开发模式的默认值。产品模式默认 6000。在代理后面时，请设置 global.trustedProxies 以正确读取地址。"
+  },
+  "security.pbes2MinIterations|label": {
+    "en": "099bacdecdd8c71d",
+    "text": "PBES2 JWE 接受的最少 PBKDF2 迭代次数"
+  },
+  "security.pbes2MinIterations|description": {
+    "en": "c6f00e313b689b2b",
+    "text": "以密码加密的 JWE（PBES2，RFC 7518 第 4.8 节）自行声明迭代次数，低于此值的会在派生任何内容之前被拒绝。产品模式默认 600000，即 OWASP 对 PBKDF2-HMAC-SHA256 给出的数值（ASVS 5.0.0 11.4.4）；开发模式默认 RFC 7518 推荐的 1000。使用某个库较小默认值的发送方在产品模式下会被拒绝，直到调低此值。密钥在 libuv 的线程池中派生，绝不在事件循环上，超过 1000000 次迭代会被拒绝。"
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "在产品模式下允许明文 syslog 审计导出"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "默认关闭时，产品模式的 syslog 审计目标仅接受 tls 传输。开启后也接受 tcp 和 udp，审计日志将以未加密方式通过网络。仅在可信网络中使用。"
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "此服务可连接的主机"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "如果设置，合作方、客户端或调用方可影响的出站请求只能访问这些主机。以逗号分隔：精确名称，或以点开头表示整个域，如 .example.com。默认为空，允许任何公共主机。产品模式下始终拒绝内部地址。"
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "将 HSTS 应用于子域"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "向 Strict-Transport-Security 添加 includeSubDomains，使浏览器对此服务主机名的所有子域也使用 HTTPS。产品模式默认开启。如果某个子域仍需通过纯 HTTP 响应，请关闭。"
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "接受未指定受众的断言"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "默认关闭时，产品模式拒绝合作方不含受众限制的 SAML 1.1 或 WS-Federation 断言，因为没有信息表明它是发给此服务的。开启后，会接受并记录警告，适用于无法发送受众限制的合作方。"
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "扫描文件中的恶意软件"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "默认关闭时不扫描任何内容。开启后，每张头像、徽标、从联合身份合作方复制的照片以及上传的风险数据集都会先发送到 malwareScan.url 中的 ICAP 服务，如果服务标记或无法应答，则拒绝。"
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "ICAP 服务地址"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "用于扫描的服务，格式为 icap://主机:端口/服务 或 icaps://主机:端口/服务（RFC 3507）。可使用任何提供 ICAP 服务的防病毒产品。"
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "扫描超时（毫秒）"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "等待服务的时长。大文件每 MiB 额外增加一秒。"
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "icaps 服务的 CA 文件"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "icaps 服务可链接到的 CA 证书 PEM 文件，作为公共根证书之外的补充。受 security.fileRoots 限制。"
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "在产品模式下允许明文 ICAP"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "默认关闭时，产品模式拒绝 icap:// 地址，在设置 icaps:// 地址之前不接受任何文件。开启后，文件可能以未加密方式到达扫描器。仅在可信网络中使用。"
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "允许不使用第二因素登录"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "仅限产品模式。默认关闭时，无论身份验证策略如何，所有人（包括管理员）都需要第二因素，未持有的人员在登录时注册。豁免的服务账户仍然豁免。开启时由身份验证策略决定。警告：开启后，除非策略要求，否则不满足 ASVS 5.0.0 要求 6.3.3。"
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "允许 JWE CBC-HMAC 内容加密"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "仅限产品模式。默认关闭时，JWE 仅使用和接受 AES-GCM：既不提供也不接受 A128CBC-HS256、A192CBC-HS384 和 A256CBC-HS512，指定了算法但未指定 enc 的客户端将以 A256GCM 应答。开启时，它们的行为与开发模式相同。警告：开启期间不满足 ASVS 5.0.0 要求 11.3.2，仅为无法读取 AES-GCM 的合作方开启。"
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "在协议仍使用时允许 SHA-1 和 MD5"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "仅限产品模式。默认关闭时，本服务不在 XML 加密或 JWE 中使用基于 SHA-1 的 OAEP，也不使用 SHA-1 PKINIT 密钥派生或 S4U2Self 的 HMAC-MD5 校验和。开启时则使用。警告：ASVS 5.0.0 要求 11.4.1 禁止这些哈希函数，因此仅为不支持更新算法的合作方或客户端开启。"
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "在产品模式下允许默认管理员名称"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "53da4f7ba4ff5dcc",
+    "text": "仅限产品模式。默认关闭时，名为 admin、root、sa 或 administrator 或没有名称的引导管理员会获得一个不可预测的生成名称，并在首次启动时与其密码一起写入 persistence.dataDir 中的 bootstrap-admin-password 文件（参见 admin.logBootstrapPassword）。开启时按配置的名称使用。警告：ASVS 5.0.0 要求 6.3.2 禁止默认账户名称，因此除测试环境外请保持关闭。"
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "引导只运行一次，介于持久化存储打开与监听器绑定之间，因此之后的更改已无可命名的对象"
+  },
   "admin.bootstrapUsername|label": {
     "en": "bdb921ce57f149ff",
     "text": "引导管理员账户"
   },
   "admin.bootstrapUsername|description": {
-    "en": "b174944b711d5987",
-    "text": "引导管理员的用户名（2026-09-13），存在于默认领域中，并自 2026-09-14 起存在于每个信任领域中，在那里它只管理该领域：若不存在则在启动时创建，同时是两个控制台角色的成员，首次登录时被强制修改密码，且不可删除或重命名。在它首次登录 /admin 之前，每个已登录的人都可以使用控制台（admin.openWhenEmpty）。在开发模式下，与其他所有人一样，任何密码都能使其登录。在产品模式下，当本服务启动且领域中没有任何人持有凭据时，它也是获得生成密码的账户；该密码只记录到日志中一次，此后不再出现，并且是进入全新产品部署的唯一途径。若已有人持有凭据，生成的密码绝不会被写入，因此它不会覆盖任何密码。强制修改只适用于此步骤创建的账户——同名的现有账户保留其密码，只是被授予两个角色。"
+    "en": "9b6fe650632ee79d",
+    "text": "引导管理员的用户名（2026-09-13），存在于默认领域中，并自 2026-09-14 起存在于每个信任领域中，在那里它只管理该领域：若不存在则在启动时创建，同时是两个控制台角色的成员，首次登录时被强制修改密码，且不可删除或重命名。在它首次登录 /admin 之前，每个已登录的人都可以使用控制台（admin.openWhenEmpty）。在开发模式下，与其他所有人一样，任何密码都能使其登录。在产品模式下，当本服务启动且领域中没有任何人持有凭据时，它也是获得生成密码的账户；该名称和密码只写入一次，写入 persistence.dataDir 中的 bootstrap-admin-password 文件，该文件仅本服务可读（日志会说明其位置，只有在开启 admin.logBootstrapPassword 时日志本身才会包含它们），并且是进入全新产品部署的唯一途径。若已有人持有凭据，生成的密码绝不会被写入，因此它不会覆盖任何密码。强制修改只适用于此步骤创建的账户——同名的现有账户保留其密码，只是被授予两个角色。"
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -204,8 +448,8 @@
     "text": "引导管理员密码"
   },
   "admin.bootstrapPassword|description": {
-    "en": "c90454b252735521",
-    "text": "在产品模式下、且仅当领域中没有任何人持有凭据时，代替生成密码而赋予引导管理员的密码——即 admin.bootstrapUsername 所描述的那个唯一时刻，条件完全相同。它不能覆盖任何人的密码，在开发模式下也不起任何作用。\n\n**它存在的原因：让唯一的入口不必出现在日志中。** 生成的密码只公布一次、此后不再出现，因此日志是敏感的，而一旦那一行日志被滚动清除，凭据也就没了。拥有密钥存储的运维人员可以在服务启动前把值放在那里，需要时随时读回——AWS 部署正是通过 Secrets Manager 这样做的（deploy/aws/CLAUDE.md）。\n\n**它受密码策略约束，策略拒绝的值会被拒绝，而不是被悄悄替换。** 改为生成一个，会在运维人员明确要求不出现凭据的部署日志中放入一个可用的凭据，同时让其密钥存储中的值失效，而且没有任何提示。拒绝信息会列出它违反的规则（STS-AUTHN-0205）。\n\n**它从不被记录**——启动时不会，/admin/config 上不会，通过 /admin-api 也不会。它已经在运维人员放置的地方了，本服务若将其打印出来，就违背了设置它的初衷。"
+    "en": "2dc1b16eebe63526",
+    "text": "在产品模式下、且仅当领域中没有任何人持有凭据时，代替生成密码而赋予引导管理员的密码——即 admin.bootstrapUsername 所描述的那个唯一时刻，条件完全相同。它不能覆盖任何人的密码，在开发模式下也不起任何作用。\n\n**它存在的原因：让唯一的入口不必出现在日志中。** 生成的密码只公布一次、此后不再出现，因此日志是敏感的，而一旦那一行日志被滚动清除，凭据也就没了。拥有密钥存储的运维人员可以在服务启动前把值放在那里，需要时随时读回——AWS 部署正是通过 Secrets Manager 这样做的（deploy/aws/CLAUDE.md）。它可以作为 STS_ADMIN_BOOTSTRAP_PASSWORD_FILE 指定的文件交付，也可以用 `$scrypt$` 或 argon2id 哈希代替密码；该哈希按原样存储，因此明文从不出现在配置中。\n\n**它受密码策略约束，策略拒绝的值会被拒绝，而不是被悄悄替换。** 改为生成一个，会在运维人员明确要求不出现凭据的部署日志中放入一个可用的凭据，同时让其密钥存储中的值失效，而且没有任何提示。拒绝信息会列出它违反的规则（STS-AUTHN-0205）。\n\n**它从不被记录**——启动时不会，/admin/config 上不会，通过 /admin-api 也不会。它已经在运维人员放置的地方了，本服务若将其打印出来，就违背了设置它的初衷。"
   },
   "admin.bootstrapPassword|restartReason": {
     "en": "25fddde63c972817",
@@ -680,8 +924,8 @@
     "text": "会话空闲超时（秒，0 = 无）"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "会话在结束前可以闲置不用的时长，叠加在上面的绝对有效期之上。**零（默认）表示没有空闲超时**，这是本服务一贯的行为。设置后，某人停止使用的会话会在其最后一次请求后这么多秒结束，以两个限制中先到者为准——对管理控制台或用户门户的请求算作对其背后单点登录会话的使用，因此在控制台中工作的运维人员不会因为一个他们并未出示的会话上的空闲计时而被注销。此项实时生效：它适用于已存在的会话，因为它是在读取会话时检查的，而不是在创建时写入的。"
+    "en": "a5806c4c1917a3f7",
+    "text": "会话在结束前可以闲置不用的时长，叠加在上面的绝对有效期之上。**零表示没有空闲超时**，这是开发模式的默认值，也是本服务在开发模式下一贯的行为。设置后，某人停止使用的会话会在其最后一次请求后这么多秒结束，以两个限制中先到者为准——对管理控制台或用户门户的请求算作对其背后单点登录会话的使用，因此在控制台中工作的运维人员不会因为一个他们并未出示的会话上的空闲计时而被注销。此项实时生效：它适用于已存在的会话，因为它是在读取会话时检查的，而不是在创建时写入的。产品模式默认 1800。"
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -790,6 +1034,126 @@
   "authn.multipleAccounts|description": {
     "en": "e0455f389b3cfb47",
     "text": "允许一个浏览器同时持有多人的单点登录会话，并在其间选择。开启时，另一个人登录会向浏览器的账号集（`sts_accounts` Cookie）中添加一个会话，而不是结束原有会话；当有多个账号已登录、而请求未说明针对哪个账号时——此流程中未选择账号，也没有指明账号的 login_hint、id_token_hint 或 SAML Subject——请求会被发送到 /authn/accounts 的账号选择器，prompt=select_account 也会显示它。每个会话保留各自的有效期、空闲超时、升级认证状态和退出登录。默认开启。关闭时，浏览器只有一个会话，另一个人登录会结束它。无论开启还是关闭，都在下一个请求时生效，且不会结束任何会话：开启后，浏览器已有的会话成为其账号集的第一个账号；关闭后，浏览器的默认会话单独继续，其他会话照常到期。"
+  },
+  "branding.layout|label": {
+    "en": "2bce09e5da84a651",
+    "text": "登录布局"
+  },
+  "branding.layout|description": {
+    "en": "0f84529af8e63ce7",
+    "text": "本领域中登录界面、其后续步骤、同意界面以及其他公共页面的布局方式。centered：卡片位于页面中央，徽标和显示名称在其上方（默认值，即本服务一贯的外观）。split：在卡片旁边显示一个强调色面板，承载徽标和显示名称，在窄屏上位于卡片上方。banner：页面顶部一条强调色横幅承载它们，卡片位于其下方。每种布局都完全保留表单、其字段及其顺序。"
+  },
+  "branding.accentColor|label": {
+    "en": "12376f4cbd6c30b9",
+    "text": "强调色"
+  },
+  "branding.accentColor|description": {
+    "en": "6a7806cbc4a60f44",
+    "text": "本领域公共页面上按钮、链接和焦点环的颜色，也是 split 面板和横幅的颜色。写作 #rgb 或 #rrggbb。按钮上的文字为黑色或白色，取在其上更易阅读者，因此不单独设置。若某颜色使链接相对于卡片颜色的对比度低于 WCAG 2.2 AA（4.5:1），则被拒绝（STS-AUTHN-0544）。"
+  },
+  "branding.pageColor|label": {
+    "en": "d8f29ba7b8da917a",
+    "text": "页面背景色"
+  },
+  "branding.pageColor|description": {
+    "en": "e36337b16ae8eb93",
+    "text": "本领域公共页面上卡片后面的背景。写作 #rgb 或 #rrggbb。"
+  },
+  "branding.cardColor|label": {
+    "en": "32fcd1507a366673",
+    "text": "卡片颜色"
+  },
+  "branding.cardColor|description": {
+    "en": "91c08312a7b2f249",
+    "text": "绘制登录表单的卡片背景。写作 #rgb 或 #rrggbb。文字颜色和强调色相对于它都必须保持 WCAG 2.2 AA 对比度（4.5:1），否则更改被拒绝（STS-AUTHN-0544）。"
+  },
+  "branding.textColor|label": {
+    "en": "25e9c8090de7f831",
+    "text": "文字颜色"
+  },
+  "branding.textColor|description": {
+    "en": "86f81fcb12b03b41",
+    "text": "卡片上文字的颜色。写作 #rgb 或 #rrggbb。较弱的文字（注释、提示）由它与卡片颜色混合而成，绝不低于 WCAG 2.2 AA 对比度。相对于卡片低于 4.5:1 的颜色会被拒绝（STS-AUTHN-0544）。"
+  },
+  "branding.displayName|label": {
+    "en": "2b7f6a84de917e38",
+    "text": "显示名称"
+  },
+  "branding.displayName|description": {
+    "en": "c7734d5c0723dde4",
+    "text": "在本领域公共页面上显示于徽标旁边、并出现在浏览器标签页标题中的名称（\"Sign in — <name>\"），作为纯文本，绝不作为标记，且不翻译。为空时不显示名称，标题仍是页面一贯的标题。最多 80 个字符。"
+  },
+  "branding.logoAlt|label": {
+    "en": "bb2a5f1e3e7d2fca",
+    "text": "徽标替代文本"
+  },
+  "branding.logoAlt|description": {
+    "en": "4252cb4ab4a31ec4",
+    "text": "屏幕阅读器在本领域徽标位置朗读的内容，通常是组织名称。领域拥有徽标时为必填：没有它无法上传徽标，且在保留徽标期间不能将其清空（STS-AUTHN-0548）。最多 160 个字符。"
+  },
+  "branding.logoLinkUrl|label": {
+    "en": "78ddaed87c9eb98d",
+    "text": "徽标链接"
+  },
+  "branding.logoLinkUrl|description": {
+    "en": "3cd6daaebb2a7ea6",
+    "text": "点击徽标时前往的位置，必须是绝对 https URL（否则为 STS-AUTHN-0551）。为空时徽标不是链接，这是默认值：没有可向外跳转之处的登录页面更安全。"
+  },
+  "branding.logoMaxBytes|label": {
+    "en": "26a97375a1800d8b",
+    "text": "最大徽标（字节）"
+  },
+  "branding.logoMaxBytes|description": {
+    "en": "37f4c903152cd219",
+    "text": "一次上传可携带的最大徽标，适用于所有领域。更大的会被拒绝（STS-AUTHN-0546）。徽标保存在存储中并复制到每个进程，因此保持较小：默认 256 KiB，最多 2 MiB。"
+  },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "允许用户设置自己的照片"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "用户是否可以在用户门户上设置和替换自己的个人资料照片。关闭时，门户不提供上传，该操作被拒绝（STS-PORTAL-0634）；用户仍可移除已有的照片。"
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "复制联合伙伴的照片"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "是否在登录后获取联合伙伴发送的图片地址并保存在此，使 picture 声明指向本领域的副本。关闭时或复制失败时，声明携带伙伴的地址。获取遵循联合出站策略，且不跟随重定向。"
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "用户可选择的最大文件（字节）"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "门户允许用户选择的最大文件，默认 5 MiB。浏览器在发送前会裁剪并缩放，因此这不是保存的大小：保存的大小由 profilePhoto.maxStoredBytes 决定。"
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "保存的最大照片（字节）"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "本领域保存的最大图片，无论来自用户还是联合伙伴。更大的会被拒绝（STS-PORTAL-0631）。默认 1 MiB，最大 3 MiB：图片以 base64 编码在 JSON 请求中传输。"
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "用户照片的最短边（像素）"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "用户设置的照片的最短边。更小的会被拒绝（STS-PORTAL-0632）。这不适用于伙伴的副本，后者通常更小。"
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "照片的最长边（像素）"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "保存的照片的最长边，因为每个显示它的浏览器都必须解码。更大的会被拒绝（STS-PORTAL-0632）。"
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -932,8 +1296,8 @@
     "text": "容忍的时钟偏差步数"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "接受当前时间前后各多少个步长。RFC 6238 第 5.2 节建议最多一个，这也是默认值，使一个验证码大约有效九十秒。**此项是实时生效的**，适用于所有现有注册——一个部署对时钟漂移的手机容忍多少，是一项策略，而不是二维码告诉应用的东西。零要求时钟完全同步，用于演示没有容忍时会发生什么。"
+    "en": "16e7e0f293746c98",
+    "text": "接受当前时间前后各多少个步长。RFC 6238 第 5.2 节建议最多一个，这也是默认值，使一个验证码大约有效九十秒。**此项是实时生效的**，适用于所有现有注册——一个部署对时钟漂移的手机容忍多少，是一项策略，而不是二维码告诉应用的东西。零要求时钟完全同步，用于演示没有容忍时会发生什么。 产品模式默认值为 0，因此代码仅在一个 30 秒时间步内有效。"
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -1376,8 +1740,120 @@
     "text": "后量子签名"
   },
   "keys.postQuantumSigning|description": {
-    "en": "68ffd5da182ec911",
-    "text": "此领域是否签名、发布并验证后量子及复合 JWS 算法（ML-DSA、SLH-DSA 以及复合 ML-DSA 算法）。**默认开启。**关闭时：`/oauth2/jwks` 和 DID 文档中没有任何后量子签名密钥（包括备用密钥、固定密钥和签名者组密钥）；发现文档、授权服务器、OpenID Federation、OpenID4VCI 和 OpenID4VP 文档的任何 `*_alg_values_supported` 或 `*_alg_values` 列表中都没有后量子算法；以其中之一签名的 JWS 在此领域验证 JWS 的任何地方都会被拒绝；客户端不能注册其中之一；仍需要其中之一的签名——此项开启期间注册的客户端，或 HTTP 消息签名——会被拒绝，而不是用一个无人能获取的密钥来签名。它是为 JOSE 库无法解析 AKP 密钥或不认识这些算法的客户端和测试套件而设的，OpenID 一致性测试套件即是其一。**不受影响：**COSE（通行密钥）、XML 签名、TLS、证书算法、ML-KEM 加密密钥（`keys.encryptionKemAlgs`）、`hybrid-groups` 证书在 `x5c` 中携带的 ML-DSA 替代密钥（单独的 ML-DSA 密钥被移除，证书不会重新签发），以及 `oidfed.signingAlg`：指定 ML-DSA 联合密钥的领域仍用它签名自己的声明，但会拒绝要求它验证的 ML-DSA 声明，因此在这里请保持该设置为经典算法。"
+    "en": "0a6b412c599e2c7d",
+    "text": "此领域是否签名、发布并验证后量子及复合 JWS 算法（ML-DSA、SLH-DSA 以及复合 ML-DSA 算法）。**默认开启。**关闭时：`/oauth2/jwks` 和 DID 文档中没有任何后量子签名密钥（包括备用密钥、固定密钥和签名者组密钥）；发现文档、授权服务器、OpenID Federation、OpenID4VCI 和 OpenID4VP 文档的任何 `*_alg_values_supported` 或 `*_alg_values` 列表中都没有后量子算法；以其中之一签名的 JWS 在此领域验证 JWS 的任何地方都会被拒绝；客户端不能注册其中之一；仍需要其中之一的签名——此项开启期间注册的客户端，或 HTTP 消息签名——会被拒绝，而不是用一个无人能获取的密钥来签名。它是为 JOSE 库无法解析 AKP 密钥或不认识这些算法的客户端和测试套件而设的，OpenID 一致性测试套件即是其一。**不受影响：**COSE（通行密钥）、XML 签名、TLS、证书算法、ML-KEM 加密密钥（`keys.encryptionKemAlgs`）、`hybrid-groups` 证书在 `x5c` 中携带的 ML-DSA 替代密钥（单独的 ML-DSA 密钥被移除，证书不会重新签发）。指定 ML-DSA 的 `oidfed.signingAlg` 改用此领域的默认算法签名。"
+  },
+  "keys.eddsaSigning|label": {
+    "en": "743f659a7fcaa776",
+    "text": "EdDSA 签名"
+  },
+  "keys.eddsaSigning|description": {
+    "en": "78d3ca6aec2ee4f6",
+    "text": "此领域是否用 EdDSA（RFC 8037，Ed25519 和 Ed448）为客户端选择算法的 JOSE 对象签名，并发布其 kty OKP 签名密钥。**默认关闭**，因为 OpenID 一致性测试套件无法解析 JWKS 中的 OKP 密钥，而 OpenID Connect 认证运行的正是该套件。关闭时：`/oauth2/jwks` 中没有 OKP 签名密钥（包括备用、固定和签名者组密钥）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；客户端不能为 ID 令牌、UserInfo、内省或 JARM 响应注册或被指定 EdDSA；仍被请求的此类签名——由在此设置开启时注册的客户端，或由设为 EdDSA 的 SSF、WS-Trust 或 Provider Commands 算法——会被拒绝，而不是用无人能获取的密钥生成。**不变：**客户端用来签名的 EdDSA（客户端断言、DPoP 证明、请求对象、钱包证明）仍被接受并被宣告为接受；密钥随 `x5c` 或 DID 文档传递的签名；运营者配置的 OpenID4VCI 凭证算法仍会签名，因此在此设置关闭时不要在那里配置 EdDSA；DID 文档、COSE、XML 签名、DKIM 和 TLS 不属于 JOSE JWKS 发布。设为 EdDSA 的 `oauth2.accessTokenSigningAlg` 或 `oidfed.signingAlg` 改用此领域的默认算法签名。开启时：按 `oauth2.eddsaCurve` 的设定签名并发布 EdDSA。"
+  },
+  "keys.signingAlgorithms|label": {
+    "en": "23087da9ac3a37f0",
+    "text": "此领域使用的签名算法"
+  },
+  "keys.signingAlgorithms|description": {
+    "en": "6ca0d3f207d8dcd4",
+    "text": "此领域用于签名并为其发布密钥的 JWS 算法。**默认值为空，保留领域原有的所有算法。** 列表必须包含 RS256：OpenID Connect Discovery 要求它出现在 `id_token_signing_alg_values_supported` 中，它也是 ID 令牌和访问令牌的默认算法。设置列表后：`/oauth2/jwks` 中不含未列出算法的签名密钥（包括备用密钥、固定密钥和签名者组密钥；一个 RSA 密钥可用于所有 RS 和 PS 算法，因此会保留）；未列出的算法不会出现在发现文档的 ID 令牌、UserInfo、内省或 JARM 签名列表中；客户端不能为这些响应注册或被分配该算法；仍要求使用该算法的签名会被拒绝，而不是用无人能获取的密钥签名；未列出的 `oauth2.accessTokenSigningAlg` 改用 RS256 签名。使用 FAPI 1.0 Advanced 时还需列出 PS256。`keys.postQuantumSigning` 和 `keys.eddsaSigning` 仍然有效：列出某个算法不会开启其算法系列。**不变的内容：**此领域从客户端接受的内容（客户端断言、DPoP 证明、请求对象、钱包证明）；纯 JSON 的 UserInfo 响应；加密密钥；COSE、XML 签名、DKIM 和 TLS；以及 `oauth2.httpSignatureResponseAlg`、`oidfed.signingAlg` 和 OpenID4VCI 凭证算法所配置的算法，因此请在这些设置中指定已列出的算法。"
+  },
+  "keys.pqcOnly|label": {
+    "en": "d27c2ce62f5e2d05",
+    "text": "仅使用后量子签名"
+  },
+  "keys.pqcOnly|description": {
+    "en": "6bfa6be713279597",
+    "text": "此领域是否仅使用后量子算法签名，涵盖 JOSE、COSE、XML 和 Data Integrity。**默认关闭。**开启时：每个签名列表都缩小为其中的后量子算法，未指定任何后量子算法时则为全部后量子算法，经典算法的签名会被拒绝。此领域接受的内容不变。**ID 令牌保留 RS256**，因为 OpenID Connect Discovery 要求如此，且仅用于注册了它或未注册任何算法的客户端。证书算法和 DKIM 不变。`keys.postQuantumSigning` 关闭时不能开启此设置，无法验证 ML-DSA 的客户端或依赖方也无法读取此领域签名的内容。"
+  },
+  "keys.acceptedSigningAlgorithms|label": {
+    "en": "13c74bb1ab9ae1ae",
+    "text": "接受的 JWS 算法"
+  },
+  "keys.acceptedSigningAlgorithms|description": {
+    "en": "861a2aba4650fdfa",
+    "text": "此领域接受来自任何一方的 JWS 算法：客户端断言、DPoP 证明、请求对象、钱包证明、联合声明及其自身的令牌。**留空（默认）时接受每个用例原本接受的全部算法。**例外：在产品模式下，只有此列表或 `keys.signingAlgorithms` 列出 ES256K 时才接受它，因为 secp256k1 不是经批准的曲线；该曲线上的 XML 签名遵循同一规则。未列出算法的签名会在任何密钥操作之前被拒绝。列表必须包含 `keys.signingAlgorithms` 列出的全部算法，该设置为空时必须包含 RS256，否则此领域会拒绝自己的令牌。HS 行是 `client_secret_jwt` 使用的；只有没有客户端使用时才可省略。"
+  },
+  "cose.algorithms|label": {
+    "en": "fe94cc0994dab40b",
+    "text": "用于签名的 COSE 算法"
+  },
+  "cose.algorithms|description": {
+    "en": "fb657d7568044786",
+    "text": "此领域按顺序用于签名状态列表 CWT 和 `vc+cose` 凭证的 COSE 算法。**留空（默认）时保持每个用例当前的做法。**通行密钥不在此管理：请参阅 `webauthn.algorithms`。"
+  },
+  "cose.acceptedAlgorithms|label": {
+    "en": "de35db5c8aac8926",
+    "text": "接受的 COSE 算法"
+  },
+  "cose.acceptedAlgorithms|description": {
+    "en": "74f312f7ccddc9ff",
+    "text": "此领域在 mdoc 的 IssuerAuth 和 DeviceAuth、状态列表 CWT 及 `vc+cose` 凭证中接受的 COSE 算法。**留空（默认）时接受各自已接受的算法**，规范可能进一步缩小范围：mdoc 从不接受 RSA。在产品模式下，只有此列表列出 ES256K（-47）时才接受它，因为 secp256k1 不是经批准的曲线。通行密钥不在此管理。"
+  },
+  "saml.signatureAlgorithms|label": {
+    "en": "fd4f436bdda0de4a",
+    "text": "用于签名的 XML 算法"
+  },
+  "saml.signatureAlgorithms|description": {
+    "en": "01cb8501b8f096c8",
+    "text": "此领域可按顺序用于签名的 XML 签名算法。**留空（默认）时不限制 `saml.signatureAlgorithm`。**`saml.signatureAlgorithm` 仍是所选算法，且必须在列表内。此领域没有对应 XML 密钥的算法会回退到列表中第一个有密钥的算法。"
+  },
+  "saml.acceptedSignatureAlgorithms|label": {
+    "en": "a190f155d61e54ca",
+    "text": "接受的 XML 算法"
+  },
+  "saml.acceptedSignatureAlgorithms|description": {
+    "en": "2bf9046fd2019c80",
+    "text": "此领域在 SP 请求和元数据、RFC 7522 断言、合作方断言及 WS-Security 上接受的 XML SignatureMethod。**留空（默认）时接受其原本验证的全部算法。**SHA-1 仍由 `saml.allowSha1Signatures` 决定，该设置关闭时列出的 SHA-1 方法会被拒绝。"
+  },
+  "saml.acceptedDigestAlgorithms|label": {
+    "en": "4c713f76e897330c",
+    "text": "接受的 XML 摘要"
+  },
+  "saml.acceptedDigestAlgorithms|description": {
+    "en": "0e9213b8012dea7a",
+    "text": "此领域接受的 XML DigestMethod。**留空（默认）时接受其计算的全部摘要。**SHA-1 仍由 `saml.allowSha1Signatures` 决定。"
+  },
+  "vc.cryptosuites|label": {
+    "en": "75a59ba059432f82",
+    "text": "用于签名的 Data Integrity 套件"
+  },
+  "vc.cryptosuites|description": {
+    "en": "3be8a2fb2911c2b3",
+    "text": "此领域按顺序用于签名的 W3C Data Integrity 密码套件：VC API 签发、Bitstring 状态列表、zcap 和 bbs-2023。**留空（默认）时保持每个用例当前的做法。**"
+  },
+  "vc.acceptedCryptosuites|label": {
+    "en": "962cf7c5a55dd594",
+    "text": "接受的 Data Integrity 套件"
+  },
+  "vc.acceptedCryptosuites|description": {
+    "en": "3148c6ff243294cb",
+    "text": "此领域接受的 W3C Data Integrity 密码套件：持有者证明、VC API 验证、zcap 和 bbs-2023 派生证明。**留空（默认）时接受各自已接受的套件。**"
+  },
+  "pki.acceptedSignatureAlgorithms|label": {
+    "en": "86ec8af66a70814d",
+    "text": "接受的证书签名"
+  },
+  "pki.acceptedSignatureAlgorithms|description": {
+    "en": "9a8e168d927bb934",
+    "text": "此领域在其验证路径中的证书上接受的签名算法，以行名而非 OID 指定。**留空（默认）时接受路径验证原本接受的全部算法**，其中不包括 SHA-1 和 MD5。列出过少会拒绝此领域自身的层级结构，因此请包含 `pki.signatureAlgorithm` 用于签发的算法。"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|label": {
+    "en": "0e6e6b8920059b86",
+    "text": "接受的 HTTP 签名算法"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|description": {
+    "en": "595341df5d9412f0",
+    "text": "此领域接受的 RFC 9421 HTTP Message Signatures 算法，OAuth 客户端和 GNAP 客户端均适用。**留空（默认）时接受其验证的全部算法。**未列出算法的签名会在任何密钥操作之前被拒绝。"
+  },
+  "keys.jwksCertificateUrl|label": {
+    "en": "b910ac23ecc20134",
+    "text": "通过 URL 指明已发布密钥的证书"
+  },
+  "keys.jwksCertificateUrl|description": {
+    "en": "83d67129453bea8c",
+    "text": "`/oauth2/jwks` 是否用 `x5u`（RFC 7517 第 4.6 节）指明每个密钥的证书链，而不是将其放在 `x5c` 中。**默认关闭。** 开启后：密钥发布其证书链的地址 `/pki/chain/{scope}/{sha256}.pem`，这会使 JWK 集小得多；需要证书链的客户端通过 TLS 获取。该地址无法提供其证书链的密钥保留 `x5c`。**不变的内容：**令牌的 `x5c` 或 `x5u` 标头，由各用例自己的设置决定。"
   },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
@@ -1398,6 +1874,18 @@
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
     "text": "密钥加密密钥在启动时、签名密钥解密之前读取一次"
+  },
+  "secrets.allowLocalSecrets|label": {
+    "en": "b746acd0225ed6a2",
+    "text": "在产品模式下允许本地后端密钥"
+  },
+  "secrets.allowLocalSecrets|description": {
+    "en": "ecfd7489f63a1df3",
+    "text": "关闭（默认）时，产品模式从密钥存储或密钥管理服务获取密钥加密密钥（keys.kekProvider、keys.cellKekProvider），从密钥存储获取数据库密码；文件中的密钥加密密钥，或文件中、连接字符串中的数据库密码，会使服务停止（ASVS 5.0.0 13.3.1）。开启时接受它们，这会让密钥留在主机上。无论哪种情况，先前的密钥加密密钥都可以是文件。开发模式不论此设置如何都接受它们。"
+  },
+  "secrets.allowLocalSecrets|restartReason": {
+    "en": "3c6a25d74849bf35",
+    "text": "密钥加密密钥和数据库密码只在启动时读取一次"
   },
   "keys.kekTransitMount|label": {
     "en": "efe8c3a4233dd778",
@@ -1947,6 +2435,22 @@
     "en": "41a2ff91a0055e49",
     "text": "它决定主端口是否以 HTTPS 绑定（global.https），而监听器在进程启动时绑定。即便如此，领域仍可携带此项——领域不绑定套接字，因此它以本进程启动时的协议方案应答，只有此模式的检查会改变"
   },
+  "oauth2.allowImplicitTokenResponses|label": {
+    "en": "28cd231f5d568de0",
+    "text": "在 RFC 9700 下允许令牌响应类型"
+  },
+  "oauth2.allowImplicitTokenResponses|description": {
+    "en": "7ae0908c5a3cc1b9",
+    "text": "在 RFC 9700 模式生效之处（product 模式下始终生效）豁免 RFC 9700 第 2.1.2 节（no-implicit，一项 SHOULD NOT）。开启后，从授权端点签发访问令牌的响应类型（token、id_token token、code token、code id_token token）在授权端点和动态注册处均被接受，两份发现文档也会公布它们以及隐式授权。RFC 9700 的其他所有要求以及 product 模式的其余部分仍然有效，GET /oauth2/rfc9700 和 /admin/mode 会将该要求报告为已豁免。它为 OpenID Connect Implicit、Hybrid 和 Dynamic OP 配置文件而设。在 OAuth 2.1 模式或任一 FAPI 配置文件开启时无效：OAuth 2.1 彻底移除了隐式授权，而 FAPI 配置文件是本设置不会放宽的更严格配置文件。按应用程序（#1296）：它使这些响应类型成为可能，而应用程序只有在其 oauthAllowedTokenResponseTypes 列出某个类型时才能使用该类型（否则为 unauthorized_client）；该属性由管理员或应用程序的所有者设置，或由自行注册的客户端在 oauth2.dynamicRegistrationTokenResponseTypes 范围内设置。默认关闭；按领域设置。"
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|label": {
+    "en": "4475090bccf20d35",
+    "text": "自行注册的客户端可启用的令牌响应类型"
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|description": {
+    "en": "acccf2f947729707",
+    "text": "在 oauth2.allowImplicitTokenResponses 豁免 RFC 9700 第 2.1.2 节的情况下，在 POST /oauth2/register 自行注册的客户端可以为自己启用哪些从授权端点签发访问令牌的响应类型（token、code token、id_token token、code id_token token）。请求所列类型的注册会将其记录为该客户端的 oauthAllowedTokenResponseTypes；请求未列类型的注册会被拒绝（invalid_client_metadata），RFC 7592 更新也受同一列表约束。默认为空：只有管理员或应用程序的所有者才能启用这些类型。对于面向隐式和混合流程开放自行注册的领域（例如 OpenID Connect Dynamic OP 配置文件），请列出它们。豁免关闭时，或在 OAuth 2.1 模式或 FAPI 配置文件下无效。"
+  },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",
     "text": "OAuth 2.1 模式"
@@ -2034,6 +2538,22 @@
   "oauth2.tokenExchangeAudience|description": {
     "en": "3f48d3e7de647a63",
     "text": "作为 RFC 8693 subject_token 或 actor_token 出示的 RFC 7523 JWT 或 RFC 7522 / SAML 1.1 断言可以以什么为受众。AUTHORIZATION-SERVER（默认）是断言授权自身的规则：其受众指明本令牌端点或颁发者，SAML Recipient 指明令牌端点。ANY-DECLARED-RELYING-PARTY 还接受指明此领域中已注册应用的受众（对于 SAML，还接受作为交换方客户端上已注册断言使用者服务的 Recipient）——即令牌转发：签发给一个依赖方的令牌被换成给另一个依赖方的令牌，/admin/delegation 上的操作会如实记录这一点。警告：此后任何持有此类令牌的人——它被签发给的每个依赖方——都能交换它；只在设计如此的地方开启。"
+  },
+  "oauth2.tokenExchangeKerberosInput|label": {
+    "en": "9fb1b4d9b1b510bc",
+    "text": "在令牌交换中接受 Kerberos 令牌"
+  },
+  "oauth2.tokenExchangeKerberosInput|description": {
+    "en": "36c738a4d9dbae66",
+    "text": "RFC 8693 的 subject_token 或 actor_token 是否可以是 Kerberos 令牌（发给本授权服务器自身 SPN 的 AP-REQ，base64url 编码，类型为 Kerberos Token Profile 1.1 的六个 URI 之一）。接受器在两种模式下都会检查它。委派的主体令牌在其 PAC 的 S4U_DELEGATION_INFO 中把执行交换的客户端列为最后一个服务，该链成为所签发令牌的嵌套 act 声明。关闭时，拒绝此类令牌类型。"
+  },
+  "oauth2.tokenExchangeKerberosOutput|label": {
+    "en": "7711b5c35b5a2730",
+    "text": "通过令牌交换签发 Kerberos 令牌"
+  },
+  "oauth2.tokenExchangeKerberosOutput|description": {
+    "en": "e0da8bfdb68b27ed",
+    "text": "指定 Kerberos Token Profile 1.1 六个 URI 之一的 requested_token_type 是否以 Kerberos 令牌应答：一个发给唯一受众或资源的 AP-REQ（该受众或资源必须是作为 Kerberos 服务的应用程序），放在 access_token 中，issued_token_type 为该 URI，token_type 为 N_A。委派的 act 链成为票据的 S4U_DELEGATION_INFO。关闭时，拒绝此类请求。"
   },
   "oauth2.tokenExchangeRefreshToken|label": {
     "en": "07090990e1118ef0",
@@ -2474,6 +2994,14 @@
   "oauth2.maxOpaqueAccessTokens|description": {
     "en": "19042efe72e28cc6",
     "text": "此领域记住多少个不透明访问令牌。存满时先丢掉过期的行，再拒绝继续签发（STS-OAUTH-0979），而不是逐出一个仍有效的令牌。当 oauth2.accessTokenFormat 为 opaque 时适用。"
+  },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "允许未列出授权类型的客户端使用任何授权"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "dad6e01199413088",
+    "text": "仅限产品模式。默认关闭时，未声明授权类型的客户端只能使用 authorization_code 和 refresh_token，未声明响应类型（且未声明隐式授权）的客户端只能使用 response_type=code。开启时，可使用本服务提供的任何授权和响应类型。警告：ASVS 5.0.0 要求 10.4.4 将客户端限制为其所需的授权，因此除测试环境外请保持关闭。"
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -2952,8 +3480,8 @@
     "text": "命令汇总间隔（秒）"
   },
   "oauth2.commandSummaryS|description": {
-    "en": "1045cb014a1ce125",
-    "text": "每个领域最多每隔这么久写一行日志，统计已发送、已重试和已转入死信的命令数。"
+    "en": "3a91e7d305fbb684",
+    "text": "一个领域的命令计数可以多久记录一次日志。死信或延迟投递是警告；两者都没有的计数只在调试级别写入。"
   },
   "oauth2.commandSweepS|label": {
     "en": "ebf638b4c702db80",
@@ -3032,8 +3560,8 @@
     "text": "CIBA 通知汇总间隔（秒）"
   },
   "oauth2.cibaNotifySummaryS|description": {
-    "en": "251c4ae1278354cf",
-    "text": "每个领域最多每隔这么久写一行日志，统计已发送、已重试和已转入死信的 ping 和推送数。"
+    "en": "27d25bd5cf11b057",
+    "text": "一个领域的 ping 和 push 计数可以多久记录一次日志。死信或延迟投递是警告；两者都没有的计数只在调试级别写入。"
   },
   "oauth2.cibaSweepS|label": {
     "en": "722ae1b995e6c351",
@@ -3144,8 +3672,8 @@
     "text": "默认 CA 密钥算法"
   },
   "pki.keyAlgorithm|description": {
-    "en": "00e61f4da7498a62",
-    "text": "当表单未指明时，新证书颁发机构所使用的密钥算法：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或某个后量子 id（ML-DSA、SLH-DSA、复合算法以及 ML-KEM——后者不能签名，因此只能作为主体密钥，而绝不能作为颁发机构的密钥）。默认值为 RSA 2048，因为此层级结构所要签发的叶证书会签署客户端断言，而该断言须由别人的 OAuth 库验证，RS256 是每个此类库都支持的唯一算法。该列表读取自 common/crypto_impl/key_material.js——即生成密钥的模块——因此它不认识的值会在构建时被拒绝，并附上该列表。"
+    "en": "d0667a437e4fd5f6",
+    "text": "当表单未指明时，新证书颁发机构所使用的密钥算法：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或某个后量子 id（ML-DSA、SLH-DSA、复合算法以及 ML-KEM——后者不能签名，因此只能作为主体密钥，而绝不能作为颁发机构的密钥）。默认值为 RSA，因为此层级结构所要签发的叶证书会签署客户端断言，而该断言须由别人的 OAuth 库验证，RS256 是每个此类库都支持的唯一算法：开发模式下为 rsa-2048，产品模式下为 rsa-3072（ASVS 5.0.0 11.2.3）。该列表读取自 common/crypto_impl/key_material.js——即生成密钥的模块——因此它不认识的值会在构建时被拒绝，并附上该列表。"
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -3216,8 +3744,8 @@
     "text": "工作台存储保留的证书和密钥数（每个领域）"
   },
   "pki.maxStoredObjects|description": {
-    "en": "3057876f05b58063",
-    "text": "/admin/pki 上的“证书与密钥配置”窗格在一个领域中最多可保留的对象数。**存储已满时会拒绝下一个对象**；过去它会丢弃最旧的对象，而最旧的对象携带着某人选择保留的私钥。请删除不再需要的对象，或调高此值。"
+    "en": "d78b7992e9302874",
+    "text": "/admin/pki 上的证书工作台在一个领域中最多可保留的对象数。**存储已满时会拒绝下一个对象**；过去它会丢弃最旧的对象，而最旧的对象携带着某人选择保留的私钥。请删除不再需要的对象，或调高此值。"
   },
   "pki.personSelfServicePerIdentity|label": {
     "en": "16d37c1faeb2ce0c",
@@ -3242,6 +3770,14 @@
   "pki.personTlsClientCertificateMax|description": {
     "en": "7fd3b5724d944994",
     "text": "一个人可以在用户门户上为自己签发多少个仍然有效的 TLS 客户端证书——每个浏览器或设备一个。已吊销或已过期的证书不计入。超出后门户会拒绝（STS-PKI-0170），而不是吊销某人可能仍在使用的较旧证书。签发证书还受 pki.personSelfService 以及上面两项自助服务速率限制的约束。"
+  },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "每人每个配置文件可持有的签名密钥对"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "一个人对每个配置文件（RFC 7523 JWT 与 RFC 7522 SAML 2.0 分别计算）最多可持有多少个仍然有效的断言签名密钥对——无论是在用户门户上签发、由管理员签发还是上传的。已吊销或已过期的密钥对不计入。超过上限时，门户会把“生成”按钮换成一条说明，每个入口都会拒绝（STS-PKI-0223），而不是吊销某人可能仍在使用的较旧密钥对。"
   },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
@@ -3419,6 +3955,218 @@
     "en": "f292a8cf26b697f2",
     "text": "一个个人或应用条目可同时携带多少个通过 ACME、EST 或 SCEP 签发的证书。计数之前会先从条目中删除已过期的证书；超出后请求会被拒绝（STS-ENROLL-0040），而不是遗忘较旧的证书，因为某人仍在使用的证书不能从说明其归属的条目中消失。"
   },
+  "pki.paranoid|label": {
+    "en": "69d9666085a31d95",
+    "text": "偏执 PKI 模式"
+  },
+  "pki.paranoid|description": {
+    "en": "96d8d3c8d4989451",
+    "text": "偏执 PKI 模式（#1360）：本服务所依赖的每一份 X.509 证书——无论是任一方向的 TLS 握手、签名之下、作为加密接收方、在证明中，还是在 CMS 消息中——是否都通过唯一的验证入口（common/certificate_trust.ts）接受完整检查：存在通往本服务已知锚点的路径、当前时间有效、未被吊销，以及其用例所要求的 basicConstraints、keyUsage 和 extendedKeyUsage；用例从未运行的检查视为拒绝。**`auto` 在产品模式下开启，在开发模式下关闭**（mode.enforcesParanoidPki()）；`on` 和 `off` 在任一模式下强制设定。生效期间，会参考下面每一个 `pki.paranoid<UseCase>` 行；不生效时，每个用例的行为与 #1360 之前完全相同。在产品模式下将总开关强制关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示；写入本身不会被拒绝。 如果证书本身及其上级 CA 都未指明 CRL 分发点和 OCSP 响应方，则无需执行吊销检查：已指明的来源会被强制执行，而本服务签发的证书始终会查询其自身的登记簿。"
+  },
+  "pki.paranoidTlsClient|label": {
+    "en": "c0010750fb1dedac",
+    "text": "偏执：TLS 握手时的客户端证书"
+  },
+  "pki.paranoidTlsClient|description": {
+    "en": "a92be9cfd66a7481",
+    "text": "用例 `tls-client`：出示给主端口、自定义监听器、LDAPS 或调试器监听器的客户端证书，以及 socket.authorized 的每一个使用者。偏执模式要求每个监听器（不只是主端口和自定义监听器）都遵守路径规则，对每个叶证书要求 extendedKeyUsage clientAuth 以及 keyUsage digitalSignature 或 keyAgreement，在每个监听器上查询吊销状态，在 TLS 恢复时延续已降级的结论，并在检查抛出异常时以拒绝（fail CLOSED）处理。锚点：客户端证书信任库和服务根证书。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。 在 SPIFFE 的 gRPC 套接字上，它不拦截任何连接，只拒绝以明文绑定 SPIRE Server API；单元间通道有自己的一行，即 pki.paranoidCellPeer。"
+  },
+  "pki.paranoidTlsClientSelfSigned|label": {
+    "en": "1fffd43ed19648a8",
+    "text": "偏执：客户端注册的自签名 TLS 客户端证书"
+  },
+  "pki.paranoidTlsClientSelfSigned|description": {
+    "en": "976e7f91b601714f",
+    "text": "用例 `tls-client-self-signed`：RFC 8705 第 2.2 节的 self_signed_tls_client_auth，以及由固定证书证明的 GNAP 密钥（RFC 9635 第 7.3.2 节）。两份规范都把该方法定义为证书相等，因此不要求证书链（规范豁免）；偏执模式增加有效期窗口、keyUsage digitalSignature 或 keyAgreement，以及登记簿中的吊销状态。这是 TLS 握手时唯一接受自签名叶证书的用例。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidOutboundTls|label": {
+    "en": "806774c88eae0cf1",
+    "text": "偏执：出站请求的服务器证书"
+  },
+  "pki.paranoidOutboundTls|description": {
+    "en": "ad7a2574ae96644e",
+    "text": "用例 `tls-server-outbound`：本服务拨出的每一个地址——联合后端通道、SSF 和 GNAP 推送、XACML PEP 提示、SCIM 供应、邮件、数据库、密钥存储、云 SDK、通过 https 的 CRL 和 OCSP、LDAPS。偏执模式增加对端证书的吊销检查（先 OCSP 装订，再 OCSP 或 CRL），在写入任何请求体之前对握手设卡，要求 extendedKeyUsage serverAuth，在每个进程中执行路径规则和 RFC 9525 主机检查，并在每个协议族的 CA 文件之外加入签名者信任库。规范豁免：通过明文 http 获取 CRL 或 OCSP 时没有证书可检查（RFC 5280 第 4.2.1.13 节）。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidJoseSigner|label": {
+    "en": "6712f80a7d8d0d37",
+    "text": "偏执：JOSE 签名者的证书链"
+  },
+  "pki.paranoidJoseSigner|description": {
+    "en": "a361abe6b62ec518",
+    "text": "用例 `jose-signer`：RFC 7523 断言、private_key_jwt、JAR 请求对象、软件声明以及已注册 JWK 的 x5c 背后的 x5c。偏执模式在拒绝不完整的已注册证书链之前，先用签名者信任库补全它，要求叶证书具备 keyUsage digitalSignature，并使粘贴进 JWK 的自签名 x5c[0] 遵守上传入口的规则（不允许单独的自签名叶证书）。锚点：领域的 CA、已注册的根证书、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidSamlSigner|label": {
+    "en": "f542d60aa4055a78",
+    "text": "偏执：SAML 签名者的证书"
+  },
+  "pki.paranoidSamlSigner|description": {
+    "en": "9185c29a838854a8",
+    "text": "用例 `saml-signer`：RFC 7522 断言、服务提供方已签名的 AuthnRequest 或 LogoutRequest、SOAP artifact 调用方以及 SP 元数据签名背后的证书。偏执模式增加每次使用时的有效期检查、证书不是自签名时通往签名者信任库的证书链、吊销检查和 keyUsage digitalSignature，并拒绝无法到达任何锚点的 SP 元数据（此前首次使用时即被接受）。注册在应用程序上的自签名证书按规范被接受（SAML Metadata 第 2.4.1.1 节），并在清单中列为自签名。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidFederationPartner|label": {
+    "en": "1153fde809c347ea",
+    "text": "偏执：联合合作伙伴的签名证书"
+  },
+  "pki.paranoidFederationPartner|description": {
+    "en": "c7dd276f9a86e888",
+    "text": "用例 `federation-partner`：合作伙伴的 SAML 或 WS-Federation 签名、合作伙伴 JWK 的 x5c 以及联合注销签名者。偏执模式增加每次使用时的有效期检查、证书不是自签名时通往签名者信任库的证书链、注销和登录同样适用的吊销检查，以及注册入口处的字段检查。注册在关系上的自签名证书按规范被接受，与 SAML 签名者的情形相同。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidWsSecurityToken|label": {
+    "en": "fdf207fb5b68e7c1",
+    "text": "偏执：WS-Security X.509 令牌"
+  },
+  "pki.paranoidWsSecurityToken|description": {
+    "en": "d1b001f7c3cf7dad",
+    "text": "用例 `wss-x509-token`：WS-Trust 请求的 WS-Security X.509 Token Profile 签名者。偏执模式要求已存储的外部叶证书必须链接到签名者信任库，并且 OCSP 或 CRL 的颁发者取自信任库的路径，绝不仅取自叶证书自身的 Authority Information Access。锚点：领域的 CA、已存储的叶证书、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidJoseBareKey|label": {
+    "en": "ae8a99b03823519c",
+    "text": "偏执：携带 x5c 的裸 JWK"
+  },
+  "pki.paranoidJoseBareKey|description": {
+    "en": "d55aaf11968d0119",
+    "text": "用例 `jose-bare-key`：OpenID Federation 实体密钥、SSF 发送方密钥、声明提供方密钥以及 GNAP `cert` 密钥。携带 x5c 的 JWK 在偏执模式下会被当作 JOSE 签名者来验证；裸 JWK 则不受影响，因为 OpenID Federation 1.1 第 3 节把实体密钥定义为裸 JWK（没有 x5c 时按规范豁免）。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidEncryptionRecipient|label": {
+    "en": "1fec5dc0c124d4d7",
+    "text": "偏执：加密接收方的证书"
+  },
+  "pki.paranoidEncryptionRecipient|description": {
+    "en": "22e7d1dcaf21b830",
+    "text": "用例 `encryption-recipient`：SAML 断言所加密到的证书以及 JWE 接收方的 x5c。偏执模式增加有效期、keyUsage keyEncipherment 或 keyAgreement 和吊销检查，并且绝不向仅仅在请求中观察到的证书加密（#1360 之前，开发模式在偏执模式之外会这样做）。注册在应用程序上的自签名证书按规范被接受。没有 x5c 的裸 JWK 被豁免（RFC 7517 第 4.7 节使 x5c 成为可选）。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidClientAttestation|label": {
+    "en": "f9781b19e7a5faa5",
+    "text": "偏执：基于证明的客户端认证证书链"
+  },
+  "pki.paranoidClientAttestation|description": {
+    "en": "3272afd18d05a5d0",
+    "text": "用例 `client-attestation`：OAuth 基于证明的客户端认证背后的证明方证书。偏执模式对叶证书增加吊销检查和 keyUsage digitalSignature。锚点：oauth2.clientAttestationTrustAnchors 和签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidWebauthnAttestation|label": {
+    "en": "56518cdbf25aba42",
+    "text": "偏执：WebAuthn 证明证书链"
+  },
+  "pki.paranoidWebauthnAttestation|description": {
+    "en": "a1da1a7091f590f6",
+    "text": "用例 `webauthn-attestation`：通行密钥的 packed、tpm、android-key、android-safetynet 和 apple 格式的证明声明。偏执模式通过入口使每种格式的 extendedKeyUsage 和 keyUsage 变得明确（tpm 要求 TPM AIK EKU 2.23.133.8.3）；吊销检查原本就已要求。有效期仍按当前时间评估——过期的证明证书会使该声明变为不受信任（rcbj，2026-11-06）。锚点：webauthn.attestationTrustAnchors、FIDO Metadata Service 根证书、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidDeviceAttestation|label": {
+    "en": "eb8ad90daa8e84e6",
+    "text": "偏执：设备证明证书链"
+  },
+  "pki.paranoidDeviceAttestation|description": {
+    "en": "1e8781ffffcd5976",
+    "text": "用例 `device-attestation`：已注册设备的 Android 密钥证明、Apple App Attest 和 TPM 证明。偏执模式在 Apple 和 TPM 证书链指明吊销来源时增加 OCSP 或 CRL 检查，并要求每种格式所要求的 extendedKeyUsage。锚点：devices.*TrustAnchors 设置、随附的根证书、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidSpiffeSvid|label": {
+    "en": "78e43611bf44d5cf",
+    "text": "偏执：出示给 SPIRE Server 或 Broker API 的 X509-SVID"
+  },
+  "pki.paranoidSpiffeSvid|description": {
+    "en": "9df64672b57d6dfa",
+    "text": "用例 `spiffe-svid`：SPIRE Server API 或 Broker API 的调用方所出示的 X509-SVID，以及联合的 SVID。偏执模式把 X509-SVID 规范第 4.3 节中关于 extendedKeyUsage 的 SHOULD 提升为 MUST，并在联合捆绑包的颁发机构证书注册时和使用时对其做字段检查。规范豁免：Workload API 规定 MUST NOT 认证，因此不受影响；联合 SVID 的吊销状态不被查询，因为联合颁发机构不发布本服务可以访问的任何内容。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidSpiffeAttestation|label": {
+    "en": "02cc79ee469c2d68",
+    "text": "偏执：SPIFFE 节点证明方的证书"
+  },
+  "pki.paranoidSpiffeAttestation|description": {
+    "en": "589e499a7857c323",
+    "text": "用例 `spiffe-attestation`：x509pop、TPM DevID、Azure IMDS、AWS 实例身份和 sigstore 证明方。偏执模式在证书链指明吊销来源时增加吊销检查，要求每个证明方所要求的 keyUsage 和 extendedKeyUsage，检查 AWS 固定证书的有效期，并要求 Azure AIA 中间证书在使用前先链接成功。规范豁免：sigstore 在证书的 notBefore 时间评估有效期（Sigstore 客户端规范的规则）；对 SCT 和 Rekor 的跳过仍是各自独立的设置。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidPkinit|label": {
+    "en": "075d91f34c26d707",
+    "text": "偏执：PKINIT 客户端证书"
+  },
+  "pki.paranoidPkinit|description": {
+    "en": "4cd0d308a974fcbd",
+    "text": "用例 `pkinit`：RFC 4556 AS-REQ 中的客户端证书。该检查原本就已完整（通往领域身份 CA 的路径、以 krb5.clockSkew 计的有效期、id-pkinit-KPClientAuth 或 Microsoft 智能卡 EKU、吊销）；偏执模式让它成为对入口的一次调用，因而与其他每个用例是同一份代码。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidEnrollmentCredential|label": {
+    "en": "ce5c0d1996e12403",
+    "text": "偏执：出示用于注册或续期的证书"
+  },
+  "pki.paranoidEnrollmentCredential|description": {
+    "en": "e581316f80e4f785",
+    "text": "用例 `enrollment-credential`：EST 请求出示的客户端证书以及 SCEP 续期的签名者。EST 原本就已完整；偏执模式为 SCEP 自签名的 PKCSReq 签名者加入有效期窗口。规范豁免：RFC 8894 第 2.3 节把 PKCSReq 签名者定义为自签名，因此不对它要求证书链。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidVcKeyAttestation|label": {
+    "en": "c9da12bd29969033",
+    "text": "偏执：OpenID4VCI 密钥证明证书链"
+  },
+  "pki.paranoidVcKeyAttestation|description": {
+    "en": "65f64443cb54f4c6",
+    "text": "用例 `vc-key-attestation`：钱包在 OpenID4VCI 凭证端点处的密钥证明的 x5c。偏执模式构建包含中间证书的真实路径（此前只有一跳），查询吊销状态，并要求叶证书具备 keyUsage digitalSignature。锚点：oidc4vci.keyAttestationTrustedCertificates 和签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidVcIssuer|label": {
+    "en": "bf59999c71087b0a",
+    "text": "偏执：凭证颁发者或状态列表签名者的证书"
+  },
+  "pki.paranoidVcIssuer|description": {
+    "en": "4497f64a995a4cbf",
+    "text": "用例 `vc-issuer`：mdoc 的 IACA 到 DS 的证书链、CWT 状态列表签名者、OpenID4VP 受信任颁发者证书以及外来状态列表的签名者。偏执模式要求 ISO 18013-5 文档签名者 EKU 1.0.18013.5.1.2 和 DS 配置文件（keyUsage digitalSignature，DS 的有效期位于其 IACA 的有效期之内），对状态列表签名者检查吊销，并对非自签名的受信任颁发者证书检查有效期和证书链。已配置的受信任颁发者证书按规范可以是自签名的，但仍要检查有效期和吊销。锚点：oid4vp.mdocTrustAnchors、oid4vp.trustedIssuerCertificates、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidCellPeer|label": {
+    "en": "29ff42feacbce3f9",
+    "text": "偏执：单元间通道上的另一个单元"
+  },
+  "pki.paranoidCellPeer|description": {
+    "en": "4dbdc1d9a7d0f4c4",
+    "text": "用例 `cell-peer`：另一个单元在单元间通道上出示的证书，双向均适用。偏执模式增加来自登记簿的吊销检查、extendedKeyUsage clientAuth 和 serverAuth（两者均由本服务自己的 CA 颁发）以及路径规则。锚点：服务根证书。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidCaImport|label": {
+    "en": "db5c10402103e4d7",
+    "text": "偏执：运维人员导入的 CA 或密钥对"
+  },
+  "pki.paranoidCaImport|description": {
+    "en": "d87040a5e24c74ae",
+    "text": "用例 `ca-import`：/admin/pki 对运维人员的根 CA 或颁发 CA 以及固定密钥对的导入。偏执模式要求导入的颁发 CA 必须链接到服务根证书，并检查 cA、keyCertSign、有效期和 pathLen；固定的叶证书会做字段检查。导入的根证书仍然是自我锚定的。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidAnchorAdmission|label": {
+    "en": "7d8bf2554b7ae476",
+    "text": "偏执：信任库的准入"
+  },
+  "pki.paranoidAnchorAdmission|description": {
+    "en": "169bc8829426f512",
+    "text": "用例 `anchor-admission`：/admin/tls/trust、签名者信任库、tls.trustAnchorsFile 和 pki.signerTrustAnchorsFile 所接受的内容。锚点是有效期内的自签名 CA，且其自签名可验证（cA，keyUsage 存在时还要有 keyCertSign）；中间证书是链接到已持有锚点的 CA；叶证书在两个信任库中都会被拒绝——要固定的叶证书应放在使用它的条目或关系上。#1360 之前，客户端信任库接受 OpenSSL 能解析的任何内容。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidRevocationSigner|label": {
+    "en": "05be41dc43e60403",
+    "text": "偏执：OCSP 响应方或 CRL 签名者"
+  },
+  "pki.paranoidRevocationSigner|description": {
+    "en": "02ce618736381ac9",
+    "text": "用例 `revocation-signer`：common/revocation_status.js 中的委托 OCSP 响应方证书和 CRL 签名者。原本就已完整（id-kp-OCSPSigning、cRLSign）；偏执模式改为经由入口检查，使这些检查成为同一份代码。规范豁免：携带 id-pkix-ocsp-nocheck 的响应方本身不检查吊销状态（RFC 6960 第 4.2.2.2.1 节）。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidFidoMds|label": {
+    "en": "49e3f63a1962f092",
+    "text": "偏执：FIDO Metadata Service BLOB 签名者"
+  },
+  "pki.paranoidFidoMds|description": {
+    "en": "03950106a2822b70",
+    "text": "用例 `fido-mds`：已导入的 FIDO MDS3 BLOB 的签名者。原本就已完整；偏执模式改为经由入口检查，使这些检查成为同一份代码。管理员经审计的 overrideSignature 绕过保持不变。锚点：risk.mdsTrustAnchors、GlobalSign Root R3、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.signerTrustAnchorsFile|label": {
+    "en": "9d4fabbc6c6918f1",
+    "text": "签名者信任库：包含锚点和中间证书的 PEM 文件"
+  },
+  "pki.signerTrustAnchorsFile|description": {
+    "en": "32ac16c13b12ea05",
+    "text": "进程启动时加载到默认领域签名者信任库中的 PEM 捆绑包：当第三方的签名、加密或证明证书不是本服务自己的证书时，它可以链接到的证书颁发机构及其下的中间证书（common/signer_truststore.ts）。每个块都要经过准入规则：自签名的 CA 是锚点，其他 CA 是中间证书，叶证书会被点名拒绝。如果指定了文件但无法读取，或其中没有证书，则为致命错误（STS-PKI-0237），与 tls.trustAnchorsFile 相同。在运行时通过 /admin/pki/trust 添加的锚点保存在其旁边的目录中。默认为空。"
+  },
+  "pki.signerTrustAnchorsFile|restartReason": {
+    "en": "736eb74db8a5c84f",
+    "text": "该文件只读取一次，在任何验证之前"
+  },
+  "pki.pinnedCertificateWarningDays|label": {
+    "en": "bc1a8dace838ed5f",
+    "text": "固定证书到期警告（天）"
+  },
+  "pki.pinnedCertificateWarningDays|description": {
+    "en": "7ce39ba31b8cb865",
+    "text": "在固定证书的 notAfter 之前多久，/admin/pki/trust 清单将其标记为 `expiring`，且每日的 pki.pins.audit 作业将其记入日志（STS-PKI-0263，每次状态变化一次）。固定证书是指注册在应用程序条目、关系、设置、JWK 的 x5c、联合捆绑包或云锚点表上的证书；已过期、已吊销或缺少证书链的证书为 STS-PKI-0264。"
+  },
   "acme.enabled|label": {
     "en": "4e21aa7b001c95d8",
     "text": "运行 ACME 服务器"
@@ -3456,7 +4204,7 @@
     "text": "最大请求体（字节）"
   },
   "acme.maxRequestBytes|description": {
-    "en": "1e75b2f8a06b2682",
+    "en": "64645666fe96987c",
     "text": "大于此值的扁平化 JWS 会在解析之前被拒绝（HTTP 413）。携带后量子 CSR 的 finalize 是最大的合法请求；SLH-DSA 的签名有数十千字节。"
   },
   "acme.attemptsPerIdentity|label": {
@@ -3594,6 +4342,14 @@
   "scep.enabled|description": {
     "en": "9d0b62856fb7cc83",
     "text": "关闭时，每个 /enroll/scep 请求在此领域中都答复 503。已签发的证书会被保留。"
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "在产品模式下响应 SCEP"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "仅限产品模式。开启时，/enroll/scep 在产品模式下响应。默认关闭时返回 503。警告：RFC 8894 要求 RSAES-PKCS1-v1.5 和 AES-CBC，而 ASVS 5.0.0 要求 11.3.1 和 11.3.2 不接受它们，因此仅为不支持更新算法的设备开启。"
   },
   "scep.allowedProfiles|label": {
     "en": "b2cd406490c7676d",
@@ -3744,8 +4500,8 @@
     "text": "刷新令牌加密：密钥管理（alg）"
   },
   "oauth2.refreshTokenEncryptionAlg|description": {
-    "en": "edc32ded102e4226",
-    "text": "每个刷新令牌加密所用的 JWE 密钥管理算法。刷新令牌是一个封装给此领域自身密钥的签名 JWT，对其客户端不透明，因此这一选择在本服务之外不可见。RSA-OAEP 算法使用领域的 RSA 密钥，ECDH-ES 算法使用其 EC 密钥，其余算法使用领域自己的密钥材料。更改它只影响此后签发的令牌；已签发的令牌仍可解开，因为领域持有每种类型的密钥。不提供 RSA1_5。ML-KEM 和 HPKE 算法（#82——草案，参见 keys.encryptionKemAlgs）封装给从领域针对该算法的密钥材料派生出的密钥对，该密钥对从不发布，因此在此处选择它们无需任何密钥，也不会改变客户端看到的任何内容；HPKE-10-KE（X-Wing）使今天截获的刷新令牌不仅能抵御经典攻击者，也能抵御未来的量子攻击者。"
+    "en": "93e63f4a8c7ba5b2",
+    "text": "每个刷新令牌加密所用的 JWE 密钥管理算法。刷新令牌是一个封装给此领域自身密钥的签名 JWT，对其客户端不透明，因此这一选择在本服务之外不可见。RSA-OAEP 算法使用领域的 RSA 密钥，ECDH-ES 算法使用其 EC 密钥，其余算法使用领域自己的密钥材料。不提供 PBES2：该密钥是随机的，把它当作密码进行拉伸毫无益处。更改它只影响此后签发的令牌；已签发的令牌仍可解开，因为领域持有每种类型的密钥。不提供 RSA1_5。ML-KEM 和 HPKE 算法（#82——草案，参见 keys.encryptionKemAlgs）封装给从领域针对该算法的密钥材料派生出的密钥对，该密钥对从不发布，因此在此处选择它们无需任何密钥，也不会改变客户端看到的任何内容；HPKE-10-KE（X-Wing）使今天截获的刷新令牌不仅能抵御经典攻击者，也能抵御未来的量子攻击者。"
   },
   "oauth2.refreshTokenEncryptionEnc|label": {
     "en": "901d0b6a281af825",
@@ -3971,6 +4727,14 @@
     "en": "2394ee67a689920d",
     "text": "执行 OpenID Connect Key Binding 1.0（#150）。开启时：发现文档列出 `bound_key` 范围，未声明任何范围的客户端可以请求它，请求它时必须提供 `dpop_jkt` 并使用授权码流程（否则拒绝，STS-OAUTH-0704 和 0705）；随后 ID Token 指明 DPoP 密钥（`cnf.jwk`，`typ: dpop+id_token`），令牌请求必须用 `c_s256` 证明该密钥，且每次刷新都必须来自同一密钥。**关闭时，它不存在，服务仅为 OpenID Connect Core**：不公布 `bound_key`，携带它的请求不会被拒绝——该范围被忽略且不授予，正如 Core 对待 OP 不处理的范围——也不绑定任何 ID Token。若依赖方会请求所有已公布的范围且不了解 Key Binding，请将其关闭（#315）。关闭前已绑定的授权在刷新时仍检查其密钥。"
   },
+  "oauth2.enterpriseClaimsAlways|label": {
+    "en": "25c226f1b3654eee",
+    "text": "每个 ID 令牌中的 Enterprise Extensions 声明"
+  },
+  "oauth2.enterpriseClaimsAlways|description": {
+    "en": "fad892b6e39c3877",
+    "text": "将 OpenID Connect Enterprise Extensions 1.0 的 `session_expiry`（单点登录会话的绝对结束时间，在基于会话签发令牌时）和 `tenant`（此领域的 id）放入每个 ID 令牌（#148）。**默认关闭：**只有当客户端在 OpenID Connect Core 5.5 声明请求的 `id_token` 成员中点名时，才会将其放入 ID 令牌，因为无人请求的声明正是 OpenID 一致性测试套件所报告的，而 OpenID Connect 认证运行该套件。两者无论如何都保留在 `claims_supported` 中，`aud_sub` 不受影响（它仅在管理员为该客户端记录了一个时才出现在 ID 令牌中）。"
+  },
   "oauth2.didClaim|label": {
     "en": "d0b89f9c74f06728",
     "text": "did 声明"
@@ -4096,8 +4860,8 @@
     "text": "后端通道注销汇总间隔（秒）"
   },
   "oauth2.backchannelLogoutSummaryS|description": {
-    "en": "308efc32d526898a",
-    "text": "每个领域每个间隔最多写一行日志，统计本进程自上次以来发送、重试、接管和转入死信的投递数——绝不会每次尝试或每次失败写一行。有任何投递转入死信时发出警告（STS-OAUTH-0545）。"
+    "en": "4c2470b19d5277f2",
+    "text": "一个领域的注销计数可以多久记录一次日志。死信或延迟投递是警告（STS-OAUTH-0545）；两者都没有的计数只在调试级别写入。从不每次尝试写一行。"
   },
   "admin.readGroup|label": {
     "en": "990fd753159230d1",
@@ -4114,6 +4878,14 @@
   "admin.writeGroup|description": {
     "en": "5bd2e65986c9ef86",
     "text": "其成员可以提交控制台表单的目录组的 cn——吊销令牌、添加声明、更改设置、授予角色。写入包含读取：此组的成员不需要同时属于读取组，因为一个能更改自己看不到的页面的角色，与其说是权限，不如说是陷阱。"
+  },
+  "admin.securityGroup|label": {
+    "en": "e208f88393e196ce",
+    "text": "安全管理员角色"
+  },
+  "admin.securityGroup|description": {
+    "en": "296a8d5721391215",
+    "text": "其成员为安全管理员的目录组的 cn：只有他们可以更改目录 → 策略中的策略、为应用程序、组或人员指定策略、授予此角色，或对持有此角色的人员的帐户执行操作。仅有 Admin Write 不行。该角色包含 ADMIN READ，仅此而已，因此可以由本身不是管理员的人员持有。默认领域的组是服务的安全管理员，覆盖所有领域；领域自己的组将其成员限制在该领域内。"
   },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
@@ -4443,6 +5215,14 @@
     "en": "f24b1c4bc1251e30",
     "text": "在 /federation/metadata/{id} 中发布的 <md:NameIDFormat>，依据该文档配置的合作方会以此格式发送主体。默认值是本服务一直以来发布的字面值。"
   },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "Bluesky 登录使用的 PLC 目录"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Bluesky 登录在此查找收到的 did:plc，以确认该用户的数据服务器信任指明该用户的颁发者。只有 Bluesky 关系会读取此设置。"
+  },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",
     "text": "旧加密密钥保留时长（秒）"
@@ -4514,6 +5294,14 @@
   "saml2.assertionLifetimeMin|description": {
     "en": "a243fee8db63660f",
     "text": "签发的断言的有效时长：它同时成为 Conditions/NotOnOrAfter 和持有者 SubjectConfirmationData/NotOnOrAfter。将其设为 1，即可观察服务提供方是否拒绝过时的断言，这是大多数服务提供方都会弄错的检查。"
+  },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "在元数据中发布算法支持"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "IdP 元数据是否包含 `<alg:SigningMethod>` 和 `<alg:DigestMethod>`（SAML V2.0 Metadata Profile for Algorithm Support 1.0），列出此领域能够验证的 XML 签名方法及摘要，按优先顺序排列。**默认开启。**不了解该配置文件的使用方会忽略它们，这是 SAML 元数据第 2.3.1 节的要求。"
   },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",
@@ -4688,8 +5476,8 @@
     "text": "允许在没有信任锚的情况下进行 MDQ 导入（产品模式）"
   },
   "saml2.mdqImportWithoutAnchors|description": {
-    "en": "61eeb6e71a71076d",
-    "text": "仅限产品模式：当领域没有 saml2.metadataTrustAnchors 时，管理员的“从 MDQ 导入”（SAML 2.0 页面，POST /admin-api/saml2/mdq-import）是否可以注册服务提供方。关闭（默认值）：会被拒绝（STS-SAML-0084）。警告：打开时，响应方所答复的文档会在没有任何签名检查的情况下被导入——其签名证书会成为验证该服务提供方请求的依据，其端点会成为断言的发送目标——因此任何能够代表响应方主机应答的人（其运营方，或位于通往它的路径上的任何人）都可以决定这些内容。只有管理员对 entityID 和响应方的选择能代替签名。最好设置一个信任锚。由请求触发的查找从不受此设置覆盖：无论此处如何设置，它都需要信任锚。无论此处如何设置，开发模式都可以在没有信任锚的情况下导入。"
+    "en": "084296c20a8eb042",
+    "text": "仅限产品模式：当领域没有 saml2.metadataTrustAnchors 时，管理员的“从 MDQ 导入”（SAML 2.0 页面，POST /admin-api/saml2/mdq-import）是否可以注册服务提供方。关闭（默认值）：会被拒绝（STS-SAML-0084）。警告：打开时，响应方所答复的文档会在没有任何签名检查的情况下被导入——其签名证书会成为验证该服务提供方请求的依据，其端点会成为断言的发送目标——因此任何能够代表响应方主机应答的人（其运营方，或位于通往它的路径上的任何人）都可以决定这些内容。只有管理员对 entityID 和响应方的选择能代替签名。最好设置一个信任锚。由请求触发的查找从不受此设置覆盖：无论此处如何设置，它都需要信任锚。无论此处如何设置，开发模式都可以在没有信任锚的情况下导入。 在偏执 PKI 模式下，由此放行的导入会将文档的第一个签名证书设为该应用程序的信任锚，之后的获取必须据此验证。"
   },
   "saml11.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
@@ -4842,6 +5630,22 @@
   "wstrust.acceptClientCertificate|description": {
     "en": "23d9a8fba459f61c",
     "text": "当发往 /sts 的请求的 wsse:Security 头不携带任何凭据时，是否通过连接上的 TLS 客户端证书来认证请求方。只有在握手时验证通过、且由本领域颁发给某个人或某个应用程序的证书（来自用户门户或应用程序 Credentials 的 TLS 客户端证书，或通过 ACME、EST 或 SCEP 注册的证书）才是凭据，两种模式皆然；已吊销的证书、来自其他领域的证书以及持有者已不再持有的证书会以 wst:FailedAuthentication 拒绝。颁发的令牌会表明使用了证书：SAML 2.0 断言中为 TLSClient，SAML 1.1 断言中为 urn:ietf:rfc:2246，JWT 中为 amr swk。关闭时，此处忽略该证书。"
+  },
+  "wstrust.acceptKerberos|label": {
+    "en": "ed45753aa5e54768",
+    "text": "接受 Kerberos 令牌"
+  },
+  "wstrust.acceptKerberos|description": {
+    "en": "a17dc237154329df",
+    "text": "对 /sts 的请求是否可以出示 Kerberos 令牌（发给本服务自身 SPN 的 AP-REQ，放在 ValueType 为 Kerberos Token Profile 1.1 六种之一的 BinarySecurityToken 中），作为请求者的凭据，或放在 wst:OnBehalfOf 或 wst14:ActAs 中。接受器在两种模式下都会检查票据。在这两个元素中，它必须是委派票据：请求者通过 S4U2Proxy 获得的票据（其 PAC 把请求者列在最后），或用转发给受信任可委派的请求者的 TGT 换得的票据。关闭时，拒绝此类令牌。"
+  },
+  "wstrust.issueKerberos|label": {
+    "en": "285465dcff30aee0",
+    "text": "签发 Kerberos 令牌"
+  },
+  "wstrust.issueKerberos|description": {
+    "en": "52a63db9be2c6460",
+    "text": "指定 Kerberos Token Profile 1.1 六种 ValueType 之一的 wst:TokenType 是否以 Kerberos 令牌应答：一个 AP-REQ，携带本领域 KDC 为主体签发、发给 AppliesTo 所指 Kerberos 服务的服务票据，并通过 TLS 把 Authenticator 的子密钥作为证明令牌返回。ActAs 票据在其 PAC 的 S4U_DELEGATION_INFO 中列出每个执行过操作的参与方。关闭时，拒绝此类请求。"
   },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
@@ -5208,8 +6012,8 @@
     "text": "延迟签发：就绪时间（毫秒）"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "延迟签发的凭证在就绪之前保持 issuance_pending 状态的时长。足够长，使钱包必须轮询；又足够短，使测试不会超时。"
+    "en": "2456e341de78a860",
+    "text": "延迟凭证变为就绪所需的时间。在此之前，延迟端点以 202 响应，并返回相同的 transaction_id 和一个 interval。时间足够长，钱包必须轮询；又足够短，测试不会超时。"
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",
@@ -5312,8 +6116,8 @@
     "text": "凭证签名算法"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "6503fe55086c7b70",
-    "text": "dc+sd-jwt 和 jwt_vc_json 凭证签名所用的 JWS 算法——包括后量子算法——也是此领域状态列表签名所用的算法，以及 DID Configuration 的 Domain Linkage Credential 所用的算法。元数据的 credential_signing_alg_values_supported 会指明它，/oauth2/jwks 和 /.well-known/did.json 会发布该密钥，本服务的验证方也会据此进行检查。ldp_vc 使用 bbs-2023，不受影响。已签发的凭证保留其签名时所用的算法。"
+    "en": "64dfa4a593f7ec50",
+    "text": "dc+sd-jwt 和 jwt_vc_json 凭证签名所用的 JWS 算法——包括后量子算法——也是此领域状态列表签名所用的算法，以及 DID Configuration 的 Domain Linkage Credential 所用的算法。元数据的 credential_signing_alg_values_supported 会指明它，/oauth2/jwks 和 /.well-known/did.json 会发布该密钥，本服务的验证方也会据此进行检查。ldp_vc 使用 bbs-2023，不受影响。已签发的凭证保留其签名时所用的算法。oid4vc.walletCompatibility 会在此拒绝后量子或组合算法。"
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5496,8 +6300,24 @@
     "text": "x509 客户端标识符请求的签名算法"
   },
   "oid4vp.x509SigningAlgorithm|description": {
-    "en": "f85d7f30b92687ec",
-    "text": "使用 x509_san_dns 或 x509_hash 客户端标识符的请求对象所采用的 JWS 签名算法，因此也决定了验证方证书所签发的领域密钥。默认为 ES256，OpenID4VC HAIP 要求钱包接受该算法。目前尚不提供后量子算法：请求对象在请求路径上签署，而此领域的后量子密钥在 libuv 的线程池上签名（oid4vc/CLAUDE.md，x509 前缀）。"
+    "en": "aa2c5eaf7760ef3f",
+    "text": "使用 x509_san_dns 或 x509_hash 客户端标识符的请求对象所采用的 JWS 签名算法，因此也决定了验证方证书所签发的领域密钥。默认为 ES256，OpenID4VC HAIP 要求钱包接受该算法。后量子算法和组合算法也同样提供，供接受它们的钱包使用；oid4vc.walletCompatibility 会拒绝它们，关闭 keys.postQuantumSigning 时也会拒绝。"
+  },
+  "oid4vp.requestObjectSigningAlgorithm|label": {
+    "en": "f3337ef9c128d22c",
+    "text": "已签名请求的签名算法"
+  },
+  "oid4vp.requestObjectSigningAlgorithm|description": {
+    "en": "c8e10b889bf92533",
+    "text": "在 pre-registered、decentralized_identifier、verifier_attestation 和 openid_federation 客户端标识符前缀下，已签名请求对象所用的 JWS 签名算法（x509 前缀使用 oid4vp.x509SigningAlgorithm）。对应的领域密钥就是请求所指明的那把：在 /oauth2/jwks 中、在 DID 文档中、在自签发的 Verifier Attestation 的 cnf 中，以及在 Entity Configuration 的 openid_credential_verifier jwks 中。默认为 RS256，即此设置出现之前所有已签名请求所用的算法。后量子算法和组合算法也提供给接受它们的钱包；oid4vc.walletCompatibility 会拒绝它们，关闭 keys.postQuantumSigning 时也会拒绝。"
+  },
+  "oid4vc.walletCompatibility|label": {
+    "en": "50234c10261cc298",
+    "text": "钱包兼容模式"
+  },
+  "oid4vc.walletCompatibility|description": {
+    "en": "a8207c4165957956",
+    "text": "在 OpenID4VCI 和 OpenID4VP 中关闭所有当前在用钱包会拒绝、或没有任何已发布规范为这些协议定义的 JWS 算法：即后量子算法和组合算法（ML-DSA-44、-65 和 -87 出自 RFC 9964，但目前还没有钱包接受它们；SLH-DSA 和组合 ML-DSA 算法是互联网草案）。开启时：颁发者和验证方的元数据中都不出现它们，dc+sd-jwt 或 jwt_vc_json 凭证、OpenID4VP 请求对象或门户的凭证要约都不会用它们签名（指明其中之一的设置会被拒绝，而不会被替换），用它们签名的凭证、Key Binding JWT、VP JWT、持有证明或外部状态列表都会被拒绝。关闭（默认值）：此领域拥有的每种算法都照旧提供和接受。ldp_vc（bbs-2023 及其持有者密码套件）不受影响，其他任何协议也不受影响：keys.postQuantumSigning 才是整个领域的开关。"
   },
   "oid4vp.verifierAttestation|label": {
     "en": "43be5976a5b30428",
@@ -5784,8 +6604,8 @@
     "text": "其他受信任的凭证颁发者（PEM）"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "60a2c73b8c2c6aec",
-    "text": "串联在一起的 PEM 证书，除此领域自身的颁发者之外，本服务的验证方还接受来自这些证书密钥的 SD-JWT VC 或 jwt_vc_json 凭证签名。为空（默认值）时只信任此颁发者，这也是它一贯的行为。证书被当作密钥使用：不构建证书链，但在用它验证凭证时会查询其吊销状态（pki.revocationCheck，自 2026-09-12 起）。"
+    "en": "bbe880b9d434d9ab",
+    "text": "串联在一起的 PEM 证书，除此领域自身的颁发者之外，本服务的验证方还接受来自这些证书密钥的 SD-JWT VC 或 jwt_vc_json 凭证签名。为空（默认值）时只信任此颁发者，这也是它一贯的行为。证书被当作密钥使用：不构建证书链，但在用它验证凭证时会查询其吊销状态（pki.revocationCheck，自 2026-09-12 起）。密钥为 ML-DSA、SLH-DSA 或组合 ML-DSA 的证书可以验证用该算法签名的凭证和状态列表（#657），除非 oid4vc.walletCompatibility 已开启。"
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5794,6 +6614,30 @@
   "oid4vp.expectedVct|description": {
     "en": "8cc9cdf9a93a0260",
     "text": "验证方对出示的 SD-JWT VC 所要求的 `vct`。默认是此颁发者签发的类型；设置它可以接受另一颁发者以其自身类型签发的凭证。"
+  },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "受信任的 mdoc 签发机构（IACA 证书，PEM）"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "PEM 证书，串联在一起：出示的 mdoc 的文档签名者证书必须链接到的签发机构 CA 证书（ISO/IEC 18013-5 附录 B）。证书链按 RFC 5280 的规定构建和检查，会查询文档签名者的吊销状态（pki.revocationCheck），签名者未链接到其中任何一个证书的 mdoc 会被拒绝。为空（默认值）时不信任任何 mdoc 签发者，因此在指定一个之前，mso_mdoc 出示会被拒绝。"
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "预期的 mdoc 文档类型（docType）"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "mso_mdoc 请求所请求的 `docType`（`meta.doctype_value`），也是验证方要求出示的文档及其 Mobile Security Object 所具有的类型。默认值是 ISO/IEC 18013-5 的移动驾照。"
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "读取所请求声明的 mdoc 命名空间"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "mso_mdoc 请求的声明路径所指明的命名空间（`[namespace, element]`，OpenID4VP 1.0 附录 B.2.3）。每个请求的声明都以同名的数据元素请求，但 birthdate（birth_date）和 address（resident_address）除外，ISO/IEC 18013-5 对它们的命名不同。默认值是移动驾照的命名空间。"
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -5939,6 +6783,38 @@
     "en": "89f8d541b4738289",
     "text": "其凭证绑定到本人的 DID 而不是密钥的凭证配置。对列出的每一个配置，钱包的证明必须用 kid 指明其密钥，且该 kid 是本人在其 Self-issued IDs 页面上证明过的 did:jwk 或 did:key URL（管理员录入的条目不够），凭证会携带该 DID：dc+sd-jwt 中为 cnf.kid，jwt_vc_json 中为 credentialSubject.id、sub 和 cnf.kid，ldp_vc 中为 credentialSubject.id。元数据会为其声明 did:jwk 和 did:key。同一批次的每个副本都携带同一个 DID，因此它们可以相互关联——这就是所做的取舍。为空时，每个配置都像以前一样绑定到密钥。不提供 did:web。"
   },
+  "did.personPublishing|label": {
+    "en": "e68b6af2230600ec",
+    "text": "为个人发布 did:web"
+  },
+  "did.personPublishing|description": {
+    "en": "841dc751d16e1137",
+    "text": "允许个人在其门户的 Self-issued IDs 页面上创建一个由本领域为其发布的 did:web（#1291）：did:web:<host>[:realm:<id>]:users:<rid>，其中 <rid> 为 128 位随机数，因此没有人能通过探测地址来枚举账户，同一个人的两个 DID 也无法被关联。其文档在 /users/<rid>/did.json 提供，所有版本均保留，并且可以作为此人的首选 DID。开启后，绑定到 DID 的凭证配置（oid4vci.didHolderBinding）还会为本领域托管且此人已用钱包证明的 DID 提供 did:web。关闭：不发布任何新的 DID；已发布的 DID 无论是否停用仍继续提供，因为其地址会永久保留。在产品模式下，只有在固定的 global.publicBaseUrl 上才会发布 DID。"
+  },
+  "did.personCustody|label": {
+    "en": "057d429ef011ffab",
+    "text": "个人 DID 私钥的持有方"
+  },
+  "did.personCustody|description": {
+    "en": "d6a546fec114599d",
+    "text": "为个人发布的 DID 的私钥由谁持有。`wallet`（默认值，也最安全）：此人的钱包在自签发（SIOPv2）往返中证明自己的密钥，本领域只发布其公开部分；之后的每次密钥变更都须由当前版本列出的密钥授权，并由新密钥证明。`realm`：本领域生成密钥并加密封存，因此该 DID 可以作为首选并在 did 声明中发布，但绝不能用于钱包登录或绑定凭证。`download`：本领域生成密钥对，只显示一次私钥，并且只保留公开部分；在此人用钱包证明该密钥之前，该 DID 处于未证明状态。警告：使用 `download` 时私钥会经过浏览器，使用 `realm` 时本领域可以代表此人行事；只应在可以接受的情况下选择它们。"
+  },
+  "did.personMaxPerPerson|label": {
+    "en": "5a10d569545ab9fe",
+    "text": "每人可持有的已发布 DID 数量"
+  },
+  "did.personMaxPerPerson|description": {
+    "en": "ddaedbc77af9d48d",
+    "text": "一个人可持有的有效已发布 DID 的数量。已停用的 DID 不计入，其地址会继续答复 410 Gone。每个 DID 也计入一个人可登记的十个自签发主体。"
+  },
+  "did.personKeyAlgorithm|label": {
+    "en": "2ba095f9fc035eca",
+    "text": "本领域生成的 DID 密钥算法"
+  },
+  "did.personKeyAlgorithm|description": {
+    "en": "63a8db054fa27772",
+    "text": "在 `realm` 和 `download` 保管模式下，本领域为个人 DID 生成的密钥所用的算法：ES256（P-256）、ES384（P-384）或 EdDSA（Ed25519）。在 `wallet` 保管模式下，由钱包自行选择密钥。已发布的密钥保持其算法不变。"
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "提供 W3C VC API"
@@ -6022,6 +6898,18 @@
   "krb5.serviceSalt|restartReason": {
     "en": "6f0fcf17e84ec4f0",
     "text": "服务账户的长期密钥在启动时由它派生。但信任领域仍可携带此项：领域的主体数据库在其 Kerberos 开启时构建，并在此项更改时重建，因此启动时并未使用该领域的值"
+  },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "在产品模式下提供带 SHA-1 的 AES"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "仅限产品模式。开启时，此 KDC 还可使用 enctype 17 和 18（带 HMAC-SHA1-96 的 AES，RFC 3962）。默认关闭时，产品模式只使用 19 和 20（RFC 8009）。警告：ASVS 5.0.0 要求 11.4.1 在此不接受 SHA-1，因此仅为不支持更新算法的 Kerberos 客户端开启。"
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "每个主体的密钥在启动时生成"
   },
   "krb5.enctypes|label": {
     "en": "e28806e1a9d53522",
@@ -6444,8 +7332,8 @@
     "text": "明文 LDAP 监听器"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "是否启动 ldap.port 上的未加密监听器。默认开启，这是本服务一贯的行为。关闭后，ldap.tlsPort 上的 LDAPS 成为唯一的入口——这正是绑定会被验证的部署（产品模式）所需要的，因为 389 上的简单绑定会以明文发送密码。产品模式下开启此项时，启动时会记录一条警告，明确说明这一点。"
+    "en": "64c4523fa982995b",
+    "text": "是否启动 ldap.port 上的未加密监听器。开发模式下默认开启，这是本服务一贯的行为；产品模式下默认关闭。关闭后，ldap.tlsPort 上的 LDAPS 成为唯一的入口——这正是绑定会被验证的部署（产品模式）所需要的，因为 389 上的简单绑定会以明文发送密码。产品模式下开启此项时，启动时会记录一条警告，明确说明这一点。"
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -6576,8 +7464,8 @@
     "text": "共享的 Digest 密码"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "所有用户名在 HTTP Digest 中共享的密码——与 KRB5_USER_PASSWORD 的默认值相同，这样只需记住一个事实而不是两个。它不能像绑定或 Basic 凭据那样“任意皆可”：digest 响应是基于密码的哈希，因此没有密码的服务器根本不会执行这一交换，客户端的 digest 代码也就得不到演练。"
+    "en": "6819fb3962f9f205",
+    "text": "所有用户名在 HTTP Digest 中共享的密码——与 KRB5_USER_PASSWORD 的默认值相同，这样只需记住一个事实而不是两个。它不能像绑定或 Basic 凭据那样“任意皆可”：digest 响应是基于密码的哈希，因此没有密码的服务器根本不会执行这一交换，客户端的 digest 代码也就得不到演练。它可以作为 SCIM_DIGEST_PASSWORD_FILE 指定的文件交付。"
   },
   "scim.digestNonceSeconds|label": {
     "en": "1fa6981a1aebea0d",
@@ -6728,8 +7616,8 @@
     "text": "摘要间隔（秒）"
   },
   "scimClient.summaryS|description": {
-    "en": "532d257e0c6e60fe",
-    "text": "每个领域在每个间隔内最多记录一条摘要日志。"
+    "en": "ea1e0599735008ca",
+    "text": "一个领域的投递计数可以多久记录一次日志。死信或延迟投递是警告；两者都没有的计数只在调试级别写入。"
   },
   "scimClient.reconcileCheckS|label": {
     "en": "f122dddcfc10af98",
@@ -7726,6 +8614,14 @@
   "risk.uploadMaxBytes|description": {
     "en": "65308f69a41d480e",
     "text": "上传文件的最大大小，按发送时的大小计算（如经压缩则为压缩后）。若请求声明的大小超过此值，则在读取任何字节之前拒绝；否则在超过此值处停止。DB-IP Lite 的城市文件压缩后有几百 MB。"
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "数据集中允许解析失败的行的最大比例（百分比）"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "数据集文件中若超过此百分比的非注释行不是该格式的记录，则拒绝该文件，且不保留任何内容。100 表示接受至少含一条记录的任何文件，这是此服务以前的行为。警告：设为 100 时，只要有一行能解析，错误类型的文件也可能被加载。"
   },
   "risk.expandedMaxBytes|label": {
     "en": "c9644dc433201840",
@@ -9564,12 +10460,24 @@
     "text": "持久化模式"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用 postgres 时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
+    "en": "9017af2918cf94be",
+    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。mariadb 是 MariaDB 上的同一存储（mariadb/schema.sql），是测试套件所针对的第二种引擎：此时 persistence.databaseUrl 是一个 mariadb:// 地址，必须安装 mysql2 包，而需要 PostgreSQL 本身的功能（单元、批量导入、目录窗口）会被拒绝。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用 postgres 时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
     "text": "存储在监听器绑定之前打开并读取"
+  },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "集群 SQL 方言"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "postgres 存储用于协调多个进程而发送的语句：认领、租约、计数器、限速窗口、预算、写入栅栏、集群加入锁、心跳以及变更日志修剪。native 是 PostgreSQL 自身的语句（条件 upsert、咨询锁、LISTEN/NOTIFY），也是生产环境运行的方式。portable 是第二种数据库引擎运行的语句（遇到重复时不做任何事的普通插入、sts_cluster_locks 中的行锁，且没有变更通知，因此除非设置了 persistence.pollInterval，否则每秒轮询一次变更日志）；它的存在是为了让测试套件能够在 PostgreSQL 上验证这些代码。两者都是正确的；portable 每次操作需要更多语句。"
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "存储驱动在构建时选择其语句"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -9840,8 +10748,8 @@
     "text": "变更轮询间隔（毫秒）"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "本进程多久向变更日志询问一次其他进程提交了什么。这是契约，LISTEN/NOTIFY 提醒只是在其之上的优化，因此这是通知丢失时——监听器断开、数据库重启——最坏情况下的收敛延迟，而典型延迟为几毫秒。设为五秒，是因为提醒通常会先到达，更短的间隔除了增加查询之外毫无收益；250ms 是下限。它也是 persistence.coordinate 下所述重放缓存窗口的大小。"
+    "en": "0620a679e69c0d43",
+    "text": "此进程多久向变更日志询问一次其他进程已提交的内容。这是契约，LISTEN/NOTIFY 提示只是对它的一种优化，因此当通知丢失时——监听器断开、数据库重启——这就是最坏情况下的收敛延迟，而典型延迟只有几毫秒。取五秒是因为提示通常先到达，更短的间隔除了更多查询之外一无所获；250 毫秒是下限。当存储不发送提示（persistence.sqlDialect 为 portable）且未设置此项时，间隔为一秒。它也是 persistence.coordinate 下所述重放缓存窗口的大小。"
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",
@@ -10044,8 +10952,8 @@
     "text": "单元间投递摘要间隔（秒）"
   },
   "cells.deliverySummaryS|description": {
-    "en": "4d6c6babc8c6fdfa",
-    "text": "每个领域每隔这么多秒最多输出一行摘要，而不是每次投递一行。"
+    "en": "6d3c80b9adce5ba8",
+    "text": "一个领域的单元间投递计数可以多久记录一次日志。死信或延迟投递是警告；两者都没有的计数只在调试级别写入。"
   },
   "cells.deliverySweepS|label": {
     "en": "f26150d48283cebf",
@@ -10188,8 +11096,8 @@
     "text": "同时进行的最多运行数"
   },
   "scheduler.maxConcurrentRuns|description": {
-    "en": "56fac41f63177db7",
-    "text": "领导者在所有作业和信任领域中同时进行多少个定时或手动运行。时间槽是其间隔的倍数，因此每个领域中的每个每小时作业都在同一秒到期；每次运行在认领和工作期间都会占用一个到存储的连接，而 postgres 存储有四个。其余的运行会等待——人员发起的“立即运行”优先——并在运行结束时开始。无论设为多少，它都不会超过连接池容量减一，因此调度器不会从请求那里占走所有连接。"
+    "en": "dc2ba3cac81ad956",
+    "text": "领导节点同时运行的计划或手动运行数，涵盖所有作业和信任域。默认值 0 表示同时两个运行；若请求工作线程数（workers.requestCount）减一更大，则取该值，从而留下一个不承担作业的线程来响应请求。设置为 1 或更大的值时改用该值。时段是其间隔的倍数，因此每个域的每个每小时作业都在同一秒到期；其余的等待（个人的 Run now 优先），并随运行结束而启动。无论如何设置，它都不会超过存储连接池容量减一，因此调度器无法占用请求的全部连接。"
   },
   "scheduler.niceBusyThreshold|label": {
     "en": "115ae6125244b30a",
@@ -11534,5 +12442,29 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "仅针对协议调试器监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
+  },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在让用户登录前先征得同意"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "在 SAML 2.0 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 saml2SsoConsent 可为该应用覆盖此设置。"
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在让用户登录前先征得同意"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "在 SAML 1.1 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 saml11SsoConsent 可为该应用覆盖此设置。"
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在让用户登录前先征得同意"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "在 WS-Federation 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 wsfedSsoConsent 可为该应用覆盖此设置。"
   }
 }

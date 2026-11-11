@@ -47,6 +47,7 @@ import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import validation = require('../common/validation');
 import deviceAuthorization = require('../oauth-oidc/device_authorization');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -69,17 +70,9 @@ const WRONG_CODE_WINDOW_MS = 10 * 60 * 1000;
 // The size cap on the count, checked at the insert: the oldest goes.
 const WRONG_CODE_SESSIONS = 10000;
 
-const FORM = vz.object({
-  action: vt.oneOf(['approve', 'deny'])
-    .describe('`approve` signs you in on the device; `deny` refuses it.'),
-  user_code: vz.string().min(1).max(32)
-    .describe('The code the device shows.')
-});
+const FORM = ModelZod.body('account', 'answerDeviceRequest');
 
-const QUERY = vz.object({
-  user_code: vz.string().max(32).optional()
-    .describe('The code the device shows; brings up its request.')
-});
+const QUERY = ModelZod.query('account', 'getDeviceRequest');
 
 /**
  * `/portal/device`'s account API operations: RFC 8628's verification URI,
@@ -310,30 +303,13 @@ class PortalDevice {
     log.debug("Entering PortalDevice.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/device',
-        operationId: 'getDeviceRequest', tag: 'Sign in a device',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/device',
-        summary: 'The device request a user code brings up',
-        description: 'RFC 8628 section 3.3. With no `user_code`, only ' +
-          'whether the flow is on. With one, the waiting request — the ' +
-          'client and the scopes — so that you see what you would approve ' +
-          'before approving it (section 5.4). Five codes that match nothing ' +
-          'lock the sign-on session out for ten minutes (section 5.1).',
-        query: QUERY,
-        statuses: { 404: 'No device is waiting with that code.',
-                    429: 'Too many codes that matched nothing.' },
+        operationId: 'getDeviceRequest', access: 'person', query: QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.getView(ctx, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/device',
-        operationId: 'answerDeviceRequest', tag: 'Sign in a device',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/device',
-        summary: 'Approves or denies a device sign-in',
-        description: 'An approval issues the device tokens for you, on the ' +
-          'sign-on session this token was issued on, which ends them when ' +
-          'it ends.',
-        body: FORM,
-        statuses: { 429: 'Too many codes that matched nothing.' },
+        operationId: 'answerDeviceRequest', access: 'person', body: FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.answer(ctx, res, caller, input.body);

@@ -244,8 +244,8 @@
     "text": "「本服務在夥伴處的秘密」，以明文存放在每次繫結都會成功的目錄中。它是「真正的」外部服務上「真正的」憑證，這比此目錄中其他任何東西都更具分量——請參閱標頭。絕不會寫入稽核記錄，也絕不會印在頁面上。"
   },
   "fed.schema.attributes.fedResponseMode.what": {
-    "en": "07cfe6e4177873df",
-    "text": "授權碼的返回方式：query（預設值，代碼在重新導向中）或 form_post（OAuth 2.0 Form Post Response Mode）；只要要求姓名或地址，Sign in with Apple 就要求使用後者。form_post 以跨網站 POST 的方式抵達，因此瀏覽器不會隨之傳送任何 SameSite=Lax Cookie。"
+    "en": "fdcac3938c7dc0ec",
+    "text": "授權回應如何返回。空白即預設值：code 使用 query，攜帶 ID Token 或存取權杖的 OpenID Connect 回應類型使用 form_post（OAuth 2.0 Form Post Response Mode）。Sign in with Apple 在要求姓名或地址時要求使用 form_post，它以跨站 POST 的形式抵達，因此瀏覽器不會隨之傳送 SameSite=Lax cookie。fragment 僅限 OpenID Connect，是規格中這些回應類型的預設值：回應位於 URL 片段中，由此處一個附有指令碼的頁面轉交。它會把 ID Token 留在瀏覽器的歷史紀錄中，而 form_post 不會：僅對無法傳送 POST 的夥伴使用。query 無法攜帶 ID Token 或存取權杖。"
   },
   "fed.schema.attributes.fedAllowedTenants.what": {
     "en": "1436122fe8c92048",
@@ -276,8 +276,52 @@
     "text": "向夥伴要求的範圍。`openid profile email` 是 OIDC 關係的預設值，OAuth 2.0 關係則沒有預設值，因為 OAuth 2.0 授權伺服器會給你什麼完全由它自己決定。"
   },
   "fed.schema.attributes.fedResponseType.what": {
-    "en": "b2682d37a527ee98",
-    "text": "code（預設）或 id_token。`id_token` 搭配 form_post 是「不需要」後端通道的形式，因此不需要權杖端點、用戶端秘密，也沒有外送請求——這是在完全沒有對外連線的部署中與 OIDC 夥伴聯盟的唯一方式。"
+    "en": "885dc55158b43f26",
+    "text": "code（預設）、id_token，或 OpenID Connect 其他四種之一：id_token token（隱含）、code id_token、code token 與 code id_token token（混合）。`id_token` 搭配 form_post 是「不需要」後端通道的形式，因此不需要權杖端點、客戶端秘密，也沒有外送請求——這是在完全沒有對外連線的部署中與 OIDC 夥伴聯盟的唯一方式。來自授權端點的 ID Token 必須攜帶 nonce，且凡隨附代碼或存取權杖之處都必須攜帶 c_hash 與 at_hash。"
+  },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "僅限 OPENID CONNECT。夥伴簽署此關係的 ID Token 與 Logout Token 所用的唯一演算法——即在夥伴處註冊為 id_token_signed_response_alg 的演算法（OpenID Connect Core 1.0 第 3.1.3.7 節第 7 步，Back-Channel Logout 1.0 第 2.6 節）。以其他演算法簽署的權杖會被拒絕，即使夥伴的金鑰能驗證它。空白即預設值：federation.jwtAlgorithms 允許的、驗證金鑰所屬家族的任何演算法。請設定它：空白時，會接受由夥伴另一把金鑰以另一種演算法簽署的權杖。"
+  },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "僅限 OPENID CONNECT。已簽署的 UserInfo 回應必須使用的簽署演算法——即在夥伴處註冊為 userinfo_signed_response_alg 的演算法（OpenID Connect Core 1.0 第 5.3.2 節）。無論是否設定此項，已簽署的回應都會以夥伴的金鑰驗證；設定後，以其他演算法簽署的回應不會被使用。空白即預設值：JSON 回應，或以其金鑰所屬家族任何演算法簽署的回應。"
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "僅限 OPENID CONNECT。TRUE 會將夥伴於登入時簽發的更新權杖加密保存，與其開啟的工作階段放在一起，並用它讓該工作階段的身分保持最新（OpenID Connect Core 1.0 第 12 節）：每隔 fedRefreshEverySeconds 更新一次工作階段的權杖，新的 ID Token 必須標明相同的 iss 與 sub，且 UserInfo 必須仍為該 sub 回應。夥伴拒絕的更新，或未通過這些檢查的回應，會結束該工作階段。權杖隨工作階段一同消亡。FALSE 為預設值：夥伴的權杖只在登入時使用一次，隨後捨棄——這裡不持有其他服務的任何憑證，而夥伴自己的登出與 Shared Signals 才是提早結束工作階段的方式。"
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "在 fedRefreshTokens 開啟時：工作階段的權杖每隔多少秒更新一次。空白：於存取權杖到期時（其 expires_in），若夥伴未給出到期時間則每小時一次。排程工作 federation.partner-refresh 每十五秒檢查一次。"
+  },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "僅限 OPENID CONNECT，需搭配 fedDiscovery。TRUE 會讓本服務在夥伴處自行註冊（OpenID Connect Dynamic Client Registration 1.0，RFC 7591），註冊地點是其探索文件所指的 registration_endpoint；只要該關係沒有 fedClientId，或持有的 fedClientId 是向另一簽發者註冊的，就會註冊——於登入開始時，或由管理員的 register-partner 發起。夥伴簽發的 client_id 與密鑰會寫入 fedClientId 與 fedClientSecret（加密保存）。註冊的是此關係：其斷言取用服務、回應類型、用戶端驗證、此處設定的演算法，以及對於請求物件，簽署它們的公開金鑰。FALSE 為預設值：用戶端在夥伴處以人工註冊。"
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "fedRegister 為 fedClientId 註冊時所針對的簽發者。由註冊寫入；將它與 fedClientId 一併清除，即可於下次登入時重新註冊。"
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "僅限 OPENID CONNECT。以請求物件傳送授權請求（OpenID Connect Core 1.0 第 6 節，RFC 9101）：request（以值）或 request_uri（以參照——夥伴從 /federation/request/{id}/{handle} 取得一次）。以本領域的金鑰依 fedRequestObjectSigningAlg 簽署。空白即預設值：一般的授權請求。"
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "簽署請求物件所用的演算法：RS256（預設）、PS256 或 ES256（使用本領域的金鑰），或 none——未簽署的物件，Core 6.2 只允許透過 https 以參照傳遞；警告：此時夥伴只能憑取得時的 TLS 判斷該物件出自本服務。"
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "僅限 OPENID CONNECT，需搭配 fedDiscovery。TRUE 會回應 /federation/webfinger/{id}：由某人輸入一個識別碼（acct:user@host 或 URL），本服務向該主機詢問此人的 OpenID 提供者是誰（OpenID Connect Discovery 1.0 第 2 節，RFC 7033）。警告：所撥打的主機由呼叫端選擇——這是本服務在聯盟請求中唯一一個經過論證的此類例外，受外送政策約束（產品模式下不存取內部位址、不跟隨重新導向、有上限）。找到的簽發者必須以 fedPeer 開頭，從而被限定在管理員設定的夥伴範圍內；此人會看到該簽發者，只有按下按鈕才會繼續。FALSE 為預設值，予以拒絕。"
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "僅限 OPENID CONNECT。TRUE 會在每次登入開始時（OpenID Connect Discovery 1.0 第 4 節）從夥伴的探索文件 {fedPeer}/.well-known/openid-configuration 讀取其端點與 jwks_uri，該文件的 issuer 必須與 fedPeer 完全相同；此時不讀取 fedSsoUrl、fedTokenUrl、fedUserinfoUrl 與 fedJwksUri。此位址由管理員設定的 fedPeer 推導而來，絕不來自請求。FALSE 為預設值：端點以人工設定。"
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "僅限 OPENID CONNECT。TRUE 會回應此關係的登入發起端點 /federation/initiate-login/{id}，夥伴將其註冊為 initiate_login_uri（OpenID Connect Core 1.0 第 4 節）：由夥伴發起的登入，在 iss 中標明自身，且 iss 必須是 fedPeer。login_hint 會被轉交，target_link_uri 僅在指向本服務上的路徑時才會被跟隨。FALSE 為預設值，會拒絕它：否則任何頁面都能在某人的瀏覽器中發起登入。"
   },
   "fed.schema.attributes.fedBinding.what": {
     "en": "a10d4406a67b3b1f",
@@ -376,8 +420,8 @@
     "text": "「fedSignalsClientId 的秘密」，只要金鑰持久保存就以金鑰加密金鑰「密封」，且從不顯示。空白則使用 fedClientSecret，以相同方式密封。"
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "ed55c437fcd421f1",
-    "text": "以用戶端認證要求的範圍。空白則要求 `ssf.manage`，它包含讀取。"
+    "en": "9a4b1c668a3d1dd5",
+    "text": "以用戶端憑證請求的範圍。留空則請求 `ssf.read ssf.manage`，即 CAEP 互通設定檔的兩個範圍（第 2.7.3 節）。"
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

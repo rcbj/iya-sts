@@ -25,7 +25,7 @@
 //      private key is handed back ONCE and this module keeps no copy.
 //   2. PACKAGE — a password-protected PKCS#12 and a PEM key and chain, through
 //      `common/crypto_impl/key_material.js`'s `exportKeyPair()`, which is the
-//      exporter `/admin/keys` and the Certificate & Key Configuration pane
+//      exporter `/admin/keys` and the Certificate Workbench
 //      already use. One exporter, so a `.p12` from here imports exactly as one
 //      from those pages does.
 //   3. RECOGNISE — `identityOf()`, the gate every door that turns a verified
@@ -751,6 +751,31 @@ async function bundle(issued, password) {
     key: { name: stem + '-key.pem', mime: 'application/x-pem-file',
            text: typeof pemFile.data === 'string'
              ? pemFile.data : Buffer.from(pemFile.data).toString('utf8') },
+    chain: { name: stem + '-chain.pem', mime: 'application/x-pem-file',
+             text: certs.map(function (one) {
+               return String(one).trim() + '\n';
+             }).join('') }
+  };
+}
+
+/**
+ * The two files the PORTAL answers (#671): the private key as the issue
+ * handed it over (unencrypted PKCS#8 PEM) and the certificate chain, leaf
+ * first. No password, no PKCS#12 — rcbj's decision on #671, so the three
+ * cards of `/portal/signing-key` answer the same pair. `bundle()` above is
+ * still what the console's issue answers.
+ *
+ * @param issued - the `issued` object from `issue()`
+ * @returns `{ key, chain }`, each with a file name, MIME type and PEM text
+ */
+function pemFiles(issued) {
+  log.debug("Entering pemFiles().");
+  const stem = fileStem(issued);
+  const certs = [issued.certificatePem].concat(issued.chainPem || []);
+  log.debug("Leaving pemFiles().");
+  return {
+    key: { name: stem + '-key.pem', mime: 'application/x-pem-file',
+           text: String(issued.privateKeyPem).trim() + '\n' },
     chain: { name: stem + '-chain.pem', mime: 'application/x-pem-file',
              text: certs.map(function (one) {
                return String(one).trim() + '\n';
@@ -1709,6 +1734,7 @@ module.exports = {
   issue: issue,
   pkcs12PasswordProblem: pkcs12PasswordProblem,
   bundle: bundle,
+  pemFiles: pemFiles,
   revoke: revoke,
   trustAnchorPem: trustAnchorPem,
   identityOf: identityOf,

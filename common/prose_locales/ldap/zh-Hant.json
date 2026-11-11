@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "此用戶端可要求的 response_type 值——RFC 7591 section 2 的 response_types，來自註冊或由管理員寫入，每個值一種回應類型（\"code\"、\"code id_token\"）。授權端點在每種模式下都會拒絕其他任何值（unauthorized_client）；空清單不限制任何東西。用戶端實際要求過的是 oauthResponseTypeObserved。"
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "在 RFC 9700 模式生效時（產品模式始終生效）此用戶端可以使用的、從授權端點簽發存取權杖的回應類型——token、code token、id_token token、code id_token token。僅當領域豁免 RFC 9700 第 2.1.2 節時生效（oauth2.allowImplicitTokenResponses，在 OAuth 2.1 或 FAPI 下從不生效）；此時未在此列出的類型會被拒絕（unauthorized_client）。預設為空，空表示無。在領域允許這些類型時由管理員或應用程式的擁有者寫入，或由 oauth2.dynamicRegistrationTokenResponseTypes 範圍內的動態註冊寫入。RFC 9700 第 2.1.2 節規定用戶端不應（SHOULD NOT）使用它們。"
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "看到此用戶端在權杖端點使用過的授權類型。這是記錄而不是權限：oauthGrantType 才是它可以使用的。"
@@ -580,8 +584,8 @@
     "text": "「此應用程式定義之每個權限所依附的基礎 URI」，也是讓權限名稱在此全域唯一的東西。權限由此值加上其名稱識別——基礎 `https://example.com/` 加名稱 `write` 即為權限 `https://example.com/write`——這是用戶端放在 `scope` 中的值，存取權杖也隨之以它為「對象」。Entra ID 稱之為 Application ID URI，拼寫為 `api://<guid>`；形式相同，而此處並不要求該配置。\n\n透過此模組寫入時，「它會被正規化為以分隔符號結尾」——結尾沒有 `/`、`#` 或 `:` 時會加上 `/`——因為基礎 + 名稱是單純的串接，否則 `https://example.com` + `write` 會產生 `https://example.comwrite`。`ldapmodify` 與其他屬性一樣可寫入此屬性且不會正規化，因此手動寫入的基礎就完全照字面意思。\n\n「單一值」，它是這一組中唯一無法在不做出決定的情況下擴充的屬性：兩個基礎意味著項目上的每個權限都有兩個識別碼，而將範圍轉為對象的查詢必須挑一個放進 `aud`。"
   },
   "applications.schema.attributes.oauthPermission.what": {
-    "en": "0c47fe049bbc6c7b",
-    "text": "「此應用程式公開的一個權限」，每個權限一個值。值是權限的「名稱」——`read`、`write`、`Widgets.ReadWrite.All`——可選擇性地接著 `|` 與描述：`write|Change widgets on somebody's behalf`。「第一個」`|` 是分隔符號，之後的每個都屬於描述，因此描述可包含該字元，名稱則不可。\n\n名稱必須是合法的 OAuth 範圍權杖（RFC 6749 section 3.3——不含空格、雙引號或反斜線），因為這是用戶端會放在 `scope` 參數中、並會出現在權杖 `scope` 宣告中的內容。以 `ldapmodify` 寫入時不會強制檢查；此模組與兩個主控台會檢查。\n\n「權限必須先存在，才能授予任何東西該權限」，這是此功能唯一的順序規則，在 updateApplication() 中檢查，讓主控台表單與管理 API 不會對此產生分歧。它是在「授予」時檢查，而不是在這裡：此屬性是定義，而尚未被任何人使用的定義是正常的第一步，而不是錯誤。"
+    "en": "7eb690e390462f2d",
+    "text": "「此應用程式公開的一個權限」，每個權限一個值。值是權限的「名稱」——`read`、`write`、`Widgets.ReadWrite.All`——可選擇性地接著 `|` 與描述：`write|Change widgets on somebody's behalf`。「第一個」`|` 是分隔符號，之後的每個都屬於描述，因此描述可包含該字元，名稱則不可。\n\n名稱必須是合法的 OAuth 範圍權杖（RFC 6749 section 3.3——不含空格、雙引號或反斜線），因為這是用戶端會放在 `scope` 參數中、並會出現在權杖 `scope` 宣告中的內容。包含操作員錯誤代碼的名稱或描述也會被拒絕：兩者都會在列出此權限的每個頁面上傳回，而錯誤代碼只記錄、不傳送。以 `ldapmodify` 寫入此值時不會強制檢查這兩項規則；此模組與兩個主控台會檢查。\n\n「權限必須先存在，才能授予任何東西該權限」，這是此功能唯一的順序規則，在 updateApplication() 中檢查，讓主控台表單與管理 API 不會對此產生分歧。它是在「授予」時檢查，而不是在這裡：此屬性是定義，而尚未被任何人使用的定義是正常的第一步，而不是錯誤。"
   },
   "applications.schema.attributes.oauthRoleGatedPermission.what": {
     "en": "fa1c86d8fb8ce2fb",
@@ -732,8 +736,8 @@
     "text": "AuthZEN 存取請求回呼（#1180）：此用戶端作為 AuthZEN PEP 可指定為存取請求 callback.endpoint 的 https URL——每個值一個，須完全相符。指定其他任何 URL 的請求都會被拒絕；本服務絕不會僅憑請求中的 URL 就向其發出回呼。由管理員設定，絕不由呼叫端設定。"
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 第 3 節：此應用程式作為資源伺服器，對存取權杖背後之驗證所要求的 acr 值——以空格分隔，最偏好者在前。acr 不符合任何一個的權杖，會收到 401 insufficient_user_authentication 挑戰，並以這些值作為 acr_values。等級 0 < 1 < mfa 有先後順序；hwk、phr 與 phrh 由密碼加上安全金鑰滿足；其他任何值只由完全相同的 acr 滿足。空白則不要求任何東西。"
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 第 3 節：此應用程式作為資源伺服器，對存取權杖背後之驗證所要求的 acr 值——以空格分隔，最偏好者在前。acr 不符合任何一個的權杖，會收到 401 insufficient_user_authentication 挑戰，並以這些值作為 acr_values。等級 0 < 1 < mfa 有先後順序；hwk 由密碼加上安全金鑰滿足；phr 與 phrh 只由其所指的抗網路釣魚驗證滿足 (#723)；其他任何值只由完全相同的 acr 滿足。空白則不要求任何東西。"
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1083,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "「由第三方開始登入此用戶端的位置」：OpenID Connect Core section 4 的 initiate_login_uri，/launch/{app} 與使用者入口網站會帶著 iss、login_hint 與 target_link_uri 將某人送往此處。僅限 https，且不得帶有片段。"
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "用戶端的標誌：OpenID Connect Registration 第 2 節的 logo_uri，繪製於登入與同意畫面上用戶端名稱旁邊。由使用者的瀏覽器從此位址載入；本服務從不擷取它。一個絕對 https URL。"
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "用戶端的隱私權政策：OpenID Connect Registration 第 2 節的 policy_uri，從登入與同意畫面連結。一個絕對 https URL。"
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "用戶端的服務條款：OpenID Connect Registration 第 2 節的 tos_uri，從登入與同意畫面連結。一個絕對 https URL。"
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "此用戶端執行的 RFC 8693 權杖交換，是否在交換所得的存取權杖之外再取得一個 `refresh_token`，僅為它覆寫 oauth2.tokenExchangeRefreshToken。為三個詞之一：`never`、`when-requested`（全服務預設值——用戶端以 RFC 8693 第 2.1 節的 `requested_token_type` 提出要求，只有要求了才會取得）或 `always`。\n\n「它是在執行交換的用戶端上讀取」，而不是在對象上讀取，因為重新整理權杖是交給用戶端的：它是該方要持有、撤銷並最終兌換的認證。在值得關注的情況下，交換所「關於」的主體在此登錄中根本沒有項目，因為交換的重點就在於來自別處的 subject_token。\n\n**它適用於 OAuth 2.0 與 OpenID Connect 系列，不適用於其他系列，而且與此處其他每個屬性不同，這一點是「強制執行」的。**未宣告用於任一系列的項目，會被主控台的兩個入口以及管理 API 拒絕，並指出要先勾選的系列——因為此處的值是關於權杖端點的原則，而一個任何權杖請求都無法指名的項目若攜帶它，看起來就像它正在生效。此列上方的區塊論證了這一點。`ldapmodify` 和對待其他屬性一樣可以修改此屬性，且不會受到檢查。\n\n「不屬於三個詞之一的值，在寫入時不算錯誤，但也不會無聲無息」：settingFor() 會發出警告，指出項目、屬性及其內容，並由全服務的設定決定——與此項目上其他每個覆寫一樣，具有相同的三態誠實性。"
@@ -1244,8 +1260,8 @@
     "text": "TRUE 或 FALSE：是否回應此依賴方自己的 wsignin1.0，覆寫 wsfed.spInitiatedSso。wsignin1.0 是未簽署的 URL，因此 FALSE 是把門關上，而不是證明是誰開的門。"
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "此應用程式之 wsignoutcleanup1.0 通知的傳送位置——WS-Federation 的登出 URI，也是此表在 2026-08-30 之前所沒有的。是「宣告的」，而非觀察到的，這使它與 samlSingleLogoutService 而非 wsfedReplyUrl 同類：清理是在「工作階段」結束時傳送，那時原本會攜帶 wreply 的請求早已結束。\n\n**登出目前「尚未」讀取它**，這一點明確說明而非暗示。`cleanupTargetsFor()` 從 `session.wsfedRealms` 建立清單，其中記錄每個登入回應實際送往的 wreply——因此本服務目前通知的是它「觀察到」的，而此屬性是營運者「宣告」的。這是兩項不同的事實，而第二項是設定應用程式的人可以事先說明的。將它接入、作為未帶 wreply 登入之領域的後備，是顯而易見的下一步，但此處刻意不這麼做：此變更新增欄位與儲存，而改變清理的去處，是改變協定的行為。"
+    "en": "677e7babd8d711d3",
+    "text": "此應用程式之 wsignoutcleanup1.0 通知的傳送位置——WS-Federation 的登出 URI，也是此表在 2026-08-30 之前所沒有的。是「宣告的」，而非觀察到的，這使它與 samlSingleLogoutService 而非 wsfedReplyUrl 同類：清理是在「工作階段」結束時傳送，那時原本會攜帶 wreply 的請求早已結束。\n\n**宣告的位址優先於觀察到的位址** (#747)。對於工作階段已登入的領域，`cleanupTargetsFor()` 會通知此處的每個值；只有此處為空白時，才使用登入回應所送往的 wreply，它由 `session.wsfedRealms` 記錄。"
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",
@@ -1262,6 +1278,10 @@
   "applications.schema.attributes.krb5ClaimsPac.what": {
     "en": "0abf4d44f51d3755",
     "text": "此服務自己的 PAC 宣告，為 JSON 陣列，各列格式與領域的「Kerberos PAC 宣告」頁面相同。加入此應用程式某個 SPN 之服務票證所攜帶的宣告中（即其簽發來源 TGT 的宣告），應用程式的列會取代同名的宣告。僅在 krb5.pacClaims 開啟時有效。"
+  },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "此用戶端自己的 GNAP 存取權杖 JWT 宣告，為 JSON 陣列，各列格式與其他自訂宣告集相同。加入簽發給此用戶端的 jwt-signed 權杖，以及 jwt-encrypted 權杖內部的 JWT；同名時應用程式的列會取代領域的列。權杖自身的宣告（access、flags、label、grant_id 以及 JWT 名稱）不能被覆蓋。macaroon、biscuit 與 zcap 權杖不攜帶這些列。"
   },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
@@ -1990,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 註冊時對自己所做的任何說明。"
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE 或 FALSE：在 SAML 2.0 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml2.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE 或 FALSE：在 SAML 1.1 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml11.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE 或 FALSE：在 WS-Federation 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 wsfed.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
   }
 }

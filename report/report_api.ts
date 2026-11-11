@@ -36,6 +36,9 @@ import Query = require('./query');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
 import OpenApi = require('./openapi');
+import responseChecks = require('../common/response_models');
+// What a request may name and hold (#1483): a leaf that registers nothing.
+import RequestHeaders = require('../common/request_headers');
 import version = require('../common/version');
 
 const log = bunyan.createLogger({ name: 'sts-report-api' });
@@ -658,8 +661,16 @@ function reportAuthenticateToken(req: any, res: any, presentation: any):
     log.debug("Leaving reportAuthenticateToken(). Another audience.");
     return null;
   }
-  const person = String(claims.username ||
-    deps.helpers.nameForSubject(claims.sub) || '');
+  if (deps.helpers.subjectIsGone(claims.sub) &&
+      require('../common/mode').refusesTokenForGoneSubject()) {
+    reportUnauthenticated(res, 'STS-REPORT-0059', 'invalid_token',
+      'The person this access token names no longer exists.');
+    log.debug("Leaving reportAuthenticateToken(). The subject is gone.");
+    return null;
+  }
+  // `sub` first: it cannot be reassigned and a username can (ASVS 5.0.0 10.3.3).
+  const person = String(deps.helpers.nameForSubject(claims.sub) ||
+    claims.username || '');
   if ((claims.jti && deps.stats.isRevoked(String(claims.jti))) ||
       (person && deps.accountState.isDisabled(person))) {
     reportUnauthenticated(res, 'STS-REPORT-0012', 'invalid_token',
@@ -792,6 +803,8 @@ function reportAuthenticateToken(req: any, res: any, presentation: any):
     log.debug("Leaving reportAuthenticateToken(). A role was withdrawn.");
     return null;
   }
+  // The audit row names who the token says this is (#1537).
+  res.locals.apiCaller = { name: person };
   log.debug("Leaving reportAuthenticateToken().");
   return caller.who;
 }
@@ -1113,6 +1126,17 @@ function reportServeGroups(req: any, res: any): void {
 // administrator broadcast to this application, as its receiver kept it.
 // Everybody signed in to it sees the same announcements — they are about
 // nobody — so there is no narrowing by person here.
+// WHAT THE USER MENU DRAWS (#719): the reader's own photo. This application
+// signs in with no directory view of its own, so this is the one thing it asks
+// about the person, and it answers only about the token's.
+function reportServeMe(res: any, who: any): void {
+  log.debug("Entering reportServeMe().");
+  reportJson(res, 200, { photo: who && who.kind === 'user'
+    ? require('../common/profile_photo').pathFor(String(who.username || ''))
+    : '' });
+  log.debug("Leaving reportServeMe().");
+}
+
 function reportServeAnnouncements(req: any, res: any): void {
   log.debug("Entering reportServeAnnouncements().");
   const since = Number(((req && req.query) || {}).since || 0) || 0;
@@ -1766,10 +1790,87 @@ async function reportStreamPieces(res: any, media: string,
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// WHAT A REQUEST MAY NAME AND HOLD (#1483, `/admin-api`'s #1476 rule). The
+// document is the whole of what an operation takes: a query name it does not
+// declare, a value its declared type does not hold and a custom header nobody
+// defined are refused, after the token and before the operation. The
+// operations and their parameters are read from `openapi.ts` once.
+// ---------------------------------------------------------------------------
+const REPORT_SHAPE_CODES: Record<string, string> = {
+  'unknown-parameter': 'STS-REPORT-0056',
+  'wrong-type': 'STS-REPORT-0057',
+  header: 'STS-REPORT-0058'
+};
+
+let reportDeclared: Array<{ method: string; pattern: RegExp;
+                            parameters: any[] }> | null = null;
+
+function reportDeclaredOperations(): Array<{ method: string; pattern: RegExp;
+                                             parameters: any[] }> {
+  log.debug("Entering reportDeclaredOperations().");
+  if (!reportDeclared) {
+    const paths: any = OpenApi.document(new Catalog()).paths;
+    const rows: Array<{ method: string; pattern: RegExp;
+                        parameters: any[] }> = [];
+    Object.keys(paths).forEach(function (template: string): void {
+      const pattern = new RegExp('^' + template.replace(/\{[^}]+\}/g,
+                                                        '[^/]+') + '$');
+      Object.keys(paths[template]).forEach(function (verb: string): void {
+        const op = paths[template][verb];
+        rows.push({ method: verb.toUpperCase(), pattern: pattern,
+                    parameters: (op && op.parameters) || [] });
+      });
+    });
+    reportDeclared = rows;
+  }
+  log.debug("Leaving reportDeclaredOperations().");
+  return reportDeclared;
+}
+
+// The declared parameters of the operation this request is, or null where
+// the route is not one of the document's (a path the router answers 404).
+function reportParametersOf(req: any, method: string, parts: string[]):
+    any[] | null {
+  log.debug("Entering reportParametersOf().");
+  const path = BASE + (parts.length ? '/' + parts.join('/') : '');
+  const row = reportDeclaredOperations().filter(function (one: any): boolean {
+    return one.method === method && one.pattern.test(path);
+  })[0];
+  log.debug("Leaving reportParametersOf(). " + !!row);
+  return row ? row.parameters : null;
+}
+
+// Refuses a request its operation does not take; true when it did.
+function reportShapeRefused(req: any, res: any, method: string,
+                            parts: string[]): boolean {
+  log.debug("Entering reportShapeRefused().");
+  const parameters = reportParametersOf(req, method, parts);
+  if (!parameters) {
+    log.debug("Leaving reportShapeRefused(). Not a declared operation.");
+    return false;
+  }
+  const shape = RequestHeaders.checkRequest(parameters, req.query || {},
+                                            req.headers || {});
+  if (shape.ok) {
+    log.debug("Leaving reportShapeRefused(). Accepted.");
+    return false;
+  }
+  const code = REPORT_SHAPE_CODES[String(shape.problem)];
+  reportSend(res, reportHttpStatus(code), code, 'invalid_query',
+    String(shape.sentence));
+  log.debug("Leaving reportShapeRefused(). " + shape.problem);
+  return true;
+}
+
 async function reportRoute(req: any, res: any, who: any): Promise<void> {
   log.debug("Entering reportRoute().");
   const method = reportMethod(req);
   const parts = reportParts(req);
+  if (reportShapeRefused(req, res, method, parts)) {
+    log.debug("Leaving reportRoute(). Refused its shape.");
+    return;
+  }
   const a = parts[0] || '';
   const b = parts[1] || '';
   const c = parts[2] || '';
@@ -1789,6 +1890,8 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
     await reportServeSignals(req, res, who);
   } else if (a === 'announcements' && !b && method === 'GET') {
     reportServeAnnouncements(req, res);
+  } else if (a === 'me' && !b && method === 'GET') {
+    reportServeMe(res, who);
   } else if (a === 'schedules' && !b && method === 'GET') {
     reportServeSchedules(req, res, who);
   } else if (a === 'queries' && !b && method === 'POST') {
@@ -1911,10 +2014,17 @@ class ReportApi {
    */
   registerRoutes(app: any): void {
     log.debug("Entering registerRoutes().");
+    // EVERY ANSWER IS HELD TO ITS MODEL (#1353), before any route answers.
+    responseChecks.install(app, BASE, function () {
+      return OpenApi.document(new Catalog());
+    }, { $ref: '#/components/schemas/Error' });
     app.get(BASE, function (req: any, res: any): void {
       reportAnswer(req, res);
     });
     app.get(BASE + '/openapi.json', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
+    app.get(BASE + '/me', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
     app.get(BASE + '/catalog', function (req: any, res: any): void {
@@ -2001,6 +2111,8 @@ export = {
   schedulesView: reportSchedulesView,
   definitionsView: reportDefinitionsView,
   jobsView: reportJobsView,
+  // What a request may name and hold (#1483), for its test.
+  shapeRefused: reportShapeRefused,
   ReportApi: ReportApi,
   streamPieces: reportStreamPieces
 };

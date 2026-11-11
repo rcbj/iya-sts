@@ -423,7 +423,8 @@ class DeadLetterReport {
    * realm, and adds it to the since-start totals.
    *
    * @param summary - what the sweep returned (held, letters, expired,
-   * orphaned, trimmed, byCode)
+   * orphaned, trimmed). Its `byCode` is logged by the sweep, under
+   * STS-SSF-0094, and drawn by nothing on the sweep's row (#1355).
    * @param extra - `deadStreams`, `probes` and `nowMs`
    * @returns the row recorded
    */
@@ -441,10 +442,7 @@ class DeadLetterReport {
       orphaned: Number(s.orphaned) || 0,
       trimmed: Number(s.trimmed) || 0,
       deadStreams: Number(x.deadStreams) || 0,
-      probes: Number(x.probes) || 0,
-      byCode: (s.byCode || []).map(function (pair) {
-        return { errorCode: pair[0], count: pair[1] };
-      })
+      probes: Number(x.probes) || 0
     };
     notes.recent.unshift(row);
     if (notes.recent.length > SWEEPS_KEPT) {

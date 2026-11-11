@@ -709,8 +709,8 @@ async function aRemovedRealmsJobsGo() {
   check("no answer lists a job in the removed realm", function () {
     assert.ok(true);
   });
-  const runs = await api("GET", "/admin-api/scheduler?per=500&realm=" +
-                         encodeURIComponent(gone));
+  // The realm is the call's own: the operation takes no `realm` (#1476).
+  const runs = await api("GET", "/admin-api/scheduler?per=500");
   check("nor a run in it", function () {
     const inGone = ((runs.body && runs.body.runs) || []).filter(function (r) {
       return r.realm === gone;

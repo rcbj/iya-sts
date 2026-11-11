@@ -92,7 +92,7 @@
 
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
 import app = require('../common/app');
 // firstByLocal/textByLocal were written here and now live in helpers.js:
 // WS-Federation reads the same shapes (a `wreq` RST, and a `wresult` at its
@@ -162,6 +162,11 @@ import cellPlacement = require('../common/cell_placement');
 // at load, not lazily, because loading it is what registers the
 // `fetch-attributes` operation this cell answers as somebody's home.
 import cellAttributes = require('../common/cell_attributes');
+// KERBEROS TOKENS (#658): the Kerberos Token Profile 1.1's AP-REQ, accepted
+// through the acceptor and issued through the KDC. A library that requires
+// only `common/` modules at load and every Kerberos module lazily, so this
+// module (7) does not drag the KDC's routes (15) forward.
+import krb5Tokens = require('../kerberos/krb5_tokens');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -464,7 +469,8 @@ class WsTrust {
     } = this.deps;
     const self = this;
     log.debug("Entering WsTrust.buildJwt().");
-    const alg = String(config.value('wstrust.jwtAlgorithm') || 'RS256');
+    const alg = helpers.usableSigningAlg(
+      String(config.value('wstrust.jwtAlgorithm') || 'RS256'));
     const now = Math.floor(Date.now() / 1000);
     // THE REALM'S OAUTH ISSUER (#480, rcbj): the identifier
     // /.well-known/oauth-authorization-server publishes, in every mode, so
@@ -624,6 +630,33 @@ class WsTrust {
     return String(kept || '').trim();
   }
 
+  // WHO ?encrypt=1 ENCRYPTS TO (#747): the requester, by the certificate in its
+  // own WS-Security header. Not the first X509Certificate in the document,
+  // which with a UsernameToken requester and an OnBehalfOf or ActAs assertion
+  // was the delegated assertion's, so the token went to the wrong party's key.
+  // An assertion in the header is skipped too: its KeyInfo is its ISSUER's
+  // certificate, which is this service's, and names nobody asking.
+  private recipientCertificateOf(doc) {
+    const { log, firstByLocal } = this.deps;
+    log.debug("Entering WsTrust.recipientCertificateOf().");
+    const found = (node) => {
+      const kids = (node && node.childNodes) || [];
+      for (let i = 0; i < kids.length; i += 1) {
+        const kid = kids[i];
+        if (kid.nodeType === 1 && kid.localName !== 'Assertion') {
+          const inner = kid.localName === 'X509Certificate' ? kid : found(kid);
+          if (inner) {
+            return inner;
+          }
+        }
+      }
+      return null;
+    };
+    const cert = found(firstByLocal(doc, 'Security'));
+    log.debug("Leaving WsTrust.recipientCertificateOf(). " + !!cert);
+    return cert ? String(cert.textContent || '').replace(/\s+/g, '') : '';
+  }
+
   // THE APPLICATION A TOKEN IS FOR (#483): the one registered for the
   // AppliesTo, found the way the register finds it (`forAppliesTo()`,
   // which skips the entry `seen()` files under the address itself), and
@@ -735,6 +768,20 @@ class WsTrust {
     log.debug("Entering WsTrust.actNote(). " + via);
     const jwt = tokenType === JWT_TOKEN_TYPE;
     let out;
+    if (krb5Tokens.isType(tokenType)) {
+      out = (via === 'ActAs'
+        ? 'ActAs is COMPOSITE (WS-Trust 1.4 section 9.3): the far end can ' +
+          'see that a middle tier is acting, and the token issued says so. ' +
+          'The Kerberos ticket names every party that acted in its PAC\'s ' +
+          'S4U_DELEGATION_INFO, least to most recent, this requester last, ' +
+          'as an S4U2Proxy ticket does.'
+        : 'OnBehalfOf is IMPERSONATION (WS-Trust 1.3 section 9.2): the ' +
+          'Kerberos ticket names the subject and adds nobody for this ' +
+          'requester. A chain the presented token already carried is kept ' +
+          'in S4U_DELEGATION_INFO.');
+      log.debug("Leaving WsTrust.actNote(). Kerberos.");
+      return out;
+    }
     if (tokenType === SAML11_TOKEN_TYPE) {
       // #522: SAML 1.1 names who acted in an attribute — see
       // buildSaml11Token().
@@ -788,6 +835,15 @@ class WsTrust {
     const lineage = '; its identifier is read so that the lineage of what ' +
       'came out can be followed back through it';
     let out;
+    if (tokenKind === 'kerberos') {
+      // #658: the acceptor checks a Kerberos ticket in every mode.
+      out = lead + ': a Kerberos ticket for this service\'s own SPN, ' +
+        'ACCEPTED by its Kerberos acceptor under its own key in every ' +
+        'mode, and obtained by Kerberos delegation (S4U2Proxy, or a ' +
+        'forwarded TGT)' + lineage;
+      log.debug("Leaving WsTrust.consumedNote(). Kerberos.");
+      return out;
+    }
     if (!mode.verifiesCredentials()) {
       out = lead + '. In development mode it is NOT verified: its ' +
         'signature and ' + (jwt ? 'expiry' : 'Conditions') + ' are not ' +
@@ -1372,7 +1428,8 @@ class WsTrust {
     // the one credential that covers the request itself — and a message
     // credential beside it must name the same entry (requesterSigned()).
     const signed = this.messageSignature(doc, connection);
-    const message = this.messageCredential(doc, jwtIssuer, base);
+    const message = this.messageCredential(doc, jwtIssuer, base,
+                                           connection);
     if (signed) {
       log.debug("Leaving WsTrust.requesterCredential(). A signed request.");
       return this.requesterSigned(signed, message);
@@ -1397,14 +1454,17 @@ class WsTrust {
   // The requester's credential IN THE MESSAGE — a UsernameToken, an
   // assertion or a JWT in `wsse:Security` — or null; requesterCredential()
   // above decides what it means beside a signature or a certificate.
-  private messageCredential(doc, jwtIssuer?, base?): any {
+  private messageCredential(doc, jwtIssuer?, base?, connection?): any {
     const { credentials, mode, log, firstByLocal, textByLocal } = this.deps;
     log.debug("Entering WsTrust.messageCredential().");
     const scope = this.credentialScope(doc);
     const ut = this.firstOwnedByRequester(scope, 'UsernameToken');
     if (ut) {
       const user = textByLocal(ut, 'Username');
-      const pass = textByLocal(ut, 'Password');
+      // VERBATIM (#1466, ASVS 5.0.0 6.2.8): `textByLocal()` trims, and a
+      // password is what the person typed, spaces included.
+      const passwordElement = helpers.firstByLocal(ut, 'Password');
+      const pass = passwordElement ? (passwordElement.textContent || '') : '';
       if (!user || !pass) {
         log.debug("Leaving WsTrust.messageCredential(). Incomplete " +
                   "UsernameToken.");
@@ -1437,10 +1497,18 @@ class WsTrust {
       // person with a second factor is refused their password here — with
       // this same fault — and an app password scoped to `wstrust` is
       // accepted instead.
+      const websecurity = require('../common/websecurity');
+      if (websecurity.doorBlocked('wstrust', null, user)) {
+        log.debug("Leaving WsTrust.messageCredential(). Too many failures.");
+        return { ok: false, errorCode: 'STS-WSTRUST-0070',
+                 trustFault: 'FailedAuthentication',
+                 reason: 'Authentication failed for user ' + user + '.' };
+      }
       const checked = credentials.verify(user, pass, {
         via: 'a WS-Security UsernameToken', door: 'wstrust'
       });
       if (!checked.ok) {
+        websecurity.doorFailed('wstrust', null, user);
         log.info('wstrust: the UsernameToken for "' + user + '" was refused (' +
                  checked.reason + '): ' + checked.detail);
         log.debug("Leaving WsTrust.messageCredential(). The credential was " +
@@ -1449,6 +1517,7 @@ class WsTrust {
                  trustFault: 'FailedAuthentication',
                  reason: 'Authentication failed for user ' + user + '.' };
       }
+      websecurity.doorSucceeded('wstrust', null, user);
       log.debug("Leaving WsTrust.messageCredential(). A UsernameToken " +
                 "for " + user + ".");
       // AN APP PASSWORD IS SAID SO (#101): one factor, and the row names it.
@@ -1571,6 +1640,14 @@ class WsTrust {
                  : 'The JWT is not verified in development mode; its sub is ' +
                    'read and believed.' };
     }
+    // A KERBEROS TOKEN (#658): an AP-REQ for this service's own SPN in a
+    // BinarySecurityToken of one of the Kerberos Token Profile 1.1's six
+    // ValueTypes, accepted before this was reached. See kerberosCredential().
+    const kerberosEl = this.requesterKerberosElement(scope);
+    if (kerberosEl) {
+      log.debug("Leaving WsTrust.messageCredential(). A Kerberos token.");
+      return this.kerberosCredential(kerberosEl, connection);
+    }
     log.debug("Leaving WsTrust.messageCredential(). None in the message.");
     return null;
   }
@@ -1659,6 +1736,16 @@ class WsTrust {
                      errorCodes.codeOf(reading) === 'STS-KEYS-0163'
                        ? 'AuthenticationBadElements' : undefined);
     }
+    // A SIGNATURE MADE WITH A KERBEROS TOKEN'S KEY (#658, rcbj's D7): its
+    // KeyInfo names a Kerberos token in this header, and nothing about it is
+    // X.509 — see kerberosSignature(). Nothing to prepare: the token was
+    // accepted (and spent) by prepareKerberosAt(), which is its replay check.
+    const named = reading.keyReference || {};
+    if (named.kind === 'kerberos' || named.kind === 'kerberos-id') {
+      log.debug("Leaving WsTrust.messageSignature(). A Kerberos key.");
+      return prepare ? null
+        : this.kerberosSignature(doc, xml, reading, connection, refused);
+    }
     let gates: any = null;
     try {
       gates = loadTlsClientCertificates();
@@ -1684,6 +1771,27 @@ class WsTrust {
                      'certificate this realm\'s message-signing Issuing CA ' +
                      'issued; a certificate stored on an entry is carried ' +
                      'in a wsse:BinarySecurityToken');
+    }
+    // Under paranoid PKI mode (#1360) a certificate stored on exactly one entry
+    // was named by whoever provisioned that entry, so it needs no path; its
+    // fields and revocation still count. One this realm issued is answered by
+    // the gate below, and in product one stored nowhere or twice is refused
+    // there by its own code. Development believes a name, so the door holds it.
+    const trust = require('../common/certificate_trust');
+    if (trust.applies('wss-x509-token')) {
+      const issuedHere = gates.signingIdentityOf(certificate);
+      const stored = !!(issuedHere && issuedHere.ok);
+      if (!(issuedHere && issuedHere.issuedHere) &&
+          (stored || !mode.verifiesCredentials())) {
+        const held = trust.pinnedSync('wss-x509-token',
+          Buffer.from(String(certificate).replace(/-----[^-]+-----/g, '')
+            .replace(/\s+/g, ''), 'base64'), { named: stored });
+        if (!held.ok) {
+          log.debug("Leaving WsTrust.messageSignature(). Paranoid: " +
+                    held.code);
+          return refused(held.code, held.why);
+        }
+      }
     }
     const identity = gates.signingIdentityOf(certificate);
     const verifies = mode.verifiesCredentials();
@@ -1736,40 +1844,13 @@ class WsTrust {
       log.debug("Leaving WsTrust.messageSignature(). It does not verify.");
       return refused('STS-WSTRUST-0045', String(verified.why));
     }
-    const body = this.signedBodyOf(doc);
-    const outside = RST_PARTS.filter((name: string): boolean => {
-      const all = doc.getElementsByTagNameNS('*', name);
-      for (let i = 0; i < all.length; i++) {
-        if (!body || !this.isWithin(all[i], body)) {
-          return true;
-        }
-      }
-      return false;
-    });
-    if (outside.length) {
-      log.debug("Leaving WsTrust.messageSignature(). Parts outside the Body.");
-      return refused('STS-WSTRUST-0046', 'the request carries ' +
-                     outside.join(', ') + ' outside the signed SOAP Body, ' +
-                     'and this service reads the request from the whole ' +
-                     'document');
+    const parts = this.signedPartsProblem(doc, reading, refused);
+    if (parts.refusal) {
+      log.debug("Leaving WsTrust.messageSignature(). The signed parts.");
+      return parts.refusal;
     }
-    const skewMs =
-      Math.max(0, Number(config.value('oauth2.clockSkewS')) || 0) * 1000;
-    const now = Date.now();
-    const created = Date.parse(String(reading.timestamp.created || ''));
-    const expires = Date.parse(String(reading.timestamp.expires || ''));
-    if (isNaN(created) || isNaN(expires) || created - skewMs > now) {
-      log.debug("Leaving WsTrust.messageSignature(). The Timestamp.");
-      return refused('STS-WSTRUST-0047', isNaN(created) || isNaN(expires)
-        ? 'its wsu:Timestamp does not carry a readable Created and Expires'
-        : 'its wsu:Timestamp was Created at ' + reading.timestamp.created +
-          ', ahead of this service\'s clock by more than oauth2.clockSkewS');
-    }
-    if (expires + skewMs <= now) {
-      log.debug("Leaving WsTrust.messageSignature(). Expired.");
-      return refused('STS-WSTRUST-0048', 'its wsu:Timestamp expired at ' +
-                     reading.timestamp.expires, 'ExpiredData');
-    }
+    const skewMs = parts.skewMs;
+    const expires = parts.expires;
     const name = String(identity.username);
     const isClient = identity.kind === 'application';
     const fingerprint = stsCrypto.digest('sha256', identity.leaf, 'hex');
@@ -1829,6 +1910,123 @@ class WsTrust {
 
   // THE Body: the direct child of the Envelope, which is the element the
   // signature reading checked by position.
+  // ---------------------------------------------------------------------------
+  // WHAT A SIGNED REQUEST MUST HAVE SIGNED, for both kinds of key (#521;
+  // shared since #658): every RST_PARTS element inside the signed Body
+  // (`0046`) and a Timestamp that is fresh (`0047`, `0048`). Answers
+  // `{ refusal }` or `{ skewMs, expires }`.
+  // ---------------------------------------------------------------------------
+  private signedPartsProblem(doc, reading, refused): any {
+    const { config, log } = this.deps;
+    log.debug("Entering WsTrust.signedPartsProblem().");
+    const body = this.signedBodyOf(doc);
+    const outside = RST_PARTS.filter((name: string): boolean => {
+      const all = doc.getElementsByTagNameNS('*', name);
+      for (let i = 0; i < all.length; i++) {
+        if (!body || !this.isWithin(all[i], body)) {
+          return true;
+        }
+      }
+      return false;
+    });
+    if (outside.length) {
+      log.debug("Leaving WsTrust.signedPartsProblem(). Outside the Body.");
+      return { refusal: refused('STS-WSTRUST-0046', 'the request carries ' +
+                     outside.join(', ') + ' outside the signed SOAP Body, ' +
+                     'and this service reads the request from the whole ' +
+                     'document') };
+    }
+    const skewMs =
+      Math.max(0, Number(config.value('oauth2.clockSkewS')) || 0) * 1000;
+    const now = Date.now();
+    const created = Date.parse(String(reading.timestamp.created || ''));
+    const expires = Date.parse(String(reading.timestamp.expires || ''));
+    if (isNaN(created) || isNaN(expires) || created - skewMs > now) {
+      log.debug("Leaving WsTrust.signedPartsProblem(). The Timestamp.");
+      return { refusal: refused('STS-WSTRUST-0047',
+        isNaN(created) || isNaN(expires)
+          ? 'its wsu:Timestamp does not carry a readable Created and Expires'
+          : 'its wsu:Timestamp was Created at ' + reading.timestamp.created +
+            ', ahead of this service\'s clock by more than ' +
+            'oauth2.clockSkewS') };
+    }
+    if (expires + skewMs <= now) {
+      log.debug("Leaving WsTrust.signedPartsProblem(). Expired.");
+      return { refusal: refused('STS-WSTRUST-0048', 'its wsu:Timestamp ' +
+                                'expired at ' + reading.timestamp.expires,
+                                'ExpiredData') };
+    }
+    log.debug("Leaving WsTrust.signedPartsProblem().");
+    return { skewMs: skewMs, expires: expires };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REQUESTER AUTHENTICATED BY A SIGNATURE WITH A KERBEROS TOKEN'S
+  // SESSION KEY (#658, rcbj's decision D7). The Kerberos Token Profile 1.1
+  // section 3.2: the signature's KeyInfo names a Kerberos token in this
+  // header — by a Reference to its BinarySecurityToken, or by its
+  // `#Kerberosv5APREQSHA1` key identifier — and it is an HMAC keyed with the
+  // token's session key (the Authenticator's subkey where it carries one),
+  // which the acceptor established when it accepted the token. So:
+  //
+  //   * the token is the requester's credential first (kerberosCredential():
+  //     accepted, not disabled, its codes `0054`–`0057`);
+  //   * the HMAC verifies with its key (`crypto.verifyWsSecurityHmac()`,
+  //     every guard readWsSecuritySignature() applies, no truncated HMAC) —
+  //     `0045` otherwise, the code a signature that does not verify has;
+  //   * the signed parts and the Timestamp, as for an X.509 signature
+  //     (`0046`–`0048`);
+  //   * a signature naming a Kerberos token the header does not carry is
+  //     `0069`.
+  //
+  // REPLAY needs nothing of its own: the token inside was accepted once and
+  // spent, so the same signed request presented again is refused at the
+  // token (`0056`). Both modes check all of it: nothing here is a credential
+  // development believes, because the key is the acceptor's to establish.
+  // ---------------------------------------------------------------------------
+  private kerberosSignature(doc, xml, reading, connection, refused): any {
+    const { stsCrypto, log } = this.deps;
+    log.debug("Entering WsTrust.kerberosSignature().");
+    const ref = reading.keyReference || {};
+    const tokens = this.kerberosElementsIn(this.credentialScope(doc))
+      .filter((one) => !this.insideAnotherPartysToken(one));
+    const el = tokens.filter((one) => {
+      const text = this.kerberosTextOf(one);
+      return ref.kind === 'kerberos'
+        ? text === String(ref.tokenB64 || '')
+        : krb5Tokens.keyIdentifierOf(Buffer.from(text, 'base64')) ===
+          String(ref.keyIdentifier || '');
+    })[0] || null;
+    if (!el) {
+      log.debug("Leaving WsTrust.kerberosSignature(). No such token.");
+      return refused('STS-WSTRUST-0069', 'its KeyInfo names a Kerberos ' +
+                     'token this security header does not carry');
+    }
+    const credential = this.kerberosCredential(el, connection);
+    if (!credential.ok) {
+      log.debug("Leaving WsTrust.kerberosSignature(). The token.");
+      return credential;
+    }
+    const verdict = credential.kerberos;
+    const key = verdict.subkey && verdict.subkey.key ? verdict.subkey.key
+      : (verdict.sessionKey ? verdict.sessionKey.key : null);
+    const verified = stsCrypto.verifyWsSecurityHmac(xml, { key: key });
+    if (!verified.ok) {
+      log.debug("Leaving WsTrust.kerberosSignature(). It does not verify.");
+      return refused('STS-WSTRUST-0045', String(verified.why));
+    }
+    const parts = this.signedPartsProblem(doc, reading, refused);
+    if (parts.refusal) {
+      log.debug("Leaving WsTrust.kerberosSignature(). The signed parts.");
+      return parts.refusal;
+    }
+    log.debug("Leaving WsTrust.kerberosSignature(). " + credential.subject);
+    return Object.assign({}, credential, {
+      method: 'a WS-Security signature with a Kerberos token\'s session key',
+      note: credential.note + ' The signature over the SOAP Body and ' +
+            'Timestamp verified with the token\'s session key.' });
+  }
+
   private signedBodyOf(doc): any {
     const { log } = this.deps;
     log.debug("Entering WsTrust.signedBodyOf().");
@@ -2371,6 +2569,498 @@ class WsTrust {
   // yields '', which is not an error — it is the honest "this act consumed
   // something this register cannot name", and the lineage page prints that as a
   // reason rather than as an origin.
+  // ---------------------------------------------------------------------------
+  // A KERBEROS TOKEN IN ANY SEAT (#658, 2026-11-02).
+  //
+  // The Web Services Security Kerberos Token Profile 1.1's AP-REQ, in a
+  // `wsse:BinarySecurityToken` of one of its six ValueTypes
+  // (`kerberos/krb5_tokens.ts`), as the requester's credential, inside
+  // OnBehalfOf / ActAs, and in a ValidateTarget. Accepting one is
+  // ASYNCHRONOUS — the acceptor decrypts under this service's key and spends
+  // the Authenticator across the cluster — so every Kerberos token in the
+  // document is accepted FIRST, before anything is read, recorded or
+  // decided: by the endpoint (prepareKerberosAt(), beside #521's
+  // prepareMessageSignature()), or by handleRst() itself for a caller that
+  // reached it without the endpoint, which then answers a Promise for that
+  // one request. The verdicts ride in on the connection (`kerberos`), keyed
+  // by the token's text, and every seat reads its token's verdict
+  // synchronously, as #521's revocation and replay answers are read.
+  //
+  // ACCEPTING A TOKEN SPENDS IT (the acceptor's replay claim), whatever is
+  // decided after. An AP-REQ is good once at any service; a client refused
+  // for another reason makes a new Authenticator, as it would anywhere.
+  //
+  // THE ACCEPTOR'S RULE HOLDS: the ticket must be for THIS service's own SPN
+  // (`krb5.servicePrincipal`), so a delegated ticket is one obtained FOR
+  // this service by Kerberos delegation, never the user's ticket to the
+  // middle tier — see delegatedKerberos() and `ws-trust/CLAUDE.md`.
+  // ---------------------------------------------------------------------------
+  private kerberosElementsIn(root): any[] {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.kerberosElementsIn().");
+    const all = root && root.getElementsByTagNameNS
+      ? root.getElementsByTagNameNS('*', 'BinarySecurityToken') : [];
+    const out = [];
+    for (let i = 0; i < all.length; i += 1) {
+      if (krb5Tokens.isType(String(all[i].getAttribute('ValueType') || ''))) {
+        out.push(all[i]);
+      }
+    }
+    log.debug("Leaving WsTrust.kerberosElementsIn(). " + out.length);
+    return out;
+  }
+
+  private kerberosTextOf(el): string {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.kerberosTextOf().");
+    log.debug("Leaving WsTrust.kerberosTextOf().");
+    return String((el && el.textContent) || '').replace(/\s+/g, '');
+  }
+
+  /**
+   * Accepts every Kerberos token in a request, before the request is read.
+   *
+   * @param doc - the parsed request
+   * @returns the verdicts, keyed by each token's text; empty when
+   *   `wstrust.acceptKerberos` is off, so every seat refuses
+   */
+  async prepareKerberosTokens(doc): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.prepareKerberosTokens().");
+    const verdicts: any = {};
+    if (!krb5Tokens.settingOn('wstrust.acceptKerberos')) {
+      log.debug("Leaving WsTrust.prepareKerberosTokens(). " +
+                "wstrust.acceptKerberos is off.");
+      return verdicts;
+    }
+    for (const el of this.kerberosElementsIn(doc)) {
+      const text = this.kerberosTextOf(el);
+      if (!text || verdicts[text]) {
+        continue;
+      }
+      const inside = this.insideAnotherPartysToken(el);
+      verdicts[text] = await krb5Tokens.accept(text,
+        String(el.getAttribute('ValueType') || ''),
+        { via: inside ? 'a Kerberos token inside a WS-Trust request'
+                      : 'a WS-Trust requester\'s Kerberos token' });
+    }
+    log.debug("Leaving WsTrust.prepareKerberosTokens(). " +
+              Object.keys(verdicts).length + " token(s).");
+    return verdicts;
+  }
+
+  // The endpoint's half: the verdicts on the request, for connectionOf().
+  private async prepareKerberosAt(req, doc): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.prepareKerberosAt().");
+    if (!doc || !this.kerberosElementsIn(doc).length) {
+      log.debug("Leaving WsTrust.prepareKerberosAt(). None.");
+      return;
+    }
+    try {
+      req.stsKerberosTokens = await this.prepareKerberosTokens(doc);
+    } catch (e) {
+      // An acceptor that threw accepted nothing: every seat then finds no
+      // verdict and refuses (`STS-WSTRUST-0055`), which is the fail-closed
+      // answer.
+      log.debug("Caught in WsTrust.prepareKerberosAt(): " +
+                ((e && e.message) || e));
+      req.stsKerberosTokens = {};
+    }
+    log.debug("Leaving WsTrust.prepareKerberosAt().");
+  }
+
+  private kerberosVerdictFor(el, connection): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.kerberosVerdictFor().");
+    const map = connection && connection.kerberos;
+    const out = map ? map[this.kerberosTextOf(el)] || null : null;
+    log.debug("Leaving WsTrust.kerberosVerdictFor(). " +
+              (out ? (out.ok ? 'accepted' : 'refused') : 'none'));
+    return out;
+  }
+
+  private requesterKerberosElement(scope) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.requesterKerberosElement().");
+    const found = this.kerberosElementsIn(scope).filter((el) => {
+      return !this.insideAnotherPartysToken(el);
+    });
+    log.debug("Leaving WsTrust.requesterKerberosElement(). " +
+              (found.length ? 'Found.' : 'None.'));
+    return found[0] || null;
+  }
+
+  private delegatedKerberosElement(element) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.delegatedKerberosElement().");
+    const found = this.kerberosElementsIn(element);
+    log.debug("Leaving WsTrust.delegatedKerberosElement(). " +
+              (found.length ? 'Found.' : 'None.'));
+    return found[0] || null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REQUESTER'S KERBEROS TOKEN (#658), a sixth credential. The ticket's
+  // client is the requester: a person by their name (the local realm
+  // stripped, as the SPNEGO sign-in strips it), a SERVICE principal as the
+  // application whose identifier is its `SPN@REALM` — recorded as a client,
+  // with its own token, as #519 records an application — and anybody of
+  // another realm whole (`bob@PARTNER.TEST`), holding only the roles granted
+  // to that name (#430). Its refusals are `wst:FailedAuthentication`.
+  // ---------------------------------------------------------------------------
+  private kerberosCredential(el, connection): any {
+    const { credentials, log } = this.deps;
+    log.debug("Entering WsTrust.kerberosCredential().");
+    if (!krb5Tokens.settingOn('wstrust.acceptKerberos')) {
+      log.debug("Leaving WsTrust.kerberosCredential(). Off.");
+      return { ok: false, errorCode: 'STS-WSTRUST-0054',
+               trustFault: 'FailedAuthentication',
+               reason: 'A Kerberos token is not accepted here: ' +
+                       'wstrust.acceptKerberos is off.' };
+    }
+    const verdict = this.kerberosVerdictFor(el, connection);
+    if (!verdict) {
+      log.debug("Leaving WsTrust.kerberosCredential(). Not accepted first.");
+      return { ok: false, errorCode: 'STS-WSTRUST-0055',
+               trustFault: 'FailedAuthentication',
+               reason: 'The Kerberos token was not checked before the ' +
+                       'request was read, so it is not believed.' };
+    }
+    if (!verdict.ok) {
+      log.info('wstrust: the requester\'s Kerberos token was refused (' +
+               verdict.errorCode + '): ' + verdict.reason);
+      log.debug("Leaving WsTrust.kerberosCredential(). Refused.");
+      return { ok: false, errorCode: 'STS-WSTRUST-0056',
+               trustFault: 'FailedAuthentication', reason: verdict.reason };
+    }
+    const app = verdict.isService ? this.applicationOf(verdict.name) : null;
+    const subject = app ? String(app.identifier) : String(verdict.name);
+    if (!verdict.isService && verdict.ownRealm &&
+        credentials.accountDisabled(subject)) {
+      log.debug("Leaving WsTrust.kerberosCredential(). Disabled.");
+      return { ok: false, errorCode: 'STS-WSTRUST-0057',
+               trustFault: 'FailedAuthentication',
+               reason: 'Authentication failed for ' + subject + '.' };
+    }
+    log.debug("Leaving WsTrust.kerberosCredential(). " + subject);
+    return { ok: true, subject: subject, isClient: !!verdict.isService,
+             kind: 'kerberos',
+             method: 'a Kerberos token (WS-Security Kerberos Token Profile ' +
+                     '1.1)',
+             tokenId: String(verdict.keyIdentifier || ''),
+             amr: verdict.amr || [], kerberos: verdict,
+             note: 'The ticket was accepted by this service\'s Kerberos ' +
+                   'acceptor under its own key, in every mode: ' +
+                   verdict.method + '.' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A KERBEROS TICKET INSIDE OnBehalfOf / ActAs (#658), in Kerberos's own
+  // delegation syntax. The ticket is for THIS service's SPN and its client
+  // is the subject; HOW the requester came to hold it is the ticket's own
+  // record:
+  //
+  //   * S4U2Proxy (classic or resource-based, after S4U2Self or after a
+  //     real sign-in): the PAC's S4U_DELEGATION_INFO, its transited services
+  //     in the order they acted, the LAST the party that asked the KDC —
+  //     which must be the requester (kerberosChainProblem()). The ones
+  //     before it are the prior chain, `delegates` here as everywhere.
+  //   * a TGT the subject forwarded: the FORWARDED flag, unconstrained
+  //     delegation, which the ticket cannot attribute; the requester must be
+  //     trusted for it (`krb5TrustedForDelegation`).
+  //   * neither: a ticket the subject made for this service and handed
+  //     over. REFUSED IN EVERY MODE (rcbj's decision D2): Kerberos has a
+  //     delegation syntax, and a bearer AP-REQ passed along is not it.
+  //
+  // Whether the protocol transition before an S4U2Proxy hop happened cannot
+  // be read off the ticket — this KDC writes no asserted-identity SID — and
+  // is on the KDC's own row on /admin/delegation, where S4U2Self is recorded.
+  // ---------------------------------------------------------------------------
+  private delegatedKerberos(el, element, connection): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.delegatedKerberos(). " + element);
+    const refuse = (code: string, reason: string): any => {
+      log.debug("Entering refuse().");
+      log.debug("Leaving refuse().");
+      return { subject: '', element: element, tokenId: '',
+               errorCode: code, trustFault: 'InvalidRequest',
+               refused: reason };
+    };
+    if (!krb5Tokens.settingOn('wstrust.acceptKerberos')) {
+      log.debug("Leaving WsTrust.delegatedKerberos(). Off.");
+      return refuse('STS-WSTRUST-0054', 'A Kerberos token is not accepted ' +
+                    'here: wstrust.acceptKerberos is off.');
+    }
+    const verdict = this.kerberosVerdictFor(el, connection);
+    if (!verdict) {
+      log.debug("Leaving WsTrust.delegatedKerberos(). Not accepted first.");
+      return refuse('STS-WSTRUST-0055', 'The Kerberos token inside <wst:' +
+                    element + '> was not checked before the request was ' +
+                    'read, so it is not believed.');
+    }
+    if (!verdict.ok) {
+      log.info('wstrust: the Kerberos token inside <wst:' + element +
+               '> was refused (' + verdict.errorCode + '): ' + verdict.reason);
+      log.debug("Leaving WsTrust.delegatedKerberos(). Refused.");
+      return refuse('STS-WSTRUST-0058', verdict.reason);
+    }
+    if (verdict.shape === 'none') {
+      log.debug("Leaving WsTrust.delegatedKerberos(). Not delegated.");
+      return refuse('STS-WSTRUST-0059', 'The Kerberos ticket inside <wst:' +
+        element + '> was not obtained by Kerberos delegation: its PAC ' +
+        'carries no S4U_DELEGATION_INFO and it is not FORWARDED. A ticket ' +
+        'the subject made for this service and handed over is not evidence ' +
+        'that anybody may act for them; obtain one by S4U2Proxy to ' +
+        'this service, or with a TGT the subject forwarded.');
+    }
+    const transited = (verdict.transited || []).map(String);
+    const prior = verdict.shape === 's4u2proxy' ? transited.slice(0, -1)
+                                                 : [];
+    const app = verdict.isService ? this.applicationOf(verdict.name) : null;
+    const subject = app ? String(app.identifier) : String(verdict.name);
+    const now = new Date().toISOString();
+    log.debug("Leaving WsTrust.delegatedKerberos(). " + subject + ", " +
+              verdict.shape);
+    return {
+      subject: subject, element: element,
+      tokenId: String(verdict.keyIdentifier || ''), tokenKind: 'kerberos',
+      // S is the requester's application (D3), set once the requester is
+      // known — authenticate().
+      audiences: [],
+      delegates: prior.map(function (one: string): any {
+        return { nameId: krb5Tokens.applicationOfTransited(one),
+                 instant: now };
+      }),
+      kerberos: { shape: verdict.shape,
+                  last: transited.length ? transited[transited.length - 1]
+                                         : '',
+                  verdict: verdict }
+    };
+  }
+
+  // The chain a delegated Kerberos ticket names must end at the requester
+  // (#658), in every mode: the KDC let the LAST transited service obtain it,
+  // and a requester presenting a ticket another service obtained is
+  // presenting somebody else's delegation. A forwarded ticket names no
+  // forwarder, so the requester must be trusted for unconstrained
+  // delegation, as the KDC requires of a service a TGT may be forwarded to.
+  // Answers `{ requester }` (its application's identifier) or a refusal.
+  private kerberosChainProblem(delegatedBy, credential): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.kerberosChainProblem().");
+    const k = delegatedBy.kerberos;
+    if (!credential) {
+      log.debug("Leaving WsTrust.kerberosChainProblem(). No requester.");
+      return { errorCode: 'STS-WSTRUST-0060', trustFault: 'InvalidRequest',
+               reason: 'The request delegates with a Kerberos ticket and ' +
+                       'presents no credential of its own. A delegated ' +
+                       'ticket is evidence only beside the party it was ' +
+                       'delegated to.' };
+    }
+    const requesterApp = this.applicationOf(credential.subject);
+    const requesterId = requesterApp ? String(requesterApp.identifier)
+                                     : String(credential.subject);
+    if (k.shape === 's4u2proxy') {
+      const lastId = krb5Tokens.applicationOfTransited(k.last);
+      if (!k.last || (lastId !== requesterId &&
+                      k.last !== String(credential.subject))) {
+        log.debug("Leaving WsTrust.kerberosChainProblem(). Another's.");
+        return { errorCode: 'STS-WSTRUST-0060', trustFault: 'InvalidRequest',
+                 reason: 'The Kerberos ticket\'s S4U_DELEGATION_INFO names ' +
+                         (k.last || 'nobody') + ' as the service that ' +
+                         'obtained it, and the requester is ' + requesterId +
+                         '. Only the party a ticket was delegated to may ' +
+                         'present it.' };
+      }
+    } else if (k.shape === 'forwarded' &&
+               !krb5Tokens.trustedForDelegation(requesterApp)) {
+      log.debug("Leaving WsTrust.kerberosChainProblem(). Not trusted.");
+      return { errorCode: 'STS-WSTRUST-0061', trustFault: 'RequestFailed',
+               reason: 'The Kerberos ticket was bought with a forwarded TGT, ' +
+                       'and the requester ' + requesterId + ' is not trusted ' +
+                       'for unconstrained delegation ' +
+                       '(krb5TrustedForDelegation).' };
+    }
+    log.debug("Leaving WsTrust.kerberosChainProblem(). " + requesterId);
+    return { requester: requesterId };
+  }
+
+  // Whether the request arrived over TLS: the socket, or — behind a proxy
+  // that terminates it — the base the request was answered at.
+  private overTls(options): boolean {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.overTls().");
+    const socket = options && options.connection
+      ? options.connection.socket : null;
+    const out = !!(socket && socket.encrypted) ||
+      /^https:/i.test(String((options && options.base) || ''));
+    log.debug("Leaving WsTrust.overTls(). " + out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A KERBEROS TOKEN ISSUED (#658): `wst:TokenType` naming one of the six
+  // ValueTypes. The ticket is this realm's KDC's (`krb5Tokens.issue()`, over
+  // `krb5_kdc.js`'s `mintTicket()`), for the subject, to the Kerberos service
+  // the AppliesTo's application is; the Authenticator's subkey is the proof
+  // token, `wst:BinarySecret` inside `wst:RequestedProofToken`, sent only
+  // over TLS (rcbj's decision D5). What it says of delegation:
+  //
+  //   * the parties that acted (`delegates`, least to most recent, the
+  //     requester last for an ActAs) as S4U_DELEGATION_INFO's transited
+  //     services — a Kerberos service by `SPN@REALM`, an application with
+  //     no SPN by its identifier (D4) — and the AppliesTo's SPN as its
+  //     target; an OnBehalfOf keeps whatever chain the presented token
+  //     carried and adds nobody;
+  //   * FORWARDABLE as `wst:Forwardable` asks (WS-Trust 1.3 section 9.3; it
+  //     defaults to true), never for a protected subject — the KDC's rule —
+  //     and evidence for the target's own S4U2Proxy, whose rights the KDC
+  //     decides there;
+  //   * a forwarded TGT in the Authenticator (GSS_C_DELEG_FLAG and a
+  //     KRB-CRED, rcbj's decision D7) when `wst:Delegatable` is true — "the
+  //     requested token MAY be delegated" — only to a target trusted for
+  //     unconstrained delegation and only for a subject who is not protected.
+  //
+  // A target in another Kerberos realm is reached through the trusts (D8).
+  // Answers the token as buildToken() answers one, or `{ fault }`.
+  // ---------------------------------------------------------------------------
+  private async issueKerberos(c): Promise<any> {
+    const { log, textByLocal, xmlEscape } = this.deps;
+    log.debug("Entering WsTrust.issueKerberos(). " + c.tokenType);
+    const fault = (code: string, trustFault: string, why: string): any => {
+      log.debug("Entering fault().");
+      log.info('wstrust: refused a Kerberos token — ' + why);
+      log.debug("Leaving fault().");
+      // error-code: none — the code is the caller's, fault('STS-WSTRUST-…')
+      return { fault: { status: 500, version: c.version, errorCode: code,
+                        body: this.soapFault(c.version, why, trustFault,
+                                             c.trustNs) } };
+    };
+    if (!krb5Tokens.settingOn('wstrust.issueKerberos')) {
+      log.debug("Leaving WsTrust.issueKerberos(). Off.");
+      return fault('STS-WSTRUST-0062', 'BadRequest', 'Kerberos tokens are ' +
+                   'not issued here: wstrust.issueKerberos is off.');
+    }
+    if (!this.overTls(c.options)) {
+      log.debug("Leaving WsTrust.issueKerberos(). Not over TLS.");
+      return fault('STS-WSTRUST-0063', 'InvalidRequest', 'A Kerberos token ' +
+                   'is answered with its session key as the proof token, ' +
+                   'which is sent only over TLS; this request arrived ' +
+                   'without it.');
+    }
+    // appliesToApplication() answers the identifier; the entry is read for
+    // its SPN and its krb5TrustedForDelegation.
+    const appliedTo = c.audience ? this.appliesToApplication(c.audience) : '';
+    const application = appliedTo
+      ? this.deps.applications.get(appliedTo) : null;
+    const target = krb5Tokens.servicePrincipalOf(application) ||
+      krb5Tokens.servicePrincipalOf({ identifier: c.audience });
+    if (!target) {
+      log.debug("Leaving WsTrust.issueKerberos(). No Kerberos target.");
+      return fault('STS-WSTRUST-0064', 'BadRequest', 'The AppliesTo "' +
+                   String(c.audience || '') + '" is not a Kerberos service: ' +
+                   'no application registered for it has an SPN@REALM ' +
+                   'identifier or a krb5ServicePrincipalName.');
+    }
+    // WHO THE TICKET IS FOR. A subject that arrived in a Kerberos ticket of
+    // another realm keeps that realm and the PAC its own KDC wrote (SID-
+    // filtered on the way in); an application is its own SPN; anybody else
+    // is a person of this realm.
+    const verdict = c.auth.kerberos ||
+      (c.auth.delegation && c.auth.delegation.kerberos) || null;
+    let subjectName = String(c.subject || '');
+    let subjectRealm = '';
+    let carriedPac = null;
+    const subjectApp = this.applicationOf(subjectName);
+    const subjectSpn = subjectApp ? krb5Tokens.servicePrincipalOf(subjectApp)
+                                  : null;
+    if (verdict && verdict.ok && !verdict.ownRealm) {
+      subjectName = (verdict.components || []).join('/');
+      subjectRealm = String(verdict.realm || '');
+      carriedPac = verdict.pac || null;
+    } else if (subjectSpn) {
+      subjectName = subjectSpn.spn;
+      subjectRealm = subjectSpn.realm;
+    }
+    const transitedServices = (c.delegates || []).map((one: any): string => {
+      const app = this.applicationOf(one.nameId);
+      const sp = app ? krb5Tokens.servicePrincipalOf(app) : null;
+      return sp ? sp.spn + '@' + sp.realm
+                : String(app ? app.identifier : one.nameId);
+    });
+    const forwardable = String(textByLocal(c.doc, 'Forwardable') || '')
+      .trim().toLowerCase() !== 'false';
+    const delegatable = String(textByLocal(c.doc, 'Delegatable') || '')
+      .trim().toLowerCase() === 'true';
+    if (delegatable) {
+      const realm = subjectRealm || '';
+      if (!krb5Tokens.trustedForDelegation(application) ||
+          krb5Tokens.isProtected(subjectName.split('/'), realm ||
+                                 target.realm)) {
+        log.debug("Leaving WsTrust.issueKerberos(). Not delegatable.");
+        return fault('STS-WSTRUST-0065', 'RequestFailed', 'wst:Delegatable ' +
+                     'asked for a forwarded TGT inside the token, and ' +
+                     (krb5Tokens.trustedForDelegation(application)
+                       ? String(c.subject) + ' may not be delegated'
+                       : 'the AppliesTo\'s application is not trusted for ' +
+                         'unconstrained delegation ' +
+                         '(krb5TrustedForDelegation)') +
+                     '.');
+      }
+    }
+    const minted = await krb5Tokens.issue({
+      valueType: c.tokenType,
+      subject: { name: subjectName, realm: subjectRealm || undefined },
+      target: target,
+      delegationInfo: transitedServices.length
+        ? { s4u2proxyTarget: target.spn,
+            transitedServices: transitedServices }
+        : null,
+      forwardable: forwardable,
+      forwardTgt: delegatable,
+      carriedPac: carriedPac,
+      lifetimeSeconds: Number(c.lifetimeMin) * 60
+    });
+    if (!minted.ok) {
+      log.info('wstrust: the KDC did not issue a Kerberos ticket (' +
+               minted.errorCode + '): ' + minted.reason);
+      log.debug("Leaving WsTrust.issueKerberos(). The KDC refused.");
+      return fault('STS-WSTRUST-0066', 'RequestFailed', 'The Kerberos ticket ' +
+                   'could not be issued: ' + minted.reason + '.');
+    }
+    const wsse = 'http://docs.oasis-open.org/wss/2004/01/' +
+      'oasis-200401-wss-wssecurity-secext-1.0.xsd';
+    const wsu = 'http://docs.oasis-open.org/wss/2004/01/' +
+      'oasis-200401-wss-wssecurity-utility-1.0.xsd';
+    const id = 'krb5-' + this.deps.randomId().replace(/[^A-Za-z0-9_-]/g, '');
+    const reference = '<wsse:SecurityTokenReference xmlns:wsse="' + wsse +
+      '"><wsse:KeyIdentifier ValueType="' + krb5Tokens.KEY_IDENTIFIER +
+      '" EncodingType="' + krb5Tokens.BASE64_ENCODING + '">' +
+      xmlEscape(minted.keyIdentifier) + '</wsse:KeyIdentifier>' +
+      '</wsse:SecurityTokenReference>';
+    log.debug("Leaving WsTrust.issueKerberos(). " + minted.servicePrincipal);
+    return {
+      xml: '<wsse:BinarySecurityToken xmlns:wsse="' + wsse + '" ' +
+           'xmlns:wsu="' + wsu + '" wsu:Id="' + id + '" ValueType="' +
+           c.tokenType + '" EncodingType="' + krb5Tokens.BASE64_ENCODING +
+           '">' + minted.token + '</wsse:BinarySecurityToken>',
+      ref: '<wst:RequestedAttachedReference>' + reference +
+           '</wst:RequestedAttachedReference>' +
+           '<wst:RequestedUnattachedReference>' + reference +
+           '</wst:RequestedUnattachedReference>',
+      proof: '<wst:RequestedProofToken><wst:BinarySecret Type="' + c.trustNs +
+             '/SymmetricKey">' +
+             Buffer.from(minted.sessionKey.key).toString('base64') +
+             '</wst:BinarySecret></wst:RequestedProofToken>',
+      tokenType: c.tokenType,
+      id: minted.keyIdentifier,
+      created: minted.created.toISOString(),
+      expires: minted.expires.toISOString(),
+      kerberos: minted
+    };
+  }
+
   private delegatedTokenId(element) {
     const { log, firstByLocal } = this.deps;
     log.debug("Entering WsTrust.delegatedTokenId().");
@@ -2398,7 +3088,7 @@ class WsTrust {
     return '';
   }
 
-  private delegatedSubject(doc, jwtIssuer?) {
+  private delegatedSubject(doc, jwtIssuer?, connection?): any {
     const { mode, log, firstByLocal } = this.deps;
     log.debug("Entering WsTrust.delegatedSubject().");
     const oboEl = firstByLocal(doc, 'OnBehalfOf');
@@ -2409,6 +3099,19 @@ class WsTrust {
       return { subject: '', element: '', tokenId: '' };
     }
     const element = oboEl ? 'OnBehalfOf' : 'ActAs';
+    // A KERBEROS TICKET IN KERBEROS'S OWN DELEGATION SYNTAX (#658), read
+    // before the other kinds: see delegatedKerberos(). An assertion inside
+    // still wins, as it does over a JWT.
+    const kerberosEl = firstByLocal(obo, 'Assertion') ? null
+      : this.delegatedKerberosElement(obo);
+    if (kerberosEl) {
+      const fromKerberos = this.delegatedKerberos(kerberosEl, element,
+                                                  connection);
+      fromKerberos.both = !!(oboEl && actAsEl);
+      log.debug("Leaving WsTrust.delegatedSubject(). A Kerberos ticket via " +
+                element + ".");
+      return fromKerberos;
+    }
     // A JWT THIS STS ISSUED, in the BinarySecurityToken its own RSTR carries
     // it in (#477). WS-Trust 1.3 section 9.2 and 1.4 section 9.3 put a
     // security token in either element and name no kind, so a JWT is read
@@ -2624,6 +3327,23 @@ class WsTrust {
                          String(claims && claims.iss) + '", not by this ' +
                          'security token service ("' + issuer + '").' };
       }
+      // A TOKEN OF ANOTHER KIND, signed by this service, is no credential
+      // here (#1559, ASVS 5.0.0 9.2.2).
+      let typ = '';
+      try {
+        typ = String(JSON.parse(Buffer.from(token.split('.')[0] || '',
+          'base64url').toString('utf8')).typ || '');
+      } catch (e) {
+        log.debug("Caught in WsTrust.readOwnJwt(): " +
+                  ((e && e.message) || e));
+      }
+      if (claims.events !== undefined || /logout\+jwt/i.test(typ) ||
+          claims.typ === 'Refresh') {
+        log.debug("Leaving WsTrust.readOwnJwt(). Another kind of token.");
+        return { ok: false, errorCode: 'STS-WSTRUST-0026',
+                 reason: 'The ' + what + ' is a kind of token this service ' +
+                         'does not accept as a credential.' };
+      }
     } else {
       try {
         claims = JSON.parse(Buffer.from(token.split('.')[1] || '',
@@ -2807,7 +3527,7 @@ class WsTrust {
         application: String(audience || '')
       }, credential.isClient ? { isClient: true } : {}));
     }
-    const delegatedBy = this.delegatedSubject(doc, jwtIssuer);
+    const delegatedBy = this.delegatedSubject(doc, jwtIssuer, connection);
     if (delegatedBy.refused) {
       log.debug("Leaving WsTrust.authenticate(). The delegated token was " +
                 "refused.");
@@ -2816,6 +3536,20 @@ class WsTrust {
                trustFault: delegatedBy.trustFault };
     }
     const delegated = delegatedBy.subject;
+    // A DELEGATED KERBEROS TICKET NAMES WHO DELEGATED (#658), and in every
+    // mode that party must be the requester: see kerberosChainProblem(). S
+    // is the requester's own application (rcbj's decision D3), so the
+    // WS-Trust hop continues the Kerberos chain rather than restarting it.
+    if (delegated && delegatedBy.kerberos) {
+      const chain = this.kerberosChainProblem(delegatedBy, credential);
+      if (chain.errorCode) {
+        log.debug("Leaving WsTrust.authenticate(). The Kerberos chain does " +
+                  "not end at the requester.");
+        return { ok: false, reason: chain.reason, errorCode: chain.errorCode,
+                 trustFault: chain.trustFault };
+      }
+      delegatedBy.audiences = [chain.requester];
+    }
     // PRODUCT: A DELEGATION NEEDS A REQUESTER. Development issues a token about
     // somebody for a request that presented no credential of its own — the gap
     // the delegation register draws on purpose. In product the requester is the
@@ -2881,7 +3615,11 @@ class WsTrust {
           // other credential, which mayActNames() compares a claim's `iss`
           // with.
           mayAct: delegatedBy.mayAct || null,
-          requesterIssuer: credential ? String(credential.issuer || '') : ''
+          requesterIssuer: credential ? String(credential.issuer || '') : '',
+          // #658: the accepted Kerberos ticket the subject was delegated
+          // with, null for any other token — its PAC is what a Kerberos
+          // token issued for a subject of another realm carries.
+          kerberos: delegatedBy.kerberos ? delegatedBy.kerberos.verdict : null
         }
       };
     }
@@ -2892,7 +3630,11 @@ class WsTrust {
       // (handleRst()'s `signIn`), as `/tls/sign-in` starts no session for
       // one.
       return { ok: true, subject: credential.subject, kind: credential.kind,
-               isClient: !!credential.isClient };
+               isClient: !!credential.isClient,
+               // #658: what a Kerberos ticket said of the authentication,
+               // and the accepted ticket itself.
+               amr: credential.amr || null,
+               kerberos: credential.kerberos || null };
     }
     // PRODUCT: NO CREDENTIAL, NO TOKEN (2026-09-12). Everything below this line
     // is development's — and it is also what made a Renew with no credential
@@ -2961,6 +3703,12 @@ class WsTrust {
       log.debug("Leaving WsTrust.authnContextOf(). X509.");
       return authnContext.AC_X509;
     }
+    // #658: a Kerberos ticket — SAML 2.0's Kerberos class, SAML 1.1's
+    // urn:ietf:rfc:1510 through the builder's mapping.
+    if (auth && auth.kind === 'kerberos') {
+      log.debug("Leaving WsTrust.authnContextOf(). Kerberos.");
+      return authnContext.AC_KERBEROS;
+    }
     if (auth && auth.kind === 'password') {
       log.debug("Leaving WsTrust.authnContextOf().");
       return authnContext.AC_PASSWORD_PROTECTED;
@@ -2984,6 +3732,13 @@ class WsTrust {
     const { log } = this.deps;
     log.debug("Entering WsTrust.amrOf().");
     const kind = auth ? String(auth.kind || '') : '';
+    // #658: a Kerberos ticket says what the KDC checked, in its own flags
+    // and indicators (krb5Tokens.factorsFor(), the SPNEGO sign-in's rule).
+    if (kind === 'kerberos') {
+      const said = (auth.amr || []).map(String);
+      log.debug("Leaving WsTrust.amrOf(). " + said.join(','));
+      return said;
+    }
     // #521: a signed message is a proof of possession of a key, as the
     // handshake's is — `swk` too.
     const out = kind === 'certificate' || kind === 'signature' ? ['swk']
@@ -3034,7 +3789,7 @@ class WsTrust {
    * @returns the HTTP status, the SOAP version, the envelope body and, where
    * issued, the sign-in to record
    */
-  handleRst(rawBody, contentType, options) {
+  handleRst(rawBody, contentType, options): any {
     const {
       config, validation, encryptAssertion, applications, gate, delegation,
       mode, errorCodes, log, xmlEscape, iso, firstByLocal, textByLocal,
@@ -3070,6 +3825,21 @@ class WsTrust {
                                read.detail, 'InvalidRequest', WST_NS) };
     }
     const doc = read.value;
+    // EVERY KERBEROS TOKEN IS ACCEPTED FIRST (#658), before anything is read,
+    // recorded or decided — the endpoint does it (prepareKerberosAt()); a
+    // caller that reached this without the endpoint gets the same, and a
+    // Promise of this request's answer. Nothing has happened yet, so running
+    // the whole of this again with the verdicts in hand repeats nothing.
+    const arrivedOn = options.connection || {};
+    if (!arrivedOn.kerberos && this.kerberosElementsIn(doc).length) {
+      log.debug("Leaving WsTrust.handleRst(). Its Kerberos tokens are " +
+                "accepted first.");
+      return this.prepareKerberosTokens(doc).then((kerberos) => {
+        return this.handleRst(rawBody, contentType, Object.assign({}, options,
+          { connection: Object.assign({}, arrivedOn,
+                                      { kerberos: kerberos }) }));
+      });
+    }
     const version = this.detectSoapVersion(doc, contentType);
     const requestType = textByLocal(doc, 'RequestType');
     // Operation from the LAST path segment of RequestType, so any WS-Trust
@@ -3082,7 +3852,10 @@ class WsTrust {
     const statusTokenType = trustNs + '/RSTR/Status';
     const statusValid = trustNs + '/status/valid';
     const statusInvalid = trustNs + '/status/invalid';
-    const keyTypeReq = textByLocal(doc, 'KeyType') || (trustNs + '/Bearer');
+    // THE RSTR STATES WHAT WAS ISSUED (#747), not what was asked: every token
+    // here is a bearer token with no proof key, so echoing a requested
+    // PublicKey or SymmetricKey told the client it held a key it did not.
+    const keyTypeIssued = trustNs + '/Bearer';
 
     const tokenTypeReq = textByLocal(doc, 'TokenType');
     const appliesToEl = firstByLocal(doc, 'AppliesTo');
@@ -3179,17 +3952,48 @@ class WsTrust {
                                trustNs) };
     }
 
+    // A KERBEROS TOKEN IS RENEWED AT THE KDC (#658), with the ticket's own
+    // RENEW option, and a token that was one AP-REQ cannot be renewed or
+    // cancelled as a token: it was good once, and the ticket inside it is
+    // the KDC's to end.
+    if ((op === 'renew' || op === 'cancel') &&
+        this.kerberosElementsIn(firstByLocal(doc, op === 'renew'
+          ? 'RenewTarget' : 'CancelTarget')).length) {
+      log.debug("Leaving WsTrust.handleRst(). A Kerberos token is not " +
+                "renewed or cancelled here.");
+      return { status: 500, version: version, errorCode: 'STS-WSTRUST-0067',
+               body: this.soapFault(version, 'A Kerberos token is not ' +
+                                    (op === 'renew' ? 'renewed' : 'cancelled') +
+                                    ' by WS-Trust: its ticket is renewed at ' +
+                                    'the KDC, and the AP-REQ around it was ' +
+                                    'good once.', 'InvalidRequest', trustNs) };
+    }
+
     if (op === 'validate') {
       const target = firstByLocal(doc, 'ValidateTarget');
       const hasToken = target &&
                        (firstByLocal(target, 'Assertion') ||
                         firstByLocal(target, 'BinarySecurityToken') ||
                         (target.textContent || '').trim());
-      const code = hasToken ? statusValid : statusInvalid;
+      // #658: a Kerberos token is valid when the acceptor accepted it — which
+      // also spent it, as any acceptance does.
+      const kerberosTarget = target ? this.kerberosElementsIn(target)[0] : null;
+      const kerberosVerdict = kerberosTarget
+        ? this.kerberosVerdictFor(kerberosTarget, options.connection) : null;
+      const valid = kerberosTarget ? !!(kerberosVerdict && kerberosVerdict.ok)
+                                   : !!hasToken;
+      const code = valid ? statusValid : statusInvalid;
       // A wst:Status of invalid is this operation's refusal, delivered in a
       // 200.
-      const invalidCode = hasToken ? '' : 'STS-WSTRUST-0014';
-      const reason = hasToken ? 'The token is valid.' : 'No token to validate.';
+      const invalidCode = valid ? ''
+        : (kerberosTarget ? 'STS-WSTRUST-0068' : 'STS-WSTRUST-0014');
+      const reason = kerberosTarget
+        ? (valid ? 'The Kerberos token is valid: its ticket was accepted ' +
+                   'under this service\'s key.'
+                 : (kerberosVerdict ? kerberosVerdict.reason
+                     : 'The Kerberos token was not checked: ' +
+                       'wstrust.acceptKerberos is off.'))
+        : (hasToken ? 'The token is valid.' : 'No token to validate.');
       const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
                    '"><wst:TokenType>' + statusTokenType +
                    '</wst:TokenType><wst:Status><wst:Code>' + code +
@@ -3422,7 +4226,11 @@ class WsTrust {
 
     // #487: SAML 1.1 by either of its two names; anything else that is not
     // the JWT's is answered with SAML 2.0, as it always was.
-    const tokenType = (tokenTypeReq === JWT_TOKEN_TYPE) ? JWT_TOKEN_TYPE :
+    // #658: a Kerberos token by any of the profile's six ValueTypes, issued
+    // in the form asked for.
+    const kerberosOut = krb5Tokens.isType(tokenTypeReq);
+    const tokenType = kerberosOut ? String(tokenTypeReq).trim() :
+      (tokenTypeReq === JWT_TOKEN_TYPE) ? JWT_TOKEN_TYPE :
       (tokenTypeReq === SAML11_TOKEN_TYPE ||
        tokenTypeReq === SAML11_TOKEN_TYPE_ALIAS) ? SAML11_TOKEN_TYPE :
         SAML2_TOKEN_TYPE;
@@ -3461,10 +4269,43 @@ class WsTrust {
     const requester = auth.delegation
       ? String(auth.delegation.requester || '')
       : (auth.kind === 'none' ? '' : String(auth.subject || ''));
+    const issuing = { options: options, doc: doc, version: version,
+                      trustNs: trustNs, audience: audience, subject: subject,
+                      auth: auth, delegationDecision: delegationDecision,
+                      lifetimeMin: lifetimeMin, keyTypeIssued: keyTypeIssued,
+                      op: op, tokenType: tokenType, delegates: delegates,
+                      requester: requester };
+    // #658: A KERBEROS TOKEN IS MINTED ASYNCHRONOUSLY (the KDC encrypts), so
+    // this request's answer is a Promise; every other token is built here.
+    if (kerberosOut) {
+      log.debug("Leaving WsTrust.handleRst(). A Kerberos token is minted.");
+      return this.issueKerberos(issuing).then((minted) => {
+        return minted.fault ? minted.fault
+                            : this.finishIssue(issuing, minted);
+      });
+    }
     const tok = this.buildToken(tokenType, subject, audience, lifetimeMin,
                            this.authnContextOf(auth), delegates, requester,
                            undefined, jwtIssuer,
                            auth.kind === 'delegated' ? [] : this.amrOf(auth));
+    log.debug("Leaving WsTrust.handleRst(). The token is built.");
+    return this.finishIssue(issuing, tok);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT FOLLOWS AN ISSUED TOKEN (#658: moved out of handleRst() unchanged, so
+  // a token minted asynchronously — a Kerberos ticket — reaches it as one
+  // built in place does): the optional encryption, the relying party's
+  // sighting, the delegation act, the RSTR and the session it signs in.
+  // ---------------------------------------------------------------------------
+  private finishIssue(issuing: any, tok: any): any {
+    const {
+      config, encryptAssertion, applications, delegation, mode, errorCodes,
+      log, xmlEscape, iso, firstByLocal, delegationPolicy
+    } = this.deps;
+    log.debug("Entering WsTrust.finishIssue().");
+    const { options, doc, version, trustNs, audience, subject, auth,
+            delegationDecision, lifetimeMin, keyTypeIssued, op } = issuing;
 
     // Optional encryption (?encrypt=1): encrypt the SAML assertion to the
     // recipient certificate carried in the request's WS-Security signature
@@ -3484,21 +4325,31 @@ class WsTrust {
     // way out, which is the question here, rather than who may drive a test
     // control.
     if (options.encrypt && tok.tokenType === SAML2_TOKEN_TYPE) {
-      const x509 = firstByLocal(doc, 'X509Certificate');
-      const recipB64 = x509 ? (x509.textContent || '').replace(/\s+/g, '') : '';
+      const recipB64 = this.recipientCertificateOf(doc);
+      // BY THE APPLICATION THE ASSERTION IS FOR (#747, #483's defect): an
+      // AppliesTo need not be the entry's identifier.
+      const answering = this.appliesToApplication(audience) || audience || '';
       let failure = '';
+      let heldRefused = false;
       if (recipB64) {
         const recipPem = '-----BEGIN CERTIFICATE-----\n' +
             (recipB64.match(/.{1,64}/g) || []).join('\n') + '\n-----END ' +
             'CERTIFICATE-----\n';
         const how = {
-          algorithm: String(applications.settingFor(audience || '',
+          algorithm: String(applications.settingFor(answering,
                                                     'saml2.encryptionAlgorithm',
                                                     config) || ''),
           keyTransport: String(applications.settingFor(
-            audience || '', 'saml2.keyTransportAlgorithm', config) || '')
+            answering, 'saml2.keyTransportAlgorithm', config) || '')
         };
-        try {
+        // The requester's certificate, held to its use case under paranoid PKI
+        // mode (#1360). Refused, nothing is sent in clear in either mode.
+        const held = require('../common/certificate_trust')
+          .pinnedSync('encryption-recipient', recipPem);
+        if (!held.ok) {
+          failure = 'the certificate in the request is refused: ' + held.why;
+          heldRefused = true;
+        } else try {
           tok.xml = encryptAssertion(tok.xml, recipPem, how);
           tok.ref = '';
         } catch (e) {
@@ -3512,10 +4363,10 @@ class WsTrust {
                   'WS-Security signature)';
       }
       if (failure) {
-        if (!mode.sendsWeakerThanAsked()) {
+        if (heldRefused || !mode.sendsWeakerThanAsked()) {
           log.info('wstrust: refused to return a plaintext assertion — ' +
                    failure + '.');
-          log.debug("Leaving WsTrust.handleRst(). Encryption was required " +
+          log.debug("Leaving WsTrust.finishIssue(). Encryption was required " +
                     "and did not happen.");
           // No recipient certificate is the REQUEST lacking what it asked
           // to be answered with, `wst:InvalidRequest`; a certificate that
@@ -3679,11 +4530,15 @@ class WsTrust {
                note: this.consumedNote(via, auth.delegation.tokenKind) }]
           : []),
         produced: [{
-          kind: tok.tokenType === SAML11_TOKEN_TYPE ? 'SAML 1.1 assertion'
+          kind: tok.kerberos ? 'Kerberos AP-REQ'
+            : tok.tokenType === SAML11_TOKEN_TYPE ? 'SAML 1.1 assertion'
             : tok.tokenType === SAML2_TOKEN_TYPE ? 'SAML 2.0 assertion'
                                                    : 'JWT',
           identifier: tok.id || '',
-          note: tok.id
+          note: tok.kerberos
+            ? 'its Kerberosv5APREQSHA1 key identifier; the ticket inside is ' +
+              'for ' + tok.kerberos.servicePrincipal
+            : tok.id
             ? (tok.tokenType === JWT_TOKEN_TYPE ? 'jti' : 'AssertionID')
             : 'this token carries no identifier'
         }],
@@ -3707,12 +4562,18 @@ class WsTrust {
       '<wst:TokenType>' + tok.tokenType + '</wst:TokenType>' +
       '<wst:RequestedSecurityToken>' + tok.xml +
       '</wst:RequestedSecurityToken>' +
+      // #658: a Kerberos token's session key, which the holder needs to use
+      // it (WS-Trust 1.4 section 4.4.2), over TLS only.
+      (tok.proof || '') +
       appliesToOut +
+      // A Kerberos token's Lifetime is its Authenticator's window: it is
+      // good once, within the clock skew of when it was made.
       '<wst:Lifetime ' +
       'xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">' +
-      '<wsu:Created>' + iso(0) + '</wsu:Created><wsu:Expires>' +
-      iso(lifetimeMin) + '</wsu:Expires></wst:Lifetime><wst:KeyType>' +
-      keyTypeReq + '</wst:KeyType>' +
+      '<wsu:Created>' + (tok.created || iso(0)) +
+      '</wsu:Created><wsu:Expires>' + (tok.expires || iso(lifetimeMin)) +
+      '</wsu:Expires></wst:Lifetime><wst:KeyType>' +
+      keyTypeIssued + '</wst:KeyType>' +
       // 2004/04 spells the reference RequestedTokenReference (#188).
       (trustNs === WST_2004_04_NS
         ? tok.ref.split('wst:RequestedAttachedReference')
@@ -3762,7 +4623,8 @@ class WsTrust {
     const signIn = auth.subject && auth.subject !== 'anonymous' &&
                    auth.kind !== 'delegated' &&
                    !((auth.kind === 'certificate' ||
-                      auth.kind === 'signature') && auth.isClient)
+                      auth.kind === 'signature' ||
+                      auth.kind === 'kerberos') && auth.isClient)
       ? { username: auth.subject, method: auth.method || 'WS-Trust',
           via: 'WS-Trust ' + op,
           amr: this.amrOf(auth) }
@@ -3771,7 +4633,7 @@ class WsTrust {
     if (op === 'renew') {
       const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
                    '">' + rstrInner + '</wst:RequestSecurityTokenResponse>';
-      log.debug("Leaving WsTrust.handleRst(). Renew answered with a fresh " +
+      log.debug("Leaving WsTrust.finishIssue(). Renew answered with a fresh " +
                 "token.");
       return { status: 200, version: version, signIn: signIn,
                body: this.envelope(version, trustNs + '/RSTR/RenewFinal',
@@ -3784,7 +4646,7 @@ class WsTrust {
     if (trustNs === WST_2004_04_NS) {
       const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
                    '">' + rstrInner + '</wst:RequestSecurityTokenResponse>';
-      log.debug("Leaving WsTrust.handleRst(). Issue answered with an RSTR " +
+      log.debug("Leaving WsTrust.finishIssue(). Issue answered with an RSTR " +
                 "(2004/04).");
       return { status: 200, version: version, signIn: signIn,
                body: this.envelope(version, trustNs + '/RSTR/Issue', rstr) };
@@ -3793,7 +4655,7 @@ class WsTrust {
                   trustNs + '"><wst:RequestSecurityTokenResponse>' + rstrInner +
                   '</wst:RequestSecurityTokenResponse>' +
                   '</wst:RequestSecurityTokenResponseCollection>';
-    log.debug("Leaving WsTrust.handleRst(). Issue answered with an RSTR " +
+    log.debug("Leaving WsTrust.finishIssue(). Issue answered with an RSTR " +
               "Collection.");
     return { status: 200, version: version, signIn: signIn,
              body: this.envelope(version, trustNs + '/RSTRC/IssueFinal',
@@ -4068,6 +4930,19 @@ class WsTrust {
       log.debug("Leaving WsTrust.homeNameOf(). The requester's JWT.");
       return this.nameOfSubject(sub) || '';
     }
+    // A KERBEROS TOKEN NAMES ITS CLIENT ONLY INSIDE WHAT IS ENCRYPTED
+    // (#658): the ticket's enc-part and the Authenticator, under keys only
+    // the acceptor holds — so there is no name to read unverified, as there
+    // is in a UsernameToken. And accepting it here, to read one, would SPEND
+    // it (the acceptor's replay claim), so the home cell would refuse the
+    // relayed request as a replay. It is served where it arrived.
+    if (this.requesterKerberosElement(scope) ||
+        this.kerberosElementsIn(firstByLocal(doc, 'OnBehalfOf') ||
+                                firstByLocal(doc, 'ActAs')).length) {
+      log.debug("Leaving WsTrust.homeNameOf(). A Kerberos token: served " +
+                "here.");
+      return '';
+    }
     if (certificateOnConnection) {
       log.debug("Leaving WsTrust.homeNameOf(). The connection's " +
                 "certificate: served here.");
@@ -4144,6 +5019,9 @@ class WsTrust {
       // #521: a signed request's revocation and replay answers first, so
       // every authentication below reads them.
       return self.prepareMessageSignature(req, doc);
+    }).then(function (): Promise<unknown> {
+      // #658: every Kerberos token accepted, so every seat reads a verdict.
+      return self.prepareKerberosAt(req, doc);
     }).then(function (): Promise<unknown> {
       return delegated ? Promise.resolve(null)
                        : self.doorAssessment(req, doc);
@@ -4238,17 +5116,23 @@ class WsTrust {
     return { socket: socket,
              revocation: req ? (req.certificateRevocation || null) : null,
              // #521: the asynchronous half of a signed request's checks.
-             signature: req ? (req.stsMessageSignature || null) : null };
+             signature: req ? (req.stsMessageSignature || null) : null,
+             // #658: every Kerberos token's verdict, accepted first.
+             kerberos: req ? (req.stsKerberosTokens || null) : null };
   }
 
-  private stsEndpointNow(req, res, door?: any) {
+  private stsEndpointNow(req, res, door?: any, settled?: any) {
     const { authn, errorCodes, log } = this.deps;
     log.debug("Entering the WS-Trust STS endpoint.");
     const contentType = req.headers['content-type'] || '';
     try {
+      if (settled && settled.error) {
+        throw settled.error;
+      }
       const encrypt = req.query.encrypt === '1' || req.query.encrypt === 'true';
-      let issuanceAnswer: any = null;
-      const result = this.handleRst(req.body || '', contentType,
+      let issuanceAnswer: any = settled ? settled.issuanceAnswer : null;
+      const answered = settled ? settled.result :
+        this.handleRst(req.body || '', contentType,
         { encrypt: encrypt, base: helpers.baseUrlOf(req),
           connection: this.connectionOf(req),
           preAuthenticated: door ? door.auth : null,
@@ -4257,6 +5141,19 @@ class WsTrust {
           onIssuanceAnswer: function (answer: any): void {
             issuanceAnswer = answer;
           } });
+      // #658: AN ANSWER MINTED ASYNCHRONOUSLY (a Kerberos token) is served
+      // when it is ready, by this same function with it in hand.
+      if (answered && typeof answered.then === 'function') {
+        log.debug("Leaving the WS-Trust STS endpoint. The answer is " +
+                  "asynchronous.");
+        return answered.then((result: any) => {
+          return this.stsEndpointNow(req, res, door,
+            { result: result, issuanceAnswer: issuanceAnswer });
+        }, (e: any) => {
+          return this.stsEndpointNow(req, res, door, { error: e });
+        });
+      }
+      const result = answered;
       // WHAT THE POLICY DECIDED ON THE DOOR'S ASSESSMENT, written back onto
       // it (#499), as the sign-in screen writes its own (`settle()`).
       const doorDecision = door && door.assessment
@@ -4340,8 +5237,10 @@ class WsTrust {
          .type(failedVersion === '1.1' ? 'text/xml; charset=utf-8'
                                        : 'application/soap+xml; charset=utf-8')
          .send(this.receiverFault(failedVersion,
-                         'STS error: ' +
-                         (e && e.message ? e.message : String(e))));
+                         require('../common/mode').hidesFailureDetail()
+                           ? 'The service could not process this request.'
+                           : 'STS error: ' +
+                             (e && e.message ? e.message : String(e))));
       log.debug("Leaving the WS-Trust STS endpoint. It failed.");
     }
   }

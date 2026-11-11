@@ -227,7 +227,7 @@ function childMain() {
     const s = await w.start(who, w.pendingSignIn());
     const arrival = who.cookies.sts_session;
     note(s.started.status === 303 && !!who.cookies.sts_wallet_binding &&
-         /^\/authn\/wallet\/wait\?authn=[^&]+&state=/.test(s.waitPath) &&
+         /^\/authn\/wallet\/wait(?:\?app=[^#]*)?[?#]authn=[^&]+&state=/.test(s.waitPath) &&
          !s.started.answer.setCookie.some(function (c) {
            return /^sts_session=/.test(c);
          }),

@@ -22,7 +22,10 @@
 //           session-presented on the sign-on session the token was issued on
 //           (CAEP, naming OpenID4VCI);
 //        3. the code and the Transaction Code redeem at the token endpoint
-//           for a token about the caller;
+//           for a token about the caller — and (#666) the code names the
+//           offer's session, on whose risk the token request is judged:
+//           a HIGH standing held for the person does not refuse an offer
+//           made on a clean session, and still refuses one made on none;
 //        4. a body naming somebody else still offers for the caller (the
 //           person is the token's), an unknown configuration is refused
 //           (STS-PORTAL-0589), no token is refused (401), and a token
@@ -164,6 +167,10 @@ function childMain() {
          '2e. the offer is session-presented, naming OpenID4VCI, on the ' +
          'sign-on session the portal\'s token was issued on',
          JSON.stringify(mine));
+    note(record && mine.length === 1 && record.sessionId === mine[0].id,
+         '2f. the code records the sign-on session the offer was made on ' +
+         '(#666), the one it is judged on at the token endpoint',
+         JSON.stringify([record && record.sessionId, mine[0] && mine[0].id]));
     const config = require(ROOT_DIR + '/common/config');
     config.setOverride('oid4vci.walletInvocation', 'haip-vci');
     const haip = await alice.act('/portal/wallet',
@@ -210,6 +217,77 @@ function childMain() {
          '3. the code and the Transaction Code redeem for a token about ' +
          'the caller', tokenAnswer.status + ' ' +
          JSON.stringify(claims).slice(0, 300));
+
+    // --- 3b. judged on the offer's session, not a held standing (#666) ------
+    // The issue's sequence, for a person of its own: a sign-in refused on
+    // risk left them HIGH in one request worker, their next sign-in was
+    // clean, and the offer was made on it. Here the clean sign-in comes
+    // first and the HIGH is held after it — what that worker still held —
+    // with enforcement OFF while it is assessed, so the risk-response
+    // reaction is only observed and the session lives. Then the token
+    // request, enforced, is judged on the OFFER'S session.
+    const riskEngine = require(ROOT_DIR + '/risk/risk_engine');
+    const helpers = require(ROOT_DIR + '/common/helpers');
+    const BOB = 'pw-bob-' + stamp;
+    ldap.createUser(BOB, { invent: false });
+    credentials.setPassword(BOB, PASSWORD);
+    const bob = await signin.signInToThePortal(base, BOB, null,
+                                               { password: PASSWORD });
+    await riskEngine.assess({ realm: 'default',
+      subject: helpers.subjectForName(BOB), username: BOB,
+      sessionId: '', door: 'a test', userAgent: 'curl/8.5.0',
+      context: { address: '192.0.2.10', uaFingerprint: 'fp-666' } });
+    const heldHigh = riskEngine.standingOf('default', BOB);
+    config.setOverride('risk.enforceInDevelopment', true);
+    const again = await bob.act('/portal/wallet',
+      { configuration: 'IdentityCredential', mode: 'cross-device' });
+    const againOffer = (again.json && again.json.offer) || {};
+    const againCode = (((againOffer.credentialOffer || {}).grants || {})[
+      'urn:ietf:params:oauth:grant-type:pre-authorized_code'] || {})[
+      'pre-authorized_code'] || '';
+    const againRecord = againCode ?
+      offers.preAuthorizedCodes.get(againCode) : null;
+    const offerSession = againRecord ?
+      authn.sessionById(againRecord.sessionId) : null;
+    const redeemAgain = await fetch(base + '/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:pre-authorized_code',
+        'pre-authorized_code': againCode, tx_code: againOffer.txCode })
+        .toString() });
+    const redeemAgainText = await redeemAgain.text();
+    note(heldHigh && heldHigh.level === 'HIGH' && offerSession &&
+         offerSession.risk && offerSession.risk.level !== 'HIGH' &&
+         redeemAgain.status === 200,
+         '3b. with a HIGH standing held for the person, an offer made on ' +
+         'a session that is not HIGH still redeems: the token request is ' +
+         'judged on the offer\'s session (#666)',
+         JSON.stringify([heldHigh && heldHigh.level,
+                         offerSession && offerSession.risk &&
+                         offerSession.risk.level, redeemAgain.status,
+                         redeemAgainText.slice(0, 200)]));
+    // And with no session behind the offer, the standing still decides.
+    const orphan = offers.makeOffer({ protocol: 'http',
+      get: function () {
+        return '127.0.0.1';
+      }, headers: {} }, { configurationIds: ['IdentityCredential'],
+      mode: 'cross-device', user: againRecord && againRecord.user });
+    const orphanRedeem = await fetch(base + '/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:pre-authorized_code',
+        'pre-authorized_code': orphan.built.preAuthorizedCode,
+        tx_code: orphan.built.txCode }).toString() });
+    const orphanJson = await orphanRedeem.json().catch(function () {
+      return {};
+    });
+    note(orphanRedeem.status === 400 && orphanJson.error === 'access_denied',
+         '3c. an offer made on no session is still judged on the ' +
+         'person\'s standing, and HIGH refuses it',
+         orphanRedeem.status + ' ' + JSON.stringify(orphanJson));
+    config.clearOverride('risk.enforceInDevelopment');
 
     // --- 4. the refusals -----------------------------------------------------
     const mallory = await signin.signInToThePortal(base, MALLORY, null,

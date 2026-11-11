@@ -255,7 +255,7 @@ class EstPage {
             '</span>'
           : '<form method="post" action="/admin/est">' +
             self.hidden('action', 'revoke-certificate') +
-            self.hidden('serialHex', one.serialHex) + '<select name="reason">' +
+            self.hidden('serial', one.serialHex) + '<select name="reason">' +
             self.options(json.revocationReasons, 'unspecified') + '</select> ' +
             '<button type="submit" class="danger">' +
             t.html('consoleEst.revoke') + '</button></form>';

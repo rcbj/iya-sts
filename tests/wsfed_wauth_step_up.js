@@ -297,7 +297,7 @@ function childMain() {
       }).length;
     };
     const pendingOf = function (location) {
-      const found = /[?&]authn=([^&]+)/.exec(String(location || ''));
+      const found = /[?&#]authn=([^&]+)/.exec(String(location || ''));
       if (!found) {
         return null;
       }
@@ -414,6 +414,29 @@ function childMain() {
          'pass and not a loop', r.status + ' ' + r.text.slice(0, 160));
     note(await refusedWith('STS-WSFED-0010'),
          'd2. and it carries STS-WSFED-0010');
+    // THE REFUSAL IS THE SHARED ERROR PAGE (#1327): the code's sentence in
+    // the box, the ways forward, the start-over note and the portal, the
+    // diagnostics with an incident ID and the English summary as data, and
+    // no key drawn as its name and no error code in the body.
+    note(/<div class="warn" role="alert">/.test(r.text) &&
+         /only one factor was used/.test(r.text) &&
+         /<h2>Two ways forward<\/h2>/.test(r.text) &&
+         /href="[^"]*\/portal"/.test(r.text) &&
+         /<dt>Incident ID<\/dt><dd><code>\d+<\/code>/.test(r.text) &&
+         /<dt>Summary<\/dt><dd><code>Still one factor<\/code>/.test(r.text) &&
+         /<dt>wtrealm<\/dt>/.test(r.text) &&
+         r.text.indexOf('wsfedErrors.') < 0 &&
+         r.text.indexOf('STS-WSFED-0010') < 0,
+         'd3. the refusal is the shared error page, with its diagnostics',
+         r.text.slice(0, 400));
+    const fr = await bob.go('GET', signInUrl({ wauth: MFA,
+      step_up_honoured: '1' }), { headers: { 'accept-language': 'fr' } });
+    note(fr.status === 400 && /<html lang="fr"/.test(fr.text) &&
+         /un seul facteur a été utilisé/.test(fr.text) &&
+         /Deux façons de continuer/.test(fr.text) &&
+         /Still one factor/.test(fr.text),
+         'd4. every word follows the language asked for; the English ' +
+         'summary stays as data', fr.text.slice(0, 400));
 
     // --- e. no session ---------------------------------------------------------
     const carol = browser(port);

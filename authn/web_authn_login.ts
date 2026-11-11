@@ -383,6 +383,27 @@ class WebAuthnLogin {
           '</a></p>' : '') + '</div>';
   }
 
+  // THE SECOND SIGN-IN'S NOTICE (#1302). The OpenID Foundation's
+  // oidcc-prompt-login and oidcc-max-age-1 ask the reviewer to see the person
+  // "asked to login for a second time", and a screen identical to the first
+  // sign-in did not show it. The view's `reauthentication` is the
+  // authorization endpoint's reason, carried on the pending record; any
+  // value without a sentence draws nothing.
+  /**
+   * The one-line notice of a forced second sign-in, or ''.
+   *
+   * @param reason - the view's `reauthentication`: `prompt_login`,
+   *   `max_age` or ''
+   * @param t - the translator
+   * @returns the markup
+   */
+  static reauthentication(reason: Json, t: Json): string {
+    const key = reason === 'prompt_login' ? 'authn.login.reauthPromptLogin'
+      : (reason === 'max_age' ? 'authn.login.reauthMaxAge' : '');
+    return key ? '<div class="warn" id="authn-reauthentication">' +
+                 t.html(key) + '</div>' : '';
+  }
+
   /**
    * The sign-in screen's body, under the chooser.
    *
@@ -400,6 +421,10 @@ class WebAuthnLogin {
     return '<h1>' + t.html('authn.login.heading') + '</h1>' +
       '<p class="sub">' + t.html('authn.login.at', { base: String(v.base) }) +
       '</p>' +
+      // WHY A PERSON WITH A SESSION IS ASKED AGAIN (#1302): one line, the
+      // application's `prompt=login` or its `max_age`, so the screen is
+      // told apart from a first sign-in. Nothing on a first sign-in.
+      WebAuthnLogin.reauthentication(v.reauthentication, t) +
       (error ? '<div class="err" id="authn-error">' + esc(error) + '</div>'
              : '') +
       // A CLASSICAL PASSKEY REFUSED WHERE A POST-QUANTUM ONE IS REQUIRED

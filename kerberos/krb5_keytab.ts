@@ -50,8 +50,8 @@
 // **A LIBRARY (rule 3).** It registers no route, holds no state and requires
 // only the logger — so its position in the require order is not a position,
 // and it can never join a cycle. It is NOT reachable from `krb5_kdc.js`,
-// `krb5_service.js` or `spnego.js`, which is what keeps the parent project's
-// COPY set unchanged (see `kerberos/CLAUDE.md`).
+// `krb5_service.js` or `spnego.js`, which kept it out of the parent
+// project's COPY set (an obligation until #1280).
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

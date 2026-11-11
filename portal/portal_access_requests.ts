@@ -32,6 +32,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -48,12 +49,7 @@ interface PortalAccessRequestsDeps {
 }
 
 // The answer to one request: which, and how.
-const DECIDE_FORM = vz.object({
-  request: vz.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/)
-    .describe('The access request, from the list.'),
-  action: vt.oneOf(['approve', 'deny'])
-    .describe('approve or deny.')
-});
+const DECIDE_FORM = ModelZod.body('account', 'decideAccessRequest');
 
 /**
  * `/portal/access-requests`'s account API operations: the AuthZEN access
@@ -150,32 +146,12 @@ class PortalAccessRequests {
     log.debug("Entering PortalAccessRequests.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/access-requests',
-        operationId: 'getAccessRequests', tag: 'Access requests',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/access-requests',
-        summary: 'The AuthZEN access requests waiting for you to decide',
-        description: 'The pending access requests (#1180) whose denying ' +
-          'policy named you an approver — its approver role, its approver ' +
-          'group, or the application\'s owners — and that the ' +
-          'access-control policy lets you decide: each with who it is ' +
-          'about, what it asks to do to what, through which PEP and ' +
-          'application, and until when it waits. `enabled` is false where ' +
-          'the realm has the profile off.',
-        handler: function (req: Json, res: Json,
+        operationId: 'getAccessRequests', access: 'person', handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));
         } },
       { method: 'POST', path: ctx.BASE + '/access-requests',
-        operationId: 'decideAccessRequest', tag: 'Access requests',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/access-requests',
-        summary: 'Approves or denies an AuthZEN access request',
-        description: 'Decides one request as you, after the access-control ' +
-          'policy (action approve-access-request on resource ' +
-          'authzen-access-request) said you may: an approval is handed to ' +
-          'the PEP to carry on its next evaluation, which the realm\'s ' +
-          'policy decides afresh; a denial ends the request. Refused for a ' +
-          'request you may not decide, your own included where the policy ' +
-          'forbids self-approval, and for one no longer pending.',
-        body: DECIDE_FORM,
+        operationId: 'decideAccessRequest', access: 'person', body: DECIDE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.decide(ctx, res, caller, input.body);

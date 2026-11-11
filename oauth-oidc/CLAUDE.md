@@ -277,6 +277,76 @@ so must `admin-ui/admin.ts`.
    documents to notice. **When a new refusal is added to an endpoint, look for
    the registration member that would have recorded it.**
 
+   **THE IMPLICIT GRANT IS REFUSED ONLY WHERE NOTHING TOKEN-FREE NEEDS IT
+   (#1295, 2026-11-03).** `STS-OAUTH-0133` used to refuse ANY `grant_types`
+   naming `implicit`, while the authorization endpoint allowed `id_token` and
+   `code id_token` — the response types RFC 7591 section 2.1 and OpenID
+   Connect Registration pair with that grant. The mirror rule above, applied
+   carelessly, had made the registration those response types call for
+   impossible in every mode the BCP governs. It is refused now when no
+   registered response type is `id_token`-without-`token`, or when a
+   token-bearing one is registered beside it (`0134`'s refusal on its own);
+   and `applyToMetadata()` keeps `implicit` in `grant_types_supported` while
+   a response type that uses it is advertised (`impliesImplicitGrant()`), with
+   `fapi.js` dropping it again when a profile narrows the list to `code`.
+
+   **ONE ROW AN ADMINISTRATOR MAY WAIVE: `no-implicit` (#1295, rcbj's decision,
+   2026-11-03: "ease off the strictness of our product mode so that we get
+   certified … It should require an admin to turn on these restricted flow /
+   grant types").** Product mode implies this mode in every realm and no realm
+   can turn it off, so a product deployment could not pass the OpenID
+   Connect Implicit, Hybrid or Dynamic OP plans, which need `id_token token`,
+   `code token` and `code id_token token`. `oauth2.allowImplicitTokenResponses`
+   (runtime, per realm, off) waives section 2.1.2 ALONE: the mode stays on —
+   `enabled()` is untouched, so PKCE, exact redirect matching, the nonce, the
+   password grant and rotation all still hold — and `implicitWaived()` is the
+   one answer the four doors ask (the authorization endpoint's `0126`,
+   registration's `0133`/`0134`, the metadata, and the report, where the row's
+   `enforced` reads `waived` and `state().waived` / `mode.report()`'s BCP row
+   carry it as data). It is a waiver and not a second mode because section
+   2.1.2 is a SHOULD NOT — a requirement of the BCP a deployment may
+   knowingly decline, with the reason recorded where a reader of the report
+   meets it — and a certification profile names it. **OAuth 2.1 mode
+   and the FAPI profiles ignore it**: OAuth 2.1 removes the implicit grant from
+   the framework (a MUST), and a FAPI profile is a stricter profile layered on
+   this mode that a setting about the mode has no business loosening. Do NOT
+   grow a second waiver by analogy: the argument is section 2.1.2's level, and
+   the next row has its own.
+
+   **THE REALM MAKES THEM POSSIBLE; EACH APPLICATION ENABLES THEM (#1296,
+   rcbj's decision, 2026-11-03: "a realm allowing the token response types
+   must not turn them on for every client").** A waived realm honours a token
+   response type only for an application whose
+   `oauthAllowedTokenResponseTypes` lists it — a permission, empty by default
+   and empty meaning NONE, unlike `oauthResponseType`, whose empty list
+   restricts nothing (#289) and which is therefore not reused. Three answers,
+   one function each, and every door asks the same three:
+   `checkAuthorizationRequest()` refuses `0126` (`unsupported_response_type`)
+   where the realm does not allow the type, and `0998` (`unauthorized_client`,
+   RFC 6749 4.1.2.1 / 4.2.2.1) where it does and the application does not
+   list it — so the authorization endpoint, PAR and a request object, all of
+   which go through `vetAuthorizationRequest()`, agree;
+   `checkClientRegistration()` refuses `0999` (`invalid_client_metadata`) for
+   a token type outside `oauth2.dynamicRegistrationTokenResponseTypes` (admin
+   only, runtime, EMPTY by default — a production realm waiving the section
+   for one administered application does not open it to every self-registered
+   client), for RFC 7592's update too, and `applyRegistrationFields()` records
+   what it let through on the attribute, REPLACED like the declared lists; and
+   `tokenResponsesAllowed()` (mode off, or waived) is what `applications.js`
+   asks before an administrator's or an owner's ADD — refused `STS-REG-0364`
+   rather than recorded, the mirror rule above applied to the console. A
+   remove is never refused. **Outside RFC 9700 mode nothing reads the
+   attribute**: section 2.1.2 is not enforced there, and holding a
+   development-mode client to a list it never needed would break every
+   implicit-flow job for no rule. Discovery still advertises what the REALM
+   allows (#1295, unchanged): the metadata describes the server, not one
+   client. The waiver's report data (`waivers()`, drawn on `/admin/mode`) says
+   it is per application and carries the dynamic-registration setting with its
+   value. The OWNER may write the attribute (rcbj's decision): it is on the
+   access-control template's default `ownerApplicationAttributes`, the
+   management API's `OWNER_APPLICATION_FIELDS` and the portal's owned-object
+   form (`xacml/CLAUDE.md`).
+
    **ONE DECISION ABOUT FORWARDED HEADERS, SHARED.** `helpers.forwardedFrom()`
    decides whether `X-Forwarded-Proto`/`X-Forwarded-Host` are believed, and both
    `baseUrlOf()` and `dpop.ts`'s `htuOf()` go through it. They used to disagree
@@ -2447,8 +2517,8 @@ the same day and read it at introspection instead.
    |---|---|
    | Who may frame the OP iframe | The origins of the realm's registered redirect URIs — `frame-ancestors` narrowed, never dropped |
    | On by default | No: `oauth2.sessionManagement`, per realm |
-   | The script | The ninth scripted page, with no button |
-   | Tests | The served script in a node vm with a fake window |
+   | The script | INLINE in the page under `script-src 'sha256-…'` of its exact text (#1297, option A; it was the ninth `script-src 'self'` page until then), with no button |
+   | Tests | The page's inline script in a node vm with a fake window |
 
    **THE OP BROWSER STATE** is `session.browserState`, a random value
    `authn.ts`'s `mintSessionHandle()` sets beside the handle, so it changes at
@@ -2473,12 +2543,59 @@ the same day and read it at introspection instead.
    realm's) is the one framable page: `app.framedContentSecurityPolicy()`
    and X-Frame-Options removed. Its script hashes the MESSAGE's origin, so
    a page that is not the relying party computes a different value.
-   `/oauth2/check_session.js` answers a relying party's `postMessage`, which
-   no markup can; so it is the one scripted page with **NO submit button**,
-   and with script off a relying party's question simply goes unanswered
-   (moved from the root `CLAUDE.md`'s scripted-pages table, 2026-10-13). Off, both
-   paths answer a 404 naming the setting (`STS-OAUTH-0601`), never Express's
+   The script answers a relying party's `postMessage`, which no markup can;
+   so it is the one scripted page with **NO submit button**, and with script
+   off a relying party's question simply goes unanswered (moved from the
+   root `CLAUDE.md`'s scripted-pages table, 2026-10-13). Off, the path
+   answers a 404 naming the setting (`STS-OAUTH-0601`), never Express's
    `Cannot GET`, which `tests/protocol/sts_metadata.js` reads as unrouted.
+
+   **THE SCRIPT IS INLINE, UNDER THE SHA-256 OF ITS EXACT TEXT (#1297,
+   rcbj's option A, 2026-11-04)** — the root `CLAUDE.md`'s ONE named
+   exception to "`script-src 'self'`, never inline". Until then the page
+   was `<script src="check_session.js">` and the script a sibling served
+   `no-store`: two requests (two round trips, more on a new TLS connection)
+   before the `message` listener existed. The OpenID Foundation's hosted
+   suite loads its own RP iframe beside ours, posts `client_id
+   session_state` ONCE, `setTimeout(checkSession, 500)` after that iframe
+   loads, and never retries; from a test browser 0.22 s a round trip away
+   (0.45–1.5 s on a new connection) our listener was not there yet, and
+   `oidcc-session-management-rp-initiated-logout` timed out on every
+   response type — its console said `checkSession started` and never
+   `receiveMessage`, with no CSP or framing error. A real relying party's
+   first poll had the same race. Now:
+
+   * **One document, one request.** `iframePage(accounts)` is a constant
+     built at load around `scriptFor(accounts)`, byte for byte — nothing
+     templates it afterwards, because a byte changed after hashing is a
+     script the browser silently refuses. The script's text depends only on
+     `COOKIE`, which no realm changes, so there are exactly two pages and two
+     hashes (#561's list script is the second).
+   * **`script-src 'sha256-<base64>'` INSTEAD of `'self'`** (CSP Level 3
+     section 8.4), from `scriptHashFor(accounts)`, computed once through
+     `common/crypto.js`'s `digest()` — the one place this service hashes.
+     A hash source admits that one text and nothing else, which is narrower
+     than `'self'` (any script this origin serves); the script holds no
+     `</script`, which would end the element early. Everything else in the
+     policy is as it was: `default-src 'none'`, `img-src 'self' data:`,
+     `base-uri 'none'`, `frame-ancestors` the registered redirect origins
+     (`'none'` with none), X-Frame-Options removed, `no-store`.
+   * **`app.framedContentSecurityPolicy()` narrows `script-src` to exact
+     sources**: only `'none'`, `'self'` and `'sha256/384/512-…'` pass;
+     `'unsafe-inline'`, `'unsafe-eval'`, `*`, a host, a scheme or a nonce is
+     dropped, and nothing left is `'none'`. The framed door is where an
+     inline allowance would hurt most, so it is refused there by
+     construction rather than by convention.
+   * **`/oauth2/check_session.js` is GONE**, with its `sts_metadata.ts`
+     entry and its prose-catalog keys: nothing referenced it but the page
+     and the tests of it. No back-compatibility path: a relying party never
+     named it (only `check_session_iframe` is published).
+
+   Option B (the script at a versioned, immutable URL) was rejected because
+   a browser's first visit still makes two requests, and the first Session
+   Management module of a plan is exactly the one that timed out; option C
+   (a test browser near the OP) changes the tester, not the OP, and leaves
+   real relying parties' first poll racing.
 
    **NOT DONE, AND ON THE CARD**: a session that EXPIRES or that an
    administrator ends keeps its cookie, so the iframe says `unchanged` until
@@ -2546,7 +2663,45 @@ nothing registered, a private-use address never (`0290`), OAuth 2.1 mode never
 (`0286`), product never (`0603`), development yes. `oauth2.redirectUris` — the
 AUTHORIZATION list — is no longer read. A refused return is NOT a refusal of
 the sign-out: the person is signed out and the page says where they were not
-sent. `state` rides on every return (`withLogoutState()`), including the
+sent. **An address the client did not register (`0123`) is a WARNING BOX as
+prominent as the green "signed out" one since #1302**, ABOVE it, in the
+page's language (`oauthPages.signedOut.notRegistered`): that the request's
+`post_logout_redirect_uri` is not one this client registered and so was not
+followed, then the address asked for and section 3. ~~and the registered
+ones (`checkPostLogoutRedirectUri()`'s `registered`)~~ — **never the
+registered ones since #1331 (rcbj, 2026-11-05)**: naming them handed the
+caller the exact value to aim at. `checkPostLogoutRedirectUri()` answers
+`notRegistered: true` instead, and its description names only the address
+sent; the registered set is logged at debug for the operator.
+
+**ONE RULE FOR EVERY RETURN THAT IS NOT FOLLOWED (rcbj, 2026-11-05: "be
+consistent in how we handle this").** Whatever the reason — no
+`id_token_hint` and no `client_id` (`STS-OAUTH-0785`), not registered
+(`0123`), a private-use address nobody vouches for (`0290`), a client that
+registered nothing (`0286`, `0603`) — the request named a
+`post_logout_redirect_uri` that will not be followed, and EVERY page this
+sign-out draws leads with the same amber box (`id="logout-return-refused"`),
+its reason's sentence `oauthPages.signedOut.{noClient, notRegistered,
+privateUse, clientRegisteredNone, notFollowed}`: "This sign-out request is not
+valid as sent: …", the address asked for, the section — in the present tense,
+because the same words stand on the question (section 2's MUST ask, which
+stays), on the page after it is declined, and on the signed-out page, which
+is then "Sign-out request partly refused" with the shared footer. Where the
+box is drawn the question's grey reason line is left out rather than repeat
+it. Until then only the unregistered address had the box; the others were a
+grey English sentence, and the question showed none of it — which is what
+the OpenID Foundation's `oidcc-rp-initiated-logout-no-id-token-hint`
+reviewer reads (*an error page saying the request is invalid as the
+id_token_hint is missing*). `tests/rp_initiated_logout.js` b1c–b1d, d1b–d1d. The OpenID
+Foundation's `oidcc-rp-initiated-logout-bad-post-logout-redirect-uri` and
+`-query-added-to-post-logout-redirect-uri` ask their reviewer for a page
+saying the request is invalid for exactly that, and a grey sentence under the
+banner did not. **Since 2026-11-04 that page's heading and title are
+`oauthPages.signedOut.partlyRefused`** ("Sign-out request partly refused")
+rather than "Signed out": the reviewer reads the heading first, and a success
+heading over the box still read as a success page. Every other refused return
+keeps its grey English sentence and the "Signed out" heading.
+`state` rides on every return (`withLogoutState()`), including the
 front-channel page's refresh and link. When the registered return URI already
 has a `state`, the request's value replaces it; duplicate query values can
 make an RP read stale state.
@@ -2560,7 +2715,26 @@ it would clear a cookie it never saw. No script: a button needs none.
 
 **`ui_locales` is honoured on the sign-out pages since #539**: the
 confirmation and signed-out pages are drawn in it (namespace `oauthPages`),
-and a refusal stays English. `tests/rp_initiated_logout.js` holds
+~~and a refusal stays English~~ — **and since #1326 a refusal too**:
+`logoutRefusal()` draws `common/error_page.ts`'s page, its sentence chosen
+by the id_token_hint verdict's `reason` (`oauthPages.logoutRefused.hint.*`),
+the English `why` among the diagnostics. The sign-out whose return was
+refused ends with the same page's footer.
+
+**THE AUTHORIZATION ENDPOINT'S TWO PAGES ARE THE SAME PAGE (#1326)**: the
+refusal page (a refusal that is never redirected — since #1326 every one, for
+a browser, not only those about the redirect_uri) and RFC 9700 section
+4.11.2's interstitial. `refusalMessage()` picks the sentence: a key the
+refusal names (`pageText.key`, where one code covers two cases), else
+`oauthPages.refusal.<the code marked on the response>`, else
+`oauthPages.oauthError.<error>`, else a general one. The values a sentence
+names are the request's own plus `pageText.params`. **No refusal names a
+REGISTERED address, or how many there are (#1331)** — not the redirect URIs
+(`0569`, `0122`), not the post-logout ones, not OAuth 2.1's unconfirmed ones
+(`0272`), in the `error_description` or on the page: only the address the
+request sent. `saml/return_address.ts` holds SAML and WS-Federation to the
+same rule. The English `error_description` is in
+the diagnostics, as the value an application receives. `tests/rp_initiated_logout.js` holds
 it in a child process; `tests/protocol/sts_rp_initiated_logout.js` over HTTP.
 
 ## OPENID CONNECT REGISTRATION, AND THE `jwks_uri` (#120, 2026-09-22)
@@ -2573,6 +2747,7 @@ metadata and honoured little of it. rcbj's answers:
 | A `jwks_uri` | FETCHED, under the outbound policy — the eighth outbound fetch in the root index |
 | `grant_types` / `response_types` | Enforced in every mode, for a registered client — and since #289 for every client that declares them |
 | `initiate_login_uri` | Validated, written to `oauthInitiateLoginUri`, and launched through `/launch/{app}` (#426) |
+| `logo_uri`, `policy_uri`, `tos_uri` | Validated (https), written to `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri`, and SHOWN on the sign-in and consent screens (#1300) |
 
 **`applications.oidcRegistrationProblem()` is the grammar**, asked at RFC
 7591 registration and RFC 7592 update beside the other metadata checks, in
@@ -2587,6 +2762,38 @@ required for the redirect grants (`0184`), the two signing algorithms
 `default_max_age` / `require_auth_time` / `default_acr_values` (`0187`) and
 an https `initiate_login_uri` (`0188`). `withRegistrationDefaults()` applies
 section 2's defaults, which are stored and returned (RFC 7591 section 3.2.1).
+
+**WHAT THE SCREENS SHOW ABOUT A CLIENT (#1300, 2026-11-04).** Section 2's
+`logo_uri` ("the server SHOULD display this image to the End-User during
+approval"), `policy_uri` and `tos_uri` were stored only inside
+`appRegistrationJson` and drawn nowhere, so the OpenID Foundation's
+`oidcc-registration-logo-uri`, `-policy-uri` and `-tos-uri` photographed a
+sign-in page with none of them. They are attributes now, written by
+registration and REPLACED by an RFC 7592 update (`initiate_login_uri`'s
+arrangement), editable in the console and `/admin-api`, and held at every
+door to an absolute https URL with a host and no credentials (`0365` —
+http would be mixed content on an https page, and a policy a network can
+rewrite). `applications.clientDisplayOf()` reads them back for a client_id
+and checks again; `Authn.clientDisplay()` puts the answer in the sign-in
+screen's, the steps', the emailed factor's and the consent screen's views as
+`clientDisplay`, and `authn/web_client_display.ts` draws it in the sign-in
+surface's frame. A language-tagged member (`logo_uri#ja`) is kept in the
+registration as sent and drawn nowhere. `client_uri` was already kept, as
+`appHomePageUrl`, and is not drawn on these screens.
+
+**THE BROWSER LOADS THE LOGO; THIS SERVICE NEVER DIALS IT**, so it is not a
+row in the root's index of dialled URLs. What it costs is one CSP source:
+each shell (`Authn.signInShell()`, `ConsentScreen.shell()`) is drawn per
+request for one pending sign-in or consent, and so for one client, which is
+what lets `ShellDocument`'s `images` add EXACTLY that logo's https origin
+to that page's `img-src` beside `'self' data:` — through
+`app.contentSecurityPolicy()`, so `frame-ancestors` and `base-uri` stay —
+rather than `img-src https:` on every sign-in page. `images` drops anything
+that is not an https origin, so the door cannot widen past what it is
+given. The `<img>` carries `referrerpolicy="no-referrer"`, so the client's
+image server is not told the pending sign-in's address. Tests:
+`tests/oidc_registration.js` (1a, 1b-iii, 2f) and
+`tests/authn_consent_api.js` (8).
 
 **ENFORCEMENT READS THE DECLARED LISTS, `oauthGrantType` AND
 `oauthResponseType`** (`declaredFlowsOf()`), for every client however they
@@ -2659,8 +2866,10 @@ spent when the response goes out. `launch/CLAUDE.md` argues it. The
 unsolicited ID Token some providers post straight to a `redirect_uri` is
 not offered: no `state`, no `nonce`.
 
-**NOT DONE**: `policy_uri` and `tos_uri` are not drawn on the consent
-screen. `tests/oidc_registration.js` holds the rest.
+**DONE SINCE #1300**: `logo_uri`, `policy_uri` and `tos_uri` are drawn on
+the sign-in and consent screens (*What the screens show about a client*,
+above); a language-tagged one is not. `tests/oidc_registration.js` holds the
+rest.
 
 ## DISCOVERY ON THE REALM MODEL, AND WEBFINGER (#119, 2026-09-22)
 
@@ -4148,6 +4357,17 @@ certificate SANs are identifiers already inside issued tokens and certificates;
 renaming them is a migration, not a setting.
 
 
+## 3x / 3z, CONTINUED: SEVERAL KEY PAIRS PER PERSON (#1290, 2026-11-03)
+
+A person may hold several key pairs per profile. `assertion_grant.js`'s
+`keysForParty()` reads a person's `jwks` — the record's VALID key pairs only,
+each found by `kid`, `keySource` `stsAssertionKeyPair` — and
+`saml_assertion_grant.js`'s `issuerEntry()` hands `certificatesForParty()` the
+valid certificates as `personSamlCertificates`, each with its own chain, matched
+by thumbprint. A revoked or expired key pair is in neither, so an assertion
+signed with it finds no registered key; its certificate in an `x5c` is refused
+by the CRL. `common/CLAUDE.md` 3ab, continued, has the register.
+
 ## 3z, CONTINUED: A PERSON AS AN RFC 7522 ISSUER (2026-09-13)
 
 `saml_assertion_grant.js` answered only for applications: `issuerEntry()` read
@@ -4627,10 +4847,15 @@ What the suite still reports as WARNING, and why it stays:
   suite cannot parse — every module. The suite's gap, not ours; rcbj
   (2026-09-24): PQC support matters more than a clean run. The #187 drivers'
   classical twins (2026-10-23, 3bp) run without it.
-* **`claims_supported` names claims no directory attribute answers** —
-  `middle_name`, `profile`, `picture`, `gender`, `zoneinfo`, `updated_at`,
-  `phone_number_verified` (the `profile` scope's list) — so a claims request
-  for them comes back without them. OPEN: map them or stop listing them.
+* ~~**`claims_supported` names claims no directory attribute answers**~~ —
+  closed. `updated_at` and `phone_number_verified` were answered by #187
+  (3bp); `middle_name`, `profile`, `picture`, `gender` and `zoneinfo` got
+  catalogue rows in #1292 (`middleName`, `profileUrl`, `pictureUrl`,
+  SCHAC's `schacGender`, `timeZone`; `oid4vc/vc_claims.ts`), because the
+  suite's `VerifyScopesReturnedIn*` conditions want EVERY claim of a granted
+  scope whatever `claims_supported` says — so un-listing them would not
+  have cleared the warning, and mapping all five was the only default that
+  passes (rcbj: "make the default be whatever passes OIDC conformance").
 * **`sid` and `address.country_code`** are claims the suite's list lacks;
   both come from specifications (Front/Back-Channel Logout, Identity
   Assurance).
@@ -4736,11 +4961,23 @@ absolute; `aud_sub` is recorded per person per client; `domain_hint` is
 home-realm discovery. All in every mode.
 
 * **`session_expiry`** is set in `idToken()` from `authn.sessionById()`'s
-  `expires` whenever the token is issued on a session — keyed on
-  `opts.session_id` ALONE, unlike `sid`, which only the logout features and
+  `expires` when the token is issued on a session — keyed on
+  `opts.session_id`, unlike `sid`, which only the logout features and
   Native SSO switch on.
-* **`tenant`** is `realms.current().id` in every ID Token. On the request it
-  is declared in `AUTHORIZE_QUERY` and refused in
+* **`tenant`** is `realms.current().id`.
+* **BOTH ONLY WHEN ASKED FOR, SINCE #1292 (2026-11-03).** rcbj's answer on
+  #148 put them in EVERY ID Token; the OpenID conformance suite reports
+  that as claims nobody requested
+  (`EnsureIdTokenDoesNotContainNonRequestedClaims`, whose allowed list is
+  the protocol claims plus the granted scopes' — it reads no claims
+  request), and rcbj's instruction for certification was the default that
+  passes. Enterprise Extensions defines no scope for them, so the request
+  is OIDC Core 5.5's: a name in the claims request's `id_token` member
+  (`requestedClaimNames()`). `oauth2.enterpriseClaimsAlways` (off) puts
+  both back in every ID Token. They stay in `claims_supported`; `aud_sub`
+  is unchanged (it is present only where recorded). Provider Commands
+  (#151) reads `tenant` from the realm, never from an ID Token.
+* **`tenant` on the request** (section 3) is declared in `AUTHORIZE_QUERY` and refused in
   `vetAuthorizationRequest()` when it names another realm
   (`STS-OAUTH-0688`, redirected `invalid_request`), before the response type
   is read. PAR runs the same vetting.
@@ -4848,16 +5085,32 @@ protection).
 * **SAML LEFT OUT.** An assertion's attributes have no per-attribute consent
   of the person's; condition 6 could not hold there, so no SP opt-in was
   built.
+* **A DID THIS REALM PUBLISHED FOR THE PERSON COUNTS AS PROVED (#1291)**,
+  rcbj's decision 4 ("treat it as a proved DID"): the preferred DID may be a
+  published one in any custody — `wallet`, or `realm` / `issued`, which the
+  person chose on their own portal even though no wallet proved the key —
+  because what the claim asserts is the person's choice of identifier, not
+  possession of a key (`siop.releasableSubjectsOf()`). An administrator's
+  by-value entry still never qualifies, and a deactivated published DID is
+  no longer enrolled, so it is never released. A sign-in and a credential
+  binding are held to more (`oid4vc/CLAUDE.md`, *A PERSON'S PUBLISHED
+  did:web*).
 * **LOGGING.** Each omission's code at the front of an info line, at most
   once per (client, code) in ten minutes, the remembered keys capped at the
   insert (no timer) — UserInfo may be polled, and a misconfigured client
   must not write a line per call.
 
 `tests/did_claim.js` holds every condition, both endpoints over HTTP, the
-discovery document and the bypasses in process. **What has no test**: the
-consent screen drawing the `did` row (a browser page), and an HTTP job — no
-vendored claim job neighbours it, and a proved DID needs the wallet
-round trip the SIOP job drives with thumbprints.
+discovery document and the bypasses in process.
+**`tests/protocol/sts_did_claim.js`** (local, 2026-11-03) is the HTTP half,
+in the stack's mode: a did:jwk proved by the wallet round trip, preferred
+from the portal, the claim in the ID Token and at UserInfo after the
+person answered the consent screen, never in the access token or
+introspection, and left out for a claims request without the scope, a
+pairwise client until it opts in, an undeclared client, a cleared
+preference and a disabled account. **What has no test**: the consent
+screen DRAWING the `did` row (a browser page; the job answers the screen
+over `/authn-api`).
 
 ## 3bk. RFC 8628 DEVICE AUTHORIZATION AND OPENID CONNECT KEY BINDING (2026-09-26, #150)
 
@@ -5196,10 +5449,11 @@ failure in its driver):
   WITHOUT these entries — the proof that nothing but the suite's gap is
   behind them (`tests/CLAUDE.md`, *The classical twins*). The classical twin
   still publishes EdDSA (kty OKP, Ed25519 and Ed448). The same condition
-  then reports `unknown key type 'OKP'` and stops before the new-key check.
-  That one message, on `oidcc-server-rotate-keys` only, stays in the OpenID
-  Connect ledger. Any other message from the condition is a finding
-  (`tests/protocol/sts_oidcc_conformance.js`).
+  then reported `unknown key type 'OKP'` and stopped before the new-key
+  check, and that one message was argued in the OpenID Connect ledger until
+  #1292 turned EdDSA signing off by default (`keys.eddsaSigning`,
+  `common/CLAUDE.md`): no realm publishes an OKP key unless it asks, the
+  entry is gone, and the message is a finding again.
 * `VerifyStatusListTokenSignatureUsingEmbeddedJwk`: outside HAIP the suite
   resolves a status list token's key only from a header `jwk`; this realm's
   names it by `kid` and carries its chain in `x5c`, which
@@ -5212,22 +5466,20 @@ failure in its driver):
   openid/sharedsignals#351).
 * `VCIValidateFormatOfCredentialConfigurationsInMetadata`: the ldp_vc
   configurations, a format the suite does not test.
-* 3bg's open items stand: `claims_supported` names five `profile` claims no
-  attribute answers (`middle_name`, `profile`, `picture`, `gender`,
-  `zoneinfo`), which is also why `VerifyScopesReturnedInUserInfoClaims`
-  warns — rcbj's call, map them or stop listing them.
-
-* `EnsureIdTokenDoesNotContainNonRequestedClaims`, for `session_expiry` and
-  `tenant` ONLY: Enterprise Extensions 1.0 lets an ID Token carry them and
-  rcbj's answer on #148 puts them in every one. The driver matches the
-  suite's message, so any other unrequested claim is still a finding.
+* **Gone with #1292 (2026-11-03), rcbj: "make the default be whatever
+  passes OIDC conformance"**: `VerifyScopesReturnedInUserInfoClaims` and
+  `…InAuthorizationEndpointIdToken` (the five `profile` claims now have
+  attributes, 3bg, and the job's person holds all fourteen), and
+  `EnsureIdTokenDoesNotContainNonRequestedClaims` (`session_expiry` and
+  `tenant` are in an ID Token only when its claims request names them, 3bi).
+  Each of the three is a finding now.
 * **Session Management's `oidcc-session-management-rp-initiated-logout`**:
   the suite's browser, HtmlUnit 4.17, checks `frame-ancestors` against the
   FRAMED document's own origin (it hands `Policy.allowsFrameAncestor()` its
   two origins the wrong way round), so it refuses to load the OP iframe
   framed from the suite's origin, which this OP lists. Shown by driving
   HtmlUnit directly: refused as served; with the OP's own origin added to
-  the header it loads, runs `check_session.js` and answers. Listing that
+  the header it loads, runs the iframe's script and answers. Listing that
   origin here would mean taking it from the request (the suite reaches the
   OP as `sts:8081`), so the module is argued, and the iframe is held by
   `tests/session_management.js` and `tests/protocol/sts_session_management.js`.
@@ -5514,6 +5766,23 @@ the decisions rcbj made on #118:
   account that consented. `authn/CLAUDE.md`, *Several signed-in accounts in
   one browser*, argues all of it. **An essential `acr` in a claims request**
   is a step-up requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
+* **A forced second sign-in says why (#1302)**: where a person WITH a
+  session is sent to sign in because of `prompt=login`, or because the
+  session is older than `max_age` (the request's, or `default_max_age`),
+  `beginAuthentication()` is given `reauthentication: 'prompt_login'` or
+  `'max_age'`, and the sign-in screen draws one line for it
+  (`authn/CLAUDE.md`, *Why a second sign-in*). Nothing for a first sign-in,
+  `select_account`, a hint naming somebody else or an unmet `acr`. Wording
+  only: who is sent to sign in is decided exactly as before. The OpenID
+  Foundation's `oidcc-prompt-login` and `oidcc-max-age-1` ask the reviewer to
+  see the person "asked to login for a second time".
+* **No `redirect_uri` at all is told apart from an empty one (#1302)**: the
+  400 page and JSON (`invalid_request`, `STS-OAUTH-0160`) say "This
+  authorization request has no redirect_uri, and one is required: without it
+  there is nowhere to send the response." for an absent parameter
+  (`oidcc-ensure-redirect-uri-in-authorization-request`), and keep "A valid
+  absolute redirect_uri is required." for `redirect_uri=`; a malformed one is
+  the validator's (`0159`), as it was.
 * **`offline_access`** (section 11): `offlineAccessScope()` strips it without a
   code, and without `prompt=consent` or a recorded consent to it. **A refresh
   token without it is online**: it carries `sid` inside its JWE, and the refresh
@@ -6020,3 +6289,98 @@ Left whole elsewhere in this family, each for its reason: `request_object.ts`'s
 token, a `jti`, a grant id, a pairwise subject and a GNAP management handle are
 identifiers or are already digests; `consent_screen.pending`'s id is bound to
 the person's session and answers nothing without it.
+
+## KERBEROS TOKENS IN THE TOKEN EXCHANGE (#658, 2026-11-03)
+
+The six Kerberos Token Profile 1.1 URIs are `EXCHANGE_TOKEN_TYPES` kind
+`kerberos` (rcbj's D1: WS-Trust's vocabulary). The token is the AP-REQ (or
+its GSS wrapping), base64url. Everything Kerberos is
+`kerberos/krb5_tokens.ts`'s; this file has three methods:
+
+* **`kerberosSubject()`**: accepted by the acceptor in every mode, for this
+  server's own SPN. A delegated subject is an S4U2Proxy ticket whose last
+  transited service's application registers the client's `client_id`
+  (`registersClient()`, `0989`), or a FORWARDED one to a client with
+  `krb5TrustedForDelegation` (`0990`). Anything else is `0991` (D2), unless the
+  ticket's client is the client's own service principal (a self exchange). The
+  prior transited services become `act`, the most recent outermost. S is the
+  client's application (D3). A person needs an entry (`0992`); a principal of
+  another realm is allowed only when a Kerberos token is asked for. The
+  subject is recorded there, not by the generic row.
+* **`kerberosActor()`**: the ticket's client is the client's own service
+  principal (`0993`).
+* **`kerberosExchangeToken()`**: one Kerberos target (`0995`). TLS is required
+  (`0996`, D5: the subkey goes back as `session_key`). The act chain, innermost
+  first, becomes S4U_DELEGATION_INFO (D4 for a party with no SPN). The answer
+  is `issued_token_type` the URI, `token_type` `N_A`, and `expires_in` the
+  AP-REQ's own window. No refresh token or ID Token is issued.
+
+**WHY `registersClient()` AND NOT `forClientId()`.** A party is matched by
+asking whether ITS application registers the client_id. Resolving the
+client_id to one application was flaky in testing: another entry registering
+the same client_id was found first about one run in nine.
+
+Settings: `oauth2.tokenExchangeKerberosInput` (on, `0987`) and
+`oauth2.tokenExchangeKerberosOutput` (off, `0994`), both checked in
+`exchangeTypeProblem()`. A `requested_token_type` naming a Kerberos type is
+the one value no longer "read as a request and answered with an access
+token". Tests: `tests/kerberos_tokens.js` X and
+`tests/protocol/sts_kerberos_tokens.js` 4.
+
+## ASVS 5.0.0 IN THIS FAMILY (#1453-#1565, 2026-11-09)
+
+`docs/product-security.md` is the user's account and `docs/oauth-oidc.md` the
+behaviour; this is why each is shaped as it is. Every product-only rule is a
+`common/mode.js` predicate, never `isProduct()`.
+
+* **The grant list and the response-type list narrow together** (#1453 at the
+  token endpoint, `STS-OAUTH-0598`; #1479 at the authorization endpoint,
+  `0597`). Narrowing only the token endpoint left `response_type=id_token`
+  answering for a client the token endpoint held to the code flow. A client
+  that declared the `implicit` GRANT counts as having declared the response
+  types that grant answers with. ONE switch, `oauth2.allowUndeclaredGrants`,
+  lifts both, because a test stack that needs one needs the other.
+* **PKCE of a confidential client (#1495, `STS-OAUTH-1002`) sits AFTER the
+  public-client refusal in `oauth2_bcp.js` and outside OAuth 2.1 mode**, which
+  answers first with its own `pkceDecision()` and its nonce exemption. Product
+  does not override that mode's rule.
+* **A code replay ends what was refreshed from it** (#1467, #1489). The
+  redemption record carries the refresh `family`; a replay revokes every member
+  through `stats.revoke()` with `replay: 'authorization-code-replay'` — the one
+  act that fills the grant's CAEP `session-revoked` and `risk-level-change` —
+  and then `bcp.revokeFamily()`, which is persisted, so the revocation outlives
+  the in-memory redemption record. RISC has no event for it:
+  `credential-compromise` is about a credential type and `sessions-revoked`
+  about the whole account.
+* **The refresh chain's limit is an EXPIRY, not a refusal** (#1506). Each
+  refresh token carries `chain_iat`, copied from the one it replaced, and its
+  `exp` is `min(own lifetime, chain_iat + oauth2.refreshTokenMaxChainS)`. A
+  client sees an ordinary expired refresh token, and nothing new is stored.
+* **A repeated parameter in product reuses `oauth21.repeatedParameterRefusal()`**
+  (#1507 at the token endpoint, #1533 at the authorization endpoint), only
+  while OAuth 2.1 mode is off — that mode refuses already, with the same code.
+* **`id_token_hint` is refused when it is a Logout Token or an access token**
+  (#1531): every token this realm signs is signed with the same keys, so a
+  signature that verifies proves nothing about the KIND. `events`, or a `typ`
+  of `logout+jwt` or `at+jwt`, is the test.
+* **A public client is asked consent every time** (#1522,
+  `common/consent.ts`'s `alwaysAsks()`), except a client id starting `sts-`:
+  this service's own applications are not third parties. The screen's duration
+  (#1519, #1565) is the client's refresh token lifetime, because a recorded
+  consent never expires and what IS bounded is one grant of it.
+  **The answer given for THIS request counts for this request, once**
+  (`fix/product-consent-loop`). 10.7.1 says an EARLIER answer does not speak
+  for a public client; it does not say the one just given is ignored, and
+  nothing recorded it, so the second pass asked again and the browser looped
+  on `/oauth2/consent` for ever. The consent screen now records Allow in RFC
+  9396's one-time store under `scopeAnswerDigestOf()` (`scope:` and the
+  sorted scopes), and the next pass spends it with `consumeConsented()`
+  before `outstanding({ answered })`, exactly as a details Allow is spent. A
+  later request finds nothing and is asked again. Callers asking what is ON
+  FILE (`offlineAccessScope()`, Grant Management's `stillConsented`) pass
+  `recorded: true`, which the rule never forces.
+  `tests/consent_public_client_once.js`.
+* **A person is found by `sub` first** (#1514, #1536) at `/account-api`,
+  `/report-api` and in `common/role_permissions.ts`, and in product a `sub`
+  that resolves to nobody is refused rather than matched by username (#1543,
+  `helpers.subjectIsGone()`), which may since name somebody else.

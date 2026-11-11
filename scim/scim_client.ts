@@ -130,6 +130,7 @@ import http = require('http');
 import https = require('https');
 import fs = require('fs');
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import mode = require('../common/mode');
@@ -1164,12 +1165,23 @@ class ScimClients {
       answer = true;
     } else if (c.groupMode === 'selected') {
       answer = this.namesGroup(c.groups, { dn: group.dn,
-        cn: this.firstOf(group.attributes, 'cn') });
+        cn: this.groupNameOf(group) });
     } else {
       answer = this.membersInScope(c, group).length > 0;
     }
     log.debug("Leaving ScimClients.groupInScope(). " + answer);
     return answer;
+  }
+
+  // A group's name, as the domain model says it is (#1390); '' when the entry
+  // holds none. firstOf() below stays for entryUUID, which is read from a
+  // person or a group and which the Group concept does not carry.
+  private groupNameOf(group: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.groupNameOf().");
+    const name = Classes.Group.fromEntry(group.attributes).name || '';
+    log.debug("Leaving ScimClients.groupNameOf().");
+    return name;
   }
 
   // The first value of an attribute, by any spelling of its name.
@@ -1712,7 +1724,7 @@ class ScimClients {
     const dir = directory();
     const group = dir.readGroupEntry(dn);
     let uuid = group ? this.uuidOf(group) : '';
-    let name = group ? this.firstOf(group.attributes, 'cn') : '';
+    let name = group ? this.groupNameOf(group) : '';
     if (!uuid) {
       const wanted = dir.normalizeDn(dn);
       const prefix = c.identifier + '|Group|';
@@ -1753,6 +1765,10 @@ class ScimClients {
     add(c.caCertificates);
     const file = String(config.value('scimClient.caFile') || '').trim();
     if (file) {
+      if (!OutboundTls.namedFileAllowed(file)) {
+        throw new Error('scimClient.caFile is not a file in a directory ' +
+                        'security.fileRoots lists');
+      }
       add(fs.readFileSync(file, 'utf8'));
     }
     const out: Json = OutboundTls.verifiedOptions(pems.length ? pems : null);
@@ -2960,7 +2976,7 @@ class ScimClients {
       log.debug("Leaving ScimClients.syncGroup(). Not pushed.");
       return { ok: true };
     }
-    const displayName = this.firstOf(group.attributes, 'cn') || group.dn;
+    const displayName = this.groupNameOf(group) || group.dn;
     const memberIds: string[] = [];
     this.membersInScope(c, group).forEach((person: Json) => {
       const uuid = this.uuidOf(person);
@@ -3091,7 +3107,7 @@ class ScimClients {
       answer = false;
     } else if (c.groupMode === 'selected') {
       answer = this.namesGroup(c.groups, { dn: group.dn,
-        cn: this.firstOf(group.attributes, 'cn') });
+        cn: this.groupNameOf(group) });
     } else {
       answer = true;
     }
@@ -3250,7 +3266,7 @@ class ScimClients {
       if (given.recheck && this.ownerCell(c, uuid) === this.here()) {
         const link = this.linkOf(c, 'Group', uuid);
         this.enqueue(c, 'Group', uuid, group
-          ? this.firstOf(group.attributes, 'cn') : (link && link.name) || '');
+          ? this.groupNameOf(group) : (link && link.name) || '');
         this.deliverSoon();
       }
       return { members: members };
@@ -3274,7 +3290,7 @@ class ScimClients {
       group: group, defined: defined, share: share, link: link,
       owner: this.ownerCell(c, row.uuid) === this.here(),
       before: link && Array.isArray(link.members) ? link.members : [],
-      displayName: group ? (this.firstOf(group.attributes, 'cn') || group.dn)
+      displayName: group ? (this.groupNameOf(group) || group.dn)
                          : String((link && link.name) || row.name || '')
     };
     const outcome = disc.patch
@@ -3727,7 +3743,7 @@ class ScimClients {
           if (uuid && this.groupInScope(c, group)) {
             desired['Group|' + uuid] = true;
             this.enqueue(c, 'Group', uuid,
-                         this.firstOf(group.attributes, 'cn'));
+                         this.groupNameOf(group));
             result.groups++;
           }
         });
@@ -4195,6 +4211,19 @@ class ScimClients {
     return errorCodes.mark({ ok: false, errors: errors }, code);
   }
 
+  // One cell's answer to an act. Another cell's code crossed the channel spelt
+  // out (`code`, `answerAct()`), because a mark does not survive JSON; it is a
+  // mark again here, so that what this act answers never carries it (#1355).
+  private cellResult(cell: string, answer: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering ScimClients.cellResult(). " + cell);
+    const out: Json = Object.assign({ cell: cell, reachable: true }, answer);
+    const code = String(out.code || errorCodes.codeOf(answer) || '');
+    delete out.code;
+    log.debug("Leaving ScimClients.cellResult().");
+    return code ? errorCodes.mark(out, code) : out;
+  }
+
   // A definition from an act's body over the row it changes.
   private definitionFrom(given: Json, before: Json | null): Json {
     const { log } = this.deps;
@@ -4418,14 +4447,13 @@ class ScimClients {
     for (const cell of targets) {
       if (cell === here) {
         const mine = await this.actHere(given, ctx);
-        results.push(Object.assign({ cell: cell, reachable: true }, mine));
+        results.push(this.cellResult(cell, mine));
         continue;
       }
       try {
         const theirs = await channel().call(cell, OP_ACT, {
           realm: realms.currentId(), body: given, actor: actor });
-        results.push(Object.assign({ cell: cell, reachable: true },
-                                   theirs || {}));
+        results.push(this.cellResult(cell, theirs || {}));
       } catch (e) {
         log.warn(errorCodes.tag('STS-SCIMC-0034') + 'scim client: cell "' +
                  cell + '" did not answer ' + OP_ACT + ' (' + action + '): ' +
@@ -4461,7 +4489,7 @@ class ScimClients {
       const first = results.filter(function (one) {
         return one.reachable;
       })[0];
-      return this.refusal(first ? (first.code || errorCodes.codeOf(first) ||
+      return this.refusal(first ? (errorCodes.codeOf(first) ||
                                    'STS-SCIMC-0016')
                                 : 'STS-SCIMC-0034',
                           [out.message]);

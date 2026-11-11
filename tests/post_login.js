@@ -355,7 +355,7 @@ function childMain() {
     let s = await signIn('pla-ann', annOld);
     const startsBefore = rows('session.start', 'pla-ann').length;
     note(s.answer.next === 'mfa' && s.answer.step === 'post-login' &&
-         /\/authn\/post-login\?mfa=/.test(s.answer.location) &&
+         /\/authn\/post-login(?:\?app=[^#]*)?[?#]mfa=/.test(s.answer.location) &&
          rows('session.start', 'pla-ann').length === startsBefore &&
          rows('authn.post-login.asked', 'pla-ann').length === 1,
          'D1. the password and passkey sign-in starts no session and ' +

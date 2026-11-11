@@ -142,8 +142,9 @@ const APP_VERSION = version.load();
 //     `async` handler reaches `next()` as a 500 instead of becoming an
 //     unhandled rejection. It patches the one prototype every express app in
 //     this process shares, the debugger's own included. Here and not in
-//     `common/app.js`, because that file is in the parent project's Kerberos
-//     COPY closure and a require there would owe a COPY line over there;
+//     `common/app.js` because that file was in the parent project's Kerberos
+//     COPY closure when this was written; nothing is owed there since #1280,
+//     and the install stays where it works;
 //   * the PROCESS HANDLERS in announce(), once the service has STARTED — a
 //     failure while starting is still fatal, as it always was.
 // ---------------------------------------------------------------------------
@@ -242,6 +243,15 @@ const spMetadata = require('./saml/sp_metadata');
 // derivation exists to prevent.
 // ---------------------------------------------------------------------------
 const useHttps = config.value('global.https');
+// NOT IN PRODUCT (#1457, ASVS 5.0.0 12.2.1): a process that would serve its
+// main port in cleartext does not start.
+const cleartextProblem = require('./common/mode')
+  .cleartextStartupProblem(useHttps);
+if (cleartextProblem) {
+  log.fatal(errorCodes.tag('STS-CORE-0167') + 'sts: NOT STARTING. ' +
+            cleartextProblem);
+  process.exit(1);
+}
 
 function announce() {
   log.debug('Entering announce().');
@@ -379,12 +389,12 @@ function announce() {
   // cannot see a raw socket, so the listener has its own entry there.
   const kdcListeners = krb5.listen();
   // THE KDC'S TCP LISTENER TAKES THE PROXY PROTOCOL FROM HERE, not from
-  // `krb5_kdc.js`: a require there would put `common/proxy_protocol.ts` into
-  // the parent project's Kerberos COPY set (`kerberos/CLAUDE.md`). Installing
-  // after `listen()` returned is not a race — `listen()` is synchronous up to
-  // the bind, and a `connection` event is delivered from the event loop,
-  // after this line. UDP is not covered: a datagram has no stream to put a
-  // header at the front of.
+  // `krb5_kdc.js`, which kept `common/proxy_protocol.ts` out of the parent
+  // project's Kerberos COPY set while this repository owed it one (until
+  // #1280). Installing after `listen()` returned is not a race — `listen()`
+  // is synchronous up to the bind, and a `connection` event is delivered from
+  // the event loop, after this line. UDP is not covered: a datagram has no
+  // stream to put a header at the front of.
   proxyProtocol.install(kdcListeners.tcp, {
     label: 'the KDC (TCP ' + kdcListeners.port + ')', channel: 'kerberos' });
   kdcListeners.whenReady.then(function (ready) {
@@ -564,9 +574,10 @@ function announce() {
   // same day the sockets went; it binds nothing, and still restores the stored
   // trust anchors and re-applies the context to the registered listeners.
   tlsServer.listen();
-  // A scheduler job and not a socket (#49 P5), registered here where its
-  // timer used to start: the job saml2.sp-metadata-refresh, once for the
-  // cluster, on the leader (see sp_metadata.ts).
+  // A scheduler job and not a socket (#49 P5): saml2.sp-metadata-refresh,
+  // once for the cluster, on the leader. The module's wire step registers it
+  // in every process since #704 (see sp_metadata.ts), so this call finds it
+  // registered and is kept for a process that loaded the module alone.
   spMetadata.startRefresher();
   log.info('tls: this port asks every connection for a client certificate ' +
            'and requires none, so presenting one is the client\'s decision. ' +
@@ -858,7 +869,7 @@ serviceState.start({
   // wins does them after catching up with the store, and every other node
   // does neither and says which node is. It is awaited below, before the
   // request workers start, so the listener still binds only after it ran.
-  const bootstrapUsername = config.value('admin.bootstrapUsername');
+  const bootstrapUsername = require('./common/bootstrap_name').current();
   const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
   });
@@ -1138,6 +1149,10 @@ function customListener(label, certificate, certificateOf, listenerId) {
   tlsServer.registerHttpListener(server, 'custom', listenerId);
   server.prependListener('request',
     require('./common/http2_framing').markFramedBody);
+  // A CONNECT is answered 501 here, as on the main port (#1304).
+  require('./common/connect_refusal').install(server, label);
+  // A request the parser refuses keeps its answer (#1500).
+  require('./common/parser_refusal').install(server, label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1240,6 +1255,13 @@ if (useHttps) {
   // above the realm middleware — common/http2_framing.ts.
   mainServer.prependListener('request',
     require('./common/http2_framing').markFramedBody);
+  // A CONNECT IS ANSWERED 501 (#1304): this is an origin server, not a proxy
+  // (RFC 9110 sections 9.1 and 9.3.6), and node never hands one to the
+  // application — common/connect_refusal.ts.
+  require('./common/connect_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
+  require('./common/parser_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
@@ -1305,6 +1327,11 @@ if (useHttps) {
   // thing with the server object hidden — and the PROXY protocol has to be
   // installed on that object before it listens.
   const plainServer = http.createServer(app);
+  // A CONNECT is answered 501 here too (#1304).
+  require('./common/connect_refusal').install(plainServer,
+    'the main port (' + PORT + ')');
+  require('./common/parser_refusal').install(plainServer,
+    'the main port (' + PORT + ')');
   proxyProtocol.install(plainServer, { label: 'the main port (' + PORT + ')',
                                        channel: 'http' });
   plainServer.listen(PORT, HOST, announce);

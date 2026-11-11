@@ -567,7 +567,7 @@ lists them with their help text.
 
 | Setting | Default | Why you would change it |
 |---|---|---|
-| `xacml.enforceAccess` | `true` | Off stops the gated surfaces asking the access policy. The roles the console and SCIM check underneath still apply. |
+| `xacml.enforceAccess` | `true` | Off stops the gated surfaces asking the access policy. The roles the console and SCIM check underneath still apply. In product mode, use it only to recover from a policy that has locked you out; `/admin/mode` shows it while it is off. |
 | `roles.enforceIssuance` | `true` | Off issues everything without asking the issuance policy. |
 
 ---

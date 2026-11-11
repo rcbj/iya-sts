@@ -46,6 +46,7 @@ delete process.env.CONFIG_FILE;
 
 const nodeCrypto = require('crypto');
 const config = require('../common/config');
+const errorCodes = require('../common/error_codes');
 const pki = require('../common/pki');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
@@ -126,6 +127,31 @@ async function run(t) {
     t.check(!bad.ok && /cannot produce/.test((bad.errors || []).join(' ')),
             'while a caller that NAMES a mismatched pair is refused by name',
             (bad.errors || []).join(' '));
+    const kem = await pki.buildScope(SIG_SCOPE + '-kem', {
+      keyAlg: 'ml-kem-1024',
+      signatureAlg: 'mldsa87-ecdsa-p521-sha512'
+    });
+    t.check(!kem.ok && errorCodes.codeOf(kem) === 'STS-PKI-0004' &&
+            /cannot sign/.test((kem.errors || []).join(' ')),
+            'a ML-KEM key cannot be a certificate authority (#1409)',
+            (kem.errors || []).join(' ') + ' ' + errorCodes.codeOf(kem));
+  });
+
+  // The same skip, where kind cannot tell the two algorithms apart.
+  await withSettings({
+    'pki.signatureAlgorithm': 'mldsa87-ecdsa-p521-sha512'
+  }, async function () {
+    const dsa = await pki.buildScope(SIG_SCOPE + '-dsa',
+                                     { keyAlg: 'ml-dsa-65' });
+    t.check(dsa.ok,
+            'an ML-DSA build is not refused because the default names a ' +
+            'composite it cannot produce (#1409)',
+            (dsa.errors || []).join(' '));
+    const dsaIssuing = dsa.chain && dsa.chain.tiers &&
+                       dsa.chain.tiers[dsa.chain.tiers.length - 1];
+    t.equal(dsaIssuing && dsaIssuing.signatureAlg, 'ml-dsa-65',
+            'and its Issuing CA signs with the key\'s own algorithm',
+            dsaIssuing && dsaIssuing.signatureAlg);
   });
 
   // -----------------------------------------------------------------------
@@ -155,6 +181,14 @@ async function run(t) {
   t.equal(pki.tierYearsFrom(undefined, 'issuing'), 0,
           'and cleared, zero — which issueCaTier() reads as the profile\'s ' +
           'own');
+  const huge = await pki.buildScope(YEARS_SCOPE + '-huge',
+    { years: { intermediate: 1000000000000 } });
+  t.check(!huge.ok && errorCodes.codeOf(huge) === 'STS-PKI-0268' &&
+          /not a date a certificate can carry/.test(
+            (huge.errors || []).join(' ')),
+          'a lifetime a certificate cannot carry is refused before it is ' +
+          'issued (#1409)',
+          (huge.errors || []).join(' ') + ' ' + errorCodes.codeOf(huge));
 
   // -----------------------------------------------------------------------
   t.log.info('=== 3. an issued key pair lives pki.leafLifetimeDays ===');

@@ -29,6 +29,11 @@
 //      the portal's, the reports application's — narrowed to a named
 //      session and never a token issued after the event; and the reports
 //      application is a receiver of its own, its inbox narrowed per person.
+//   H. A RISC EVENT REPORTING THE PERSON'S OWN ACT (2026-11-03): a
+//      credential-compromise the account holder's keyCompromise revoke sent,
+//      emitted through the transmitter, revokes no portal token (its txn is
+//      on the account's RISC row); an administrator's, a detector's and a
+//      txn the row does not name still do.
 //   F. PRODUCT MODE REFUSES AN UNVERIFIED SET (#117) at the console's
 //      receiver, whatever ssf.receiveRequireSignature says; and there is no
 //      /ssf/receive in either mode (#593 deleted it; Express's own 404).
@@ -437,6 +442,114 @@ function childMain() {
     } catch (e) {
       log.debug("Caught in run(): " + ((e && e.message) || e));
     }
+    // G9, G10 (2026-11-10): an event with NO event_timestamp is bounded by
+    // its SET's `iat`. RISC's account-credential-change-required carries
+    // none (an activation link, a reset link), and it revoked every portal
+    // token the person held when the poll collected it — one issued on a
+    // sign-in made after the act included (`sts_portal_directory_attributes`,
+    // product single-node). A SET issued ten seconds before the token leaves
+    // it; one issued in the token's second still revokes it.
+    const pushUndated = function (short, subject, iatOffset) {
+      const claims = events.buildSet({ uri: events.RISC_PREFIX + short,
+        issuer: record.iss, audience: 'sts-user-portal',
+        subject: subject, payload: {} });
+      claims.iat = Math.floor(Date.now() / 1000) + iatOffset;
+      return receivers.acceptPolled('user-portal',
+                                    events.signSetSync(claims));
+    };
+    const g9Token = token('sr-erin', 'sts-user-portal');
+    const g9 = pushUndated('account-credential-change-required',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, -10);
+    note(g9.status === 202 && g9.entry.verified &&
+         revokedOf(g9) === 0 && !stats.isRevoked(g9Token),
+         'G9. an account-credential-change-required with no ' +
+         'event_timestamp, in a SET issued BEFORE the token, leaves the ' +
+         'token: the SET\'s iat bounds what it is about',
+         JSON.stringify([g9.status, g9.entry.reactions]));
+    const g10 = pushUndated('account-credential-change-required',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, 0);
+    note(revokedOf(g10) >= 1 && stats.isRevoked(g9Token),
+         'G10. and the same event in a SET issued in the token\'s second ' +
+         'revokes it', JSON.stringify(g10.entry.reactions));
+
+    // --- H. a RISC event reporting the person's OWN act (2026-11-03) ------
+    // A person revoking their own key pair for keyCompromise on the portal
+    // (#1290) sends CAEP's revoke (`user`, skipped since 2026-09-23) AND
+    // RISC's credential-compromise, which has no initiating_entity — and the
+    // portal acted on it, revoking the token the person had made the report
+    // with (`sts_portal_signing_key`, single-node). Emitted through the
+    // transmitter itself, so the txn the receiver asks about is the one the
+    // act noted, then collected off the portal's own stream as its poll
+    // collects it.
+    const ssf = require(ROOT + '/ssf/ssf');
+    const ssfStreams = require(ROOT + '/ssf/ssf_streams');
+    const riscRegister = require(ROOT + '/ssf/risc');
+    const portalRecord = receivers.streamFor('user-portal');
+    const compromiseUri = events.RISC_PREFIX + 'credential-compromise';
+    const seenJtis = [];
+    const emitCompromise = async function (initiatingEntity) {
+      await ssf.emitRiscAccountAct({ username: 'sr-erin',
+        act: 'credentialCompromise', initiatingEntity: initiatingEntity,
+        via: 'portal', values: { credential_type: 'x509' } });
+      const queued = ssfStreams.queueOf(portalRecord).filter(function (one) {
+        return !!one && !!one.token && !!one.claims &&
+          !!(one.claims.events || {})[compromiseUri] &&
+          seenJtis.indexOf(one.jti) < 0;
+      });
+      queued.forEach(function (one) {
+        seenJtis.push(one.jti);
+      });
+      return queued[0] || null;
+    };
+    const h1Token = token('sr-erin', 'sts-user-portal');
+    const h1Set = await emitCompromise('user');
+    const h1 = h1Set
+      ? receivers.acceptPolled('user-portal', h1Set.token) : null;
+    note(!!h1 && h1.status === 202 && h1.entry.verified &&
+         riscRegister.ownAct(h1Set.claims.sub_id, h1Set.claims.txn) &&
+         revokedOf(h1) === 0 && !stats.isRevoked(h1Token) &&
+         h1.entry.reactions.length >= 1 &&
+         h1.entry.reactions.every(function (r) {
+           return r.skipped === 'the person\'s own report';
+         }),
+         'H1. a RISC credential-compromise reporting the person\'s OWN act ' +
+         '(their keyCompromise revoke on the portal) revokes no portal ' +
+         'token: the transmitter noted its txn on the account\'s RISC row ' +
+         'and the receiver leaves it alone, as it leaves the CAEP twin',
+         JSON.stringify([!!h1Set, h1 && h1.entry && h1.entry.reactions,
+                         stats.isRevoked(h1Token)]));
+    const h2Token = token('sr-erin', 'sts-user-portal');
+    const h2Set = await emitCompromise('admin');
+    const h2 = h2Set
+      ? receivers.acceptPolled('user-portal', h2Set.token) : null;
+    note(!!h2 && h2.entry.verified &&
+         !riscRegister.ownAct(h2Set.claims.sub_id, h2Set.claims.txn) &&
+         revokedOf(h2) >= 1 && stats.isRevoked(h2Token),
+         'H2. the same event from an ADMINISTRATOR\'s act still revokes ' +
+         'the portal token the person holds',
+         JSON.stringify([!!h2Set, h2 && h2.entry && h2.entry.reactions]));
+    const h3Token = token('sr-erin', 'sts-user-portal');
+    const h3Set = await emitCompromise('system');
+    const h3 = h3Set
+      ? receivers.acceptPolled('user-portal', h3Set.token) : null;
+    note(!!h3 && revokedOf(h3) >= 1 && stats.isRevoked(h3Token),
+         'H3. and a DETECTOR\'s (initiating entity system) still revokes it',
+         JSON.stringify([!!h3Set, h3 && h3.entry && h3.entry.reactions]));
+    const h4Token = token('sr-erin', 'sts-user-portal');
+    const forgedTxn = await emitCompromise('admin');
+    let h4 = null;
+    if (forgedTxn) {
+      // A SET this transmitter never noted as the person's, naming a txn
+      // the register does not hold, is not the person's own.
+      const claims = Object.assign({}, forgedTxn.claims,
+        { jti: 'sr-h4-' + cryptoNode.randomBytes(6).toString('hex'),
+          txn: 'sr-h4-unknown-txn' });
+      h4 = receivers.acceptPolled('user-portal', events.signSetSync(claims));
+    }
+    note(!!h4 && revokedOf(h4) >= 1 && stats.isRevoked(h4Token),
+         'H4. a txn the account\'s row does not name is not the person\'s ' +
+         'own: the event acts',
+         JSON.stringify([!!forgedTxn, h4 && h4.entry && h4.entry.reactions]));
 
     // --- D. a disabled policy ----------------------------------------------
     const written = xacmlStore.write('signal-response',

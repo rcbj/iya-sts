@@ -576,8 +576,12 @@ async function theBadge(consoleClient, admin) {
   check("and their Directory → Users page opens with it, in its level's " +
         "colour", function () {
           assert.strictEqual(page.status, 200, page.text.slice(0, 300));
-          const at = page.text.indexOf('class="risk-badge"');
-          assert.ok(at >= 0, "no risk badge on the page");
+          // The level's colours are its class (`risk-badge rb-HIGH`), not
+          // a style attribute, since the console allows no inline style.
+          const at = page.text.indexOf('class="risk-badge rb-' +
+                                       r.body.risk.level + '"');
+          assert.ok(at >= 0, "no " + r.body.risk.level +
+                    " risk badge on the page");
           assert.ok(page.text.indexOf(">" + r.body.risk.level + "<", at) > 0,
                     "the badge does not name " + r.body.risk.level);
         });

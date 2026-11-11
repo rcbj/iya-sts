@@ -1136,7 +1136,11 @@ class SpiffeApi {
     const ttl = Number(asked.ttl) > 0
       ? Number(asked.ttl)
       : config.value('spiffe.joinTokenTtl');
-    const token = String(asked.token || '').trim() || crypto.randomUuid();
+    // 256 random bits, base64url (ASVS 5.0.0 11.5.1): a join token is a
+    // bearer credential, and a version 4 UUID carries only 122. Its
+    // alphabet is a SPIFFE ID path segment's, which the agent's ID is built
+    // from (`spire/agent/join_token/<token>`).
+    const token = String(asked.token || '').trim() || crypto.randomToken(256);
     const expiresAt = nowSec() + ttl;
     const agentId = String(asked.agentId || '');
     // ---------------------------------------------------------------------

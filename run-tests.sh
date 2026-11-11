@@ -81,6 +81,8 @@
 #                                             # `cluster` job runs the third
 #                                             # (2026-09-21)
 #   ./run-tests.sh --modes=cells --only=sts_cells --no-browser
+#   ./run-tests.sh --modes=schema-validation  # every answer held to its model,
+#                                             # one container, every deployment
 #                                             # the fourth mode, two cells of
 #                                             # one service (#98): run only
 #                                             # when named, never by a bare
@@ -182,6 +184,15 @@ CLUSTER_COMPOSE_FILE="tests/docker-compose-run-tests-cluster.yml"
 # only in that mode, which runs only when named (`--modes=cells`); its header
 # argues the stack and tests/tools/modes.sh the mode.
 CELLS_COMPOSE_FILE="tests/docker-compose-run-tests-cells.yml"
+# THE `mariadb` MODE'S LAYER (#677): the store on the stack's MariaDB server,
+# its schema built by a one-shot from mariadb/schema.sql. Only in that mode,
+# which runs only when named (`--modes=mariadb`); its header argues it.
+MARIADB_COMPOSE_FILE="tests/docker-compose-run-tests-mariadb.yml"
+# THE `fuzz` MODE'S LAYER (#1299): the stack's network made `internal` — no
+# egress — so Schemathesis can throw any input at the service without anything
+# leaving the device. Only in that mode, which runs only when named
+# (`--modes=fuzz --only=schemathesis`); its header argues it.
+FUZZ_COMPOSE_FILE="tests/docker-compose-run-tests-fuzz.yml"
 COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
 # do not share a project: compose scopes containers, networks and images by it,
@@ -421,6 +432,14 @@ do
   esac
   shift
 done
+
+# THE schema-validation MODE (#1353) is one container with everything in it,
+# named on its own: it starts no compose project, so nothing below applies.
+if [ "${RUN_MODES[*]}" = "schema-validation" ];
+then
+  # shellcheck disable=SC2086
+  exec "${CURRENT_DIR}/tests/schema-validation/run.sh" ${STS_TEST_ARGS}
+fi
 STS_TEST_ARGS="${STS_TEST_ARGS# }"
 
 # ---------------------------------------------------------------------------
@@ -1851,6 +1870,22 @@ do
   # runner is handed cell A as the service, as `sts` in every mode, and
   # both cells by name through the layer. Cell B's address is pinned like
   # `cluster`'s node B, because `sts2` extends `sts`, whose address is.
+  # ---- THE `mariadb` MODE: THE STORE ON MARIADB (#677) -----------------
+  if stsModeIsMariadb "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${MARIADB_COMPOSE_FILE}")
+  fi
+  if stsModeIsFuzz "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${FUZZ_COMPOSE_FILE}")
+    # Exact cell keys for the schemathesis kit. Empty is every cell, so it
+    # is forwarded only when set; sudo would otherwise drop it and the
+    # overlay's default would silently run the whole matrix.
+    if [ -n "${STS_SCHEMATHESIS_SURFACES:-}" ];
+    then
+      MODE_ENV+=("STS_SCHEMATHESIS_SURFACES=${STS_SCHEMATHESIS_SURFACES}")
+    fi
+  fi
   if stsModeIsCells "${MODE}";
   then
     COMPOSE_FILE_ARGS+=(-f "${CELLS_COMPOSE_FILE}")
@@ -1939,6 +1974,11 @@ do
   if stsModeIsCells "${MODE}";
   then
     UP_NO_ATTACH+=(--no-attach sts-cell-kek)
+  fi
+  # The `mariadb` mode's schema one-shot exits 0 by design too (#677).
+  if stsModeIsMariadb "${MODE}";
+  then
+    UP_NO_ATTACH+=(--no-attach mariadb-store-schema)
   fi
   # The profiles this mode brings up, joined once below: compose reads ONE
   # COMPOSE_PROFILES, and the conformance suite and the SAML peers can both

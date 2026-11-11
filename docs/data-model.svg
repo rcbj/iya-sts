@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC -->
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" width="960" height="400"
+     font-family="Helvetica, Arial, sans-serif" font-size="14" role="img"
+     aria-labelledby="title desc">
+  <title id="title">The abstract model today</title>
+  <desc id="desc">The directory SCHEMA tables, the RFC definitions and the
+  PostgreSQL script are read into TypeSpec. The TypeSpec compiler checks it.
+  What is generated from the compiled model is compared with the files it was
+  read from. All 15 directory tables have switched to the generated files; the
+  running service still uses the other files.</desc>
+  <style>
+    .box { fill: #ffffff; stroke: #33475b; stroke-width: 1.5; }
+    .model { fill: #e8f0fb; stroke: #1f5fbf; stroke-width: 2; }
+    .head { font-weight: bold; fill: #1b2733; }
+    .text { fill: #1b2733; }
+    .line { stroke: #33475b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .check { stroke: #1b7a3d; stroke-width: 1.5; fill: none; stroke-dasharray: 6 4; marker-end: url(#tick); }
+    .note { fill: #1b7a3d; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#33475b"/></marker>
+    <marker id="tick" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1b7a3d"/></marker>
+  </defs>
+  <rect width="960" height="400" fill="#ffffff"/>
+  <rect class="box" x="30" y="60" width="240" height="210" rx="6"/>
+  <text class="head" x="46" y="88">What the service runs from</text>
+  <text class="text" x="46" y="118">SCHEMA tables in code</text>
+  <text class="text" x="46" y="142">postgres/schema.sql</text>
+  <text class="text" x="46" y="166">OpenAPI builders (not read yet)</text>
+  <text class="head" x="46" y="208">Published standards</text>
+  <text class="text" x="46" y="236">RFC LDAP definitions</text>
+  <rect class="model" x="360" y="60" width="240" height="210" rx="6"/>
+  <text class="head" x="376" y="88">TypeSpec, under models/</text>
+  <text class="text" x="376" y="118">Directory models</text>
+  <text class="text" x="376" y="142">Persistence models</text>
+  <text class="text" x="376" y="166">Decorators with closed values</text>
+  <text class="text" x="376" y="208">Checked by the</text>
+  <text class="text" x="376" y="230">TypeSpec compiler</text>
+  <rect class="box" x="690" y="60" width="240" height="210" rx="6"/>
+  <text class="head" x="706" y="88">Generated from the model</text>
+  <text class="text" x="706" y="118">SCHEMA tables</text>
+  <text class="text" x="706" y="142">PostgreSQL statements</text>
+  <text class="text" x="706" y="166">Classes and validators</text>
+  <text class="text" x="706" y="190">RFC 4512 definitions</text>
+  <path class="line" d="M270,165 L358,165"/>
+  <text class="text" x="288" y="153">read</text>
+  <path class="line" d="M600,165 L688,165"/>
+  <text class="text" x="612" y="153">generate</text>
+  <path class="check" d="M810,270 L810,340 L150,340 L150,272"/>
+  <text class="note" x="330" y="330">Compared: each must equal what it was read from</text>
+  <text class="text" x="30" y="380">All 15 directory tables have switched: the service reads what is generated. The rest switch only after this comparison holds.</text>
+</svg>

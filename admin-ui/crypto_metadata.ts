@@ -179,16 +179,11 @@
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
-import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
 type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
-  function () {
-    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
-  }, helpers.log);
 import config = require('../common/config');
 // The signer groups' table (#68), a leaf: the model and the group ids.
 import signerGroups = require('../common/signer_groups');
@@ -217,6 +212,8 @@ import adminViews = require('../admin-core/admin_views');
 // vendored module re-exported, which is taken from here rather than required
 // again so that there stays exactly one spelling of it in the process.
 import stsCrypto = require('../common/crypto');
+// The BBS suite, through crypto.js's lazy door (#1368).
+const bbs2023: Bbs2023 = stsCrypto.bbs;
 import pqJose = require('../common/pq_jose');
 import krb5crypto = require('../kerberos/krb5_crypto');
 import spiffeCa = require('../spiffe/spiffe_ca');
@@ -2005,23 +2002,41 @@ class CryptoMetadata {
              'oauth2.httpSignatureResponseAlg)',
              [String(config.value('oauth2.httpSignatureResponseAlg') ||
                      'ES256')]],
+            // Narrowed BY THE FUNCTION DISCOVERY NARROWS WITH
+            // (`helpers.publishedSigningAlgs()`, which is
+            // `narrowSigningAlgs()` over the one member): the page and the
+            // discovery document are the same table read twice. A copy of
+            // the narrowing here drifted once already — ES256K left the
+            // accept lists in product and stayed on this page (ASVS 5.0.0
+            // 11.6.1).
             ['ID Token, when a client registers one',
-             oauth2.ID_TOKEN_SIGNING_ALGS],
-            ['UserInfo response', oauth2.USERINFO_SIGNING_ALGS],
+             helpers.publishedSigningAlgs(
+               'id_token_signing_alg_values_supported',
+               oauth2.ID_TOKEN_SIGNING_ALGS)],
+            ['UserInfo response',
+             helpers.publishedSigningAlgs(
+               'userinfo_signing_alg_values_supported',
+               oauth2.USERINFO_SIGNING_ALGS)],
             ['JWT introspection response (RFC 9701)',
-             introspectionJwt.SIGNING_ALGS],
+             helpers.publishedSigningAlgs(
+               'introspection_signing_alg_values_supported',
+               introspectionJwt.SIGNING_ALGS)],
             // Narrowed to what the realm OFFERS (`keys.offerKemEncryption`,
             // 2026-09-28), as discovery is.
             ['JWT introspection response encryption (RFC 9701)',
              helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS)],
             ['Request object signature (RFC 9101)',
-             applicationRegistry.REQUEST_OBJECT_SIGNING_ALGS],
+             helpers.publishedSigningAlgs(
+               'request_object_signing_alg_values_supported',
+               applicationRegistry.REQUEST_OBJECT_SIGNING_ALGS)],
             // Narrowed to the ML-KEM and HPKE algs the realm holds a key
             // for (#82), as discovery is.
             ['Request object decryption (RFC 9101)',
              helpers.decryptableJweAlgs(
                applicationRegistry.REQUEST_OBJECT_ENCRYPTION_ALGS)],
-            ['DPoP proof', dpop.SIGNING_ALGS],
+            ['DPoP proof',
+             helpers.publishedSigningAlgs(
+               'dpop_signing_alg_values_supported', dpop.SIGNING_ALGS)],
             ['Client assertion', clientAuth.SYMMETRIC_METHODS
               .concat(clientAuth.ASYMMETRIC_METHODS)],
             // **OUT IS THE ASYMMETRIC HALF AND IN IS THE WHOLE TABLE, AND THEY
@@ -2957,7 +2972,10 @@ class CryptoMetadata {
           log.debug("Entering algorithms().");
           log.debug("Leaving algorithms().");
           return [
-            ['Credential signing', ['RS256', bbs2023.CRYPTOSUITE]],
+            // What the realm signs credentials with now, not a literal (#1368).
+            ['Credential signing', [String(
+              config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'),
+              bbs2023.CRYPTOSUITE]],
             ['Wallet proof of possession', stsCrypto.JWS_ASYMMETRIC_ALGS],
             ['Disclosure digest', ['sha-256']]
           ];
@@ -3672,6 +3690,10 @@ class CryptoMetadata {
       function (row) {
         return row.uri;
       });
+    // What DPoP accepts in THIS realm, as discovery publishes it: product
+    // leaves ES256K out of the list it is narrowed from.
+    const dpopAlgs = helpers.publishedSigningAlgs(
+      'dpop_signing_alg_values_supported', dpop.SIGNING_ALGS);
     const out = {
       jws: stsCrypto.JWS_SIGNING_ALGS.map(function (alg) {
         const spec = stsCrypto.JWS_ALGS[alg];
@@ -3684,7 +3706,7 @@ class CryptoMetadata {
           asymmetric: stsCrypto.JWS_ASYMMETRIC_ALGS.indexOf(alg) >= 0,
           postQuantum: spec.family === 'pq',
           composite: composites.indexOf(alg) >= 0,
-          dpop: dpop.SIGNING_ALGS.indexOf(alg) >= 0
+          dpop: dpopAlgs.indexOf(alg) >= 0
         };
       }),
       xml: Object.keys(xmldsig.SIG_METHODS).map(function (uri) {
@@ -3710,8 +3732,11 @@ class CryptoMetadata {
                  // STANDARDS for why that is load-bearing rather than a taste.
                  usedHere: spec.exclusive && !spec.comments };
       }),
-      cose: Object.keys(webauthn.COSE_ALGS).map(function (id) {
-        return { coseAlg: Number(id), jose: webauthn.COSE_ALGS[id] };
+      // The table the COSE door and passkeys verify with (#1368). It was
+      // WebAuthn's, drawn as though passkeys were all COSE was.
+      cose: Object.keys(stsCrypto.COSE_SIGNATURE_ALGS).map(function (id) {
+        return { coseAlg: Number(id),
+                 jose: stsCrypto.COSE_SIGNATURE_ALGS[id].name };
       }),
       other: [
         { name: bbs2023.CRYPTOSUITE,
@@ -4106,6 +4131,9 @@ class CryptoMetadata {
       realm: realms.currentId(),
       generatedAt: new Date().toISOString(),
       oneModule: SENTENCES.oneModule,
+      // Which algorithm, on which surface, and why not: the same answer the
+      // signers and verifiers act on (#1368).
+      signaturePolicy: self.deps.stsCrypto.signaturePolicy.describe(),
       drift: self.driftReport(),
       keys: self.keyMaterial(),
       families: self.families.map(function (row) {

@@ -1822,6 +1822,13 @@ Both are withheld where the person has no password and passkeys may be a
 first factor in the realm, and the API refuses them there
 (`STS-AUTHN-0161`), so neither can lock anybody out.
 
+In product mode these two, and removing one passkey, ask the administrator how
+the person's identity was verified (`evidence`, at least 8 characters). It is
+kept on the audit row, and the change is refused without it
+(`STS-ADMIN-0916`). Removing one passkey also needs the administrator to
+have signed in within `account.recentAuthMinutes`, or the console asks them
+to sign in again.
+
 Until #1135 the first removed only the passkeys enrolled to sign in on their
 own and the second only those enrolled as a second step; a passkey has no
 role now, so both take every passkey.
@@ -1874,6 +1881,64 @@ registering a passkey). See *Account recovery* under
 
 See also [Authentication → Development and product mode](authentication.md#development-and-product-mode)
 and [What is not checked](what-is-not-checked.md).
+
+## Paranoid PKI mode and passkeys
+
+[Paranoid PKI mode](pki.md#paranoid-pki-mode) is on by default in product mode and off in development mode. For passkeys it applies only to **attestation certificates**. Signing in with a passkey never reads a certificate, so nothing here changes a sign-in.
+
+With it on, the certificate behind a trusted attestation statement is held to more than its path:
+
+| Check | What it asks |
+|---|---|
+| Validity | In date now. An expired attestation certificate makes the statement untrusted. |
+| keyUsage | Includes digitalSignature, if the certificate has a keyUsage at all. |
+| extendedKeyUsage | The TPM AIK value, for a `tpm` statement only. |
+| A real leaf | Not a CA, and not a self-signed certificate acting as its own anchor. |
+| Strength | Signature hash and key size, and no critical extension nothing here reads. |
+
+A root in this realm's [signer truststore](signer-truststore.md) can stand beside `webauthn.attestationTrustAnchors`, or in place of it. The signer of a FIDO Metadata Service BLOB is held to the same checks under a row of its own.
+
+### Going back to how attestation worked before this mode
+
+Turn these two rows off, in each realm that needs it. Attestation is then decided exactly as it was before paranoid PKI mode existed: the same path check, with none of the checks above and no signer truststore.
+
+| Setting | Environment variable | What off restores |
+|---|---|---|
+| `pki.paranoidWebauthnAttestation` | `STS_PKI_PARANOID_WEBAUTHN_ATTESTATION` | A passkey's attestation certificate is held to its path alone. |
+| `pki.paranoidFidoMds` | `STS_PKI_PARANOID_FIDO_MDS` | A FIDO MDS BLOB's signer is held to its path alone. |
+
+The BLOB is one for the whole service, so `pki.paranoidFidoMds` belongs in the default realm: that is the row the scheduled download reads. A realm's own row decides only an import made under that realm's path.
+
+Three ways to do it:
+
+* **In the console:** open `/admin/pki/trust` in the realm and switch the row off.
+* **Through the management API**, once per row, under `/realm/<id>` for a realm other than the default:
+
+  ```bash
+  curl -X POST https://sts.example/admin-api/pki/trust/set-row \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"setting": "pki.paranoidWebauthnAttestation", "value": false}'
+  ```
+
+* **At start**, for every realm that does not set its own value:
+
+  ```bash
+  STS_PKI_PARANOID_WEBAUTHN_ATTESTATION=false
+  STS_PKI_PARANOID_FIDO_MDS=false
+  ```
+
+Development mode needs none of this, unless somebody set `pki.paranoid` to `on` there.
+
+**What you give up.** A certificate that has expired, or whose keyUsage forbids signing, can again vouch for an authenticator. In product mode each row that is off is logged once (`STS-PKI-0239`) and drawn red on `/admin/pki/trust`. Nothing refuses it.
+
+**What these rows leave alone:**
+
+* `webauthn.attestationPolicy` still decides what an untrusted statement means, and self and `none` attestation never had a certificate to check.
+* Revocation of an attestation chain is the check it always was, under `pki.revocationCheck`.
+* Downloading the BLOB from `risk.mdsUrl` is an outbound request, so it follows `pki.paranoidOutboundTls`. That row covers every outbound request this service makes, so turn it off only if the download itself is what fails, and read [TLS](tls.md) first.
+* `pki.paranoidDeviceAttestation` is a registered device's attestation, not a passkey's.
+
+**Prefer the narrowest change.** `pki.paranoid=off` also goes back for this realm, and turns off every other use case with it. If one authenticator's certificate is what is refused, the row is the most you need, and `/admin/pki/trust` shows the last refusal and why.
 
 ## Settings
 

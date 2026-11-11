@@ -246,12 +246,14 @@ async function mintTheCredential() {
   log.debug("Entering mintTheCredential().");
   xacmlUser = await credentials.mint({
     subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
-  const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
+  // Recorded before it is posted (#1307): an add applied but answered late
+  // is still removed when the job finishes.
+  const posted = await credentials.trustRecorded(base, xacmlUser.anchorPem,
+                                                 addedAnchors);
   assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
     "Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and every read below is a 403.");
-  addedAnchors.push(xacmlUser.anchorPem);
   log.info("Minted an XACML_USER credential for " + xacmlUser.subject + ".");
   log.debug("Leaving mintTheCredential().");
 }
@@ -521,6 +523,62 @@ async function throughTheSwitcher(driver, path) {
 // `until.stalenessOf()`: a probe that lands while Chrome tears a document
 // down answers "Node with given id does not belong to the document", which
 // means the same thing here.
+// HOW LONG A PRESSED FORM'S PAGE HAS TO BE REPLACED (2026-10-26). It was
+// fifteen seconds, the tightest bound in this file and shorter than the
+// twenty waitForDrawn() then gives the drawing. On 2026-10-26, in memory
+// mode with four conformance lanes beside it, form 22 ("A condition, added
+// once") was not replaced within the fifteen. Nothing on either side says
+// why: a successful edit writes no line in the service log.
+const REPLACED_MS = 45000;
+
+// What the browser showed when a pressed form's page was never replaced, so
+// the next such failure says whether the request went out. Read only once
+// the wait has failed: getting the browser log empties it, and the job's
+// last section asserts that log is clean.
+async function pageEvidence(driver) {
+  log.debug("Entering pageEvidence().");
+  const shown = await driver.executeScript(`
+    const strip = document.querySelector('.strip, .notice, .error, ' +
+                                          '[role=status], [role=alert]');
+    // THE REQUESTS THE PAGE MADE (2026-11-02): the press timed out with no
+    // refusal in the service log, which leaves three causes — the request
+    // was never sent, it was never answered, or it was answered and not
+    // drawn. Resource Timing lists a request once it has ENDED, with its
+    // status, so the last few say which: no /admin-api entry after the
+    // press is the first two, one with a status the third. A reauth bar
+    // (a sign-in the runtime is waiting for) is read as well.
+    const now = performance.now();
+    const requests = performance.getEntriesByType('resource')
+      .filter(function (e) { return /\\/admin-api|\\/oauth2\\//.test(e.name); })
+      .slice(-8).map(function (e) {
+        return { url: e.name.replace(location.origin, ''),
+                 type: e.initiatorType,
+                 startedMsAgo: Math.round(now - e.startTime),
+                 ms: Math.round(e.duration),
+                 status: e.responseStatus };
+      });
+    const reauth = document.getElementById('reauth-bar');
+    return { url: location.href, readyState: document.readyState,
+             strip: strip ? strip.textContent.trim().slice(0, 300) : '',
+             requests: requests,
+             reauth: reauth ? reauth.textContent.trim().slice(0, 200) : '' };
+  `).catch(function (e) {
+    log.debug("Caught in pageEvidence(): " + ((e && e.message) || e));
+    return { error: String((e && e.message) || e) };
+  });
+  const logged = await driver.manage().logs().get("browser")
+    .catch(function (e) {
+      log.debug("Caught in pageEvidence(): " + ((e && e.message) || e));
+      return [];
+    });
+  const out = JSON.stringify(shown) + "; the browser logged " +
+    JSON.stringify(logged.slice(-5).map(function (entry) {
+      return (entry.level && entry.level.name) + " " + entry.message;
+    }));
+  log.debug("Leaving pageEvidence().");
+  return out;
+}
+
 async function replaced(driver, element, what) {
   log.debug("Entering replaced().");
   await driver.wait(async function () {
@@ -536,7 +594,12 @@ async function replaced(driver, element, what) {
       }
       throw e;
     }
-  }, 15000, what + " never replaced the page it was pressed on");
+  }, REPLACED_MS, what + " never replaced the page it was pressed on")
+    .catch(async function (e) {
+      log.debug("Caught in replaced(): " + ((e && e.message) || e));
+      throw new Error(((e && e.message) || e) + ". The page: " +
+                      await pageEvidence(driver));
+    });
   log.debug("Leaving replaced().");
 }
 
@@ -749,8 +812,12 @@ async function submitForm(driver, index, values) {
       }
       throw e;
     }
-  }, 15000, "form " + index + " was submitted and the page it was on was " +
-            "never replaced");
+  }, REPLACED_MS, "form " + index + " was submitted and the page it was on " +
+                 "was never replaced").catch(async function (e) {
+    log.debug("Caught in submitForm(): " + ((e && e.message) || e));
+    throw new Error(((e && e.message) || e) + ". The page: " +
+                    await pageEvidence(driver));
+  });
   // AND DRAWN AGAIN (#446): the console sends the form to its /admin-api
   // operation and draws the page it came from in place, with the answer's
   // `?notice=` or `?error=` on its URL.
@@ -1760,8 +1827,8 @@ async function theBrowserConsoleIsClean(driver) {
   }).map(function (entry) {
     return entry.message;
   }).filter(function (message) {
-    // The browser asks for /favicon.ico on its own and this service serves
-    // none; it is the browser's request rather than the page's.
+    // The browser asks for /favicon.ico on its own and another origin may not
+    // serve one; it is the browser's request rather than the page's.
     return message.indexOf("/favicon.ico") < 0;
   }).filter(function (message) {
     // A 4xx FROM /admin-api OR THE TOKEN ENDPOINT IS AN ANSWER THE CONSOLE

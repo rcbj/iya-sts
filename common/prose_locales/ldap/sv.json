@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "De response_type-värden som den här klienten får be om — RFC 7591 avsnitt 2:s response_types, från en registrering eller skrivna av en administratör, varje värde en svarstyp (\"code\", \"code id_token\"). Auktoriseringsslutpunkten avvisar varje annan (unauthorized_client), i varje läge; en tom lista begränsar ingenting. Vad klienten faktiskt har bett om är oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "De svarstyper som utfärdar en åtkomsttoken från auktoriseringsslutpunkten — token, code token, id_token token, code id_token token — som denna klient får använda där RFC 9700-läget gäller (produktläge gör det alltid). Respekteras bara medan sfären undantar RFC 9700 avsnitt 2.1.2 (oauth2.allowImplicitTokenResponses, aldrig under OAuth 2.1 eller FAPI); då nekas en typ som inte listas här (unauthorized_client). TOM som standard, och tom betyder ingen. Skrivs av en administratör eller applikationens ägare medan sfären tillåter dessa typer, eller av en dynamisk registrering inom oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 avsnitt 2.1.2 säger att klienter INTE BÖR använda dem."
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "En beviljandetyp som den här klienten setts använda vid tokenslutpunkten. En registrering, inte en behörighet: oauthGrantType är vad den får använda."
@@ -580,8 +584,8 @@
     "text": "DEN BAS-URI SOM VARJE BEHÖRIGHET SOM DEN HÄR APPLIKATIONEN DEFINIERAR HÄNGER UNDER, och det som gör ett behörighetsnamn globalt unikt här. En behörighet identifieras av det här värdet följt av sitt namn — basen `https://example.com/` och namnet `write` är behörigheten `https://example.com/write` — vilket är vad en klient lägger i ett `scope` och vad åtkomsttoken sedan får som MÅLGRUPP. Entra ID kallar det Application ID URI och stavar det `api://<guid>`; formen är densamma och ingenting här kräver det schemat.\n\nDEN NORMALISERAS SÅ ATT DEN SLUTAR MED EN AVGRÄNSARE när den skrivs genom den här modulen — ett avslutande `/` läggs till där det inte finns något `/`, `#` eller `:` i slutet — eftersom bas + namn är en ren sammanfogning och `https://example.com` + `write` annars skulle ge `https://example.comwrite`. En `ldapmodify` når det här attributet som alla andra och normaliseras inte, så en bas som skrivits för hand betyder exakt vad den säger.\n\nETT VÄRDE, och det är det enda attributet i den här gruppen som inte kunde breddas utan att något avgörs: två baser skulle innebära att varje behörighet på posten hade två identifierare, och uppslagningen som gör ett omfång till en målgrupp skulle behöva välja en att lägga i `aud`."
   },
   "applications.schema.attributes.oauthPermission.what": {
-    "en": "0c47fe049bbc6c7b",
-    "text": "EN BEHÖRIGHET SOM DEN HÄR APPLIKATIONEN EXPONERAR, ett värde var. Värdet är behörighetens NAMN — `read`, `write`, `Widgets.ReadWrite.All` — eventuellt följt av `|` och en beskrivning: `write|Change widgets on somebody's behalf`. Det FÖRSTA `|` är avgränsaren och varje senare hör till beskrivningen, så en beskrivning får innehålla tecknet men ett namn får inte det.\n\nNamnet måste vara en giltig OAuth-omfångstoken (RFC 6749 avsnitt 3.3 — inget mellanslag, inget dubbelt citattecken, inget omvänt snedstreck), eftersom det är vad en klient lägger i en `scope`-parameter och vad som kommer tillbaka i tokens `scope`-anspråk. Ingenting upprätthåller det när en `ldapmodify` skriver det; den här modulen och båda konsolerna gör det.\n\nEN BEHÖRIGHET MÅSTE FINNAS INNAN NÅGOT KAN BEVILJAS DEN, vilket är den enda ordningsregel som den här funktionen har och kontrolleras i updateApplication() så att konsolformuläret och hanterings-API:t inte kan vara oense om den. Den kontrolleras vid BEVILJANDET och inte här: det här attributet är definitionen, och en definition som ingen har använt än är det vanliga första steget snarare än ett misstag."
+    "en": "7eb690e390462f2d",
+    "text": "EN BEHÖRIGHET SOM DEN HÄR APPLIKATIONEN EXPONERAR, ett värde var. Värdet är behörighetens NAMN — `read`, `write`, `Widgets.ReadWrite.All` — eventuellt följt av `|` och en beskrivning: `write|Change widgets on somebody's behalf`. Det FÖRSTA `|` är avgränsaren och varje senare hör till beskrivningen, så en beskrivning får innehålla tecknet men ett namn får inte det.\n\nNamnet måste vara en giltig OAuth-omfångstoken (RFC 6749 avsnitt 3.3 — inget mellanslag, inget dubbelt citattecken, inget omvänt snedstreck), eftersom det är vad en klient lägger i en `scope`-parameter och vad som kommer tillbaka i tokens `scope`-anspråk. Ett namn eller en beskrivning som innehåller en felkod för operatörer avvisas också: båda returneras på varje sida som listar behörigheten, och en kod registreras i stället för att skickas. Ingenting upprätthåller någon av reglerna när en `ldapmodify` skriver värdet; den här modulen och båda konsolerna gör det.\n\nEN BEHÖRIGHET MÅSTE FINNAS INNAN NÅGOT KAN BEVILJAS DEN, vilket är den enda ordningsregel som den här funktionen har och kontrolleras i updateApplication() så att konsolformuläret och hanterings-API:t inte kan vara oense om den. Den kontrolleras vid BEVILJANDET och inte här: det här attributet är definitionen, och en definition som ingen har använt än är det vanliga första steget snarare än ett misstag."
   },
   "applications.schema.attributes.oauthRoleGatedPermission.what": {
     "en": "fa1c86d8fb8ce2fb",
@@ -732,8 +736,8 @@
     "text": "CALLBACK FÖR AUTHZEN-ÅTKOMSTBEGÄRAN (#1180): en https-URL som den här klienten, som AuthZEN PEP, får ange som en åtkomstbegärans callback.endpoint — en per värde, matchad exakt. En begäran som anger någon annan avvisas; den här tjänsten anropar aldrig en callback-URL som enbart hämtats från en begäran. Sätts av en administratör, aldrig av anroparen."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 avsnitt 3: de acr-värden som den här applikationen, i egenskap av resursserver, kräver av autentiseringen bakom en åtkomsttoken — blankstegsseparerade, det mest föredragna först. En token vars acr inte uppfyller något av dem utmanas med 401 insufficient_user_authentication med dessa som acr_values. Nivåerna 0 < 1 < mfa är ordnade; hwk, phr och phrh uppfylls av ett lösenord med en säkerhetsnyckel; alla andra värden bara av exakt den acr:en. TOMT kräver ingenting."
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 avsnitt 3: de acr-värden som den här applikationen, i egenskap av resursserver, kräver av autentiseringen bakom en åtkomsttoken — blankstegsseparerade, det mest föredragna först. En token vars acr inte uppfyller något av dem utmanas med 401 insufficient_user_authentication med dessa som acr_values. Nivåerna 0 < 1 < mfa är ordnade; hwk uppfylls av ett lösenord med en säkerhetsnyckel; phr och phrh bara av den nätfiskeresistenta autentisering de namnger (#723); alla andra värden bara av exakt den acr:en. TOMT kräver ingenting."
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1083,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "DÄR EN INLOGGNING TILL DEN HÄR KLIENTEN STARTAS AV EN TREDJE PART: initiate_login_uri i OpenID Connect Core avsnitt 4, dit /launch/{app} och användarportalen skickar en person med iss, login_hint och target_link_uri. Endast https, utan fragment."
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "KLIENTENS LOGOTYP: logo_uri från OpenID Connect Registration avsnitt 2, ritad på inloggnings- och samtyckesskärmarna bredvid klientens namn. Personens webbläsare läser in den från den här adressen; den här tjänsten hämtar den aldrig. En absolut https-URL."
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "KLIENTENS INTEGRITETSPOLICY: policy_uri från OpenID Connect Registration avsnitt 2, länkad från inloggnings- och samtyckesskärmarna. En absolut https-URL."
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "KLIENTENS ANVÄNDARVILLKOR: tos_uri från OpenID Connect Registration avsnitt 2, länkad från inloggnings- och samtyckesskärmarna. En absolut https-URL."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "OM ETT TOKENUTBYTE ENLIGT RFC 8693 SOM UTFÖRS AV DEN HÄR KLIENTEN FÅR EN `refresh_token` BREDVID DEN UTBYTTA ÅTKOMSTTOKEN, vilket åsidosätter oauth2.tokenExchangeRefreshToken för enbart den. Ett av tre ord: `never`, `when-requested` (det tjänstevida standardvärdet — klienten ber om en med RFC 8693 avsnitt 2.1:s `requested_token_type` och får en bara om den gjorde det) eller `always`.\n\nDET LÄSES PÅ KLIENTEN SOM UTFÖR UTBYTET och inte på målgruppen, eftersom uppdateringstoken lämnas till klienten: det är den partens inloggningsuppgift att förvara, återkalla och till slut lösa in. Det subjekt som utbytet GÄLLER har ingen post alls i det här registret i det intressanta fallet, eftersom hela poängen med ett utbyte är en subject_token från någon annanstans.\n\n**DET GÄLLER FAMILJERNA OAUTH 2.0 OCH OPENID CONNECT OCH INGEN ANNAN, och till skillnad från varje annat attribut här UPPRÄTTHÅLLS det.** En post som inte är deklarerad för någon av dem avvisas av båda konsolens dörrar och av hanterings-API:t, som anger vilken familj som ska markeras först — eftersom ett värde här är en policy för tokenslutpunkten, och en post som ingen tokenbegäran någonsin kan ange skulle bära den som om den vore i kraft. Blocket ovanför den här raden argumenterar för det. `ldapmodify` når det här attributet som alla andra och kontrolleras inte.\n\nETT VÄRDE SOM INTE ÄR ETT AV DE TRE ORDEN ÄR INTE ETT FEL VID SKRIVNING OCH ÄR INTE TYST: settingFor() varnar med angivande av posten, attributet och vad det innehåller, och den tjänstevida inställningen avgör — samma tretillståndsärlighet som varje annan åsidosättning på den här posten får."
@@ -1244,8 +1260,8 @@
     "text": "TRUE eller FALSE: besvaras den här förlitande partens egen wsignin1.0, vilket åsidosätter wsfed.spInitiatedSso. En wsignin1.0 är en osignerad URL, så FALSE stänger dörren snarare än bevisar vem som öppnade den."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "DIT ETT wsignoutcleanup1.0-ANROP SKICKAS för den här applikationen — WS-Federations utloggnings-URI, och den som den här tabellen saknade fram till 2026-08-30. DEKLARERAT, inte observerat, vilket gör det till ett syskon till samlSingleLogoutService snarare än till wsfedReplyUrl: en cleanup skickas när en SESSION avslutas, och då är den begäran som skulle ha burit en wreply sedan länge över.\n\n**DET LÄSES ÄNNU INTE AV UTLOGGNINGEN**, och det sägs uttryckligen snarare än antyds. `cleanupTargetsFor()` bygger sin lista från `session.wsfedRealms`, som registrerar den wreply varje inloggningssvar faktiskt gick till — så det som den här tjänsten anropar i dag är det den OBSERVERADE, och det här attributet är det som en operatör DEKLARERADE. Det är två olika fakta och det andra är det som en person som sätter upp en applikation kan ange i förväg. Att koppla in det som reserv för en sfär som loggats in i utan wreply är det självklara nästa steget och tas medvetet inte här: den här ändringen lägger till fältet och lagringen, och att ändra vart en cleanup går är en ändring av vad protokollet gör."
+    "en": "677e7babd8d711d3",
+    "text": "DIT ETT wsignoutcleanup1.0-ANROP SKICKAS för den här applikationen — WS-Federations utloggnings-URI, och den som den här tabellen saknade fram till 2026-08-30. DEKLARERAT, inte observerat, vilket gör det till ett syskon till samlSingleLogoutService snarare än till wsfedReplyUrl: en cleanup skickas när en SESSION avslutas, och då är den begäran som skulle ha burit en wreply sedan länge över.\n\n**EN DEKLARERAD ADRESS GÅR FÖRE EN OBSERVERAD** (#747). `cleanupTargetsFor()` anropar varje värde här för en sfär som sessionen loggat in på, och den wreply som inloggningssvaret gick till, som `session.wsfedRealms` registrerar, bara där detta är tomt."
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",
@@ -1262,6 +1278,10 @@
   "applications.schema.attributes.krb5ClaimsPac.what": {
     "en": "0abf4d44f51d3755",
     "text": "DEN HÄR TJÄNSTENS EGNA PAC-ANSPRÅK, som en JSON-matris av rader likt sfärens sida Kerberos PAC-anspråk. Läggs till de anspråk som en tjänstebiljett för någon av den här applikationens SPN:er bär (de från den TGT den utfärdades från), där en applikationsrad ersätter anspråket med samma namn. Endast medan krb5.pacClaims är påslaget."
+  },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "DEN HÄR KLIENTENS EGNA JWT-ANSPRÅK FÖR GNAP-ÅTKOMSTTOKEN, som en JSON-matris av rader likt de andra uppsättningarna av anpassade anspråk. Läggs till en jwt-signed-token och till JWT:n inuti en jwt-encrypted-token som utfärdas till den här klienten, där en applikationsrad ersätter sfärens rad med samma namn. Tokenens egna anspråk (access, flags, label, grant_id och JWT-namnen) kan inte åsidosättas. Macaroon-, biscuit- och zcap-token bär inte dessa rader."
   },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
@@ -1990,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Vad PEP:en än sade om sig själv när den registrerade sig."
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan SAML 2.0 loggar in dem i det här programmet från en session de redan har, vilket åsidosätter saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan SAML 1.1 loggar in dem i det här programmet från en session de redan har, vilket åsidosätter saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan WS-Federation loggar in dem i det här programmet från en session de redan har, vilket åsidosätter wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
   }
 }

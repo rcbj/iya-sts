@@ -48,24 +48,24 @@
     "text": "個符號"
   },
   "password.FIELDS.minSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "密碼必須包含多少個既非字母、數字也非空白的字元。0 會關閉此規則。"
+    "en": "1121ccc1580b0c86",
+    "text": "一律為 0。要求包含符號的原則會遭拒絕：ASVS 5.0.0 6.2.5 要求接受任意組成的密碼，因此本原則只要求長度。"
   },
   "password.FIELDS.requireUppercase.label": {
     "en": "41d8365a4b5a8473",
     "text": "要求大寫字母"
   },
   "password.FIELDS.requireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "密碼是否必須包含至少一個大寫字母（任何文字系統皆可）。"
+    "en": "9ab7a52d3b16949e",
+    "text": "一律關閉。要求包含大寫字母的原則會遭拒絕：ASVS 5.0.0 6.2.5 要求接受任意組成的密碼。"
   },
   "password.FIELDS.requireDigit.label": {
     "en": "eaa0c73c3cc00f02",
     "text": "要求數字"
   },
   "password.FIELDS.requireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "密碼是否必須包含至少一個十進位數字。"
+    "en": "9d7cd7fdbca971d9",
+    "text": "一律關閉。要求包含數字的原則會遭拒絕：ASVS 5.0.0 6.2.5 要求接受任意組成的密碼。"
   },
   "password.FIELDS.generatedLength.label": {
     "en": "9a6d2215cc16392c",
@@ -168,16 +168,16 @@
     "text": "記住並拒絕一個人以前的多少個密碼。只要此值大於 0，目前的密碼也一律被拒絕，所以 5 表示新密碼不能是最近六個中的任何一個。0 關閉此規則。草案的屬性，取草案的含義。每個記住的密碼都以其原本儲存時的雜湊（argon2id 或 scrypt）保存在此人自己項目的 pwdHistory 中，檢查一個新密碼對每個記住的密碼各需一次雜湊比較。"
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "密碼必須包含多少個既非字母、數字也非空白的字元。0 會關閉此規則。"
+    "en": "1121ccc1580b0c86",
+    "text": "一律為 0。要求包含符號的原則會遭拒絕：ASVS 5.0.0 6.2.5 要求接受任意組成的密碼，因此本原則只要求長度。"
   },
   "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "密碼是否必須包含至少一個大寫字母（任何文字系統皆可）。"
+    "en": "9ab7a52d3b16949e",
+    "text": "一律關閉。要求包含大寫字母的原則會遭拒絕：ASVS 5.0.0 6.2.5 要求接受任意組成的密碼。"
   },
   "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "密碼是否必須包含至少一個十進位數字。"
+    "en": "9d7cd7fdbca971d9",
+    "text": "一律關閉。要求包含數字的原則會遭拒絕：ASVS 5.0.0 6.2.5 要求接受任意組成的密碼。"
   },
   "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
     "en": "9abc8e368dbfdf05",
@@ -234,22 +234,6 @@
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
     "text": "至少 {{n}} 個字元"
-  },
-  "password.sentences.minSymbolsOne": {
-    "en": "bcd5d7597e2d9c28",
-    "text": "至少 {{n}} 個符號（不是字母、數字或空格的字元）"
-  },
-  "password.sentences.minSymbolsMany": {
-    "en": "59951161d553809a",
-    "text": "至少 {{n}} 個符號（不是字母、數字或空格的字元）"
-  },
-  "password.sentences.uppercase": {
-    "en": "4a27754133d00695",
-    "text": "一個大寫字母"
-  },
-  "password.sentences.digit": {
-    "en": "d24f1fa16d122006",
-    "text": "一個數字"
   },
   "password.sentences.history": {
     "en": "524e6c7233b4e109",
@@ -963,57 +947,29 @@
     "en": "02f30171dcced882",
     "text": "LDAP 簡單繫結"
   },
-  "serviceAccount.DOORS.allowLdapBind.what": {
-    "en": "3a8c8bfe4923e585",
-    "text": "在 389 或 636 上的繫結（RFC 4513）。"
-  },
   "serviceAccount.DOORS.allowWsTrust.label": {
     "en": "a1d8fa9805648e7d",
     "text": "WS-Trust UsernameToken"
-  },
-  "serviceAccount.DOORS.allowWsTrust.what": {
-    "en": "4d920a20f96a19a1",
-    "text": "傳送到安全權杖服務的 WS-Security UsernameToken。"
   },
   "serviceAccount.DOORS.allowScim.label": {
     "en": "13441836ceee258a",
     "text": "SCIM HTTP Basic"
   },
-  "serviceAccount.DOORS.allowScim.what": {
-    "en": "506c021bbd796caa",
-    "text": "/scim/v2 上的 HTTP Basic（RFC 7617）。"
-  },
   "serviceAccount.DOORS.allowSsf.label": {
     "en": "5f0a37c29c6be8ab",
     "text": "Shared Signals HTTP Basic"
-  },
-  "serviceAccount.DOORS.allowSsf.what": {
-    "en": "41e56e2806f5f363",
-    "text": "/ssf 端點上的 HTTP Basic（RFC 7617）。"
   },
   "serviceAccount.DOORS.allowEst.label": {
     "en": "90892c78280ab239",
     "text": "EST HTTP Basic"
   },
-  "serviceAccount.DOORS.allowEst.what": {
-    "en": "a40e0a702c1600f6",
-    "text": "/.well-known/est 上的 HTTP Basic（RFC 7030 第 3.2.3 節）。"
-  },
   "serviceAccount.DOORS.allowKerberos.label": {
     "en": "b707a90f8fd22d69",
     "text": "Kerberos AS 交換"
   },
-  "serviceAccount.DOORS.allowKerberos.what": {
-    "en": "22fac9e9e9e7d0a8",
-    "text": "預先驗證證明了密碼金鑰的 AS-REQ（RFC 4120），以及 MS-KKDCP。"
-  },
   "serviceAccount.DOORS.allowPasswordGrant.label": {
     "en": "a55abf2085020a8c",
     "text": "OAuth 2.0 密碼授權"
-  },
-  "serviceAccount.DOORS.allowPasswordGrant.what": {
-    "en": "7fe8d96fec703361",
-    "text": "權杖端點上的 grant_type=password（RFC 6749 第 4.3 節），前提是此領域允許該授權類型。"
   },
   "serviceAccount.SELECTORS.precedence.what": {
     "en": "3bc40f48dcc93e91",
@@ -1691,22 +1647,6 @@
     "en": "df463dd3d0380799",
     "text": "本服務用於屬性原則的類別：一個領域中每個人都必須持有的屬性。以設定檔命名（`cn=default`，或該領域自己的具名設定檔）。"
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "當此人及其群組指定了多個具名屬性原則時，哪一個適用：最低者，範圍 1 至 1000。"
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "在人員或群組上：其所指定的屬性原則，`default` 或該領域的一個具名設定檔。一個值。"
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "當此人及其群組指定了多個具名屬性原則時，哪一個適用：最低者，範圍 1 至 1000。"
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "它適用於指定它的人，或屬於指定它的群組的人，且他們所指定的其他原則都沒有比 {{precedence}} 更低的優先順序"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "本服務用於領域自訂屬性的類別，位於 ou=attributeDefinitions，以屬性命名（`cn=<name>`）。"
@@ -1730,6 +1670,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "自訂屬性只有一個值時為 TRUE，有多個值時為 FALSE。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "為 TRUE 時，本人可在使用者入口網站的概覽中看到自己在某個自訂屬性上的值。預設為 FALSE 或不存在。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "為 TRUE 時，本人可在使用者入口網站上變更自己在某個自訂屬性上的值。隱含 stsAttributePortalVisible。預設為 FALSE 或不存在。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "當此人及其群組指定了多個具名屬性原則時，哪一個適用：最低者，範圍 1 至 1000。"
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "在人員或群組上：其所指定的屬性原則，`default` 或該領域的一個具名設定檔。一個值。"
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "當此人及其群組指定了多個具名屬性原則時，哪一個適用：最低者，範圍 1 至 1000。"
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1743,17 @@
     "en": "3867ffa1e351efa2",
     "text": "自訂屬性 {{name}} 已在此領域的 {{dn}} 定義。現在可以將其賦予人員，並由此原則設為必填。"
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "自訂屬性 {{name}} 已變更。其語法以及是否包含多個值維持不變。"
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "自訂屬性 {{name}} 已不再在此領域中定義。"
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "它適用於指定它的人，或屬於指定它的群組的人，且他們所指定的其他原則都沒有比 {{precedence}} 更低的優先順序"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

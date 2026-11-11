@@ -98,7 +98,7 @@
 // `krb5_person_keys.ts` and handed to `krb5_principals.js` INSIDE the key
 // source, beside FAST (`setKeySource({ ..., fast, pkinit })`), so the KDC
 // reaches it through `principals.pkinitProvider()` and `krb5_kdc.js` gains
-// no require — the parent project's COPY set is what it was. A process
+// no require (the parent project's COPY set was owed, until #1280). A process
 // without the key source has no PKINIT, and PA-PK-AS-REQ is unknown padata
 // to it as it always was.
 // ===========================================================================
@@ -106,6 +106,7 @@
 import helpers = require('../common/helpers');
 import config = require('../common/config');
 import cryptoLib = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import realms = require('../common/realms');
 import mode = require('../common/mode');
@@ -643,8 +644,9 @@ class Krb5Pkinit {
       return pki.certificateFromDer(Buffer.from(String(pem)
         .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64'));
     }).filter(Boolean);
-    const path = await pki.verifyPathToAnchors(leaf, intermediates, anchors,
-      { now: this.now().getTime(), skewMs: this.skewMs() });
+    const path = await CertificateTrust.path('pkinit', leaf, intermediates,
+      anchors, { now: this.now().getTime(), skewMs: this.skewMs(),
+                 siteAsksRevocation: true });
     if (!path.ok) {
       log.debug('Leaving Krb5Pkinit.checkCertificate(). No path: ' +
                 path.check);
@@ -960,7 +962,15 @@ class Krb5Pkinit {
                              'anonymous principal may send');
     }
     // THE paChecksum (section 3.2.1 item 6) over the KDC-REQ-BODY the AuthPack
-    // was signed for.
+    // was signed for. THE ONE SHA-1 THIS SERVICE MAY NOT REFUSE (ASVS 5.0.0
+    // 11.4.1): RFC 4556 says it MUST be present and contains a SHA-1 checksum,
+    // and that a KDC MUST answer KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED where it
+    // is absent; RFC 8636 section 9 leaves it "fixed at SHA-1". What the
+    // request's security rests on is elsewhere, and in product it is enforced
+    // below: the signature's digest is not SHA-1, the reply key is agreed by
+    // Diffie-Hellman, and RFC 8636's KDF over SHA-256 or better binds the
+    // AS-REQ to the reply (its section 3), which is what covers a second
+    // preimage of this checksum (its section 9).
     if (!pack.paChecksum) {
       log.debug('Leaving Krb5Pkinit.checkRequest(). No paChecksum.');
       return this.refuse(codec.ERROR.PA_CHECKSUM_MUST_BE_INCLUDED,
@@ -1061,7 +1071,11 @@ class Krb5Pkinit {
     // THE KDF (RFC 8636 section 6): the strongest the client offers.
     let kdf: string | null = null;
     if (pack.supportedKdfs) {
-      kdf = cryptoLib.PKINIT_KDFS.map(function (one: Json) {
+      // THE SHA-1 KDF ONLY WHERE AN OPERATOR ALLOWS IT (#1469).
+      const legacy = require('../common/mode').allowsLegacyHashes();
+      kdf = cryptoLib.PKINIT_KDFS.filter(function (one: Json) {
+        return legacy || one.hash !== 'sha1';
+      }).map(function (one: Json) {
         return one.oid;
       }).filter(function (oid: string) {
         return pack.supportedKdfs.indexOf(oid) >= 0;
@@ -1072,7 +1086,10 @@ class Krb5Pkinit {
                            'none of the client\'s KDFs is one of RFC ' +
                            '8636\'s (SHA-1, SHA-256, SHA-384, SHA-512)');
       }
-    } else if (config.value('krb5.pkinitLegacyKdf') !== true) {
+    } else if (config.value('krb5.pkinitLegacyKdf') !== true ||
+               !require('../common/mode').allowsLegacyHashes()) {
+      // RFC 4556's own derivation is SHA-1 (section 3.2.3.1), so in product it
+      // takes crypto.allowLegacyHashes as well (ASVS 5.0.0 11.4.1).
       log.debug('Leaving Krb5Pkinit.checkRequest(). Legacy KDF refused.');
       return this.refuse(codec.ERROR.NO_ACCEPTABLE_KDF, 'STS-KRB-0196',
                          'the AuthPack offers no RFC 8636 KDF, and RFC ' +

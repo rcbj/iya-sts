@@ -243,5 +243,13 @@
   "passwordHint": "obligatoire pour PKCS#12 ; chiffre la moitié privée des autres",
   "downloadKey": "Télécharger",
   "publicOnly": "<strong>La moitié PUBLIQUE seulement.</strong> La RFC 9964 définit les membres publics d’une clé AKP et le traitement de la graine privée évolue encore : il n’existe donc aucun encodage privé interopérable à remettre. Un fichier qu’aucune bibliothèque ne lit serait pire que de le dire.",
-  "passwordNote": "<strong>Un mot de passe est OBLIGATOIRE pour PKCS#12 et facultatif pour les trois autres</strong>, où il chiffre la moitié privée (PKCS#8 pour PEM et DER, PBES2 en .jwe pour JWK). Laissez-le vide et la clé privée sort en clair, ce qui est généralement ce qu’on veut en développement et jamais ce qu’on veut ailleurs."
+  "passwordNote": "<strong>Un mot de passe est OBLIGATOIRE pour PKCS#12 et facultatif pour les trois autres</strong>, où il chiffre la moitié privée (PKCS#8 pour PEM et DER, PBES2 en .jwe pour JWK). Laissez-le vide et la clé privée sort en clair, ce qui est généralement ce qu’on veut en développement et jamais ce qu’on veut ailleurs.",
+  "algorithmsHeading": "Algorithmes, par surface",
+  "algorithmsLead": "Chaque algorithme de signature de chaque surface, si ce domaine signe avec lui et l’accepte maintenant, et pourquoi non. C’est la réponse selon laquelle agissent les signataires et les vérificateurs.",
+  "algorithmsSettings": "Définissez les listes sur la page des paramètres.",
+  "tocAlgorithms": "les algorithmes",
+  "thAlgName": "Algorithme",
+  "thAlgSigns": "Signe",
+  "thAlgAccepts": "Accepte",
+  "thAlgWhyNot": "Pourquoi non"
 }

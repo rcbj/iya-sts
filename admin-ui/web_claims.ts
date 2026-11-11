@@ -443,7 +443,12 @@ class ClaimsPage {
         kit.esc(row.ldap) + '"' +
         (on ? ' checked' : '') + '></td>' +
         '<td><code>' + kit.esc(row.ldap) + '</code></td>' +
-        '<td>' + kit.esc(row.schema) + '</td>' +
+        // A REALM'S CUSTOM ATTRIBUTE (#700) is defined by the realm, said
+        // in the reader's language; a catalogue row names its document.
+        '<td>' + (row.custom
+          ? t.html('consoleClaims.customDefinedBy',
+                   { syntax: row.syntax || 'string' })
+          : kit.esc(row.schema)) + '</td>' +
         '<td><code>' + kit.esc(pac ? row.pacClaimId : row.claim) +
         '</code></td>' +
         valueCell + '</tr>';

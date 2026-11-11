@@ -116,6 +116,15 @@ is one a conforming client must reject. The inserted form behaves like its
 
 * **Authorization code**, with **PKCE**
   ([RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), `S256` and `plain`).
+  In product mode every client must send a `code_challenge`, confidential ones
+  included, unless `oauth2.allowConfidentialWithoutPkce` is on
+  ([OAuth security](oauth-security.md#the-authorization-code-flow-section-211)).
+* **In product mode a client that declares no response types gets `code`
+  alone** (RFC 7591 section 2). One with no `oauthResponseType`, and no
+  `implicit` grant declared, is refused `unauthorized_client` for any other
+  `response_type`, as the token endpoint holds a client with no
+  `oauthGrantType` to `authorization_code` and `refresh_token`.
+  `oauth2.allowUndeclaredGrants` lifts both.
 * **Implicit and hybrid**: every combination of `code`, `token` and
   `id_token`, including `id_token token`.
 * **`response_type=none`**: nothing is issued. The response carries `state`
@@ -164,7 +173,9 @@ is one a conforming client must reject. The inserted form behaves like its
   issued to the client, with any of its signing algorithms; an expired one is
   still a valid hint, and an encrypted one is refused. If the person signed in
   is not the one it names, `prompt=none` answers `login_required` and
-  otherwise the person is asked to sign in again.
+  otherwise the person is asked to sign in again. A Logout Token or an access
+  token is not an ID Token, and is refused as a hint even when this realm signed
+  it for the same client.
 * **`display`** (`page`, `popup`, `touch`), **`ui_locales`** and
   **`claims_locales`** are accepted. There is one sign-in page and it is in
   English, so each is answered in English, which the specification permits.
@@ -241,7 +252,11 @@ client from the authorization endpoint, a 400 from PAR and from the token
 endpoint, in development mode as in product.
 
 **A redeemed code is refused if it is presented again, in every mode**, and
-what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5). The refusal says
+what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5): the tokens the
+first redemption issued, the refresh tokens rotated from them since, and the
+access tokens those refreshes minted. Each is revoked as a replay, so the
+grant's CAEP `session-revoked` and `risk-level-change` are sent
+([Shared Signals](shared-signals.md)). The refusal says
 when the code was redeemed and by which client, or names the field that differs.
 The old development courtesy — an identical repeat answered with the same token
 set — is still there as `oauth2.codeReplayIdempotent`, off by default and
@@ -486,6 +501,13 @@ tokens. Withdraw `offline_access` from an application's global consent on
 `/admin/consent` to turn this off: every session of that surface standing on it
 ends at its next token renewal, and the person is asked at their next sign-in.
 
+**A public client is asked every time, in product mode**
+(`oauth2.consentAlwaysForPublicClients`, on by default there and off in
+development). A public client (`token_endpoint_auth_method=none`) cannot prove
+which program holds its `client_id`, so an earlier answer, a recorded
+`oauthConsent`, does not speak for it. This service's own applications are not
+asked.
+
 Consent is **on by default** (`oauth2.consentRequired`). Turning it off means
 nothing is asked and nothing is recorded; it does not mean everybody consented,
 so turning it back on asks again. `/admin/consent` is the register. The
@@ -549,6 +571,11 @@ does.
   It needs JavaScript. The answer names the authorization request to go
   back to, so what reaches the application — a redirect, `form_post`, JARM
   — is decided by the authorization endpoint, exactly as before.
+* **The screen says where and for how long.** It lists each RFC 8707
+  `resource` the request names, and says that consent lasts until the person
+  withdraws it and that each grant can keep access for up to the client's
+  refresh token lifetime (`oauth2.refreshTokenTtlS`, or the client's own), in
+  hours.
 * Consent is a question asked of somebody already signed in. It is not a
   password check.
 
@@ -770,6 +797,27 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
    **`claims` request**, read from the person's directory entry,
 4. `sub`, which is always set last.
 
+**Every claim of the four scopes has a directory attribute** (#1292), so a
+person whose entry holds them is answered all fourteen `profile` claims. The
+five that had none until then: `middle_name` (`middleName`), `gender`
+(SCHAC's `schacGender`, ISO/IEC 5218: `1` is answered `male`, `2` `female`,
+`0` `not known`, `9` `not applicable`), `zoneinfo` (`timeZone`, an IANA time
+zone), `picture` (`pictureUrl`) and `profile` (`profileUrl`). In development
+mode a value the entry lacks is invented, as for the rest; in product mode
+it is absent. [The LDAP schema](ldap-schema.md) lists them.
+
+**A person with a photo here is answered this realm's own address in
+`picture`**, at `/web/photo/{id}`: one they set on the
+[user portal](user-facing-pages.md#the-user-portal), or a copy of a
+[federation partner's](federation.md#what-a-federated-sign-in-writes). A
+relying party fetches it with no credential. The address changes when the photo
+does, so fetch it from the latest token or UserInfo response rather than
+keeping it. The realm's own limits are under
+[Profile photos](configuration.md#profile-photos). The same address can go into
+a SAML assertion: add a custom attribute on the set's
+[claims page](admin-console.md) with `pictureUrl` as its directory attribute. No
+assertion carries it unless you add that row.
+
 **The Identity Assurance Claims Registration's claims** can be asked for by
 name in a `claims` request, and are listed in `claims_supported`:
 
@@ -829,8 +877,10 @@ most `devices.maxPerPerson` (20); the whole register is
 
 **Token exchange reads its token types.** Every RFC 8693 exchange must send
 `subject_token_type` (and `actor_token_type` with an `actor_token`); each
-must be `access_token`, `refresh_token`, `id_token` or `jwt`; and a token this
-service issued must be the type it is declared as. Anything else is refused
+must be `access_token`, `refresh_token`, `id_token`, `jwt`, `saml2`, `saml1`
+or one of the six Kerberos token types
+([a Kerberos ticket](configure-oauth2-grants.md#a-kerberos-ticket-as-the-subject-the-actor-or-the-token-issued));
+and a token this service issued must be the type it is declared as. Anything else is refused
 `invalid_request`.
 
 ### Backchannel sign-in (OpenID Connect CIBA Core 1.0)
@@ -974,7 +1024,13 @@ OpenID Connect Enterprise Extensions 1.0 (#148), in every mode:
 * **The ID Token** carries `tenant` (the trust realm's id) and, when it is
   issued on a sign-on session, `session_expiry`: the session's absolute end.
   A later sign-in does not extend a session, so a relying party can end its
-  own session no later than this. Where an administrator recorded the
+  own session no later than this. **Each is put in an ID Token only when the
+  client asks for it by name** in the `id_token` member of the `claims`
+  request parameter (OpenID Connect Core 5.5), for example
+  `{"id_token":{"session_expiry":null,"tenant":null}}`, because a claim
+  nobody requested is what the OpenID conformance suite reports (#1292).
+  `oauth2.enterpriseClaimsAlways` (off by default, per realm) puts both in
+  every ID Token, as before #1292. Where an administrator recorded the
   account id a client knows the person by (`POST
   /admin-api/users/set-aud-sub`, or the person's page on the console), the
   ID Token for that client carries it as `aud_sub`.
@@ -1195,7 +1251,9 @@ the client registered (RFC 7591, OpenID Connect Core section 5.3.2):
   ECDH-ES and its three key-wrapping variants, over any of the three AES-GCM
   and three AES-CBC-HMAC content encryptions. **`enc` defaults to
   `A128CBC-HS256`** when only an `alg` is registered, as the registration
-  specification says. The recipient key comes from the client's inline `jwks`
+  specification says. In product mode, unless `crypto.allowCbcJwe` is on, the
+  AES-CBC-HMAC encryptions are neither offered nor accepted and the default is
+  `A256GCM`, and RSA-OAEP (over SHA-1) needs `crypto.allowLegacyHashes`. The recipient key comes from the client's inline `jwks`
   or its registered `jwks_uri`, fetched and cached (see
   [Client authentication](#client-authentication)).
 * Both give a **Nested JWT**, signed then encrypted, with `cty: "JWT"`.
@@ -1221,7 +1279,9 @@ derived from the same table, so what is advertised is what is accepted.
 
 * **The traditional keys**: RSA, P-256, P-384, P-521, secp256k1, Ed25519 and
   Ed448, all published in `/oauth2/jwks` (RSA first, since the default
-  signature is RS256). ES256K's signature is the R‖S concatenation RFC 7518
+  signature is RS256). In product mode the secp256k1 key is published, and
+  ES256K offered, only where `keys.signingAlgorithms` lists it (see
+  [Limiting a realm to named signing algorithms](#limiting-a-realm-to-named-signing-algorithms)). ES256K's signature is the R‖S concatenation RFC 7518
   section 3.4 requires, not OpenSSL's DER.
 * **Eleven post-quantum algorithms**: ML-DSA at three parameter sets (FIPS 204,
   RFC 9964), SLH-DSA at two (FIPS 205), and the six composite ML-DSA +
@@ -1265,6 +1325,84 @@ Passkeys (COSE), XML signatures, TLS and certificates are not affected; a
 the setting on and once with it off, so the second run is the evidence of a
 clean result with no post-quantum exemption.
 
+#### EdDSA signing, off by default
+
+**`keys.eddsaSigning`** (Key material, per realm, **off by default**, #1292)
+decides whether the realm signs with EdDSA (RFC 8037, Ed25519 and Ed448) and
+publishes its `kty: OKP` signing keys. It is off by default because the
+OpenID conformance suite, which OpenID Connect certification runs, cannot
+parse an OKP key in a JWK Set. With it off:
+
+* `/oauth2/jwks` carries no OKP signing key (standby, pinned and signer-group
+  keys included).
+* `EdDSA` is not in `id_token_signing_alg_values_supported`,
+  `userinfo_signing_alg_values_supported`,
+  `introspection_signing_alg_values_supported` or
+  `authorization_signing_alg_values_supported`, and a client cannot register
+  it for those responses or be given it on the console or `/admin-api`
+  (`STS-REG-0185` and the members' own refusals).
+* A client registered for EdDSA while the setting was on is refused the
+  response it would need signed (`STS-KEYS-0165`), and so is an SSF,
+  WS-Trust or Provider Commands token whose algorithm names EdDSA.
+* A `/portal/wallet` offer cannot choose EdDSA for a credential.
+
+EdDSA that a **client** signs with is unaffected: client assertions, DPoP
+proofs, request objects and wallet proofs are still verified, and the lists
+that advertise what the realm accepts still name it. So is a signature whose
+key travels in an `x5c` or a DID document. `oid4vci.credentialSigningAlgorithm`
+still signs, so do not configure EdDSA there with the setting off. An
+`oauth2.accessTokenSigningAlg` or `oidfed.signingAlg` of EdDSA signs with the
+realm's default instead (`STS-KEYS-0178`, logged once per realm). Turn it on to sign with EdDSA and publish the
+keys as `oauth2.eddsaCurve` says.
+
+#### Limiting a realm to named signing algorithms
+
+**`keys.signingAlgorithms`** (Key material, per realm, **empty by default**)
+names the JWS algorithms the realm signs with and publishes keys for. Empty
+leaves every algorithm the realm otherwise has, except that in product mode
+`ES256K` is left out: secp256k1 is not an approved curve, so with no list a
+product realm publishes no secp256k1 signing key, names `ES256K` in none of the
+lists below, and refuses a signature with it (`STS-KEYS-0166`). List it to use
+it. A list must include `RS256`,
+which OpenID Connect Discovery requires and which is the default for ID Tokens
+and access tokens; anything else is refused (`STS-KEYS-0167`). With a list:
+
+* `/oauth2/jwks` carries no signing key for an unlisted algorithm (standby,
+  pinned and signer-group keys included). One RSA key serves every `RS` and
+  `PS` algorithm, so the RSA key stays.
+* An unlisted algorithm is not in `id_token_signing_alg_values_supported`,
+  `userinfo_signing_alg_values_supported`,
+  `introspection_signing_alg_values_supported` or
+  `authorization_signing_alg_values_supported`, and a client cannot register
+  it for those responses or be given it on the console or `/admin-api`.
+* A client registered for an unlisted algorithm before the list was set is
+  refused the response it would need signed (`STS-KEYS-0166`), and so is an
+  SSF, WS-Trust or Provider Commands token whose algorithm is unlisted.
+* An unlisted `oauth2.accessTokenSigningAlg`, or a named authorization
+  server's own, signs with RS256 instead.
+
+`keys.postQuantumSigning` and `keys.eddsaSigning` still apply: listing an
+algorithm does not turn its family on. Under FAPI 1.0 Advanced, list `PS256`
+as well.
+
+What the realm **accepts** from clients is unaffected (client assertions, DPoP
+proofs, request objects, wallet proofs), and a UserInfo response can still be
+plain JSON. `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` and
+`oid4vci.credentialSigningAlgorithm` still sign with what they name, so name a
+listed algorithm there.
+
+#### Naming a published key's certificates by URL
+
+**`keys.jwksCertificateUrl`** (Key material, per realm, **off by default**)
+makes `/oauth2/jwks` name each key's certificate chain with `x5u` (RFC 7517
+section 4.6) instead of carrying it in `x5c`. The address is
+`/pki/chain/{scope}/{sha256}.pem`, the same document a token's `x5u` header
+names. It makes the JWK Set much smaller, and a client that wants the chain
+fetches it over TLS, so check that your clients do not read `x5c` from the JWK
+Set before you turn it on. A key whose chain that address cannot serve keeps
+its `x5c`. A token's own header is unaffected: each use case's setting decides
+that.
+
 ### Custom claims — `/admin/claims`
 
 **Protocols → OAuth2 / OIDC → Custom claims** says what to add to every access
@@ -1272,7 +1410,9 @@ token and every ID Token issued **from now on**. There are two sets because the
 two tokens go to different readers (a resource server and a client). Each set
 takes:
 * typed claims;
-* LDAP attribute types ticked from those found under `ou=users`;
+* LDAP attribute types ticked from those found under `ou=users`, and the
+  realm's own [custom attributes](policies.md#the-attribute-policy), each
+  claimed under its own name;
 * **directory-attribute claims**, a claim name of your choosing carrying any
   attribute of the person's entry (#94, see
   [the admin console](admin-console.md));
@@ -1327,6 +1467,9 @@ realm's own keys, so it is opaque to the client. It opens only in the realm that
 minted it. A refresh token that was not encrypted is refused. A refresh
 **hands on the grant it was given**: narrowing `scope` or `resource` narrows the
 new access token, and the rotated refresh token still carries the whole grant.
+A chain of refreshes has an absolute limit, `oauth2.refreshTokenMaxChainS`,
+counted from its first refresh token: 30 days in product mode and none in
+development. Past it the person signs in again.
 Rotation with replay detection belongs to [OAuth security](oauth-security.md).
 
 ### JWT access tokens (RFC 9068)
@@ -1524,12 +1667,19 @@ hex characters), because the store keeps no `request_uri`. **Withdraw**, and
 An authorization request may arrive as a signed and optionally encrypted
 `request` object, or as a `request_uri`. **A `request_uri` is fetched only when
 the client registered that exact address** (`require_request_uri_registration`
-is `true`), with no redirects, a timeout and a size cap. The object's
+is `true`), with no redirects, a timeout and a size cap. It is dialled under
+the same outbound rules as a client's `jwks_uri`: nothing is fetched while
+`federation.outbound` is off, `security.outboundAllowedHosts` applies, and in
+product mode a host that resolves to a loopback, private, link-local or
+reserved address is refused `invalid_request_uri` (`STS-OAUTH-1004`), and the
+connection is pinned to the address that was checked. The object's
 parameters **replace** the query, so every check runs on what was signed, and
 the round trip through sign-in carries the object rather than its resolved
 parameters. Each realm publishes an RSA and an EC key with `use: enc` for
 encrypting to it, and the symmetric algorithms are keyed from the client
 secret. A request object's `jti` is accepted once.
+
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the server hosting a `request_uri` is held to the same checks as any other server this service dials. A client hosting one on a self-signed certificate is refused until that certificate is [accepted by name](signer-truststore.md#accepting-one-certificate-by-name). A private CA named in `federation.outboundCaFile` is reached as before. The same applies to a client's `jwks_uri` and `sector_identifier_uri`.
 
 The query's `client_id` must be present and identical to the object's;
 anything else in the query is ignored, and the redirect URI, PKCE and RFC 9700
@@ -1709,7 +1859,7 @@ schema:
   is written (`STS-REG-0112`), as are an unknown category or datatype, a row
   for `type` or a common field, two rows for one member and a member both
   mapped and listed in `notForPolicy`. These are the rules
-  [AuthZEN's catalogue](authzen.md#the-attribute-catalogue) follows.
+  [AuthZEN's catalogue](authzen.md#3-the-realms-conversion-rules-the-attribute-catalogue) follows.
 * **Values are typed by the row**: a string is parsed as the row's datatype,
   a JSON number reaches only an `integer` or `double` row, `null` is refused,
   an array only for a `bag` row, and a nested object only through dotted
@@ -1866,7 +2016,7 @@ and it is not recorded in `/admin/tokens`: it is a response, not a credential.
   |---|---|---|
   | `introspection_signed_response_alg` | `oauthIntrospectionSignedResponseAlg` | `RS256` — any JWS algorithm in `introspection_signing_alg_values_supported`, HMAC keyed by the client secret; never `none` |
   | `introspection_encrypted_response_alg` | `oauthIntrospectionEncryptedResponseAlg` | not encrypted — RSA-OAEP, RSA-OAEP-256 or ECDH-ES(+A*KW), to a key in the client's `jwks` or registered `jwks_uri` |
-  | `introspection_encrypted_response_enc` | `oauthIntrospectionEncryptedResponseEnc` | `A128CBC-HS256` once an `alg` is set; refused without one |
+  | `introspection_encrypted_response_enc` | `oauthIntrospectionEncryptedResponseEnc` | `A128CBC-HS256` once an `alg` is set (`A256GCM` in product mode unless `crypto.allowCbcJwe` is on); refused without one |
 
   Set them in an RFC 7591 registration (an RFC 7592 update clears a member it
   omits), on the application's console page, or with
@@ -2122,6 +2272,11 @@ When it is on:
   posts `client_id session_state`. It answers `changed`, `unchanged` or
   `error`.
 * Only the origins of the realm's registered redirect URIs may frame it.
+* The iframe is one document: its script is inline, and its
+  `Content-Security-Policy` admits exactly that script by its SHA-256
+  (`script-src 'sha256-…'`), never `'unsafe-inline'`. So the iframe is
+  listening as soon as the page has loaded, and a relying party that posts
+  once, soon after loading it, gets an answer.
 
 The OP browser state is the cookie `sts_op_browser_state`. Script can read
 it, and on an HTTPS port it is `SameSite=None` so the iframe is sent it. It
@@ -2200,6 +2355,8 @@ endpoints on this page:
 * A foreign `subject_token` issuer in product mode.
 * Enrichment of declared `authorization_details` types (RFC 9396 section 7).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a client's encryption key that carries an `x5c` is held to that certificate; a bare key is left alone. See the `encryption-recipient` row of the [use cases](pki-use-cases.md).
+
 ## Development and product mode
 
 `global.mode` changes a good deal here. The full list, with the reasoning, is
@@ -2214,6 +2371,11 @@ on [What is not checked](what-is-not-checked.md).
 | Redirect URIs | any | only one registered for the client |
 | Password grant | offered; accepts any password but `invalid` | not offered (RFC 9700 section 2.4) |
 | Grants for a public client | all | authorization code and refresh only |
+| A client that declares no grant or response types | any grant and response type | `authorization_code`, `refresh_token` and `response_type=code` only (`oauth2.allowUndeclaredGrants`) |
+| PKCE for a confidential client | recommended: omitting it is logged | required (`oauth2.allowConfidentialWithoutPkce`) |
+| A repeated parameter at the authorization or token endpoint | the last value is taken, outside OAuth 2.1 mode | refused `invalid_request` |
+| A chain of refresh tokens | no absolute limit | ends 30 days after its first token (`oauth2.refreshTokenMaxChainS`) |
+| Consent for a public client | asked once, then recorded | asked every time (`oauth2.consentAlwaysForPublicClients`) |
 | `POST /oauth2/register` | open | closed unless `oauth2.openRegistration`, or a trusted software statement |
 | JSON introspection | answers anybody holding the token | the caller must authenticate |
 | Request objects | `alg: none` accepted unless a signature is required; `request_uri` may be `http` | must be signed; `request_uri` must be https and answer a JWT media type |
@@ -2226,6 +2388,8 @@ on [What is not checked](what-is-not-checked.md).
 | Profile claims | an invented persona fills gaps | from the directory entry or omitted; `email_verified` is `true` only for an address the person verified ([mail](mail.md)), else `false` |
 | Signing keys | new on every start | persisted, sealed, and rotated with an overlap |
 | `/logout?username=` | honoured (`logout.anyUser`) | ignored |
+
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate behind attestation-based client authentication must also permit digitalSignature, and is asked about revocation where its chain names a source. A root in this realm's [signer truststore](signer-truststore.md) can stand in for `oauth2.clientAttestationTrustAnchors`. `pki.paranoidClientAttestation` turns this row off.
 
 ## Configuration
 
@@ -2258,6 +2422,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.accessTokenTtlS` | `STS_OAUTH2_ACCESS_TOKEN_TTL_S` | `3600` | yes | An access token's lifetime and `expires_in`; read per token, in steps of 30 seconds. |
 | `oauth2.idTokenTtlS` | `STS_OAUTH2_ID_TOKEN_TTL_S` | `3600` | yes | An ID Token's lifetime, separate from the access token's. |
 | `oauth2.refreshTokenTtlS` | `STS_OAUTH2_REFRESH_TOKEN_TTL_S` | `86400` | yes | A refresh token's absolute lifetime, in both modes (it was thirty days before; `2592000` restores that). |
+| `oauth2.refreshTokenMaxChainS` | `STS_OAUTH2_REFRESH_TOKEN_MAX_CHAIN_S` | `0` (`2592000` in product) | yes | The absolute limit on a grant renewed by refresh tokens, counted from the first one; a renewed token never expires past it. 0 is no limit. |
 | `oauth2.clockSkewS` | `STS_OAUTH2_CLOCK_SKEW_S` | `30` | yes | The allowance on `exp` and `nbf` wherever this service reads back a token it issued, and on every console screen's state. |
 | `oauth2.authorizationCodeTtlS` | `STS_OAUTH2_AUTHORIZATION_CODE_TTL_S` | `300` | yes | How long an authorization code may wait to be redeemed; RFC 9700 mode's transaction memory is measured from it. |
 | `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered, so a repeat is refused naming when and by whom the code was redeemed (or the field that differs) and what it bought is revoked. Only with `oauth2.codeReplayIdempotent` on does an identical repeat get the same tokens. Past the limit the oldest is forgotten, and its replay is refused as an unknown code. |
@@ -2282,7 +2447,7 @@ on [OAuth security](oauth-security.md#configuration).
 |---|---|---|---|---|
 | `oauth2.refreshTokenEncryptionAlg` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ALG` | `A256KW` (`RSA-OAEP-256` until 2026-10-21; a token sealed under it still opens) | yes | The JWE key management algorithm every refresh token is sealed under, to this realm's own keys. |
 | `oauth2.refreshTokenEncryptionEnc` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ENC` | `A256GCM` | yes | The JWE content encryption algorithm for refresh tokens. |
-| `oauth2.refreshTokenEncryptionKeyBits` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of each realm's RSA refresh-token encryption key; reaches keys made after the change. |
+| `oauth2.refreshTokenEncryptionKeyBits` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS` | `2048` (`3072` in product) | yes | The size of each realm's RSA refresh-token encryption key; reaches keys made after the change. |
 | `oauth2.refreshTokenEncryptionCurve` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_CURVE` | `P-256` | yes | The curve of each realm's EC refresh-token encryption key; reaches keys made after the change. |
 
 ### Consent, permissions and claims
@@ -2290,6 +2455,7 @@ on [OAuth security](oauth-security.md#configuration).
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `oauth2.consentRequired` | `STS_OAUTH2_CONSENT_REQUIRED` | `true` | yes | Ask the person, on `/oauth2/consent`, before issuing for a scope they have not agreed to for that application. |
+| `oauth2.consentAlwaysForPublicClients` | `STS_OAUTH2_CONSENT_ALWAYS_FOR_PUBLIC_CLIENTS` | `false` (`true` in product) | yes | Ask every time a public client requests access, whatever the person answered before. This service's own applications are not asked. |
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development, refuse `invalid_scope` a request, on a person's behalf, for a delegated permission the client has not been granted; off, it is honoured and logged. Product mode always refuses one. Not asked on `client_credentials`, where a role decides (#551). |
 | `oauth2.maxRequestedClaims` | `STS_OAUTH2_MAX_REQUESTED_CLAIMS` | `64` | yes | The most claims one OpenID Connect Core 5.5 claims request may name. |
 | `oauth2.didClaim` | `STS_OAUTH2_DID_CLAIM` | `false` | yes | Release a person's preferred, proved DID as the `did` claim behind the `did` scope (#693). See [A person's DID](#a-persons-did-the-did-claim). |
@@ -2298,6 +2464,7 @@ on [OAuth security](oauth-security.md#configuration).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
+| `oauth2.allowUndeclaredGrants` | `STS_OAUTH2_ALLOW_UNDECLARED_GRANTS` | `false` | yes | Product mode only. On, a client that declares no grant or response types may use any this service offers. Off, `authorization_code`, `refresh_token` and `response_type=code` alone. For test stacks. |
 | `oauth2.tokenExchangeAudience` | `STS_OAUTH2_TOKEN_EXCHANGE_AUDIENCE` | `authorization-server` | yes | What an exchanged assertion may be addressed to: this authorization server, or also (`any-declared-relying-party`) a relying party registered here — token forwarding. See [Delegation](delegation.md#assertions-as-the-subject-or-the-actor). |
 | `oauth2.tokenExchangeRefreshToken` | `STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN` | `when-requested` | yes | Whether an RFC 8693 exchange returns a refresh token: `never`, `when-requested` or `always`. |
 | `oauth2.jwtBearerGrant` | `STS_OAUTH2_JWT_BEARER_GRANT` | `true` | yes | Offer and advertise the RFC 7523 JWT bearer grant. |
@@ -2339,7 +2506,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.clientJwksCacheS` | `STS_OAUTH2_CLIENT_JWKS_CACHE_S` | `300` | yes | How long a key set fetched from a client's `jwks_uri` is reused. |
 | `oauth2.clientJwksRefetchS` | `STS_OAUTH2_CLIENT_JWKS_REFETCH_S` | `30` | yes | The least time between two fetches of one `jwks_uri` for a `kid` the cached set lacks. |
 | `oauth2.requestUriCacheS` | `STS_OAUTH2_REQUEST_URI_CACHE_S` | `0` | yes | How long a fetched `request_uri` answer is reused; 0 fetches every time. |
-| `oauth2.requestObjectEncryptionKeyBits` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of the RSA key each realm publishes (`use: enc`) for encrypted request objects. |
+| `oauth2.requestObjectEncryptionKeyBits` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS` | `2048` (`3072` in product) | yes | The size of the RSA key each realm publishes (`use: enc`) for encrypted request objects. |
 | `oauth2.requestObjectEncryptionCurve` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_CURVE` | `P-256` | yes | The curve of the EC key each realm publishes for ECDH-ES request object encryption. |
 
 ### Client attestation

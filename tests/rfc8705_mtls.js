@@ -439,6 +439,13 @@ function childMain() {
                     reason: 'keyCompromise' });
     note(r.status === 200, '3c9. the holder\'s certificate is revoked',
          JSON.stringify(r.json).slice(0, 300));
+    r = await api('/applications/revoke-tls-client-certificate',
+                  { application: 'mtls-other', serialHex: doomed.serialHex,
+                    reason: 'keyCompromise' });
+    note(r.status === 200 && r.json && r.json.already === true,
+         '3c9a. revoking the same certificate again keeps the earlier ' +
+         'entry',
+         JSON.stringify(r.json).slice(0, 300));
     r = await token({ grant_type: 'client_credentials',
                       client_id: 'mtls-other' }, doomed.tls);
     note(refused(r, 401, 'invalid_client') &&

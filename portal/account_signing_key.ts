@@ -15,7 +15,10 @@
 // whole authority is *this is me*: `common/person_assertions.js` refuses an
 // assertion signed with it that names anybody else as `sub`, on the
 // registered key and on the certificate alike. Two profiles — RFC 7523's JWT
-// key pair and RFC 7522's SAML one — each with its own Generate and Take off.
+// key pairs and RFC 7522's SAML ones — each holding SEVERAL since #1290
+// (rcbj, 2026-11-03), up to `pki.personSigningKeyMax` valid ones, each with
+// its own label and revoked on its own row, as the TLS card's certificates
+// are. Generate ADDS one; there is no Take off any more.
 // And since 2026-09-13 a TLS CLIENT CERTIFICATE, the third card: a key and a
 // certificate that sign a TLS handshake at `GET /tls/sign-in`
 // (`common/tls_client_certificates.js`).
@@ -24,11 +27,19 @@
 // VIEW.** Every other act here answers a message. These two cannot: a
 // credential on a URL is a credential in a browser history entry, this
 // service's own access log and every proxy log between here and the person.
-// So `generate` answers `view.fresh.privateKeyPem`, and `generate-tls-client`
-// answers `view.fresh.files` — the PKCS#12, the key and the chain, each as
-// base64 the page turns into a `download` link — and the runtime draws them
-// in place. **AND THERE IS NO SECOND CHANCE**: the key is written to the
-// entry sealed under the key-encryption key and nothing opens it again.
+// So both generations answer `view.fresh.files` — the private key and the
+// certificate chain, two PEM files, each as base64 the page turns into a
+// `download` link in the certificate's own row — and the runtime draws them
+// in place. **AND THERE IS NO SECOND CHANCE**: a signing key is written to
+// the entry sealed under the key-encryption key and nothing opens it again,
+// and a TLS client certificate's key is not kept at all.
+//
+// **NO FILE PASSWORD AND NO PKCS#12 (#671, rcbj, 2026-11-03).** The TLS card
+// asked for a password and answered a `.p12` beside an encrypted PEM key;
+// rcbj asked for the three cards to work alike, with no password, accepting
+// that a browser can no longer import the result. The key file is the
+// unencrypted PKCS#8 PEM the issue handed over, as the two signing keys'
+// are, and the files are the same pair on every card.
 //
 // **THE SETTING IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE**
 // (`pki.personSelfService`, 403 when off), and BOTH generations are RATE
@@ -38,17 +49,21 @@
 //
 // **THE IDENTITY IS THE TOKEN'S AND THERE IS NO PARAMETER FOR IT.** The form
 // has no name field, and a TLS certificate's serial is looked up among THIS
-// person's certificates only in `tlsClient.revoke()` — one belonging to
-// somebody else matches nothing.
+// person's certificates only in `tlsClient.revoke()`, as a signing key's
+// handle is among this person's key pairs only in
+// `personAssertions.revoke()` — one belonging to somebody else matches
+// nothing.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import pki = require('../common/pki');
 import personAssertions = require('../common/person_assertions');
 import tlsClient = require('../common/tls_client_certificates');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -72,33 +87,9 @@ const SIGNING_KEY_PROFILES = [
 // field — the deployment's answers — and above all NO NAME FIELD: a
 // `username` here would let anybody signed in issue THEMSELVES a key pair on
 // somebody else's entry, which is a takeover rather than a leak.
-const SIGNING_KEY_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['generate', 'remove',
-                          // A TLS client certificate (2026-09-13).
-                          'generate-tls-client', 'revoke-tls-client']))
-    .describe('`generate` or `remove` a signing key pair (for `purpose`); ' +
-              '`generate-tls-client` or `revoke-tls-client` a TLS client ' +
-              'certificate.'),
-  label: vz.string().max(80).optional()
-    .describe('For `generate-tls-client`: what you call the device.'),
-  key_alg: vt.opt(vt.oneOf(tlsClient.KEY_ALGS))
-    .describe('For `generate-tls-client`: the key algorithm.'),
-  p12_password: vz.string().max(512).optional()
-    .describe('For `generate-tls-client`: the password protecting the ' +
-              'PKCS#12 file. Used once and not stored.'),
-  p12_confirm: vz.string().max(512).optional()
-    .describe('The same password again.'),
-  serial: vz.string().max(80).regex(/^[0-9A-Fa-f:]*$/).optional()
-    .describe('For `revoke-tls-client`: the certificate\'s serial, one of ' +
-              'yours.'),
-  reason: vt.opt(vt.oneOf(tlsClient.REVOCATION_REASONS))
-    .describe('For `revoke-tls-client`: why.'),
-  // WHICH PROFILE (2026-09-13). Absent means `jwt`, which is what every form
-  // and client posted before the second profile existed.
-  purpose: vt.opt(vt.oneOf(['jwt', 'saml']))
-    .describe('For `generate` and `remove`: RFC 7523\'s `jwt` key pair (the ' +
-              'default) or RFC 7522\'s `saml` one.')
-});
+// `remove` (take off) left with #1290: a signing key pair is REVOKED, one
+// at a time, by `revoke` with its `handle`.
+const SIGNING_KEY_FORM = ModelZod.body('account', 'changeSigningKeys');
 
 interface AccountSigningKeyDeps {
   log: typeof helpers.log;
@@ -159,32 +150,42 @@ class AccountSigningKey {
     })[0] || null;
   }
 
-  // What a person holds for one profile, read off `recordFor()`'s record by
-  // the register's own attribute table — so this page and `/admin/users`
-  // cannot disagree about which attribute holds the handle. Null where
-  // nothing is held.
+  // What a person holds for one profile (#1290): every key pair with its
+  // state, newest first, as the TLS card lists certificates — read off
+  // `recordFor()`'s record, which is the register's own, so this page and
+  // `/admin/users` cannot disagree. No private key is in it.
   /**
    * What the person holds for one profile.
    *
-   * @param held - `personAssertions.recordFor()`'s record
+   * @param held - `personAssertions.recordFor()`'s record, or null
    * @param profile - the profile
-   * @returns the handle, expiry, certificate and issuers, or null
+   * @returns `{ keys, issuers, valid }`
    */
   heldProfile(held: Json, profile: Json): Json {
-    const { log, personAssertions } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AccountSigningKey.heldProfile().");
-    const names = personAssertions.KEY_PAIR_ATTRIBUTES[profile.id];
-    if (!held || !names || !held[names.present]) {
-      log.debug("Leaving AccountSigningKey.heldProfile(). Nothing held.");
-      return null;
-    }
-    log.debug("Leaving AccountSigningKey.heldProfile().");
+    const keys: Json[] = ((held && held.keys && held.keys[profile.id]) || [])
+      .map(function (one: Json): Json {
+        return { handle: String(one.id || ''),
+                 label: String(one.label || ''),
+                 source: String(one.source || ''),
+                 serialHex: String(one.serialHex || ''),
+                 keyAlg: String(one.keyAlg || ''),
+                 notAfter: String(one.notAfter || ''),
+                 expiresAt: String(one.expiresAt || ''),
+                 state: String(one.state || ''),
+                 reason: String(one.reason || ''),
+                 revokedAt: String(one.revokedAt || ''),
+                 certificate: String(one.certificatePem || '') };
+      });
+    log.debug("Leaving AccountSigningKey.heldProfile(). " + keys.length);
     return {
-      handle: String(held[names.handle] || ''),
-      expiresAt: String(held[names.expiresAt] || ''),
-      certificate: String(held[names.certificate] || ''),
-      issuers: [].concat((profile.id === 'saml' ? held.samlEffectiveIssuers
-                                                : held.effectiveIssuers) || [])
+      keys: keys,
+      valid: keys.filter(function (one: Json): boolean {
+        return one.state === 'valid';
+      }).length,
+      issuers: [].concat((held && (profile.id === 'saml'
+        ? held.samlEffectiveIssuers : held.effectiveIssuers)) || [])
     };
   }
 
@@ -208,13 +209,9 @@ class AccountSigningKey {
       // No directory to ask: the certificate is issued with no address.
       entry = null;
     }
-    const attributes = (entry && entry.attributes) || {};
-    const key = Object.keys(attributes).filter(function (one) {
-      return one.toLowerCase() === 'mail';
-    })[0];
-    const values = key ? [].concat(attributes[key]) : [];
+    const user = Classes.User.fromEntry((entry && entry.attributes) || {});
     log.debug("Leaving AccountSigningKey.mailOf().");
-    return values.length ? String(values[0]) : '';
+    return user.email || '';
   }
 
   // THE TLS CLIENT CERTIFICATE CARD'S FACTS: the person's certificates, what
@@ -252,7 +249,6 @@ class AccountSigningKey {
       maxPerPerson: Number(report.maxPerPerson || 0),
       keyAlgs: (tlsClient.KEY_ALGS || []).slice(0),
       defaultKeyAlg: tlsClient.DEFAULT_KEY_ALG,
-      passwordMin: tlsClient.PKCS12_PASSWORD_MIN,
       held: held.map(function (one: Json): Json {
         return { label: String(one.label || ''),
                  serialHex: String(one.serialHex || ''),
@@ -263,6 +259,21 @@ class AccountSigningKey {
                  revokedAt: String(one.revokedAt || '') };
       })
     };
+  }
+
+  // THE TWO FILES EVERY GENERATION ANSWERS (#671): the private key and the
+  // certificate chain, leaf first, each as base64 for a `data:` link. One
+  // shape for the three cards, so the page draws them one way.
+  /**
+   * A PEM file as the page's `download` link wants it.
+   *
+   * @param name - the file name
+   * @param text - the PEM text
+   * @returns `{ name, mime, base64 }`
+   */
+  static pemFile(name: string, text: string): Json {
+    return { name: name, mime: 'application/x-pem-file',
+             base64: Buffer.from(String(text), 'utf8').toString('base64') };
   }
 
   /**
@@ -279,6 +290,7 @@ class AccountSigningKey {
     log.debug("Entering AccountSigningKey.view().");
     const username = caller.username;
     const held: Json = personAssertions.recordFor(username);
+    const max = Number(personAssertions.maxPerPerson() || 0);
     const out = {
       username: username,
       entry: !!held,
@@ -286,10 +298,15 @@ class AccountSigningKey {
       offered: config.value('pki.personSelfService') !== false,
       issuable: !!pki.hasChain(),
       tokenEndpoint: String(base || '') + '/oauth2/token',
+      // THE CAP (#1290), per profile, and the two reasons a holder may give.
+      maxPerPerson: max,
+      reasons: (personAssertions.REVOCATION_REASONS || []).slice(0),
       profiles: SIGNING_KEY_PROFILES.map(function (profile) {
+        const mine = self.heldProfile(held, profile);
         return { id: profile.id, rfc: profile.rfc,
                  grantType: profile.grantType,
-                 held: self.heldProfile(held, profile) };
+                 held: mine,
+                 atCap: max > 0 && mine.valid >= max };
       }),
       tls: this.tlsView(username, base),
       fresh: fresh || null
@@ -375,12 +392,6 @@ class AccountSigningKey {
           'people issue their own certificates. An administrator can issue ' +
           'one to you.');
       }
-      const passwordSaid = tlsClient.pkcs12PasswordProblem(body.p12_password,
-                                                           body.p12_confirm);
-      if (passwordSaid) {
-        log.debug("Leaving AccountSigningKey.act(). File password.");
-        return refuse(400, 'STS-PORTAL-0040', passwordSaid);
-      }
       const allowedTls = await limited();
       if (!allowedTls.ok) {
         log.debug("Leaving AccountSigningKey.act(). Rate limited.");
@@ -399,24 +410,10 @@ class AccountSigningKey {
           (made.errors || ['A TLS client certificate could not be ' +
                            'issued.'])[0]);
       }
-      let files: Json = null;
-      try {
-        files = await tlsClient.bundle(made.issued, body.p12_password);
-      } catch (e) {
-        // THE CERTIFICATE EXISTS AND ITS KEY IS GONE. Revoked at once rather
-        // than left valid in the register: a certificate nobody can ever
-        // present is only a line on a list, and one nobody can revoke
-        // because nobody knows its key was lost is worse.
-        log.error(ctx.errorCodes.tag('STS-PORTAL-0042') + 'portal: a TLS ' +
-                  'client certificate was issued to ' + username + ' and ' +
-                  'its files could not be built, so it was revoked: ' +
-                  ((e && e.message) || e));
-        tlsClient.revoke(undefined, username, made.issued.serialHex,
-                         'cessationOfOperation');
-        log.debug("Leaving AccountSigningKey.act(). Not packaged.");
-        return refuse(500, 'STS-PORTAL-0042', 'The certificate could not be ' +
-                      'packaged for download, so it was revoked. Try again.');
-      }
+      // THE KEY AND THE CHAIN AS THEY CAME OUT OF THE ISSUE (#671): nothing
+      // is encrypted or packaged, so nothing between the issue and the
+      // answer can fail and leave a certificate whose key is lost.
+      const files: Json = tlsClient.pemFiles(made.issued);
       audit.record({
         category: 'authentication', action: 'portal.tls-client.issued',
         actor: username, outcome: 'success',
@@ -431,11 +428,6 @@ class AccountSigningKey {
                'certificate, serial ' + made.issued.serialHex + ', valid ' +
                'until ' + made.issued.notAfter + '. The private key went out ' +
                'once in the answer and is not readable again.');
-      // THE FILES AS BASE64, which the page turns into `download` links —
-      // the PKCS#12 already is; the key and the chain are PEM text.
-      const b64 = function (text: Json): string {
-        return Buffer.from(String(text), 'utf8').toString('base64');
-      };
       const fresh = {
         kind: 'tls-client',
         issued: { subject: String(made.issued.subject || ''),
@@ -443,12 +435,8 @@ class AccountSigningKey {
                   keyAlg: String(made.issued.keyAlg || ''),
                   notAfter: String(made.issued.notAfter || '') },
         files: {
-          pkcs12: { name: files.pkcs12.name, mime: files.pkcs12.mime,
-                    base64: files.pkcs12.base64 },
-          key: { name: files.key.name, mime: files.key.mime,
-                 base64: b64(files.key.text) },
-          chain: { name: files.chain.name, mime: files.chain.mime,
-                   base64: b64(files.chain.text) }
+          key: AccountSigningKey.pemFile(files.key.name, files.key.text),
+          chain: AccountSigningKey.pemFile(files.chain.name, files.chain.text)
         }
       };
       log.debug("Leaving AccountSigningKey.act(). TLS client issued.");
@@ -456,31 +444,35 @@ class AccountSigningKey {
                                   view: this.view(caller, base, fresh) });
     }
 
-    if (action === 'remove') {
-      // ONE PROFILE AT A TIME: taking the RFC 7522 key pair off leaves the
-      // RFC 7523 one working, and the reverse.
-      const removed: Json = personAssertions.clear(username, profile.id,
+    // A SIGNING KEY PAIR: revoke one of yours (#1290), which replaced
+    // "take off". A message, because nothing secret comes back. The handle
+    // is looked up among THIS person's key pairs only.
+    if (action === 'revoke') {
+      const revoked: Json = personAssertions.revoke(username, profile.id,
+        String(body.handle || ''), body.reason,
         { initiatingEntity: 'user', via: 'portal' });
-      if (!removed.ok) {
-        log.debug("Leaving AccountSigningKey.act(). Nothing to remove.");
-        return refuse(400, 'STS-PORTAL-0027', 'You hold no ' + profile.rfc +
-          ' signing key, so there was nothing to take off.');
+      if (!revoked.ok) {
+        log.debug("Leaving AccountSigningKey.act(). Not revoked.");
+        return refuse(400, codeOf(revoked, 'STS-PORTAL-0625'),
+          (revoked.errors || ['That key pair could not be revoked.'])[0]);
       }
       audit.record({
-        category: 'authentication', action: 'portal.signing-key.removed',
+        category: 'authentication', action: 'portal.signing-key.revoked',
         actor: username, outcome: 'success',
-        summary: username + ' took their own ' + profile.rfc + ' signing ' +
-                 'key off',
-        detail: { purpose: profile.id, attributes: removed.removed,
+        summary: username + ' revoked their own ' + profile.rfc + ' signing ' +
+                 'key pair ' + revoked.key.id + ' (' + revoked.reason + ')',
+        detail: { purpose: profile.id, handle: revoked.key.id,
+                  serialHex: revoked.key.serialHex, label: revoked.key.label,
+                  reason: revoked.reason, already: !!revoked.already,
+                  onList: !!revoked.onList,
                   address: websecurity.addressOf(req) }
       });
-      log.info('portal: ' + username + ' removed their ' + profile.rfc +
-               ' assertion signing key. Assertions signed with it are ' +
-               'refused from now on; the certificate itself is on no ' +
-               'revocation list.');
-      log.debug("Leaving AccountSigningKey.act(). Removed.");
+      log.info('portal: ' + username + ' revoked their ' + profile.rfc +
+               ' signing key pair ' + revoked.key.id + ' (' + revoked.reason +
+               '). Assertions signed with it are refused from now on.');
+      log.debug("Leaving AccountSigningKey.act(). Revoked.");
       return ctx.json(res, 200, { ok: true,
-        message: t.text('portal.done.keyOff', { rfc: profile.rfc }) });
+        message: t.text('portal.done.keyRevoked', { rfc: profile.rfc }) });
     }
 
     if (action === 'generate') {
@@ -489,6 +481,25 @@ class AccountSigningKey {
         return refuse(403, 'STS-PORTAL-0028', 'This service does not let ' +
           'people issue their own signing keys. An administrator can issue ' +
           'one to you.');
+      }
+      // THE CAP AND THE LABEL BEFORE A KEY PAIR IS GENERATED (#1290), and
+      // before the rate limit: an RSA key pair is CPU on the one thread, and
+      // generating one only for `write()` to refuse it would spend that and
+      // lose the key — and a refusal that generates nothing should not use
+      // up one of the person's generations either.
+      const label = String(body.label || '').trim();
+      const labelSaid = personAssertions.labelProblem(label);
+      if (labelSaid) {
+        log.debug("Leaving AccountSigningKey.act(). Label refused.");
+        return refuse(400, 'STS-PKI-0225', labelSaid);
+      }
+      if (personAssertions.atCap(username, profile.id)) {
+        log.debug("Leaving AccountSigningKey.act(). At the cap.");
+        return refuse(400, 'STS-PKI-0223', 'You already hold ' +
+          personAssertions.maxPerPerson() + ' ' + profile.rfc + ' signing ' +
+          'key pairs that are still valid, which is the most this service ' +
+          'issues to one person. Revoke one you no longer use and generate ' +
+          'again.');
       }
       // RATE LIMITED, two settings since 2026-09-12 whose defaults are the
       // five it was: per identity, and per address so that everybody behind
@@ -516,7 +527,8 @@ class AccountSigningKey {
       }
       const record = issued.issued;
       const written: Json = personAssertions.write(username, record,
-        { purpose: profile.id, initiatingEntity: 'user', via: 'portal' });
+        { purpose: profile.id, label: label, initiatingEntity: 'user',
+          via: 'portal' });
       if (!written.ok) {
         // THE KEY PAIR IS GONE AND THE PAGE SAYS SO. `common/pki.js` hands
         // one over ONCE and keeps no copy, so a failed write is not a state
@@ -534,7 +546,7 @@ class AccountSigningKey {
         actor: username, outcome: 'success',
         summary: username + ' issued themselves an ' + profile.rfc +
                  ' signing key pair',
-        detail: { purpose: profile.id, kid: record.kid,
+        detail: { purpose: profile.id, kid: record.kid, label: label,
                   thumbprint: record.certificateThumbprint,
                   notAfter: record.notAfter, keyAlg: record.keyAlg,
                   address: websecurity.addressOf(req) }
@@ -545,11 +557,31 @@ class AccountSigningKey {
                  ? 'thumbprint=' + record.certificateThumbprint
                  : 'kid=' + record.kid) +
                ', valid until ' + record.notAfter + '. The private half was ' +
-               'shown to them once and is not readable again.');
+               'offered to them once and is not readable again.');
       log.debug("Leaving AccountSigningKey.act(). Issued and showing.");
+      // The files are named for the person, the profile and the label, as a
+      // TLS client certificate's are for the person and the device — two
+      // key pairs of one profile are two pairs of files a person can tell
+      // apart in a downloads folder.
+      const stem = (String(username + (label ? '-' + label : ''))
+        .replace(/[^A-Za-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'person') + '-' + profile.id + '-signing';
+      const chain = [record.certificatePem].concat(record.chainPem || [])
+        .map(function (one: Json): string {
+          return String(one).trim() + '\n';
+        }).join('');
       return ctx.json(res, 200, { ok: true, view: this.view(caller, base, {
         purpose: profile.id,
-        privateKeyPem: record.privateKeyPem,
+        // WHICH ROW OF THE LIST IS THE NEW ONE (#1290): the page draws the
+        // two downloads in that key pair's own row.
+        handle: profile.id === 'saml' ? record.certificateThumbprint || ''
+                                      : record.kid || '',
+        label: label,
+        files: {
+          key: AccountSigningKey.pemFile(stem + '-key.pem',
+                                         record.privateKeyPem),
+          chain: AccountSigningKey.pemFile(stem + '-chain.pem', chain)
+        },
         kid: record.kid || '',
         thumbprint: record.certificateThumbprint || '',
         jwsAlg: record.jwsAlg || '',
@@ -575,37 +607,13 @@ class AccountSigningKey {
     log.debug("Entering AccountSigningKey.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/signing-key',
-        operationId: 'getSigningKeys', tag: 'Signing keys',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/signing-key',
-        summary: 'Your signing key pairs and TLS client certificates',
-        description: '`profiles`: RFC 7523\'s JWT and RFC 7522\'s SAML key ' +
-          'pairs — for each, what you hold (its kid or thumbprint, the ' +
-          'issuers you may assert as, its expiry and certificate) or null. ' +
-          '`tls`: your TLS client certificates, where one signs you in, and ' +
-          'what the form offers. `offered` (`pki.personSelfService`) and ' +
-          '`issuable` (a certificate authority exists) say whether you may ' +
-          'generate. No private key is ever in this answer.',
-        query: vz.object({}),
+        operationId: 'getSigningKeys', access: 'person', query: ModelZod.query('account', 'getSigningKeys'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req)));
         } },
       { method: 'POST', path: ctx.BASE + '/signing-key',
-        operationId: 'changeSigningKeys', tag: 'Signing keys',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/signing-key',
-        summary: 'Generates or takes off a signing key or TLS certificate',
-        description: '`generate` issues a key pair for `purpose` from this ' +
-          'realm\'s Issuing CA and answers its private key ONCE, in ' +
-          '`view.fresh.privateKeyPem`; `remove` takes one off. ' +
-          '`generate-tls-client` issues a TLS client certificate and answers ' +
-          'its PKCS#12, key and chain ONCE, in `view.fresh.files` (base64); ' +
-          '`revoke-tls-client` revokes one of yours. Both generations are ' +
-          'refused (403) where self-service is off, and rate limited. A ' +
-          'refusal carries the page\'s `view`.',
-        body: SIGNING_KEY_FORM,
-        statuses: { 403: 'Self-service issue is off in this service.',
-                    429: 'Too many generations; try again later.',
-                    500: 'Issued and then lost; nothing usable was kept.' },
+        operationId: 'changeSigningKeys', access: 'person', recentAuth: true, body: SIGNING_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

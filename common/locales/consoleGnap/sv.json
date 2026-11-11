@@ -30,7 +30,7 @@
   "jwtEncrypted": "Inbäddad i en JWE: till resursserverns <code>gnapJweKey</code>, eller till den här auktoriseringsservern (introspektera den)",
   "macaroon": "HMAC-SHA256 under en rotnyckel per resursserver, förseglad som <code>gnapMacaroonKey</code> på dess post",
   "biscuit": "Ed25519-rotnyckel <code>{key}</code>",
-  "zcap": "Ed25519Signature2020-delegering från <code>{controller}</code>",
+  "zcap": "{suite}-delegering från <code>{controller}</code>",
   "grants": "Beviljanden",
   "grantCount": "{n} beviljande(n)",
   "thGrant": "Beviljande",

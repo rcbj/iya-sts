@@ -432,12 +432,12 @@ function portalPages(root, client) {
       return op.mirrors === method + " " + page;
     })[0] || null;
   };
-  const call = async function (op, method, target, body) {
+  const call = async function (op, method, target, body, extra) {
     log.debug("Entering call().");
     log.debug("Leaving call().");
     return op.access === "person" ? client.api(method, target, body)
                                   : portalSignin.nobody(root, method, target,
-                                                        body);
+                                                        body, extra);
   };
   const draw = async function (page, view, query) {
     log.debug("Entering draw().");
@@ -486,7 +486,16 @@ function portalPages(root, client) {
                 page);
       if (method === "GET") {
         const qs = new URLSearchParams(query).toString();
-        const r = await call(op, "GET", op.path + (qs ? "?" + qs : ""));
+        // A LINK'S TOKEN IS IN ITS FRAGMENT (#1454): the page reads it there
+        // and sends it in a header, and renders the form with it.
+        const linkToken = new URLSearchParams(url.hash.slice(1)).get("token");
+        if (linkToken) {
+          query.token = linkToken;
+        }
+        const r = await call(op, "GET", op.path + (qs ? "?" + qs : ""),
+                             undefined,
+                             linkToken ? { "X-Link-Token": linkToken }
+                                       : undefined);
         const view = r.json && r.json.view ? r.json.view : r.json;
         const shell = await fetch(root + page + url.search);
         log.debug("Leaving go(). GET " + page);
@@ -631,7 +640,7 @@ async function startSignIn(b, root) {
     code_challenge: sha256(Buffer.from(verifier)).toString("base64url"),
     code_challenge_method: "S256", resource: root + "/account-api"
   }).toString());
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
     "the portal's authorization request did not ask for a sign-in: " +
     r.status + " -> " + r.location);
   const screenAt = r.location;

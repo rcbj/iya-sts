@@ -95,13 +95,33 @@
     "en": "4369282d9208f4aa",
     "text": "Paniwalaan ang X-Forwarded-Proto at X-Forwarded-Host — na siyang itinatakda ng isang TLS-terminating reverse proxy para sabihin kung ano ang ginamit ng CLIENT. I-ON ito kapag may nasa harap ng serbisyong ito, kung hindi ay maglalathala ang metadata ng mga http:// URL sa mga client na umabot dito sa https at tatanggihan ang bawat DPoP proof dahil pinangangalanan nito ang tunay na endpoint. Iwanan itong OFF kapag wala: kung walang proxy, ordinaryong header lang ang mga iyon na kayang itakda ng sinumang client, at ang paniniwala sa mga iyon ay hinahayaan ang isang caller na pumili kung ano ang akala ng serbisyong ito na sarili nitong issuer at mga endpoint. Ipinapakita ng Monitoring → TLS connection kung ano talaga ang dala ng isang request at kung ano ang pinaniwalaan dito. TANDAAN na hindi kailanman nagbabasa ang serbisyong ito ng client certificate mula sa isang header (X-Client-Cert at mga kamag-anak nito) sa alinmang mode — ang forwarded na certificate ay certificate na kayang pekein ng kahit sino."
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "Mga address ng CDN edge"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "Ang mga address o CIDR range na pinagkokonektahan ng CDN na nasa harap ng serbisyong ito, pinaghihiwalay ng kuwit. Pinagsisilbihan ng mga edge ng CDN ang lahat ng customer nito, kaya tinatanggihan ang request mula sa isa sa mga range na ito maliban kung may dala itong global.edgeSecret sa X-Origin-Verify header nito. Kapag WALANG laman, ang default, walang hinihingi kaninuman. Ang value na hindi address o CIDR range ay binabalewala at itinatala sa log."
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "Origin secret ng CDN"
+  },
+  "global.edgeSecret|description": {
+    "en": "150b63080ee2d16b",
+    "text": "Ang ipinapadala ng sariling CDN distribution ng deployment na ito sa X-Origin-Verify, na siyang nagpapakilala rito mula sa distribution ng ibang customer sa parehong mga edge. Inaalis ang header kapag nabasa na. Kapag walang laman habang nakatakda ang global.edgeProxies, tinatanggihan ang bawat request mula sa mga range na iyon. Maaari itong ibigay bilang `sha256:<hex digest>`, para ang digest lang ang hawak ng serbisyong ito, at ihatid bilang file na pinangangalanan ng STS_EDGE_SECRET_FILE."
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "binabasa nang isang beses sa startup"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "Mga address ng pinagkakatiwalaang proxy"
   },
   "global.trustedProxies|description": {
-    "en": "1f176030f2e4d953",
-    "text": "Ang mga address o CIDR range na pinagkokonektahan ng sariling mga proxy at load balancer ng deployment na ito, pinaghihiwalay ng kuwit (10.0.0.0/8, fd00::/8). Binabasa lang kapag naka-on ang global.trustProxy. Ang WALANG LAMAN, ang default, ay nagpapanatili ng lumang patakaran: pinaniniwalaan ang mga forwarded header mula sa kahit anong caller, at kinukuha ng rate limiter ang pinakakaliwang X-Forwarded-For entry, na isinusulat mismo ng client. Kapag ITINAKDA, ang X-Forwarded-For, X-Forwarded-Proto at X-Forwarded-Host ay pinaniniwalaan lang mula sa connection na ang peer ay nasa isa sa mga range na ito, at ang client ay ang pinakakanang X-Forwarded-For entry na wala roon — kaya ang caller na direktang umaabot sa isang node ay hindi makakapili ng sarili nitong rate-limit address ni ng akala ng serbisyong ito sa sarili nitong URL. Ang value na hindi address o range ay binabalewala at nilo-log, hindi kailanman pinalalawak. Kapag naka-on ang global.proxyProtocol, ito RIN ang listahan na pinaniniwalaan ang PROXY protocol header, anuman ang sinasabi ng global.trustProxy — at doon, walang pinagkakatiwalaan ang listahang walang laman, kaya tumatangging mag-start ang serbisyo."
+    "en": "0af5f57bfac2e8d3",
+    "text": "Ang mga address o CIDR range na pinagkokonektahan ng sariling mga proxy at load balancer ng deployment na ito, pinaghihiwalay ng kuwit (10.0.0.0/8, fd00::/8). Binabasa lang kapag naka-on ang global.trustProxy. Ang WALANG LAMAN, ang default, ay nagpapanatili ng lumang patakaran sa development mode: pinaniniwalaan ang mga forwarded header mula sa kahit anong caller, at kinukuha ng rate limiter ang pinakakaliwang X-Forwarded-For entry, na isinusulat mismo ng client. Sa product mode, ang WALANG LAMAN ay walang pinaniniwalaan, kaya ang client ay ang peer ng connection. Kapag ITINAKDA, ang X-Forwarded-For, X-Forwarded-Proto at X-Forwarded-Host ay pinaniniwalaan lang mula sa connection na ang peer ay nasa isa sa mga range na ito, at ang client ay ang pinakakanang X-Forwarded-For entry na wala roon — kaya ang caller na direktang umaabot sa isang node ay hindi makakapili ng sarili nitong rate-limit address ni ng akala ng serbisyong ito sa sarili nitong URL. Ang value na hindi address o range ay binabalewala at nilo-log, hindi kailanman pinalalawak. Kapag naka-on ang global.proxyProtocol, ito RIN ang listahan na pinaniniwalaan ang PROXY protocol header, anuman ang sinasabi ng global.trustProxy — at doon, walang pinagkakatiwalaan ang listahang walang laman, kaya tumatangging mag-start ang serbisyo."
   },
   "http.keepAliveTimeoutS|label": {
     "en": "d9f06661ccb4fd07",
@@ -187,13 +207,237 @@
     "en": "034b8666bc7feb89",
     "text": "Mga origin — scheme, host at port, walang path — na itinuturing ng CORS na SARILI ng deployment na ito, pinaghihiwalay ng kuwit, katabi ng mga address na pinakikinggan ng serbisyong ito, ng global.publicBaseUrl at ng embedded debugger. Ang origin dito ay puwedeng magbasa ng bawat sagot na ibinibigay ng serbisyong ito sa isang browser, anumang client ang pinangangalanan ng request. Ang WALANG LAMAN, ang default, ay walang idinadagdag: ang bawat ibang origin ay pinapayagan lang kung saan inililista ito ng isang application sa appCorsOrigin. Ang value na hindi origin ay binabalewala at nilo-log, hindi kailanman pinalalawak."
   },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "Mga direktoryong mababasahan ng pinangalanang file"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "Sa product mode lang. Listahan ng mga absolute na direktoryo na pinaghihiwalay ng kuwit. Binabasa lang ang file na pinangalanan ng administrator sa setting o kahilingan (CA file, SPIFFE token o key file, Sigstore file, mail certificate o key) kung ang tunay nitong path, matapos sundan ang mga symbolic link, ay nasa loob ng isa sa mga ito. Itinatakda ito sa environment o sa appconfig file at hindi mababago sa console o API, para hindi ito mapalawak ng kahilingan ng administrator. BABALA: ang pagdagdag ng / o ibang malawak na direktoryo ay nangangahulugang hindi natutugunan ang requirement 5.3.2 ng ASVS 5.0.0."
+  },
+  "security.fileRoots|restartReason": {
+    "en": "65fd8c7be0cfb5d3",
+    "text": "nililimitahan nito ang maaaring pangalanan ng kahilingan ng administrator, kaya walang ganoong kahilingan ang makapagpapalawak nito"
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "Hayaang maka-access ang taong walang tungkulin sa SCIM at Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, ang nag-authenticate sa /scim/v2 o Shared Signals gamit ang scheme na walang scope, gaya ng HTTP Basic o session cookie, ay nangangailangan ng Admin Read para magbasa at Admin Write para magsulat. Kapag naka-on, maaari ang sinumang na-authenticate. BABALA: kapag naka-on, hindi natutugunan ang mga requirement 8.2.1 at 8.2.2 ng ASVS 5.0.0, dahil mababago ng sinuman ang anumang account. Gumamit na lang ng mga OAuth scope para sa mga provisioning client."
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "I-log ang nabuong bootstrap password"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, isinusulat ang password na nabuo para sa unang administrator sa file na bootstrap-admin-password sa persistence.dataDir, na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan. Kapag naka-on, isinusulat ito sa service log. BABALA: kapag naka-on, hindi natutugunan ang requirement 16.2.5 ng ASVS 5.0.0, dahil umaabot sa log ang credential."
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "Hayaang hindi gumamit ng PKCE ang confidential client"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, tinatanggihan ang authorization request na walang code_challenge para sa bawat client. Kapag naka-on, maaari itong alisin ng confidential client at inilo-log lang ang request. BABALA: kapag naka-on, hindi natutugunan ang requirement 10.4.6 ng ASVS 5.0.0."
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "Mga salitang hindi maaaring nasa password"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "Mga karagdagang salitang hindi maaaring nasa bagong password, gaya ng pangalan ng iyong organisasyon, produkto, proyekto o departamento. Pinaghihiwalay ng kuwit. Laging tinatanggihan ang pangalan ng service at ang pangalan at domain ng realm. Kailangan ng hindi bababa sa apat na titik ang salita, at hindi pinapansin ng pagsusuri ang case at mga karaniwang pagpapalit gaya ng 0 para sa o."
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "Pinakamahabang tagal ng chain ng refresh token (s)"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "Ang ganap na limitasyon ng grant na nire-renew ng mga refresh token, binibilang mula sa una. Kapag lumampas, muling magsa-sign in ang tao, gaano man kadalas nag-refresh ang client. Ang 0 ay walang limitasyon, ang default sa development. 30 araw ang default ng product mode."
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "Tanggapin ang Logout Token ng partner na walang tahasang type"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "Kapag naka-off, ang default, tinatanggap lamang ng product mode ang Logout Token ng partner kung logout+jwt ang type. Kapag naka-on, tinatanggap din ang token na jwt ang type o walang type, para sa partner na hindi nagpapadala ng type. Inirerekomenda lamang ito ng OpenID specification."
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "7a29e5cd3a5ff016",
+    "text": "Gaano kabago dapat ang sign-in para sa sensitibong pagbabago (min)"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "4bfb2112a9f37a5d",
+    "text": "Gaano kabago, sa minuto, dapat nakapag-sign in ang isang tao para baguhin kung paano nagsa-sign in ang isang tao. Sa portal: ang kaniyang mga second factor, recovery code, passkey, app password, certificate, signing key, self-issued ID, email address o isang wallet credential offer, at ang pagtatapos ng iba pa niyang session; papapag-sign in muna siya. Para sa administrator: ang pagpapalit ng password, second factor, passkey, recovery code, email address o app password ng isang tao sa console o sa /admin-api, na sumasagot ng insufficient_user_authentication ng RFC 9470. Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "Payagan ang default na database password sa product mode"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "Kapag naka-off, ang default, hindi magsisimula ang product mode gamit ang kilalang database password, gaya ng sts_app ng kasamang compose file, o password na katulad ng user name. Kapag naka-on, magsisimula pa rin. Gamitin lamang sa test stack."
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "Natapos na ang mga session na nagsimula bago ang sandaling ito (ms)"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "Itinatakda ng Tapusin ang bawat session sa pahina ng Sessions. Natapos na ang sign-on session na nagsimula bago ang sandaling ito, sa millisecond mula 1970. Ang 0 ay wala."
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "Laging humingi ng pahintulot para sa public client"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "Hindi mapapatunayan ng public client kung sino ito, kaya tinatanong ang tao tuwing humihiling ito ng access, anuman ang sagot niya dati. Hindi kasama ang sariling mga application ng service na ito. Naka-on bilang default sa product mode."
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "Pinakalumang partner authentication na tinatanggap (s)"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "Tinatanggihan ang federated sign-in kung sinasabi ng partner na mas matagal pa rito nang nag-authenticate ang tao, gamit ang auth_time o AuthnInstant. Habang may limitasyon, tinatanggihan ang partner na hindi nagsasabi. Ang 0, ang default, ay hindi nagtatanong."
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "Mga request bawat address bawat minuto"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "Limitasyon sa lahat ng request mula sa isang address, bawat process. Preno ito sa pang-aabuso, hiwalay sa mga limitasyon sa pagsubok ng credential. Ang 0 ay walang limitasyon, ang default sa development. 6000 ang default ng product mode. Sa likod ng proxy, itakda ang global.trustedProxies para mabasa nang tama ang mga address."
+  },
+  "security.pbes2MinIterations|label": {
+    "en": "099bacdecdd8c71d",
+    "text": "Pinakakaunting PBKDF2 iteration na tinatanggap sa isang PBES2 JWE"
+  },
+  "security.pbes2MinIterations|description": {
+    "en": "c6f00e313b689b2b",
+    "text": "Ang isang JWE na naka-encrypt sa isang password (PBES2, RFC 7518 seksiyon 4.8) ay nagsasaad ng sarili nitong bilang ng iteration, at tinatanggihan ang mas mababa rito bago may i-derive. Ang default ng product mode ay 600000, ang bilang ng OWASP para sa PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4); ang sa development ay ang 1000 na inirerekomenda ng RFC 7518. Tinatanggihan sa product ang isang sender na gumagamit ng mas maliit na default ng isang library hangga’t hindi ito ibinababa. Dine-derive ang key sa thread pool ng libuv, hindi kailanman sa event loop, at tinatanggihan ang higit sa 1000000 iteration."
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "Payagan ang plain syslog audit export sa product mode"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "Kapag naka-off, ang default, tls transport lamang ang tinatanggap ng product mode para sa syslog audit destination. Kapag naka-on, tinatanggap din ang tcp at udp, kaya hindi naka-encrypt ang audit log sa network. Gamitin lamang sa network na pinagkakatiwalaan."
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "Mga host na maaaring tawagan ng service na ito"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "Kung nakatakda, ang outbound request na maiimpluwensyahan ng partner, client o tumatawag ay makakarating lamang sa mga host na ito. Pinaghihiwalay ng kuwit: eksaktong pangalan, o tuldok sa unahan para sa buong domain, gaya ng .example.com. Ang walang laman, ang default, ay nagpapahintulot ng anumang public host. Laging tinatanggihan ang mga internal address sa product mode."
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "Ilapat ang HSTS sa mga subdomain"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "Idinaragdag ang includeSubDomains sa Strict-Transport-Security, para gumamit ang mga browser ng HTTPS sa bawat subdomain ng host name ng service na ito. Naka-on bilang default sa product mode. I-off kung kailangan pang sumagot ng subdomain sa plain HTTP."
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "Tanggapin ang assertion na walang audience"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "Kapag naka-off, ang default, tinatanggihan ng product mode ang SAML 1.1 o WS-Federation assertion ng partner na walang audience restriction, dahil walang nagsasabing para ito sa service na ito. Kapag naka-on, tinatanggap ito nang may babala, para sa partner na hindi makapagpadala nito."
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "I-scan ang mga file para sa malware"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "Kapag naka-off, ang default, walang ini-scan. Kapag naka-on, bawat profile photo, logo, photo na kinopya mula sa federation partner at in-upload na risk dataset ay ipinapadala muna sa ICAP service sa malwareScan.url, at tinatanggihan kung na-flag ito ng service o hindi makasagot."
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "Address ng ICAP service"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "Ang service na gagamitin, bilang icap://host:port/service o icaps://host:port/service (RFC 3507). Maaaring gamitin ang anumang antivirus na may ICAP service."
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "Timeout ng scan (milliseconds)"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "Gaano katagal maghihintay sa service. May dagdag na isang segundo bawat mebibyte ang malaking file."
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "CA file para sa icaps service"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "PEM file ng mga CA certificate na maaaring pagkabitan ng icaps service, bukod sa mga public root. Sakop ng security.fileRoots."
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "Payagan ang plain ICAP sa product mode"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "Kapag naka-off, ang default, tinatanggihan ng product mode ang icap:// na address at walang file na tatanggapin hanggang may icaps:// na address. Kapag naka-on, maaaring makarating ang mga file sa scanner nang hindi naka-encrypt. Gamitin lamang sa network na pinagkakatiwalaan."
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "Hayaang mag-sign in nang walang second factor"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, kailangan ng lahat ng second factor, kasama ang mga administrator, anuman ang authentication policy, at nag-e-enrol sa sign-in ang walang hawak. Nananatiling exempt ang mga exempt na service account. Kapag naka-on, ang authentication policy ang magpapasya. BABALA: kapag naka-on, natutugunan lang ang requirement 6.3.3 ng ASVS 5.0.0 kung hinihingi ito ng policy."
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "Payagan ang JWE CBC-HMAC content encryption"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, AES-GCM lang ang ginagamit at tinatanggap ng JWE: hindi iniaalok o tinatanggap ang A128CBC-HS256, A192CBC-HS384 at A256CBC-HS512, at sinasagot sa A256GCM ang client na nagpangalan ng algorithm pero walang enc. Kapag naka-on, gumagana sila gaya sa development. BABALA: habang naka-on ito, hindi natutugunan ang requirement 11.3.2 ng ASVS 5.0.0, kaya i-on lang para sa partner na hindi makabasa ng AES-GCM."
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "Payagan ang SHA-1 at MD5 kung saan ginagamit pa ng protocol"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, hindi gumagamit ang serbisyong ito ng OAEP sa SHA-1 sa XML encryption o JWE, ng SHA-1 PKINIT key derivation, o ng HMAC-MD5 checksum ng S4U2Self. Kapag naka-on, ginagamit nito ang mga ito. BABALA: hindi pinapayagan ng requirement 11.4.1 ng ASVS 5.0.0 ang mga hash na iyon, kaya i-on lang ito para sa mga partner o client na walang mas bago."
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "Payagan ang default na pangalan ng administrator sa product"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "53da4f7ba4ff5dcc",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na isinusulat kasama ng password nito sa file na bootstrap-admin-password sa persistence.dataDir sa unang pagsisimula (tingnan ang admin.logBootstrapPassword). Kapag naka-on, ginagamit ang naka-configure na pangalan. BABALA: ipinagbabawal ng requirement 6.3.2 ng ASVS 5.0.0 ang default na pangalan ng account, kaya iwanang naka-off ito sa labas ng test stack."
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "isang beses tumatakbo ang bootstrap, sa pagitan ng pagbukas ng persistence store at ng pag-bind ng listener, kaya ang pagbabago pagkatapos noon ay wala nang mapapangalanan"
+  },
   "admin.bootstrapUsername|label": {
     "en": "bdb921ce57f149ff",
     "text": "Account ng bootstrap administrator"
   },
   "admin.bootstrapUsername|description": {
-    "en": "b174944b711d5987",
-    "text": "Ang username ng bootstrap administrator (2026-09-13), sa DEFAULT na realm at, mula 2026-09-14, sa bawat trust realm, kung saan ang realm na iyon lang ang pinangangasiwaan nito: ginagawa sa startup kung wala pa, miyembro ng parehong console role, pinipilit na palitan ang password nito sa unang sign-in, at hindi mabubura o mapapalitan ng pangalan. Hangga't hindi pa ito unang nagsa-sign in sa /admin, puwedeng gamitin ng bawat naka-sign in na tao ang console (admin.openWhenEmpty). Sa development, kahit anong password ay nagsa-sign in dito, gaya ng sa lahat. SA PRODUCT MODE, ito rin ang binibigyan ng ginawang password kapag nag-start ang serbisyong ito at WALANG sinuman sa realm ang may hawak na credential; nilo-log nang isang beses ang password na iyon at hindi na kailanman, at iyon lang ang daan papasok sa bagong product deployment. Hindi kailanman isinusulat ang ginawang password kung saan may may hawak nang credential, kaya hindi nito mao-overwrite ang isang password. Nalalapat lang ang sapilitang pagpapalit sa account na GINAWA ng hakbang na ito — ang kasalukuyang account na may ganitong pangalan ay nagpapanatili ng password nito at binibigyan lang ng dalawang role."
+    "en": "9b6fe650632ee79d",
+    "text": "Ang username ng bootstrap administrator (2026-09-13), sa DEFAULT na realm at, mula 2026-09-14, sa bawat trust realm, kung saan ang realm na iyon lang ang pinangangasiwaan nito: ginagawa sa startup kung wala pa, miyembro ng parehong console role, pinipilit na palitan ang password nito sa unang sign-in, at hindi mabubura o mapapalitan ng pangalan. Hangga't hindi pa ito unang nagsa-sign in sa /admin, puwedeng gamitin ng bawat naka-sign in na tao ang console (admin.openWhenEmpty). Sa development, kahit anong password ay nagsa-sign in dito, gaya ng sa lahat. SA PRODUCT MODE, ito rin ang binibigyan ng ginawang password kapag nag-start ang serbisyong ito at WALANG sinuman sa realm ang may hawak na credential; ang pangalan at ang password na iyon ay isinusulat nang isang beses sa file na bootstrap-admin-password sa persistence.dataDir, na mababasa lang ng serbisyong ito (sinasabi ng log kung saan, at dala lang mismo ng log ang mga ito kapag naka-on ang admin.logBootstrapPassword), at iyon lang ang daan papasok sa bagong product deployment. Hindi kailanman isinusulat ang ginawang password kung saan may may hawak nang credential, kaya hindi nito mao-overwrite ang isang password. Nalalapat lang ang sapilitang pagpapalit sa account na GINAWA ng hakbang na ito — ang kasalukuyang account na may ganitong pangalan ay nagpapanatili ng password nito at binibigyan lang ng dalawang role."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -204,8 +448,8 @@
     "text": "Password ng bootstrap administrator"
   },
   "admin.bootstrapPassword|description": {
-    "en": "c90454b252735521",
-    "text": "Ang password na ibinibigay sa bootstrap administrator sa halip na ginawang password, SA PRODUCT MODE at kung saan lang walang sinuman sa realm ang may hawak na credential — ang parehong iisang sandaling inilalarawan ng admin.bootstrapUsername, sa eksaktong parehong mga kondisyon. Hindi nito mao-overwrite ang password ng sinuman at wala itong ginagawa sa development mode.\n\n**BAKIT ITO UMIIRAL: PARA ANG TANGING DAAN PAPASOK AY HINDI NASA ISANG LOG.** Ang ginawang password ay inaanunsyo nang isang beses at hindi na kailanman, kaya sensitibo ang log, at nawawala ang credential kapag lumipas na ang linyang iyon. Ang operator na may secret store ay puwedeng maglagay ng value roon bago mag-start ang serbisyo at basahin ito muli kahit kailan kailanganin — na siyang ginagawa ng AWS deployment, sa pamamagitan ng Secrets Manager (deploy/aws/CLAUDE.md).\n\n**SAKOP ITO NG PASSWORD POLICY, at ang value na tinatanggihan ng policy ay TINATANGGIHAN sa halip na tahimik na palitan.** Kung gagawa na lang ng isa, maglalagay ito ng gumaganang credential sa log ng deployment na ang operator ay humiling na huwag itong naroon, at iiwang hindi gumagana ang value sa kanilang secret store nang walang nagsasabi. Pinangangalanan ng pagtanggi ang mga patakarang nilabag nito (STS-AUTHN-0205).\n\n**HINDI ITO KAILANMAN NILO-LOG** — hindi sa startup, hindi sa /admin/config, hindi sa pamamagitan ng /admin-api. Naroon na ito kung saan man ito inilagay ng operator, at ang pag-print nito ng serbisyong ito ay sisira sa layunin ng pagtatakda nito."
+    "en": "2dc1b16eebe63526",
+    "text": "Ang password na ibinibigay sa bootstrap administrator sa halip na ginawang password, SA PRODUCT MODE at kung saan lang walang sinuman sa realm ang may hawak na credential — ang parehong iisang sandaling inilalarawan ng admin.bootstrapUsername, sa eksaktong parehong mga kondisyon. Hindi nito mao-overwrite ang password ng sinuman at wala itong ginagawa sa development mode.\n\n**BAKIT ITO UMIIRAL: PARA ANG TANGING DAAN PAPASOK AY HINDI NASA ISANG LOG.** Ang ginawang password ay inaanunsyo nang isang beses at hindi na kailanman, kaya sensitibo ang log, at nawawala ang credential kapag lumipas na ang linyang iyon. Ang operator na may secret store ay puwedeng maglagay ng value roon bago mag-start ang serbisyo at basahin ito muli kahit kailan kailanganin — na siyang ginagawa ng AWS deployment, sa pamamagitan ng Secrets Manager (deploy/aws/CLAUDE.md). Maaari itong ihatid bilang file na pinangangalanan ng STS_ADMIN_BOOTSTRAP_PASSWORD_FILE, at ibigay bilang `$scrypt$` o argon2id hash sa halip na ang password; iniimbak ang hash nang ganoon, kaya hindi kailanman naka-configure ang plaintext.\n\n**SAKOP ITO NG PASSWORD POLICY, at ang value na tinatanggihan ng policy ay TINATANGGIHAN sa halip na tahimik na palitan.** Kung gagawa na lang ng isa, maglalagay ito ng gumaganang credential sa log ng deployment na ang operator ay humiling na huwag itong naroon, at iiwang hindi gumagana ang value sa kanilang secret store nang walang nagsasabi. Pinangangalanan ng pagtanggi ang mga patakarang nilabag nito (STS-AUTHN-0205).\n\n**HINDI ITO KAILANMAN NILO-LOG** — hindi sa startup, hindi sa /admin/config, hindi sa pamamagitan ng /admin-api. Naroon na ito kung saan man ito inilagay ng operator, at ang pag-print nito ng serbisyong ito ay sisira sa layunin ng pagtatakda nito."
   },
   "admin.bootstrapPassword|restartReason": {
     "en": "25fddde63c972817",
@@ -680,8 +924,8 @@
     "text": "Idle timeout ng session (segundo, 0 = wala)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "Gaano katagal puwedeng HINDI GAMITIN ang isang session bago ito matapos, bukod pa sa absolute lifetime sa itaas. **Ang zero, ang default, ay nangangahulugang walang idle timeout**, na siyang palaging ginagawa ng serbisyong ito. Kapag itinakda, ang session na tinigilang gamitin ng isang tao ay natatapos ilang segundo matapos ang huling request nito, alinman sa dalawang limit ang mauna — at ang request sa admin console o sa user portal ay binibilang na paggamit ng sign-on session sa likod nito, kaya ang operator na nagtatrabaho sa console ay hindi masa-sign out dito ng idle clock sa session na hindi nila ipinapakita. Live ito: nalalapat ito sa mga session na umiiral na, dahil sinusuri ito kung saan binabasa ang session sa halip na itinatatak kung saan ito ginagawa."
+    "en": "a5806c4c1917a3f7",
+    "text": "Gaano katagal puwedeng HINDI GAMITIN ang isang session bago ito matapos, bukod pa sa absolute lifetime sa itaas. **Ang zero ay nangangahulugang walang idle timeout**, ang default sa development at siyang palaging ginagawa roon ng serbisyong ito. Kapag itinakda, ang session na tinigilang gamitin ng isang tao ay natatapos ilang segundo matapos ang huling request nito, alinman sa dalawang limit ang mauna — at ang request sa admin console o sa user portal ay binibilang na paggamit ng sign-on session sa likod nito, kaya ang operator na nagtatrabaho sa console ay hindi masa-sign out dito ng idle clock sa session na hindi nila ipinapakita. Live ito: nalalapat ito sa mga session na umiiral na, dahil sinusuri ito kung saan binabasa ang session sa halip na itinatatak kung saan ito ginagawa. 1800 ang default ng product mode."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -790,6 +1034,126 @@
   "authn.multipleAccounts|description": {
     "en": "e0455f389b3cfb47",
     "text": "Hayaang maghawak ang isang browser ng mga sign-on session para sa ilang tao nang sabay, at pumili sa pagitan nila. Kapag naka-on, ang pag-sign in ng ibang tao ay NAGDARAGDAG ng session sa account set ng browser (ang cookie na `sts_accounts`) sa halip na tapusin ang dati nitong session; ang isang request na hindi nagsasabi kung para saang account ito — walang account na pinili sa flow na ito, walang login_hint, id_token_hint o SAML Subject na nagpapangalan ng isa — habang higit sa isa ang naka-sign in ay ipinapadala sa account picker sa /authn/accounts, at ipinapakita ito ng prompt=select_account. Pinapanatili ng bawat session ang sarili nitong lifetime, idle timeout, step-up state at sign-out. Naka-on ito bilang default. Kapag naka-off, iisa ang session ng browser at tinatapos ito ng pag-sign in ng ibang tao. Nagkakabisa sa susunod na request sa alinmang direksyon, at walang tinatapos: kapag in-on, ang kasalukuyang session ng browser ang nagiging unang account ng set nito; kapag in-off, mag-isang nagpapatuloy ang default na session ng browser at nag-e-expire ang iba gaya ng dati."
+  },
+  "branding.layout|label": {
+    "en": "2bce09e5da84a651",
+    "text": "Layout ng pag-sign in"
+  },
+  "branding.layout|description": {
+    "en": "0f84529af8e63ce7",
+    "text": "Kung paano inaayos sa realm na ito ang screen ng pag-sign in, ang mga hakbang nito, ang screen ng pahintulot at ang iba pang pampublikong pahina. centered: ang card sa gitna ng pahina, kasama ang logo at ang display name sa itaas nito (ang default, ang itsurang laging taglay ng serbisyo). split: isang panel sa accent na kulay na may logo at display name sa tabi ng card, sa itaas nito sa makitid na screen. banner: isang banda sa accent na kulay sa itaas na may dala ng mga ito, at ang card sa ibaba. Pinananatili ng bawat layout ang form, ang mga field nito at ang kanilang pagkakasunod nang eksakto."
+  },
+  "branding.accentColor|label": {
+    "en": "12376f4cbd6c30b9",
+    "text": "Accent na kulay"
+  },
+  "branding.accentColor|description": {
+    "en": "6a7806cbc4a60f44",
+    "text": "Ang kulay ng mga button, link at focus ring sa mga pampublikong pahina ng realm na ito, at ng split na panel at ng banner. Isinusulat bilang #rgb o #rrggbb. Itim o puti ang teksto sa button, alinman ang mas mababasa rito, kaya hindi ito itinatakda nang hiwalay. Tinatanggihan ang kulay na magpapababa sa mga link sa ilalim ng WCAG 2.2 AA na contrast (4.5:1) laban sa kulay ng card (STS-AUTHN-0544)."
+  },
+  "branding.pageColor|label": {
+    "en": "d8f29ba7b8da917a",
+    "text": "Kulay ng background ng pahina"
+  },
+  "branding.pageColor|description": {
+    "en": "e36337b16ae8eb93",
+    "text": "Ang background sa likod ng card sa mga pampublikong pahina ng realm na ito. Isinusulat bilang #rgb o #rrggbb."
+  },
+  "branding.cardColor|label": {
+    "en": "32fcd1507a366673",
+    "text": "Kulay ng card"
+  },
+  "branding.cardColor|description": {
+    "en": "91c08312a7b2f249",
+    "text": "Ang background ng card kung saan iginuguhit ang form ng pag-sign in. Isinusulat bilang #rgb o #rrggbb. Ang kulay ng teksto at ang accent na kulay ay dapat bawat isa'y manatili sa WCAG 2.2 AA na contrast (4.5:1) laban dito, o tatanggihan ang pagbabago (STS-AUTHN-0544)."
+  },
+  "branding.textColor|label": {
+    "en": "25e9c8090de7f831",
+    "text": "Kulay ng teksto"
+  },
+  "branding.textColor|description": {
+    "en": "86f81fcb12b03b41",
+    "text": "Ang kulay ng teksto sa card. Isinusulat bilang #rgb o #rrggbb. Ang mas tahimik na teksto (mga tala, pahiwatig) ay hinahalo mula rito at sa kulay ng card, hindi kailanman bababa sa WCAG 2.2 AA na contrast. Tinatanggihan ang kulay na mas mababa sa 4.5:1 laban sa card (STS-AUTHN-0544)."
+  },
+  "branding.displayName|label": {
+    "en": "2b7f6a84de917e38",
+    "text": "Display name"
+  },
+  "branding.displayName|description": {
+    "en": "c7734d5c0723dde4",
+    "text": "Isang pangalang ipinapakita sa tabi ng logo sa mga pampublikong pahina ng realm na ito at sa pamagat ng tab ng browser (\"Sign in — <name>\"), bilang payak na teksto, hindi kailanman markup, at hindi isinasalin. Kapag walang laman, walang ipinapakitang pangalan at ang pamagat ay ang laging taglay ng pahina. Hanggang 80 character."
+  },
+  "branding.logoAlt|label": {
+    "en": "bb2a5f1e3e7d2fca",
+    "text": "Alternatibong teksto ng logo"
+  },
+  "branding.logoAlt|description": {
+    "en": "4252cb4ab4a31ec4",
+    "text": "Ang binabasa ng screen reader sa halip ng logo ng realm na ito, karaniwang ang pangalan ng organisasyon. Kinakailangan habang may logo ang realm: hindi maa-upload ang logo nang wala ito, at hindi ito maaaring alisan ng laman habang may hawak na logo (STS-AUTHN-0548). Hanggang 160 character."
+  },
+  "branding.logoLinkUrl|label": {
+    "en": "78ddaed87c9eb98d",
+    "text": "Link ng logo"
+  },
+  "branding.logoLinkUrl|description": {
+    "en": "3cd6daaebb2a7ea6",
+    "text": "Kung saan humahantong ang logo kapag sinundan, isang absolute na https URL (STS-AUTHN-0551 kung hindi). Kapag walang laman, hindi link ang logo, na siyang default: mas ligtas ang pahina ng pag-sign in na walang masusundan palabas."
+  },
+  "branding.logoMaxBytes|label": {
+    "en": "26a97375a1800d8b",
+    "text": "Pinakamalaking logo (bytes)"
+  },
+  "branding.logoMaxBytes|description": {
+    "en": "37f4c903152cd219",
+    "text": "Ang pinakamalaking logo na maaaring dalhin ng isang upload, para sa bawat realm. Tinatanggihan ang mas malaki (STS-AUTHN-0546). Iniimbak ang logo sa store at nire-replicate sa bawat proseso, kaya pinananatili itong maliit: 256 KiB bilang default, 2 MiB ang pinakamarami."
+  },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "Maaaring magtakda ang mga tao ng sariling larawan"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "Kung maaaring magtakda at magpalit ang isang tao ng sariling larawan sa profile sa user portal. Kapag naka-off, walang upload sa portal at tinatanggihan ang operasyon (STS-PORTAL-0634); maaari pa ring alisin ng tao ang larawang mayroon siya."
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "Kopyahin ang larawan ng federation partner"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "Kung kukunin pagkatapos ng sign-in at itatago rito ang address ng larawang ipinadala ng federation partner, upang ang kopya ng realm na ito ang pangalanan ng picture claim. Kapag naka-off, o kapag pumalya ang pagkopya, dala ng claim ang address ng partner. Sinusunod ng pagkuha ang outbound policy ng federation at walang redirect."
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "Pinakamalaking file na mapipili ng tao (bytes)"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "Ang pinakamalaking file na pinapayagan ng portal na piliin, 5 MiB bilang default. Kino-crop at sini-scale ito ng browser bago ipadala, kaya hindi ito ang itinatago: ang profilePhoto.maxStoredBytes ang sukatan niyon."
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "Pinakamalaking larawang itinatago (bytes)"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "Ang pinakamalaking larawang itinatago ng realm na ito, mula sa tao o federation partner. Tinatanggihan ang mas malaki (STS-PORTAL-0631). 1 MiB bilang default at 3 MiB sa pinakamarami: naglalakbay ang larawan na naka-base64 sa isang JSON request."
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "Pinakamaikling gilid ng larawan ng tao (pixel)"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "Ang pinakamaikling gilid na maaaring taglayin ng larawang itinakda ng tao. Tinatanggihan ang mas maliit (STS-PORTAL-0632). Hindi ito nalalapat sa kopya mula sa partner, na madalas na mas maliit."
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "Pinakamahabang gilid ng larawan (pixel)"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "Ang pinakamahabang gilid na maaaring taglayin ng itinatagong larawan, dahil kailangan itong i-decode ng bawat browser na nagpapakita nito. Tinatanggihan ang mas malaki (STS-PORTAL-0632)."
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -932,8 +1296,8 @@
     "text": "Mga step ng clock skew na pinapalampas"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "Ilang step sa magkabilang panig ng ngayon ang tinatanggap. Inirerekomenda ng RFC 6238 section 5.2 ang hindi hihigit sa isa, na siyang default at ginagawang valid ang isang code nang mga siyamnapung segundo. **LIVE ang isang ito** at nalalapat sa bawat kasalukuyang enrolment — kung gaano kalaki ang pinapalampas ng isang deployment sa teleponong lumilihis ang orasan ay isang policy sa halip na bagay na sinabi ng QR code sa app. Ang zero ay humihingi ng perpektong naka-synchronize na orasan at ito ang setting na gagamitin kapag ipinapakita kung ano ang nangyayari kapag wala nito."
+    "en": "16e7e0f293746c98",
+    "text": "Ilang step sa magkabilang panig ng ngayon ang tinatanggap. Inirerekomenda ng RFC 6238 section 5.2 ang hindi hihigit sa isa, na siyang default at ginagawang valid ang isang code nang mga siyamnapung segundo. **LIVE ang isang ito** at nalalapat sa bawat kasalukuyang enrolment — kung gaano kalaki ang pinapalampas ng isang deployment sa teleponong lumilihis ang orasan ay isang policy sa halip na bagay na sinabi ng QR code sa app. Ang zero ay humihingi ng perpektong naka-synchronize na orasan at ito ang setting na gagamitin kapag ipinapakita kung ano ang nangyayari kapag wala nito. Sa product mode, 0 ang default, kaya isang 30-segundong step lang valid ang code."
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -1376,8 +1740,120 @@
     "text": "Post-quantum na pagpirma"
   },
   "keys.postQuantumSigning|description": {
-    "en": "68ffd5da182ec911",
-    "text": "Kung pumipirma, naglalathala at nagve-verify ang realm na ito ng mga post-quantum at composite na JWS algorithm (ML-DSA, SLH-DSA at ang mga composite na ML-DSA). **Naka-on bilang default.** Kapag naka-off: walang post-quantum na signing key sa `/oauth2/jwks` o sa DID document (kasama ang mga standby, naka-pin at signer-group na key); walang post-quantum na algorithm sa anumang `*_alg_values_supported` o `*_alg_values` na listahan ng mga dokumento ng discovery, authorization server, OpenID Federation, OpenID4VCI at OpenID4VP; tinatanggihan ang JWS na pinirmahan gamit ang isa saanman nagve-verify ang realm na ito; hindi makakapag-register ng isa ang client; at ang pirmang mangangailangan pa ng isa — para sa client na nag-register habang naka-on ito, o isang HTTP message signature — ay tinatanggihan sa halip na gawin gamit ang key na walang makakakuha. Para ito sa mga client at test suite na hindi kayang basahin ng mga JOSE library ang isang AKP key o hindi alam ang mga algorithm na ito, kabilang ang OpenID conformance suite. **Hindi nagbabago:** COSE (mga passkey), mga XML signature, TLS, mga algorithm ng certificate, ang mga ML-KEM encryption key (`keys.encryptionKemAlgs`), ang alternatibong ML-DSA key na dala ng isang `hybrid-groups` certificate sa `x5c` (inaalis ang mga hiwalay na ML-DSA key, hindi muling ini-issue ang mga certificate), at ang `oidfed.signingAlg`: ang realm na nagpapangalan ng ML-DSA federation key ay patuloy na pumipirma ng mga statement nito gamit iyon pero tinatanggihan ang ML-DSA statement na hinihiling na i-verify nito, kaya panatilihing classical ang setting na iyon dito."
+    "en": "0a6b412c599e2c7d",
+    "text": "Kung pumipirma, naglalathala at nagve-verify ang realm na ito ng mga post-quantum at composite na JWS algorithm (ML-DSA, SLH-DSA at ang mga composite na ML-DSA). **Naka-on bilang default.** Kapag naka-off: walang post-quantum na signing key sa `/oauth2/jwks` o sa DID document (kasama ang mga standby, naka-pin at signer-group na key); walang post-quantum na algorithm sa anumang `*_alg_values_supported` o `*_alg_values` na listahan ng mga dokumento ng discovery, authorization server, OpenID Federation, OpenID4VCI at OpenID4VP; tinatanggihan ang JWS na pinirmahan gamit ang isa saanman nagve-verify ang realm na ito; hindi makakapag-register ng isa ang client; at ang pirmang mangangailangan pa ng isa — para sa client na nag-register habang naka-on ito, o isang HTTP message signature — ay tinatanggihan sa halip na gawin gamit ang key na walang makakakuha. Para ito sa mga client at test suite na hindi kayang basahin ng mga JOSE library ang isang AKP key o hindi alam ang mga algorithm na ito, kabilang ang OpenID conformance suite. **Hindi nagbabago:** COSE (mga passkey), mga XML signature, TLS, mga algorithm ng certificate, ang mga ML-KEM encryption key (`keys.encryptionKemAlgs`), ang alternatibong ML-DSA key na dala ng isang `hybrid-groups` certificate sa `x5c` (inaalis ang mga hiwalay na ML-DSA key, hindi muling ini-issue ang mga certificate). Ang `oidfed.signingAlg` na nagpapangalan ng ML-DSA ay pumipirma gamit ang default ng realm sa halip nito."
+  },
+  "keys.eddsaSigning|label": {
+    "en": "743f659a7fcaa776",
+    "text": "EdDSA signing"
+  },
+  "keys.eddsaSigning|description": {
+    "en": "78d3ca6aec2ee4f6",
+    "text": "Kung pumipirma ang realm na ito ng EdDSA (RFC 8037, Ed25519 at Ed448) sa mga JOSE object na pinili ng client ang algorithm, at kung inilalathala nito ang mga kty OKP signing key nito. **Naka-off bilang default**, dahil hindi kayang i-parse ng OpenID conformance suite ang isang OKP key sa isang JWKS, at iyon ang pinapatakbo ng OpenID Connect certification. Naka-off: walang OKP signing key sa `/oauth2/jwks` (kasama ang standby, pinned at signer-group key); wala ang EdDSA sa `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` o `authorization_signing_alg_values_supported`; hindi maaaring magparehistro o mabigyan ng EdDSA ang isang client para sa ID Token, UserInfo, introspection o JARM response; at ang ganitong pirma na hinihingi pa rin — ng client na nakarehistro habang naka-on ito, o ng SSF, WS-Trust o Provider Commands algorithm na naka-set sa EdDSA — ay tinatanggihan sa halip na gawin gamit ang key na walang makakakuha. **Hindi nagbabago:** ang EdDSA na ipinapampirma ng client (client assertion, DPoP proof, request object, wallet proof) ay tinatanggap pa rin at ina-advertise bilang tinatanggap; ang signature na ang key ay nasa `x5c` o DID document; ang credential algorithm ng OpenID4VCI na kino-configure ng operator ay pumipirma pa rin, kaya huwag i-configure doon ang EdDSA habang naka-off ito; ang DID document, COSE, XML signature, DKIM at TLS ay hindi JOSE JWKS publication. Ang `oauth2.accessTokenSigningAlg` o `oidfed.signingAlg` na EdDSA ay pumipirma gamit ang default ng realm sa halip nito. Naka-on: pinipirmahan at inilalathala ang EdDSA ayon sa sinasabi ng `oauth2.eddsaCurve`."
+  },
+  "keys.signingAlgorithms|label": {
+    "en": "23087da9ac3a37f0",
+    "text": "Mga algorithm sa pagpirma na ginagamit ng realm na ito"
+  },
+  "keys.signingAlgorithms|description": {
+    "en": "6ca0d3f207d8dcd4",
+    "text": "Ang mga JWS algorithm na ginagamit ng realm na ito sa pagpirma at pinaglalathalaan nito ng mga key. **Kapag walang laman, ang default, nananatili ang bawat algorithm na mayroon ang realm.** Dapat kasama sa listahan ang RS256: hinihingi ito ng OpenID Connect Discovery sa `id_token_signing_alg_values_supported`, at ito ang default para sa mga ID Token at access token. Kapag may listahan: walang signing key para sa algorithm na wala sa listahan sa `/oauth2/jwks` (kasama ang mga standby, pinned, at signer-group key; nagsisilbi ang isang RSA key sa bawat RS at PS algorithm, kaya nananatili ito); wala ang algorithm na wala sa listahan sa mga signing list ng ID Token, UserInfo, introspection, o JARM sa discovery; hindi ito mairerehistro o maibibigay sa isang client para sa mga tugong iyon; tinatanggihan ang pirmang hinihingi pa rin gamit ito sa halip na gawin gamit ang key na hindi makukuha ninuman; at RS256 ang ipinipirma ng `oauth2.accessTokenSigningAlg` na wala sa listahan. Isama rin ang PS256 para sa FAPI 1.0 Advanced. Patuloy na umiiral ang `keys.postQuantumSigning` at `keys.eddsaSigning`: hindi binubuksan ang pamilya ng algorithm dahil lang nakalista ito. **Hindi nagbabago:** ang tinatanggap ng realm na ito mula sa mga client (mga client assertion, DPoP proof, request object, wallet proof); ang plain JSON na tugon ng UserInfo; ang mga encryption key; ang COSE, mga XML signature, DKIM, at TLS; at ang mga algorithm na itinatakda ng `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg`, at ng credential algorithm ng OpenID4VCI, kaya pangalanan doon ang nasa listahan."
+  },
+  "keys.pqcOnly|label": {
+    "en": "d27c2ce62f5e2d05",
+    "text": "Pumirma ng post-quantum lamang"
+  },
+  "keys.pqcOnly|description": {
+    "en": "6bfa6be713279597",
+    "text": "Kung pumipirma LAMANG ang realm na ito gamit ang mga post-quantum algorithm, sa JOSE, COSE, XML at Data Integrity. **Naka-off bilang default.** Naka-on: lumiliit ang bawat signing list sa mga post-quantum algorithm nito, o sa lahat ng mga iyon kung wala itong pinapangalanan, at tinatanggihan ang signature sa classical na algorithm. Hindi nagbabago ang TINATANGGAP ng realm na ito. **Nananatili ang RS256 para sa mga ID Token**, dahil hinihingi ito ng OpenID Connect Discovery, at ginagamit lang para sa client na nagrehistro nito o walang nirehistrong algorithm. Hindi nagbabago ang mga certificate algorithm at DKIM. Hindi ito maaaring naka-on habang naka-off ang `keys.postQuantumSigning`, at hindi mababasa ng client o relying party na hindi makapag-verify ng ML-DSA ang pinipirmahan ng realm na ito."
+  },
+  "keys.acceptedSigningAlgorithms|label": {
+    "en": "13c74bb1ab9ae1ae",
+    "text": "Mga tinatanggap na JWS algorithm"
+  },
+  "keys.acceptedSigningAlgorithms|description": {
+    "en": "861a2aba4650fdfa",
+    "text": "Ang mga JWS algorithm na tinatanggap ng realm na ito mula kaninuman: client assertion, DPoP proof, request object, wallet proof, federation statement, sarili nitong mga token. **Ang walang laman, ang default, ay tumatanggap ng lahat ng tinatanggap ng bawat use case.** Eksepsiyon: sa product mode, tinatanggap lang ang ES256K kung saan ito pinangangalanan ng listahang ito o ng `keys.signingAlgorithms`, dahil hindi aprubadong curve ang secp256k1; ganoon din ang isang XML signature sa curve na iyon. Tinatanggihan ang signature sa algorithm na wala sa listahan bago ang anumang key operation. Dapat isama ng listahan ang lahat ng nasa `keys.signingAlgorithms`, at RS256 kung walang laman iyon, o tatanggihan ng realm ang sarili nitong mga token. Ang mga HS row ang ginagamit ng `client_secret_jwt`; alisin lang ang mga ito kung walang client na gumagamit."
+  },
+  "cose.algorithms|label": {
+    "en": "fe94cc0994dab40b",
+    "text": "Mga COSE algorithm sa pagpirma"
+  },
+  "cose.algorithms|description": {
+    "en": "fb657d7568044786",
+    "text": "Ang mga COSE algorithm na ipinapampirma ng realm na ito sa mga status-list CWT at `vc+cose` credential, ayon sa pagkakasunod-sunod. **Ang walang laman, ang default, ay iniiwan ang ginagawa ngayon ng bawat use case.** Hindi saklaw dito ang mga passkey: tingnan ang `webauthn.algorithms`."
+  },
+  "cose.acceptedAlgorithms|label": {
+    "en": "de35db5c8aac8926",
+    "text": "Mga tinatanggap na COSE algorithm"
+  },
+  "cose.acceptedAlgorithms|description": {
+    "en": "74f312f7ccddc9ff",
+    "text": "Ang mga COSE algorithm na tinatanggap ng realm na ito sa IssuerAuth at DeviceAuth ng mdoc, status-list CWT at `vc+cose` credential. **Ang walang laman, ang default, ay tumatanggap ng tinatanggap na ng bawat isa**, na maaari pang paliitin ng isang specification: hindi kailanman tumatanggap ng RSA ang mdoc. Sa product mode, tinatanggap lang ang ES256K (-47) kung saan ito pinangangalanan ng listahang ito, dahil hindi aprubadong curve ang secp256k1. Hindi saklaw dito ang mga passkey."
+  },
+  "saml.signatureAlgorithms|label": {
+    "en": "fd4f436bdda0de4a",
+    "text": "Mga XML algorithm sa pagpirma"
+  },
+  "saml.signatureAlgorithms|description": {
+    "en": "01cb8501b8f096c8",
+    "text": "Ang mga XML signature algorithm na maaaring ipampirma ng realm na ito, ayon sa pagkakasunod-sunod. **Ang walang laman, ang default, ay iniiwang malaya ang `saml.signatureAlgorithm`.** Nananatiling piniling algorithm ang `saml.signatureAlgorithm` at dapat nasa listahan. Ang algorithm na walang XML key ang realm na ito ay babalik sa unang nakalista na mayroon itong key."
+  },
+  "saml.acceptedSignatureAlgorithms|label": {
+    "en": "a190f155d61e54ca",
+    "text": "Mga tinatanggap na XML algorithm"
+  },
+  "saml.acceptedSignatureAlgorithms|description": {
+    "en": "2bf9046fd2019c80",
+    "text": "Ang mga XML SignatureMethod na tinatanggap ng realm na ito, sa mga SP request at metadata, RFC 7522 assertion, partner assertion at WS-Security. **Ang walang laman, ang default, ay tumatanggap ng lahat ng nave-verify nito.** Ang `saml.allowSha1Signatures` pa rin ang nagpapasya sa SHA-1, at tinatanggihan ang nakalistang SHA-1 method habang naka-off ito."
+  },
+  "saml.acceptedDigestAlgorithms|label": {
+    "en": "4c713f76e897330c",
+    "text": "Mga tinatanggap na XML digest"
+  },
+  "saml.acceptedDigestAlgorithms|description": {
+    "en": "0e9213b8012dea7a",
+    "text": "Ang mga XML DigestMethod na tinatanggap ng realm na ito. **Ang walang laman, ang default, ay tumatanggap ng bawat kinakalkula nito.** Ang `saml.allowSha1Signatures` pa rin ang nagpapasya sa SHA-1."
+  },
+  "vc.cryptosuites|label": {
+    "en": "75a59ba059432f82",
+    "text": "Mga Data Integrity suite sa pagpirma"
+  },
+  "vc.cryptosuites|description": {
+    "en": "3be8a2fb2911c2b3",
+    "text": "Ang mga W3C Data Integrity cryptosuite na ipinapampirma ng realm na ito, ayon sa pagkakasunod-sunod: VC API issuance, ang Bitstring status list, zcap at bbs-2023. **Ang walang laman, ang default, ay iniiwan ang ginagawa ngayon ng bawat use case.**"
+  },
+  "vc.acceptedCryptosuites|label": {
+    "en": "962cf7c5a55dd594",
+    "text": "Mga tinatanggap na Data Integrity suite"
+  },
+  "vc.acceptedCryptosuites|description": {
+    "en": "3148c6ff243294cb",
+    "text": "Ang mga W3C Data Integrity cryptosuite na tinatanggap ng realm na ito: holder proof, VC API verification, zcap at bbs-2023 derived proof. **Ang walang laman, ang default, ay tumatanggap ng tinatanggap na ng bawat isa.**"
+  },
+  "pki.acceptedSignatureAlgorithms|label": {
+    "en": "86ec8af66a70814d",
+    "text": "Mga tinatanggap na certificate signature"
+  },
+  "pki.acceptedSignatureAlgorithms|description": {
+    "en": "9a8e168d927bb934",
+    "text": "Ang mga signature algorithm na tinatanggap ng realm na ito sa certificate sa path na bine-validate nito, na pinapangalanan ang row at hindi ang OID. **Ang walang laman, ang default, ay tumatanggap ng lahat ng tinatanggap ng path validation**, na hindi kasama ang SHA-1 at MD5. Ang masyadong kaunting nakalista ay tatanggihan ang sariling hierarchy ng realm na ito, kaya isama ang ginagamit ng `pki.signatureAlgorithm` sa pag-issue."
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|label": {
+    "en": "0e6e6b8920059b86",
+    "text": "Mga tinatanggap na HTTP signature algorithm"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|description": {
+    "en": "595341df5d9412f0",
+    "text": "Ang mga RFC 9421 HTTP Message Signature algorithm na tinatanggap ng realm na ito, mula sa mga OAuth client at GNAP client. **Ang walang laman, ang default, ay tumatanggap ng bawat nave-verify nito.** Tinatanggihan ang signature sa algorithm na wala sa listahan bago ang anumang key operation."
+  },
+  "keys.jwksCertificateUrl|label": {
+    "en": "b910ac23ecc20134",
+    "text": "Pangalanan sa URL ang mga certificate ng nakalathalang key"
+  },
+  "keys.jwksCertificateUrl|description": {
+    "en": "83d67129453bea8c",
+    "text": "Kung pinangangalanan ng `/oauth2/jwks` ang certificate chain ng bawat key gamit ang `x5u` (RFC 7517 section 4.6) sa halip na isama ito sa `x5c`. **Naka-off bilang default.** Kapag naka-on: inilalathala ng key ang address ng chain nito sa `/pki/chain/{scope}/{sha256}.pem`, na nagpapaliit nang husto sa JWK Set; kinukuha ito sa TLS ng client na gusto ang chain. Pinapanatili ang `x5c` ng key na ang chain ay hindi kayang ibigay ng address na iyon. **Hindi nagbabago:** ang `x5c` o `x5u` header ng token, na itinatakda ng sariling setting ng bawat use case."
   },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
@@ -1398,6 +1874,18 @@
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
     "text": "isang beses binabasa ang key-encryption key, sa startup, bago i-decrypt ang mga signing key"
+  },
+  "secrets.allowLocalSecrets|label": {
+    "en": "b746acd0225ed6a2",
+    "text": "Payagan ang mga lokal na secret sa product mode"
+  },
+  "secrets.allowLocalSecrets|description": {
+    "en": "ecfd7489f63a1df3",
+    "text": "Naka-off, ang default, kinukuha ng product mode ang mga key-encryption key nito (keys.kekProvider, keys.cellKekProvider) mula sa isang secret store o isang key management service, at ang password ng database mula sa isang secret store; pinahihinto ng isang key-encryption key sa isang file, o ng password ng database sa isang file o sa connection string, ang serbisyo (ASVS 5.0.0 13.3.1). Naka-on, tinatanggap ang mga ito, kaya naiiwan ang secret sa host. Maaaring file ang naunang key-encryption key alinman dito. Tinatanggap ang mga ito ng development mode anuman ang sabihin nito."
+  },
+  "secrets.allowLocalSecrets|restartReason": {
+    "en": "3c6a25d74849bf35",
+    "text": "binabasa nang isang beses ang key-encryption key at ang password ng database, sa pagsisimula"
   },
   "keys.kekTransitMount|label": {
     "en": "efe8c3a4233dd778",
@@ -1947,6 +2435,22 @@
     "en": "41a2ff91a0055e49",
     "text": "pinagpapasyahan nito kung ibina-bind bilang HTTPS ang main port (global.https), at bina-bind ang listener kapag nagsimula ang process. Puwede pa rin itong dalhin ng isang REALM — walang bina-bind na socket ang realm, kaya sumasagot ito sa anumang scheme na sinimulan ng process na ito at ang mga check lang ng mode ang nagbabago"
   },
+  "oauth2.allowImplicitTokenResponses|label": {
+    "en": "28cd231f5d568de0",
+    "text": "Payagan ang mga token response type sa ilalim ng RFC 9700"
+  },
+  "oauth2.allowImplicitTokenResponses|description": {
+    "en": "7ae0908c5a3cc1b9",
+    "text": "Alisin ang RFC 9700 section 2.1.2 (no-implicit, isang SHOULD NOT) kung saan umiiral ang RFC 9700 mode — na laging umiiral sa product mode. Kapag naka-on, ang mga response type na naglalabas ng access token mula sa authorization endpoint (token, id_token token, code token, code id_token token) ay tinatanggap sa authorization endpoint at sa dynamic registration, at ina-advertise ang mga ito at ang implicit grant ng parehong discovery document. Nananatiling umiiral ang lahat ng iba pang kinakailangan ng RFC 9700 at ang natitirang bahagi ng product mode, at iniuulat ng GET /oauth2/rfc9700 at /admin/mode na inalis ang kinakailangan. Para ito sa mga OpenID Connect Implicit, Hybrid at Dynamic OP profile. WALANG EPEKTO habang naka-on ang OAuth 2.1 mode o isang FAPI profile: tuluyang inaalis ng OAuth 2.1 ang implicit grant, at ang FAPI profile ay mas mahigpit na profile na hindi pinaluluwag ng setting na ito. BAWAT APPLICATION (#1296): ginagawa nitong posible ang mga response type na ito, at gumagamit lang ang isang application ng isa kapag nakalista ito sa oauthAllowedTokenResponseTypes nito (unauthorized_client kung hindi), itinakda ng isang administrator o ng may-ari ng application, o ng isang client na nagrerehistro ng sarili sa loob ng oauth2.dynamicRegistrationTokenResponseTypes. NAKA-OFF bilang default; itakda ito bawat realm."
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|label": {
+    "en": "4475090bccf20d35",
+    "text": "Mga token response type na maaaring i-enable ng client na nagrerehistro ng sarili"
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|description": {
+    "en": "acccf2f947729707",
+    "text": "Alin sa mga response type na naglalabas ng access token mula sa authorization endpoint (token, code token, id_token token, code id_token token) ang maaaring i-enable para sa sarili nito ng isang client na nagrerehistro ng sarili sa POST /oauth2/register kung saan iniuurong ng oauth2.allowImplicitTokenResponses ang RFC 9700 section 2.1.2. Ang registration na humihingi ng nakalistang type ay itinatala ito bilang oauthAllowedTokenResponseTypes nito; ang humihingi ng type na hindi nakalista ay tinatanggihan (invalid_client_metadata), at ang RFC 7592 update ay nakatali sa parehong listahan. WALANG LAMAN bilang default: isang administrator o ang may-ari ng isang application lang ang nag-e-enable ng mga type na ito. Ilista sila para sa isang realm na para sa bukas na self-registration ng implicit at hybrid na flow, gaya ng OpenID Connect Dynamic OP profile. Walang epekto habang naka-off ang pag-urong, o sa ilalim ng OAuth 2.1 mode o isang FAPI profile."
+  },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",
     "text": "OAuth 2.1 mode"
@@ -2034,6 +2538,22 @@
   "oauth2.tokenExchangeAudience|description": {
     "en": "3f48d3e7de647a63",
     "text": "Kung saan puwedeng naka-address ang RFC 7523 JWT o RFC 7522 / SAML 1.1 assertion na ipinakita bilang RFC 8693 subject_token o actor_token. Ang AUTHORIZATION-SERVER (ang default) ay sariling patakaran ng assertion grant: pinangangalanan ng audience nito ang token endpoint o issuer na ito, at ng SAML Recipient ang token endpoint. Tumatanggap din ang ANY-DECLARED-RELYING-PARTY ng audience na nagpapangalan ng application na naka-register sa realm na ito (at, para sa SAML, ng Recipient na isang assertion consumer service na naka-register sa nag-e-exchange na client) — TOKEN FORWARDING: ang token na in-issue sa isang relying party ay ipinagpapalit para sa iba, na itinatala ng act sa /admin/delegation bilang ganoon. BABALA: ang sinumang may hawak ng ganoong token — bawat relying party na pinag-issue-han nito — ay makakapag-exchange na nito; i-on lang ito kung iyon ang disenyo."
+  },
+  "oauth2.tokenExchangeKerberosInput|label": {
+    "en": "9fb1b4d9b1b510bc",
+    "text": "Tanggapin ang Kerberos token sa isang token exchange"
+  },
+  "oauth2.tokenExchangeKerberosInput|description": {
+    "en": "36c738a4d9dbae66",
+    "text": "Kung maaaring maging Kerberos token ang subject_token o actor_token ng RFC 8693 (isang AP-REQ para sa sariling SPN ng authorization server na ito, base64url, na may uri ayon sa isa sa anim na URI ng Kerberos Token Profile 1.1). Sinusuri ito ng acceptor sa parehong mode. Pinapangalanan ng isang delegated subject token ang client na nag-e-exchange bilang huling serbisyo sa S4U_DELEGATION_INFO ng PAC nito, at ang chain ay nagiging nested na act claim ng token na inilabas. Kapag naka-off, tinatanggihan ang ganitong uri ng token."
+  },
+  "oauth2.tokenExchangeKerberosOutput|label": {
+    "en": "7711b5c35b5a2730",
+    "text": "Maglabas ng Kerberos token mula sa isang token exchange"
+  },
+  "oauth2.tokenExchangeKerberosOutput|description": {
+    "en": "e0da8bfdb68b27ed",
+    "text": "Kung sinasagot ng Kerberos token ang requested_token_type na nagpapangalan sa isa sa anim na URI ng Kerberos Token Profile 1.1: isang AP-REQ para sa iisang audience o resource, na dapat ay isang application na Kerberos service, sa access_token na may issued_token_type na URI na iyon at token_type na N_A. Ang act chain ng isang delegation ay nagiging S4U_DELEGATION_INFO ng ticket. Kapag naka-off, tinatanggihan ang ganitong kahilingan."
   },
   "oauth2.tokenExchangeRefreshToken|label": {
     "en": "07090990e1118ef0",
@@ -2474,6 +2994,14 @@
   "oauth2.maxOpaqueAccessTokens|description": {
     "en": "19042efe72e28cc6",
     "text": "Ilan ang opaque na access token na naaalala ng realm na ito. Kapag puno na, tinatanggal ang mga expired na row at tinatanggihan ang karagdagang mint (STS-OAUTH-0979) sa halip na paalisin ang isang buhay na token. Nalalapat kapag opaque ang oauth2.accessTokenFormat."
+  },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "Hayaang gumamit ng anumang grant ang client na walang listahan"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "dad6e01199413088",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, authorization_code at refresh_token lang ang magagamit ng client na walang idineklarang grant type, at response_type=code lang ang magagamit ng client na walang idineklarang response type (at hindi ang implicit grant). Kapag naka-on, magagamit nito ang anumang grant at response type ng serbisyong ito. BABALA: nililimitahan ng requirement 10.4.4 ng ASVS 5.0.0 ang client sa mga grant na kailangan nito, kaya iwanang naka-off ito sa labas ng test stack."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -2952,8 +3480,8 @@
     "text": "Interval ng command summary (s)"
   },
   "oauth2.commandSummaryS|description": {
-    "en": "1045cb014a1ce125",
-    "text": "Hindi hihigit sa isang log line bawat realm sa ganito kadalas, na nagbibilang ng mga command na naipadala, sinubukan ulit at ginawang dead letter."
+    "en": "3a91e7d305fbb684",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng command ng isang realm. Babala ang isang dead letter o naantalang paghahatid; ang bilang na wala ang alinman ay isinusulat lamang sa debug."
   },
   "oauth2.commandSweepS|label": {
     "en": "ebf638b4c702db80",
@@ -3032,8 +3560,8 @@
     "text": "Interval ng CIBA notification summary (s)"
   },
   "oauth2.cibaNotifySummaryS|description": {
-    "en": "251c4ae1278354cf",
-    "text": "Hindi hihigit sa isang log line bawat realm sa ganito kadalas, na nagbibilang ng mga ping at push na naipadala, sinubukan ulit at ginawang dead letter."
+    "en": "27d25bd5cf11b057",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng ping at push ng isang realm. Babala ang isang dead letter o naantalang paghahatid; ang bilang na wala ang alinman ay isinusulat lamang sa debug."
   },
   "oauth2.cibaSweepS|label": {
     "en": "722ae1b995e6c351",
@@ -3144,8 +3672,8 @@
     "text": "Default na key algorithm ng CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "00e61f4da7498a62",
-    "text": "Aling key algorithm ang ginagamit sa pagbuo ng bagong certificate authority kapag walang pinapangalanan ang form: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o isa sa mga post-quantum id (ML-DSA, SLH-DSA, ang mga composite at ML-KEM — na hindi nakakapirma, kaya subject key ito at hindi kailanman key ng authority). RSA 2048 ang default dahil ang LEAF na dahilan ng pag-iral ng hierarchy na ito ay pumipirma ng client assertion na kailangang i-verify ng OAuth library ng iba, at RS256 ang iisang algorithm na mayroon ang bawat ganoong library. Binabasa ang listahan mula sa common/crypto_impl/key_material.js — ang module na bumubuo ng key — kaya ang value na hindi nito kilala ay tinatanggihan sa build kasama ang listahan sa tabi nito."
+    "en": "d0667a437e4fd5f6",
+    "text": "Aling key algorithm ang ginagamit sa pagbuo ng bagong certificate authority kapag walang pinapangalanan ang form: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o isa sa mga post-quantum id (ML-DSA, SLH-DSA, ang mga composite at ML-KEM — na hindi nakakapirma, kaya subject key ito at hindi kailanman key ng authority). RSA ang default dahil ang LEAF na dahilan ng pag-iral ng hierarchy na ito ay pumipirma ng client assertion na kailangang i-verify ng OAuth library ng iba, at RS256 ang iisang algorithm na mayroon ang bawat ganoong library: rsa-2048 sa development mode, rsa-3072 sa product mode (ASVS 5.0.0 11.2.3). Binabasa ang listahan mula sa common/crypto_impl/key_material.js — ang module na bumubuo ng key — kaya ang value na hindi nito kilala ay tinatanggihan sa build kasama ang listahan sa tabi nito."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -3216,8 +3744,8 @@
     "text": "Mga certificate at key na itinatago ng workbench store, bawat realm"
   },
   "pki.maxStoredObjects|description": {
-    "en": "3057876f05b58063",
-    "text": "Ilang object ang puwedeng itago ng Certificate & Key Configuration pane sa /admin/pki sa iisang realm. **TINATANGGIHAN NG PUNONG STORE ANG SUSUNOD**; dati ay itinatapon nito ang pinakaluma, at may dalang private key ang pinakaluma na piniling itago ng isang tao. Burahin ang hindi na kailangan, o taasan ito."
+    "en": "d78b7992e9302874",
+    "text": "Ilang object ang puwedeng itago ng Certificate Workbench sa /admin/pki sa iisang realm. **TINATANGGIHAN NG PUNONG STORE ANG SUSUNOD**; dati ay itinatapon nito ang pinakaluma, at may dalang private key ang pinakaluma na piniling itago ng isang tao. Burahin ang hindi na kailangan, o taasan ito."
   },
   "pki.personSelfServicePerIdentity|label": {
     "en": "16d37c1faeb2ce0c",
@@ -3242,6 +3770,14 @@
   "pki.personTlsClientCertificateMax|description": {
     "en": "7fd3b5724d944994",
     "text": "Ilang valid pang TLS client certificate ang puwedeng iisyu ng isang tao para sa sarili nila sa user portal — isa bawat browser o device. Hindi binibilang ang revoked o expired na certificate. Lampas dito, tumatanggi ang portal (STS-PKI-0170) sa halip na i-revoke ang mas lumang certificate na baka ginagamit pa ng isang tao. Sakop din ng pki.personSelfService at ng dalawang self-service rate limit sa itaas ang pag-isyu ng isa."
+  },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Mga signing key pair na puwedeng hawakan ng isang tao bawat profile"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Ilang valid pa na assertion signing key pair ang puwedeng hawakan ng isang tao para sa BAWAT profile — hiwalay na binibilang ang RFC 7523 (JWT) at RFC 7522 (SAML 2.0) — na-issue man sa user portal, na-issue ng isang administrator o na-upload. Hindi binibilang ang key pair na na-revoke o nag-expire. Kapag nalampasan ito, papalitan ng portal ng isang tala ang Generate button nito at tatanggi ang bawat pinto (STS-PKI-0223) sa halip na i-revoke ang mas lumang key pair na baka ginagamit pa ng isang tao."
   },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
@@ -3419,6 +3955,218 @@
     "en": "f292a8cf26b697f2",
     "text": "Ilang certificate na iniisyu sa ACME, EST o SCEP ang puwedeng sabay-sabay na dalhin ng isang entry ng tao o application. Inaalis sa entry ang expired na certificate bago ito bilangin; lampas dito, tinatanggihan ang request (STS-ENROLL-0040) sa halip na kalimutan ang mas lumang certificate, dahil ang certificate na ginagamit pa ng isang tao ay hindi dapat mawala sa entry na nagsasabi kung kanino ito."
   },
+  "pki.paranoid|label": {
+    "en": "69d9666085a31d95",
+    "text": "Paranoid PKI mode"
+  },
+  "pki.paranoid|description": {
+    "en": "96d8d3c8d4989451",
+    "text": "Paranoid PKI mode (#1360): kung ang bawat X.509 certificate na pinagbabatayan ng serbisyong ito — sa TLS handshake sa alinmang direksyon, sa ilalim ng isang signature, bilang encryption recipient, sa isang attestation, sa isang CMS message — ay isinasailalim sa buong hanay ng mga pagsusuri sa pamamagitan ng iisang validation door (common/certificate_trust.ts): path papunta sa anchor na ipinaalam sa serbisyong ito, validity sa ngayon, revocation, at ang basicConstraints, keyUsage at extendedKeyUsage na hinihingi ng use case nito, kung saan ang pagsusuring hindi isinagawa ng use case ay binibilang na pagtanggi. **Ang `auto` ay on sa product mode at off sa development** (mode.enforcesParanoidPki()); pinipilit ng `on` at `off` ang setting sa alinmang mode. Habang ipinapatupad ito, kinokonsulta ang bawat `pki.paranoid<UseCase>` row sa ibaba; kapag hindi, kumikilos ang bawat use case nang eksakto gaya ng dati bago ang #1360. Kapag pinilit na off ang master sa product, nilolog ito nang isang beses (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust; walang tumatanggi sa pagsulat. Ang certificate na walang binabanggit na CRL distribution point at OCSP responder, sa sarili nito o sa CA sa itaas nito, ay walang revocation check na gagawin: ipinapatupad ang binanggit na source, at ang certificate na inisyu ng serbisyong ito ay palaging tinatanong sa sarili nitong register."
+  },
+  "pki.paranoidTlsClient|label": {
+    "en": "c0010750fb1dedac",
+    "text": "Paranoid: isang client certificate sa TLS handshake"
+  },
+  "pki.paranoidTlsClient|description": {
+    "en": "a92be9cfd66a7481",
+    "text": "Use case `tls-client`: isang client certificate na ipinakita sa main port, sa custom listener, sa LDAPS o sa debugger listener, at bawat gumagamit ng socket.authorized. Isinasailalim ng paranoid ang BAWAT listener sa mga path rule (hindi lang ang main port at mga custom listener), itinatanong ang extendedKeyUsage clientAuth at keyUsage digitalSignature o keyAgreement sa bawat leaf, kinokonsulta ang revocation sa bawat listener, dinadala ang na-demote na verdict sa TLS resumption, at nagfa-fail CLOSED kapag nag-throw ang pagsusuri. Mga anchor: ang client-certificate truststore at ang service Root. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust. Sa mga gRPC socket ng SPIFFE, wala itong hinahawakang koneksyon at tumatanggi lang itong i-bind ang SPIRE Server API nang walang encryption; may sariling row ang channel sa pagitan ng mga cell, ang pki.paranoidCellPeer."
+  },
+  "pki.paranoidTlsClientSelfSigned|label": {
+    "en": "1fffd43ed19648a8",
+    "text": "Paranoid: isang self-signed na TLS client certificate na nirehistro ng isang client"
+  },
+  "pki.paranoidTlsClientSelfSigned|description": {
+    "en": "976e7f91b601714f",
+    "text": "Use case `tls-client-self-signed`: RFC 8705 section 2.2 self_signed_tls_client_auth at isang GNAP key na pinatunayan ng naka-pin na certificate (RFC 9635 section 7.3.2). Parehong tinutukoy ng dalawang specification ang method bilang EQUALITY ng certificate, kaya walang chain na hinihingi (exempt ayon sa spec); idinaragdag ng paranoid ang validity window, keyUsage digitalSignature o keyAgreement, at ang revocation ng register. Ang tanging use case kung saan tinatanggap ang self-signed na leaf sa TLS handshake. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidOutboundTls|label": {
+    "en": "806774c88eae0cf1",
+    "text": "Paranoid: ang server certificate ng isang outbound request"
+  },
+  "pki.paranoidOutboundTls|description": {
+    "en": "ad7a2574ae96644e",
+    "text": "Use case `tls-server-outbound`: bawat address na tinatawagan ng serbisyong ito — federation back channel, SSF at GNAP push, XACML PEP nudge, SCIM provisioning, mail, ang database, ang secret store, ang mga cloud SDK, CRL at OCSP sa https, LDAPS. Idinaragdag ng paranoid ang revocation ng certificate ng peer (OCSP stapling muna, saka OCSP o CRL) na nagsisilbing gate sa handshake bago may maisulat na request body, extendedKeyUsage serverAuth, ang mga path rule at RFC 9525 host check sa bawat proseso, at ang signer truststore sa tabi ng CA file ng bawat family. Exempt ayon sa spec: ang pagkuha ng CRL o OCSP sa plain http ay walang certificate na masusuri (RFC 5280 section 4.2.1.13). Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidJoseSigner|label": {
+    "en": "6712f80a7d8d0d37",
+    "text": "Paranoid: ang certificate chain ng isang JOSE signer"
+  },
+  "pki.paranoidJoseSigner|description": {
+    "en": "a361abe6b62ec518",
+    "text": "Use case `jose-signer`: ang x5c sa likod ng isang RFC 7523 assertion, private_key_jwt, JAR request object, software statement at x5c ng isang nakarehistrong JWK. Kinukumpleto ng paranoid ang hindi kumpletong nakarehistrong chain mula sa signer truststore bago ito tanggihan, itinatanong ang keyUsage digitalSignature ng leaf, at isinasailalim ang self-signed na x5c[0] na idinikit sa isang JWK sa rule ng upload door (walang bare na self-signed leaf). Mga anchor: ang CA ng realm, ang nakarehistrong root, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidSamlSigner|label": {
+    "en": "f542d60aa4055a78",
+    "text": "Paranoid: ang certificate ng isang SAML signer"
+  },
+  "pki.paranoidSamlSigner|description": {
+    "en": "9185c29a838854a8",
+    "text": "Use case `saml-signer`: ang certificate sa likod ng isang RFC 7522 assertion, ang naka-sign na AuthnRequest o LogoutRequest ng isang service provider, ang SOAP artifact caller at isang SP metadata signature. Idinaragdag ng paranoid ang validity sa bawat paggamit, chain papunta sa signer truststore kapag hindi self-signed ang certificate, revocation, keyUsage digitalSignature, at TINATANGGIHAN ang SP metadata na walang naaabot na anchor (dating tinatanggap sa unang gamit). Ang self-signed na certificate na nakarehistro sa application ay tinatanggap ayon sa spec (SAML Metadata section 2.4.1.1) at nakalista sa inventory bilang self-signed. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidFederationPartner|label": {
+    "en": "1153fde809c347ea",
+    "text": "Paranoid: ang signing certificate ng isang federation partner"
+  },
+  "pki.paranoidFederationPartner|description": {
+    "en": "c7dd276f9a86e888",
+    "text": "Use case `federation-partner`: ang SAML o WS-Federation signature ng isang partner, ang x5c ng JWK ng partner at ang signer ng isang federated logout. Idinaragdag ng paranoid ang validity sa bawat paggamit, chain papunta sa signer truststore kapag hindi self-signed ang certificate, revocation sa logout at sign-in, at field check sa registration door. Ang self-signed na certificate na nakarehistro sa relationship ay tinatanggap ayon sa spec, gaya ng sa isang SAML signer. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidWsSecurityToken|label": {
+    "en": "fdf207fb5b68e7c1",
+    "text": "Paranoid: isang WS-Security X.509 token"
+  },
+  "pki.paranoidWsSecurityToken|description": {
+    "en": "d1b001f7c3cf7dad",
+    "text": "Use case `wss-x509-token`: ang signer ng WS-Security X.509 Token Profile sa isang WS-Trust request. Hinihiling ng paranoid na ang naka-store na outside leaf ay mag-chain sa signer truststore at kinukuha ang OCSP o CRL issuer mula sa path ng truststore, hindi kailanman mula lang sa sariling Authority Information Access ng leaf. Mga anchor: ang CA ng realm, ang naka-store na leaf, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidJoseBareKey|label": {
+    "en": "ae8a99b03823519c",
+    "text": "Paranoid: isang bare JWK na may dalang x5c"
+  },
+  "pki.paranoidJoseBareKey|description": {
+    "en": "d55aaf11968d0119",
+    "text": "Use case `jose-bare-key`: mga entity key ng OpenID Federation, mga transmitter key ng SSF, mga key ng claims-provider at mga `cert` key ng GNAP. Ang JWK na MAY DALANG x5c ay vine-validate bilang JOSE signer sa ilalim ng paranoid; ang bare JWK ay hindi ginagalaw, dahil tinutukoy ng OpenID Federation 1.1 section 3 ang mga entity key bilang bare JWK (exempt ayon sa spec kapag walang x5c). Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidEncryptionRecipient|label": {
+    "en": "1fec5dc0c124d4d7",
+    "text": "Paranoid: ang certificate ng isang encryption recipient"
+  },
+  "pki.paranoidEncryptionRecipient|description": {
+    "en": "22e7d1dcaf21b830",
+    "text": "Use case `encryption-recipient`: ang certificate kung saan ine-encrypt ang isang SAML assertion at ang x5c ng isang JWE recipient. Idinaragdag ng paranoid ang validity, keyUsage keyEncipherment o keyAgreement at revocation, at hindi kailanman nag-e-encrypt sa certificate na basta NAOBSERBAHAN lang sa isang request (ginagawa iyon ng development bago ang #1360, sa labas ng paranoid). Ang self-signed na certificate na nakarehistro sa application ay tinatanggap ayon sa spec. Exempt ang bare JWK na walang x5c (ginagawang opsyonal ng RFC 7517 section 4.7 ang x5c). Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidClientAttestation|label": {
+    "en": "f9781b19e7a5faa5",
+    "text": "Paranoid: isang chain ng attestation-based client authentication"
+  },
+  "pki.paranoidClientAttestation|description": {
+    "en": "3272afd18d05a5d0",
+    "text": "Use case `client-attestation`: ang certificate ng attester sa likod ng OAuth attestation-based client authentication. Idinaragdag ng paranoid ang revocation at keyUsage digitalSignature sa leaf. Mga anchor: oauth2.clientAttestationTrustAnchors at ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidWebauthnAttestation|label": {
+    "en": "56518cdbf25aba42",
+    "text": "Paranoid: isang WebAuthn attestation chain"
+  },
+  "pki.paranoidWebauthnAttestation|description": {
+    "en": "a1da1a7091f590f6",
+    "text": "Use case `webauthn-attestation`: ang attestation statement ng isang passkey sa mga format na packed, tpm, android-key, android-safetynet at apple. Ginagawang tahasan ng paranoid ang extendedKeyUsage at keyUsage ng bawat format sa pamamagitan ng door (kinakailangan ang TPM AIK EKU 2.23.133.8.3 para sa tpm); itinatanong na dati ang revocation. Sinusuri ang validity sa ngayon, gaya ng dati — ang nag-expire na attestation certificate ay nagiging untrusted ang statement (rcbj, 2026-11-06). Mga anchor: webauthn.attestationTrustAnchors, ang mga root ng FIDO Metadata Service, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidDeviceAttestation|label": {
+    "en": "eb8ad90daa8e84e6",
+    "text": "Paranoid: isang device attestation chain"
+  },
+  "pki.paranoidDeviceAttestation|description": {
+    "en": "1e8781ffffcd5976",
+    "text": "Use case `device-attestation`: Android key attestation, Apple App Attest at TPM attestation ng isang nakarehistrong device. Idinaragdag ng paranoid ang OCSP o CRL para sa mga chain ng Apple at TPM kung saan may pinangalanan ang chain, at ang extendedKeyUsage na hinihingi ng bawat format. Mga anchor: ang mga setting na devices.*TrustAnchors, ang mga naka-ship na root, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeSvid|label": {
+    "en": "78e43611bf44d5cf",
+    "text": "Paranoid: isang X509-SVID na ipinakita sa SPIRE Server o Broker API"
+  },
+  "pki.paranoidSpiffeSvid|description": {
+    "en": "9df64672b57d6dfa",
+    "text": "Use case `spiffe-svid`: ang X509-SVID na ipinapakita ng tumatawag sa SPIRE Server API o Broker API, at isang federated SVID. Ginagawang MUST ng paranoid ang SHOULD ng extendedKeyUsage sa section 4.3 ng X509-SVID specification at sinusuri ang mga field ng authority certificate ng isang federated bundle sa pagrehistro at sa paggamit nito. Exempt ayon sa spec: ang Workload API ay MUST NOT mag-authenticate at hindi ginagalaw, at hindi kinokonsulta ang revocation ng federated SVID dahil walang inilalathala ang federated authority na maaaring tawagan ng serbisyong ito. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeAttestation|label": {
+    "en": "02cc79ee469c2d68",
+    "text": "Paranoid: ang certificate ng isang SPIFFE node attestor"
+  },
+  "pki.paranoidSpiffeAttestation|description": {
+    "en": "589e499a7857c323",
+    "text": "Use case `spiffe-attestation`: ang mga attestor na x509pop, TPM DevID, Azure IMDS, AWS instance identity at sigstore. Idinaragdag ng paranoid ang revocation kung saan may pinangalanan ang chain, ang keyUsage at extendedKeyUsage na hinihingi ng bawat attestor, ang validity ng naka-pin na certificate ng AWS, at hinihiling na mag-chain ang Azure AIA intermediate bago ito gamitin. Exempt ayon sa spec: sinusuri ng sigstore ang validity sa notBefore ng certificate (rule ng Sigstore client specification); ang pag-skip sa SCT at Rekor ay nananatiling sarili nilang mga setting. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidPkinit|label": {
+    "en": "075d91f34c26d707",
+    "text": "Paranoid: isang PKINIT client certificate"
+  },
+  "pki.paranoidPkinit|description": {
+    "en": "4cd0d308a974fcbd",
+    "text": "Use case `pkinit`: ang client certificate sa isang RFC 4556 AS-REQ. Buo na ang pagsusuri (path papunta sa mga identity CA ng realm, validity na may krb5.clockSkew, id-pkinit-KPClientAuth o ang Microsoft smart-card EKU, revocation); ginagawa ito ng paranoid na isang tawag sa door, kaya iisang code ito gaya ng bawat ibang use case. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidEnrollmentCredential|label": {
+    "en": "ce5c0d1996e12403",
+    "text": "Paranoid: isang certificate na ipinakita para mag-enroll o mag-renew"
+  },
+  "pki.paranoidEnrollmentCredential|description": {
+    "en": "e581316f80e4f785",
+    "text": "Use case `enrollment-credential`: ang client certificate na ipinapakita ng isang EST request at ang signer ng isang SCEP renewal. Buo na para sa EST; binibigyan ng paranoid ang self-signed na PKCSReq signer ng SCEP ng validity window. Exempt ayon sa spec: tinutukoy ng RFC 8894 section 2.3 ang PKCSReq signer bilang self-signed, kaya walang chain na hinihingi rito. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidVcKeyAttestation|label": {
+    "en": "c9da12bd29969033",
+    "text": "Paranoid: isang OpenID4VCI key attestation chain"
+  },
+  "pki.paranoidVcKeyAttestation|description": {
+    "en": "65f64443cb54f4c6",
+    "text": "Use case `vc-key-attestation`: ang x5c ng key attestation ng isang wallet sa OpenID4VCI credential endpoint. Bumubuo ang paranoid ng tunay na path na may mga intermediate (isang hop lang dati), kinokonsulta ang revocation at itinatanong ang keyUsage digitalSignature ng leaf. Mga anchor: oidc4vci.keyAttestationTrustedCertificates at ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidVcIssuer|label": {
+    "en": "bf59999c71087b0a",
+    "text": "Paranoid: ang certificate ng isang credential issuer o status-list signer"
+  },
+  "pki.paranoidVcIssuer|description": {
+    "en": "4497f64a995a4cbf",
+    "text": "Use case `vc-issuer`: ang IACA-to-DS chain ng isang mdoc, isang CWT status-list signer, isang trusted issuer certificate ng OpenID4VP at ang signer ng isang dayuhang status list. Itinatanong ng paranoid ang document-signer EKU 1.0.18013.5.1.2 ng ISO 18013-5 at ang DS profile (keyUsage digitalSignature, DS validity na nasa loob ng sa IACA nito), revocation para sa status-list signer, at validity at chain para sa trusted-issuer certificate na hindi self-signed. Ang naka-configure na trusted-issuer certificate ay tinatanggap na self-signed ayon sa spec, na itinatanong pa rin ang validity at revocation. Mga anchor: oid4vp.mdocTrustAnchors, oid4vp.trustedIssuerCertificates, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidCellPeer|label": {
+    "en": "29ff42feacbce3f9",
+    "text": "Paranoid: ang kabilang cell sa inter-cell channel"
+  },
+  "pki.paranoidCellPeer|description": {
+    "en": "4dbdc1d9a7d0f4c4",
+    "text": "Use case `cell-peer`: ang certificate na ipinapakita ng kabilang cell sa inter-cell channel, sa dalawang direksyon. Idinaragdag ng paranoid ang revocation mula sa register, extendedKeyUsage clientAuth at serverAuth (parehong iniisyu ng sariling CA ng serbisyong ito), at ang mga path rule. Anchor: ang service Root. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidCaImport|label": {
+    "en": "db5c10402103e4d7",
+    "text": "Paranoid: isang CA o key pair na ini-import ng operator"
+  },
+  "pki.paranoidCaImport|description": {
+    "en": "d87040a5e24c74ae",
+    "text": "Use case `ca-import`: ang import ng /admin/pki ng Root o Issuing CA ng operator at ng naka-pin na key pair. Hinihiling ng paranoid na ang ini-import na Issuing CA ay mag-chain sa service Root at sinusuri ang cA, keyCertSign, validity at pathLen; ang naka-pin na leaf ay sinusuri ang mga field. Ang ini-import na Root ay nananatiling self-anchoring. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidAnchorAdmission|label": {
+    "en": "7d8bf2554b7ae476",
+    "text": "Paranoid: pagtanggap sa isang truststore"
+  },
+  "pki.paranoidAnchorAdmission|description": {
+    "en": "169bc8829426f512",
+    "text": "Use case `anchor-admission`: kung ano ang tinatanggap ng /admin/tls/trust, ng signer truststore, ng tls.trustAnchorsFile at ng pki.signerTrustAnchorsFile. Ang anchor ay isang self-signed na CA na nasa loob ng validity at na-verify ang self-signature (cA, at keyCertSign kung may keyUsage); ang intermediate ay isang CA na nakakadena sa anchor na hawak na; ang leaf ay tinatanggihan sa dalawang truststore — ang leaf na ipi-pin ay inilalagay sa entry o relationship na gumagamit nito. Bago ang #1360, tinatanggap ng client truststore ang anumang kayang i-parse ng OpenSSL. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidRevocationSigner|label": {
+    "en": "05be41dc43e60403",
+    "text": "Paranoid: isang OCSP responder o CRL signer"
+  },
+  "pki.paranoidRevocationSigner|description": {
+    "en": "02ce618736381ac9",
+    "text": "Use case `revocation-signer`: ang delegated OCSP responder certificate at ang CRL signer sa loob ng common/revocation_status.js. Buo na (id-kp-OCSPSigning, cRLSign); nagtatanong ang paranoid sa door para iisang code ang mga pagsusuri. Exempt ayon sa spec: ang responder na may id-pkix-ocsp-nocheck ay hindi mismo sinusuri para sa revocation (RFC 6960 section 4.2.2.2.1). Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidFidoMds|label": {
+    "en": "49e3f63a1962f092",
+    "text": "Paranoid: ang signer ng FIDO Metadata Service BLOB"
+  },
+  "pki.paranoidFidoMds|description": {
+    "en": "03950106a2822b70",
+    "text": "Use case `fido-mds`: ang signer ng na-import na FIDO MDS3 BLOB. Buo na; nagtatanong ang paranoid sa door para iisang code ang mga pagsusuri. Hindi nagbabago ang na-audit na overrideSignature bypass ng administrator. Mga anchor: risk.mdsTrustAnchors, ang GlobalSign Root R3, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.signerTrustAnchorsFile|label": {
+    "en": "9d4fabbc6c6918f1",
+    "text": "Signer truststore: isang PEM file ng mga anchor at intermediate"
+  },
+  "pki.signerTrustAnchorsFile|description": {
+    "en": "32ac16c13b12ea05",
+    "text": "Isang PEM bundle na nilo-load sa signer truststore ng DEFAULT realm sa pag-start ng proseso: ang mga certificate authority, at ang mga intermediate sa ilalim ng mga ito, na maaaring pagdugtungan ng signing, encryption o attestation certificate ng third party kapag hindi ito sa serbisyong ito (common/signer_truststore.ts). Bawat block ay dumadaan sa admission rule: ang self-signed na CA ay anchor, ang ibang CA ay intermediate, at ang leaf ay tinatanggihan nang may pangalan. Kapag pinangalanan ngunit hindi mabasa, o walang certificate, FATAL ito (STS-PKI-0237), gaya ng tls.trustAnchorsFile. Ang mga anchor na idinagdag habang tumatakbo sa pamamagitan ng /admin/pki/trust ay iniingatan sa directory sa tabi ng mga ito. Walang laman bilang default."
+  },
+  "pki.signerTrustAnchorsFile|restartReason": {
+    "en": "736eb74db8a5c84f",
+    "text": "binabasa nang isang beses ang file, bago mag-validate ang anumang bagay"
+  },
+  "pki.pinnedCertificateWarningDays|label": {
+    "en": "bc1a8dace838ed5f",
+    "text": "Babala sa pag-expire ng naka-pin na certificate (araw)"
+  },
+  "pki.pinnedCertificateWarningDays|description": {
+    "en": "7ce39ba31b8cb865",
+    "text": "Gaano kaaga bago ang notAfter ng naka-pin na certificate minamarkahan ito ng inventory ng /admin/pki/trust bilang `expiring` at nilolog ito ng araw-araw na job na pki.pins.audit (STS-PKI-0263, isang beses bawat pagbabago ng state). Ang naka-pin na certificate ay ang nakarehistro sa isang application entry, isang relationship, isang setting, x5c ng isang JWK, isang federated bundle o ang cloud-anchor table; ang expired, revoked o walang-chain ay STS-PKI-0264."
+  },
   "acme.enabled|label": {
     "en": "4e21aa7b001c95d8",
     "text": "Patakbuhin ang ACME server"
@@ -3456,8 +4204,8 @@
     "text": "Pinakamalaking request body (bytes)"
   },
   "acme.maxRequestBytes|description": {
-    "en": "1e75b2f8a06b2682",
-    "text": "Ang flattened JWS na mas malaki rito ay tinatanggihan (HTTP 413) bago ito i-parse. Ang finalize na may dalang post-quantum CSR ang pinakamalaking lehitimong request; sampu-sampung kilobyte ang mga pirma ng SLH-DSA."
+    "en": "64645666fe96987c",
+    "text": "Tinatanggihan (HTTP 413) ang flattened JWS na mas malaki rito bago ito i-parse. Ang finalize na may dalang post-quantum CSR ang pinakamalaking lehitimong request; ang mga signature ng SLH-DSA ay sampu-sampung kilobyte."
   },
   "acme.attemptsPerIdentity|label": {
     "en": "0357e08b72306dd7",
@@ -3594,6 +4342,14 @@
   "scep.enabled|description": {
     "en": "9d0b62856fb7cc83",
     "text": "Kapag naka-off, sumasagot ng 503 ang bawat /enroll/scep request sa realm na ito. Itinatago ang mga certificate na naiisyu na."
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "Sumagot sa SCEP sa product"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "Sa product mode lang. Kapag naka-on, sumasagot ang /enroll/scep sa product mode. Kapag naka-off, ang default, sumasagot ito ng 503. BABALA: hinihingi ng RFC 8894 ang RSAES-PKCS1-v1.5 at AES-CBC, na hindi tinatanggap ng mga requirement 11.3.1 at 11.3.2 ng ASVS 5.0.0, kaya i-on lang ito para sa mga device na walang mas bago."
   },
   "scep.allowedProfiles|label": {
     "en": "b2cd406490c7676d",
@@ -3744,8 +4500,8 @@
     "text": "Encryption ng refresh token: key management (alg)"
   },
   "oauth2.refreshTokenEncryptionAlg|description": {
-    "en": "edc32ded102e4226",
-    "text": "Ang JWE key management algorithm na ginagamit sa pag-encrypt ng bawat refresh token. Ang refresh token ay isang pinirmahang JWT na naka-seal sa sariling mga key ng realm NA ITO at opaque sa client nito, kaya hindi nakikita sa labas ng serbisyong ito ang pagpili. Ginagamit ng mga RSA-OAEP algorithm ang RSA key ng realm, ng mga ECDH-ES ang EC key nito, at ng iba pa ang sariling secret ng realm. Ang pagbabago nito ay nakakaapekto sa mga token na iniisyu mula noon; nabubuksan pa rin ang mga naiisyu na, dahil may hawak ang realm na key ng bawat uri. Hindi iniaalok ang RSA1_5. Ang mga ML-KEM at HPKE algorithm (#82 — mga draft, tingnan ang keys.encryptionKemAlgs) ay nagse-seal sa key pair na HINANGO mula sa secret ng realm para sa algorithm na iyon, hindi kailanman inilalathala, kaya ang pagpili ng isa rito ay hindi nangangailangan ng key at walang binabagong nakikita ng client; ginagawang ligtas ng HPKE-10-KE (X-Wing) ang refresh token na nakuha ngayon laban sa hinaharap na quantum na kalaban pati sa classical."
+    "en": "93e63f4a8c7ba5b2",
+    "text": "Ang JWE key management algorithm na ginagamit sa pag-encrypt ng bawat refresh token. Ang refresh token ay isang pinirmahang JWT na naka-seal sa sariling mga key ng realm NA ITO at opaque sa client nito, kaya hindi nakikita sa labas ng serbisyong ito ang pagpili. Ginagamit ng mga RSA-OAEP algorithm ang RSA key ng realm, ng mga ECDH-ES ang EC key nito, at ng iba pa ang sariling secret ng realm. Hindi iniaalok ang PBES2: random ang secret, kaya walang naidaragdag ang pag-stretch dito bilang password. Ang pagbabago nito ay nakakaapekto sa mga token na iniisyu mula noon; nabubuksan pa rin ang mga naiisyu na, dahil may hawak ang realm na key ng bawat uri. Hindi iniaalok ang RSA1_5. Ang mga ML-KEM at HPKE algorithm (#82 — mga draft, tingnan ang keys.encryptionKemAlgs) ay nagse-seal sa key pair na HINANGO mula sa secret ng realm para sa algorithm na iyon, hindi kailanman inilalathala, kaya ang pagpili ng isa rito ay hindi nangangailangan ng key at walang binabagong nakikita ng client; ginagawang ligtas ng HPKE-10-KE (X-Wing) ang refresh token na nakuha ngayon laban sa hinaharap na quantum na kalaban pati sa classical."
   },
   "oauth2.refreshTokenEncryptionEnc|label": {
     "en": "901d0b6a281af825",
@@ -3971,6 +4727,14 @@
     "en": "2394ee67a689920d",
     "text": "Isagawa ang OpenID Connect Key Binding 1.0 (#150). Kapag naka-on: nakalista sa discovery document ang scope na `bound_key`, maaari itong hingin ng client na walang idinedeklarang scope, at ang request para dito ay dapat magbigay ng `dpop_jkt` at gumamit ng code flow (tinatanggihan kung hindi, STS-OAUTH-0704 at 0705); pinangangalanan ng ID Token ang DPoP key (`cnf.jwk`, `typ: dpop+id_token`), dapat itong patunayan ng token request gamit ang `c_s256`, at bawat refresh ay dapat manggaling sa parehong key. **Kapag naka-off, wala ito, at ang serbisyo ay OpenID Connect Core lamang**: hindi ina-advertise ang `bound_key`, hindi tinatanggihan ang request na may dala nito — binabalewala ang scope at hindi ibinibigay, gaya ng pagtrato ng Core sa scope na hindi kinikilos ng OP — at walang ID Token na naka-bind. I-off ito kung saan humihingi ang mga relying party ng bawat ina-advertise na scope at walang alam sa Key Binding (#315). Ang grant na naka-bind na bago ito i-off ay patuloy na sinusuri ang key nito sa refresh."
   },
+  "oauth2.enterpriseClaimsAlways|label": {
+    "en": "25c226f1b3654eee",
+    "text": "Mga claim ng Enterprise Extensions sa bawat ID Token"
+  },
+  "oauth2.enterpriseClaimsAlways|description": {
+    "en": "fad892b6e39c3877",
+    "text": "Ilagay ang `session_expiry` (ang absolute na pagtatapos ng sign-on session, kapag ini-issue ang token sa isa) at `tenant` (ang id ng realm na ito) ng OpenID Connect Enterprise Extensions 1.0 sa BAWAT ID Token (#148). **Naka-off bilang default:** inilalagay lamang ang bawat isa sa ID Token kapag pinangalanan ito ng client sa `id_token` member ng isang OpenID Connect Core 5.5 claims request, dahil ang claim na walang humingi ay ang iniuulat ng OpenID conformance suite, at pinapatakbo ng OpenID Connect certification ang suite na iyon. Nananatili ang dalawa sa `claims_supported` alinman ang kaso, at hindi apektado ang `aud_sub` (nasa ID Token lamang ito kung saan nagtala ang administrator ng isa para sa client na iyon)."
+  },
   "oauth2.didClaim|label": {
     "en": "d0b89f9c74f06728",
     "text": "Ang claim na did"
@@ -4096,8 +4860,8 @@
     "text": "Interval ng back-channel logout summary (segundo)"
   },
   "oauth2.backchannelLogoutSummaryS|description": {
-    "en": "308efc32d526898a",
-    "text": "Hindi hihigit sa isang log line bawat realm bawat interval, na nagbibilang ng naipadala, sinubukan ulit, inagaw at ginawang dead letter ng process na ito mula noong huli — hindi kailanman isang line bawat pagsubok o bawat pagkabigo. Isang warning (STS-OAUTH-0545) kapag may ginawang dead letter."
+    "en": "4c2470b19d5277f2",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng logout ng isang realm. Babala ang isang dead letter o naantalang paghahatid (STS-OAUTH-0545); ang bilang na wala ang alinman ay isinusulat lamang sa debug. Hindi kailanman isang linya bawat pagsubok."
   },
   "admin.readGroup|label": {
     "en": "990fd753159230d1",
@@ -4114,6 +4878,14 @@
   "admin.writeGroup|description": {
     "en": "5bd2e65986c9ef86",
     "text": "Ang cn ng directory group na ang mga miyembro ay puwedeng mag-POST ng console form — mag-revoke ng token, magdagdag ng claim, magbago ng setting, magbigay ng role. KASAMA NG WRITE ANG READ: hindi na kailangan ng miyembro ng group na ito ang read group, dahil ang role na kayang baguhin ang pahinang hindi nito nakikita ay bitag sa halip na pahintulot."
+  },
+  "admin.securityGroup|label": {
+    "en": "e208f88393e196ce",
+    "text": "Role na Security Administrator"
+  },
+  "admin.securityGroup|description": {
+    "en": "296a8d5721391215",
+    "text": "Ang cn ng grupo sa directory na ang mga miyembro ay mga Security Administrator: sila lamang ang maaaring magbago ng patakaran sa Directory → Policies, magtakda ng patakaran sa isang application, grupo o tao, magbigay ng role na ito, o kumilos sa account ng taong may hawak nito. Hindi ito magagawa ng Admin Write lamang. KASAMA SA ROLE ANG ADMIN READ at wala nang iba, kaya maaari itong hawakan ng taong hindi naman administrator. Ang grupo ng default realm ang mga Security Administrator ng serbisyo, sa bawat realm; ang sariling grupo ng isang realm ay naglilimita sa mga miyembro nito sa realm na iyon."
   },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
@@ -4443,6 +5215,14 @@
     "en": "f24b1c4bc1251e30",
     "text": "Ang <md:NameIDFormat> na inilalathala sa /federation/metadata/{id}, na siyang format na ipinapadala ng subject ng partner na naka-configure mula sa document na iyon. Ang default ay ang literal na palaging inilalathala ng serbisyong ito."
   },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "PLC directory para sa mga sign-in ng Bluesky"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Kung saan hinahanap ng Bluesky sign-in ang natanggap na did:plc, upang tiyakin na pinagkakatiwalaan ng data server ng tao ang issuer na nagpangalan sa kanya. Ang Bluesky relationship lang ang bumabasa nito."
+  },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",
     "text": "Itinatago ang naunang encryption key nang (segundo)"
@@ -4514,6 +5294,14 @@
   "saml2.assertionLifetimeMin|description": {
     "en": "a243fee8db63660f",
     "text": "Gaano katagal valid ang iniisyung assertion: nagiging Conditions/NotOnOrAfter ito at ang bearer SubjectConfirmationData/NotOnOrAfter din. Itakda ito sa 1 para panoorin ang service provider na tumatanggi sa lipas na assertion, na siyang check na mali ang karamihan sa kanila."
+  },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "I-publish ang suporta sa algorithm sa metadata"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "Kung may `<alg:SigningMethod>` at `<alg:DigestMethod>` ang IdP metadata (SAML V2.0 Metadata Profile for Algorithm Support 1.0), na naglilista ng mga XML signature method at digest na kayang i-verify ng realm na ito, ayon sa pagkakasunod-sunod ng kagustuhan. **Naka-on bilang default.** Binabalewala ang mga ito ng consumer na hindi alam ang profile, gaya ng hinihingi ng seksyon 2.3.1 ng SAML metadata."
   },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",
@@ -4688,8 +5476,8 @@
     "text": "Payagan ang MDQ import nang walang trust anchor (product mode)"
   },
   "saml2.mdqImportWithoutAnchors|description": {
-    "en": "61eeb6e71a71076d",
-    "text": "PRODUCT MODE LANG: kung puwedeng mag-register ng service provider ang Import from MDQ ng isang administrator (ang pahinang SAML 2.0, POST /admin-api/saml2/mdq-import) kapag walang saml2.metadataTrustAnchors ang realm. NAKA-OFF, ang default: tinatanggihan ito (STS-SAML-0084). BABALA: kapag NAKA-ON, kino-consume ang document na isinasagot ng responder NANG WALANG ANUMANG SIGNATURE CHECK — ang mga signing certificate nito ang nagiging pinagve-verify-an ng mga request ng service provider na iyon at ang mga endpoint nito ang nagiging pinagpapadalhan ng mga assertion — kaya ang sinumang makakasagot para sa host ng responder (ang operator nito, o sinumang nasa daan papunta rito) ang pumipili sa mga iyon. Ang pagpili lang ng administrator ng entityID at ng responder ang humahalili sa pirma. Mas mabuting magtakda ng trust anchor. Hindi kailanman sakop nito ang lookup na sinimulan ng REQUEST: nangangailangan iyon ng anchor anuman ang sabihin nito. Nag-i-import ang development nang walang anchor anuman ang sabihin nito."
+    "en": "084296c20a8eb042",
+    "text": "PRODUCT MODE LANG: kung puwedeng mag-register ng service provider ang Import from MDQ ng isang administrator (ang pahinang SAML 2.0, POST /admin-api/saml2/mdq-import) kapag walang saml2.metadataTrustAnchors ang realm. NAKA-OFF, ang default: tinatanggihan ito (STS-SAML-0084). BABALA: kapag NAKA-ON, kino-consume ang document na isinasagot ng responder NANG WALANG ANUMANG SIGNATURE CHECK — ang mga signing certificate nito ang nagiging pinagve-verify-an ng mga request ng service provider na iyon at ang mga endpoint nito ang nagiging pinagpapadalhan ng mga assertion — kaya ang sinumang makakasagot para sa host ng responder (ang operator nito, o sinumang nasa daan papunta rito) ang pumipili sa mga iyon. Ang pagpili lang ng administrator ng entityID at ng responder ang humahalili sa pirma. Mas mabuting magtakda ng trust anchor. Hindi kailanman sakop nito ang lookup na sinimulan ng REQUEST: nangangailangan iyon ng anchor anuman ang sabihin nito. Nag-i-import ang development nang walang anchor anuman ang sabihin nito. Sa paranoid PKI mode, ang import na pinapayagan nito ang ginagawang trust anchor ng application ang unang signing certificate ng dokumento, at dapat mag-verify dito ang susunod na fetch."
   },
   "saml11.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
@@ -4842,6 +5630,22 @@
   "wstrust.acceptClientCertificate|description": {
     "en": "23d9a8fba459f61c",
     "text": "Kung ang isang request sa /sts na walang dalang kredensyal ang wsse:Security header ay magpapatunay sa humihiling nito sa pamamagitan ng TLS client certificate sa koneksyon. Tanging ang certificate na na-verify sa handshake at inisyu ng realm na ito sa isang tao o isang application (isang TLS client certificate mula sa user portal o sa Credentials ng application, o isang na-enroll sa ACME, EST o SCEP) ang isang kredensyal, sa parehong mode; ang na-revoke, ang galing sa ibang realm, at ang hindi na hawak ng may-ari nito ay tinatanggihan ng wst:FailedAuthentication. Sinasabi ng inisyung token na may ginamit na certificate: TLSClient sa isang SAML 2.0 assertion, urn:ietf:rfc:2246 sa isang SAML 1.1, amr swk sa isang JWT. Kapag naka-off, binabalewala rito ang certificate."
+  },
+  "wstrust.acceptKerberos|label": {
+    "en": "ed45753aa5e54768",
+    "text": "Tanggapin ang Kerberos token"
+  },
+  "wstrust.acceptKerberos|description": {
+    "en": "a17dc237154329df",
+    "text": "Kung maaaring magharap ang isang kahilingan sa /sts ng Kerberos token (isang AP-REQ para sa sariling SPN ng serbisyong ito, sa isang BinarySecurityToken ng isa sa anim na ValueType ng Kerberos Token Profile 1.1) bilang credential ng humihiling o sa loob ng wst:OnBehalfOf o wst14:ActAs. Sinusuri ng acceptor ang ticket sa parehong mode. Sa loob ng alinmang element, dapat itong delegated ticket: isang nakuha ng humihiling sa pamamagitan ng S4U2Proxy (pinapangalanan ng PAC nito ang humihiling sa huli), o isang binili gamit ang TGT na ipinasa sa humihiling na pinagkakatiwalaan para sa delegation. Kapag naka-off, tinatanggihan ang ganitong token."
+  },
+  "wstrust.issueKerberos|label": {
+    "en": "285465dcff30aee0",
+    "text": "Maglabas ng mga Kerberos token"
+  },
+  "wstrust.issueKerberos|description": {
+    "en": "52a63db9be2c6460",
+    "text": "Kung sinasagot ng Kerberos token ang wst:TokenType na nagpapangalan sa isa sa anim na ValueType ng Kerberos Token Profile 1.1: isang AP-REQ na may dalang service ticket na inilabas ng KDC ng realm na ito para sa subject patungo sa Kerberos service na pinapangalanan ng AppliesTo, at ibinabalik ang subkey ng Authenticator bilang proof token sa TLS. Pinapangalanan ng isang ActAs ticket ang bawat partidong kumilos sa S4U_DELEGATION_INFO ng PAC nito. Kapag naka-off, tinatanggihan ang ganitong kahilingan."
   },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
@@ -5208,8 +6012,8 @@
     "text": "Deferred: handa pagkalipas ng (ms)"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "Gaano katagal nananatiling issuance_pending ang isang deferred credential bago ito maging handa. Sapat ang haba para kailanganin ng wallet na mag-poll at sapat ang ikli para hindi mag-time out ang isang test."
+    "en": "2456e341de78a860",
+    "text": "Gaano katagal bago maging handa ang deferred credential. Hanggang doon, sumasagot ang deferred endpoint ng 202 na may parehong transaction_id at isang interval. Sapat ang haba para kailangang mag-poll ng wallet at sapat ang ikli para hindi mag-time out ang test."
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",
@@ -5312,8 +6116,8 @@
     "text": "Algorithm na ipinipirma sa mga credential"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "6503fe55086c7b70",
-    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng Verifier ng serbisyong ito. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito."
+    "en": "64dfa4a593f7ec50",
+    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng Verifier ng serbisyong ito. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito. Tinatanggihan dito ng oid4vc.walletCompatibility ang post-quantum o composite."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5496,8 +6300,24 @@
     "text": "Signing algorithm ng x509 Client Identifier request"
   },
   "oid4vp.x509SigningAlgorithm|description": {
-    "en": "f85d7f30b92687ec",
-    "text": "Ang JWS algorithm na ipinapampirma sa Request Object na may x509_san_dns o x509_hash Client Identifier, at kaya ang realm key kung saan ini-issue ang certificate ng Verifier. ES256 bilang default, na hinihingi ng OpenID4VC HAIP na tanggapin ng wallet. Hindi pa inaalok ang post-quantum algorithm: pinipirmahan ang Request Object sa request path, at pumipirma ang mga post-quantum key ng realm na ito sa thread pool ng libuv (oid4vc/CLAUDE.md, ang mga x509 prefix)."
+    "en": "aa2c5eaf7760ef3f",
+    "text": "Ang JWS algorithm na ipinapampirma sa Request Object na may x509_san_dns o x509_hash Client Identifier, at kaya ang realm key kung saan ini-issue ang certificate ng Verifier. ES256 bilang default, na hinihingi ng OpenID4VC HAIP na tanggapin ng wallet. Inaalok din ang mga post-quantum at composite algorithm, para sa wallet na tumatanggap sa mga ito; tinatanggihan sila ng oid4vc.walletCompatibility, at ganoon din kapag naka-off ang keys.postQuantumSigning."
+  },
+  "oid4vp.requestObjectSigningAlgorithm|label": {
+    "en": "f3337ef9c128d22c",
+    "text": "Signing algorithm ng naka-sign na request"
+  },
+  "oid4vp.requestObjectSigningAlgorithm|description": {
+    "en": "c8e10b889bf92533",
+    "text": "Ang JWS algorithm na ipinapampirma sa naka-sign na Request Object sa ilalim ng mga Client Identifier prefix na pre-registered, decentralized_identifier, verifier_attestation at openid_federation (ginagamit ng mga x509 prefix ang oid4vp.x509SigningAlgorithm). Ang realm key para rito ay ang pinapangalanan ng request: sa /oauth2/jwks, sa DID document, sa cnf ng sariling-isyung Verifier Attestation at sa openid_credential_verifier jwks ng Entity Configuration. RS256 bilang default, na siyang ginamit ng bawat naka-sign na request bago ang setting na ito. Inaalok ang mga post-quantum at composite algorithm para sa wallet na tumatanggap sa mga ito; tinatanggihan sila ng oid4vc.walletCompatibility, at ganoon din kapag naka-off ang keys.postQuantumSigning."
+  },
+  "oid4vc.walletCompatibility|label": {
+    "en": "50234c10261cc298",
+    "text": "Wallet compatibility mode"
+  },
+  "oid4vc.walletCompatibility|description": {
+    "en": "a8207c4165957956",
+    "text": "Ina-off, para sa OpenID4VCI at OpenID4VP, ang bawat JWS algorithm na tinatanggihan ng wallet na ginagamit ngayon o na walang inilathalang specification na tumutukoy para sa mga protocol na ito: ang mga post-quantum at composite (ang ML-DSA-44, -65 at -87 ay sa RFC 9964, pero wala pang wallet na tumatanggap sa mga ito; ang SLH-DSA at ang mga composite ML-DSA algorithm ay mga Internet-Draft). Naka-on: wala sa kanila ang nasa metadata ng issuer o ng Verifier, hindi kailanman ipinipirma sa isa sa kanila ang dc+sd-jwt o jwt_vc_json credential, OpenID4VP Request Object o alok ng portal (tinatanggihan ang setting na nagpapangalan ng isa sa halip na palitan), at tinatanggihan ang credential, Key Binding JWT, VP JWT, proof of possession o banyagang status list na pinirmahan ng isa sa kanila. NAKA-OFF, ang default: inaalok at tinatanggap ang bawat algorithm na hawak ng realm na ito, gaya ng dati. Hindi apektado ang ldp_vc (bbs-2023 at ang mga holder cryptosuite nito), at wala ring ibang protocol: ang keys.postQuantumSigning ang switch para sa buong realm."
   },
   "oid4vp.verifierAttestation|label": {
     "en": "43be5976a5b30428",
@@ -5784,8 +6604,8 @@
     "text": "Ibang pinagkakatiwalaang credential issuer (PEM)"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "60a2c73b8c2c6aec",
-    "text": "Mga PEM certificate, pinagdugtong, na ang mga key ay tinatanggap ng Verifier ng serbisyong ito para sa pirma ng SD-JWT VC o jwt_vc_json credential BUKOD PA sa sariling issuer ng realm na ito. Walang laman — ang default — ay ang issuer na ito lang ang pinagkakatiwalaan, gaya ng dati. Ginagamit ang certificate bilang KEY: walang chain na binubuo, pero kinokonsulta ang revocation nito kapag nagve-verify ito ng credential (pki.revocationCheck, mula 2026-09-12)."
+    "en": "bbe880b9d434d9ab",
+    "text": "Mga PEM certificate, pinagdugtong, na ang mga key ay tinatanggap ng Verifier ng serbisyong ito para sa pirma ng SD-JWT VC o jwt_vc_json credential BUKOD PA sa sariling issuer ng realm na ito. Walang laman — ang default — ay ang issuer na ito lang ang pinagkakatiwalaan, gaya ng dati. Ginagamit ang certificate bilang KEY: walang chain na binubuo, pero kinokonsulta ang revocation nito kapag nagve-verify ito ng credential (pki.revocationCheck, mula 2026-09-12). Ang certificate na ang key ay ML-DSA, SLH-DSA o composite ML-DSA ay nagve-verify ng credential at status list na pinirmahan ng algorithm na iyon (#657), maliban kung naka-on ang oid4vc.walletCompatibility."
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5794,6 +6614,30 @@
   "oid4vp.expectedVct|description": {
     "en": "8cc9cdf9a93a0260",
     "text": "Ang `vct` na hinihingi ng Verifier sa isang ipinresent na SD-JWT VC. Ang default ay ang type na mini-mint ng issuer na ito; itakda ito para tanggapin ang credential na mini-mint ng ibang issuer sa ilalim ng sarili nitong type."
+  },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "Mga pinagkakatiwalaang mdoc issuing authority (mga IACA certificate, PEM)"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "Mga PEM certificate, pinagdugtong: ang mga Issuing Authority CA certificate (ISO/IEC 18013-5 Annex B) na dapat pag-chain-an ng document signer certificate ng ipinakitang mdoc. Binubuo at sinusuri ang chain ayon sa RFC 5280, kinokonsulta ang revocation ng document signer (pki.revocationCheck), at tinatanggihan ang mdoc na ang signer ay hindi naka-chain sa alinman sa mga ito. Walang laman — ang default — ay walang pinagkakatiwalaang mdoc issuer, kaya tinatanggihan ang mso_mdoc presentation hanggang may mapangalanan."
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "Inaasahang mdoc document type (docType)"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "Ang `docType` na hinihingi ng mso_mdoc request (`meta.doctype_value`) at kinakailangan ng Verifier sa ipinakitang dokumento at sa Mobile Security Object nito. Ang default ay ang mobile driving licence ng ISO/IEC 18013-5."
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "mdoc namespace na pinagbabasahan ng mga hinihinging claim"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "Ang namespace na pinangangalanan ng mga claim path ng mso_mdoc request (`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3). Hinihingi ang bawat claim bilang data element na may parehong pangalan, maliban sa birthdate (birth_date) at address (resident_address), na iba ang pangalan sa ISO/IEC 18013-5. Ang default ay sa mobile driving licence."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -5939,6 +6783,38 @@
     "en": "89f8d541b4738289",
     "text": "Ang mga credential configuration na ang mga credential ay naka-bind sa DID ng tao sa halip na sa isang key. Para sa bawat isang nakapangalan, dapat pangalanan ng proof ng wallet ang key nito sa pamamagitan ng kid na isang did:jwk o did:key URL na pinatunayan ng tao sa kanilang pahinang Self-issued IDs (hindi sapat ang entry ng administrator), at dala ng credential ang DID na iyon: cnf.kid sa isang dc+sd-jwt, credentialSubject.id, sub at cnf.kid sa isang jwt_vc_json, credentialSubject.id sa isang ldp_vc. Sinasabi ng metadata ang did:jwk at did:key para rito. Pareho ang DID na dala ng bawat kopya ng isang batch, kaya maiuugnay ang mga ito sa isa't isa — iyan ang kapalit. Kapag walang laman, naka-bind sa key ang bawat configuration, gaya ng dati. Hindi iniaalok ang did:web."
   },
+  "did.personPublishing|label": {
+    "en": "e68b6af2230600ec",
+    "text": "Maglathala ng did:web para sa isang tao"
+  },
+  "did.personPublishing|description": {
+    "en": "841dc751d16e1137",
+    "text": "Hayaang gumawa ang isang tao ng did:web na inilalathala ng realm na ito para sa kanya, sa Self-issued IDs na pahina ng kanyang portal (#1291): did:web:<host>[:realm:<id>]:users:<rid>, kung saan ang <rid> ay 128 random na bit, kaya walang makapag-iisa-isa ng mga account sa pagsubok ng mga address at hindi mapag-uugnay ang dalawang DID ng iisang tao. Inihahain ang dokumento nito sa /users/<rid>/did.json na iniingatan ang bawat bersyon, at maaari itong maging preferred DID ng tao. Kapag naka-on, nag-aalok din ang isang credential configuration na nakatali sa DID (oid4vci.didHolderBinding) ng did:web para sa isang DID na hino-host ng realm na ito at pinatunayan ng tao gamit ang isang wallet. Kapag naka-off: walang bagong inilalathala; inihahain pa rin ang DID na nailathala na, naka-deactivate man o hindi, dahil iniingatan ang address nito magpakailanman. Sa product mode, inilalathala lang ang isang DID sa isang naka-pin na global.publicBaseUrl."
+  },
+  "did.personCustody|label": {
+    "en": "057d429ef011ffab",
+    "text": "Sino ang may hawak ng pribadong susi ng DID ng isang tao"
+  },
+  "did.personCustody|description": {
+    "en": "d6a546fec114599d",
+    "text": "Sino ang may hawak ng pribadong susi ng isang DID na inilathala para sa isang tao. `wallet` (ang default, at ang pinakaligtas): pinatutunayan ng wallet ng tao ang sarili nitong susi sa isang self-issued (SIOPv2) na palitan at ang pampublikong kalahati lang ang inilalathala ng realm; bawat susunod na pagpapalit ng susi ay inaawtorisa ng isang susing pinangangalanan ng kasalukuyang bersyon at pinatutunayan ng bagong susi. `realm`: ang realm ang gumagawa ng susi at iniingatan itong naka-seal, kaya maaaring gawing preferred ang DID at ilabas sa did claim pero hindi kailanman makapagsa-sign in ng wallet o makapagtatali ng credential. `download`: ang realm ang gumagawa ng pares, ipinapakita ang pribadong susi nang ISANG beses at ang pampublikong kalahati lang ang iniingatan; hindi pa napapatunayan ang DID hanggang patunayan ng tao ang susi gamit ang isang wallet. BABALA: sa `download` dumaraan sa browser ang pribadong susi, at sa `realm` maaaring kumilos ang realm bilang ang tao; piliin lang ang mga ito kung katanggap-tanggap iyon."
+  },
+  "did.personMaxPerPerson|label": {
+    "en": "5a10d569545ab9fe",
+    "text": "Mga inilathalang DID na maaaring hawakan ng isang tao"
+  },
+  "did.personMaxPerPerson|description": {
+    "en": "ddaedbc77af9d48d",
+    "text": "Ilang AKTIBONG inilathalang DID ang maaaring hawakan ng isang tao. Hindi binibilang ang naka-deactivate na DID, at patuloy na sumasagot ng 410 Gone ang address nito. Binibilang din ang bawat isa sa sampung self-issued na subject na maaaring i-enroll ng isang tao."
+  },
+  "did.personKeyAlgorithm|label": {
+    "en": "2ba095f9fc035eca",
+    "text": "Algorithm ng susi ng DID na ginawa ng realm"
+  },
+  "did.personKeyAlgorithm|description": {
+    "en": "63a8db054fa27772",
+    "text": "Ang algorithm ng susing ginagawa ng realm para sa DID ng isang tao, sa mga custody mode na `realm` at `download`: ES256 (P-256), ES384 (P-384) o EdDSA (Ed25519). Sa custody na `wallet`, ang wallet ang pumipili ng sarili nitong susi. Pinananatili ng susing nailathala na ang algorithm nito."
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "Ihain ang W3C VC API"
@@ -6022,6 +6898,18 @@
   "krb5.serviceSalt|restartReason": {
     "en": "6f0fcf17e84ec4f0",
     "text": "hinahango mula rito sa startup ang mga long-term key ng service account. Maaari pa rin itong dalhin ng isang TRUST REALM: binubuo ang principal database ng realm kapag ino-on ang Kerberos nito at binubuo ulit kapag nagbago ito, kaya walang bahagi ng value ng realm ang nagamit sa startup"
+  },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "Mag-alok ng AES na may SHA-1 sa product"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "Sa product mode lang. Kapag naka-on, maaari ring gumamit ang KDC na ito ng enctype 17 at 18 (AES na may HMAC-SHA1-96, RFC 3962). Kapag naka-off, ang default, 19 at 20 (RFC 8009) lang ang gamit ng product. BABALA: hindi tinatanggap ng requirement 11.4.1 ng ASVS 5.0.0 ang SHA-1 dito, kaya i-on lang ito para sa mga Kerberos client na walang mas bago."
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "ginagawa sa pagsisimula ang mga key ng bawat principal"
   },
   "krb5.enctypes|label": {
     "en": "e28806e1a9d53522",
@@ -6444,8 +7332,8 @@
     "text": "Plain na LDAP listener"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "Kung sinisimulan man lang ang hindi naka-encrypt na listener sa ldap.port. Naka-on bilang default, na siyang palaging ginagawa ng serbisyong ito. Ang Off ay nag-iiwan sa LDAPS sa ldap.tlsPort bilang tanging daan papasok — na siyang gusto ng deployment na ang mga bind ay VINE-VERIFY (product mode), dahil ang simple bind sa 389 ay nagpapadala ng password nang hindi naka-encrypt. Ang product mode na naka-on ito ay naglo-log ng babala sa startup na eksaktong nagsasabi niyon."
+    "en": "64c4523fa982995b",
+    "text": "Kung sinisimulan man lang ang hindi naka-encrypt na listener sa ldap.port. Naka-on bilang default sa development mode, na siyang palaging ginagawa ng serbisyong ito, at naka-off bilang default sa product mode. Ang Off ay nag-iiwan sa LDAPS sa ldap.tlsPort bilang tanging daan papasok — na siyang gusto ng deployment na ang mga bind ay VINE-VERIFY (product mode), dahil ang simple bind sa 389 ay nagpapadala ng password nang hindi naka-encrypt. Ang product mode na naka-on ito ay naglo-log ng babala sa startup na eksaktong nagsasabi niyon."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -6576,8 +7464,8 @@
     "text": "Ang shared na Digest password"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "Ang password na pinagsasaluhan ng bawat username para sa HTTP Digest — ang parehong value na default ng KRB5_USER_PASSWORD, para iisang bagay lang ang tatandaan sa halip na dalawa. Hindi ito maaaring \"kahit ano\" gaya ng bind o Basic credential: ang digest response ay hash ng password, kaya ang server na walang password ay hindi talaga gumagawa ng palitan at hindi masusubok ang digest code ng client."
+    "en": "6819fb3962f9f205",
+    "text": "Ang password na pinagsasaluhan ng bawat username para sa HTTP Digest — ang parehong value na default ng KRB5_USER_PASSWORD, para iisang bagay lang ang tatandaan sa halip na dalawa. Hindi ito maaaring \"kahit ano\" gaya ng bind o Basic credential: ang digest response ay hash ng password, kaya ang server na walang password ay hindi talaga gumagawa ng palitan at hindi masusubok ang digest code ng client. Maaari itong ihatid bilang file na pinangangalanan ng SCIM_DIGEST_PASSWORD_FILE."
   },
   "scim.digestNonceSeconds|label": {
     "en": "1fa6981a1aebea0d",
@@ -6728,8 +7616,8 @@
     "text": "Interval ng summary (segundo)"
   },
   "scimClient.summaryS|description": {
-    "en": "532d257e0c6e60fe",
-    "text": "Hindi hihigit sa isang summary log line kada realm kada interval."
+    "en": "ea1e0599735008ca",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng paghahatid ng isang realm. Babala ang isang dead letter o naantalang paghahatid; ang bilang na wala ang alinman ay isinusulat lamang sa debug."
   },
   "scimClient.reconcileCheckS|label": {
     "en": "f122dddcfc10af98",
@@ -7726,6 +8614,14 @@
   "risk.uploadMaxBytes|description": {
     "en": "65308f69a41d480e",
     "text": "Ang pinakamalaking maaaring maging file ng upload, gaya ng pagkakapadala (naka-compress, kung ganoon). Tinatanggihan bago mabasa ang anumang byte kapag mas malaki ang idinedeklara ng request, at pinahihinto kung saan ito lumampas sa kabilang kaso. Ilang daang megabyte na naka-compress ang city file ng DB-IP Lite."
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "Pinakamalaking bahagi ng mga linya ng dataset na maaaring hindi ma-parse (porsiyento)"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "Tinatanggihan ang dataset file kung higit sa porsiyentong ito ng mga linyang hindi komento ang hindi row ng format, at walang itinatabi rito. Tinatanggap ng 100 ang anumang file na may kahit isang row, na siyang ginagawa ng serbisyong ito dati. BABALA: sa 100, maaaring ma-load ang maling uri ng file basta may isang linyang ma-parse."
   },
   "risk.expandedMaxBytes|label": {
     "en": "c9644dc433201840",
@@ -9564,12 +10460,24 @@
     "text": "Persistence mode"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "Kung saan isinusulat ang embedded directory, ang trust realm registry at ang mga runtime appconfig override. Walang isinusulat ang memory at ito ang palaging ginagawa ng serbisyong ito — nawawala ang lahat sa restart. Nagsusulat ang ldif ng isang RFC 2849 file kada realm at dalawang JSON file sa persistence.dataDir, na siyang sagot para sa local development at hindi nangangailangan ng database. Nagsusulat ang postgres ng isang set ng table (inililista ng postgres/schema.sql ang mga ito) at ito ang shared store. ANG MINI-MINT NG SERBISYONG ITO — mga session, token, code, artifact, Kerberos principal, mga replay cache, mga counter at ang audit log — ay nape-persist sa PRODUCT mode sa postgres at sa walang ibang configuration; tingnan ang persistence.minted. Walang pine-persist ang development mode sa mga ito, dahil nire-regenerate doon ang signing key sa bawat start at ang token na mas tumagal dito ay walang mapagve-verify-an. Walang hawak sa mga ito ang ldif store sa alinmang mode at sinasabi nito iyon sa startup, dahil buong file ang isinusulat nito kada flush."
+    "en": "9017af2918cf94be",
+    "text": "Kung saan isinusulat ang embedded directory, ang trust realm registry at ang mga runtime appconfig override. Walang isinusulat ang memory at ito ang palaging ginagawa ng serbisyong ito — nawawala ang lahat sa restart. Nagsusulat ang ldif ng isang RFC 2849 file kada realm at dalawang JSON file sa persistence.dataDir, na siyang sagot para sa local development at hindi nangangailangan ng database. Nagsusulat ang postgres ng isang set ng table (inililista ng postgres/schema.sql ang mga ito) at ito ang shared store. Ang mariadb ay ang parehong store sa MariaDB (mariadb/schema.sql), isang pangalawang engine na pinatatakbuhan ng test suite: ang persistence.databaseUrl ay isang mariadb:// na address, dapat naka-install ang package na mysql2, at tinatanggihan ang anumang nangangailangan ng mismong PostgreSQL (mga cell, ang bulk import, ang directory window). ANG MINI-MINT NG SERBISYONG ITO — mga session, token, code, artifact, Kerberos principal, mga replay cache, mga counter at ang audit log — ay nape-persist sa PRODUCT mode sa postgres at sa walang ibang configuration; tingnan ang persistence.minted. Walang pine-persist ang development mode sa mga ito, dahil nire-regenerate doon ang signing key sa bawat start at ang token na mas tumagal dito ay walang mapagve-verify-an. Walang hawak sa mga ito ang ldif store sa alinmang mode at sinasabi nito iyon sa startup, dahil buong file ang isinusulat nito kada flush."
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
     "text": "binubuksan at binabasa ang store bago mag-bind ang listener"
+  },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "SQL dialect ng cluster"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "Kung aling mga statement ang ipinapadala ng isang postgres store para i-coordinate ang ilang proseso: ang mga claim, lease, counter, rate window, budget, write fence, ang join lock ng cluster, ang heartbeat at ang pag-trim ng change log. Ang native ay ang sariling mga statement ng PostgreSQL (conditional upsert, advisory lock, LISTEN/NOTIFY) at ito ang pinapatakbo ng production. Ang portable ay ang mga statement na pinapatakbo ng pangalawang database engine (mga simpleng insert na walang ginagawa kapag duplicate, mga row lock sa sts_cluster_locks, at walang abiso ng pagbabago, kaya tinatanong ang change log bawat segundo maliban kung nakatakda ang persistence.pollInterval); umiiral ito para mapatunayan ng test suite ang code na iyon sa PostgreSQL. Parehong tama; mas maraming statement bawat operasyon ang gastos ng portable."
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "pinipili ng store driver ang mga statement nito kapag binubuo ito"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -9840,8 +10748,8 @@
     "text": "Change poll interval (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "Gaano kadalas tinatanong ng process na ito ang change log kung ano ang kinommit ng ibang process. Ito ang KONTRATA at ang LISTEN/NOTIFY nudge ay optimisasyon lang dito, kaya ito ang pinakamasamang convergence lag kapag nawala ang isang notification — isang nalaglag na listener, isang restart ng database — at ilang millisecond ang karaniwang lag. Limang segundo dahil karaniwang nauunang dumating ang nudge at walang nabibili ang mas maikling interval kundi mga query; 250ms ang pinakamababa. Ito rin ang laki ng replay-cache window na inilalarawan sa ilalim ng persistence.coordinate."
+    "en": "0620a679e69c0d43",
+    "text": "Kung gaano kadalas tinatanong ng prosesong ito ang change log kung ano ang na-commit ng ibang mga proseso. Ito ang KONTRATA at ang LISTEN/NOTIFY na pagsundot ay optimisasyon lamang dito, kaya ito ang pinakamasamang pagkaantala ng convergence kapag nawala ang isang abiso — naputol na listener, pag-restart ng database — at ang karaniwang pagkaantala ay ilang millisecond. Limang segundo dahil karaniwang nauuna ang pagsundot at walang nabibili ang mas maikling interval kundi mga query; 250ms ang pinakamababa. Kapag walang ipinapadalang pagsundot ang store (persistence.sqlDialect portable) at hindi ito nakatakda, isang segundo ang interval. Ito rin ang laki ng replay-cache window na inilarawan sa ilalim ng persistence.coordinate."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",
@@ -10044,8 +10952,8 @@
     "text": "Interval ng summary ng inter-cell delivery (s)"
   },
   "cells.deliverySummaryS|description": {
-    "en": "4d6c6babc8c6fdfa",
-    "text": "Hindi hihigit sa isang summary line kada realm kada ganitong karaming segundo, sa halip na isang linya kada delivery."
+    "en": "6d3c80b9adce5ba8",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng paghahatid sa pagitan ng mga cell ng isang realm. Babala ang isang dead letter o naantalang paghahatid; ang bilang na wala ang alinman ay isinusulat lamang sa debug."
   },
   "cells.deliverySweepS|label": {
     "en": "f26150d48283cebf",
@@ -10188,8 +11096,8 @@
     "text": "Pinakamaraming sabay-sabay na run"
   },
   "scheduler.maxConcurrentRuns|description": {
-    "en": "56fac41f63177db7",
-    "text": "Ilang naka-iskedyul o manual na run ang sabay-sabay na pinapatakbo ng leader, sa lahat ng job at trust realm. Ang slot ay multiple ng interval nito, kaya ang bawat oras-orasang job sa bawat realm ay dapat patakbuhin sa parehong segundo; bawat run ay may hawak na connection sa store habang nagke-claim at gumagawa ito, at apat ang mayroon ang postgres store. Naghihintay ang iba, inuuna ang Run now ng isang tao, at nagsisimula habang natatapos ang mga run. Hindi ito kailanman lalampas sa isang mas kaunti kaysa sa hawak ng pool, anuman ang itakda rito, kaya hindi makukuha ng scheduler ang bawat connection mula sa mga request."
+    "en": "dc2ba3cac81ad956",
+    "text": "Ilang nakaiskedyul o manwal na pagtakbo ang sabay-sabay na pinapatakbo ng leader, sa lahat ng job at trust realm. Ang 0, ang default, ay dalawang pagtakbo, o isang mas kaunti kaysa sa mga request worker thread (workers.requestCount) kapag mas marami iyon, kaya may isang thread na naiiwang sumasagot sa mga request nang walang job. Ang halagang 1 o higit pa ang ginagamit sa halip. Ang isang slot ay multiple ng interval nito, kaya ang bawat oras-oras na job sa bawat realm ay due sa parehong segundo; ang iba ay naghihintay, una ang Run now ng isang tao, at nagsisimula habang natatapos ang mga pagtakbo. Hindi ito kailanman lalampas sa isang mas kaunti kaysa sa hawak ng connection pool ng store, anuman ang itakda, kaya hindi makukuha ng scheduler ang lahat ng koneksyon mula sa mga request."
   },
   "scheduler.niceBusyThreshold|label": {
     "en": "115ae6125244b30a",
@@ -11534,5 +12442,29 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Para lang sa listener ng Protocol debugger: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
+  },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Magtanong bago i-sign in ang isang tao"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng SAML 2.0 dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang saml2SsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Magtanong bago i-sign in ang isang tao"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng SAML 1.1 dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang saml11SsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Magtanong bago i-sign in ang isang tao"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng WS-Federation dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang wsfedSsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
   }
 }

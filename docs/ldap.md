@@ -141,7 +141,8 @@ a running listener from one whose port another process (the host's own `slapd`,
 say) holds. The console's user page reads the same fields and warns in three
 cases rather than two, because telling somebody no client can connect while
 LDAPS is answering costs them an afternoon. Both sockets bind `global.host`, and LDAPS
-takes `tls.minVersion` and `tls.ciphers`. With `global.proxyProtocol` set to
+takes its TLS settings from the per-listener `listenerLdaps.*` rows, which inherit
+`tls.minVersion` and `tls.ciphers` ([TLS](tls.md)). With `global.proxyProtocol` set to
 `v2`, both sockets read a PROXY protocol header first, so the audit log and the
 bind rate limit see the client's real address.
 
@@ -327,9 +328,9 @@ Its attributes are:
 |---|---|---|
 | `pwdMinLength` | 12 | minimum length |
 | `pwdInHistory` | 5 | how many previous passwords may not be reused (the current one is refused as well) |
-| `stsPwdMinSymbols` | 1 | how many symbols are required |
-| `stsPwdRequireUppercase` | TRUE | an uppercase letter is required |
-| `stsPwdRequireDigit` | TRUE | a digit is required |
+| `stsPwdMinSymbols` | 0 | always 0: a policy may not ask for symbols (ASVS 5.0.0 6.2.5) |
+| `stsPwdRequireUppercase` | FALSE | always FALSE, for the same reason |
+| `stsPwdRequireDigit` | FALSE | always FALSE, for the same reason |
 | `stsPwdGeneratedLength` | 20 | the length of a generated password |
 
 The `pwd*` names are those of
@@ -371,9 +372,10 @@ and `security.rateLimitPerAddress` inside `security.rateLimitWindowS`. **Only
 failures count**, so a connection pool that binds fifty times at once is not
 locked out. On a cluster the count is shared across nodes.
 
-Product mode logs a warning at startup while `ldap.plainListener` is on. A
-verified bind on 389 is a real password sent in the clear, so turn 389 off in
-production. With 389 on, product mode answers only the root DSE there.
+Product mode leaves the plain listener off unless `ldap.plainListener` is set
+on, because a client's password can cross 389 in the clear even when the bind is
+refused. Set on, it logs a warning at startup, refuses every bind there and
+answers only the root DSE.
 
 ### What a bound identity may read (product mode)
 
@@ -405,14 +407,20 @@ provisioning client must.
 |---|---|---|---|---|
 | `ldap.port` | `LDAP_PORT` | `389` | restart | The plain LDAP listener. A host run that is not root fails to bind 389; the failure is recorded, not thrown. |
 | `ldap.tlsPort` | `LDAPS_PORT` | `636` | restart | The LDAPS listener, presenting the service's TLS certificate; it binds independently of 389. |
-| `ldap.plainListener` | `LDAP_PLAIN_LISTENER` | `true` | restart | Whether the plain listener starts at all; off leaves LDAPS as the only way in, which product mode wants. |
+| `ldap.plainListener` | `LDAP_PLAIN_LISTENER` | `true` (`false` in product) | restart | Whether the plain listener starts at all; off leaves LDAPS as the only way in. Product mode leaves it off unless it is set. |
 | `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | Creates `uid=<name>,ou=users,<base>` the first time somebody authenticates through a protocol with no switch of its own. A federation relationship follows `fedAutocreateUsers` instead. |
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow, across every realm in the process. |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side search size limit, past which a search ends with `sizeLimitExceeded`. |
 | `ldap.timeLimit` | `LDAP_TIME_LIMIT` | `30` | yes | The server-side search time limit in seconds (a client's shorter `timeLimit` wins), past which a search ends with `timeLimitExceeded` and the entries already sent. |
-| `ldap.selfWritableAttributes` | `LDAP_SELF_WRITABLE_ATTRIBUTES` | `telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword` | yes | In product mode, the attributes a person bound as themselves may modify on their own entry; empty allows none. |
+| `ldap.selfWritableAttributes` | `LDAP_SELF_WRITABLE_ATTRIBUTES` | `telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode` | yes | In product mode, the attributes a person bound as themselves may modify on their own entry; empty allows none. |
 | `ldap.directoryReadableAttributes` | `LDAP_DIRECTORY_READABLE_ATTRIBUTES` | empty | yes | In product mode, the attributes a person may read on **other** people's entries; empty (the default) means they read only their own. See the warning above before widening it. |
 | `ldap.groupMembersReadable` | `LDAP_GROUP_MEMBERS_READABLE` | `false` | yes | In product mode, whether a person may read the member list of a group they are in. See the warning above. |
+| `ldap.ldapsDisableOptionalClientCertificate` | `STS_LDAPS_DISABLE_OPTIONAL_CLIENT_CERT` | `true` | yes | LDAPS sends no CertificateRequest (what it always did). |
+| `ldap.ldapsRequireClientCertificate` | `STS_LDAPS_REQUIRE_CLIENT_CERT` | `false` | yes | LDAPS requires a client certificate chaining to the client truststore. |
+| `ldap.workerDirectory` | `LDAP_WORKER_DIRECTORY` | `auto` | **restart** — the directory's store is chosen when the process loads it | How every process — the front process and each request or surface worker — holds the directory. `auto` (the default, #320): `postgres-lru` wherever it can work (`persistence.mode=postgres` and a single cell) and `memory` everywhere else. `memory`: every entry, in every process. `postgres-lru`: the people and devices as a window of at most `ldap.workerCacheEntries` entries per process, the rest read from PostgreSQL when asked for — memory no longer grows with the number of people, and a miss costs one database round trip during which that process does nothing else. Requires `persistence.mode=postgres` and a single cell; set explicitly where it cannot work, the service does not start (STS-LDAP-0133). Measured: 20,000 people cost the front process 47 MB less heap windowed. |
+| `ldap.workerCacheEntries` | `LDAP_WORKER_CACHE_ENTRIES` | `10000` | yes | With `ldap.workerDirectory=postgres-lru`, how many people and devices a request worker holds at once (about 2.5 KB each), the least recently read dropped first. An entry it changed and has not yet written is never dropped. |
+| `ldap.workerDirectoryTimeoutMs` | `LDAP_WORKER_DIRECTORY_TIMEOUT_MS` | `2000` | yes | With `ldap.workerDirectory=postgres-lru`, how long a request worker waits for the database when it needs a directory entry it does not hold. The worker does nothing else while it waits, so this is also the longest a database outage can hold one of its requests; past it the request is refused (503, `STS-LDAP-0130`). |
+| `ldap.workerDirectoryBudgetMs` | `LDAP_WORKER_DIRECTORY_BUDGET_MS` | `5000` | yes | With `ldap.workerDirectory=postgres-lru`, how long one `/admin` or `/admin-api` request may spend waiting, in all, on synchronous directory reads. A question that would pass the budget is refused (503, `STS-LDAP-0175`) and is not asked; one slow question still fails as `STS-LDAP-0130` when it exceeds its own timeout first. Other requests have no such budget. |
 | `groups.claim` | `STS_GROUPS_CLAIM` | `true` | yes | Puts the person's directory groups in every access token, ID Token and SAML assertion, omitted for somebody in no group. |
 | `groups.claimName` | `STS_GROUPS_CLAIM_NAME` | `groups` | yes | The claim or SAML attribute name the groups are carried under. |
 | `groups.claimValue` | `STS_GROUPS_CLAIM_VALUE` | `cn` | yes | Whether each group is named by its common name or its whole DN. |
@@ -453,9 +461,17 @@ changes one, and a runtime setting can be set per trust realm. See
   directory is still a tree, a leaf is still a leaf, and one person is still one
   entry. Inventing a schema would hide the difference from a real directory
   instead of stating it.
-* **No referential integrity.** It is a feature of some directories, not of the
-  protocol. A dangling group member is the honest result, and the console
-  reports it.
+* **A group lists only what is there.** Adding a group member that names no
+  entry is refused, over LDAP with `constraintViolation` (19), and over SCIM,
+  the console and `/admin-api` with a 400 naming the missing member. The
+  console still reports a dangling member that an older store holds.
+* **A delete takes the entry out of every group and role.** Deleting a person,
+  a group or an application removes its DN from every group that listed it and
+  its name from every role. Something created again under the same name starts
+  with no memberships and no roles, and has to be added back.
+* **A rename keeps the entry's memberships.** A modifyDN updates every group
+  that listed the old DN, and every role that listed the old username or group
+  name, to the new one.
 * **Two ports rather than StartTLS.** StartTLS is an extended operation
   (RFC 4511 section 4.14) that upgrades a connection already in progress,
   ldapjs implements none, and LDAPS on 636 is what most clients speak. Which of

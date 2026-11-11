@@ -105,7 +105,6 @@
 // a plain one, so every process in this service sees the same bundles and no
 // realm sees another's.
 import realms = require('../common/realms');
-import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import pkijs = require('pkijs');
@@ -168,7 +167,6 @@ const PROCESS_TRUST_DOMAIN =
 // one and a test can build one with stubs.
 interface SpiffeCaDeps {
   realms: typeof realms;
-  jwt: typeof jwt;
   stsCrypto: typeof stsCrypto;
   pkijs: typeof pkijs;
   log: typeof log;
@@ -289,7 +287,6 @@ class SpiffeCa {
     helpers.log.debug("Leaving SpiffeCa.defaultDeps().");
     return {
       realms: realms,
-      jwt: jwt,
       stsCrypto: stsCrypto,
       pkijs: pkijs,
       log: log,
@@ -510,9 +507,12 @@ class SpiffeCa {
   // word and both name their trust domain: `{kind}` becomes `CA` or
   // `downstream CA` and `{trustDomain}` the realm's domain. The default
   // rendered the old two strings byte for byte until the product name in every
-  // identifier this service emits became `sts` the same day, so it now renders
-  // `CN=sts SPIFFE CA (<domain>),O=sts`; no migration, because a SPIFFE CA is
-  // minted per start in development and taken from /admin/pki everywhere else.
+  // identifier this service emits became `sts` the same day, so it rendered
+  // `CN=sts SPIFFE CA (<domain>),O=sts`; and since #1294 (2026-11-03), which
+  // made every certificate this service issues say the product's name, it
+  // renders `CN=iya-sts SPIFFE CA (<domain>),O=iya-sts`. No migration either
+  // time, because a SPIFFE CA is minted per start in development and taken
+  // from /admin/pki everywhere else.
   //
   // The PKI path is untouched: a realm with a hierarchy takes its Issuing CA's
   // subject from `common/pki.js`, which owns it.
@@ -538,7 +538,8 @@ class SpiffeCa {
       // about an RDN. Named here instead.
       throw new Error('spiffe.caSubject is empty, and a CA certificate needs ' +
                       'a subject. Set it to an X.501 name — the default is ' +
-                      '`CN=sts SPIFFE {kind} ({trustDomain}),O=sts`.');
+                      '`CN=iya-sts SPIFFE {kind} ({trustDomain}),' +
+                      'O=iya-sts`.');
     }
     log.debug("Leaving SpiffeCa.caSubjectFor().");
     return rendered;
@@ -877,7 +878,7 @@ class SpiffeCa {
     const notBefore = new Date();
     const notAfter = new Date(notBefore.getTime() +
                               (ttlSeconds || 86400) * 1000);
-    const issued = await x509.issueCertificate({
+    const issued = await pki.issueOutsideHierarchy({
       // The CA's own name. A SPIFFE trust domain has no naming rules for it —
       // only the SVIDs it signs are constrained — so this says what it is and
       // which trust domain it belongs to, which is what a person reading
@@ -1239,7 +1240,7 @@ class SpiffeCa {
                chainDer: made.issuerChainDer.slice() };
     }
     const type = this.keyTypeById(authority.keyType) || KEY_TYPES[0];
-    const issued = await x509.issueCertificate({
+    const issued = await pki.issueOutsideHierarchy({
       subject: spec.subject,
       subjectPublicKey: spec.publicKeyPem,
       signatureAlg: type.sigAlg,
@@ -2462,7 +2463,7 @@ class SpiffeCa {
    *   reason, errorCode }`
    */
   async validateJwtSvid(token, audience, options?) {
-    const { log, jwt, spiffeId, stsCrypto } = this.deps;
+    const { log, spiffeId, stsCrypto } = this.deps;
     const self = this;
     log.debug('Entering SpiffeCa.validateJwtSvid().');
     // THE REALM WHOSE BUNDLE IS BEING ASKED. It has an option now for the same
@@ -2486,7 +2487,7 @@ class SpiffeCa {
     }
     let unverified;
     try {
-      unverified = jwt.decode(text, { complete: true });
+      unverified = stsCrypto.decodeJws(text, { complete: true });
     } catch (e) {
       log.debug("Caught in SpiffeCa.validateJwtSvid(): " +
                 ((e && e.message) || e));
@@ -2870,7 +2871,8 @@ class SpiffeCa {
           'as that realm\'s identities. Realms here are isolated; name a ' +
           'trust domain no realm of this service uses.' };
     }
-    const checked = this.checkBundleDocument(document);
+    const checked = this.checkBundleDocument(document,
+                                             this.realmIdOf(opts.realm));
     if (!checked.ok) {
       log.debug('Leaving SpiffeCa.setFederatedBundle(). Bad document.');
       checked.errorCode = 'STS-SPIFFE-0041';
@@ -3075,7 +3077,7 @@ class SpiffeCa {
    * @param value - the document, or its JSON text
    * @returns `{ ok: true, document }`, or `{ ok: false, reason }`
    */
-  checkBundleDocument(value): Record<string, any> {
+  checkBundleDocument(value, realmId?): Record<string, any> {
     const { log } = this.deps;
     log.debug('Entering SpiffeCa.checkBundleDocument().');
     let document = value;
@@ -3135,6 +3137,20 @@ class SpiffeCa {
                  reason: 'Key ' + i + ' is an x509-svid key with no `x5c`; ' +
                                     'the certificate is what an X.509 ' +
                                     'authority IS.' };
+      }
+      // Under paranoid a federated authority's own fields hold when it is
+      // accepted: a CA, in its window, of a strength this deployment takes.
+      const certificates = key.use === 'x509-svid' ? key.x5c : [];
+      for (let c = 0; c < certificates.length; c++) {
+        const held = CertificateTrust.fields('spiffe-svid', certificates[c],
+          { realmId: realmId, variant: 'federated-authority',
+            fieldRole: 'anchor' });
+        if (!held.ok) {
+          log.debug('Leaving SpiffeCa.checkBundleDocument(). An authority ' +
+                    'is refused.');
+          return { ok: false, reason: 'Key ' + i + '\'s certificate is ' +
+                                      'refused: ' + held.why };
+        }
       }
     }
     log.debug('Leaving SpiffeCa.checkBundleDocument(). ' +
@@ -3811,6 +3827,7 @@ let startError = null;
 // moves nothing in the router, and it requires nothing that requires this
 // module back.
 // ===========================================================================
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 
 // ---------------------------------------------------------------------------

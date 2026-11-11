@@ -172,5 +172,16 @@
   "attributes.removeCustom": "Remove",
   "attributes.defineHeading": "Define a custom attribute",
   "attributes.labelPlaceholder": "Badge number",
-  "attributes.define": "Define the attribute"
+  "attributes.define": "Define the attribute",
+  "attributes.portal": "User portal",
+  "attributes.portalVisible": "Show it to the person on the portal",
+  "attributes.portalEditable": "Let the person change it on the portal",
+  "attributes.portalNote": "Both off by default. Letting the person change it also shows it.",
+  "attributes.portalStateHidden": "not shown",
+  "attributes.portalStateVisible": "shown",
+  "attributes.portalStateEditable": "shown, editable",
+  "attributes.change": "Change",
+  "attributes.changeFixed": "The syntax and whether it holds several values cannot be changed.",
+  "attributes.saveChange": "Save the change",
+  "securityOnly": "Only a Security Administrator may save, reset or act on a policy here, or name one on an application, group or person. You can read every policy; a change is refused."
 }

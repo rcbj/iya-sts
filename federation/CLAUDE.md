@@ -10,7 +10,7 @@ relationship (#373); see *A PARTNER'S SHARED SIGNALS* below.
 | `federation.js` | **The register.** The schema, the two conversions, the CRUD, the counters, the release filter, and the broker resolver (`identityProviderFor()` / `authenticationFor()` / `usableServiceProvider()`). A library (rule 3): it registers nothing. Directory-backed — `ou=federations` IS the store. |
 | `federation_map.ts` | What a foreign identity provider SAID, turned into directory attributes. The default mapping table and the username rule. A library. **Not to be confused with `../admin-ui/federation_diagram.ts`**, which draws the picture — the near-collision is why that file is not called `federation_map.ts` too. |
 | `federation_graph.ts` | **This realm's register as a GRAPH**, for `/admin/federation/map`. Three bands, and the bands are a claim about direction. A library: it registers nothing, and nothing here requires it back. |
-| `federation_http.ts` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. Since 2026-09-17 also `deliverForm()` (the back-channel Logout Token's POST), `fetchPublished()` (a trusted issuer's status list) and the product-mode internal-address check every outbound requester shares. |
+| `federation_http.ts` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. Since 2026-09-17 also `deliverForm()` (the back-channel Logout Token's POST), `fetchPublished()` (a trusted issuer's status list) and the product-mode internal-address check every outbound requester shares; since #930 `fetchDiscovery()` (a partner's discovery document, from the address `fedPeer` derives). |
 | `federation_sp.ts` | The five endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued — and `subjectDecision()`, which says which local person a verified subject may become (#109). |
 | `federation_slo.ts` | **A partner's sign-out, in both directions** (#167): `/federation/slo/{id}`, `/federation/backchannel-logout/{id}` and `/federation/frontchannel-logout/{id}`, and what `logout/logout.ts` draws to tell a partner of a sign-out here. See *A PARTNER'S SIGN-OUT* below. |
 | `federation_links.ts` | **The link between a partner's subject and a person** (#109): the `federationLink` format, the stable subject a verified response carries, the one check a requested link goes through (console, `/admin-api`, SCIM), and what removing one ends. A static utility class. |
@@ -210,8 +210,10 @@ permissive, and each of the three was permissive:
    one restriction are an OR, restrictions an AND — reading only the first
    `<Audience>` refused legitimate multi-audience assertions too). SAML 2.0 with NO
    restriction is refused, because the Web Browser SSO profile requires one;
-   SAML 1.1 and WS-Federation with none are accepted with a warning, because
-   their profiles make it optional. **The WS-Federation path checked no audience
+   SAML 1.1 and WS-Federation with none are accepted with a warning in
+   development, because their profiles make it optional, and refused in product
+   since #1542 (ASVS 5.0.0 9.2.3, `STS-FED-0241`, `mode.refusesAssertionWithoutAudience()`)
+   unless `federation.allowAssertionWithoutAudience` is on. **The WS-Federation path checked no audience
    at all and does now.** The remedy for a partner that calls us something else
    is `fedLocalEntityId`.
 2. **`fedPeer`.** Empty, it skipped the issuer check with a warning — any issuer
@@ -376,8 +378,34 @@ somebody in. Every answer now carries `signer` where its signature was
 verified (`certificate`, `jwk` with the key, or `none` for the opaque token's
 profile answer), the three returns ask `signerStillAccepted()` again with it
 (`heldSigner()`), and a held answer with no `signer` is refused
-(`STS-FED-0194`) rather than finished unchecked. Seven `completeSignIn()`
-sites, six wrapped; the seventh is the opaque token's.
+(`STS-FED-0194`) rather than finished unchecked.
+
+**TEN `completeSignIn()` SITES, SIX WRAPPED, AND THE OTHER FOUR EACH FOR A
+REASON OF ITS OWN (#746, 2026-11-05).** The question is whether the answer rests
+on a signature whose signer could be withdrawn. Wrapping a site that has none
+would only look like an answer, so each unwrapped one says why, and
+`tests/revocation_status.js` holds the reason against what that method does:
+
+| Site | Marker | What the answer rests on, and why no signer can be asked about |
+|---|---|---|
+| the opaque OAuth 2.0 token | the refusal sentence before it | a profile endpoint's answer to a token this service cannot read; no signature was verified |
+| Discourse | `no-signer: discourse-hmac` | an HMAC under the relationship's shared secret, which no issuer stands behind; replacing the secret is the withdrawal. No secret verifies nothing: a sealed secret that will not open reads as `''`, and an HMAC under an empty key is one anybody can make |
+| Steam | `no-signer: steam-check-authentication` | OpenID 2.0 section 11.4.2: Steam answers `is_valid:true` over TLS about its own signature; its association key is never here |
+| Bluesky | `no-signer: atproto-back-channel` | the token endpoint's `sub` over TLS, believed only on `subjectProblem()`'s chain from the DID's document. The profile has no ID Token, the access token is dropped unread, the directory's signed operations are not verified, and the one key is this sign-in's own DPoP key |
+
+**A new site is one of three things**: wrapped, the opaque token's, or a new
+reason added to the test's table with evidence it can read. Adding a marker alone
+fails the test.
+
+**NO SIGNER IS NOT THE SAME AS NOTHING TO ASK AGAIN (rcbj, 2026-11-05).** What a
+held answer rested on can change while the person is away, so two of these carry
+it. A Discourse answer holds a fingerprint of the secret (`shared-secret`, an
+HMAC under that secret, as every sign-in already shows a browser), and is refused
+if the secret was replaced (`STS-FED-0235`). A Bluesky answer holds its DID (`did`)
+and asks `subjectProblem()` again, refused if the data server no longer names this
+issuer or cannot be asked (`STS-FED-0236`). **Steam and the opaque token carry
+`none` and finish on the check already made**: Steam's nonce is spent and its
+answer cannot be asked for twice, and the opaque path was left as it was.
 
 ---
 
@@ -807,7 +835,18 @@ that was checked.** That check and that resolution MOVED HERE on the same day
 (`internalAddressProblem()`, `vetHost()`), because a second requester needing
 them made this module — the owner of the outbound policy — the place for one
 copy; `oauth-oidc/protected_resource_metadata.ts` now asks for them and keeps
-its own refusal codes. Everything else above holds for `deliverForm()` too:
+its own refusal codes. **`vetHost()` also holds the operator's list of hosts,
+`security.outboundAllowedHosts` (#1526, ASVS 5.0.0 13.2.4)**: set, a host on
+neither an exact name nor a leading-dot suffix is refused BEFORE it is resolved,
+**in either mode since #1577** — until then it sat after the development
+return, so a list an operator set was ignored in development, while the
+setting's own description says it binds. Development still skips the
+internal-address check and the pin after the list, so a listed internal host is
+dialled. The refusal keeps `kind: 'internal'`, so each caller marks it with its
+internal-address code, as product always did.
+`common/revocation_status.js` reads the same list for the CRL and OCSP addresses
+a certificate names (#1550), in either mode, because those fetches never pass
+through `vetHost()`. Everything else above holds for `deliverForm()` too:
 the kill switch, the transport policy, no redirect,
 the cap, a timeout (the caller's, `oauth2.backchannelLogoutTimeoutMs`). **Its
 URL comes off a record by an attribute name from its OWN list, `SENDABLE`**
@@ -877,16 +916,16 @@ why, url }`.
 
 **Moved here verbatim from the root `CLAUDE.md`'s *Things this service
 deliberately does not do* on 2026-10-13**, where it was one row of an index
-that had grown eighteen exceptions (nineteen since #693, twenty since #1180, twenty-one since #641); the row is one
+that had grown eighteen exceptions (nineteen since #693, twenty since #1180, twenty-one since #641, twenty-two since #930, twenty-three since #719, twenty-four since #746, twenty-five and twenty-six since #1358 — the dials of #147 and #552, each one older than its row and found undocumented by the #1299 fuzz gate); the row is one
 line now and points here.
 The rule is the row's: this service does not dial a URL a CALLER supplied to
 fetch something FROM (`wreqptr`, above) — the URLs it does dial are
 addresses somebody asked to be SENT something at. Each exception below is
-argued in its own file — `common/CLAUDE.md` (3cf), `common/CLAUDE.md` (3ce), `gnap/CLAUDE.md`, `oidfed/CLAUDE.md`, `oid4vc/CLAUDE.md`, `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md`, `saml/CLAUDE.md`, `spiffe/CLAUDE.md`, `risk/CLAUDE.md`, `common/CLAUDE.md` (3da).
+argued in its own file — `common/CLAUDE.md` (3cf), `common/CLAUDE.md` (3ce), `gnap/CLAUDE.md`, `oidfed/CLAUDE.md`, `oid4vc/CLAUDE.md`, `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md`, `saml/CLAUDE.md`, `spiffe/CLAUDE.md`, `risk/CLAUDE.md`, `common/CLAUDE.md` (3da), `scim/CLAUDE.md`.
 
 * **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode.
 * **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode.
-* **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it.
+* **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it. **Since ASVS 5.0.0 1.3.6 (2026-11-10) it is also dialled under this module's address rules**, because dynamic registration takes one from whoever registers: `federation.outbound` off fetches nothing, `security.outboundAllowedHosts` applies, and product refuses a name resolving to an internal address and pins the connection to the address it checked (`STS-OAUTH-1004`).
 * **The fourth is a STATUS LIST (2026-09-17)** — an address inside a credential, which is a caller's kind of URL; what makes it the administrator's is where it sits, under a signature that verified against a certificate in `oid4vp.trustedIssuerCertificates`, and it is never fetched for a credential this realm signed (whose list is in its own store).
 * **The fifth is a SAML MDQ lookup (2026-09-17)** — the operator's `saml2.mdqBaseUrl`, with only a request's entityID as its path, never awaited.
 * **The sixth is SPIFFE's `http_challenge` (2026-09-21, #40)** — a host name the attesting agent names, fetched only after it matched the realm's `spiffe.httpChallengeAllowedDnsPatterns` (empty refuses all), internal addresses refused in product mode, no redirect, 64 bytes.
@@ -900,11 +939,16 @@ argued in its own file — `common/CLAUDE.md` (3cf), `common/CLAUDE.md` (3ce), `
 * **The fourteenth is the Entity Collection crawl (2026-09-24, #136)** — going DOWN the realm's own subtree: a list is fetched only from an entity whose chain to the realm already validated, at the endpoint its resolved metadata names, and each entity on it is only resolved towards the realm; bounded by `oidfed.collectionMaxEntities` and `collectionMaxFetches`, through `fetchPublished()`, started by the `oidfed.collection-crawl` job or an administrator's Crawl now and never by the anonymous collection endpoint.
 * **The fifteenth is a FEDERATION PARTNER'S SHARED SIGNALS (2026-09-26, #153; on the relationship since #373)** — the SSF issuer an administrator configured on a federation relationship (`fedSignalsIssuer`, else `fedPeer`); the configuration document is fetched from that issuer's well-known address and must name it, and every endpoint dialled after (stream management, status, subjects, verification, poll, the jwks_uri) is one that document named, through `fetchPublished()`; a request can name none of them.
 * **The sixteenth is a GNAP resource server's owner lookup (2026-10-03, #432)** — the administrator's `gnapOwnerLookupUri` template on the resource server's entry, the client choosing only the identifier percent-encoded into its one path segment, through `fetchPublished()`.
-* **The seventeenth is a SECRET PUSH DESTINATION (2026-10-06, #221 P3)** — a secrets manager a service account's rotated password is written to: the provider, region, vault URL and address are attributes of a destination's application entry an administrator writes (Admin Write), and no request names one; https only, verified (Vault's request through `outbound_tls.ts` with the destination's own CA), with the destination's own write credential, and never creating a secret.
+* **The seventeenth is a SECRET PUSH DESTINATION (2026-10-06, #221 P3)** — a secrets manager a service account's rotated password is written to: the provider, region, vault URL and address are attributes of a destination's application entry an administrator writes (Admin Write), and no request names one; https only, verified (Vault's request through `outbound_tls.ts` with the destination's own CA), with the destination's own write credential, and never creating a secret. On the no-egress fuzz stack a test push (`POST /admin-api/secret-destinations/test-push`) fails closed at the network, so the refusal carries a DNS marker the `no_outbound_fetch` check allows for that action alone (#1430). The address is the destination's stored endpoint. No other action on that route dials.
 * **The eighteenth is GOOGLE'S ANDROID ATTESTATION STATUS LIST (2026-10-06, #256)** — the operator's `devices.androidStatusUrl` (Google's address by default, empty in the suite), which no request can name, downloaded by the `devices.android-status-refresh` scheduler job through `fetchPublished()` with a cap of its own, and believed only as a list of serials to distrust. Since #1157 an administrator's Reload of a removed list dials the same configured address, never another, and only when the version's record names it.
 * **The nineteenth is a SIOPv2 `did:web` BEING ENROLLED (2026-10-20, #693)** — the twelfth's URL, before anybody enrolled it, at two doors only. (1) A person's OWN ENROLMENT TRANSACTION: started from a sign-on session they already hold (`/authn/wallet?siop=1&enrol=1`, refused with no session), answered with an ID Token whose nonce, `aud`, `exp`, `iat`, `iss === sub` and DID syntax have ALL passed before anything is dialled — so the token must answer that transaction, which an unauthenticated caller cannot start — and fetched at most ONCE per transaction (the mark written through the store before the fetch; a second is `STS-VC-0128`). (2) An administrator's by-value enrolment (Admin Write), which fetches the document to pin its `authentication` keys and refuses one it cannot fetch (`STS-ADMIN-0871`) — the checks that need no fetch run first. Both through `fetchPublished()`: the kill switch, https, internal addresses refused in product mode, no redirect, the body cap and timeout. What it buys is the PIN: the key the proof used is recorded, and the twelfth row's later fetches can no longer hand the sign-in to whoever holds the host next (`oid4vc/CLAUDE.md`, 3ba).
 * **The twentieth is an AuthZEN access request's CALLBACK (2026-10-30, #1180)** — the companion profile's `callback.endpoint`, which the request names, so the caller's kind of URL; what makes it an administrator's is that it must EQUAL one of the URLs registered for the requesting PEP (`appAuthzenCallbackUri` on an application, `stsAuthzenCallbackUri` on a person's or service account's entry, written only by the AuthZEN tab's `set-callbacks`, https, no credentials or fragment), checked at the submission, and never one taken from the request alone (rcbj's decision 4). It is SENT to, never fetched from: `federation_http.deliverJson()` under the SENDABLE attribute `authzenCallbackEndpoint` — the kill switch, https verified, no redirect, the internal-address refusal with the connection pinned, the cap — once per finished task, with a 300-second JWT the realm signs as the Bearer, carrying no `result`. A failure is recorded (`STS-AUTHZEN-0091`) and not retried, because the task status endpoint is the record (`authzen/CLAUDE.md`).
 * **The twenty-first is an AUDIT EXPORT DESTINATION an administrator names (2026-11-01, #641)** — a webhook URL, a Splunk HEC URL, or a syslog TLS host, SENT to, never a caller-supplied fetch. `https` by default (`common/outbound_tls.ts`); product mode refuses plain `http`; skip-TLS is development-only and ignored in product mode; a CA file sits beside node's store; no userinfo. Loopback, link-local and private addresses, including RFC 6598 `100.64.0.0/10`, are refused in product mode unless `auditExport.allowPrivateDestinations` is on. Cloud metadata addresses are refused in every mode, and while that setting is on. Development mode still allows a loopback host whose every resolved address is loopback. The name is resolved before connect, a private answer is refused, a lookup failure at send pauses the destination, and a redirect is left unfollowed (`common/audit_export.ts`, `common/CLAUDE.md` 3da).
+* **The twenty-second is a PERSON'S WEBFINGER (2026-11-03, #930, rcbj's decision)** — `/federation/webfinger/{id}`, where a person types an identifier and this service asks the host it names who their OpenID Provider is (OpenID Connect Discovery 1.0 section 2). The host is the caller's to choose, which is why it is an exception: OFF by default per relationship (`fedWebFinger`, with `fedDiscovery`), through `fetchPublished()` (https only, verified; internal addresses refused in product mode with the connection pinned; no redirect; the cap and timeout); the issuer it names must lie WITHIN `fedPeer` — parsed, never a string prefix: the same scheme, host and effective port, no userinfo, query or fragment, and `fedPeer`'s path or one below it at a `/` boundary (`FederationSp.issuerWithin()`) — so it selects only within the partner an administrator configured; its discovery document must name it exactly; and nothing continues until the person follows the link the answer shows. The registration endpoint and the discovery document after it are the administrator's kind (named by a document of an issuer bounded by `fedPeer`).
+* **The twenty-third is a PARTNER'S PROFILE PHOTO (2026-11-05, #719, rcbj's ticket)** — the `pictureUrl` a configured partner's signed assertion or verified token mapped onto a person, so a URL an administrator's partner names and not a request. Dialled only after that sign-in has a session, never awaited (`federation_sp.ts` `copyPartnerPhoto()`, `common/profile_photo.ts` `noteFederated()`), through `fetchPublished()`: the kill switch, the transport policy, internal addresses refused in product mode with the connection pinned, no redirect, `profilePhoto.maxStoredBytes` as the cap, ten seconds. What comes back is an image or it is dropped, the bytes deciding (`STS-FED-0221`), and it is rewritten without its metadata before it is kept. Off with `profilePhoto.cacheFederated`; not asked again of the same address within a week. Failing leaves the partner's address on the claim, as before #719.
+* **The twenty-fourth is a BLUESKY ACCOUNT'S DATA SERVER (2026-11-05, #746)** — named by a DID's document, so the caller's kind of URL; what bounds it is that it is reached only with a DID the relationship's own issuer answered, a did:plc read from the operator's `federation.atprotoPlcDirectory`, through `fetchPublished()`, and only to ask whether that server names this issuer. `atproto_client.ts`. A did:web is refused rather than dialled.
+* **The twenty-fifth is an OpenID CONNECT CLAIMS PROVIDER (#147, 2026-09-24; named here #1358)** — OpenID Connect Claims Aggregation (`oauth-oidc/CLAUDE.md` 3bh). When an administrator registers or updates a provider on `/admin/claim-providers` (`POST /admin-api/claim-providers/add-provider`, `update-provider`), and when a claim is later aggregated, `oauth-oidc/claims_providers.ts` dials the PROVIDER'S own addresses — its `.well-known/openid-configuration`, `jwksUri`, `tokenEndpoint` and `claimsEndpoint`, all configured by the administrator, none named by a request — through `federation_http.requestConfigured()` (the outbound kill switch, https only in product, the outbound TLS policy). On the no-egress fuzz stack the dial fails closed at the network, so the refusal carries a `getaddrinfo`/`ENOTFOUND` the `no_outbound_fetch` check now allows for this route alone.
+* **The twenty-sixth is an OUTBOUND SCIM SERVICE (#552, 2026-10; named here #1358)** — `scim/scim_client.ts`, this service PROVISIONING INTO somebody else's directory. A reconcile (`POST /admin-api/scim/clients/reconcile`, and the `scim-client.reconcile` job), a connection test (`POST /admin-api/scim/clients/test-connection`, #1405) and every queued change dial the SCIM endpoint an administrator configured on the client's entry (its base and `/Users`, `/Groups`, `/ResourceTypes`), SENT to with the client's own bearer, never a request-named URL, through `common/outbound_tls.ts` and `oauth-oidc/outbound_delivery.ts`. `scim/CLAUDE.md` argues it. As above, the no-egress refusal carries a DNS marker the check allows for the reconcile and the connection test, and for no other action on this route.
 
 ---
 
@@ -1179,7 +1223,9 @@ setting to turn it off — the one thing worse than not sending PKCE is a flag
 that stops. The `nonce` check is OpenID Connect Core section 3.1.3.7 step 11,
 and it is the check `oauth2_bcp.js` records as `enforced: 'no'` on the ISSUING
 side because nothing there can observe a client doing it. Here this service IS
-the client, so it does it.
+the client, so it does it. **Since #930 the other five response types and the
+fragment response mode are taken too, and a token without the nonce is refused
+from either endpoint** — see *THE OPENID CONNECT RELYING PARTY PLANS* below.
 
 **OAuth 2.0 is a distinct protocol here rather than OIDC with a flag**, because
 what identifies the person is a different artifact — and getting that wrong is
@@ -1218,6 +1264,37 @@ it is converted.
 
 So what #580 converts is all in this directory: three pages of
 `federation_sp.ts`'s own flows. The rest of the section says how.
+
+**THE ASSERTION CONSUMER SERVICE'S REFUSALS ARE `common/error_page.ts`'s
+PAGE SINCE #1327** (still server-drawn, never the shell): `refuse()` off the
+surface, and `consume()`'s two 404s, draw through `refusalPage()` — the
+sentence for the code marked (`federationErrors.refusal.<code>`, else
+`federationErrors.refusal.general`), the "refuses rather than accepts" note
+collapsed, the portal, and the diagnostics (relationship, partner,
+RelayState / state / wctx, who is signed in, the English `what` and `why`).
+`refuse()`'s sixth argument is DATA since then, `{ error, rows }`: a value
+the partner sent (a SAML StatusCode, an OAuth `error`) for the box, and
+diagnostics rows (the attributes it sent, the configured certificate's
+prefix). Status, error code, `fedLastError` and the audit row are as they
+were; the page gains `Cache-Control: no-store` and loses the console and
+`federation/CLAUDE.md` pointers. The metadata and key-set 404s stay
+English: a program fetches those documents. `tests/federation_pages.js` 4a–4c.
+
+**A partner's sign-out refused in a browser is the same page (#1327)**:
+`federation_slo.ts`'s `refuse()` and `relationshipFor()`'s two 404s draw it
+in the person's language, the sentence chosen by the code marked
+(`federationSloErrors.refusal.<code>`, then a general one), "no session was
+ended" kept below the box, the English `what` and `why` among the
+diagnostics. The back channel's JSON (`refuseJson()`) is unchanged. **The
+two 200 outcome pages are NOT the error page** — "Signed out here, and not
+at the partner" (`STS-FED-0125`) and "Nothing to sign out" (`STS-FED-0122`,
+for WS-Federation and inside the Front-Channel Logout frame) are outcomes,
+not refusals — **but they are translated too (rcbj, #1327)**, in their own
+layout and status, from `federationSloErrors.outcome.*`, with the language
+chooser (the 0125 page's returns to the front door, since the partner's
+answer it drew is spent; the frame has none, nobody reads it). The
+partner's name, StatusCode and StatusMessage are data.
+`tests/federation_signout.js` 5c-ii, 5m, 5n.
 
 ### Each is the shell, carrying its view (`federation_pages.ts`)
 
@@ -1320,9 +1397,10 @@ provider**, which is exactly the moment a deliberate click is worth having.
 | ~~Decrypt an `<EncryptedAssertion>`~~ — **reversed 2026-09-23 (#168)** | See *A PARTNER'S ENCRYPTED ASSERTION*. Product mode now refuses a PLAINTEXT one unless `fedAllowUnencrypted`. |
 | Verify the partner's certificate against a CA, or check its validity dates | `fedSigningCertificate` is trusted because an administrator pasted it there. It is a pinned key, not a chain, and pinning is the stronger of the two for this purpose. **Its REVOCATION is checked since 2026-09-12** — the one question a pin cannot answer — see *The signature check is the line*. |
 | ~~Consume a federated SIGN-OUT~~ — **reversed 2026-09-23 (#167)** | See *A PARTNER'S SIGN-OUT*. The ACS still refuses a sign-out sent to it (`STS-FED-0024`) and names the path that consumes one. |
-| Refresh anything | The tokens a partner issues are used once, to learn who the person is, and are then discarded. Nothing here holds a refresh token belonging to somebody else's service. |
+| ~~Refresh anything~~ — **reversed by rcbj on #930 (2026-11-03), for a relationship that turns `fedRefreshTokens` on** | The default is unchanged: the tokens a partner issues are used once, to learn who the person is, and discarded. See *A PARTNER'S REFRESH TOKEN* below for what the switch does. |
 | Re-verify a person on a later request | The session is this service's from the moment it is created, and nothing here polls the partner. What reaches it since #167 is what the partner SENDS — its sign-out, which ends the session — and what it SAID at sign-in: a SAML `SessionNotOnOrAfter` bounds the session. |
-| Act as an OpenID Connect Session Management relying party (#167, rcbj's decision 3) | Polling a partner's `check_session_iframe` needs a script in this service's page, the root `CLAUDE.md` admits a script only where a page cannot work without one, and Back-Channel Logout already tells this relying party what that script would find out. |
+| Act as an OpenID Connect Session Management relying party (#167, rcbj's decision 3) | Polling a partner's `check_session_iframe` needs a script in this service's page, the root `CLAUDE.md` admits a script only where a page cannot work without one, and Back-Channel Logout already tells this relying party what that script would find out. The logout plan's session-management module is argued in #930's ledger on this decision. |
+| ~~Register itself at a partner, discover a partner by WebFinger, or send a request object~~ — **built by rcbj's decision on #930 (2026-11-03)**, each behind a switch that is off by default | See *SELF-REGISTRATION, REQUEST OBJECTS AND WEBFINGER* below. |
 | ~~Restrict WHICH people a partner may assert~~ — **reversed 2026-09-22 (#109)** | See *WHICH PEOPLE A PARTNER MAY ASSERT*. |
 | Federate the ADMIN CONSOLE's roles | A federated sign-in produces a session like any other, so a federated identity holding `admin-write` in the directory reaches `/admin`. The partner does not decide that — `ldap_server.js` and `admin_rbac.js` do, from group membership, exactly as for a local sign-in. |
 
@@ -1420,7 +1498,8 @@ still the parent's to write):
   certificate that is NOT the configured one — that last is the one that must
   fail, and it is the one a naive implementation passes;
 * an assertion **outside its validity window** at both ends, and one with no
-  `<Conditions>` at all, which must be ACCEPTED for SAML 1.1 and WS-Federation and
+  `<Conditions>` at all, which must be ACCEPTED for SAML 1.1 and WS-Federation
+  in development (refused in product since #1542) and
   is REFUSED for SAML 2.0 since 2026-09-12, because it then carries no audience
   restriction and that profile requires one;
 * a `RelayState`/`wctx`/`state` that this service never minted, one that
@@ -1912,21 +1991,55 @@ A register that cannot be read answers "it grants". `STS-FED-0164`, audited
 `tests/federation_group_authority.js` holds it, and `tests/federation_provisioning.js` 8
 holds the console's `admin-write` refused through a real sign-in.
 
+**AND IN A WINDOWED DIRECTORY THE STORE IS ASKED (#1306, 2026-11-04).** The check
+walked only what the process held, and in a windowed process (`ldap/CLAUDE.md`, the
+default on postgres) that is not the directory: a service account's
+`stsServiceAccountOwner` under `ou=users` was seen only while the window held that
+person, and any entry another process wrote — a role naming a member group, a group
+naming an owner — only once the change log reached this one. Since #1306 the codec
+keys every value of the six attributes as the derived `grantinggroup` key in
+`value_keys` (`persistence/directory_codec.js`: trimmed, lower-cased, a DN also in its
+normalised form, the one reading both halves use), and `federatedGroupAuthorityAsync()`
+asks the store two `byAttribute` questions, the name and the DN, `LIMIT 1` each,
+through the bridge's `queryAsync()`: constant in the directory's size and off the
+event loop. Any row answers "it grants", whatever this process holds of that entry; a
+store that cannot answer does too (`STS-LDAP-0205`, logged when it stops and when it
+answers again). The walk of what this process holds still runs first, for its own
+writes not yet flushed. Outside a window nothing is asked. So `applyFederatedGroups()`
+is a promise, and `startFederatedSession()` waits for it before the browser goes on.
+~~A row written before #1306 carries no `grantinggroup` key until it is next written
+(rcbj's no-migration rule, as on #636 and #1061).~~ **Since #1311 such a row is keyed
+by a one-time backfill**, rcbj's decision on #1306's open point: the cluster job
+`persistence.granting-key-backfill` walks each database's directory a page at a time
+and writes the keys the codec derives, then a done mark (`persistence/CLAUDE.md`, *The
+`grantinggroup` keys of rows written before #1306*). Until its mark is written a row it
+has not reached is still missed. `tests/federation_group_authority.js` section W, and
+`tests/granting_index_backfill.js` for the backfill.
+
 **AND IN PRODUCT, A NEWCOMER THE ATTRIBUTE POLICY REFUSES IS `STS-FED-0158` ON THE PAGE
-(#396 with #358).** `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
+(#396 with #358)** — once the newcomer's form (#701) could not supply what is
+missing; see *A NEWCOMER THE ATTRIBUTE POLICY WOULD REFUSE*. `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
 missing attributes on the sign-in's own `federation` object, and `startFederatedSession()`
-answers that before the generic `STS-FED-0090` *the directory declined*. A directory
-reached in another process cannot write there; that sign-in gets the generic answer.
-`tests/federation_subject_policy.js` 1m-0.
+answers that before the generic `STS-FED-0090` *the directory declined*.
+`tests/federation_subject_policy.js` 1m-0. **This said, until #1306, that a directory
+reached in another process could not write there and that sign-in got 0090; no such
+directory exists, so the sentence went.** `autoCreateUser()` is
+`admin_stats.recordAuthentication()`'s synchronous observer, installed by
+`ldap_server.js` in every process that loads the stack — the front and each request
+worker; the surface pool serves no federation path — and `startSession()` hands it the
+`federation` object by reference (`statsExtra` is a shallow copy), so the refusal is
+always written where the page reads it. 0158 is the right code whenever the attribute
+policy refused; 0090 stays the case where nothing says why. A future observer that
+copies the payload, or a directory reached over a channel, owes this a way back.
 
 **Known limits of #358's provisioning, recorded rather than fixed:**
 
 * `provisionedCount` counts people linked by confirm-at-first-sign-in too, not only people the relationship created, so `fedProvisionCap` fills sooner than its name says.
 * The cap check is not atomic across nodes or cells: two first sign-ins at once can each see room and both create.
-* `groupByFederatedName()` walks every group on each sign-in that names a group not at its DN; so does `federatedGroupAuthority()`'s walk over resident entries.
+* `groupByFederatedName()` walks every group on each sign-in that names a group not at its DN; so does `federatedGroupAuthority()`'s walk over what the process holds (resident entries only, in a window; it runs before the store is asked, for this process's unflushed writes).
 * Groups are only ever added: a name the partner stops sending leaves the membership in place.
 * The idle sweep ignores passkeys: a person whose other path is a passkey alone is still disabled.
-* `federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.
+* ~~`federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.~~ Fixed by #1306: the store is asked (above); a row written before #1306 is keyed by #1311's one-time backfill.
 
 `tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms
 of one process — the default realm's OpenID Provider and a service-provider realm of its
@@ -2083,6 +2196,39 @@ partner. Unchanged with the setting off. Federation's own Single Logout and
   cookie is then handled by `authn.afterAccountSignOut()`: cleared only where
   the default ended.
 
+## WHAT ASVS 5.0.0 LEVEL 2 ADDED TO THE SERVICE-PROVIDER HALF (#1497-#1499, #1523, #1541, #1542, #1554)
+
+`docs/federation.md` says what each refuses; this is why each is shaped so.
+
+* **The browser that started the flow (#1497, product only,
+  `bindsSignInSteps()`).** The context was found by its handle alone, so a flow
+  an attacker started could be finished in a victim's browser.
+  `bindFlowToBrowser()` sets a cookie PER FLOW (`sts_fed_flow_<random>`, its
+  hash on the context), so two tabs signing in at once do not undo each other.
+  It is `SameSite=None` because a SAML or `form_post` answer arrives as a
+  cross-site POST that a Lax cookie would not ride. A context with no binding
+  is one the mode did not bind, and passes (`STS-FED-0237`).
+* **The partner the flow was started for (#1498, every mode).** The state's
+  relationship is compared with the one whose endpoint received the answer, and
+  RFC 9207's `iss` with the partner's issuers wherever one is sent — it was
+  checked only for Bluesky before. A tenant-templated `fedPeer` is skipped here
+  and checked on the token, the only place the tenant is known (`STS-FED-0238`).
+* **An assertion is good once (#1499, then #1541).** #1499 claimed the ID of an
+  assertion that had no request context to spend. #1541 claims it EVERY time
+  (`claimAssertionOnce()`, `used_assertions`, until `NotOnOrAfter`), because a
+  context stops a replay only where the response names it, which SAML 1.1 and
+  WS-Federation may not (`STS-FED-0239`).
+* **The partner's authentication time (#1523, then #1554).**
+  `federation.maxPartnerAuthAgeS` is off at 0, and while set a partner that
+  gives no time is refused, its age being unknown (`STS-FED-0240`). #1554 made
+  the session's `authTime` the partner's (`authn.backdateAuthentication()`, which
+  only ever moves it earlier), so `max_age` is judged on the real age, and asks
+  the partner for a fresh one (`prompt=login`, `ForceAuthn`, `wfresh=0`) when
+  the pending step was a re-authentication. A partner that answers such a
+  request with an authentication more than `FRESH_SIGN_IN_SKEW_S` (60) older
+  than the request is refused (`STS-FED-0242`): accepting it would send the
+  person straight back round the same loop.
+
 ## A NEWCOMER THE ATTRIBUTE POLICY WOULD REFUSE (#396, 2026-10-19)
 
 Where `fedAutocreateUsers` lets a first sign-in create the person, product mode
@@ -2091,8 +2237,14 @@ mapped ones, a `cn` made of the names — to the realm's attribute policy
 (`common/CLAUDE.md` 3co, `ldap/CLAUDE.md`). One missing a required attribute
 creates nobody (STS-FED-0158, logged), and `authn.startSession()` refuses the
 sign-in as it refuses an unprovisioned person. rcbj's choice on #396 was this
-refusal over exempting the door; a sign-in step that asks the person for what
-the partner did not send is a follow-up ticket.
+refusal over exempting the door. **Since #701 (2026-11-04) the person is ASKED
+first, for every relationship**: `startFederatedSession()` sends any newcomer
+the policy would refuse to `/federation/profile/{handle}`, the step #729 built
+for consumer providers (*CONSUMER AND SOCIAL PROVIDERS*, below, has the
+mechanics), so STS-FED-0158 is left for a required name nobody can be given a
+value of, and for a form's return whose values still leave the policy unmet —
+a return is never asked again, because a fresh form would reset the five-try
+cap.
 
 ## CONSUMER AND SOCIAL PROVIDERS (#565, 2026-10-19)
 
@@ -2195,8 +2347,13 @@ The ones a reader of this directory needs:
   `profileSupplied` back through `completeSignIn()`, so the subject decision,
   the creation question and the policy are asked again, and only onto an
   entry this sign-in CREATES (`withProfileValues()`). A typed address is
-  unverified. An enterprise partner keeps the refusal: its mapping is where
-  a missing attribute is supplied.
+  unverified. **#729 kept the refusal for an enterprise partner, on the
+  argument that its mapping is where a missing attribute is supplied; #701
+  reversed that (rcbj's choice, 2026-11-04)**, and every relationship's
+  newcomer is asked. The mapping still wins wherever it says anything:
+  `withProfileValues()` never replaces a value the partner sent, and the
+  form asks only what is missing. `profileContext()` no longer asks the
+  category either.
 * **NO SESSION OUTLIVES A REFUSED SIGN-IN** (rcbj's decision 3 on #729). The
   step-up's second factor starts a local session before the browser returns
   to `/federation/stepup/{handle}`; `holdStepUpSession()` holds it on the
@@ -2233,6 +2390,50 @@ and `user` field, the Microsoft tenant issuer and TikTok's `client_key` are
 the next. Which platforms can be supported is
 `../docs/federation-consumer-providers.md`.
 
+### Steam is the one provider that is not OAuth (#746, 2026-11-05)
+
+**The `steam-openid2` adapter replaces both halves of the flow**, because OpenID
+2.0 has no client, no code and no token, and a profile cannot say that. It is an
+`oauth2` relationship rather than a seventh protocol: everything after the
+assertion is the same funnel, and a new protocol would have touched every table
+keyed on one for a single provider. `fedTokenUrl` is the OP Endpoint, already
+diallable, and `fedClientId` is a placeholder the protocol's `needs` wants and
+no request sends.
+
+**What stands in for the signature** is `check_authentication`: this service
+holds no association, so the OP says whether it signed the assertion. What is
+this service's own is section 11, in `steamAssertionProblem()`, and the check
+worth protecting is that `claimed_id`, `identity`, `return_to` and `op_endpoint`
+are inside `openid.signed`, because anything outside it is the browser's to
+write. The claimed identifier is held to Steam's host by a pattern, and it is
+**never dialled**: OpenID 2.0 discovery on a caller's identifier would be
+exactly the fetch `wreqptr` refuses, and only Steam's fixed endpoint is asked.
+
+**The Web API key goes on the URL**, as Steam takes it, so `steamSummary()` logs
+neither the URL nor `why`. `fetchPublished()`'s `why` can quote a redirect's
+`Location`, which is why that matters.
+
+### The other three that a profile cannot say (#746 Tier 2, 2026-11-05)
+
+**`query-access-token`** is Stack Exchange's API and OSChina's, which read no
+bearer header. The address then holds a credential, so `queryTokenProfile()`
+answers `fetchJson()`'s shape with the query taken off and never quotes
+`fetchPublished()`'s `why`, since both reach the refusal page.
+
+**`discourse-connect`** dials nothing. The signature is checked in constant time
+before a byte of the payload is read, and readiness excuses the token and
+profile endpoints the protocol would otherwise ask for.
+
+**`atproto-oauth`** is `atproto_client.ts`, whose header is the argument. Its one
+step that must not be weakened is `subjectProblem()`: anybody can run an
+authorization server in that protocol, so without it any server could name any
+person. It is a public client on purpose, since nothing outlives the sign-in. It
+adds one more URL a caller's kind of value could name, a DID document's data
+server, which is dialled only after a named issuer's answer and through
+`fetchPublished()`. `beginConnect()` refuses it because that door answers an
+address synchronously and this protocol's request is a dial; making the door
+asynchronous would lift that.
+
 ### Tests
 
 `tests/federation_consumer_providers.js` drives a Discord, a GitHub and a
@@ -2247,6 +2448,8 @@ category over HTTP between two realms of one service through the
 login endpoint, creation from the profile, the list's category, a newcomer's
 own entry with a namesake left alone, and any-existing refused. The first
 file's section N holds rcbj's #729 decisions 2-4, and its A11 decision 1.
+Its sections O and P drive #746's providers the same way, with Steam's,
+Discourse's and Bluesky's refusals.
 **Not covered yet:** a consumer provider on an application's chooser beside
 an enterprise partner, the details form after Apple's second authorization
 (the mechanism is the generic one N drives), and any profile against its
@@ -2345,3 +2548,223 @@ origin. A later draft that makes 11.6, 9.6 and algorithm 8.11 describe
 one grammar can be scoped to configured federation partners; it must not
 dial a URL a caller supplies.
 
+## THE OPENID CONNECT RELYING PARTY PLANS (#930, 2026-11-02)
+
+**The OpenID Foundation's suite plays the OpenID Provider, and this service
+is its relying party through an inbound OpenID Connect relationship** — the
+one way this service is somebody's relying party (`common/oidc_rp.ts`, the
+embedded debugger's client, is not the target). `docs/conformance.md` said
+the relying-party plans were not run because "this service is no one's
+relying party but its own"; federation made that untrue, and
+`tests/protocol/sts_oidcc_rp_conformance.js` runs eleven of them
+(`tests/CLAUDE.md`, *THE OPENID CONNECT RELYING PARTY PLANS*). What the plans
+needed, built here:
+
+* **THE ID TOKEN'S CLAIMS** (`verifyIdToken()`), beyond the signature, the
+  issuer and the audience `jwt.verify()` already checked: `sub`, `iat` and
+  `exp` PRESENT (`STS-FED-0195`, `0196` — a token with no `exp` never
+  expired); `azp` equal to `fedClientId` where it is sent, and sent where
+  there are several audiences (`0197`); and **the nonce present and equal,
+  from either endpoint (`0198`, `0039`)**. A code-flow ID Token without the
+  nonce was ACCEPTED with a warning until #930, on the argument that the
+  state and the PKCE verifier protect the code flow too. Core 3.1.3.7 step 11
+  draws no such line ("If a nonce value was sent ... a nonce Claim MUST be
+  present"), this service always sends one, and a partner that drops it is
+  now refused by name. Nothing in the in-process suite relied on the old
+  acceptance.
+* **USERINFO'S `sub`** must be the ID Token's (Core 5.3.2), or the sign-in is
+  REFUSED (`0202`) rather than finished without UserInfo's values: a
+  mismatch is an access token belonging to somebody else, and the ID Token
+  beside it no longer accounts for anything. A UserInfo that does not answer
+  is still not a failure (`STS-FED-0040`).
+* **THE OTHER FOUR RESPONSE TYPES** — `id_token token`, `code id_token`,
+  `code token`, `code id_token token` — beside `code` and `id_token`.
+  `federation.js`'s `responseTypeParts()` is the one reading of a response
+  type. Whatever the authorization endpoint sent is verified FIRST, with
+  `c_hash` REQUIRED beside a code (`0199`) and `at_hash` beside an access token
+  (`0200`), so a code is never redeemed for an answer this service is about to
+  refuse; then `redeemCode()` redeems it, and the token endpoint's ID Token
+  must name the front one's `iss` and `sub` (`0201`, Core 3.3.3.6). The access
+  token UserInfo is asked with is the token endpoint's, else the front one.
+  PKCE goes with every code. Only an ID Token that crossed the browser must be
+  encrypted where `encryptionRequired()` says so (`openIdToken()`'s
+  `frontChannel`): a hybrid relationship's token-endpoint ID Token comes over
+  TLS, as a code-flow one always has.
+* **THE FRAGMENT RESPONSE MODE** (`fedResponseMode: fragment`), the
+  specification's DEFAULT for every response type carrying an ID Token or an
+  access token. form_post stays this service's choice and is still asked
+  for unless the relationship says `fragment`; `query` with those types is
+  "not ready" (OAuth 2.0 Multiple Response Type Encoding Practices section
+  5). A fragment never reaches a server, so the bare GET at the ACS is
+  answered — only for a relationship that chose it — with a page carrying
+  ONE named script, `/federation/fragment.js`, which reads the fragment,
+  removes it from the address and the history entry, and posts it back to the
+  same address, where it is consumed as form_post's is. The root `CLAUDE.md`'s
+  test for a scripted server-drawn page is met: no markup can read a URL
+  fragment, so, like the OP iframe, there is no submit button to fall back on.
+  The suite's plain implicit and hybrid plans answer by fragment whatever is
+  asked, which is why this exists; the cost — the ID Token in the browser's
+  history until the script replaces the entry — is the schema row's warning.
+* **DISCOVERY** (`fedDiscovery`, off by default): the endpoints and
+  `jwks_uri` are read from `{fedPeer}/.well-known/openid-configuration` at the
+  start of EVERY sign-in, kept on the flow's context, and used for its
+  response, so a partner's change takes effect at the next sign-in and a
+  response is verified against what its own request used. The document's
+  `issuer` must be `fedPeer` exactly (Discovery 4.3, `0204`); one that cannot
+  be read, or names no authorization endpoint or `jwks_uri`, is `0203`. **It
+  is the fifth thing a relationship dials, and `federation_http.ts`'s
+  `fetchDiscovery()` rather than a fifth name in `DIALLABLE`**: the address is
+  not an attribute but is DERIVED from `fedPeer`, which an administrator
+  configured, and nothing a request carries can change it. `fedEndSessionUrl`
+  is still configured by hand.
+* **A SIGN-IN THE PARTNER STARTS** (`/federation/initiate-login/{id}`, Core
+  section 4; `fedInitiateLogin`, OFF by default): `iss` REQUIRED and equal to
+  `fedPeer` (`0206`), `login_hint` passed on as the authorization request's,
+  `target_link_uri` followed only to a path on this service — section 4's
+  "MUST verify ... to prevent being used as an open redirector" — and dropped
+  otherwise. Off refuses (`0205`), because the endpoint is a door any page
+  can send a browser through, and section 4 asks a relying party to guard
+  against a third party signing somebody in without their knowledge; the
+  strongest guard is not to answer for a partner that never asked to start
+  sign-ins. It goes through `loginEndpoint()`, so every check of an ordinary
+  start is met. The relationship's view names it (`endpoints.initiateLogin`).
+
+* **THE REGISTERED ALGORITHM** (`fedIdTokenSignedResponseAlg`, the first
+  full run, 2026-11-03): an ID Token or a Logout Token signed under any
+  algorithm but the one the relationship registered is refused
+  (`STS-FED-0208`), even when one of the partner's own keys verifies it —
+  Core 3.1.3.7 step 7, and Back-Channel Logout 2.6's "in the same way that an
+  ID Token signature is validated". The back-channel logout's wrong-alg
+  module found it: a Logout Token signed ES256 by the partner's EC key was
+  accepted beside RS256 ID Tokens. `verifyForeignJwt()` takes the
+  expectation as `expectAlg`, so the plain OAuth 2.0 JWT access token is not
+  held to it. Empty keeps the key-family rule alone, and the schema row warns
+  against leaving it so.
+* **AN ADMINISTRATOR'S `check-partner`** (console and `/admin-api`, rule 7):
+  the discovery document where it is read and the key set, fetched and
+  reported, nothing written. Two discovery modules end the moment those are
+  read, so the plans' person does not sign in for them — a sign-in would
+  reach a FINISHED module, which the suite records as a failure.
+
+**WHAT IS NOT BUILT, AND IS ARGUED IN THE JOB'S LEDGER INSTEAD** (the ticket
+allows either, and each of these is a decision recorded here, not a gap
+noticed):
+
+* **Session Management** — rcbj's decision 3 on #167, above; the logout
+  plan's one module that needs it.
+
+`tests/federation_oidc_rp.js` pins each refusal's code in process, and that
+nothing is dialled after it — no UserInfo after a refused ID Token, no token
+request after a refused front channel.
+
+### A PARTNER'S REFRESH TOKEN (#930, rcbj's decision, 2026-11-03)
+
+rcbj decided the refresh-token plan is built. **It is a switch,
+`fedRefreshTokens`, OFF by default**, because what it adds is a long-lived
+credential at another service held by this one; off, nothing changed.
+
+* **HELD FOR ONE SESSION.** The refresh token the token endpoint returns at
+  sign-in is sealed at once (`federation.js`'s `sealPartnerToken()`, the
+  client secret's arrangement under a label of its own — under a durable
+  key-encryption key, in clear where keys do not persist) and carried on the
+  sign-in's result, so a held step (linking, step-up, profile) never holds
+  it in clear. When the session starts, `holdPartnerRefresh()` writes it to
+  `federation_sp.partnerRefresh`, keyed by the SESSION's id: per realm,
+  persisted, cell-minted (`persistence/tiers.js`), as the session is.
+* **USED BY A SCHEDULER JOB**, `federation.partner-refresh` (per realm,
+  every fifteen seconds; rcbj's directive that periodic work is a job). It
+  reads that store alone — never the session store, so it is no scan of the
+  sessions — and refreshes an entry when it is due: `fedRefreshEverySeconds`
+  after the last, else the access token's `expires_in`, else an hour. The
+  client authentication is the code redemption's (Basic, the body, a public
+  client, or an OpenID Federation OP's `private_key_jwt`); a consumer
+  provider's own adapters are not repeated.
+* **WHAT IT HOLDS THE ANSWER TO** is Core section 12.2: a new ID Token is
+  verified as any is (the registered algorithm included) and must name the
+  session's `iss` and `sub`; UserInfo, asked with the new access token, must
+  answer for that `sub`. The person's attributes are NOT rewritten on a
+  refresh: what it keeps current is that the partner still vouches for the
+  subject.
+* **A FAILED REFRESH ENDS THE SESSION** — the partner refusing it
+  (`STS-FED-0210`), the token not opening, the new ID Token failing
+  (`STS-FED-0211`), UserInfo naming another `sub` (`STS-FED-0202`) —
+  through `logout.ts`'s `endPartnerSession()`, so the cascade is the one
+  every sign-out has. An RP that can no longer show the partner vouches for
+  the person has nothing to keep the session on. A refresh that could not be
+  MADE (no answer at all, a 5xx) is not the partner's answer and is tried
+  again a minute later.
+* **IT DIES WITH THE SESSION.** An entry whose session is gone — ended here,
+  by the partner, by expiry — is dropped the next time the job reads it, and
+  so is one whose relationship turned the switch off.
+
+**Signed and encrypted UserInfo** came with it (the dynamic plan's
+`userinfo-signed` module asks for it): a UserInfo answer that is a JWT is
+decrypted where it is a JWE, verified against the partner's keys under
+`fedUserinfoSignedResponseAlg` where one is registered, its `iss` and `aud`
+held to the partner and this service where present, and then used as a JSON
+answer is (`userinfoClaims()`). One that does not verify is not used, which
+costs its attributes and not the sign-in, as an unanswered UserInfo always
+has.
+
+### SELF-REGISTRATION, REQUEST OBJECTS AND WEBFINGER (#930, rcbj's decision, 2026-11-03)
+
+rcbj decided the dynamic plan is built, all of it. Each piece is a switch on
+an OpenID Connect relationship, **off by default**, and each needs
+`fedDiscovery`, which is what names the endpoints involved.
+
+* **`fedRegister` — THIS SERVICE REGISTERS ITSELF** (Dynamic Client
+  Registration 1.0, RFC 7591) at the `registration_endpoint` of the
+  partner's discovery document, whenever the relationship holds no
+  `fedClientId` or holds one `fedRegisteredIssuer` says belongs to another
+  issuer — at the start of a sign-in (`ensureRegistered()`) or by an
+  administrator's `register-partner` (console and `/admin-api`, rule 7). What
+  is registered is the relationship: its ACS, response type and grant types,
+  `fedTokenAuth`, the algorithms it pins, its sign-out and login-initiation
+  addresses, and for signed Request Objects ONE public key — the realm key
+  that signs them, as `jwks` by value, so nothing else of the realm's key set
+  (its post-quantum keys among them) is handed over. The answer's
+  `client_id` and secret are written through `federation.update()`, so the
+  secret is sealed as any `set` seals it. A failure refuses the sign-in
+  (`STS-FED-0212`, `0213`). No RFC 7592 management: to register again,
+  clear `fedClientId` or press register-partner.
+* **`fedRequestObject` — REQUEST OBJECTS** (Core section 6, RFC 9101): the
+  authorization request's parameters as the claims of a JWT, `iss` the
+  client and `aud` the partner's issuer, five minutes, a `jti`, signed with
+  the realm's key under `fedRequestObjectSigningAlg` (RS256 by default,
+  PS256, ES256), or `none` — UNSIGNED, a warning on the row, and only by
+  reference over https as Core 6.2 allows. By value it is `request`; by
+  reference the object is held in the flow context store behind a handle of
+  its own and answered ONCE at `/federation/request/{id}/{handle}`
+  (`STS-FED-0218` after that). The parameters stay on the query too, as
+  Core 6.1 requires. A realm with no key for the algorithm refuses
+  (`STS-FED-0214`). An OP found through an OpenID Federation still signs its
+  own (`oidfed_rp.ts`).
+* **`fedWebFinger` — A PERSON'S WEBFINGER**, the argued exception above
+  (the twenty-second URL): `/federation/webfinger/{id}` asks for an
+  identifier, normalises it as Discovery 2.1 says (`acct:` for an address,
+  `https://` for a host), asks the host it names, and holds the issuer found
+  within `fedPeer` (`STS-FED-0215`..`0217`). **The bound is a PARSED
+  comparison** (`issuerWithin()`, fixed before hand-off on 2026-11-03): a raw
+  string prefix let `https://op.example` admit `https://op.example.evil.com`,
+  `https://op.example:8443` and `https://op.example@evil`, whose keys would
+  then have been discovered and trusted. Scheme, host (case-insensitive) and
+  effective port must be identical, neither side may carry userinfo, the
+  issuer no query or fragment, and its path must be `fedPeer`'s or extend it
+  at a `/` (`/tenant` admits `/tenant/7`, not `/tenant2`). The handle the
+  confirmation page carries is checked with the same function. The page that names the
+  issuer is a view of the federation pages' surface with a link and no
+  submit of its own: following it reaches `/federation/login/{id}?found=`,
+  whose handle names the issuer server-side, so a request cannot choose
+  one. The discovery, registration and sign-in then run against that
+  issuer, which `context.discovered` carries as `fedPeer` for the response.
+* **Signed and encrypted UserInfo** — under *A PARTNER'S REFRESH TOKEN*
+  above.
+
+**Post-quantum.** Request Objects are signed with a classical realm key and
+only that key is registered, so nothing post-quantum reaches the suite. The
+dynamic plan still runs as its classical twin too (rcbj), with
+`PQ_ONLY` empty, and both are expected clean.
+
+**What the plans' harness had to do differently** is in `tests/CLAUDE.md`:
+the registration and the WebFinger modules end at the registration or the
+discovery document, so the person does not sign in for them.

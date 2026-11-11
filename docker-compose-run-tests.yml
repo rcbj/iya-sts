@@ -135,10 +135,13 @@ x-mirror-contexts: &mirror-contexts
 
 # Every service that BUILDS the sts tag passes these. The last build of the
 # tag wins, so one of them omitting STS_CLOUD_SDKS would ship an image the
-# attribute-source job cannot load mysql2 from (#356). BUILD_NUMBER and
-# GIT_COMMIT are optional and empty by default; the `sts` service argues them.
+# attribute-source job cannot load mysql2 from (#356). GIT_COMMIT is
+# optional and empty by default; the `sts` service argues it. STS_RELEASE
+# and BUILD_NUMBER (#1317) are NOT passed: a test stack's image is never a
+# release build, so its build number is the UTC build instant the
+# Dockerfile's stamp takes by default — and a BUILD_NUMBER a CI runner
+# happens to export could not reach it anyway.
 x-sts-image-args: &sts-image-args
-  BUILD_NUMBER: "${BUILD_NUMBER:-}"
   GIT_COMMIT: "${GIT_COMMIT:-}"
   STS_CLOUD_SDKS: "mysql2"
 
@@ -309,17 +312,29 @@ services:
     # `bash` first, so the image entrypoint execs it without initialising;
     # the inner `docker-entrypoint.sh mariadbd` is what initialises. The
     # socket healthcheck still counts as a secure transport.
+    # SIZED FOR A LAPTOP (rcbj on #695): a 128M buffer pool, overridable
+    # with STS_MARIADB_BUFFER_POOL as postgres's shared_buffers is with
+    # STS_POSTGRES_SHARED_BUFFERS, and the performance schema off. Outside
+    # the `mariadb` mode only sts_attribute_sources.js's MariaDB pass uses
+    # this server; that mode, where it is the whole store, names 1G
+    # (tests/tools/modes.sh). No mem_limit: a limit is a container killed
+    # mid-run, where a small pool is only slower.
+    # THE DIRECTORY IS 711, NOT 700 (#677): in the `mariadb` mode the service,
+    # uid 10001, reads server.crt from here by name, and 700 stopped it starting
+    # (STS-STORE-0079, EACCES). The key is closed by its own 0600.
     command: >
       bash -c 'set -euo pipefail;
       chown mysql:mysql /mariadb-tls/tls
       /mariadb-tls/tls/server.key /mariadb-tls/tls/server.crt;
-      chmod 700 /mariadb-tls/tls;
+      chmod 711 /mariadb-tls/tls;
       chmod 600 /mariadb-tls/tls/server.key;
       chmod 644 /mariadb-tls/tls/server.crt;
       exec docker-entrypoint.sh mariadbd
       --ssl-cert=/mariadb-tls/tls/server.crt
       --ssl-key=/mariadb-tls/tls/server.key
-      --require-secure-transport=ON'
+      --require-secure-transport=ON
+      --innodb-buffer-pool-size=${STS_MARIADB_BUFFER_POOL:-128M}
+      --performance-schema=OFF'
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
@@ -565,13 +580,13 @@ services:
       context: .
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
-      # THE BUILD'S IDENTITY, both optional and both empty by default — the
-      # same two arguments docker-compose.yml passes, and that file carries the
-      # argument for them. They are here so that a CI run of this stack can
-      # stamp its image with the run number and the commit, which is the
-      # environment where "which build produced this report" is asked most and
-      # answerable least. Leave them and the build number is the UTC build
-      # instant, which is still unique per build.
+      # THE BUILD'S IDENTITY, optional and empty by default — the argument
+      # docker-compose.yml passes. It is here so that a CI run of this stack
+      # can stamp its image with the commit, which is the environment where
+      # "which build produced this report" is asked most and answerable
+      # least. The version is VERSION's release followed by the build
+      # number, here always the UTC build instant: a test stack is never a
+      # release build (#1317), so STS_RELEASE is not passed.
       #
       # AND STS_CLOUD_SDKS, in the anchor every build of this tag uses
       # (x-sts-image-args, #356). mysql2 is what the attribute-source job's
@@ -676,6 +691,7 @@ services:
       - STS_PUBLIC_BASE_URL=${STS_PUBLIC_BASE_URL:-}
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}
+      - STS_PERSISTENCE_SQL_DIALECT=${STS_PERSISTENCE_SQL_DIALECT:-native}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}
       - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}
@@ -767,6 +783,28 @@ services:
       # whole suite against a plain port — which is the first thing to try if a
       # job fails with something that names a certificate.
       - STS_HTTPS=${STS_HTTPS:-true}
+      - KRB5_ALLOW_SHA1_ENCTYPES=${KRB5_ALLOW_SHA1_ENCTYPES:-true}
+      - STS_CRYPTO_ALLOW_LEGACY_HASHES=${STS_CRYPTO_ALLOW_LEGACY_HASHES:-true}
+      - STS_SECURITY_ALLOW_UNSCOPED_PEOPLE=${STS_SECURITY_ALLOW_UNSCOPED_PEOPLE:-true}
+      - STS_CRYPTO_ALLOW_CBC_JWE=${STS_CRYPTO_ALLOW_CBC_JWE:-true}
+      - STS_ADMIN_LOG_BOOTSTRAP_PASSWORD=${STS_ADMIN_LOG_BOOTSTRAP_PASSWORD:-true}
+      - STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE=${STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE:-true}
+      - LDAP_PLAIN_LISTENER=${LDAP_PLAIN_LISTENER:-true}
+      - STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR=${STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR:-true}
+      # SINGLE SIGN-ON ASKS FOR CONSENT IN PRODUCT (ASVS 5.0.0 7.6.2), once per
+      # application. The protocol jobs sign in to SAML and WS-Federation
+      # applications with no person to press Allow, as they do without a
+      # second factor above, so the suite turns it off; a job that tests the
+      # screen sets the setting itself.
+      - STS_SAML2_SSO_CONSENT=${STS_SAML2_SSO_CONSENT:-false}
+      - STS_SAML11_SSO_CONSENT=${STS_SAML11_SSO_CONSENT:-false}
+      - STS_WSFED_SSO_CONSENT=${STS_WSFED_SSO_CONSENT:-false}
+      - STS_SECURITY_REQUESTS_PER_ADDRESS_PER_MINUTE=${STS_SECURITY_REQUESTS_PER_ADDRESS_PER_MINUTE:-0}
+      - STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD=${STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD:-true}
+      - STS_SECURITY_FILE_ROOTS=${STS_SECURITY_FILE_ROOTS:-/etc/ssl,/usr/share/ca-certificates,/run/secrets,/run/sts-test,/tmp}
+      - STS_ADMIN_ALLOW_DEFAULT_USERNAME=${STS_ADMIN_ALLOW_DEFAULT_USERNAME:-true}
+      - STS_SCEP_ALLOW_IN_PRODUCT=${STS_SCEP_ALLOW_IN_PRODUCT:-true}
+      - STS_OAUTH2_ALLOW_UNDECLARED_GRANTS=${STS_OAUTH2_ALLOW_UNDECLARED_GRANTS:-true}
       # WHERE A CERTIFICATE SAYS ITS CRL AND OCSP RESPONDER ARE (2026-09-13).
       # This stack publishes no port, and the runner beside it dials the
       # service as `sts` — so that is the name every certificate has to carry,
@@ -909,12 +947,11 @@ services:
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
       dockerfile: xacml-pep/Dockerfile
-      # THE BUILD'S IDENTITY, exactly as the sts service above takes it. Pass
-      # the SAME BUILD_NUMBER to both to say the PDP and this PEP are one
-      # release; leave them and each image gets the instant it was built, which
-      # is two different numbers for two artifacts and is the honest default.
+      # THE BUILD'S IDENTITY, exactly as the sts service above takes it. Both
+      # images report the one VERSION file's release; each is numbered by
+      # the instant it was built (#1317), which is two different build
+      # numbers for two artifacts and is the honest default.
       args:
-        BUILD_NUMBER: "${BUILD_NUMBER:-}"
         GIT_COMMIT: "${GIT_COMMIT:-}"
     depends_on:
       sts:
@@ -1275,6 +1312,18 @@ services:
 
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-iya-sts-test-runner}
+    # A DOTTED NAME FOR THE SERVICE, FOR THE RUNNER ONLY (#694). `sts` is one
+    # label, and a did:web has to name a host of two or more: the native
+    # OID4VC wallet refuses `did:web:sts%3A8081:…`. So sts_oid4vc_wallet.js
+    # runs its realm on `<host>.example.com` and pins that as the realm's
+    # global.publicBaseUrl, and the name resolves here, where the job and
+    # its wallet run, and nowhere else — the service never dials a DID it
+    # publishes, and an alias on `sts` would follow it into `sts2`, which
+    # extends it. It is already in the certificate's SANs (`tls.hostnames`).
+    # The address is the one the runner's `sts` is (cells mode can move it);
+    # the cluster file adds `sts-lb.example.com`.
+    extra_hosts:
+      - "sts.example.com:${STS_TEST_ENTRY_ADDRESS:-${STS_ADDRESS:-172.30.0.10}}"
     image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/iya-sts-tests:${IMAGE_TAG:-latest}}
     build:
       # The same context as the service, with the root .dockerignore deciding

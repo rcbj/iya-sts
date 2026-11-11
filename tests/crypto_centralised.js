@@ -59,7 +59,9 @@ const ROOT = path.resolve(__dirname, '..');
 // runtime (the tests, the deployment trees, the documentation, the Rust
 // conversion, the development companion container of #591 — a separate
 // party that reaches this service only over its doors, and ships in no
-// image of it), or the parent project's copies.
+// image of it), or common/crypto_impl/ — the engines common/crypto.js itself
+// rests on, which is what they are whoever wrote them (this service's own
+// since #1280; they were skipped as the parent project's copies before).
 const SKIP_DIRS = new Set(['node_modules', '.git', '.terraform', 'coverage',
                            '__pycache__']);
 const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded', 'tests',
@@ -70,7 +72,9 @@ const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded', 'tests',
 const THE_MODULE = ['common/crypto.js', 'common/pq_native.js',
                     'common/pq_jose.js'];
 
-// The parent project's byte-identical Kerberos codec copies (#431).
+// The Kerberos codec modules (#431), exempt for the same reason as
+// common/crypto_impl/: they are the RFC 3961/3962/8009 engines the KDC runs
+// on, not callers that could ask crypto.js. This service's own since #1280.
 const KERBEROS_COPIES = ['kerberos/krb5_primitives.js',
                          'kerberos/krb5_asn1.js', 'kerberos/krb5_crypto.js',
                          'kerberos/krb5_messages.js', 'kerberos/krb5_ndr.js',
@@ -79,16 +83,9 @@ const KERBEROS_COPIES = ['kerberos/krb5_primitives.js',
 
 // Files still allowed while a decision about them is open, each with the
 // reason. It may only shrink (claim 3).
-const PENDING = {
-  // The parent project's tests/webauthn_cross_impl.js stages this ONE file
-  // on its own, without common/crypto.js beside it, and checks it against
-  // the wallet's independent decoder. In the service every digest and
-  // signature check goes through crypto.js; `standaloneNodeCrypto()`, a
-  // lazy require, is reached only in that standalone copy. Whether to keep
-  // the standalone path or change the parent's test is rcbj's decision
-  // (#453, as #431 decides the vendored copies).
-  'authn/webauthn.js': 'the parent project\'s standalone copy'
-};
+// Empty since #1280: `authn/webauthn.js` was the last entry, kept for the
+// parent project's standalone copy of it until rcbj ended that (#453).
+const PENDING = {};
 
 // Tools that run OUTSIDE the service's module graph and cannot load
 // `common/crypto.js`, each with the reason. No module the service runs may
@@ -106,7 +103,12 @@ const STANDALONE = {
   // requires config.js, so the sidecar would load the service to sign one
   // certificate request. It verifies the server's JWT-SVIDs and makes its
   // own CSR key; nothing in the service requires it.
-  'spiffe/workload_agent.ts': 'the Workload API sidecar, a separate process'
+  'spiffe/workload_agent.ts': 'the Workload API sidecar, a separate process',
+  // OpenBao's seal key (ASVS 5.0.0 13.3.1, #1553): 32 random bytes made once
+  // at a stack's first start, in the secret store's own container, which
+  // holds no service to load crypto.js from. Its compose command runs it;
+  // nothing in the service requires it.
+  'openbao/generate-seal.js': 'the secret store container\'s first-start tool'
 };
 
 // Node's module, by either spelling, required or imported for a value.
@@ -122,6 +124,25 @@ const NODE_CRYPTO = [
 // for the version they report on the console. The `@digitalbazaar` packages
 // are the zcap and Ed25519 ones; the BBS suite is common/crypto_impl's
 // (bbs2023.js), which is not walked.
+// jsonwebtoken and node-forge, which only common/crypto.js and the engines
+// under it may hold (#1368). Empty, and so it stays.
+const JOSE_LIBRARIES = [
+  /(?:require)\s*\(\s*['"](?:jsonwebtoken|node-forge)['"]\s*\)/
+];
+const LIBRARY_PENDING = {};
+
+// The post-quantum engine's signature calls, the BBS suite, and the X.509
+// engine's (#1368). `PqJose.generate` and the key readers stay open: they sign
+// nothing.
+const PQ_ENGINE_CALLS = [/\bpqJose\.(?:sign|verify|signAsync|verifyAsync)\s*\(/];
+const BBS_SUITE = [/require\(\s*['"][^'"]*crypto_impl\/bbs2023(?:\.js)?['"]\s*\)/];
+const X509_ENGINE_CALLS = [
+  /\bx509\.(?:issueCertificate|signCertificate|verifyChain|verifyBytes)\s*\(/,
+  /getCrypto\([^)]*\)\s*\.verifyWithPublicKey\s*\(/
+];
+// Empty since #1368's X.509 moves, and it stays empty.
+const X509_PENDING = {};
+
 const TOKEN_LIBRARIES = [
   new RegExp('(?:require|import)\\s*\\(\\s*[\'"](?:macaroon|' +
     'jsonld-signatures|@digitalbazaar/(?:zcap|zcap-context|' +
@@ -198,8 +219,8 @@ function uses(rel, patterns) {
 module.exports = {
   name: 'crypto_centralised',
   describe: 'only common/crypto.js (and its two post-quantum engines and ' +
-    'the vendored copies) requires node\'s crypto or a token-format ' +
-    'library; every other module asks crypto.js (#453)',
+    'the crypto engines it rests on) requires node\'s crypto or a ' +
+    'token-format library; every other module asks crypto.js (#453)',
   run: function run(t) {
     const files = walk();
     t.check(files.length > 500, 'the walk found the source files it checks',
@@ -230,6 +251,59 @@ module.exports = {
       'no module but common/crypto.js requires the macaroon, zcap or ' +
       'Biscuit library',
       holders.join(', '));
+
+    // The two libraries (#1368): a feature module reads a token through
+    // `decodeJws()` and a key through `rsaPublicJwkOf()`, and asks for a
+    // digest. The crypto engines under common/crypto_impl are the crypto
+    // module's own.
+    const libraryHolders = files.filter(function (rel) {
+      return rel !== 'common/crypto.js' &&
+        rel.indexOf('common/crypto_impl/') !== 0 &&
+        !Object.prototype.hasOwnProperty.call(LIBRARY_PENDING, rel) &&
+        uses(rel, JOSE_LIBRARIES);
+    });
+    t.check(libraryHolders.length === 0,
+      'no module but common/crypto.js requires jsonwebtoken or node-forge',
+      libraryHolders.join(', '));
+    Object.keys(LIBRARY_PENDING).forEach(function (rel) {
+      t.check(files.indexOf(rel) >= 0 && uses(rel, JOSE_LIBRARIES),
+        'a LIBRARY_PENDING entry still requires one (the list may only ' +
+        'shrink: delete the entry once the file is moved)', rel);
+    });
+
+    // The doors section 2 of #1368 closed. A signature goes through crypto.js:
+    // nobody else calls the post-quantum engine's sign or verify, or holds the
+    // BBS suite. The file it replaced in vc_status_codec.ts cannot come back.
+    const pqCallers = files.filter(function (rel) {
+      return THE_MODULE.indexOf(rel) < 0 && uses(rel, PQ_ENGINE_CALLS);
+    });
+    t.check(pqCallers.length === 0,
+      'no module but crypto.js calls pq_jose.js to sign or verify',
+      pqCallers.join(', '));
+    const bbsHolders = files.filter(function (rel) {
+      return THE_MODULE.indexOf(rel) < 0 && uses(rel, BBS_SUITE);
+    });
+    t.check(bbsHolders.length === 0,
+      'no module but crypto.js requires the BBS suite', bbsHolders.join(', '));
+    const x509Callers = files.filter(function (rel) {
+      return rel !== 'common/crypto.js' && rel !== 'common/pki.js' &&
+        rel !== 'common/pki_revocation.js' &&
+        // The Certificate Workbench's model, part of the PKI layer (rule 3aa).
+        rel !== 'common/pki_authoring.ts' &&
+        // Runs in the secret store's container, which holds no service to load
+        // crypto.js or pki.js from, to mint that store's listener certificate.
+        rel !== 'openbao/generate-tls.js' &&
+        rel.indexOf('common/crypto_impl/') !== 0 &&
+        !Object.prototype.hasOwnProperty.call(X509_PENDING, rel) &&
+        uses(rel, X509_ENGINE_CALLS);
+    });
+    t.check(x509Callers.length === 0,
+      'no module but crypto.js and pki.js calls the X.509 engine to issue or ' +
+      'verify', x509Callers.join(', '));
+    Object.keys(X509_PENDING).forEach(function (rel) {
+      t.check(files.indexOf(rel) >= 0 && uses(rel, X509_ENGINE_CALLS),
+        'an X509_PENDING entry still calls it (the list may only shrink)', rel);
+    });
 
     Object.keys(PENDING).forEach(function (rel) {
       t.check(files.indexOf(rel) >= 0 && uses(rel, NODE_CRYPTO),

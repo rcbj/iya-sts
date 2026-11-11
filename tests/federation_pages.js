@@ -22,7 +22,11 @@
 //   3. `/federation/link/{handle}` with no link waiting: 400, the shell.
 //   4. THE ASSERTION CONSUMER SERVICE IS NOT CONVERTED: its refusal of the
 //      same disabled relationship is still drawn by the server, under the
-//      service's `script-src 'none'`, with no state.
+//      service's `script-src 'none'`, with no state — since #1327 as
+//      `common/error_page.ts`'s page: the code's sentence in the box, the
+//      background collapsed, the portal, the diagnostics with the incident
+//      ID and the English what; its 404 for no such relationship too, and
+//      drawn in French for a browser that asks for it.
 //   5. `/federation/pages.js` is served as a script.
 //   6. The renderers draw each kind of view (the escaping included), and
 //      the email factor's end page is the bytes it was before #580.
@@ -227,13 +231,45 @@ function childMain() {
     // --- 4. the assertion consumer service is not converted ----------------
     r = await get('/federation/acs/' + SP);
     note(r.status >= 400 && stateOf(r.text) === null && !isShell(r) &&
-         /The federated sign-in was refused/.test(r.text) &&
+         /<h1>The federated sign-in was refused<\/h1>/.test(r.text) &&
          /script-src 'none'/.test(String(
            r.headers['content-security-policy'])),
          '4. the assertion consumer service\'s refusal is drawn by the ' +
          'server as it was, under script-src \'none\'',
          r.status + ' ' + String(r.headers['content-security-policy']) +
          ' ' + r.text.slice(0, 300));
+    // The shared error page (#1327): the disabled relationship's sentence
+    // in the box, the background collapsed, the portal, and the
+    // diagnostics — the relationship and the English what as data.
+    note(/<div class="warn" role="alert">The federation relationship with /
+           .test(r.text) && / is disabled\.<\/div>/.test(r.text) &&
+         /<details class="prose">/.test(r.text) &&
+         /<code>fedLastError<\/code>/.test(r.text) &&
+         /<a class="portal" href="\/portal">/.test(r.text) &&
+         /<section class="diagnostics"/.test(r.text) &&
+         /<dt>Incident ID<\/dt><dd><code>\d+<\/code>/.test(r.text) &&
+         r.text.indexOf('<code>' + SP + '</code>') > 0 &&
+         /<code>That relationship is not usable<\/code>/.test(r.text) &&
+         /details class="language-row"/.test(r.text) &&
+         !/federation\/CLAUDE\.md/.test(r.text) &&
+         /no-store/.test(String(r.headers['cache-control'])),
+         '4a. that refusal is the shared error page (#1327)',
+         r.text.slice(0, 1500));
+    r = await get('/federation/acs/fp-none-' + stamp);
+    note(r.status === 404 && !isShell(r) &&
+         /No federation relationship by that name signs anybody in here\./
+           .test(r.text) &&
+         r.text.indexOf('<code>fp-none-' + stamp + '</code>') > 0,
+         '4b. no such assertion consumer service: 404, the shared page',
+         r.status + ' ' + r.text.slice(0, 600));
+    r = await screen.call({ port: port, jar: {}, method: 'GET',
+                            path: '/federation/acs/' + SP,
+                            headers: { 'accept-language': 'fr' } });
+    note(r.status >= 400 && /<html lang="fr"/.test(r.text) &&
+         /La connexion fédérée a été refusée/.test(r.text) &&
+         /<code>That relationship is not usable<\/code>/.test(r.text),
+         '4c. drawn in French for a browser that asks, the English what ' +
+         'kept as data', r.status + ' ' + r.text.slice(0, 600));
 
     // --- 5. the script ------------------------------------------------------
     r = await get('/federation/pages.js');

@@ -19,8 +19,8 @@
 // |---|---|
 // | Who may frame the iframe | The registered relying parties: every http(s) origin of a redirect URI in the realm — `frame-ancestors` NARROWED, never dropped (`app.framedContentSecurityPolicy()`) |
 // | On by default | NO: `oauth2.sessionManagement`, per realm, off. Off means no cookie, no iframe, no `session_state`, no discovery member |
-// | The iframe's script | The ninth `script-src 'self'` page, with no button: no markup answers a `postMessage` |
-// | Tests | The served script in a node vm with a fake window |
+// | The iframe's script | INLINE in the page, under `script-src 'sha256-…'` of that exact text (#1297, rcbj's option A); it was the ninth `script-src 'self'` page, a sibling `check_session.js`, until then. No button: no markup answers a `postMessage` |
+// | Tests | The page's inline script in a node vm with a fake window |
 //
 // THE BROWSER STATE is a random value on the SESSION ROW (`browserState`),
 // minted with every session handle by `authn.ts` — so it changes at sign-in
@@ -63,10 +63,6 @@ const COOKIE = 'sts_op_browser_state';
  * The OP iframe's path.
  */
 const IFRAME_PATH = '/oauth2/check_session';
-/**
- * The path of the OP iframe's script.
- */
-const SCRIPT_PATH = '/oauth2/check_session.js';
 
 // Whether Session Management is on in the ambient realm.
 /**
@@ -209,22 +205,6 @@ function frameAncestors() {
   return applications.redirectOriginsOfRealm();
 }
 
-// The OP iframe itself. The script is a sibling resource, named relatively so
-// a realm's prefix carries over; the page carries no inline script.
-/**
- * Returns the OP iframe's page, which loads its script as a sibling resource
- * and carries none inline.
- *
- * @returns the HTML
- */
-function iframePage() {
-  log.debug("Entering iframePage().");
-  log.debug("Leaving iframePage().");
-  return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
-    '<title>OP iframe</title></head><body>' +
-    '<script src="check_session.js"></script></body></html>';
-}
-
 // ---------------------------------------------------------------------------
 // THE IFRAME'S SCRIPT, section 3.2. Data served to a browser, so it is
 // written as the browser runs it and not in this file's style (the root
@@ -253,7 +233,8 @@ const SCRIPT_HEAD = [
   '  function browserState() {',
   '    var all = String(document.cookie || "").split(";");',
   '    for (var i = 0; i < all.length; i++) {',
-  '      var pair = all[i].replace(/^\\s+/, "");',
+  '      var pair = all[i].replace(/^\\s+/, "")',
+  '        .replace(/^__(?:Host|Secure)-/, "");',
   '      if (pair.indexOf(NAME + "=") === 0) {',
   '        return pair.slice(NAME.length + 1);',
   '      }',
@@ -456,6 +437,102 @@ function scriptFor(accounts) {
   return accounts ? IFRAME_SCRIPT_ACCOUNTS : IFRAME_SCRIPT;
 }
 
+// ---------------------------------------------------------------------------
+// THE PAGE CARRIES ITS SCRIPT INLINE, UNDER AN EXACT HASH (#1297, rcbj's
+// option A, 2026-11-04).
+//
+// Until #1297 the page was a `<script src="check_session.js">` and the script
+// a sibling resource served `no-store`: TWO requests before the `message`
+// listener existed. The OpenID Foundation's hosted conformance suite posts
+// its one `client_id session_state` 500 ms after its own RP iframe loads and
+// never retries, so from a distant browser the listener was not there yet
+// and `oidcc-session-management-rp-initiated-logout` timed out on every
+// response type ("checkSession started", never "receiveMessage"; no CSP or
+// framing error). A real relying party's first poll had the same race.
+//
+// So the page is self-contained — one request — and the policy names the
+// script by its SHA-256 (`script-src 'sha256-…'`, CSP Level 3 section 8.4)
+// INSTEAD of `'self'`: a hash source admits that exact text and nothing
+// else, which is narrower than `'self'` (any script this origin serves). It
+// is never `'unsafe-inline'`, and `app.framedContentSecurityPolicy()` drops
+// that token if anybody asks for it.
+//
+// THE PAGE AND ITS HASH ARE CONSTANTS, built once here from the same string:
+// the script's text depends only on `COOKIE`, which no realm changes, and
+// nothing templates the page after the hash is taken — a byte changed after
+// hashing would be a page whose script the browser silently refuses. The
+// hash goes through `common/crypto.js` (`digest()`), the one place this
+// service hashes. The script holds no `</script` (it would end the element
+// early); `tests/session_management.js` checks it.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the CSP hash source (`'sha256-<base64>'`) of a script's exact text.
+ *
+ * @param script - the script, exactly as the page carries it
+ * @returns the source expression
+ */
+function hashSourceOf(script) {
+  log.debug("Entering hashSourceOf().");
+  const source = "'sha256-" + stsCrypto.digest('sha256', script, 'base64') +
+    "'";
+  log.debug("Leaving hashSourceOf().");
+  return source;
+}
+
+// The page around one script. Called only at load, below.
+/**
+ * Builds the OP iframe's page with a script inline.
+ *
+ * @param script - the script, which is carried byte for byte
+ * @returns the HTML
+ */
+function pageAround(script) {
+  log.debug("Entering pageAround().");
+  log.debug("Leaving pageAround().");
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<title>OP iframe</title></head><body><script>' + script +
+    '</script></body></html>';
+}
+
+/**
+ * The CSP hash source of `IFRAME_SCRIPT`.
+ */
+const IFRAME_SCRIPT_HASH = hashSourceOf(IFRAME_SCRIPT);
+/**
+ * The CSP hash source of `IFRAME_SCRIPT_ACCOUNTS`.
+ */
+const IFRAME_SCRIPT_ACCOUNTS_HASH = hashSourceOf(IFRAME_SCRIPT_ACCOUNTS);
+const IFRAME_PAGE = pageAround(IFRAME_SCRIPT);
+const IFRAME_PAGE_ACCOUNTS = pageAround(IFRAME_SCRIPT_ACCOUNTS);
+
+// The OP iframe itself: one document, its script inline.
+/**
+ * Returns the OP iframe's page, its script inline.
+ *
+ * @param accounts - whether the realm has `authn.multipleAccounts` on (#561)
+ * @returns the HTML
+ */
+function iframePage(accounts) {
+  log.debug("Entering iframePage().");
+  log.debug("Leaving iframePage().");
+  return accounts ? IFRAME_PAGE_ACCOUNTS : IFRAME_PAGE;
+}
+
+// The `script-src` source that admits exactly the script `iframePage()`
+// carries for the same argument.
+/**
+ * Returns the `script-src` hash source of the script the OP iframe's page
+ * carries.
+ *
+ * @param accounts - whether the realm has `authn.multipleAccounts` on (#561)
+ * @returns `'sha256-<base64>'`
+ */
+function scriptHashFor(accounts) {
+  log.debug("Entering scriptHashFor().");
+  log.debug("Leaving scriptHashFor().");
+  return accounts ? IFRAME_SCRIPT_ACCOUNTS_HASH : IFRAME_SCRIPT_HASH;
+}
+
 // The cookie value for several browser states (#561): each non-empty one
 // once, in order, joined by `.`.
 /**
@@ -486,10 +563,10 @@ function browserStatesValue(states) {
 module.exports = {
   COOKIE: COOKIE,
   IFRAME_PATH: IFRAME_PATH,
-  SCRIPT_PATH: SCRIPT_PATH,
   IFRAME_SCRIPT: IFRAME_SCRIPT,
   IFRAME_SCRIPT_ACCOUNTS: IFRAME_SCRIPT_ACCOUNTS,
   scriptFor: scriptFor,
+  scriptHashFor: scriptHashFor,
   browserStatesValue: browserStatesValue,
   enabled: enabled,
   browserStateOf: browserStateOf,

@@ -31,6 +31,10 @@
 //     same client PERMISSION_DENIED (STS-SPIFFE-0149). The code is recorded
 //     and not sent.
 //
+// And, in this process (#695), the `--ready-file` a sidecar's workload
+// waits for: read off argv, written whole, removed, and a path that cannot
+// be written reported rather than thrown (STS-SPIFFE-0152).
+//
 // It does not weaken `tests/spiffe_workload_tcp_product.js`. The realm is
 // left standing with SPIFFE off, for that file's reason.
 // ===========================================================================
@@ -205,6 +209,9 @@ function childMain() {
             'a join token was minted, and its agent id is not the token',
             minted && minted.ok ? minted.agentSpiffeId : minted &&
             minted.message);
+      check(!!(minted && /^[A-Za-z0-9_-]{43}$/.test(String(minted.token))),
+            'and it is 256 random bits, base64url, not a 122-bit UUID ' +
+            '(ASVS 5.0.0 11.5.1)', minted && minted.token);
       agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-agent-'));
       const socketPath = path.join(agentDir, 'api.sock');
       agent = new WorkloadAgent({
@@ -470,8 +477,72 @@ function inAChild(t) {
   log.debug('Leaving inAChild().');
 }
 
+// THE READY FILE A SIDECAR'S WORKLOAD WAITS FOR (#695): `--ready-file` read
+// off argv, the file written whole with the agent's SPIFFE ID, and a path
+// that cannot be written reported rather than thrown (main() then records
+// STS-SPIFFE-0152 and stops). In this process: the agent is a leaf, and
+// requiring it loads nothing of the service and binds nothing.
+function readyFileChecks(t) {
+  log.debug('Entering readyFileChecks().');
+  const WorkloadAgent = require(ROOT + '/spiffe/workload_agent');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spiffe-agent-ready-'));
+  const saved = process.env.STS_SPIFFE_JOIN_TOKEN;
+  try {
+    process.env.STS_SPIFFE_JOIN_TOKEN = 'a-token-for-argv-only';
+    const base = ['--server', 'sts.invalid:8181', '--socket',
+                  path.join(dir, 'api.sock'), '--trust-domain',
+                  'example.org', '--bundle-url',
+                  'https://sts.invalid/spiffe/bundle'];
+    const read = WorkloadAgent.readArgs(base.concat(
+      ['--ready-file', path.join(dir, 'ready')]));
+    t.check(read.ok && read.readyFile === path.join(dir, 'ready'),
+            '--ready-file is read off argv', JSON.stringify(
+              { ok: read.ok, readyFile: read.readyFile,
+                message: read.message }));
+    const without = WorkloadAgent.readArgs(base);
+    t.check(without.ok && without.readyFile === '',
+            'and is empty when not given', String(without.readyFile));
+    const id = 'spiffe://example.org/spire/agent/join_token/0123';
+    const wrote = WorkloadAgent.writeReadyFile(path.join(dir, 'ready'), id);
+    let text = '';
+    try {
+      text = fs.readFileSync(path.join(dir, 'ready'), 'utf8');
+    } catch (e) {
+      log.debug('Caught in readyFileChecks(): ' + ((e && e.message) || e));
+      // Reported by the check below as an empty file.
+      text = '';
+    }
+    t.check(wrote && text === id + '\n',
+            'the ready file holds the agent\'s SPIFFE ID and a newline',
+            JSON.stringify(text));
+    t.check(fs.readdirSync(dir).filter(function (name) {
+      return /\.tmp$/.test(name);
+    }).length === 0, 'and no temporary file is left beside it',
+            fs.readdirSync(dir).join(', '));
+    WorkloadAgent.removeReadyFile(path.join(dir, 'ready'));
+    t.check(!fs.existsSync(path.join(dir, 'ready')),
+            'removeReadyFile() removes it, as SIGTERM does');
+    const refused = WorkloadAgent.writeReadyFile(
+      path.join(dir, 'missing', 'ready'), id);
+    t.check(refused === false && fs.readdirSync(dir).length === 0,
+            'a ready file in a directory that does not exist is reported, ' +
+            'not thrown, and leaves nothing behind (STS-SPIFFE-0152)',
+            fs.readdirSync(dir).join(', '));
+  } finally {
+    if (saved === undefined) {
+      delete process.env.STS_SPIFFE_JOIN_TOKEN;
+    } else {
+      process.env.STS_SPIFFE_JOIN_TOKEN = saved;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  log.debug('Leaving readyFileChecks().');
+}
+
 function run(t) {
   log.debug('Entering run().');
+  t.log.info('=== #695: the ready file a sidecar\'s workload waits for ===');
+  readyFileChecks(t);
   t.log.info('=== #324: the workload agent serves the Workload API on a ' +
              'Unix socket ===');
   inAChild(t);

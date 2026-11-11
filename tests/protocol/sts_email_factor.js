@@ -291,10 +291,10 @@ async function toSignIn(b) {
   await b.go("GET", realmBase() + "/portal");
   let r = await b.go("GET", portalAuthorizeUrl());
   for (let hop = 0; hop < 4 && r.location &&
-       !/\/authn\/login\?authn=/.test(r.location); hop++) {
+       !/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location); hop++) {
     r = await b.go("GET", r.location);
   }
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
             "the portal did not lead to the sign-in screen: " + r.status +
             " -> " + r.location);
   // THE SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571: what it
@@ -624,7 +624,10 @@ async function aLink() {
     assert.strictEqual(r.status, 200);
     assert.ok(r.view.state === "wait" && r.view.seconds > 0,
               r.text.slice(0, 300));
-    assert.ok(b.jar.sts_email_binding, "no binding cookie");
+    // Product mode prefixes every `sts_` cookie on the wire
+    // (common/cookie_wire.ts, ASVS 5.0.0 3.3.1).
+    assert.ok(b.jar.sts_email_binding || b.jar["__Host-sts_email_binding"] ||
+              b.jar["__Secure-sts_email_binding"], "no binding cookie");
   });
   const got = await arrived(address, /sign-in link/, seen);
   const link = (String(got.message.Text).match(
@@ -642,7 +645,7 @@ async function aLink() {
   });
   // The browser already holds the portal's ARRIVAL session, so what the
   // GET must not do is CHANGE it — and the waiting step must still be there.
-  const before = b.jar.sts_session || "";
+  const before = (b.jar.sts_session || b.jar["__Host-sts_session"]) || "";
   r = await openStep(b, link);
   const opened = r;
   const t = r.step ? r.step.t : "";
@@ -652,7 +655,7 @@ async function aLink() {
         "and spends nothing", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     assert.ok(r.view.state === "open" && t, r.text.slice(0, 300));
-    assert.strictEqual(b.jar.sts_session || "", before,
+    assert.strictEqual((b.jar.sts_session || b.jar["__Host-sts_session"]) || "", before,
                        "the GET changed the session");
     assert.strictEqual(waiting.view.state, "wait",
               "the step is gone after a GET: " + waiting.text.slice(0, 200));
@@ -661,7 +664,7 @@ async function aLink() {
   check("3. and Continue signs in", function () {
     assert.ok(r.status === 302 || r.status === 303,
               r.status + " " + r.text.slice(0, 300));
-    assert.ok(b.jar.sts_session && b.jar.sts_session !== before,
+    assert.ok((b.jar.sts_session || b.jar["__Host-sts_session"]) && (b.jar.sts_session || b.jar["__Host-sts_session"]) !== before,
               "no new session cookie");
   });
   log.debug("Leaving aLink().");

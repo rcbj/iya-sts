@@ -15,6 +15,8 @@
 // drawn with the sign-in screen's card, which a static page links as a
 // stylesheet rather than carrying inline. So this module serves:
 //
+//   GET /favicon.ico                        the service's icon
+//                                           (`faviconFile()`).
 //   GET /web/card.css                       `WebCardCss`: the card, and the
 //                                           chooser's rules
 //   GET /web/locales/catalogs.json          the catalog index: which
@@ -40,11 +42,17 @@
 // differs nowhere there — is `{}`, which is the truth, and the browser's
 // chain falls through to the base and to English as the server's does.
 //
-// CACHING BY VERSION: an address carrying `?v=` equal to this build's
-// version (`common/version.js`, the shell's `data-sts-version`) is the same
-// bytes for the life of the build, so it is `public, max-age=31536000,
-// immutable`; any other is `no-cache`, revalidated by its ETag. A new build
-// is a new version, so a browser never holds a stale catalog past a deploy.
+// CACHING BY BUILD: an address carrying `?v=` equal to this build's
+// identifier (`common/version.js`'s `buildId()`, the shell's
+// `data-sts-build`) is the same bytes for the life of the build, so it is
+// `public, max-age=31536000, immutable`; any other is `no-cache`, revalidated
+// by its ETag. A new build is a new identifier, so a browser never holds a
+// stale catalog past a deploy. **IT WAS THE VERSION UNTIL #1298**, when the
+// version stopped carrying a build number for a day: every build of 1.0.0 was
+// 1.0.0, and keyed by that, a rebuild's corrected words would sit behind a
+// year-long `immutable` the browser had already been told to trust. It stays
+// the build since #1317 brought the number back, because a release build
+// NAMES its number, and two builds of `1.0.0.0` must not share an address.
 // Compressed where the request accepts it (`ShellDocument.sendCompressed()`):
 // static text with no secret beside it, which BREACH needs.
 //
@@ -73,6 +81,7 @@ interface PublicAssetsDeps {
  * The paths this module answers.
  */
 const PATHS = {
+  favicon: '/favicon.ico',
   card: '/web/card.css',
   index: '/web/locales/catalogs.json',
   catalog: '/web/locales/:ns/:file'
@@ -93,6 +102,8 @@ class PublicAssets {
    * The paths this module answers.
    */
   static readonly PATHS = PATHS;
+  // The icon's bytes, read at its first request (`faviconFile()`).
+  private favicon: Json = null;
 
   /**
    * Builds the module over its dependencies.
@@ -128,7 +139,7 @@ class PublicAssets {
     log.debug("Entering PublicAssets.cachingFor().");
     const asked = req && req.query && typeof req.query.v === 'string'
       ? req.query.v : '';
-    const out = asked && asked === String(version.load().version)
+    const out = asked && asked === String(version.buildId())
       ? IMMUTABLE : 'no-cache';
     log.debug("Leaving PublicAssets.cachingFor(). " + out);
     return out;
@@ -171,6 +182,19 @@ class PublicAssets {
       i18n.catalogs().some(function (info: Json): boolean {
         return info.tag === m[1];
       });
+    // EVERY CONSOLE NAMESPACE IN ONE FILE (#1333): 88 namespaces and a chain
+    // of two languages would be 176 requests, so `console-all` is what
+    // `catalogData()` gives the console, one language at a time.
+    if (name === 'console-all' && m && i18n.catalogs().some(
+      function (info: Json): boolean {
+        return info.tag === m[1];
+      })) {
+      const merged = i18n.catalogData({ locale: m[1], chain: [m[1]], catalog: m[1],
+        direction: 'ltr', matched: true }, 'console')
+        .catalogs[m[1]];
+      log.debug("Leaving PublicAssets.catalog(). All of the console's.");
+      return merged;
+    }
     const out = known ? i18n.messagesOf(name, m[1]) : null;
     log.debug("Leaving PublicAssets.catalog(). " +
               (out ? Object.keys(out).length + " message(s)." : 'Unknown.'));
@@ -195,7 +219,22 @@ class PublicAssets {
   }
 
   /**
-   * Registers the three routes; `common/protocol_stack.ts` calls it.
+   * The service's icon, read once. It is the square mark of `docs/logo.png` at
+   * 16, 24, 32, 48 and 64 pixels, with the logo's off-white made transparent.
+   *
+   * @returns `ShellDocument.readFile()`'s `{ raw, built }`
+   */
+  private faviconFile(): Json {
+    this.deps.log.debug("Entering PublicAssets.faviconFile().");
+    if (!this.favicon) {
+      this.favicon = ShellDocument.readFile(__dirname, 'favicon.ico', '');
+    }
+    this.deps.log.debug("Leaving PublicAssets.faviconFile().");
+    return this.favicon;
+  }
+
+  /**
+   * Registers the four routes; `common/protocol_stack.ts` calls it.
    *
    * @param app - the shared express app
    * @returns nothing
@@ -204,6 +243,24 @@ class PublicAssets {
     const { log, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering PublicAssets.registerRoutes().");
+    // THE ADDRESS A BROWSER ASKS BY ITSELF, on every origin and for every page,
+    // so /admin, /portal, /report and the sign-in screens all have it with no
+    // change to a shell (`tests/web_foundation.js` holds a shell's bytes). It
+    // is not versioned, so it is kept for a day rather than for good.
+    app.get(PATHS.favicon, function (req: Json, res: Json) {
+      log.debug("Entering GET " + PATHS.favicon + ".");
+      const file = self.faviconFile();
+      if (!file.built) {
+        errorCodes.mark(res, 'STS-CORE-0166');
+        res.status(404).type('text/plain').set('Cache-Control', 'no-store')
+           .send('There is no icon.');
+        log.debug("Leaving GET " + PATHS.favicon + ". Not in this image.");
+        return;
+      }
+      res.status(200).type('image/x-icon')
+         .set('Cache-Control', 'public, max-age=86400').send(file.raw);
+      log.debug("Leaving GET " + PATHS.favicon + ".");
+    });
     app.get(PATHS.card, function (req: Json, res: Json) {
       log.debug("Entering GET " + PATHS.card + ".");
       res.status(200).type('text/css')

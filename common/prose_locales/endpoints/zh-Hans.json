@@ -435,9 +435,29 @@
     "en": "3bc74315dcf2fb5e",
     "text": "信任领域目录"
   },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "服务的图标"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "公共界面的卡片样式表"
+  },
+  "endpoints.route./web/theme.css.name": {
+    "en": "955c14dc632bdf90",
+    "text": "域登录外观的样式表"
+  },
+  "endpoints.route./web/branding/logo.name": {
+    "en": "2ce72d622f586a26",
+    "text": "域的登录徽标"
+  },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "个人的个人资料照片"
+  },
+  "endpoints.route./web/branding/preview.name": {
+    "en": "54aca7174dc0a2b0",
+    "text": "登录外观的预览"
   },
   "endpoints.route./web/locales/catalogs.json.name": {
     "en": "54bbd31e0a5afc5b",
@@ -566,6 +586,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "报表应用程序的 Shared Signals 收件箱"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "报表应用的用户菜单绘制的内容"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",
@@ -754,6 +778,14 @@
   "endpoints.route./admin-api/pki.name": {
     "en": "bc458d477b4de7d9",
     "text": "本领域持有的证书颁发机构"
+  },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "偏执 PKI 模式、签名者信任库及已固定的证书"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "更改签名者信任库、某一偏执行，或重新检查固定证书"
   },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
@@ -955,6 +987,10 @@
     "en": "ec5770a23a0c10c0",
     "text": "单个人的自签发（SIOPv2）主体"
   },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "单个人已发布的 DID"
+  },
   "endpoints.route./admin-api/users/verifications.name": {
     "en": "aa12d03c659af2a0",
     "text": "单个人的身份验证记录"
@@ -1044,8 +1080,8 @@
     "text": "已证明的代理"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "封禁、解封或遗忘代理"
+    "en": "db7439843e5d6273",
+    "text": "封禁、解封或遗忘代理，或签发加入令牌"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",
@@ -1151,6 +1187,26 @@
     "en": "b485a2ff39ac01b5",
     "text": "错误代码"
   },
+  "endpoints.route./admin-api/audit-export.name": {
+    "en": "6215b564a1d4430f",
+    "text": "审计导出"
+  },
+  "endpoints.route./admin-api/audit-export/:action.name": {
+    "en": "b9a19e739aa5ebd6",
+    "text": "更改审计导出目标"
+  },
+  "endpoints.route./admin-api/branding.name": {
+    "en": "4f6e7c69e356bf65",
+    "text": "登录外观"
+  },
+  "endpoints.route./admin-api/branding/logo.name": {
+    "en": "febcf32d571a0fbf",
+    "text": "上传登录徽标"
+  },
+  "endpoints.route./admin-api/branding/:action.name": {
+    "en": "d7fa23e10dac9b1d",
+    "text": "更改登录外观"
+  },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",
     "text": "审计日志"
@@ -1174,6 +1230,10 @@
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
     "text": "定义自定义监听器，或将应用映射到它们"
+  },
+  "endpoints.route./admin-api/config-dump.name": {
+    "en": "9d414a56d337e804",
+    "text": "配置转储"
   },
   "endpoints.route./admin-api/config/:action.name": {
     "en": "7e8873a02dca9738",
@@ -1523,6 +1583,22 @@
     "en": "561e36f4539a01de",
     "text": "开始联合登录"
   },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "由合作伙伴发起的登录（initiate_login_uri）"
+  },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "按引用传递的请求对象"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "通过 WebFinger 查找某人的 OpenID 提供方"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "断言消费服务的片段脚本"
+  },
   "endpoints.route./federation/acs/:id.name": {
     "en": "fff6118cbd019f5e",
     "text": "断言使用者服务 / wreply / redirect_uri"
@@ -1558,6 +1634,10 @@
   "endpoints.route./federation/metadata/:id.name": {
     "en": "1bd56e73b838da2d",
     "text": "本服务自己的 SAML 元数据（按伙伴）"
+  },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Bluesky 关系的客户端元数据 (#746)"
   },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",
@@ -1863,10 +1943,6 @@
     "en": "267337fd3ad0ab7f",
     "text": "OP iframe（check_session_iframe）"
   },
-  "endpoints.route./oauth2/check_session.js.name": {
-    "en": "d9f2d9b37bfe6db9",
-    "text": "OP iframe 脚本"
-  },
   "endpoints.route./oauth2/logout.name": {
     "en": "9901e3b8fd763f16",
     "text": "会话结束（end_session_endpoint）"
@@ -2131,6 +2207,10 @@
     "en": "7d0bcaaf2c946cba",
     "text": "应用的 DID 文档"
   },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "个人已发布的 DID 文档"
+  },
   "endpoints.route./.well-known/did-configuration.json.name": {
     "en": "ea3b5de3683521ad",
     "text": "域关联凭证"
@@ -2382,5 +2462,17 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（请求客户端证书，但从不强制要求）"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "恶意软件扫描"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "测试恶意软件扫描器"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "检查审计日志完整性"
   }
 }

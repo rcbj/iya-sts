@@ -116,6 +116,7 @@
 // `service_accounts.ts`, which requires this module lazily in its turn.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
@@ -210,12 +211,7 @@ const NOUN = 'service-account policy';
 /**
  * A named profile's one selector (#1240): its precedence.
  */
-const SELECTORS = [
-  { key: 'precedence', attribute: 'stsServiceAccountPrecedence',
-    what: 'Which named service-account policy wins where several are ' +
-          'named: the lowest, from 1 to 1000. A service account names one ' +
-          'policy, so today it decides nothing.' }
-];
+const SELECTORS = ModelTables.selectors('policy.serviceAccount');
 
 /**
  * How `common/policy_selection.ts` reads a named profile (#1240).
@@ -255,98 +251,38 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 const DOORS = [
-  { id: 'ldap', key: 'allowLdapBind', label: 'LDAP simple bind',
-    what: 'A bind on 389 or 636 (RFC 4513).' },
-  { id: 'wstrust', key: 'allowWsTrust', label: 'WS-Trust UsernameToken',
-    what: 'A WS-Security UsernameToken sent to the security token service.' },
-  { id: 'scim', key: 'allowScim', label: 'SCIM HTTP Basic',
-    what: 'HTTP Basic at /scim/v2 (RFC 7617).' },
-  { id: 'ssf', key: 'allowSsf', label: 'Shared Signals HTTP Basic',
-    what: 'HTTP Basic at the /ssf endpoints (RFC 7617).' },
-  { id: 'est', key: 'allowEst', label: 'EST HTTP Basic',
-    what: 'HTTP Basic at /.well-known/est (RFC 7030 section 3.2.3).' },
-  { id: 'kerberos', key: 'allowKerberos', label: 'Kerberos AS exchange',
-    what: 'An AS-REQ whose pre-authentication proves the password\'s key ' +
-          '(RFC 4120), and MS-KKDCP.' },
-  { id: 'ropc', key: 'allowPasswordGrant', label: 'OAuth 2.0 password grant',
-    what: 'grant_type=password at the token endpoint (RFC 6749 section ' +
-          '4.3), where the realm allows the grant at all.' }
+  { id: 'ldap', key: 'allowLdapBind', label: 'LDAP simple bind' },
+  { id: 'wstrust', key: 'allowWsTrust', label: 'WS-Trust UsernameToken' },
+  { id: 'scim', key: 'allowScim', label: 'SCIM HTTP Basic' },
+  { id: 'ssf', key: 'allowSsf', label: 'Shared Signals HTTP Basic' },
+  { id: 'est', key: 'allowEst', label: 'EST HTTP Basic' },
+  { id: 'kerberos', key: 'allowKerberos', label: 'Kerberos AS exchange' },
+  { id: 'ropc', key: 'allowPasswordGrant', label: 'OAuth 2.0 password grant' }
 ];
 
 /**
  * The policy's fields: one table read as the schema, the console form, the API
  * body, the validation of a save and the parse of an entry.
  */
-const FIELDS: PolicyField[] = ([
-  { key: 'exemptFromSecondFactor',
-    attribute: 'stsSvcAcctExemptFromSecondFactor', type: 'bool', dflt: false,
-    label: 'Service accounts are exempt from the second factor',
-    what: 'OFF BY DEFAULT. On, the authentication policy\'s second-factor ' +
-          'requirements do not apply to a service account in this realm, ' +
-          'and nor does the refusal of a password alone at the password ' +
-          'doors (#101). The account\'s amr still says pwd only, so a ' +
-          'relying party asking for more is refused it. WEAKER: an account ' +
-          'on a password alone is an account anyone with the password is.' },
-  { key: 'allowBrowserSignIn', attribute: 'stsSvcAcctAllowBrowserSignIn',
-    type: 'bool', dflt: false,
-    label: 'Service accounts may sign in at a browser',
-    what: 'OFF BY DEFAULT. Off, the sign-in screen, the user portal and the ' +
-          'admin console refuse a service account, whichever first factor ' +
-          'it presents, and turning a person into a service account ends ' +
-          'their browser sessions. A service account is used by a program, ' +
-          'and a program has no business at a sign-in screen.' }
-] as PolicyField[]).concat(DOORS.map(function (door) {
-  return { key: door.key,
-           attribute: 'stsSvcAcct' + door.key.charAt(0).toUpperCase() +
-                      door.key.slice(1),
+// What each computed row says is written once, on its attribute in the model.
+const TABLE_WHAT = new Map<string, string>(ModelTables.schema('policy.serviceAccount').attributes
+  .map(function (row: any) {
+    return [row.name, row.what] as [string, string];
+  }));
+
+const FIELDS: PolicyField[] =
+  // Written in models/directory/policy_service_account.tsp (#1390). What is passed here is
+  // what the code computes, so it has no second writing there.
+  ModelTables.fields('policy.serviceAccount', {}, {
+    before: 'rotationEnabled',
+    rows: DOORS.map(function (door) {
+  const attribute = 'stsSvcAcct' + door.key.charAt(0).toUpperCase() +
+    door.key.slice(1);
+  return { key: door.key, attribute: attribute,
            type: 'bool' as const, dflt: true, door: door.id,
-           label: 'Door: ' + door.label, what: door.what +
-             ' Off, a service account\'s right password is refused there ' +
-             'as a wrong one is.' };
-})).concat([
-  { key: 'rotationEnabled', attribute: 'stsSvcAcctRotationEnabled',
-    type: 'bool', dflt: false,
-    label: 'Rotate service-account passwords automatically',
-    what: 'OFF BY DEFAULT. On, the service-accounts.rotate job gives every ' +
-          'service account that names a push destination a new generated ' +
-          'password each interval: pushed to the destination FIRST, its hash ' +
-          'committed only after the push succeeds, the previous password ' +
-          'kept for the overlap below. A failed push changes nothing. Cannot ' +
-          'be turned on while this realm has no push destination.' },
-  { key: 'rotationIntervalDays', attribute: 'stsSvcAcctRotationIntervalDays',
-    type: 'int', dflt: 30, min: 1, max: 3650, unit: 'days',
-    label: 'Rotation interval',
-    what: 'How long a service account\'s password is kept before the job ' +
-          'replaces it, counted from the last rotation (or the account\'s ' +
-          'last password change).' },
-  { key: 'rotationOverlapMinutes',
-    attribute: 'stsSvcAcctRotationOverlapMinutes', type: 'int', dflt: 60,
-    min: 0, max: 10080, unit: 'minutes',
-    label: 'How long the previous password still works',
-    what: 'After a rotation the previous password is accepted for this ' +
-          'long, so a consumer slow to read the new one is not refused — ' +
-          'nor counted by risk scoring as guessing (#226). The previous ' +
-          'Kerberos keys are kept as long. 0: the old password stops at ' +
-          'once.' },
-  { key: 'generatedLength', attribute: 'stsSvcAcctGeneratedLength',
-    type: 'int', dflt: 32, min: 16, max: 128, unit: 'characters',
-    label: 'Length of a rotated password',
-    what: 'Drawn by the password policy\'s generator, so it meets that ' +
-          'policy, and never shorter than its minimum length.' },
-  { key: 'requireOwner', attribute: 'stsSvcAcctRequireOwner', type: 'bool',
-    dflt: true,
-    label: 'A service account must name an owner',
-    what: 'ON BY DEFAULT. The owner — a person or a group in this realm — ' +
-          'is who answers for the account; a service account cannot be ' +
-          'saved without one while this is on.' },
-  { key: 'rotationAlarmFailures',
-    attribute: 'stsSvcAcctRotationAlarmFailures', type: 'int', dflt: 3,
-    min: 1, max: 100, unit: 'failures',
-    label: 'Failed rotations in a row before the alarm',
-    what: 'A failed rotation is retried at the job\'s next run. After this ' +
-          'many in a row the account is reported on Monitoring → Service ' +
-          'accounts and logged as an alarm (STS-SVCACCT-0042).' }
-]);
+           label: 'Door: ' + door.label, what: TABLE_WHAT.get(attribute) };
+})
+  });
 
 /**
  * The fields, by key.
@@ -369,25 +305,8 @@ const DEFAULTS: Readonly<Record<string, number | boolean>> =
  * The directory schema of `ou=serviceAccountPolicies`: its container, object
  * class and attributes.
  */
-const SCHEMA = {
-  container: 'ou=serviceAccountPolicies',
-  objectClasses: [
-    { name: 'stsServiceAccountPolicy',
-      what: 'This service\'s class for a service-account policy: what a ' +
-            'service account in this realm may do and how its password ' +
-            'rotates. The entry is named by the PROFILE: `cn=default`, or ' +
-            'a named profile a service account names in its ' +
-            'stsServiceAccountPolicy.' }
-  ],
-  attributes: FIELDS.map(function (field) {
-    return { name: field.attribute, what: field.what };
-  }).concat(SELECTORS.map(function (field) {
-    return { name: field.attribute, what: field.what };
-  })).concat([
-    { name: 'description',
-      what: 'What the profile is for, for the next person.' }
-  ])
-};
+// The table is written in models/directory/policy_service_account.tsp (#1390).
+const SCHEMA = ModelTables.schema('policy.serviceAccount');
 
 /**
  * The service-account policy: what a realm allows a service account — the
@@ -1204,8 +1123,18 @@ class ServiceAccountPolicy {
       attributes[SELECTION.precedenceAttribute] =
         String(selectors.precedence);
     }
+    // `{ ok: false }` is truthy. putEntry() answers it for a description
+    // that carries an operator code and writes nothing (#1416); `false`
+    // is still the directory being full.
     const written = this.directory.writeServiceAccountPolicy(which,
-                                                             attributes);
+                                                             attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug('Leaving ServiceAccountPolicy.save(). A description ' +
+                'carries an operator code.');
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
     if (!written) {
       log.debug('Leaving ServiceAccountPolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,

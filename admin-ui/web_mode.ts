@@ -52,6 +52,55 @@ class ModePage {
   }
 
   /**
+   * Draws what an administrator waived of a requirement in this realm
+   * (#1295): a row under it per waiver, naming the requirement, its section
+   * and the setting that waives it — so the BCP row, which says what the
+   * mode enforces, is not read as the whole story. Nothing when nothing is
+   * waived.
+   *
+   * @param row - one row of the report's `requirements`
+   * @param t - the page's translator (#539)
+   * @returns the rows as HTML
+   */
+  static waived(row: Json, t: Json): string {
+    const list = Array.isArray(row.waived) ? row.waived : [];
+    return list.map(function (one: Json): string {
+      return '<tr class="waived" id="waived-' + WebKit.esc(row.id) + '-' +
+        WebKit.esc(one.requirement) + '"><td colspan="4">' +
+        WebKit.warn('<p>' + t.html(/^ASVS /.test(String(one.section || ''))
+          ? 'consoleMode.requirementNotMet' : 'consoleMode.waivedBy', {
+          requirement: String(one.requirement || ''),
+          section: String(one.section || ''),
+          level: String(one.level || ''),
+          setting: String(one.setting || '') }) + '</p>' +
+          ModePage.perApplication(one, t)) + '</td></tr>';
+    }).join('');
+  }
+
+  /**
+   * Draws what a per-application waiver adds (#1296): that an application
+   * uses the waived response types only when its own attribute lists them,
+   * and which of them a client registering itself may enable, by the setting
+   * that says so. Nothing for a waiver that is not per application.
+   *
+   * @param one - one entry of a row's `waived`
+   * @param t - the page's translator (#539)
+   * @returns the paragraph as HTML
+   */
+  static perApplication(one: Json, t: Json): string {
+    if (!one || !one.perApplication) {
+      return '';
+    }
+    const dynamic = one.dynamicRegistration || {};
+    const value: string[] = Array.isArray(dynamic.value) ? dynamic.value : [];
+    const args = { attribute: String(one.attribute || ''),
+                   setting: String(dynamic.setting || ''),
+                   value: value.join(', ') };
+    return '<p>' + t.html(value.length ? 'consoleMode.waivedPerApplication'
+      : 'consoleMode.waivedPerApplicationNone', args) + '</p>';
+  }
+
+  /**
    * Draws the page's body from the mode report.
    *
    * @param json - `GET /admin-api/mode`'s answer
@@ -109,7 +158,8 @@ class ModePage {
           WebKit.esc(row.what) + '<br><small><code>' + WebKit.esc(row.id) +
           '</code></small></th>' + cell(row.development, !product) +
           cell(row.product, product) + '<td><small>' +
-          WebKit.esc(row.where || '') + '</small></td></tr>';
+          WebKit.esc(row.where || '') + '</small></td></tr>' +
+          ModePage.waived(row, t);
       }).join('') + '</tbody></table>';
     const settings = '<h2 data-tab="development">' +
       t.html('consoleMode.devOnlyHeading') + '</h2>' +

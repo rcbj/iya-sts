@@ -21,6 +21,7 @@
   "title.commands": "OpenID 提供方命令",
   "title.claims": "自定义声明",
   "title.config": "配置",
+  "title.config-dump": "配置转储",
   "title.consent": "同意",
   "title.crypto-metadata": "密码学",
   "title.home": "管理控制台",
@@ -68,6 +69,7 @@
   "title.ldap-roles": "角色条目",
   "title.ldap-spiffe": "SPIFFE 条目",
   "title.listeners": "监听器",
+  "title.malwareScanning": "恶意软件扫描",
   "title.logout": "注销",
   "title.mail": "邮件",
   "title.mail-outbox": "邮件发件箱",
@@ -107,6 +109,7 @@
   "title.ssf-dead-letters": "死信",
   "title.ssf-transmitters": "来自合作方的信号",
   "title.tls-connection": "TLS 连接",
+  "title.pki-trust": "PKI 信任",
   "title.tls-trust": "客户端证书信任库",
   "title.token-lifetimes": "令牌有效期",
   "title.tokens-credential": "令牌——单个凭证",
@@ -140,5 +143,6 @@
   "title.vc-verifier-config": "验证方请求",
   "title.worker-pools": "工作线程池",
   "title.broadcast": "广播公告",
+  "title.sign-in-appearance": "登录外观",
   "title.post-login-activities": "登录后活动"
 }

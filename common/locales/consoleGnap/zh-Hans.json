@@ -30,7 +30,7 @@
   "jwtEncrypted": "嵌套在 JWE 中：加密给资源服务器的 <code>gnapJweKey</code>，或加密给本授权服务器（对其进行内省）",
   "macaroon": "HMAC-SHA256，每个资源服务器一个根密钥，以 <code>gnapMacaroonKey</code> 密封保存在其条目上",
   "biscuit": "Ed25519 根密钥 <code>{key}</code>",
-  "zcap": "来自 <code>{controller}</code> 的 Ed25519Signature2020 委托",
+  "zcap": "来自 <code>{controller}</code> 的 {suite} 委托",
   "grants": "授权",
   "grantCount": "{n} 个授权",
   "thGrant": "授权",

@@ -138,7 +138,7 @@ const bunyan = require('bunyan');
  */
 const { z } = require('zod');
 const config = require('./config');
-const { DOMParser } = require('@xmldom/xmldom');
+const { DOMParser } = require('./xml_parser');
 const zlib = require('zlib');
 // The registry of failure codes. A LEAF that requires nothing, so this closes
 // no cycle. The guard below marks its refusals with one, on the RESPONSE OBJECT
@@ -328,34 +328,50 @@ function scalar(value, field, allowText) {
 //
 // A repeatable parameter is almost never written bare: it is
 // `repeatable(x).optional()` or `.default([])`, and each of those wraps the
-// type in another one. zod exposes the wrapped type differently between
-// versions, so this reads the type name and unwraps rather than reaching for a
-// private field — and answers "no" if it cannot tell, which fails towards
-// treating the parameter as single-valued and refusing a repeat. That is the
-// safe direction: the cost is an error message on a request that was allowed,
-// against silently accepting a repeat that was not.
+// type in another one. A union is repeatable when ANY option is an array.
+// `opt()` is itself a union of `''` and the inner type, then optional, so
+// the portal share form's scope —
+// `vt.opt(vz.union([vt.name, vt.repeatable(vt.name)]))` — hid its array and
+// a JSON body of `["view"]` was refused as given once (2026-11-01). One
+// checkbox still posts a string, and flatten wraps that into a list of one.
+//
+// zod exposes the wrapped type differently between versions, so this reads
+// the type name and unwraps rather than reaching for a private field — and
+// answers "no" if it cannot tell, which fails towards treating the parameter
+// as single-valued and refusing a repeat. That is the safe direction: the
+// cost is an error message on a request that was allowed, against silently
+// accepting a repeat that was not.
 // ---------------------------------------------------------------------------
 function isArraySchema(schema) {
   log.debug("Entering isArraySchema().");
-  let current = schema;
-  for (let depth = 0; depth < 8 && current; depth++) {
-    const def = current._def || current.def;
+  const queue = [schema];
+  let seen = 0;
+  while (queue.length && seen < 32) {
+    seen += 1;
+    const current = queue.shift();
+    const def = current && (current._def || current.def);
     if (!def) {
-      log.debug("Leaving isArraySchema().");
-      return false;
+      continue;
     }
     const kind = def.typeName || def.type;
     if (kind === 'ZodArray' || kind === 'array') {
-      log.debug("Leaving isArraySchema().");
+      log.debug("Leaving isArraySchema(). An array.");
       return true;
     }
     const inner = def.innerType || def.schema;
     if (inner && typeof inner === 'object' && (inner._def || inner.def)) {
-      current = inner;
-      continue;
+      queue.push(inner);
     }
-    log.debug("Leaving isArraySchema().");
-    return false;
+    const options = def.options;
+    if (Array.isArray(options)) {
+      for (let i = 0; i < options.length; i++) {
+        const option = options[i];
+        if (option && typeof option === 'object' &&
+            (option._def || option.def)) {
+          queue.push(option);
+        }
+      }
+    }
   }
   log.debug("Leaving isArraySchema().");
   return false;

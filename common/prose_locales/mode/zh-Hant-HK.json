@@ -72,8 +72,8 @@
     "text": "小於 2048 位元的 RSA 金鑰（RFC 7518 第 3.3 節，COSE 為 RFC 8230 第 5 節），以及短於其雜湊輸出的 HMAC 金鑰（RFC 7518 第 3.2 節）——即 client_secret_jwt 下過短的 client_secret——仍可通過驗證，因此可以測試持有此類金鑰的客戶端。「比規格寬鬆」：兩者都是 MUST。"
   },
   "mode.requirements.xml-ecdsa-curves.product": {
-    "en": "cdb3f7be9fda1083",
-    "text": "只有 P-256、P-384、P-521、secp256k1 以及 brainpoolP256r1 或更大的曲線能通過驗證；其他任何曲線都會被拒絕（STS-KEYS-0077），使用此類曲線的證書不會被註冊。"
+    "en": "83ca2ed6f0591c63",
+    "text": "只有 P-256、P-384、P-521 以及 brainpoolP256r1 及更大的曲線可以驗證，secp256k1 僅在 keys.acceptedSigningAlgorithms 或 keys.signingAlgorithms 列出 ES256K 時可以；其他任何曲線都會被拒絕（STS-KEYS-0077），使用這類曲線的憑證不會被登記。"
   },
   "mode.requirements.kerberos-deprecated-enctypes.development": {
     "en": "05d8e71722ffc76a",
@@ -136,8 +136,8 @@
     "text": "以 `none` 簽署的請求物件（OpenID Connect Core 6.1）會被接受，除非要求已簽署的請求物件——由 oauth2.requireSignedRequestObject、客戶端的項目或授權伺服器的設定檔要求。已註冊的 request_uri 可以是純 http，且可回應任何媒體類型；兩者皆會記錄。"
   },
   "mode.requirements.request-objects.product": {
-    "en": "b2ec3d6648490690",
-    "text": "請求物件必須經過簽署（RFC 9101 第 4 節），否則以 invalid_request_object 拒絕。已註冊的 request_uri 必須是 https，且必須回應 application/oauth-authz-req+jwt 或 application/jwt，否則請求以 invalid_request_uri 拒絕。在兩種模式下，只有在客戶端註冊了 request_uri 時才會擷取它。"
+    "en": "247799ea9e0595ef",
+    "text": "請求物件必須經過簽署（RFC 9101 第 4 節），否則以 invalid_request_object 拒絕。已註冊的 request_uri 必須是 https，且必須回應 application/oauth-authz-req+jwt 或 application/jwt，否則請求以 invalid_request_uri 拒絕；其主機解析為迴路、私有、鏈路本地或保留位址時同樣拒絕。在兩種模式下，只有在客戶端註冊了 request_uri 時才會擷取它。"
   },
   "mode.requirements.console-bootstrap-window.product": {
     "en": "80feb38828e08d3d",

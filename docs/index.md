@@ -36,13 +36,28 @@ each.
 
 **Start here** —
 [Getting started](getting-started.md) ·
+[Release notes](release-notes.md) ·
+[Certifications](certifications.md) ·
 [Architecture](architecture.md) ·
 [Where a request waits](request-path.md) ·
 [Configuration](configuration.md) ·
+[Configuration dump](configuration-dump.md) ·
 [Endpoints](endpoints.md) ·
 [Trust realms](trust-realms.md) ·
 [Listeners and hosted applications](listeners.md) ·
+[Words a password may not contain](password-words.md) ·
+[Malware scanning](malware-scanning.md) ·
 [What is not checked](what-is-not-checked.md) ·
+[Security in product mode](product-security.md) ·
+[Input validation](validation.md) ·
+[Data classification](data-classification.md) ·
+[Logging inventory](logging-inventory.md) ·
+[Key management](key-management.md) ·
+[Field-level access](field-access.md) ·
+[Communication inventory](communications.md) ·
+[File uploads](file-uploads.md) ·
+[Authentication pathways](authentication-pathways.md) ·
+[Availability and resource limits](availability.md) ·
 [Conformance suites](conformance.md) ·
 [Departures from the specifications](spec-departures.md) ·
 [Accepted tokens](accepted-tokens.md) ·
@@ -52,9 +67,14 @@ each.
 **Administration** —
 [Admin console](admin-console.md): `/admin`, who may use it and what its pages
 do ·
+[Security Administrator](security-administrator.md): the role that alone
+changes policies, and how to give it to somebody who is not an
+administrator ·
 [Audit export destinations](audit-export.md): where this process sends its
 audit events, with an example for syslog, a file, a webhook, Splunk HEC and
 LogRhythm ·
+[OpenAPI reference](openapi/): every operation of each API this service
+publishes, its parameters and its answers ·
 [Management API](management-api.md): `/admin-api`, every console control
 reachable by a machine with an OAuth 2.0 access token ·
 [Delegation and impersonation](delegation.md): who may obtain a token about
@@ -71,6 +91,9 @@ spoke ·
 [Service accounts](service-accounts.md) ·
 [LDAP](ldap.md) ·
 [LDAP schema](ldap-schema.md) ·
+[Abstract data model](data-model.md) ·
+[Directory models](data-model-directory.md) ·
+[Persistence models](data-model-persistence.md) ·
 [Configuring LDAP](configure-ldap.md) ·
 [SCIM 2.0](scim.md) ·
 [Bulk directory import](bulk-import.md).
@@ -104,6 +127,7 @@ protocol's section of the sidebar:
 [Sessions](sessions.md) ·
 [Identity-provider-initiated sign-in](idp-initiated-sso.md) ·
 [Several accounts in one browser](multiple-accounts.md) ·
+[Sign-in appearance](sign-in-appearance.md) ·
 [Signing out](signing-out.md) ·
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·
@@ -139,6 +163,7 @@ macOS apps.
 [PostgreSQL schema](postgres-schema.md) ·
 [Encryption at rest](encryption-at-rest.md) ·
 [Caches](caches.md) ·
+[How the cluster works](cluster-concepts.md) ·
 [A cluster in AWS](aws-cluster.md) ·
 [Several regions (cells)](cells.md) ·
 [How cells work](cells-concepts.md)
@@ -170,6 +195,7 @@ documents it.
 | WS-Trust | `/admin/wstrust` | [WS-Trust](ws-trust.md) | [WS-Trust](configure-ws-trust.md) |
 | WS-Federation | `/admin/wsfed` | [WS-Federation](ws-federation.md) | [WS-Federation](configure-ws-federation.md) |
 | PKI | `/admin/pki` | [PKI](pki.md) | |
+| PKI trust | `/admin/pki/trust` | [Signer truststore](signer-truststore.md), [use cases](pki-use-cases.md), [paranoid PKI mode](pki.md#paranoid-pki-mode) | |
 | Cert issuance (ACME, EST, SCEP and SPIFFE tabs) | `/admin/cert-issuance` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md), [SPIFFE](spiffe.md) | [ACME, EST, SCEP](configure-enrollment.md), [SPIFFE](configure-spiffe.md) |
 | TLS / mutual TLS | `/admin/tls`, `/admin/tls/trust` | [TLS and mutual TLS](tls.md) | [TLS and mutual TLS](configure-tls.md) |
 
@@ -260,6 +286,7 @@ the diagram and a walk through each layer.
 | SIOPv2 — the relying party of a Self-Issued OpenID Provider: a sign-in with an ID Token a wallet signs with an enrolled key, a preferred DID released as the `did` claim; off until a realm turns it on | `/authn/wallet`, `/portal/self-issued` | [verifiable-credentials](verifiable-credentials.md), [oid4vp](oid4vp.md#self-issued-id-tokens-siopv2) |
 | Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc/monitor` | [oid4vci](oid4vci.md) |
 | W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
+| A did:web this realm publishes for a person, with every version of its keys kept; off until a realm turns it on | `/users/{rid}/did.json`, `/portal/self-issued` | [person-dids](person-dids.md) |
 | The W3C VC API (VCALM) — an issuer, holder, verifier and status service over Data Integrity (RDFC, JCS, ecdsa-sd-2023) and VC-JOSE-COSE, and DID resolution; off until a realm turns it on | `/vc-api/*` | [vc-api](vc-api.md) |
 | Shared Signals (SSF 1.0) with CAEP and RISC — a transmitter, and a receiver of its own | `/ssf/*`, `/admin/ssf` | [shared-signals](shared-signals.md) |
 | XACML 3.0 and ALFA — a PDP, a policy repository, and the PEPs that decide this service's own issuance | `/xacml/*`, `/admin/xacml` | [xacml](xacml.md) |

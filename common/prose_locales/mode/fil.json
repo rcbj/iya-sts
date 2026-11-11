@@ -215,6 +215,30 @@
     "en": "f2869db882e1f25d",
     "text": "Tinatanggihan ang sign-in na iyon (STS-VC-0127), ina-audit, at ine-enroll muli ng tao ang DID sa pamamagitan ng pagpapatunay nito sa /portal/self-issued. Sa parehong mode, tinatanggihan ang key na hindi pinangalanan ng pin (STS-VC-0126)."
   },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "Binubuo ang address ng larawan sa profile sa naka-pin na pampublikong base URL"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "Kapag walang naka-pin na pampublikong base URL, ang larawang itinakda sa /portal o kinopya mula sa federation partner ay naka-address sa host na dinatnan ng request, at dala ng mga token ang address na iyon."
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "Tinatanggihan ang pagtatakda (STS-PORTAL-0635) at hindi kinokopya ang sa partner (STS-FED-0220) hanggang i-pin ng global.publicBaseUrl ang base: hindi kailanman nagiging bahagi ng address na dala ng token ang isang Host header."
+  },
+  "mode.requirements.person-did-base.what": {
+    "en": "58a07bbd2f445d15",
+    "text": "Ang inilathalang did:web ng isang tao ay ginagawa sa naka-pin na pampublikong base URL"
+  },
+  "mode.requirements.person-did-base.development": {
+    "en": "11156d2823005717",
+    "text": "Kung walang naka-pin na pampublikong base URL, ang DID na inilathala mula sa /portal/self-issued ay binubuo sa address na pinuntahan ng request, at bahagi na ng DID ang address na iyon magpakailanman."
+  },
+  "mode.requirements.person-did-base.product": {
+    "en": "b7878f2f5c762598",
+    "text": "Tinatanggihan ang paglathala ng isa (STS-VC-0168) hanggang i-pin ng global.publicBaseUrl, o ng ina-advertise na listener ng application ng verifiable credentials, ang base: hindi kailanman nagiging bahagi ng isang nakaimbak na identifier ang isang Host header."
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "Vine-verify ang attestation statement ng security key bago i-register ang key"
@@ -344,8 +368,8 @@
     "text": "Ang saml.signatureAlgorithm na rsa-sha1 ay nagsa-sign ng bawat XML signature gamit ang SHA-1, ang saml2.keyTransportAlgorithm na rsa-1_5 (o ang saml2KeyTransportAlgorithm ng isang application) ay binabalot ang key ng naka-encrypt na assertion gamit ang RSAES-PKCS1-v1_5, ang naka-on na saml.allowSha1Signatures ay tumatanggap ng SHA-1 sa signature na vine-verify ng serbisyong ito, ang pki.signatureAlgorithm na sha1-rsa o sha1-ecdsa (o ang build form na nagpapangalan ng alinman) ay nagpapa-sign sa certificate authority gamit ang SHA-1, at ina-unwrap ang XML element na naka-encrypt para sa serbisyong ito gamit ang rsa-1_5, at ang naka-on na scim.digestMd5 ay nag-aalok at tumatanggap ng MD5 sa HTTP Digest ng SCIM. Naka-off ang bawat isa maliban kung itinakda."
   },
   "mode.requirements.broken-algorithms.product": {
-    "en": "8e22d816464c845c",
-    "text": "BINABALEWALA ang bawat mahinang value kung saan ito binabasa (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan sa pagsulat (STS-CORE-0103, at STS-REG-0193 sa isang application): sina-sign ang XML gamit ang default na rsa-sha256, binabalot ang mga key gamit ang rsa-oaep-mgf1p, tinatanggihan ang SHA-1 signature, tinatanggihan ang CA build o key pair na nagpapangalan ng SHA-1 (STS-PKI-0191) at ang minana mula sa branch na binuo sa development ay pinapalitan ng default ng key, at tinatanggihan ang rsa-1_5 EncryptedKey bago ito i-unwrap (STS-KEYS-0070) — XML Encryption 1.1 section 6.1.2. Walang saysay ang scim.digestMd5, dahil walang anumang Digest na iniaalok ang product (STS-SCIM-0056). Nananatiling available ang mas malalakas na value ng bawat setting. Tinatanggihan ang JOSE RSA1_5 sa parehong mode."
+    "en": "173ed3ea10d31cc3",
+    "text": "BINABALEWALA ang bawat mahinang value kung saan ito binabasa (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan sa pagsulat (STS-CORE-0103, at STS-REG-0193 sa isang application): sina-sign ang XML gamit ang default na rsa-sha256, binabalot ang mga key gamit ang rsa-oaep (at gamit ang rsa-oaep-mgf1p lang kapag naka-on ang crypto.allowLegacyHashes), tinatanggihan ang SHA-1 signature, tinatanggihan ang CA build o key pair na nagpapangalan ng SHA-1 (STS-PKI-0191) at ang minana mula sa branch na binuo sa development ay pinapalitan ng default ng key, at tinatanggihan ang rsa-1_5 EncryptedKey bago ito i-unwrap (STS-KEYS-0070) — XML Encryption 1.1 section 6.1.2. Walang saysay ang scim.digestMd5, dahil walang anumang Digest na iniaalok ang product (STS-SCIM-0056). Nananatiling available ang mas malalakas na value ng bawat setting. Tinatanggihan ang JOSE RSA1_5 sa parehong mode."
   },
   "mode.requirements.jose-key-sizes.what": {
     "en": "73495c403f54e4f5",
@@ -359,6 +383,18 @@
     "en": "d1fb3763f55efbde",
     "text": "Pareho silang tinatanggihan sa pagsuri ng signature, sa shared verifier, sa verifyJws() at (RSA) para sa WebAuthn key. Ang ginawang client_secret ay 48 random byte bilang default (oauth2.registeredSecretBytes), sapat ang haba para sa HS512. Sa PAREHONG mode, tinatanggihan ang walang lamang HMAC key, ang RSA exponent na mas mababa sa 3 o even (isang forgery, hindi mahinang key), ang RSA modulus na may ROCA fingerprint (CVE-2017-15361), ang JWK na ang use ay hindi \"sig\" o ang key_ops ay walang \"verify\", at ang segment na hindi canonical na base64url."
   },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "Ginagamit lang ang secp256k1 kung saan ito pinangangalanan ng isang listahan"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "Ginagamit sa pag-sign, iniaalok at tinatanggap ang ES256K tulad ng ibang algorithm."
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "Hindi ginagamit sa pag-sign o iniaalok ang ES256K maliban kung inililista ito ng keys.signingAlgorithms, at tinatanggihan ang isang signature dito maliban kung inililista ito ng keys.acceptedSigningAlgorithms o ng keys.signingAlgorithms (cose.acceptedAlgorithms para sa COSE). Hindi ito kasama sa mga inilathalang listahan ng algorithm, kabilang ang sa DPoP."
+  },
   "mode.requirements.xml-ecdsa-curves.what": {
     "en": "858a80a68d7c0582",
     "text": "Vine-verify lang ang XML ECDSA signature sa curve na hindi bababa sa 256 bit"
@@ -368,8 +404,8 @@
     "text": "Nagve-verify ang key sa anumang curve na nababasa ng node — kasama ang secp160, secp192, secp224 — kaya masusubok ang partner na gumagamit ng isa. MAS MAHINA KAYSA SA 112-bit na minimum ng NIST SP 800-57 para sa pinakamaliit sa mga ito."
   },
   "mode.requirements.xml-ecdsa-curves.product": {
-    "en": "cdb3f7be9fda1083",
-    "text": "Ang P-256, P-384, P-521, secp256k1 at brainpoolP256r1 at mas malaki lang ang nagve-verify; tinatanggihan ang anumang ibang curve (STS-KEYS-0077) at hindi nire-register ang certificate sa isa."
+    "en": "83ca2ed6f0591c63",
+    "text": "P-256, P-384, P-521 at brainpoolP256r1 at mas malaki lang ang nagbe-verify, at ang secp256k1 kung saan pinangangalanan ng keys.acceptedSigningAlgorithms o ng keys.signingAlgorithms ang ES256K; tinatanggihan ang anumang ibang curve (STS-KEYS-0077) at hindi inirerehistro ang isang certificate na nasa isa sa mga ito."
   },
   "mode.requirements.kerberos-deprecated-enctypes.what": {
     "en": "d0088e020fb9a13e",
@@ -380,8 +416,152 @@
     "text": "Ang krb5.enctypes ay 18,17,20,19,23 bilang default: ang bawat account ay may rc4-hmac key katabi ng mga AES key nito, walang iba ang rc4only fixture, at ang client na nag-aalok lang ng 23 ay nakakakuha ng ticket — kaya masusubok ang RC4 client."
   },
   "mode.requirements.kerberos-deprecated-enctypes.product": {
-    "en": "f781591fe2d565a1",
-    "text": "Binabasa ang listahan nang WALA ang 23 (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan ang pagsulat na nagpapangalan nito (STS-CORE-0103). Walang RC4 key na hinahango, iniimbak o inilalagay sa keytab para sa krbtgt, isang serbisyo o isang tao; hindi kailanman ginagamit ang key o ticket ng enctype na iyon; ang AS-REQ o TGS-REQ na walang ibang iniaalok ay tinatanggihan nang KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); tinatanggihan ang RC4 session key o subkey sa TGS-REQ, AP-REQ o FAST armor (STS-KRB-0157, 0158, 0159). AES (17, 18, 19, 20) ang natitira."
+    "en": "7bb2840e2f96210a",
+    "text": "Binabasa ang listahan nang WALA ang 23 (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan ang pagsulat na nagpapangalan nito (STS-CORE-0103). Walang RC4 key na hinahango, iniimbak o inilalagay sa keytab para sa krbtgt, isang serbisyo o isang tao; hindi kailanman ginagamit ang key o ticket ng enctype na iyon; ang AS-REQ o TGS-REQ na walang ibang iniaalok ay tinatanggihan nang KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); tinatanggihan ang RC4 session key o subkey sa TGS-REQ, AP-REQ o FAST armor (STS-KRB-0157, 0158, 0159). AES ang natitira."
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "Kailangan ng tungkulin ang tao sa SCIM at Shared Signals"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "Maaaring magbasa at magsulat ang sinumang na-authenticate, anumang scheme ang gamit."
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "Kailangan ng scheme na walang scope ang Admin Read para magbasa at Admin Write para magsulat, maliban kung naka-on ang security.allowUnscopedPeople. Gumagana pa rin ang mga OAuth scope at ang certificate ng application."
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "Dapat nasa pinapayagang direktoryo ang pinangalanang file"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "Binabasa ang file na pinangalanan ng administrator kung saan man nito sabihin."
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "Binabasa lang ang file kung ang tunay nitong path ay nasa loob ng direktoryong nakalista sa security.fileRoots, at hindi sinasabi ng sagot kung bakit nabigo ang path."
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "AES-GCM lang ang JWE content encryption"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "Iniaalok at tinatanggap ang A128CBC-HS256, A192CBC-HS384 at A256CBC-HS512, at A128CBC-HS256 ang default."
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "AES-GCM lang ang iniaalok o tinatanggap, at ito ang ginagamit kapag walang enc na pinangalanan ang client, maliban kung naka-on ang crypto.allowCbcJwe."
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "Hindi ginagamit ang mga ipinagbabawal na hash"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "Available ang OAEP sa SHA-1, ang SHA-1 PKINIT key derivation at ang HMAC-MD5 checksum ng S4U2Self."
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "Naka-off ang mga ito maliban kung naka-on ang crypto.allowLegacyHashes. HMAC-SHA-1 pa rin ang default ng TOTP, para sa compatibility ng authenticator app, at pinananatili ng PKINIT ang SHA-1 paChecksum na itinakda ng RFC 4556."
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "Walang account na may default na pangalan ng administrator"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "Ang bootstrap administrator ay admin, na ginagamit ng bawat test at walkthrough sa pag-sign in."
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "Ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na ipinapakita kasama ng password nito sa unang pagsisimula, maliban kung naka-on ang admin.allowDefaultUsername."
+  },
+  "mode.requirements.main-port-https.what": {
+    "en": "6469fbe1118f7dc7",
+    "text": "HTTPS ang pangunahing port"
+  },
+  "mode.requirements.main-port-https.development": {
+    "en": "87bcf933b05d0ab4",
+    "text": "Pinapatakbo ng STS_HTTPS=false ang pangunahing port nang walang encryption."
+  },
+  "mode.requirements.main-port-https.product": {
+    "en": "064bd0e9c6300f83",
+    "text": "Hindi nagsisimula ang process na naka-off ang global.https (STS-CORE-0167). Nananatili ang plain-HTTP na listener ng revocation at SCEP, gaya ng inaasahan ng RFC 5280, RFC 5019 at RFC 8894."
+  },
+  "mode.requirements.public-certificate.what": {
+    "en": "5a7a979998d1c228",
+    "text": "Pinagkakatiwalaan ng publiko ang certificate ng listener"
+  },
+  "mode.requirements.public-certificate.development": {
+    "en": "306ab4dd61adc58f",
+    "text": "Ang sariling certificate authority ng serbisyong ito ang gumagawa nito."
+  },
+  "mode.requirements.public-certificate.product": {
+    "en": "6071a82728577fff",
+    "text": "Itakda ang tls.certificateFile sa chain na pinagkakatiwalaan ng publiko. Hindi hinaharang ng certificate na gawa ng serbisyong ito ang pagsisimula, at ipinapakita ito sa row na ito."
+  },
+  "mode.requirements.legacy-ciphers.what": {
+    "en": "8afeedbfdbbba221",
+    "text": "Iniiwasan ng SCEP, XML encryption at Kerberos ang mga lumang cipher"
+  },
+  "mode.requirements.legacy-ciphers.development": {
+    "en": "66885aac9214f230",
+    "text": "Sumasagot ang SCEP, maaaring gumamit ng AES-CBC ang XML encryption, at nag-aalok ang Kerberos ng enctype 17 at 18."
+  },
+  "mode.requirements.legacy-ciphers.product": {
+    "en": "0515d1605d6ccd1f",
+    "text": "Sumasagot lang ang SCEP kapag naka-on ang scep.allowInProduct (STS-SCEP-0067). AES-GCM lang ang pinipili at tinatanggap ng XML encryption (STS-KEYS-0195). 19 at 20 ang gamit ng Kerberos maliban kung naka-on ang krb5.allowSha1Enctypes."
+  },
+  "mode.requirements.declared-grants.what": {
+    "en": "cd33b5ef6c585827",
+    "text": "Ang mga grant lang na kailangan ng client ang ginagamit nito"
+  },
+  "mode.requirements.declared-grants.development": {
+    "en": "77b6bd6b92513433",
+    "text": "Maaaring gumamit ng anumang grant ang client na walang idineklarang grant type."
+  },
+  "mode.requirements.declared-grants.product": {
+    "en": "636b38aec05ad6d5",
+    "text": "authorization_code at refresh_token lang ang magagamit ng client na walang idineklarang grant type, maliban kung naka-on ang oauth2.allowUndeclaredGrants (STS-OAUTH-0598)."
+  },
+  "mode.requirements.prefixed-cookies.what": {
+    "en": "d3919ebba2136f69",
+    "text": "Bawat cookie ay may prefix na __Host- o __Secure-"
+  },
+  "mode.requirements.prefixed-cookies.development": {
+    "en": "0dd3f83e4dc57f69",
+    "text": "Pinananatili ng mga cookie ang mga simpleng pangalan nila (sts_session at iba pa), na nababasa sa browser tools."
+  },
+  "mode.requirements.prefixed-cookies.product": {
+    "en": "48f9c0318f104300",
+    "text": "Sa TLS, may prefix na __Host- ang bawat cookie, o __Secure- kung may Domain ito, at binabalewala ang walang prefix. Isang beses inilalapat ang prefix, ng process na may hawak ng socket."
+  },
+  "mode.requirements.access-decisions-fail-closed.what": {
+    "en": "e0e941b53824cae6",
+    "text": "Pagtanggi ang desisyon sa access na hindi magawa"
+  },
+  "mode.requirements.access-decisions-fail-closed.development": {
+    "en": "7e18ee029324d928",
+    "text": "Ang decider na nag-throw, walang laman na sagot, o check na walang resource o action ay pinapayagan ang request at inilo-log, para makasagot pa rin ang bahagyang na-load na development process."
+  },
+  "mode.requirements.access-decisions-fail-closed.product": {
+    "en": "905a335779a6c533",
+    "text": "Pagtanggi ang bawat isa sa mga iyon (STS-XACML-0051, 0181, 0182). Nananatili ang xacml.enforceAccess at roles.enforceIssuance bilang daan pabalik mula sa patakarang humaharang sa sarili nitong pag-aayos, at ipinapakita sa row na ito ang alinmang naka-off."
+  },
+  "mode.requirements.strict-transport-security.what": {
+    "en": "161b93a2d80010e9",
+    "text": "Sinasabi ng bawat tugon sa TLS sa browser na HTTPS lang ang gamitin (Strict-Transport-Security)"
+  },
+  "mode.requirements.strict-transport-security.development": {
+    "en": "915a47de70ff3589",
+    "text": "Hindi ipinapadala ang header: itinatali ng HSTS ang bawat port ng isang host name at inaalis ang pagtanggap sa hindi pinagkakatiwalaang certificate, na sa localhost ay mananatili kahit wala na ang container."
+  },
+  "mode.requirements.strict-transport-security.product": {
+    "en": "c36ea27a011458e7",
+    "text": "Bawat tugon na dumating sa TLS ay may Strict-Transport-Security: max-age=31536000 (RFC 6797). Hindi kailanman ito dala ng tugon sa plain-HTTP na listener ng revocation at SCEP."
   },
   "mode.requirements.signed-assertions.what": {
     "en": "61c90b75f7b0a5e3",
@@ -536,8 +716,8 @@
     "text": "Tinatanggap ang request object na signed gamit ang `none` (OpenID Connect Core 6.1) maliban kung kailangan ang signed — ng oauth2.requireSignedRequestObject, ng entry ng client o ng profile ng authorization server. Puwedeng plain http ang naka-register na request_uri at puwede itong sumagot ng anumang media type; parehong nilo-log ang mga ito."
   },
   "mode.requirements.request-objects.product": {
-    "en": "b2ec3d6648490690",
-    "text": "Dapat signed ang request object (RFC 9101 section 4) at tinatanggihan ng invalid_request_object kung hindi. Dapat https ang naka-register na request_uri at dapat itong sumagot ng application/oauth-authz-req+jwt o application/jwt, o tatanggihan ang request ng invalid_request_uri. Sa parehong mode, kinukuha lang ang request_uri kapag in-register ito ng client."
+    "en": "247799ea9e0595ef",
+    "text": "Dapat signed ang request object (RFC 9101 section 4) at tinatanggihan ng invalid_request_object kung hindi. Dapat https ang naka-register na request_uri at dapat itong sumagot ng application/oauth-authz-req+jwt o application/jwt, o tatanggihan ang request ng invalid_request_uri, gaya ng kapag ang host nito ay nagre-resolve sa isang loopback, private, link-local o reserved na address. Sa parehong mode, kinukuha lang ang request_uri kapag in-register ito ng client."
   },
   "mode.requirements.management-api.what": {
     "en": "7e9bb52b567f5c3c",
@@ -911,6 +1091,18 @@
     "en": "68f6ce868376fbc6",
     "text": "TINATANGGIHAN sa ilalim ng hard-fail (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190): ang certificate na in-issue ng CA — hindi self-signed — na walang pinangangalanang distribution point at responder ay hindi kailanman mare-revoke, kaya valid ang ninakaw na key sa ilalim nito hanggang mag-expire ito. Tinatanggap ang may dalang RFC 9608 noRevAvail, dahil idineklara ng issuer nito na walang umiiral na revocation information (nilalaktawan ng section 4 ang check). Kapag itinakda sa off ang setting, tinatanggap ang iba pa, na may babala."
   },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "Bawat X.509 certificate na pinagbabatayan ay isinasailalim sa buong mga pagsusuri (path, validity, revocation, mga usage field) sa pamamagitan ng iisang door"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "OFF (pki.paranoid=auto): kumikilos ang bawat use case gaya ng dati bago ang #1360 — hindi chine-check ang validity ng naka-pin na certificate, hindi kinokonsulta ang revocation para sa outbound peer, attestor o signer ng isang partner, at itinatanong lang ang extendedKeyUsage kung saan ito manu-manong itinatanong ng isang site. Itakda ang pki.paranoid=on para masubukan ang mga pagsusuri rito."
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "ON (pki.paranoid=auto): isinasailalim ng common/certificate_trust.ts ang bawat certificate — sa TLS handshake sa alinmang direksyon, sa ilalim ng isang signature, bilang encryption recipient, sa isang attestation — sa path papunta sa anchor na ipinaalam sa serbisyong ito (ang client o signer truststore, ang CA ng realm, ang sariling setting ng isang family), validity sa ngayon, revocation, at ang basicConstraints, keyUsage at extendedKeyUsage na hinihingi ng use case nito; ang pagsusuring hindi isinagawa ng use case ay isang pagtanggi. Ibinabalik ng isang pki.paranoid<UseCase> row bawat use case ang dating kilos ng use case na iyon kapag off, at pula itong iginuguhit sa /admin/pki/trust (STS-PKI-0239)."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Ang GNAP key na pinatunayan ng mutual TLS ay isang certificate na in-issue sa client ng pinagkakatiwalaang authority"
@@ -1082,5 +1274,137 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "para sa development mode lang ang setting."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "Kailangan ng second factor ang lahat"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "Ang authentication policy ang magpapasya, at bilang default, ang may second factor lang ang hihingan nito."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Kailangan ng lahat ng second factor, anuman ang policy, maliban kung naka-on ang authn.allowOptionalSecondFactor."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Mas mahigpit ang mga default ng session at RSA key"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "Walang idle timeout ang session, at 2048 bits ang mga bagong RSA key."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "Natatapos ang session pagkatapos ng 30 minutong walang gamit at 3072 bits ang mga bagong RSA key, maliban kung iba ang sinasabi ng setting."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "Hindi napupunta sa log ang bootstrap password"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "Isinusulat sa service log ang nabuong password."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "Isinusulat ito sa file na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan, maliban kung naka-on ang admin.logBootstrapPassword."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Dapat gumamit ng PKCE ang bawat client"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "Inilo-log lang ang confidential client na walang ipinadalang code_challenge."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Tinatanggihan ito maliban kung naka-on ang oauth2.allowConfidentialWithoutPkce."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Naka-encrypt ang mga file patungo sa malware scanner"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "Maaaring gamitin ang icap:// o icaps:// na address."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "icaps:// na address lamang ang ginagamit, maliban kung naka-on ang malwareScan.allowCleartext."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "Kailangan ng nakasaad na patunay ng pagkakakilanlan para i-clear ang second factor"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "Maaaring i-clear ng administrator ang factor sa pamamagitan ng pagpapangalan sa tao."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "Dapat sabihin ng administrator kung paano na-verify ang pagkakakilanlan ng tao. Itinatala ang pahayag sa audit log."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "Mahigpit ang pagbasa sa protocol input"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "Kinukuha ng paulit-ulit na token parameter ang huling value, hindi kailangan ng tahasang type ang Logout Token ng partner, pinaniniwalaan ang mga forwarded address mula sa kahit sino kapag naka-on ang global.trustProxy nang walang listahan, at umaabot sa tumawag ang text ng internal error."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "Tinatanggihan ang paulit-ulit na token parameter, dapat logout+jwt ang type ng Logout Token ng partner maliban kung naka-on ang federation.allowUntypedLogoutToken, kailangan ng global.trustedProxies ang mga forwarded address, at nananatili sa log ang text ng internal error."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Walang kilalang lihim sa mga log at database"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "Sa debug level, buong request at response ang nasa log, at maaaring gumamit ng demo password ang database."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "9dc455e8deb093a6",
+    "text": "Inaalis ng mga request log ang mga credential at body sa bawat level, ang isang naka-sign na token o assertion ay nilo-log lang ayon sa laki at digest nito, at pinahihinto ng isang default na password ng database ang serbisyo maliban kung naka-on ang persistence.allowDefaultDatabasePassword."
+  },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "Nanggagaling sa isang secret store ang mga backend secret"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "Maaaring file ang key-encryption key, at maaaring nasa isang file o sa connection string ang password ng database."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "Nanggagaling ang mga key-encryption key sa isang secret store o isang key management service, at ang password ng database sa isang secret store. Pinahihinto ng isang file o ng password sa connection string ang serbisyo maliban kung naka-on ang secrets.allowLocalSecrets. Maaari pa ring file ang naunang key-encryption key, para makaalis dito ang isang deployment."
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "Dapat lumabas sa service na ito ang audit log"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "Walang sinasabi tungkol sa audit export."
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "Magdagdag ng audit export destination, para hindi maabot ang kopya ng log kung makompromiso ang service. Hangga’t wala pa, nagtatala ang service ng babala para sa realm na iyon."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "Nagtatanong ang single sign-on bago nito i-sign in ang isang tao sa isang application"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "Sina-sign in ng SAML 2.0, SAML 1.1 at WS-Federation ang isang tao mula sa kanyang session nang hindi nagtatanong."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "Tinatanong ang isang tao nang minsan bawat application bago siya i-sign in dito ng SAML 2.0, SAML 1.1 o WS-Federation, at iniingatan ang sagot. Pinapatay ito ng saml2.ssoConsent, saml11.ssoConsent at wsfed.ssoConsent bawat protocol, at nangingibabaw sa kanila ang sariling value ng isang application."
   }
 }

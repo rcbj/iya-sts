@@ -435,9 +435,29 @@
     "en": "3bc74315dcf2fb5e",
     "text": "Ang directory ng mga trust realm"
   },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "Ang icon ng serbisyo"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "Ang card stylesheet ng mga pampublikong surface"
+  },
+  "endpoints.route./web/theme.css.name": {
+    "en": "955c14dc632bdf90",
+    "text": "Ang stylesheet ng itsura ng pag-sign in ng isang realm"
+  },
+  "endpoints.route./web/branding/logo.name": {
+    "en": "2ce72d622f586a26",
+    "text": "Ang logo ng pag-sign in ng isang realm"
+  },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "Larawan sa profile ng isang tao"
+  },
+  "endpoints.route./web/branding/preview.name": {
+    "en": "54aca7174dc0a2b0",
+    "text": "Isang preview ng itsura ng pag-sign in"
   },
   "endpoints.route./web/locales/catalogs.json.name": {
     "en": "54bbd31e0a5afc5b",
@@ -566,6 +586,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "Ang inbox ng Shared Signals ng application ng mga ulat"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "Ang iginuguhit ng user menu ng reports application"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",
@@ -754,6 +778,14 @@
   "endpoints.route./admin-api/pki.name": {
     "en": "bc458d477b4de7d9",
     "text": "Ang certificate authority na hawak ng realm na ito"
+  },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "Paranoid PKI mode, ang signer truststore at kung ano ang naka-pin"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "Baguhin ang signer truststore, isang paranoid row, o muling suriin ang mga pin"
   },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
@@ -955,6 +987,10 @@
     "en": "ec5770a23a0c10c0",
     "text": "Ang mga self-issued (SIOPv2) subject ng isang tao"
   },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "Ang mga inilathalang DID ng isang tao"
+  },
   "endpoints.route./admin-api/users/verifications.name": {
     "en": "aa12d03c659af2a0",
     "text": "Ang mga identity verification ng isang tao"
@@ -1044,8 +1080,8 @@
     "text": "Ang mga na-attest na agent"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "I-ban, i-unban o kalimutan ang isang agent"
+    "en": "db7439843e5d6273",
+    "text": "I-ban, i-unban o kalimutan ang isang agent, o gumawa ng join token"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",
@@ -1151,6 +1187,26 @@
     "en": "b485a2ff39ac01b5",
     "text": "Mga error code"
   },
+  "endpoints.route./admin-api/audit-export.name": {
+    "en": "6215b564a1d4430f",
+    "text": "Audit export"
+  },
+  "endpoints.route./admin-api/audit-export/:action.name": {
+    "en": "b9a19e739aa5ebd6",
+    "text": "Baguhin ang mga destinasyon ng audit export"
+  },
+  "endpoints.route./admin-api/branding.name": {
+    "en": "4f6e7c69e356bf65",
+    "text": "Itsura ng pag-sign in"
+  },
+  "endpoints.route./admin-api/branding/logo.name": {
+    "en": "febcf32d571a0fbf",
+    "text": "I-upload ang logo ng pag-sign in"
+  },
+  "endpoints.route./admin-api/branding/:action.name": {
+    "en": "d7fa23e10dac9b1d",
+    "text": "Baguhin ang itsura ng pag-sign in"
+  },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",
     "text": "Audit log"
@@ -1174,6 +1230,10 @@
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
     "text": "Magtakda ng mga custom listener, o i-map ang mga application sa mga ito"
+  },
+  "endpoints.route./admin-api/config-dump.name": {
+    "en": "9d414a56d337e804",
+    "text": "Dump ng configuration"
   },
   "endpoints.route./admin-api/config/:action.name": {
     "en": "7e8873a02dca9738",
@@ -1523,6 +1583,22 @@
     "en": "561e36f4539a01de",
     "text": "Magsimula ng federated sign-in"
   },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "Isang pag-sign in na sinisimulan ng partner (initiate_login_uri)"
+  },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "Isang Request Object by reference"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "Hanapin ang OpenID Provider ng isang tao sa pamamagitan ng WebFinger"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "Ang fragment script ng assertion consumer service"
+  },
   "endpoints.route./federation/acs/:id.name": {
     "en": "fff6118cbd019f5e",
     "text": "Assertion consumer service / wreply / redirect_uri"
@@ -1558,6 +1634,10 @@
   "endpoints.route./federation/metadata/:id.name": {
     "en": "1bd56e73b838da2d",
     "text": "Ang SARILING SAML metadata ng serbisyong ito, bawat partner"
+  },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Client metadata ng isang Bluesky relationship (#746)"
   },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",
@@ -1863,10 +1943,6 @@
     "en": "267337fd3ad0ab7f",
     "text": "OP iframe (check_session_iframe)"
   },
-  "endpoints.route./oauth2/check_session.js.name": {
-    "en": "d9f2d9b37bfe6db9",
-    "text": "Script ng OP iframe"
-  },
   "endpoints.route./oauth2/logout.name": {
     "en": "9901e3b8fd763f16",
     "text": "Pagtatapos ng session (end_session_endpoint)"
@@ -2131,6 +2207,10 @@
     "en": "7d0bcaaf2c946cba",
     "text": "Ang DID document ng isang application"
   },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "Ang inilathalang dokumento ng DID ng isang tao"
+  },
   "endpoints.route./.well-known/did-configuration.json.name": {
     "en": "ea3b5de3683521ad",
     "text": "Domain Linkage Credential"
@@ -2382,5 +2462,17 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (hinihingi ang client certificate, hindi kailanman kinakailangan)"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "Pag-scan ng malware"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "Subukan ang malware scanner"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "Suriin ang integridad ng audit log"
   }
 }

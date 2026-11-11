@@ -229,8 +229,13 @@ class VcTrustedList {
   private async signer(): Promise<Json> {
     const { log, signingKeyForAsync, certificateHeaderFor, stsKid,
             stsPrivateKey } = this.deps;
-    for (let i = 0; i < SIGNING_ALGS.length; i++) {
-      const alg = SIGNING_ALGS[i];
+    // Each specification-bound choice, narrowed by what this realm signs with
+    // (#1368). A realm whose list leaves neither has no key to name here.
+    const usable = SIGNING_ALGS.filter(function (one) {
+      return !stsCrypto.signaturePolicy.signCause('jose', one);
+    });
+    for (let i = 0; i < usable.length; i++) {
+      const alg = usable[i];
       try {
         const key = alg === 'RS256'
           ? { key: stsPrivateKey(), kid: stsKid() }

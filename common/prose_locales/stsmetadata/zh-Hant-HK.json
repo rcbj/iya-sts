@@ -160,8 +160,8 @@
     "text": "partial：第 13 節的 Web（被動）請求者設定檔——帶有 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 與 wreq 的 wsignin1.0、以表單 POST 傳送的登入回應，以及帶有前端通道清除請求的 wsignout1.0/wsignoutcleanup1.0；作為聯盟依賴方（#167）時，夥伴的清除請求（依規格未簽署）只有在該人於具備真正按鈕的頁面上確認後才會結束工作階段，而此處的登出會向夥伴送出 wsignout1.0。已簽署的聯盟元數據（第 3.1 節）位於 AD FS 路徑。「未」實作的部分，每一項都明確指名而非保持沉默：超出 /sts 已能回應範圍的主動（SOAP）請求者設定檔、wresultptr、都回應 501 的屬性服務（wattr1.0）與假名服務（wpseudo1.0）、wreqptr（拒絕——從查詢參數中解參照 URL 是伺服器端請求偽造）、此設定檔中的權杖加密（被動請求不攜帶接收者證書），以及任何授權或原則強制執行。wreply 在開發模式下照原樣使用，在「產品」模式下必須是已註冊的 wsfedReplyUrl（2026-09-12）。超出規格（規格沒有這種請求）的部分：位於 /wsfed/initiate/{rp} 的由身分識別提供者發起的登入（#712），在依賴方選擇加入之前為關閉，且只 POST 至其已註冊的 wsfedReplyUrl。"
   },
   "stsmetadata.specs.rfc6749.coverage": {
-    "en": "0c6fe743b64b0d08",
-    "text": "partial：authorization_code、implicit、password、client_credentials 與 refresh_token。客戶端驗證會被接受但不驗證——「除了」在 RFC 9700 模式下，在此註冊為機密客戶端者必須出示本服務簽發給它的 client_secret（第 2.5 節，本服務中任何地方唯一會檢查的認證資料）。該模式也會直接拒絕 password 與 implicit 授權類型，並輪替重新整理權杖。第 3.3 節：範圍與客戶端綁定（#110）——本服務自己的受保護範圍（admin:*、SCIM 與 Shared Signals 範圍、偵錯工具權限）在每種模式下都只簽發給 oauthAllowedScope 宣告了它們的客戶端，而在產品模式下每個範圍都受限於該清單或一組有文件記載的預設集合；超出範圍的請求為 invalid_scope。"
+    "en": "56137411ddc592b3",
+    "text": "partial：authorization_code、implicit、password、client_credentials 與 refresh_token。客戶端驗證會被接受但不驗證——「除了」在 RFC 9700 模式下，在此註冊為機密客戶端者必須出示本服務簽發給它的 client_secret（第 2.5 節，本服務中任何地方唯一會檢查的認證資料）。該模式也會直接拒絕 password 授權類型；拒絕 implicit 授權的存取權杖——即每一種從授權端點簽發存取權杖的回應類型——除非管理員為該領域豁免 RFC 9700 第 2.1.2 節，且即便如此也只對已啟用該類型的應用程式生效（#1295、#1296）；並輪替重新整理權杖。第 3.3 節：範圍與客戶端綁定（#110）——本服務自己的受保護範圍（admin:*、SCIM 與 Shared Signals 範圍、偵錯工具權限）在每種模式下都只簽發給 oauthAllowedScope 宣告了它們的客戶端，而在產品模式下每個範圍都受限於該清單或一組有文件記載的預設集合；超出範圍的請求為 invalid_scope。"
   },
   "stsmetadata.specs.rfc7009.coverage": {
     "en": "33e4093318a039b6",
@@ -280,8 +280,8 @@
     "text": "full（#142），在每種模式下：授權端點（包括 PAR 與 JAR）與 CIBA 端點上的 grant_management_action create、merge 與 replace，以及 grant_id；權杖回應中的 grant_id；僅限機密客戶端；依草案命名的 invalid_grant_id 與 invalid_request；授權在其權杖被領取時寫入，絕不提早；merge 與 replace 會依世代使較早的重新整理權杖失效，在每個節點上皆然；在 grant_management_query 與 grant_management_revoke 下的 GET 與 DELETE /oauth2/grants/{grant_id}，這是客戶端必須宣告的受保護範圍；DELETE 會撤銷該授權及其下記錄的每個權杖；grant_management_actions_supported 與 grant_management_endpoint。授權隨其最後一個權杖到期。「尚缺」：grant_management_action_required（選用，此處為 false）；在不同 client id 之間共用授權。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
-    "en": "a9d422b9ede39dbe",
-    "text": "full（#148），在每種模式下。第 2 節：ID Token 與 claims_supported 中的 session_expiry（工作階段的絕對結束時間，每當在工作階段上簽發權杖時）、tenant（信任領域的 id）與 aud_sub（管理員依個人依客戶端記錄的帳戶 id，主控台與 /admin-api）。第 3 節：tenant 指名其他領域時以 invalid_request 拒絕；domain_hint 會將該人送到 fedHomeRealmDomain 包含它的聯盟關係。第 4 節：入口網站的第三方發起登入會加上 tenant、domain_hint 與 target_link_uri。「尚缺」：從客戶端學習的 aud_sub，這會隨 OpenID Provider Commands 一起到來（#151）。"
+    "en": "e8438c20973c8485",
+    "text": "full（#148），在每種模式下。第 2 節：session_expiry（工作階段的絕對結束時間，在工作階段上簽發權杖時）與 tenant（信任領域的 id）出現在其 claims 請求指名它們的 ID Token 中，或在 oauth2.enterpriseClaimsAlways 開啟時出現在每個 ID Token 中（#1292）；aud_sub（管理員依個人依客戶端記錄的帳戶 id，主控台與 /admin-api）出現在 ID Token 中；三者都在 claims_supported 中。第 3 節：tenant 指名其他領域時以 invalid_request 拒絕；domain_hint 會將該人送到 fedHomeRealmDomain 包含它的聯盟關係。第 4 節：入口網站的第三方發起登入會加上 tenant、domain_hint 與 target_link_uri。「尚缺」：從客戶端學習的 aud_sub，這會隨 OpenID Provider Commands 一起到來（#151）。"
   },
   "stsmetadata.specs.oidc-ephemeral.coverage": {
     "en": "f7656881361a49fc",
@@ -328,8 +328,8 @@
     "text": "partial：提供者組態文件，具備第 3 節的每個「必要」成員，透過擴充 RFC 8414 文件建構，讓兩者在共用的二十個成員上不會不一致。在 well-known 路徑、第 4 節的簽發者帶路徑形式，以及 RFC 8414 的插入路徑形式上提供。自 #118 起發布 public 與 pairwise 的 subject_types_supported、全部四種 prompt 值、display_values_supported、claims_locales_supported、address 與 phone 範圍及其所指名的每個宣告。WebFinger（第 2 節，#119）依 DNS 網域所屬的領域解析 acct:、電郵或主機資源，依 /realm/<id> 路徑解析 https URL，從不查找該人；插入與附加形式的探索都讀取 [realm/<id>][/<server>]，其他任何形式回應 404，因此每份文件所指名的簽發者都確實有東西從那裡簽發。check_session_iframe 不存在（#121）。"
   },
   "stsmetadata.specs.oidc-registration.coverage": {
-    "en": "52a4926873bf6dbe",
-    "text": "partial：/oauth2/register 與 RFC 7592 管理會接受並遵循本服務所實作的 OpenID Connect 客戶端元數據——subject_type 與 sector_identifier_uri（會擷取並要求列出每個 redirect_uri；第 5 節）、token_endpoint_auth_signing_alg、id_token_signed_response_alg、id_token_encrypted_response_alg/enc、userinfo_signed_response_alg 及其加密成員、請求物件成員，以及前端與後端通道登出成員；以及（#120）application_type（web、native）及其重新導向 URI 規則，強制執行 grant_types 與 response_types，對兩者都未指名的請求套用 default_max_age 與 default_acr_values，require_auth_time（只要已知就會攜帶 auth_time），擷取 jwks_uri，並從用戶入口網站以 iss 與 login_hint 啟動 initiate_login_uri（Core 第 4 節）。未涵蓋：policy_uri 與 tos_uri 會被儲存並傳回，但不會繪製在同意畫面上。"
+    "en": "f938f6e1a6211dd2",
+    "text": "partial：/oauth2/register 與 RFC 7592 管理會接受並遵循本服務所實作的 OpenID Connect 客戶端元數據——subject_type 與 sector_identifier_uri（會擷取並要求列出每個 redirect_uri；第 5 節）、token_endpoint_auth_signing_alg、id_token_signed_response_alg、id_token_encrypted_response_alg/enc、userinfo_signed_response_alg 及其加密成員、請求物件成員，以及前端與後端通道登出成員；以及（#120）application_type（web、native）及其重新導向 URI 規則，強制執行 grant_types 與 response_types，對兩者都未指名的請求套用 default_max_age 與 default_acr_values，require_auth_time（只要已知就會攜帶 auth_time），擷取 jwks_uri，並從用戶入口網站以 iss 與 login_hint 啟動 initiate_login_uri（Core 第 4 節）；以及（#1300）會被保存並顯示在登入與同意畫面上的 logo_uri、policy_uri 與 tos_uri，標誌由用戶的瀏覽器載入，本服務從不擷取。未涵蓋：帶語言標籤的 logo_uri、policy_uri 或 tos_uri（第 2.1 節）會依原樣保存，不會繪製。"
   },
   "stsmetadata.specs.oidc-logout.coverage": {
     "en": "762ca8fb1eb8c94b",
@@ -368,8 +368,8 @@
     "text": "full：針對 P-256（第 3.5.8 節規定衍生證明使用的曲線）：含強制指標的基礎證明、由任意選擇性指標產生的衍生證明，以及它們的驗證（#196）——由規格本身的基礎證明所衍生的證明與其測試向量逐位元組相同，而由 Digital Bazaar 程式庫衍生的證明可在此驗證，反之亦然。"
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "0e654cb76a7429ce",
-    "text": "partial：每個領域一份清單，每個憑證兩個位元（VALID、INVALID、SUSPENDED），依 Accept 以 JWT 與 CWT 形式的 Status List Token 提供，含 ttl 與 exp、一個彙總端點，以及每個 SD-JWT VC 與 jwt_vc_json 憑證中的 status 宣告；Verifier 會解析受信任外部簽發者的清單，無法做出陳述時即拒絕。另外每個領域還有第二份針對存取權杖的清單（#432）：每個權杖一個位元，每個 OAuth RFC 9068 存取權杖以及每個 GNAP jwt-signed 與 jwt-encrypted 權杖都攜帶其 status 宣告，並在授權伺服器元數據中以 status_list_aggregation_endpoint（第 9.1 節）公告。不支援歷史解析（501）、不追隨重新導向、不支援 mdoc（未簽發任何 mdoc）。"
+    "en": "b7932392e5841ca6",
+    "text": "partial：每個領域一份清單，每個憑證兩個位元（VALID、INVALID、SUSPENDED），依 Accept 以 JWT 與 CWT 形式的 Status List Token 提供，含 ttl 與 exp、一個彙總端點，以及每個 SD-JWT VC 與 jwt_vc_json 憑證中的 status 宣告；Verifier 會解析受信任外部簽發者的清單，無法做出陳述時即拒絕。另外每個領域還有第二份針對存取權杖的清單（#432）：每個權杖一個位元，每個 OAuth RFC 9068 存取權杖以及每個 GNAP jwt-signed 與 jwt-encrypted 權杖都攜帶其 status 宣告，並在授權伺服器元數據中以 status_list_aggregation_endpoint（第 9.1 節）公告。不支援歷史解析（501）、不追隨重新導向。未簽發任何 mdoc；Verifier 會解析出示之 mdoc 的 Mobile Security Object 所指名的 CWT 清單，該清單由其 x5chain 中鏈結至 oid4vp.mdocTrustAnchors 的憑證簽署（#935）。"
   },
   "stsmetadata.specs.rdf-c14n.coverage": {
     "en": "8d11604b164ce238",
@@ -556,8 +556,8 @@
     "text": "清單包含依此目錄「兩種」規則判定的每個群組——位於 ou=groups 之下，或不論位置為何、帶有群組 objectClass——因為此處的 SCIM 是該目錄的一個檢視，而對於何謂群組的第三種意見，終究會是產生分歧的那一個。建立的群組會同時獲得位置「與」groupOfNames objectClass，因此即使客戶端移動它，它仍是一個群組。"
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.what": {
-    "en": "6f6ca2ae30df56a4",
-    "text": "「讀取」時一視同仁地解析 member、uniqueMember 與 memberUid，並以 id 傳回每個成員——對三者區別對待，正是每個 posixGroup 成員資格悄悄消失的原因。「寫入」時將每個成員 id 轉為其 DN 並放入 member，並清除另外兩者，讓移除了所有人的客戶端不會發現群組仍有成員。未指向任何對象的成員會被「接受」並記錄：懸空成員是一種值得能夠產生的狀態。"
+    "en": "c85629ec6fc43a6f",
+    "text": "「讀取」時一視同仁地解析 member、uniqueMember 與 memberUid，並以 id 傳回每個成員——對三者區別對待，正是每個 posixGroup 成員資格悄悄消失的原因。「寫入」時將每個成員 id 轉為其 DN 並放入 member，並清除另外兩者，讓移除了所有人的客戶端不會發現群組仍有成員。未指向任何對象的成員會被「拒絕」（400 invalidValue）：群組只列出存在之物，刪除會將項目從每個群組中移除。"
   },
   "stsmetadata.endpoints./scim/v2/Bulk.what": {
     "en": "e83d18c7b2d3e453",
@@ -680,8 +680,8 @@
     "text": "非規格端點。/admin/pki 所繪製的一切，以 JSON 提供：三層 CA 及其主體、序號、有效期、演算法、指紋與「證書」；建置可要求的詞彙；以及針對持有已簽發金鑰組的每一方，「每個應用程式每個設定檔一列」，因為這種數據列上的每項事實——控制代碼、到期時間、宣告的簽發者——都是依設定檔而定，而一個應用程式可能同時持有 RFC 7523 與 RFC 7522 的金鑰組。**此回覆中絕不含私密金鑰**：common/pki.js 會在輸出時將其捨棄，因此此處的呼叫端不會因為疏忽而洩漏 Root 的金鑰。證書則完整提供，因為證書本來就是金鑰組中用來分發的那一半。與階層本身一樣依領域區分。自 2026-09-11 起，`revocation` 就是登錄——每個核證機關一個項目，含其簽發的內容、清單上的內容，以及透過 http 與 ldap 的 CRL 與 OCSP 地址——旁邊的 `revocationNote` 則是持久的「說明句」：此處的撤銷是「發布」的而從不被「查詢」，因此在此頁面撤銷的證書仍可向本服務進行驗證。它們是兩個成員，因為空清單與完全沒有清單是不同的答案，一個欄位只能攜帶其中一種。`residency` 是另一個限制：在開發模式下，階層會隨程序一起消失。對應 GET /admin/pki。"
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
-    "en": "a0a71a2a102ad10e",
-    "text": "非規格端點。兩個主控台頁面背後的「十二個」動作——/admin/pki 上的 build、clear、issue、revoke，以及 Certificate & Key Configuration 窗格上的 apply-profile、generate-keys、generate-alt-keys、issue-certificate、use-key、remove-object、clear-store、export——透過那些頁面所呼叫的同一個 pkiAction()。**它以解析而非直接傳回的方式回應**：簽發從頭到尾都是 Web Crypto，因此這是此 API 中兩個需要 await 的動作處理常式之一（另一個是 /admin-api/ssf）。`issue` 會「交出私密金鑰一次」，本服務不保留第二份複本；`export` 以 base64 傳回金鑰數據，與 /admin-api/keys/export 相同，理由也相同。**`revoke` 不撤銷任何東西**：它將金鑰組從應用程式上移除，使本服務不再「接受」該金鑰所簽署的內容，而證書仍持續鏈結——回覆中就是這麼說的。`issue` 與 `revoke` 接收 `target`，值為 application（預設）或 person——個人的金鑰組會以 stsAssertion* 存放在其 ou=users 項目上，且只能針對本人進行斷言。對應 POST /admin/pki、POST /admin/pki/certificate 與 POST /admin/pki/person。"
+    "en": "42a6f7a0abbc65c4",
+    "text": "非規格端點。兩個主控台頁面背後的「十二個」動作——/admin/pki 上的 build、clear、issue、revoke，以及 證書工作台上的 apply-profile、generate-keys、generate-alt-keys、issue-certificate、use-key、remove-object、clear-store、export——透過那些頁面所呼叫的同一個 pkiAction()。**它以解析而非直接傳回的方式回應**：簽發從頭到尾都是 Web Crypto，因此這是此 API 中兩個需要 await 的動作處理常式之一（另一個是 /admin-api/ssf）。`issue` 會「交出私密金鑰一次」，本服務不保留第二份複本；`export` 以 base64 傳回金鑰數據，與 /admin-api/keys/export 相同，理由也相同。**對應用程式而言，`revoke` 不撤銷任何東西**：它將金鑰組從應用程式上移除，使本服務不再「接受」該金鑰所簽署的內容，而證書仍持續鏈結——回覆中就是這麼說的。`issue` 與 `revoke` 接收 `target`，值為 application（預設）或 person——個人在其 ou=users 項目上以 stsAssertion* 持有多組金鑰組，每組都只能針對本人進行斷言；帶 `handle` 的 `revoke` 會將其中一組列入其簽發機構的 CRL（#1290）。對應 POST /admin/pki、POST /admin/pki/certificate 與 POST /admin/pki/person。"
   },
   "stsmetadata.endpoints./admin-api/certificates.what": {
     "en": "dab1f4d1b78f518a",
@@ -1151,10 +1151,6 @@
     "en": "67b6934792210c8e",
     "text": "Session Management section 3.2（#121），僅在領域中 oauth2.sessionManagement 開啟時提供，否則回傳指名該設定的 404。信賴方將其置於框架中並張貼 \"client_id session_state\"；其腳本將之與它能讀取的 OP 瀏覽器狀態比較，回答 changed、unchanged 或 error。這是此處唯一可以被置於框架中的頁面，且僅限領域已註冊之重新導向 URI 的來源。"
   },
-  "stsmetadata.endpoints./oauth2/check_session.js.what": {
-    "en": "d0428e57643dabd6",
-    "text": "OP iframe 唯一的腳本，從此來源提供，因為此處每個頁面都在 script-src 'none' 或 'self' 下執行。以 changed、unchanged 或 error 回應 postMessage，僅張貼給提問的來源。"
-  },
   "stsmetadata.endpoints./oauth2/logout.what": {
     "en": "bfeb68315a7d7f5f",
     "text": "OIDC 探索文件中 end_session_endpoint 所指向之處，支援 GET 與 POST（#124）。請求在任何東西結束「之前」驗證；id_token_hint 會被驗證為本伺服器簽發的 ID Token（過期的仍然算數）並指名客戶端；除非該提示正是此工作階段的，否則會請該人確認；post_logout_redirect_uri 只有在客戶端精確註冊時才會跟隨——開發模式對沒有註冊任何 URI 的客戶端仍會跟隨，產品模式則不會——並將 state 一併傳回。拒絕以頁面呈現，而非 JSON。"
@@ -1228,8 +1224,8 @@
     "text": "Native SSO 裝置密鑰也會被撤銷（#130）。會生效的撤銷：之後內省會回報 inactive。客戶端需驗證（在開發模式下僅在其出示認證時），只能撤銷自己的權杖，而重新整理權杖會連同其授權一併撤銷。"
   },
   "stsmetadata.endpoints./oauth2/register.what": {
-    "en": "80ba1f611099c06a",
-    "text": "註冊一個客戶端，並傳回其認證資訊及一個註冊存取權杖。註冊「就是」ou=applications 下的應用程式項目——沒有第二個儲存區——因此 /admin/applications 與 ldapsearch 看到的是同一個客戶端。在 RFC 9700 模式下，它會「拒絕」其他端點在使用時會拒絕的元數據：密碼授權類型（section 2.4）、隱含授權類型及任何指名 token 的回應類型（2.1.2），以及非迴路地址的 http 重新導向 URI（2.6），各以 invalid_client_metadata 及章節回應。記錄一個權杖端點永遠會拒絕的權限，就是從另一個方向違背探索文件的承諾。「產品模式會將其關閉」（403），除非 oauth2.openRegistration 開啟——或註冊帶有此領域信任的軟件聲明且 oauth2.softwareStatementOpensRegistration 開啟，此時 registration_endpoint 會持續公告；兩者皆非時，它會從兩份探索文件中移除，應用程式則在 /admin 或 /admin-api 上建立。「軟件聲明」（RFC 7591 section 2.3）會在對元數據進行任何其他檢查之前驗證：由此領域簽發（型別為 software-statement+jwt），或由在 oauthSoftwareStatementIssuer 中宣告該簽發者的應用程式簽發；受信任者的宣告優先，並原封不動回傳；否則為 invalid_software_statement 或 unapproved_software_statement。client_id 前置字串、隨機大小與 client_secret_expires_at 都是設定（oauth2.registeredClientIdPrefix 及其相鄰設定）。"
+    "en": "2a1a65e6a8ada54e",
+    "text": "註冊一個客戶端，並傳回其認證資訊及一個註冊存取權杖。註冊「就是」ou=applications 下的應用程式項目——沒有第二個儲存區——因此 /admin/applications 與 ldapsearch 看到的是同一個客戶端。在 RFC 9700 模式下，它會「拒絕」其他端點在使用時會拒絕的元數據：密碼授權類型（section 2.4）、任何指名 token 的回應類型，以及隱含授權類型（除非 id_token 或 code id_token 需要它）（2.1.2，管理員可透過 oauth2.allowImplicitTokenResponses 按領域豁免），以及非迴路地址的 http 重新導向 URI（2.6），各以 invalid_client_metadata 及章節回應。記錄一個權杖端點永遠會拒絕的權限，就是從另一個方向違背探索文件的承諾。「產品模式會將其關閉」（403），除非 oauth2.openRegistration 開啟——或註冊帶有此領域信任的軟件聲明且 oauth2.softwareStatementOpensRegistration 開啟，此時 registration_endpoint 會持續公告；兩者皆非時，它會從兩份探索文件中移除，應用程式則在 /admin 或 /admin-api 上建立。「軟件聲明」（RFC 7591 section 2.3）會在對元數據進行任何其他檢查之前驗證：由此領域簽發（型別為 software-statement+jwt），或由在 oauthSoftwareStatementIssuer 中宣告該簽發者的應用程式簽發；受信任者的宣告優先，並原封不動回傳；否則為 invalid_software_statement 或 unapproved_software_statement。client_id 前置字串、隨機大小與 client_secret_expires_at 都是設定（oauth2.registeredClientIdPrefix 及其相鄰設定）。"
   },
   "stsmetadata.endpoints./oauth2/register/:client_id.what": {
     "en": "53b9b1f559379ceb",
@@ -1432,8 +1428,8 @@
     "text": "1.2 Web (Passive) Requestor Profile：依 wa 分派的 /wsfed、登入畫面、位於 AD FS 路徑的已簽署聯盟元數據，以及 wsignout1.0。"
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "32437a522ad16a77",
-    "text": "在 /sts 上透過 SOAP 進行的 RST / RSTR，涵蓋全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言，判斷提示已簽署，並可選擇加密給請求者的證書。"
+    "en": "3d88db91fab2cd5f",
+    "text": "在 /sts 上透過 SOAP 進行的 RST / RSTR，涵蓋全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言（判斷提示已簽署，並可選擇加密給請求者的證書）、JWT 或 Kerberos 票證。"
   },
   "stsmetadata.protocols.SPNEGO.what": {
     "en": "dcf9bfda53ee9570",

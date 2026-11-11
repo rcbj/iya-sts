@@ -16,6 +16,10 @@
 // what its page showed and nothing it did not — the reasoning about what
 // each page shows is kept below beside the code that builds it.
 //
+// Since #700 the Overview also carries the realm's custom attributes whose
+// definition shows them on the portal, and `POST /account-api/attributes`
+// changes the caller's own values of one that definition lets them edit.
+//
 // **THE PERSON IS THE TOKEN'S SUBJECT** (`account-api/account_api.ts`) and no
 // operation here takes a name: the entry read is the caller's, the
 // applications asked about are the caller's, and the Shared Signals inbox —
@@ -24,6 +28,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import credentials = require('../common/credentials');
@@ -41,6 +46,8 @@ import signals = require('../ssf/ssf_receivers');
 import accountSignals = require('../ssf/account_signals');
 import risc = require('../ssf/risc');
 import validation = require('../common/validation');
+import ProfilePhoto = require('../common/profile_photo');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -80,34 +87,33 @@ const SCAN_LIMIT = 1000;
 const PER_PAGE = 20;
 
 // `done` is accepted and ignored: an old bookmark carrying one still draws.
-const PORTAL_QUERY = vz.object({
-  done: vz.string().max(200).optional()
-});
+const PORTAL_QUERY = ModelZod.query('account', 'getOverview');
 
 // `page` is an INTEGER through `vt.integer()`: a handler never parses a query
 // string itself. The bound is generous; the view clamps to the last real
 // page, which is what a bookmark to page 40 of a list that shrank should do.
-const PAGED_QUERY = vz.object({
-  done: vz.string().max(200).optional(),
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('The page of the list, 1 for the first.')
-});
+const PAGED_QUERY = ModelZod.query('account', 'getApplications');
 
 // THE LANGUAGE ON THE PERSON'S OWN ENTRY (#539). One field, the tag — empty
 // for "use my browser's language", which removes the attribute.
-const LANGUAGE_FORM = vz.object({
-  lang: vz.string().max(64).optional()
-    .describe('A BCP 47 tag this service has a catalog for, or empty to ' +
-              'follow the browser.')
-});
+const LANGUAGE_FORM = ModelZod.body('account', 'setLanguage');
+
+// A PERSON'S OWN PROFILE PHOTO (#719): the file, base64-encoded. The browser
+// has already cropped and scaled it, and the bytes are judged again here; 3 MiB
+// of file is `profilePhoto.maxStoredBytes`' largest value, and four base64
+// characters carry three bytes.
+const PHOTO_FORM = ModelZod.body('account', 'setProfilePhoto');
+
+// A PERSON'S OWN VALUES OF ONE CUSTOM ATTRIBUTE (#700): the attribute and
+// the values it is to hold afterwards — every one, so an empty list (or no
+// `values`) clears it. A form's boxes are each a `values`; an empty box is
+// no value. At most 100, each the person editor's longest value.
+const ATTRIBUTE_FORM = ModelZod.body('account', 'setCustomAttribute');
 
 // THE ACCOUNT HOLDER'S RISC PARTICIPATION (#146): one of section 2.8's three
 // moves a person may make. opt-out-effective is not among them — only the
 // scheduler job makes that move, after risc.optOutDelayHours.
-const PARTICIPATION_FORM = vz.object({
-  move: vz.enum(['optOutInitiated', 'optOutCancelled', 'optIn']).optional()
-    .describe('The move: start opting out, cancel that, or opt back in.')
-});
+const PARTICIPATION_FORM = ModelZod.body('account', 'moveRiscParticipation');
 
 interface AccountOverviewDeps {
   log: typeof helpers.log;
@@ -126,6 +132,8 @@ interface AccountOverviewDeps {
   personEntry(username: string): Json;
   // The editor that writes `preferredLanguage`, reached when it is written.
   personEditor(): Json;
+  // The realm's custom attribute register (#700), reached when asked.
+  attributePolicy(): Json;
 }
 
 /**
@@ -167,6 +175,13 @@ class AccountOverview {
         helpers.log.debug("Entering personEditor().");
         helpers.log.debug("Leaving personEditor().");
         return require('../ldap/person_editor');
+      },
+      // LAZILY too (#700): the register is the directory's, and requiring
+      // it here would run its load-time declarations at 8a.
+      attributePolicy: function attributePolicy(): Json {
+        helpers.log.debug("Entering attributePolicy().");
+        helpers.log.debug("Leaving attributePolicy().");
+        return require('../common/attribute_policy');
       }
     };
   }
@@ -253,10 +268,222 @@ class AccountOverview {
                        remaining: Number(backup.remaining || 0),
                        total: Number(backup.total || 0) }
       },
-      language: this.languageOf(entry)
+      language: this.languageOf(entry),
+      // #700: the realm's custom attributes this person may see, only
+      // where they have an entry to hold them.
+      customAttributes: entry ? this.customAttributesOf(entry) : [],
+      // #719: the photo card, only for a person with an entry to hang it on.
+      photo: entry ? ProfilePhoto.viewFor(username) : null
     };
     log.debug("Leaving AccountOverview.overview().");
     return view;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REALM'S CUSTOM ATTRIBUTES ON THE OVERVIEW (#700). Only a definition
+  // whose `portalVisible` is TRUE is shown, which is OFF by default: what an
+  // administrator defined for the directory is not thereby the person's to
+  // read. Like the inetOrgPerson table, drawn from a LIST (the register) and
+  // never by iterating the entry. `editable` is the definition's
+  // `portalEditable`, which implies visible.
+  // ---------------------------------------------------------------------------
+  /**
+   * The custom attributes the person sees, with their own values.
+   *
+   * @param entry - the person's entry
+   * @returns `[{ name, label, description, syntax, multi, values, editable }]`
+   */
+  customAttributesOf(entry: Json): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.customAttributesOf().");
+    let definitions: Json[] = [];
+    try {
+      definitions = this.deps.attributePolicy().definitions() || [];
+    } catch (e) {
+      // No register to read shows nothing extra; the page still draws.
+      log.debug("Caught in AccountOverview.customAttributesOf(): " +
+                ((e && e.message) || e));
+      definitions = [];
+    }
+    const out = definitions.filter(function (one: Json): boolean {
+      return !!one.portalVisible;
+    }).map((one: Json): Json => {
+      return { name: String(one.name), label: String(one.label || one.name),
+               description: String(one.description || ''),
+               syntax: String(one.syntax || 'string'), multi: !!one.multi,
+               values: this.valuesOn(entry, one.name),
+               editable: !!one.portalEditable };
+    });
+    log.debug("Leaving AccountOverview.customAttributesOf(). " + out.length);
+    return out;
+  }
+
+  // One attribute's values on an entry, whichever case the store keys it by.
+  private valuesOn(entry: Json, name: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.valuesOn(). " + name);
+    const attributes = (entry && entry.attributes) || {};
+    const wanted = String(name || '').toLowerCase();
+    const key = Object.keys(attributes).filter(function (one) {
+      return one.toLowerCase() === wanted;
+    })[0];
+    const out = key ? [].concat(attributes[key]).map(String)
+      .filter(function (one: string): boolean {
+        return one !== '';
+      }) : [];
+    log.debug("Leaving AccountOverview.valuesOn(). " + out.length);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST: THE PERSON'S OWN VALUES OF ONE CUSTOM ATTRIBUTE (#700). Refused
+  // unless the realm defines it (STS-PORTAL-0626), its definition shows it
+  // on the portal (0627) and lets the person edit it (0628). The values are
+  // checked against the definition by the person editor, and written through
+  // it one edit at a time, as `setLanguage()` writes — so the editor's audit
+  // row, its syntax check and the attribute policy's `editRefusal` all hold.
+  //
+  // **ADDS BEFORE REMOVES**, for a multi-valued attribute: a required value
+  // may not be taken away (`editRefusal`), and replacing one value with
+  // another by removing first would leave an empty moment the policy
+  // refuses. Emptying it outright is asked of the policy BEFORE anything is
+  // written, so a refusal changes nothing (STS-LDAP-0164, the editor's own
+  // code for that refusal). A single-valued attribute is one `set`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Replaces the caller's own values of one custom attribute.
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body: `attribute`, `values`
+   * @returns nothing
+   */
+  setCustomAttribute(ctx: AccountContext, res: Json, caller: AccountCaller,
+                     body: Json): unknown {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.setCustomAttribute().");
+    const username = caller.username;
+    const asked = String(body.attribute || '').trim();
+    let policy: Json = null;
+    let definition: Json = null;
+    try {
+      policy = this.deps.attributePolicy();
+      definition = policy.definition(asked);
+    } catch (e) {
+      // No register: no custom attribute here, which is the refusal below.
+      log.debug("Caught in AccountOverview.setCustomAttribute(): " +
+                ((e && e.message) || e));
+      definition = null;
+    }
+    if (!definition) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Undefined.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0626',
+        'This realm has no custom attribute called "' + asked.slice(0, 64) +
+        '", so nothing was changed.');
+    }
+    if (!definition.portalVisible) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Hidden.");
+      return ctx.refuse(res, 403, 'STS-PORTAL-0627',
+        definition.name + ' is not shown on this portal, so it is not ' +
+        'changed here. Ask an administrator.');
+    }
+    if (!definition.portalEditable) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Read-only.");
+      return ctx.refuse(res, 403, 'STS-PORTAL-0628',
+        definition.name + ' is shown here but is not yours to change. Ask ' +
+        'an administrator.');
+    }
+    const entry = this.deps.personEntry(username);
+    if (!entry) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). No entry.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0629',
+        'You have no directory entry here to hold ' + definition.name + '.');
+    }
+    const sent = [].concat(body.values === undefined || body.values === null
+      ? [] : body.values).map(function (one: Json): string {
+      return String(one).trim();
+    }).filter(Boolean);
+    const editor = this.deps.personEditor();
+    const checked = editor.checkCreateValues(definition.name, sent);
+    if (!checked || checked.error) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Values.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0629',
+        'Your ' + definition.label + ' was not changed: ' +
+        (checked ? checked.error : definition.name + ' is not an attribute ' +
+                   'the directory\'s editor changes.'));
+    }
+    const wanted: string[] = checked.values;
+    const held = this.valuesOn(entry, definition.name);
+    // A HOT PATH, run once per value compared: no Entering/Leaving pair,
+    // which would drown the log in a line per value.
+    const within = function (list: string[], one: string): boolean {
+      return list.some(function (other: string): boolean {
+        return other.toLowerCase() === one.toLowerCase();
+      });
+    };
+    const adds = wanted.filter(function (one: string): boolean {
+      return !within(held, one);
+    });
+    const removes = held.filter(function (one: string): boolean {
+      return !within(wanted, one);
+    });
+    const t = ctx.translatorFor(username);
+    const done = function (): unknown {
+      log.debug("Entering done().");
+      log.debug("Leaving done().");
+      return ctx.json(res, 200, { ok: true, go: ctx.PORTAL,
+                                  message: t.text('portal.done.attribute',
+                                    { label: definition.label }) });
+    };
+    if (!adds.length && !removes.length) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Unchanged.");
+      return done();
+    }
+    // EMPTYING IT IS ASKED FIRST, so a refusal leaves every value in place.
+    const lower = definition.name.toLowerCase();
+    const leaves = Object.assign({}, entry.attributes || {},
+                                 { [lower]: wanted });
+    const refusal = wanted.length ? null
+      : policy.editRefusal({ [lower]: held }, { [lower]: wanted },
+                           { uid: username, attributes: leaves });
+    if (refusal) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Required.");
+      return ctx.refuse(res, 400, 'STS-LDAP-0164',
+        'Your ' + definition.label + ' was not changed: ' + refusal.message);
+    }
+    const edits: Json[] = definition.multi
+      ? adds.map(function (one: string): Json {
+        return { attribute: definition.name, mode: 'add', value: one };
+      }).concat(removes.map(function (one: string): Json {
+        return { attribute: definition.name, mode: 'remove', value: one };
+      }))
+      : [{ attribute: definition.name, mode: 'set',
+           value: wanted.length ? wanted[0] : '' }];
+    for (const edit of edits) {
+      let written: Json = null;
+      try {
+        written = editor.update(username, edit,
+                                { actor: username, via: 'the user portal' });
+      } catch (e) {
+        log.debug("Caught in AccountOverview.setCustomAttribute(): " +
+                  ((e && e.message) || e));
+        written = null;
+      }
+      if (!written || !written.ok) {
+        const why = (written && (written.errors || []).join(' ')) ||
+          'The directory could not be asked.';
+        log.debug("Leaving AccountOverview.setCustomAttribute(). Not " +
+                  "written.");
+        return ctx.refuse(res, 400, ctx.errorCodes.codeOf(written) ||
+                          'STS-PORTAL-0629',
+                          'Your ' + definition.label + ' was not ' +
+                          'changed: ' + why);
+      }
+    }
+    log.debug("Leaving AccountOverview.setCustomAttribute(). " +
+              adds.length + " added, " + removes.length + " removed.");
+    return done();
   }
 
   // THE LANGUAGE ON THE PERSON'S OWN ACCOUNT (#539): `preferredLanguage`
@@ -274,11 +501,8 @@ class AccountOverview {
   languageOf(entry: Json): Json {
     const { log } = this.deps;
     log.debug("Entering AccountOverview.languageOf().");
-    const attributes = (entry && entry.attributes) || {};
-    const key = Object.keys(attributes).filter(function (one) {
-      return one.toLowerCase() === 'preferredlanguage';
-    })[0];
-    const held = key ? String([].concat(attributes[key])[0] || '') : '';
+    const held = Classes.User.fromEntry((entry && entry.attributes) || {})
+      .preferredLanguage || '';
     log.debug("Leaving AccountOverview.languageOf(). " + (held || 'none'));
     return { held: held, offered: i18n.offered().map(function (one: Json) {
       return { tag: String(one.tag), name: String(one.name) };
@@ -300,6 +524,48 @@ class AccountOverview {
    * @param body - the checked body
    * @returns nothing
    */
+  async setPhoto(ctx: AccountContext, req: Json, res: Json,
+                 caller: AccountCaller, body: Json): Promise<unknown> {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.setPhoto().");
+    const bytes = Buffer.from(String(body.image || ''), 'base64');
+    const refused = await require('../common/malware_scan').refusal(bytes);
+    if (refused) {
+      log.debug("Leaving AccountOverview.setPhoto(). " + refused.code);
+      // error-code: none — the scanner's own, STS-CORE-0168 or STS-CORE-0169
+      return ctx.refuse(res, refused.status, refused.code, refused.error);
+    }
+    const done = ProfilePhoto.setOwn(req, caller.username, bytes);
+    if (!done.ok) {
+      log.debug("Leaving AccountOverview.setPhoto(). " + done.code);
+      return ctx.refuse(res, done.status, done.code || 'STS-PORTAL-0633',
+                        done.error);
+    }
+    const t = ctx.translatorFor(caller.username);
+    log.debug("Leaving AccountOverview.setPhoto().");
+    return ctx.json(res, 200, { ok: true, go: ctx.PORTAL, photo: done.path,
+                                message: t.text('portal.done.photo') });
+  }
+
+  /**
+   * Handles `POST /account-api/photo/remove`.
+   *
+   * @param ctx - the API's context
+   * @param res - the response
+   * @param caller - the token's person
+   * @returns what the context's answer returns
+   */
+  removePhoto(ctx: AccountContext, res: Json,
+              caller: AccountCaller): unknown {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.removePhoto().");
+    ProfilePhoto.removeOwn(caller.username);
+    const t = ctx.translatorFor(caller.username);
+    log.debug("Leaving AccountOverview.removePhoto().");
+    return ctx.json(res, 200, { ok: true, go: ctx.PORTAL, photo: '',
+                                message: t.text('portal.done.photoRemoved') });
+  }
+
   setLanguage(ctx: AccountContext, res: Json, caller: AccountCaller,
               body: Json): unknown {
     const { log } = this.deps;
@@ -697,80 +963,54 @@ class AccountOverview {
     log.debug("Entering AccountOverview.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/overview',
-        operationId: 'getOverview', tag: 'Overview', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL,
-        summary: 'Who you are, this session, and how you sign in',
-        description: 'Your username, subject and directory entry\'s DN; ' +
-          'when the sign-on session began, how it authenticated (amr, acr) ' +
-          'and when it ends; every standard inetOrgPerson attribute your ' +
-          'entry holds, from a fixed list (`directory`, null with no ' +
-          'directory or no entry — then `session` carries what the sign-in ' +
-          'said); a summary of your credentials (`mechanisms`); and the ' +
-          'language your entry holds with those offered (`language`).',
+        operationId: 'getOverview', access: 'person',
         query: PORTAL_QUERY,
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.overview(caller));
         } },
       { method: 'POST', path: ctx.BASE + '/language',
-        operationId: 'setLanguage', tag: 'Overview', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/language',
-        summary: 'Sets or removes your preferred language',
-        description: 'Writes `preferredLanguage` on your own entry (RFC ' +
-          '2798), which ranks above the browser for every page this ' +
-          'service draws for you, and sets the language cookie; an empty ' +
-          '`lang` removes it and follows the browser. A tag no catalog ' +
-          'answers is refused.',
+        operationId: 'setLanguage', access: 'person',
         body: LANGUAGE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.setLanguage(ctx, res, caller, input.body);
         } },
+      { method: 'POST', path: ctx.BASE + '/photo',
+        operationId: 'setProfilePhoto', access: 'person',
+        body: PHOTO_FORM,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.setPhoto(ctx, req, res, caller, input.body);
+        } },
+      { method: 'POST', path: ctx.BASE + '/photo/remove',
+        operationId: 'removeProfilePhoto', access: 'person',
+        handler: function (req: Json, res: Json,
+                           caller: AccountCaller): unknown {
+          return self.removePhoto(ctx, res, caller);
+        } },
+      { method: 'POST', path: ctx.BASE + '/attributes',
+        operationId: 'setCustomAttribute', access: 'person', body: ATTRIBUTE_FORM,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.setCustomAttribute(ctx, res, caller, input.body);
+        } },
       { method: 'GET', path: ctx.BASE + '/applications',
-        operationId: 'getApplications', tag: 'Applications',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/applications',
-        summary: 'The applications you can be signed in to',
-        description: 'Every registered application that is a sign-in ' +
-          'destination (OpenID Connect, OAuth 2.0, SAML 2.0, SAML 1.1, ' +
-          'WS-Federation) for which the issuance policy, asked as a dry ' +
-          'run, permits you at least one family — its home page, the ' +
-          'identity-provider-initiated sign-in links it offers ' +
-          '(`launches`, each /launch/{app}?protocol=…), the families ' +
-          'permitted and withheld. Twenty to a page; the counts ' +
-          'of those refused and not evaluated are carried too.',
-        query: PAGED_QUERY,
+        operationId: 'getApplications', access: 'person', query: PAGED_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return ctx.json(res, 200, self.applicationsView(caller,
             Number(input.query.page || 1), ctx.baseUrlOf(req)));
         } },
       { method: 'GET', path: ctx.BASE + '/signals',
-        operationId: 'getSecurityActivity', tag: 'Security activity',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/signals',
-        summary: 'The security events this portal was told about you',
-        description: 'The CAEP and RISC events this portal received as a ' +
-          'Shared Signals receiver that are about you (an event it cannot ' +
-          'tie to you is left out), twenty to a page, each with whether ' +
-          'its signature verified and what this portal did with it; and ' +
-          'whether events about your account are shared (RISC section ' +
-          '2.8, `participation`, null while RISC is off).',
-        query: PAGED_QUERY,
+        operationId: 'getSecurityActivity', access: 'person', query: PAGED_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return ctx.json(res, 200, self.signalsView(caller,
             Number(input.query.page || 1)));
         } },
       { method: 'POST', path: ctx.BASE + '/signals',
-        operationId: 'moveRiscParticipation', tag: 'Security activity',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/signals',
-        summary: 'Stops, cancels stopping, or resumes sharing security ' +
-          'events about you',
-        description: 'RISC 1.0 section 2.8\'s account-holder moves. ' +
-          'Opting out takes effect only after risc.optOutDelayHours, and ' +
-          'can be cancelled until then.',
-        body: PARTICIPATION_FORM,
-        statuses: { 409: 'That move is not one your account can make now.',
-                    503: 'Shared Signals is off, so nothing was recorded.' },
+        operationId: 'moveRiscParticipation', access: 'person', body: PARTICIPATION_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.moveParticipation(ctx, req, res, caller, input.body);

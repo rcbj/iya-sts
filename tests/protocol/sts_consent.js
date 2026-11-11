@@ -58,6 +58,7 @@ const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -243,7 +244,7 @@ async function signIn(who, clientId, scope, extra) {
                         "sign in");
   const b = browser(who);
   let r = await b.go("GET", authorizeUrl(clientId, scope, extra));
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
     "an unauthenticated authorization request should go to the sign-in " +
     "screen; it went to " + r.location);
   // THE SCREEN OVER `/authn-api` (#571), through the one helper; this
@@ -258,7 +259,7 @@ async function signIn(who, clientId, scope, extra) {
   // also sets the browser's account set (`sts_accounts`), and the ticket it
   // returns with names that set.
   b.cookie = signedIn.cookie || "";
-  assert.ok(/(?:^|; )sts_session=/.test(b.cookie),
+  assert.ok(/(?:^|; )(?:__Host-)?sts_session=/.test(b.cookie),
     "signing in should establish a session.");
   r = await b.go("GET", signedIn.location);
   log.debug("Leaving signIn(). " + r.status + " " + r.location);
@@ -271,7 +272,7 @@ async function signIn(who, clientId, scope, extra) {
 // view's JSON text, which says everything the page draws; `view` the view.
 async function screen(b, location) {
   log.debug("Entering screen().");
-  assert.ok(/\/oauth2\/consent\?consent=/.test(location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(location),
     "expected the consent screen, got " + location);
   const opened = await authnSignin.consentPage(absolute(location),
                                                { cookie: b.cookie });
@@ -384,7 +385,7 @@ async function theFirstSignInIsAsked() {
            "===");
   const who = usernameFor("consent-first");
   const { b, r } = await signIn(who, CLIENT, "openid profile");
-  assert.ok(/\/oauth2\/consent\?consent=/.test(r.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(r.location),
     "a first sign-in should be sent to the consent screen; it went to " +
     r.location);
   assert.ok(!/[?&]code=/.test(r.location),
@@ -483,7 +484,7 @@ async function theSecondSignInIsSilent(first) {
     "to " + r.location);
 
   r = await b.go("GET", authorizeUrl(CLIENT, "openid profile email"));
-  assert.ok(/\/oauth2\/consent\?consent=/.test(r.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(r.location),
     "adding a scope should ask; it went to " + r.location);
   const shown = await screen(b, r.location);
   assert.deepStrictEqual(askedOn(shown.page), ["email"],
@@ -522,7 +523,7 @@ async function theSecondSignInIsSilent(first) {
   // AND THE REFUSED SCOPE IS ASKED AGAIN, which is what "recorded nothing"
   // has to mean if it means anything.
   r = await b.go("GET", authorizeUrl(CLIENT, "openid profile email"));
-  assert.ok(/\/oauth2\/consent\?consent=/.test(r.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(r.location),
     "the refused scope should be asked about again; it went to " + r.location);
   log.debug("Leaving theSecondSignInIsSilent().");
 }
@@ -551,7 +552,7 @@ async function thePromptParameterIsHonoured(first) {
 
   r = await b.go("GET", authorizeUrl(CLIENT, "openid profile",
                                      { prompt: "consent" }));
-  assert.ok(/\/oauth2\/consent\?consent=/.test(r.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(r.location),
     "prompt=consent should ask again whatever is on the entry; it went to " +
     r.location);
   const shown = await screen(b, r.location);
@@ -592,9 +593,25 @@ async function theScreenRefusesWhatItShould() {
 
   const stranger = browser("stranger");
   let r = await stranger.go("GET", "/oauth2/consent");
-  assert.strictEqual(r.status, 400,
-    "the screen followed bare names no pending consent and must be refused; " +
-    "got " + r.status);
+  // IN PRODUCT A STEP'S ID IS IN THE FRAGMENT (#1454, ASVS 5.0.0 14.2.1), so
+  // the server never sees it: a bare `/oauth2/consent` is the shell, for
+  // nobody yet, and the page finds the step itself (`consent_screen.ts`,
+  // `mode.hidesStepIds()`). What refuses an id nothing minted is then the
+  // view, `GET /authn-api/consent/{id}` — asserted below for the id the
+  // query names, which reaches the same check in both modes.
+  if (await facts.isProduct(api)) {
+    assert.strictEqual(r.status, 200,
+      "product: the bare consent screen is the shell, for nobody; got " +
+      r.status);
+    assert.ok(/\/oauth2\/consent\.js/.test(r.text || "") &&
+              /data-sts-step-fragment="1"/.test(r.text || ""),
+      "product: the bare shell loads the consent script and reads the " +
+      "step from the fragment; got " + String(r.text || "").slice(0, 300));
+  } else {
+    assert.strictEqual(r.status, 400,
+      "the screen followed bare names no pending consent and must be " +
+      "refused; got " + r.status);
+  }
   r = await stranger.go("GET", "/oauth2/consent?consent=never-minted-" + RUN);
   assert.strictEqual(r.status, 400,
     "and so must an id nothing ever minted; got " + r.status);
@@ -602,7 +619,7 @@ async function theScreenRefusesWhatItShould() {
   // A REAL PENDING CONSENT, ANSWERED BY SOMEBODY ELSE.
   const who = usernameFor("consent-owner");
   const owner = await signIn(who, CLIENT, "openid profile");
-  assert.ok(/\/oauth2\/consent\?consent=/.test(owner.r.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(owner.r.location),
     "the owner should be asked; they went to " + owner.r.location);
   const id = (owner.r.location.match(/consent=([^&]+)/) || [])[1];
 
@@ -640,7 +657,13 @@ async function theScreenRefusesWhatItShould() {
   const anon = await authnSignin.answerConsent(
     Object.assign({}, theirs.opened, { id: decodeURIComponent(id),
                                        cookie: "" }), "allow");
-  assert.strictEqual(anon.status, 403,
+  // IN PRODUCT A STEP IS TIED TO THE BROWSER THAT FIRST ASKED ABOUT IT
+  // (#1454, ASVS 5.0.0 14.2.1, `mode.bindsSignInSteps()`), and that check
+  // comes first: a request with no cookie is not that browser, so it is
+  // refused 400 (STS-AUTHN-0552) before the session door's 403. Either way
+  // nothing is recorded, which is asserted next.
+  const anonExpected = (await facts.isProduct(api)) ? 400 : 403;
+  assert.strictEqual(anon.status, anonExpected,
     "an answer from a browser with no session belongs to nobody; got " +
     anon.status);
   assert.strictEqual((await recordedFor(who)).length, 0,
@@ -699,7 +722,7 @@ async function theGlobalOverrideWorks() {
   // -----------------------------------------------------------------------
   const asked = usernameFor("consent-perm-asked");
   const first = await signIn(asked, CLIENT, "openid " + PERMISSION);
-  assert.ok(/\/oauth2\/consent\?consent=/.test(first.r.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(first.r.location),
     "a delegated permission nobody has consented should be asked about; it " +
     "went to " + first.r.location);
   const shown = await screen(first.b, first.r.location);
@@ -765,7 +788,7 @@ async function theGlobalOverrideWorks() {
   // development-mode auto-creation this job no longer leans on.
   const elsewhere = usernameFor("consent-perm-elsewhere");
   const third = await signIn(elsewhere, OTHER_CLIENT, "openid " + PERMISSION);
-  assert.ok(/\/oauth2\/consent\?consent=/.test(third.r.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(third.r.location),
     "THE OVERRIDE BELONGS TO ONE APPLICATION. A second client asking for the " +
     "same permission is still asked — a service-wide list of harmless scopes " +
     "would mean an application registered five minutes ago inheriting a " +
@@ -779,7 +802,7 @@ async function theGlobalOverrideWorks() {
            "removed the override");
   const again = usernameFor("consent-perm-again");
   const fourth = await signIn(again, CLIENT, "openid " + PERMISSION);
-  assert.ok(/\/oauth2\/consent\?consent=/.test(fourth.r.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(fourth.r.location),
     "removing the override asks again; they went to " + fourth.r.location);
   const askedAgain = await screen(fourth.b, fourth.r.location);
   assert.deepStrictEqual(askedOn(askedAgain.page), [PERMISSION],
@@ -794,7 +817,7 @@ async function theGlobalOverrideWorks() {
   skippedAgain.cookie = second.b.cookie;
   const back = await skippedAgain.go("GET",
     authorizeUrl(CLIENT, "openid " + PERMISSION));
-  assert.ok(/\/oauth2\/consent\?consent=/.test(back.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(back.location),
     "INCLUDING THE PEOPLE IT WAS COVERING, who would have said yes and were " +
     "never asked. That is the price of an override recording nothing, and it " +
     "is why the console says so on the page. They went to " + back.location);
@@ -825,7 +848,7 @@ async function aRecordedAnswerCanBeTakenBack(first) {
     JSON.stringify(left.map(function (one) { return one.scope; })));
 
   const r = await first.b.go("GET", authorizeUrl(CLIENT, "openid profile"));
-  assert.ok(/\/oauth2\/consent\?consent=/.test(r.location),
+  assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(r.location),
     "and the revoked scope is asked about again; it went to " + r.location);
   const shown = await screen(first.b, r.location);
   assert.deepStrictEqual(askedOn(shown.page), ["profile"],

@@ -19,16 +19,16 @@
 // it; the reply is piped back untouched. This is §5's "Kerberos AS-REQ …
 // forwarded the same way" — the request travels, the person's data does not.
 //
-// **`krb5_kdc.js` IS IN THE PARENT'S COPY SET** (this repository's own, but
-// the parent's tests image copies it and its requires; `kerberos/CLAUDE.md`),
-// so rather than grow its closure this is a route of its own, registered on
+// **`krb5_kdc.js` WAS IN THE PARENT'S COPY SET** (this repository's own, but
+// the parent's tests image copied it and its requires; an obligation until
+// #1280, and the arrangement stands), so rather than grow its closure this
+// is a route of its own, registered on
 // `POST /KdcProxy` JUST BEFORE the KDC's (`common/protocol_stack.ts`), that
 // decodes just enough to find the client and either relays the request or
 // calls `next()` — after which the KDC's own handler runs exactly as it
 // always did. It REQUIRES the vendored codec
 // (`krb5_messages`, `krb5_asn1`, `krb5_primitives`, `krb5_crypto`) and the
-// principal database; it edits none of them, and none of them requires it, so
-// the parent project's COPY closure does not move.
+// principal database; it edits none of them, and none of them requires it.
 //
 // **WHO THE CLIENT IS, PER MESSAGE:**
 //
@@ -71,8 +71,7 @@
 // on #588). The KDC is handed in (`install(kdc)`, from
 // `common/protocol_stack.ts` just after it is required) rather than required
 // here, because requiring the JavaScript KDC from this module would register
-// its `/KdcProxy` before this one's; and the KDC requires nothing new, so the
-// parent project's COPY closure does not move.
+// its `/KdcProxy` before this one's; and the KDC requires nothing new.
 //
 // **A HOME THAT CANNOT BE REACHED IS FAIL-CLOSED**, as a relayed MS-KKDCP
 // request is answered 503 (`cell_channel.ts`'s `relay()`, #98 D6): the client

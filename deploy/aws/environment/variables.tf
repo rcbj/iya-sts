@@ -249,6 +249,31 @@ variable "carryover_secret" {
   default     = ""
 }
 
+variable "bootstrap_admin_username" {
+  description = <<-EOT
+    The bootstrap administrator's username, for an environment whose account
+    already exists under a name this stack did not generate. Read on the apply
+    that first creates the `bootstrap-admin-username` secret and kept; empty
+    (the default) generates `admin-` and sixteen hex digits. Product mode only.
+    Passed as TF_VAR_bootstrap_admin_username, never committed.
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "waf_report_only" {
+  description = <<-EOT
+    With CloudFront on, the web ACL in REPORT-ONLY mode: it blocks nothing,
+    and a Count rule records every request from outside allowed_cidrs (the
+    `outside-allowed-cidrs` metric and its sampled requests). Off (the
+    default), the allowlist blocks them. The direct name stays restricted by
+    the security group either way.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "vpc_cidr" {
   description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16. A cell's is `cells[cell].vpc_cidr` (#98)."
   type        = string
@@ -314,6 +339,36 @@ variable "tags" {
     Stack     = "iya-sts-environment"
     Lifecycle = "destroy-after-test-run"
   }
+}
+
+variable "cloudfront_enabled" {
+  description = <<-EOT
+    A CloudFront distribution in front of the load balancer (cloudfront.tf):
+    public_hostname goes to it, and direct_hostname stays on the load balancer
+    for mutual TLS, Kerberos, LDAP, SPIFFE and the plain-HTTP revocation
+    listener. Needs public_hostname and direct_hostname, in a single-cell
+    environment, and a foundation re-applied by an administrator.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "direct_hostname" {
+  description = "The name that reaches the load balancer itself where cloudfront_enabled is on, e.g. `direct.test-idp.iyasec.io`. The node's certificate names it too (deploy/aws/certificate)."
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_log_bucket" {
+  description = "The S3 bucket CloudFront's standard logs go to; empty for none. Foundation's `cloudfront_log_buckets` must list it."
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_log_prefix" {
+  description = "The prefix of this distribution's logs in cloudfront_log_bucket."
+  type        = string
+  default     = ""
 }
 
 variable "public_hostname" {

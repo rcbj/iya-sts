@@ -181,7 +181,7 @@ function childMain() {
         // password. A static surface over `/authn-api` since #571: signed
         // in as its page does, and its answer followed with a GET.
         if (r.status >= 300 && r.status < 400 &&
-            /\/authn\/login\?authn=/.test(at)) {
+            /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at)) {
           const sent = await authnScreen.submit({ port: port, jar: jar,
             at: new URL(at, base).pathname + new URL(at, base).search,
             fields: { action: 'login', username: username,
@@ -562,6 +562,50 @@ function childMain() {
          JSON.stringify(planted.cns) + ' second=' + hopText(r) +
          ' groups=' + JSON.stringify(cns) + ' mark=' +
          JSON.stringify(mark) + ' ignored=' + ignored.length);
+
+    // 9. A PARTNER'S PHOTO (#719), through the real sign-in: the partner's
+    // `picture` reaches the hook in `federation_sp.ts`, which copies it after
+    // the sign-in, and the service provider's entry names this realm's copy.
+    // `tests/profile_photo.js` asks what the copy does; this asks that a
+    // sign-in starts it at all, which calling the library directly cannot.
+    const photoHost = http.createServer(function (q, s) {
+      const sof = Buffer.alloc(19);
+      sof[0] = 0xff;
+      sof[1] = 0xc0;
+      sof.writeUInt16BE(17, 2);
+      sof[4] = 8;
+      sof.writeUInt16BE(96, 5);
+      sof.writeUInt16BE(96, 7);
+      s.end(Buffer.concat([Buffer.from([0xff, 0xd8]), sof,
+                           Buffer.from([0xff, 0xda, 0, 2, 1, 0xff, 0xd9])]));
+    });
+    await new Promise(function (ready) {
+      photoHost.listen(0, '127.0.0.1', ready);
+    });
+    await setRel('fedAutocreateUsers', 'TRUE');
+    await setRel('fedUpdateUserAttributes', 'TRUE');
+    const photoPerson = 'prov-photo-' + process.pid;
+    const photoSource = 'http://127.0.0.1:' + photoHost.address().port +
+                        '/partner.jpg';
+    realms.run(realms.DEFAULT_REALM, function () {
+      ldap.createUser(photoPerson, { invent: false });
+      ldap.writeProfilePhoto(photoPerson, '', photoSource);
+    });
+    const photoSignIn = await federatedSignIn(photoPerson);
+    const photoName = createdName(photoPerson);
+    let copiedTo = '';
+    for (let i = 0; i < 40 && copiedTo.indexOf('/web/photo/') < 0; i += 1) {
+      copiedTo = await inSp(async function () {
+        return String(attr(entryOf(photoName), 'pictureUrl')[0] || '');
+      });
+      await new Promise(function (r) { setTimeout(r, 100); });
+    }
+    note(photoSignIn.status === 200 &&
+         copiedTo.indexOf('/realm/' + SP + '/web/photo/') > 0,
+         '9. a partner\'s picture is copied after a real federated sign-in, ' +
+         'and the entry names this realm\'s copy',
+         hopText(photoSignIn) + ' pictureUrl=' + copiedTo);
+    photoHost.close();
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

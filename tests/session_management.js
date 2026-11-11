@@ -13,16 +13,21 @@
 //   1. THE LIBRARY: section 3's `session_state` formula, recomputed here by
 //      hand; the cookie's attributes on each kind of port; which redirect
 //      URIs have an origin; nothing owed while the setting is off.
-//   2. THE OP IFRAME'S SCRIPT, run in a node vm with a fake window, cookie
-//      and `postMessage` — rcbj's choice over a browser: `unchanged` for the
-//      state it was given, `changed` for another origin, another browser
-//      state, a tampered value, and `error` for a malformed message.
+//   2. THE OP IFRAME'S SCRIPT, as the PAGE carries it inline (#1297) — the
+//      one `<script>`, no `src=`, its text exactly what the hash in the
+//      policy names, recomputed here with node's crypto — then run in a node
+//      vm with a fake window, cookie and `postMessage` (rcbj's choice over a
+//      browser): `unchanged` for the state it was given, `changed` for
+//      another origin, another browser state, a tampered value, and `error`
+//      for a malformed message.
 //   3. THE ENDPOINTS, in a child process: a real sign-in carrying
 //      `session_state` and writing the browser state, `prompt=none` with and
 //      without a session, a sign-out clearing the state (so the iframe says
 //      `changed`), a new sign-in minting a new state, the iframe page's
-//      narrowed `frame-ancestors`, discovery, and everything absent while the
-//      setting is off.
+//      narrowed `frame-ancestors` and its `script-src` of exactly the inline
+//      script's hash (never `'self'` or `'unsafe-inline'`), the framed
+//      door's refusal of any other script source, discovery, and everything
+//      absent while the setting is off.
 //
 // **THE CHILD** is `tests/rfc9068_access_tokens.js`'s reason: the protocol
 // stack registers every route on the shared app.
@@ -78,6 +83,31 @@ async function askTheIframe(script, cookie, origin, message, webCrypto) {
   }
   log.debug("Leaving askTheIframe().");
   return answers[0] || { text: '(no answer)', to: '' };
+}
+
+// The scripts a page carries: each `<script…>` tag's attributes and text,
+// read here rather than through the module, so the test holds what a browser
+// would see.
+function scriptsOf(html) {
+  log.debug("Entering scriptsOf().");
+  const out = [];
+  const re = /<script([^>]*)>([\s\S]*?)<\/script>/gi;
+  let m = re.exec(html);
+  while (m) {
+    out.push({ attributes: m[1], text: m[2] });
+    m = re.exec(html);
+  }
+  log.debug("Leaving scriptsOf().");
+  return out;
+}
+
+// A CSP hash source over a script's exact text, computed with node's crypto
+// rather than the service's, so the two are independent.
+function hashSource(text) {
+  log.debug("Entering hashSource().");
+  log.debug("Leaving hashSource().");
+  return "'sha256-" + nodeCrypto.createHash('sha256').update(text, 'utf8')
+    .digest('base64') + "'";
 }
 
 // ---------------------------------------------------------------------------
@@ -144,46 +174,72 @@ async function library(t) {
           'HTTPS, Lax on plain HTTP, and cleared for the empty state',
           secure + ' | ' + plain);
 
-  t.log.info('=== 2. the OP iframe\'s script, in a vm ===');
+  t.log.info('=== 2. the OP iframe\'s script, inline, in a vm ===');
+  // #1297: ONE document, the script inline under the hash of its exact text.
+  for (const accounts of [false, true]) {
+    const page = sm.iframePage(accounts);
+    const scripts = scriptsOf(page);
+    const text = scripts.length ? scripts[0].text : '';
+    t.check(scripts.length === 1 && scripts[0].attributes === '' &&
+              !/\ssrc\s*=/i.test(page) &&
+              text === sm.scriptFor(accounts) &&
+              !/<\/script/i.test(sm.scriptFor(accounts)),
+            '2-0a. ' + (accounts ? 'the list\'s' : 'the one-state') +
+            ' page carries ONE inline script, no src=, byte for byte the ' +
+            'script (which holds no </script)',
+            JSON.stringify(scripts.map(function (one) {
+              return one.attributes + ' ' + one.text.length;
+            })));
+    t.check(sm.scriptHashFor(accounts) === hashSource(text) &&
+              /^'sha256-[A-Za-z0-9+/]{43}='$/.test(sm.scriptHashFor(accounts)),
+            '2-0b. and the hash it is served under is the SHA-256 of that ' +
+            'text, recomputed here', sm.scriptHashFor(accounts) + ' vs ' +
+            hashSource(text));
+  }
+  t.check(sm.scriptHashFor(false) !== sm.scriptHashFor(true) &&
+            sm.iframePage(false) === sm.iframePage(false),
+          '2-0c. the two scripts have two hashes, and the page is a ' +
+          'constant');
+  const SERVED = scriptsOf(sm.iframePage(false))[0].text;
   const RP = 'https://rp.example';
   const state = stsCrypto.sessionStateHash('c1', RP, 'BS1');
   const cookie = 'other=1; ' + sm.COOKIE + '=BS1; x=y';
-  let a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'c1 ' + state);
+  let a = await askTheIframe(SERVED, cookie, RP, 'c1 ' + state);
   t.check(a.text === 'unchanged' && a.to === RP,
           '2a. the state it was given is unchanged, answered to that origin',
           JSON.stringify(a));
-  a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, 'https://evil.example',
+  a = await askTheIframe(SERVED, cookie, 'https://evil.example',
                          'c1 ' + state);
   t.check(a.text === 'changed', '2b. from another origin it is changed',
           JSON.stringify(a));
-  a = await askTheIframe(sm.IFRAME_SCRIPT, sm.COOKIE + '=BS2', RP,
+  a = await askTheIframe(SERVED, sm.COOKIE + '=BS2', RP,
                          'c1 ' + state);
   t.check(a.text === 'changed', '2c. another browser state is changed',
           JSON.stringify(a));
-  a = await askTheIframe(sm.IFRAME_SCRIPT, '', RP, 'c1 ' + state);
+  a = await askTheIframe(SERVED, '', RP, 'c1 ' + state);
   t.check(a.text === 'changed', '2d. no cookie (signed out) is changed',
           JSON.stringify(a));
   const signedOut = stsCrypto.sessionStateHash('c1', RP, '');
-  a = await askTheIframe(sm.IFRAME_SCRIPT, '', RP, 'c1 ' + signedOut);
+  a = await askTheIframe(SERVED, '', RP, 'c1 ' + signedOut);
   t.check(a.text === 'unchanged', '2e. and a signed-out state stays ' +
           'unchanged while nobody signs in', JSON.stringify(a));
   const spaced = stsCrypto.sessionStateHash('my client', RP, 'BS1');
-  a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'my client ' + spaced);
+  a = await askTheIframe(SERVED, cookie, RP, 'my client ' + spaced);
   t.check(a.text === 'unchanged', '2f. a client_id with a space parses ' +
           '(the last space divides)', JSON.stringify(a));
   // A DIFFERENT first character, always: replacing it with a fixed 'Z'
   // changed nothing whenever the random value already began with one (one
   // run in 64, CI run 36553670107's cluster job).
   const tampered = (state[0] === 'Z' ? 'Y' : 'Z') + state.slice(1);
-  a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'c1 ' + tampered);
+  a = await askTheIframe(SERVED, cookie, RP, 'c1 ' + tampered);
   t.check(a.text === 'changed', '2g. a tampered value is changed',
           JSON.stringify(a));
   for (const bad of ['nospace', 'c1 nodot', 'c1 abc.', ' abc.def']) {
-    a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, bad);
+    a = await askTheIframe(SERVED, cookie, RP, bad);
     t.check(a.text === 'error', '2h. "' + bad + '" is error',
             JSON.stringify(a));
   }
-  a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, { not: 'a string' });
+  a = await askTheIframe(SERVED, cookie, RP, { not: 'a string' });
   t.check(a.text === 'error', '2i. a message that is not a string is error',
           JSON.stringify(a));
   // #187: the conformance suite's browser has a digest that rejects, and an
@@ -196,11 +252,11 @@ async function library(t) {
   const longState = stsCrypto.sessionStateHash(long, RP, 'BS\u00e9\u20ac');
   for (const [label, webCrypto] of [['no Web Crypto', null],
                                     ['a rejecting digest', rejecting]]) {
-    a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'c1 ' + state,
+    a = await askTheIframe(SERVED, cookie, RP, 'c1 ' + state,
                            webCrypto);
-    const b = await askTheIframe(sm.IFRAME_SCRIPT, sm.COOKIE + '=BS2', RP,
+    const b = await askTheIframe(SERVED, sm.COOKIE + '=BS2', RP,
                                  'c1 ' + state, webCrypto);
-    const c = await askTheIframe(sm.IFRAME_SCRIPT,
+    const c = await askTheIframe(SERVED,
                                  sm.COOKIE + '=BS\u00e9\u20ac', RP,
                                  long + ' ' + longState, webCrypto);
     t.check(a.text === 'unchanged' && b.text === 'changed' &&
@@ -350,8 +406,11 @@ function childMain() {
            !/Cannot GET/.test(r.text),
          '3a. off (the default), the OP iframe is a 404 naming the setting, ' +
          'not Express\'s', r.status + ' ' + r.text.slice(0, 120));
-    r = await request(port, 'GET', sm.SCRIPT_PATH);
-    note(r.status === 404, '3a. and so is its script', r.status);
+    // #1297: the script is inline; its old sibling path is routed by nobody.
+    r = await request(port, 'GET', '/oauth2/check_session.js');
+    note(r.status === 404 && /Cannot GET/.test(r.text),
+         '3a. and /oauth2/check_session.js is not routed at all (#1297)',
+         r.status + ' ' + r.text.slice(0, 120));
     r = await request(port, 'GET', '/.well-known/openid-configuration');
     note(r.status === 200 && r.json &&
            r.json.check_session_iframe === undefined,
@@ -371,25 +430,68 @@ function childMain() {
          r.json && r.json.check_session_iframe);
     r = await request(port, 'GET', sm.IFRAME_PATH);
     const csp = String(r.headers['content-security-policy'] || '');
-    const ancestors = (/frame-ancestors ([^;]*)/.exec(csp) || [])[1] || '';
+    const directive = function (name) {
+      const found = csp.split(/;\s*/).filter(function (one) {
+        return one.split(' ')[0] === name;
+      });
+      return found.length === 1 ? found[0].slice(name.length + 1) : null;
+    };
+    const ancestors = directive('frame-ancestors') || '';
     note(r.status === 200 && ancestors.split(' ').indexOf(RP) >= 0 &&
            ancestors.indexOf('*') < 0 && ancestors.indexOf("'none'") < 0 &&
-           /script-src 'self'/.test(csp) && /base-uri 'none'/.test(csp) &&
+           directive('base-uri') === "'none'" &&
+           directive('default-src') === "'none'" &&
            r.headers['x-frame-options'] === undefined &&
-           /<script src="check_session\.js"><\/script>/.test(r.text),
+           /no-store/.test(String(r.headers['cache-control'] || '')),
          '3c. the OP iframe: frame-ancestors the registered relying ' +
-         'parties, no *, script-src \'self\', no X-Frame-Options',
-         csp + ' | xfo=' + r.headers['x-frame-options']);
-    r = await request(port, 'GET', sm.SCRIPT_PATH);
-    note(r.status === 200 && /javascript/.test(r.headers['content-type']) &&
-           r.text === sm.IFRAME_SCRIPT,
-         '3c. and its script is served beside it');
+         'parties, no *, default-src and base-uri \'none\', no ' +
+         'X-Frame-Options', csp + ' | xfo=' + r.headers['x-frame-options']);
+    // #1297: one document, its script inline, admitted by its exact hash.
+    const inline = [];
+    const scriptRe = /<script([^>]*)>([\s\S]*?)<\/script>/gi;
+    for (let m = scriptRe.exec(r.text); m; m = scriptRe.exec(r.text)) {
+      inline.push({ attributes: m[1], text: m[2] });
+    }
+    const servedHash = inline.length === 1
+      ? "'sha256-" + require('crypto').createHash('sha256')
+        .update(inline[0].text, 'utf8').digest('base64') + "'"
+      : '';
+    note(inline.length === 1 && inline[0].attributes === '' &&
+           !/\ssrc\s*=/i.test(r.text) && inline[0].text === sm.IFRAME_SCRIPT,
+         '3c. and carries ONE inline script, no src=, the one-state script',
+         JSON.stringify(inline.map(function (one) {
+           return one.attributes + ' ' + one.text.length;
+         })));
+    note(directive('script-src') === servedHash &&
+           !/'self'|'unsafe-inline'/.test(directive('script-src') || ''),
+         '3c. and script-src is exactly the SHA-256 of that text, ' +
+         'recomputed here: no \'self\', no \'unsafe-inline\'',
+         String(directive('script-src')) + ' vs ' + servedHash);
     note(/frame-ancestors 'none'/.test(app.framedContentSecurityPolicy([])) &&
            /frame-ancestors 'none'/.test(
              app.framedContentSecurityPolicy(['*', 'https:',
                                               'https://x.example/path'])),
          '3c. the framing door cannot be opened to everyone: no origin, or ' +
          'nothing but non-origins, is \'none\'');
+    const scriptOf = function (policy) {
+      return ((/(?:^|; )script-src ([^;]*)/.exec(policy) || [])[1]) || '';
+    };
+    const HASH = "'sha256-" + 'A'.repeat(43) + "='";
+    note(scriptOf(app.framedContentSecurityPolicy([RP],
+           { 'script-src': "'unsafe-inline'" })) === "'none'" &&
+           scriptOf(app.framedContentSecurityPolicy([RP],
+             { 'script-src': "'unsafe-inline' " + HASH + " 'unsafe-eval' " +
+               "* https: https://cdn.example 'nonce-abc'" })) === HASH &&
+           scriptOf(app.framedContentSecurityPolicy([RP],
+             { 'script-src': "'self'" })) === "'self'" &&
+           scriptOf(app.framedContentSecurityPolicy([RP], {})) === "'none'" &&
+           scriptOf(app.framedContentSecurityPolicy([RP],
+             { 'script-src': null })) === "'none'" &&
+           /base-uri 'none'/.test(app.framedContentSecurityPolicy([RP],
+             { 'base-uri': '*', 'script-src': HASH })),
+         '3c. and its script-src passes only \'self\' and hash sources: ' +
+         '\'unsafe-inline\', \'unsafe-eval\', hosts, schemes and nonces ' +
+         'are dropped, nothing left is \'none\'; base-uri stays');
 
     flow = await signIn('sm-alice');
     let p = paramsOf(flow);
@@ -496,7 +598,7 @@ function inAChild(t) {
   findings.forEach(function (one) {
     t.check(one.ok, one.what, one.detail);
   });
-  t.check(findings.length >= 16, 'the child ran every section',
+  t.check(findings.length >= 18, 'the child ran every section',
           findings.length + ' finding(s)');
   log.debug("Leaving inAChild().");
 }
@@ -511,6 +613,6 @@ async function run(t) {
 module.exports = {
   name: 'session management',
   describe: 'OpenID Connect Session Management 1.0 (#121): session_state, ' +
-            'the OP browser state, the OP iframe and its script',
+            'the OP browser state, the OP iframe and its inline script',
   run: run
 };

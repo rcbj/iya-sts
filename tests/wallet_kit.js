@@ -633,14 +633,17 @@ async function boot() {
     }
     const dcRequest = view ? view.dcRequest : null;
     const u = new URL(waitPath, 'http://x');
+    // Product carries these in the fragment (#1487), as the page reads them.
+    const carried = new URLSearchParams(u.search.slice(1) + '&' +
+                                        u.hash.slice(1));
     return { started: started, shell: shell, opened: opened,
              waitPath: waitPath, waiting: waiting, view: view,
              walletUrl: walletUrl, requestObject: requestObject,
              dcRequest: dcRequest,
              dcPayload: dcRequest ? decode(dcRequest.data.request) : null,
-             authn: u.searchParams.get('authn'),
-             mfa: u.searchParams.get('mfa') || '',
-             enrol: u.searchParams.get('enrol') || '',
+             authn: carried.get('authn'),
+             mfa: carried.get('mfa') || '',
+             enrol: carried.get('enrol') || '',
              state: state, prefix: p };
   }
 

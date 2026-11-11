@@ -674,6 +674,61 @@ async function driveSigner(t) {
            why: v.why || '' };
 }
 
+// THE CASES THROUGH THE ONE DOOR (#1360), FOR THREE OF ITS USE CASES. The door
+// composes the path rules and adds field checks, so what this asserts is one
+// way: nothing the path function refuses is let through, and anything refused
+// beyond it is refused by a field check or the self-signed rule. Revocation is
+// left to a site, since a case's list is on no host this file can reach.
+async function throughTheDoor(t, cases) {
+  log.debug("Entering throughTheDoor().");
+  const trust = require('../common/certificate_trust');
+  const config = require('../common/config');
+  const BEYOND = ['validity', 'basic-constraints', 'key-usage',
+                  'extended-key-usage', 'signature-strength', 'key-strength',
+                  'critical-extensions', 'self-signed-allowed'];
+  config.setOverride('pki.paranoid', 'on');
+  try {
+    const usable = cases.filter(function (one) {
+      return !!one.peer_certificate && !!(one.trusted_certs || []).length;
+    });
+    for (const id of ['tls-client', 'tls-server-outbound', 'jose-signer']) {
+      const weaker = [];
+      const unexplained = [];
+      let beyond = 0;
+      for (const one of usable) {
+        const engine = await driveAnchors(one);
+        const at = timeOf(one);
+        const verdict = await trust.assess(id,
+          { leaf: derOf(one.peer_certificate),
+            chain: one.untrusted_intermediates.map(derOf) },
+          { anchors: one.trusted_certs.map(derOf), anchorSources: ['caller'],
+            now: at === null ? RealDate.now() : at, force: true,
+            siteAsksRevocation: true });
+        if (!engine.ok && verdict.ok) {
+          weaker.push(one.id);
+        } else if (engine.ok && !verdict.ok) {
+          beyond += 1;
+          if (!BEYOND.some(function (check) {
+            return verdict.checks[check] === 'failed';
+          })) {
+            unexplained.push(one.id + ' (' + verdict.why + ')');
+          }
+        }
+      }
+      t.log.info('x509-limbo, the door as ' + id + ': ' + usable.length +
+                 ' case(s), ' + beyond + ' refused beyond the path rules.');
+      t.check(weaker.length === 0, id + ': the door lets nothing through ' +
+              'that the path rules refuse', weaker.slice(0, 20).join(' | '));
+      t.check(unexplained.length === 0, id + ': what it refuses beyond them ' +
+              'is a field check or the self-signed rule',
+              unexplained.slice(0, 20).join(' | '));
+    }
+  } finally {
+    config.clearOverride('pki.paranoid');
+  }
+  log.debug("Leaving throughTheDoor().");
+}
+
 async function driveDirect(t) {
   log.debug("Entering driveDirect().");
   const pki = require('../common/pki');
@@ -1006,6 +1061,7 @@ async function run(t) {
       log.debug("Caught in run(): " + ((e && e.message) || e));
     }
   }
+  await throughTheDoor(t, loaded.cases);
   // EVERY EXCEPTION STILL EXCUSES SOMETHING, on every driver it names — so
   // the list cannot outlive the gap it records.
   EXCEPTIONS.forEach(function (one) {
@@ -1024,8 +1080,8 @@ module.exports = {
   name: 'x509_limbo',
   describe: '#201: C2SP x509-limbo against every certificate path validator ' +
             '— pki.verifyPathToAnchors, verifySignerChain, ' +
-            'verifyIssuedDirectly, the CRL reader, and OpenSSL as the main ' +
-            'port and outbound requests configure it',
+            'verifyIssuedDirectly, the CRL reader, OpenSSL as the main port ' +
+            'and outbound requests configure it, and the one door (#1360)',
   run: run,
   EXCEPTIONS: EXCEPTIONS
 };

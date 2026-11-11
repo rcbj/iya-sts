@@ -26,6 +26,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -44,12 +45,7 @@ interface PortalDelegateDeps {
 // `uid`. Its length below three is refused by the handler, with a code of
 // its own, rather than by the schema: the page says why in the person's
 // language, and a generic validation failure would not.
-const SEARCH_QUERY = vz.object({
-  q: vz.string().max(256)
-    .describe('Part of a username (`uid`), at least three characters. ' +
-              'Matched as a contains against the RDN value of the people ' +
-              'in this realm\'s `ou=users`.')
-});
+const SEARCH_QUERY = ModelZod.query('account', 'findDelegateCandidates');
 
 // The fewest characters a search takes. The directory refuses fewer too
 // (`ldap_server.js`, DELEGATE_CANDIDATE_MIN); this is the door's answer.
@@ -65,13 +61,7 @@ const SEARCH_MIN = 3;
 // time.
 const SEARCH_LIMIT = { identity: 30, address: 120 };
 
-const DELEGATE_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['set', 'clear']))
-    .describe('`set` names the delegate; `clear` removes it.'),
-  delegate: vz.string().max(1024).optional()
-    .describe('The DN of a person or an application in this realm, for ' +
-              '`action=set`.')
-});
+const DELEGATE_FORM = ModelZod.body('account', 'setDelegate');
 
 /**
  * `/portal/delegate`'s account API operations: the one party who may act for
@@ -247,57 +237,20 @@ class PortalDelegate {
     log.debug("Entering PortalDelegate.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/delegate',
-        operationId: 'getDelegate', tag: 'Who may act for you',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/delegate',
-        summary: 'Who may act for you',
-        description: '`mayAct`, the DN named in your entry\'s stsMayAct ' +
-          '(every access token about you carries it as RFC 8693 may_act), ' +
-          '`delegate.kind` (`person` or `application`, null where the DN ' +
-          'names no entry any more), and `notDelegated`, whether your ' +
-          'account refuses delegation.',
-        query: vz.object({}),
+        operationId: 'getDelegate', access: 'person', query: ModelZod.query('account', 'getDelegate'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));
         } },
       { method: 'GET', path: ctx.BASE + '/delegate/candidates',
-        operationId: 'findDelegateCandidates', tag: 'Who may act for you',
-        access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/delegate/candidates',
-        summary: 'Finds people you may name, by part of their username',
-        description: 'The people of this realm whose username (`uid`, the ' +
-          'RDN value of their entry) contains `q`, at least three ' +
-          'characters: native people only — never one a federation ' +
-          'partner\'s or a consumer provider\'s sign-in created — and ' +
-          'never you, a disabled account, a service account, a group or ' +
-          'an application. At most ten, each `{ uid, cn, dn }` and nothing ' +
-          'else; `more` says more matched, and a narrower `q` finds them. ' +
-          'Naming one is POST /account-api/delegate with its `dn`.',
+        operationId: 'findDelegateCandidates', access: 'person',
         query: SEARCH_QUERY,
-        answer: { type: 'object', properties: {
-          query: { type: 'string' },
-          people: { type: 'array', maxItems: 10, items: {
-            type: 'object', properties: {
-              uid: { type: 'string' }, cn: { type: 'string' },
-              dn: { type: 'string' } } } },
-          more: { type: 'boolean' } } },
-        statuses: {
-          400: 'Fewer than three characters (STS-PORTAL-0620).',
-          429: 'Too many searches in the window (STS-PORTAL-0621, or the ' +
-               'rate limiter\'s own code).',
-          503: 'The directory could not answer (STS-PORTAL-0622).' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.search(ctx, req, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/delegate',
-        operationId: 'setDelegate', tag: 'Who may act for you',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/delegate',
-        summary: 'Names, or clears, who may act for you',
-        description: 'Writes stsMayAct on your own entry: a person or an ' +
-          'application of this realm, by DN. A token exchange presenting a ' +
-          'token about you is then refused for any other actor.',
-        body: DELEGATE_FORM,
+        operationId: 'setDelegate', access: 'person', body: DELEGATE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.change(ctx, res, caller, input.body);

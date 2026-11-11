@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
 // File: key_material.js
 //
 // ---------------------------------------------------------------------------
@@ -39,19 +41,28 @@ var pkijs = require("pkijs");
 var pqx = require("./pqc_x509");
 var pqc = require("./pqc");
 var asn1js = require("asn1js");
+// A leaf: the table requires nothing of this service, so this directory
+// still reaches only its own files and npm packages (#1280).
+var errorCodes = require("../error_codes");
 
 // A node consumer (the tests load this module directly) may have no
 // CONFIG_FILE, so fall back to info rather than failing to load.
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "key_material",
   level: (function () {
     try {
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in key_material log level: " + logLevelProblem);
+}
 
 // PKI.js needs a Web Crypto engine. In the browser the global `crypto` object
 // provides it; in node (v18+) the same global exists, which is what lets the
@@ -63,7 +74,10 @@ var log = bunyan.createLogger({
                       crypto: crypto }));
     }
   } catch (e) {
-    log.error('Failed to init PKI.js engine: ' + e.message);
+    log.debug("Caught in initPkiEngine(): " +
+              ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-PKI-0222') +
+              'Failed to init PKI.js engine: ' + e.message);
   }
 })();
 
@@ -595,7 +609,9 @@ var OID_FRIENDLY_NAME = '1.2.840.113549.1.9.20';
 var PBES2_OPTS = {
   contentEncryptionAlgorithm: { name: 'AES-CBC', length: 256 },
   hmacHashAlgorithm: 'SHA-256',
-  iterationCount: 100000,
+  // OWASP's figure for PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4). Web Crypto
+  // derives it on libuv's thread pool, off the event loop.
+  iterationCount: jose.PBKDF2_EXPORT_ITERATIONS,
   pbkdf2HashAlgorithm: 'SHA-256'
 };
 
@@ -701,7 +717,9 @@ async function buildPkcs12(options) {
   await pfx.parsedValue.authenticatedSafe.makeInternalValues({ safeContents: [{
       }, {}] });
   await pfx.makeInternalValues({ password: strBuf(opts.password),
-                               iterations: 100000,
+                               // #1512: the one export figure, beside
+                               // pbes2JweEncrypt()'s (jose_jwe.js says why).
+                               iterations: jose.PBKDF2_EXPORT_ITERATIONS,
                                pbkdf2HashAlgorithm: 'SHA-256',
                                hmacHashAlgorithm: 'SHA-256' });
   log.debug("Leaving buildPkcs12().");

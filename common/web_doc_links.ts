@@ -48,7 +48,7 @@ type Json = any;
 // the local markdown actually has.
 const CONSOLE: Record<string, string> = {
   '/admin': 'admin-console.html#how-the-console-is-laid-out',
-  '/admin/cluster': 'configuration.html#cluster',
+  '/admin/cluster': 'cluster-concepts.html',
   '/admin/acme': 'acme.html',
   '/admin/acme/monitor': 'acme.html',
   '/admin/est': 'est.html',
@@ -66,6 +66,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/authorization-servers':
     'oauth-oidc.html#multiple-authorization-servers--adminauthorization-servers',
   '/admin/caches': 'caches.html',
+  '/admin/config-dump': 'configuration-dump.html',
   '/admin/cert-issuance': 'configure-enrollment.html',
   '/admin/audit': 'admin-console.html#audit-log--adminaudit',
   '/admin/audit-export': 'audit-export.html',
@@ -124,9 +125,11 @@ const CONSOLE: Record<string, string> = {
   '/admin/ldap/roles': 'ldap.html',
   '/admin/ldap/spiffe': 'spiffe.html',
   '/admin/listeners': 'listeners.html',
+  '/admin/malware-scanning': 'malware-scanning.html',
   '/admin/logout': 'signing-out.html',
   '/admin/mail': 'mail.html',
   '/admin/broadcast': 'shared-signals.html#broadcast-announcements',
+  '/admin/sign-in-appearance': 'sign-in-appearance.html',
   '/admin/mail/outbox': 'mail.html#where-to-look',
   '/admin/metrics': 'admin-console.html#metrics--adminmetrics',
   '/admin/mode': 'what-is-not-checked.html',
@@ -138,6 +141,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/passkey-report':
     'admin-console.html#passkeys--adminpasskey-report',
   '/admin/pki': 'pki.html',
+  '/admin/pki/trust': 'signer-truststore.html',
   '/admin/policies': 'policies.html',
   '/admin/rbac': 'admin-console.html#who-may-use-the-console',
   '/admin/realms': 'trust-realms.html',

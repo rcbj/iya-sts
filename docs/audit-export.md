@@ -145,6 +145,12 @@ rsyslog's `imtcp` or syslog-ng's syslog driver.
 Plain TCP is its own transport. `auditExport.allowHttp` covers webhook
 and Splunk URLs.
 
+**Product mode accepts a syslog or LogRhythm destination over `tls` only**, so
+the audit log does not cross the network unencrypted. Name `tls` as the
+transport, since `tcp` is the default. `tcp` and `udp`, as in the examples below,
+are refused (`STS-AUDIT-0016`) unless `audit.allowPlainSyslog` is on. Turn it on
+only for a collector on a network you trust.
+
 On **Monitoring → Audit export**, **Add a destination**:
 
 | Field | Value |

@@ -93,15 +93,15 @@ const replication = require('../persistence/persistence_replication');
 // never sent to the client whose request produced it.
 const errorCodes = require('./error_codes');
 // WHO A REQUEST CAME FROM (2026-09-18). A LEAF (rule 3) that `helpers.js`
-// already requires, so it adds nothing to what this file loads — and nothing
-// to the parent project's Kerberos COPY closure, which reaches this file.
+// already requires, so it adds nothing to what this file loads.
 const clientAddress = require('./client_address');
 const { AsyncLocalStorage } = require('async_hooks');
 
 // ---------------------------------------------------------------------------
-// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY:
-// this file is in the parent project's in-process Kerberos COPY closure
-// (kerberos/CLAUDE.md), and a top-level require would owe it two more files.
+// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY,
+// which kept two files out of the parent project's in-process Kerberos COPY
+// closure that reached this file (an obligation until #1280; the
+// arrangement stands).
 // `seq_allocator` hands out a number unique across every process of the
 // service; the origin is this process's stable name in the store, or '' with
 // no shared store. Neither throws: a failure is the caller's own counter and
@@ -528,6 +528,9 @@ const ACTIONS = [
     label: 'A dead letter was queued again by an administrator' },
   { action: 'mail.template', category: 'mail',
     label: 'A realm\'s message template was saved or reset' },
+  // A REALM'S SIGN-IN LOGO (#717), uploaded or removed.
+  { action: 'branding.logo', category: 'admin',
+    label: 'A realm\'s sign-in logo was uploaded or removed' },
   { action: 'mail.verified', category: 'mail',
     label: 'A person verified the address on their entry' },
   { action: 'mail.preferences', category: 'mail',
@@ -749,6 +752,8 @@ const ACTIONS = [
     label: 'A console page was viewed' },
   { action: 'admin.change', category: 'admin',
     label: 'A console form was posted' },
+  { action: 'admin.config-dump', category: 'admin',
+    label: 'The configuration was exported' },
   // The SUBSTANCE of a claim-set change, as against the HTTP row that says a
   // form was posted to /admin/claims or /admin/saml-attributes — one row shape
   // for both, because there is one store behind the two pages. Both are
@@ -918,6 +923,10 @@ const ACTIONS = [
   // every truststore change is one of these.)
   { action: 'admin.truststore.change', category: 'admin',
     label: 'A client-certificate trust anchor was added or removed' },
+  // #1360. A signer anchor decides whose signature this realm believes, and a
+  // paranoid row decides what it asks of a certificate, so both are recorded.
+  { action: 'admin.pki.trust.change', category: 'admin',
+    label: 'The signer truststore or a paranoid PKI setting was changed' },
 
   // STORED KERBEROS KEYS (2026-09-12). A person's keys DERIVED from a password
   // that was just set or verified is an `authentication` row, for the portal
@@ -1266,6 +1275,11 @@ const ACTIONS = [
     label: 'The RISC account register was cleared' },
 
   // ---------------------------------------------------------------------
+  // #1347: a minted row a permanent data error dropped, its post-mortem. An
+  // operator looking for it must be able to name it in `?action=`.
+  { action: 'persistence.minted-drop', category: 'service',
+    label: 'A minted row that could never commit was dropped' },
+  // ---------------------------------------------------------------------
   // ACTIONS RECORDED AND NEVER LISTED (2026-09-26). Each was written by its
   // module and had no row here, so the audit filter could not name it — and
   // since #86 holds `?action=` to this list, `GET /admin-api/audit` REFUSED a
@@ -1431,6 +1445,8 @@ const ACTIONS = [
     label: 'A group was closed to its owners, or opened to them again' },
   { action: 'group.set-mail', category: 'directory',
     label: 'A group was given an address, or its address was taken away' },
+  { action: 'group.set-policy', category: 'directory',
+    label: 'A group was given a named policy, or the name was cleared' },
   { action: 'krb5.keytab.person', category: 'authentication',
     label: 'A person\'s keytab was made from a password in hand' },
   { action: 'logout.backchannel.retry', category: 'session',
@@ -1518,6 +1534,20 @@ const ACTIONS = [
     label: 'A person took their signing key pair off' },
   { action: 'portal.signing-key.csrf', category: 'authentication',
     label: 'A signing key form was refused for its CSRF token' },
+  // #1290: a person's key pair is removed by REVOKING it, row by row.
+  { action: 'portal.signing-key.revoked', category: 'authentication',
+    label: 'A person revoked one of their signing key pairs' },
+  // #1291: a person's own did:web, published from the user portal.
+  { action: 'did.person.published', category: 'authentication',
+    label: 'A person published a did:web of their own' },
+  { action: 'did.person.version', category: 'authentication',
+    label: 'A person\'s published DID document gained a new version' },
+  { action: 'did.person.authorized', category: 'authentication',
+    label: 'A person authorized a key on their published DID' },
+  { action: 'did.person.deactivated', category: 'authentication',
+    label: 'A person deactivated their published DID' },
+  { action: 'admin.did.deactivated', category: 'authentication',
+    label: 'An administrator deactivated a person\'s published DID' },
   { action: 'portal.siop.enrol', category: 'authentication',
     label: 'A person enrolled a self-issued subject by proving it with a ' +
            'wallet' },
@@ -1680,7 +1710,12 @@ const ACTIONS = [
   { action: 'admin.audit-export.disable', category: 'admin',
     label: 'An audit export destination was disabled' },
   { action: 'admin.audit-export.test', category: 'admin',
-    label: 'An audit export destination was tested' }
+    label: 'An audit export destination was tested' },
+  // THE TEST EVENT ITSELF (#641). Never recorded here: it is what a
+  // destination RECEIVES when an administrator presses Test, and a SIEM
+  // filtering on actions needs this one named like every other.
+  { action: 'audit.export.test', category: 'service',
+    label: 'A test event an audit export destination was sent' }
 ];
 
 const CATEGORY_OF_ACTION = {};
@@ -1746,12 +1781,95 @@ const events = realms.arr({ persist: 'audit.events', merge: 'own',
 // out leased numbers wherever the store is shared, #465), and a restored ring
 // beside one that went back to 0 would renumber every event written
 // afterwards on top of ones already read.
+// `head` (ASVS 5.0.0 16.4.2) is the checksum of the newest row this process
+// wrote in this realm, `headSeq` its seq and `headMac` a keyed checksum over
+// the two: what a row deleted from the END of the ring is found by, where the
+// chain on each row finds one deleted from the middle.
 const nums = realms.obj(function () {
-  return { seq: 0, recorded: 0 };
+  return { seq: 0, recorded: 0, head: '', headSeq: 0, headMac: '' };
 }, { persist: 'audit.nums', merge: 'own', contributionsOnRead: true });
 
 
 let dropped = 0;
+
+// ---------------------------------------------------------------------------
+// AN INCIDENT ID IS THE seq OF THE ROW THE REQUEST WILL BE RECORDED AS
+// (#1326, rcbj, 2026-11-05). An error page prints it so that a person can
+// hand an operator one number, and the operator finds the row on the audit
+// page by it. The row is written by `recordHttp()` when the response ends,
+// after the page is drawn, so the number is RESERVED while drawing and
+// carried to the row on the response under a Symbol (`error_codes.js`'s
+// arrangement for the error code, and for its reasons).
+//
+// **THE RESERVATION AND THE ROW MUST BE ONE SYNCHRONOUS RUN.** `seq` rises
+// within each process, and `audit_export.ts`'s cursor relies on it: a row
+// pushed after another row with a higher number would be skipped as already
+// sent. A page reserves its number immediately before `res.send()`, and
+// `app.js`'s call log records the row inside `res.end()` in the same tick, so
+// no other row of this process can be numbered in between. Do not reserve and
+// then await anything.
+//
+// **USED ONCE.** `recordHttp()` takes the number off the response, so the
+// second row a refused commit writes for the same response (#351) is numbered
+// as usual rather than sharing it.
+// ---------------------------------------------------------------------------
+const INCIDENT = Symbol.for('iya-sts.auditIncident');
+
+// The next number this realm's rows are given, wherever it comes from.
+function nextSeq() {
+  log.debug("Entering nextSeq().");
+  const seq = seqAllocator.next('audit', function () {
+    nums.seq++;
+    return nums.seq;
+  });
+  log.debug("Leaving nextSeq().");
+  return seq;
+}
+
+/**
+ * Reserves the `seq` the response's audit row will carry, and returns it: the
+ * incident ID an error page prints. Calling it again returns the same number.
+ * Must be followed, in the same synchronous run, by the response being sent.
+ *
+ * @param res - the response the page is about to be sent on
+ * @returns the reserved number, or 0 where none could be reserved
+ */
+function reserveIncident(res) {
+  log.debug("Entering reserveIncident().");
+  if (!res || typeof res !== 'object') {
+    log.debug("Leaving reserveIncident(). No response.");
+    return 0;
+  }
+  if (res[INCIDENT]) {
+    log.debug("Leaving reserveIncident(). Already reserved.");
+    return res[INCIDENT];
+  }
+  try {
+    const seq = Number(nextSeq());
+    Object.defineProperty(res, INCIDENT, { value: seq, writable: true,
+                                           configurable: true,
+                                           enumerable: false });
+    log.debug("Leaving reserveIncident(). " + seq);
+    return seq;
+  } catch (e) {
+    // A page that cannot number its incident still draws: the row is then
+    // numbered as usual, and the page says it has no incident ID.
+    log.debug("Caught in reserveIncident(): " + ((e && e.message) || e));
+    log.debug("Leaving reserveIncident(). None.");
+    return 0;
+  }
+}
+
+// The reserved number, taken off the response so it is used once; 0 for none.
+function takeIncident(res) {
+  log.debug("Entering takeIncident().");
+  const seq = (res && typeof res === 'object' && res[INCIDENT]) || 0;
+  if (seq) {
+    res[INCIDENT] = 0;
+  }
+  log.debug("Leaving takeIncident().");
+  return seq;
+}
 
 // ---------------------------------------------------------------------------
 // WHO, for an HTTP event — and why it arrives through a slot.
@@ -2051,10 +2169,9 @@ function record(event) {
     // UNIQUE ACROSS EVERY PROCESS OF THE SERVICE (#465): a number from this
     // process's block leased from the store, or this realm's own counter
     // where there is one writer. See common/seq_allocator.ts.
-    seq: seqAllocator.next('audit', function () {
-      nums.seq++;
-      return nums.seq;
-    }),
+    // OR THE NUMBER AN ERROR PAGE RESERVED FOR IT (#1326), see
+    // `reserveIncident()`.
+    seq: (Number.isInteger(info.seq) && info.seq > 0) ? info.seq : nextSeq(),
     // WHICH PROCESS RECORDED IT (#465) — its stable origin in the store, or
     // '' with no shared store — the tie-break merged() sorts on.
     origin: processOrigin(),
@@ -2109,6 +2226,20 @@ function record(event) {
       ? (info.summary ? detailOf({ note: info.detail }) : {})
       : detailOf(info.detail)
   };
+  // THE CHAIN (ASVS 5.0.0 16.4.2): the checksum of the row this process wrote
+  // before it in this realm, covered by this row's own checksum. A row taken
+  // out of the middle leaves the next one naming a checksum nobody holds.
+  row.prev = String(nums.head || '');
+  row.mac = rowMac(row);
+  if (row.mac) {
+    nums.head = row.mac;
+    nums.headSeq = row.seq;
+    nums.headMac = headMac(row.origin, row.seq, row.mac);
+  } else {
+    nums.head = '';
+    nums.headSeq = 0;
+    nums.headMac = '';
+  }
   events.push(row);
   trimToCap();
   // `summarised: true` (2026-09-17, #36 follow-up): the caller logs a
@@ -2199,6 +2330,115 @@ function failure(code, event) {
  * @returns the row written, or null when it could not be recorded (logged under
  *   STS-REG-0048)
  */
+// A KEYED CHECKSUM ON EVERY ROW (#1552, ASVS 5.0.0 16.4.2). The key is not in
+// the database, so somebody able to rewrite a row there cannot make the
+// checksum agree. `verifyIntegrity()` is what reads it. A row with no checksum
+// was written with no key-encryption key in the process.
+// A row written before the chain (no `prev` member) was checksummed without
+// it, and is checked the way it was written.
+const LEGACY_MAC_FIELDS = ['seq', 'origin', 'at', 'category', 'action', 'actor',
+                           'actorForm', 'target', 'outcome', 'summary',
+                           'address', 'errorCode'];
+const MAC_FIELDS = LEGACY_MAC_FIELDS.concat(['prev']);
+
+function rowMac(row) {
+  log.debug("Entering rowMac().");
+  let mac = '';
+  const fields = row.prev === undefined ? LEGACY_MAC_FIELDS : MAC_FIELDS;
+  try {
+    mac = String(require('./keystore').keyedDigest('audit-row',
+      JSON.stringify(fields.map(function (key) {
+        return row[key] === undefined ? null : row[key];
+      }))) || '');
+  } catch (e) {
+    log.debug("Caught in rowMac(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving rowMac().");
+  return mac;
+}
+
+// The keyed checksum over the newest row's place: without the key, nobody who
+// deletes the last rows can make the head name the row that is now last.
+function headMac(origin, seq, mac) {
+  log.debug("Entering headMac().");
+  let out = '';
+  try {
+    out = String(require('./keystore').keyedDigest('audit-head',
+      JSON.stringify([String(origin || ''), Number(seq) || 0,
+                      String(mac || '')])) || '');
+  } catch (e) {
+    log.debug("Caught in headMac(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving headMac().");
+  return out;
+}
+
+/**
+ * Reports which of this realm's held audit rows no longer match their checksum,
+ * where a row is missing between two held ones, and whether this process's
+ * newest rows are still there (ASVS 5.0.0 16.4.2).
+ *
+ * The oldest rows leave the ring by design, at `audit.maxEvents`; what is
+ * checked is that nothing left any other way.
+ *
+ * @param held - the rows to check, this realm's held rows when left out (a
+ *   test passes a copy with rows taken away)
+ * @returns `{ checked, unsigned, altered, missing, head }`: `altered` the
+ *   seq of each row that no longer matches, `missing` each gap as
+ *   `{ origin, after, before }`, and `head` `intact`, `truncated`, `altered`
+ *   or `none`
+ */
+function verifyIntegrity(held) {
+  log.debug("Entering verifyIntegrity().");
+  const out = { checked: 0, unsigned: 0, altered: [], missing: [],
+                head: 'none' };
+  const byOrigin = new Map();
+  (Array.isArray(held) ? held : list()).forEach(function (row) {
+    if (!row.mac) {
+      out.unsigned += 1;
+      return;
+    }
+    out.checked += 1;
+    const again = rowMac(row);
+    if (again && again !== row.mac) {
+      out.altered.push(row.seq);
+    }
+    const origin = String(row.origin || '');
+    if (!byOrigin.has(origin)) {
+      byOrigin.set(origin, []);
+    }
+    byOrigin.get(origin).push(row);
+  });
+  // EACH PROCESS'S ROWS IN THE ORDER IT WROTE THEM, which is its seq order
+  // (`reserveIncident()` keeps seq rising within a process).
+  byOrigin.forEach(function (rows, origin) {
+    rows.sort(function (a, b) {
+      return (a.seq || 0) - (b.seq || 0);
+    });
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i].prev !== undefined && rows[i].prev !== rows[i - 1].mac) {
+        out.missing.push({ origin: origin, after: rows[i - 1].seq,
+                           before: rows[i].seq });
+      }
+    }
+  });
+  if (nums.head) {
+    const own = byOrigin.get(String(processOrigin())) || [];
+    const newest = own.length ? own[own.length - 1] : null;
+    if (headMac(processOrigin(), nums.headSeq, nums.head) !== nums.headMac) {
+      out.head = 'altered';
+    } else if (!newest || newest.mac !== nums.head) {
+      out.head = 'truncated';
+    } else {
+      out.head = 'intact';
+    }
+  }
+  log.debug("Leaving verifyIntegrity(). " + out.altered.length +
+            " altered, " + out.missing.length + " gap(s), head " + out.head +
+            ".");
+  return out;
+}
+
 function audit(event) {
   log.debug("Entering audit().");
   try {
@@ -2272,6 +2512,16 @@ function actionOf(req) {
 function outcomeOfStatus(status) {
   log.debug("Entering outcomeOfStatus().");
   const code = parseInt(status, 10) || 0;
+  // 501 IS A REFUSAL, NOT A FAILURE (2026-11-10): this service answers it for
+  // a feature switched off in the realm (`vcApi.enabled`, `scim.enabled`, …),
+  // which is this service working correctly and saying no. Recorded as
+  // `error`, a scanner probing three switched-off paths wrote 531 error lines
+  // in one Qualys scan of test-idp, every one of them the row OUTCOMES says
+  // nobody should be paged for.
+  if (code === 501) {
+    log.debug("Leaving outcomeOfStatus(). Not implemented here.");
+    return 'refused';
+  }
   if (code >= 500) {
     log.debug("Leaving outcomeOfStatus().");
     return 'error';
@@ -2413,7 +2663,7 @@ function recordHttp(req, res, detail) {
   // 2026-10-05): `mgmt-api/admin_api.ts`'s gate leaves the subject it
   // verified on `res.locals.apiCaller`, and that is who made this call —
   // not whoever's sign-on cookie the request happened to carry, which is
-  // what the resolver reads. Nothing but that gate writes the member.
+  // what the resolver reads. Only the token gates of the three APIs write it.
   const caller = res.locals && res.locals.apiCaller;
   const actor = (caller && String(caller.name || '')) || actorOfRequest(req);
   // WHICH SESSION (#561): named only where the resolver names one — with
@@ -2423,6 +2673,8 @@ function recordHttp(req, res, detail) {
     ? actionOf(req) : '';
   const statusOutcome = outcomeOfStatus(res.statusCode);
   const row = audit({
+    // The incident ID an error page printed, if one did (#1326).
+    seq: takeIncident(res) || undefined,
     action: action,
     outcome: (marked && statusOutcome === 'success') ? 'refused' :
               statusOutcome,
@@ -2997,6 +3249,7 @@ function prose() {
  * @namespace
  */
 module.exports = {
+  verifyIntegrity: verifyIntegrity,
   CATEGORIES: CATEGORIES,
   redactedPath: redactedPath,
   redactedQuery: redactedQuery,
@@ -3005,6 +3258,7 @@ module.exports = {
   audit: audit,
   record: audit,
   recordHttp: recordHttp,
+  reserveIncident: reserveIncident,
   quietWhenOk: quietWhenOk,
   recordDirectory: recordDirectory,
   failure: failure,

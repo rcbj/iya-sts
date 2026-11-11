@@ -285,6 +285,7 @@ function childMain() {
          'key-encryption key there is ephemeral and the entry outlives it');
     process.env.STS_KEYS_SOURCE = 'persisted';
     process.env.STS_KEYS_KEK_PROVIDER = 'file';
+    process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
     process.env.STS_KEYS_KEK_FILE = path.join(dir, 'kek');
     keystore.reset();
     keystore.setStore({
@@ -388,6 +389,7 @@ function childMain() {
 
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
+    delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
     fs.rmSync(dir, { recursive: true, force: true });

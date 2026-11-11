@@ -39,7 +39,10 @@
 //      application's page, the link opens in a new tab with the console's
 //      copy button, and the pager carries `idpInitiatedPage`; and the SAML
 //      page composes the operation and draws the tab between the SAML 1.1
-//      IdP and Assertions tabs.
+//      IdP and Assertions tabs. The combined page's link rewrite keeps the
+//      pager's own anchor and the turn-it-on link's tab, and the two
+//      identity-provider tables carry `idpInitiatedPage` so paging one of
+//      them does not send this list back to its first page.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -369,6 +372,74 @@ function childMain() {
          }),
          'f3. the SAML page always composes the operation, with its own ' +
          'page and the shared per', JSON.stringify(asked));
+
+    // The combined page runs every panel through samlTabLinks(). A pager
+    // whose fragment was not consumed had the SAML 2.0 tab written in front
+    // of it, so the browser opened that tab and never the list anchor.
+    const turnedOn = WebPages.samlTabLinks(nothing);
+    note(turnedOn.indexOf(
+           'href="/admin/saml2#saml-tab-global-settings"') >= 0 &&
+         turnedOn.indexOf('#saml-tab-saml2') < 0,
+         'f4. the turn-it-on link still names Global settings after the ' +
+         'combined page rewrites SAML links', turnedOn.slice(0, 800));
+    const stayed = WebPages.samlTabLinks(drawn);
+    note(stayed.indexOf('idpInitiatedPage=1#list-idpInitiatedPage') >= 0 &&
+         stayed.indexOf('#saml-tab-saml2') < 0 &&
+         stayed.indexOf('href="/admin/applications?application=') >= 0,
+         'f5. a page turn keeps the IdP-Initiated SSO list anchor, so the ' +
+         'tab that holds it stays open', stayed.slice(0, 1200));
+    const shared = WebPages.samlTabLinks(
+      '<a href="/admin/saml2?page=2#list-page">2</a>' +
+      '<a href="/admin/saml11?page=3#list-page">3</a>' +
+      '<a href="/admin/saml2?per=25&amp;idpInitiatedPage=4' +
+      '#list-mdqRefusedPage">r</a>');
+    note(shared.indexOf(
+           'href="/admin/saml2?page=2#saml-tab-saml2"') >= 0 &&
+         shared.indexOf(
+           'href="/admin/saml2?page=3#saml-tab-saml11"') >= 0 &&
+         shared.indexOf('#list-page') < 0 &&
+         shared.indexOf('idpInitiatedPage=4#list-mdqRefusedPage') >= 0,
+         'f6. the shared list-page anchor still opens its own identity ' +
+         'provider, and a list anchor that is unique is kept', shared);
+    const carried = WebKit.listViewOf('/admin/saml2', {
+      q: 'acme', page: '3', idpInitiatedPage: '2', sp: 'dropped' });
+    note(carried.q === 'acme' && carried.page === '3' &&
+         carried.idpInitiatedPage === '2' && !('sp' in carried) &&
+         WebKit.listViewOf('/admin/saml11', { idpInitiatedPage: '2' })
+           .idpInitiatedPage === '2',
+         'f7. a drill-down from either identity-provider table keeps the ' +
+         'IdP-Initiated SSO page', JSON.stringify(carried));
+    const paging = { page: 2, pages: 3, perPage: 25, param: 'page',
+      noun: 'rows', firstRow: 26, lastRow: 50, total: 70 };
+    const quiet = { page: 1, pages: 1, perPage: 25,
+      param: 'mdqRefusedPage', noun: 'rows', firstRow: 0, lastRow: 0,
+      total: 0 };
+    const saml2 = SamlPage.saml2Body(WebKit.context({
+      q: 'acme', per: '25', idpInitiatedPage: '4' }, true), {
+      paging: paging, mdqRefused: [], mdqRefusedPaging: quiet,
+      serviceProviders: [], kind: 'saml2-sp'
+    }, { includeMetadata: false, includeSettings: false });
+    const saml11 = SamlPage.saml11Body(WebKit.context({
+      q: 'acme', idpInitiatedPage: '4' }, true), {
+      paging: paging, relyingParties: [], kind: 'saml11-rp'
+    }, { includeMetadata: false, includeSettings: false });
+    const saml2Tabs = WebPages.samlTabLinks(saml2);
+    const saml11Tabs = WebPages.samlTabLinks(saml11);
+    note(saml2.indexOf('name="idpInitiatedPage" value="4"') >= 0 &&
+         saml2.indexOf('/admin/saml2?idpInitiatedPage=4') >= 0 &&
+         saml11.indexOf('name="idpInitiatedPage" value="4"') >= 0 &&
+         saml11.indexOf('/admin/saml11?idpInitiatedPage=4') >= 0 &&
+         saml2Tabs.indexOf('name="idpInitiatedPage" value="4"') >= 0 &&
+         saml2Tabs.indexOf('idpInitiatedPage=4') >= 0 &&
+         saml2Tabs.indexOf('#saml-tab-saml2') >= 0 &&
+         saml2Tabs.indexOf('#list-page') < 0 &&
+         saml11Tabs.indexOf('idpInitiatedPage=4') >= 0 &&
+         saml11Tabs.indexOf('#saml-tab-saml11') >= 0 &&
+         saml11Tabs.indexOf('#list-page') < 0,
+         'f8. filtering or paging either identity provider keeps the ' +
+         'IdP-Initiated SSO page, and still opens that provider\'s tab',
+         'saml2 list-page ' + saml2Tabs.indexOf('#list-page') +
+         ' saml11 tab ' + saml11Tabs.indexOf('#saml-tab-saml11'));
 
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

@@ -6,9 +6,11 @@ SPDX-License-Identifier: BUSL-1.1
 # eudi-dev wallet against the portal: the hand-run basis of #668
 
 **These are not tests.** They are the scripts used on 2026-10-17 to drive the
-8081 stack's user portal with the eudi-dev wallet as its web wallet, kept as
-the starting point for the job #668 asks for. `run.js` does not read
-subdirectories, so nothing here runs in a suite. The flow, the results and
+8081 stack's user portal with the eudi-dev wallet as its web wallet, by hand.
+`run.js` does not read subdirectories, so nothing here runs in a suite. **The
+job #668 asked for is `tests/protocol/sts_eudi_wallet_portal.js`**: it builds
+on these, starts its own wallet (from `tests/Dockerfile`'s `eudi-wallet`
+stage) and its own realm, and runs in every mode of `./run-tests.sh`. The flow, the results and
 the traps are in #668; the bugs it found are #666 and #667 (and #659).
 
 ## What it needs

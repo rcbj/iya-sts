@@ -387,8 +387,10 @@ class AuthzenAdmin {
   }
 
   // A GROUP'S MEMBERS, LOCATED: each a person's, a service account's or an
-  // application's entry, or left in `unlocated` (a DN left behind by a
-  // deletion, a nested group, a name nothing holds). What
+  // application's entry, or left in `unlocated` — a member that is none of
+  // those, a nested group above all (a member can no longer name nothing
+  // since 2026-11-10: a delete takes it out, and a write may not add one).
+  // What
   // `edgeCandidates()` reads for `roles.authzenPepGroup` and
   // `grantRemotePeps()` for `roles.remotePepGroup` (#1210).
   private locateMembers(group: string, max: number): any {
@@ -485,7 +487,7 @@ class AuthzenAdmin {
    * @returns `{ group, authzenGroup, total, truncated, granted, held,
    *   failed }`; each holder is `{ name, kind, dn }`, a granted one with
    *   `member` and `scope` saying what was added, a failed one with `why`
-   *   and `code`
+   *   (its code, STS-FGA-0025, is on the audit row and never answered)
    */
   grantRemotePeps(application: string, who?: any): any {
     const self = this;
@@ -503,8 +505,7 @@ class AuthzenAdmin {
                        granted: [], held: [], failed: [] };
     const fail = function (holder: any, why: string): void {
       log.debug("Entering fail().");
-      out.failed.push(Object.assign({}, holder,
-                                    { why: why, code: 'STS-FGA-0025' }));
+      out.failed.push(Object.assign({}, holder, { why: why }));
       self.auditGrant(id, holder, by, why);
       log.debug("Leaving fail().");
     };

@@ -34,6 +34,7 @@ import AcmePage = require('../acme/web_acme');
 import ApplicationsPage = require('./web_applications');
 import AuditPage = require('./web_audit');
 import AuditExportPage = require('./web_audit_export');
+import SignInAppearancePage = require('./web_sign_in_appearance');
 import ServiceAccountsPage = require('./web_service_accounts');
 import AuthorizationServersPage = require('./web_authorization_servers');
 import AttributeSourcesPage =
@@ -43,6 +44,7 @@ import CaepRiscPage = require('../ssf/web_caep_risc');
 import CellsPage = require('./web_cells');
 import ClaimsPage = require('./web_claims');
 import ConfigPage = require('./web_config');
+import ConfigDumpPage = require('./web_config_dump');
 import ConsentPage = require('../oauth-oidc/web_consent');
 import ClaimsProvidersPage =
   require('../oauth-oidc/web_claims_providers');
@@ -65,6 +67,7 @@ import KerberosTrustsPage = require('../kerberos/web_kerberos_trusts');
 import LogoutPage = require('../logout/web_logout');
 import LdapPage = require('../ldap/web_ldap');
 import ListenersPage = require('./web_listeners');
+import MalwareScanPage = require('./web_malware_scan');
 import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
 import MetricsPage = require('./web_metrics');
@@ -100,6 +103,7 @@ import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
 import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TlsTrustPage = require('../tls/web_tls_trust');
+import PkiTrustPage = require('./web_pki_trust');
 import TlsConnectionPage = require('../tls/web_tls_connection');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import TokensPage = require('./web_tokens');
@@ -299,6 +303,7 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/wsfed': ['settings'],
   '/admin/pki': ['hierarchy', 'pinned', 'edit', 'build', 'applications',
                  'people', 'revocation', 'workbench', 'settings'],
+  '/admin/pki/trust': ['paranoid', 'signers', 'pins', 'client'],
   '/admin/tls': [],
   '/admin/tls/trust': ['anchors', 'add'],
   // DIRECTORY (rcbj, 2026-10-12): the pages with more than one section. A
@@ -380,13 +385,15 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/persistence': ['settings'],
   '/admin/cells': ['cells', 'residents', 'rehome', 'settings'],
   '/admin/mail': ['test', 'verify', 'messages', 'settings'],
+  '/admin/sign-in-appearance': ['colours', 'layout', 'preview', 'settings'],
   '/admin/rbac': ['holders', 'grant', 'settings'],
   '/admin/debugger': ['settings'],
   '/admin/sts-metadata': ['protocols', 'servers', 'endpoints',
                           'specifications'],
   '/admin/keys': ['rotation', 'keys', 'settings'],
   '/admin/crypto-metadata': ['families', 'material', 'hashing', 'signatures',
-                             'encryption', 'post-quantum', 'standards']
+                             'algorithms', 'encryption', 'post-quantum',
+                             'standards']
 };
 
 /**
@@ -520,6 +527,9 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ConfigPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/config-dump', title: 'Configuration dump',
+    operation: '/admin-api/config-dump',
+    render: ConfigDumpPage.render },
   { path: '/admin/consent', title: 'Consent',
     operation: '/admin-api/consent',
     render: function (view: Json, ctx?: Json): string {
@@ -741,6 +751,8 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return LdapPage.spiffe(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/malware-scanning', title: 'Malware scanning',
+    operation: '/admin-api/malware-scanning', render: MalwareScanPage.render },
   { path: '/admin/listeners', title: 'Listeners',
     operation: '/admin-api/listeners', render: ListenersPage.render },
   { path: '/admin/logout', title: 'Sign-out',
@@ -770,6 +782,9 @@ const PAGES: WebPage[] = [
     render: ModePage.render },
   { path: '/admin/broadcast', title: 'Broadcast Announcement',
     operation: '/admin-api/broadcast', render: BroadcastPage.render },
+  // SERVER CONFIGURATION → SIGN-IN APPEARANCE (#717): born static.
+  { path: '/admin/sign-in-appearance', title: 'Sign-in appearance',
+    operation: '/admin-api/branding', render: SignInAppearancePage.render },
   { path: '/admin/node-health', title: 'Node health',
     operation: '/admin-api/node-health', render: NodeHealthPage.render },
   { path: '/admin/oauth2/monitor', title: 'OAuth 2.0 / OIDC activity',
@@ -788,6 +803,8 @@ const PAGES: WebPage[] = [
   { path: '/admin/post-login-activities', title: 'Post-login activities',
     operation: '/admin-api/post-login-activities',
     render: PostLoginActivitiesPage.render },
+  { path: '/admin/pki/trust', title: 'PKI trust',
+    operation: '/admin-api/pki/trust', render: PkiTrustPage.render },
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
     fixed: { rows: 'shown' }, render: PkiPage.render },
   { path: '/admin/policies', title: 'Policies',
@@ -1222,14 +1239,20 @@ class WebPages {
    *
    * @param path - the console path
    * @param query - the page's query
+   * @param declared - the names the operation declares (#1476), when known;
+   *   a name of the page's own, which it would refuse, is left out
    * @returns the query the page's operation is asked with
    */
-  static operationQuery(path: string, query: Json): Json {
+  static operationQuery(path: string, query: Json,
+                        declared?: string[]): Json {
     const page = WebPages.pageFor(path);
     const out: Json = {};
     Object.keys(query || {}).forEach(function (name) {
       const mapped = page && page.params && page.params[name];
-      out[mapped || name] = query[name];
+      const asked = mapped || name;
+      if (!declared || declared.indexOf(asked) >= 0) {
+        out[asked] = query[name];
+      }
     });
     // What the page always asks its operation, whatever its own query.
     Object.keys((page && page.fixed) || {}).forEach(function (name) {
@@ -2143,10 +2166,26 @@ class WebPages {
         ? 'href="' + path + query + '#' + tab + '"'
         : 'href="/admin/saml2' + query + '#' + tab + '"';
     };
+    // A fragment that already names a SAML tab is where the link was going
+    // (the IdP-Initiated SSO tab's turn-it-on link names Global settings).
+    // A list anchor other than `#list-page` lives inside one panel, and the
+    // tab stylesheet opens the panel that holds `:target`, so the anchor is
+    // the tab. `#list-page` is the exception: the SAML 2.0 and SAML 1.1
+    // tables share the paging parameter `page`, so that anchor is not unique
+    // and the path's own tab is what tells them apart. Putting that tab in
+    // front of a fragment this rewrite did not consume is what sent the
+    // IdP-Initiated SSO pager to SAML 2.0 (#749).
     html = html.replace(
-      /href="(\/admin\/saml2|\/admin\/saml11|\/admin\/saml-assertions|\/admin\/saml-attributes)(\?[^"#]*)?"/g,
-      function (_match: string, path: string, query: string): string {
-        return tabHref(path, query || '');
+      /href="(\/admin\/saml2|\/admin\/saml11|\/admin\/saml-assertions|\/admin\/saml-attributes)(\?[^"#]*)?(#[^"]*)?"/g,
+      function (_match: string, path: string, query: string,
+                fragment: string): string {
+        const q = query || '';
+        if (fragment && (fragment.indexOf('#saml-tab-') === 0 ||
+            (fragment.indexOf('#list-') === 0 &&
+             fragment !== '#list-page'))) {
+          return 'href="/admin/saml2' + q + fragment + '"';
+        }
+        return tabHref(path, q);
       });
     html = html.replace(
       /<form\b([^>]*)>/gi,

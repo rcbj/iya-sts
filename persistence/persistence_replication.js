@@ -174,6 +174,35 @@ function createReplication(label) {
   let highest = 0;
   // seq -> when this process first saw it missing (Date.now()).
   const holes = new Map();
+  // ---------------------------------------------------------------------------
+  // A JUMP IN THE SEQUENCE IS A RANGE, NOT A HOLE PER NUMBER (#677).
+  //
+  // `page()` used to remember every missing number between two rows it read,
+  // one Map entry each, in a synchronous loop. That is right for what a dense
+  // sequence leaves — a rollback burns one number, a burst of them a few — and
+  // it is an outage for anything else: a `setval()` forward, a sequence put
+  // back out of step with a dump, or an engine whose generator is unique but
+  // SPARSE (CockroachDB's `unique_rowid()`) leaves a gap of millions, and the
+  // loop held the event loop until the heartbeat lapsed and the node
+  // fail-stopped (STS-CLUSTER-0004), or ran the heap out. Below that,
+  // MAX_HOLES evicted the oldest holes first, so a real late commit among a
+  // few thousand burnt numbers was never applied in this process.
+  //
+  // So a gap wider than HOLE_SPAN_LIMIT is kept as ONE range `{ lo, hi,
+  // since, seen }` and re-asked for with one `changesSince(lo - 1)` a pull,
+  // taking the rows inside it that it has not applied. What can appear inside
+  // a jump is a transaction that took its number before the jump and had not
+  // committed — bounded by the connections open at the time, far below a
+  // page — so a page from `lo` reaches every one. Ranges expire as holes do,
+  // and are capped at MAX_HOLE_RANGES. A store whose generator is sparse by
+  // design is refused at open (`changeLogDense()`, STS-STORE-0091); this is
+  // what keeps a jump on a dense one from costing the node.
+  // ---------------------------------------------------------------------------
+  const HOLE_SPAN_LIMIT = 1000;
+  // The poll where the store sends no nudge (#677). See intervalMs().
+  const NO_NUDGE_INTERVAL_MS = 1000;
+  const MAX_HOLE_RANGES = 64;
+  const holeRanges = [];
 
   let unwatch = null;
   let running = false;   // one catch-up at a time
@@ -205,6 +234,10 @@ function createReplication(label) {
   // pause between (2026-10-27; applyRows()).
   const SEALED_ROW_RETRIES = 5;
   const SEALED_ROW_RETRY_PAUSE_MS = 200;
+  // Rows applied between two turns of the event loop (#704; applyRows()).
+  // Small: a turn costs a few microseconds, and a page is at most PAGE rows,
+  // so twenty turns a full page add nothing a barrier's deadline would see.
+  const APPLY_YIELD_EVERY = 25;
   // Directory changes of a realm this process does not define yet, kept by
   // kind, realm and key until the realm's own row has been applied
   // (2026-10-27; applyRows()), and the time after which one is given up.
@@ -251,7 +284,46 @@ function createReplication(label) {
                'rolled back. ' + holes.size + ' hole(s) are still being ' +
                'asked for.');
     }
+    expireHoleRanges(now);
     log.debug("Leaving expireHoles().");
+  }
+
+  // A range is given up on as a hole is: after HOLE_EXPIRE_MS, or the oldest
+  // first past MAX_HOLE_RANGES. One line per pass, with the span.
+  function expireHoleRanges(now) {
+    log.debug("Entering expireHoleRanges().");
+    const kept = holeRanges.filter(function (range) {
+      return now - range.since < HOLE_EXPIRE_MS;
+    });
+    kept.sort(function (a, b) {
+      return a.lo - b.lo;
+    });
+    while (kept.length > MAX_HOLE_RANGES) {
+      kept.shift();
+    }
+    const dropped = holeRanges.length - kept.length;
+    if (dropped) {
+      holeRanges.length = 0;
+      Array.prototype.push.apply(holeRanges, kept);
+      holesAbandoned += dropped;
+      log.warn(errorCodes.tag('STS-STORE-0049') + 'persistence: ' + dropped +
+               ' jump(s) in the change-log sequence are no longer asked ' +
+               'for; ' + holeRanges.length + ' are still being asked for.');
+    }
+    log.debug("Leaving expireHoleRanges().");
+  }
+
+  // Remembers a gap wider than HOLE_SPAN_LIMIT as one range.
+  function addHoleRange(lo, hi, now) {
+    log.debug("Entering addHoleRange(). " + lo + '..' + hi);
+    holeRanges.push({ lo: lo, hi: hi, since: now, seen: new Set() });
+    log.warn(errorCodes.tag('STS-STORE-0090') + 'persistence: the ' +
+             'change-log sequence jumped from ' + (lo - 1) + ' to ' +
+             (hi + 1) + '; the ' + (hi - lo + 1) + ' number(s) between are ' +
+             'asked for as one range rather than one by one. A dense ' +
+             'sequence jumps only when somebody moved it (setval, a ' +
+             'restore).');
+    log.debug("Leaving addHoleRange().");
   }
 
   // `applied` is just below the oldest hole still asked for, or `highest`.
@@ -261,6 +333,11 @@ function createReplication(label) {
     holes.forEach(function (since, seq) {
       if (!oldest || seq < oldest) {
         oldest = seq;
+      }
+    });
+    holeRanges.forEach(function (range) {
+      if (!oldest || range.lo < oldest) {
+        oldest = range.lo;
       }
     });
     applied = oldest ? Math.max(applied, oldest - 1) : highest;
@@ -273,6 +350,9 @@ function createReplication(label) {
   // is
   // a request waiting to be answered correctly. See syncNow().
   let runningPull = null;
+  // WHAT THE LATEST PULL HAS COST, read by STS-STORE-0039's line: the two
+  // things it waits on, and the rows it is applying.
+  let pullCost = null;
   let pendingWake = false;
   let stopped = false;
 
@@ -301,6 +381,17 @@ function createReplication(label) {
 
   function intervalMs() {
     log.debug("Entering intervalMs().");
+    // A STORE THAT SENDS NO NUDGE IS POLLED EVERY SECOND (rcbj on #677) —
+    // unless somebody set the interval, which then stands. The five-second
+    // default is argued from the nudge arriving first; without one, the
+    // interval IS the convergence lag. One indexed read a process a second
+    // when nothing changed.
+    const noNudge = !!driver && typeof driver.watchChanges !== 'function';
+    const source = config.sourceOf('persistence.pollInterval');
+    if (noNudge && (source === 'default' || source === 'defaults')) {
+      log.debug("Leaving intervalMs(). No nudge, default interval.");
+      return NO_NUDGE_INTERVAL_MS;
+    }
     log.debug("Leaving intervalMs().");
     return Math.max(250,
                     Number(config.value('persistence.pollInterval')) || 5000);
@@ -381,6 +472,7 @@ function createReplication(label) {
       applied = seq;
       highest = seq;
       holes.clear();
+      holeRanges.length = 0;
       startedAt = new Date().toISOString();
       // THE NUDGE FIRST, THE TIMER SECOND, and neither is load-bearing on its
       // own: the timer is the contract and the listener only makes it prompt.
@@ -668,7 +760,8 @@ function createReplication(label) {
         log.warn(errorCodes.tag('STS-STORE-0039') +
                  'persistence: a read barrier gave up at ' + highest +
                  ': no change pull started after it completed. The request ' +
-                 'is being answered from what this process has.');
+                 'is being answered from what this process has.' +
+                 pullCostText());
         log.debug("Leaving step(). Gave up.");
         return Promise.resolve({ caughtUp: false, applied: applied,
                                  target: highest, coordinating: true });
@@ -709,6 +802,38 @@ function createReplication(label) {
    * logged and counted, not thrown, and the next pull retries the same rows.
    * @returns a promise of `{ applied }`, with `error` when the pull failed
    */
+  /**
+   * Says what the latest pull has cost, for the line a barrier that gave up
+   * writes: whether the time went to the store, to applying rows, or neither.
+   * @returns the sentence, starting with a space, or an empty string
+   */
+  function pullCostText() {
+    log.debug("Entering pullCostText().");
+    if (!pullCost) {
+      log.debug("Leaving pullCostText(). No pull.");
+      return '';
+    }
+    const now = Date.now();
+    const kindMs = pullCost.kindMs || {};
+    const current = pullCost.current;
+    const kinds = Object.keys(pullCost.kinds).map(function (kind) {
+      const ms = (kindMs[kind] || 0) +
+        (current && current.kind === kind ? now - current.since : 0);
+      return kind + '=' + pullCost.kinds[kind] + '/' + ms + 'ms';
+    }).join(',');
+    const applyMs = pullCost.applyMs +
+      (pullCost.applyingSince ? now - pullCost.applyingSince : 0);
+    log.debug("Leaving pullCostText().");
+    return ' The ' + (runningPull ? 'pull in flight' : 'latest pull') +
+           ' began ' + (now - pullCost.startedAt) + ' ms ago: ' +
+           pullCost.queryMs + ' ms reading pages, ' + applyMs +
+           ' ms applying ' + pullCost.rows + ' row(s)' +
+           (kinds ? ' (rows/time by kind: ' + kinds + ')' : '') +
+           (current ? '; applying a "' + current.kind + '" row (' +
+            current.key.slice(0, 40) + ') for ' + (now - current.since) +
+            ' ms' : '') + '.';
+  }
+
   function pull() {
     log.debug("Entering pull().");
     if (!enabled() || running) {
@@ -724,6 +849,13 @@ function createReplication(label) {
     // pull that STARTED after it read its target, because only such a pull's
     // queries could see every row committed before that read.
     const startNo = ++pullsStarted;
+    // `kindMs` and `current` are kept by applyOne() as each row is applied,
+    // so a barrier that gives up while a page is still being applied says
+    // which kind of row the time is going to (2026-11-10): `applyMs` alone
+    // is added only when a page ends, and read "0 ms" for a stuck one.
+    const cost = { startedAt: Date.now(), queryMs: 0, applyMs: 0, rows: 0,
+                   kinds: {}, kindMs: {}, applyingSince: 0, current: null };
+    pullCost = cost;
 
     function page() {
       log.debug("Entering page().");
@@ -750,13 +882,19 @@ function createReplication(label) {
       // asks for the holes again on every pull, and gives a hole up only after
       // HOLE_EXPIRE_MS — ten minutes, not four seconds.
       // -----------------------------------------------------------------------
+      const asked = Date.now();
       return driver.changesSince(highest, PAGE).then(function (rows) {
+        cost.queryMs += Date.now() - asked;
         if (!rows.length) {
           return 0;
         }
         const now = Date.now();
         let expect = highest + 1;
         rows.forEach(function (row) {
+          if (row.seq - expect > HOLE_SPAN_LIMIT) {
+            addHoleRange(expect, row.seq - 1, now);
+            expect = row.seq;
+          }
           while (expect < row.seq) {
             if (!holes.has(expect)) {
               holes.set(expect, now);
@@ -765,7 +903,15 @@ function createReplication(label) {
           }
           expect = row.seq + 1;
         });
+        rows.forEach(function (row) {
+          cost.kinds[row.kind] = (cost.kinds[row.kind] || 0) + 1;
+        });
+        cost.rows += rows.length;
+        const applying = Date.now();
+        cost.applyingSince = applying;
         return applyRows(rows).then(function () {
+          cost.applyMs += Date.now() - applying;
+          cost.applyingSince = 0;
           // ADVANCED ONLY AFTER THE APPLY, so a failure part-way re-reads the
           // same page rather than skipping it. Applying a row twice is
           // harmless — every applier is idempotent by construction, because it
@@ -783,10 +929,18 @@ function createReplication(label) {
     // hole still being asked for.
     function recheckHoles() {
       log.debug("Entering recheckHoles().");
-      if (!holes.size) {
+      if (!holes.size && !holeRanges.length) {
         applied = highest;
         log.debug("Leaving recheckHoles(). None.");
         return Promise.resolve(0);
+      }
+      if (!holes.size) {
+        log.debug("Leaving recheckHoles(). Ranges only.");
+        return recheckHoleRanges().then(function (n) {
+          expireHoles(Date.now());
+          settleWatermark();
+          return n;
+        });
       }
       const asked = Array.from(holes.keys());
       // A DRIVER THAT CANNOT BE ASKED FOR ONE SEQ is asked for everything above
@@ -811,11 +965,46 @@ function createReplication(label) {
               holes.delete(row.seq);
             });
             rowsApplied += rows.length;
+            return recheckHoleRanges();
+          }).then(function (inRanges) {
             expireHoles(Date.now());
             settleWatermark();
-            return rows.length;
+            return rows.length + inRanges;
           });
       });
+    }
+
+    // THE RANGES, ASKED FOR AGAIN: one `changesSince(lo - 1)` a range, the
+    // rows inside it not applied yet. See HOLE_SPAN_LIMIT for why a page from
+    // `lo` reaches every row a jump can hide.
+    function recheckHoleRanges() {
+      log.debug("Entering recheckHoleRanges().");
+      if (!holeRanges.length) {
+        log.debug("Leaving recheckHoleRanges(). None.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving recheckHoleRanges().");
+      return holeRanges.slice().reduce(function (prior, range) {
+        return prior.then(function (total) {
+          return Promise.resolve(driver.changesSince(range.lo - 1, PAGE))
+            .then(function (found) {
+              const rows = (found || []).filter(function (row) {
+                return row.seq >= range.lo && row.seq <= range.hi &&
+                  !range.seen.has(row.seq);
+              });
+              if (!rows.length) {
+                return total;
+              }
+              return applyRows(rows).then(function () {
+                rows.forEach(function (row) {
+                  range.seen.add(row.seq);
+                });
+                rowsApplied += rows.length;
+                return total + rows.length;
+              });
+            });
+        });
+      }, Promise.resolve(0));
     }
 
     log.debug("Leaving pull().");
@@ -1012,6 +1201,22 @@ function createReplication(label) {
     const applyOne = function (row) {
       log.debug("Entering applyOne(). " + row.kind);
       byKind[row.kind] = (byKind[row.kind] || 0) + 1;
+      // TIMED PER KIND for the barrier's line (pullCostText()); the cost of
+      // the pull this row belongs to, held so a later pull's does not get it.
+      const cost = pullCost;
+      const began = Date.now();
+      if (cost && cost.kindMs) {
+        cost.current = { kind: row.kind, key: String(row.key || ''),
+                         since: began };
+      }
+      const timed = function (out) {
+        if (cost && cost.kindMs) {
+          cost.kindMs[row.kind] = (cost.kindMs[row.kind] || 0) +
+            (Date.now() - began);
+          cost.current = null;
+        }
+        return out;
+      };
       const applier = appliers[row.kind];
       if (typeof applier !== 'function') {
         // A kind this build does not know. Ordinary during a rolling upgrade,
@@ -1025,7 +1230,7 @@ function createReplication(label) {
       }
       const realm = realms.get(row.realm) || null;
       log.debug("Leaving applyOne().");
-      return realms.run(realm, function () {
+      return Promise.resolve(realms.run(realm, function () {
         // -----------------------------------------------------------------
         // ONE ROW'S FAILURE IS NOT THE PAGE'S. A single entry that will not
         // apply — a value this build cannot parse, a store that refused it —
@@ -1110,7 +1315,7 @@ function createReplication(label) {
                                                   err));
             return keyedRetries();
           }).catch(failed);
-        });
+        })).then(timed);
     };
     const first = [];
     const rest = [];
@@ -1121,7 +1326,19 @@ function createReplication(label) {
         rest.push(row);
       }
     });
-    first.concat(rest).forEach(function (row) {
+    // A TURN OF THE EVENT LOOP EVERY APPLY_YIELD_EVERY ROWS (#704). The
+    // chain is promises, and a synchronous applier resolves in a microtask,
+    // so a page of 500 synchronous rows ran start to finish with no request,
+    // heartbeat or timer let in between — every 5 s, in every process. The
+    // order and the serial apply are unchanged; only the turns are added.
+    first.concat(rest).forEach(function (row, i) {
+      if (i > 0 && i % APPLY_YIELD_EVERY === 0) {
+        chain = chain.then(function () {
+          return new Promise(function (resolve) {
+            setImmediate(resolve);
+          });
+        });
+      }
       chain = chain.then(function () {
         if (row.kind === 'directory' && row.realm && !realms.get(row.realm)) {
           deferForRealm(row);
@@ -1863,10 +2080,11 @@ function createReplication(label) {
   }
 
   // `cluster/cluster.js`, for which node this process is and one leader for the
-  // trim. REQUIRED LAZILY: it closes no cycle either way, but this file is in
-  // the parent project's in-process Kerberos closure (through `admin_stats.js`)
-  // and a top-level require would add `cluster.js` to the COPY set that project
-  // owes (kerberos/CLAUDE.md). Only a process that coordinates reaches it.
+  // trim. REQUIRED LAZILY: it closes no cycle either way, but it kept
+  // `cluster.js` out of the parent project's in-process Kerberos COPY set,
+  // which reached this file through `admin_stats.js` (an obligation until
+  // #1280; the arrangement stands). Only a process that coordinates reaches
+  // it.
   function clusterModule() {
     log.debug("Entering clusterModule().");
     log.debug("Leaving clusterModule().");
@@ -2101,6 +2319,7 @@ function createReplication(label) {
       appliedSeq: applied,
       highestSeq: highest,
       holes: holes.size,
+      holeRanges: holeRanges.length,
       holesAbandoned: holesAbandoned,
       pollIntervalMs: intervalMs(),
       pulls: pulls,
@@ -2152,12 +2371,14 @@ function createReplication(label) {
     applied = 0;
     highest = 0;
     holes.clear();
+    holeRanges.length = 0;
     holesAbandoned = 0;
     pullsStarted = 0;
     lastCompletedStartNo = 0;
     stopped = false;
     running = false;
     runningPull = null;
+    pullCost = null;
     pendingWake = false;
     contributions.clear();
     staleContributions.clear();

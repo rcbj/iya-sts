@@ -454,6 +454,7 @@ import persistence = require('../persistence/persistence');
 // persistence.js, app.js or service_state.js, so these are cache hits.
 import cluster = require('../cluster/cluster');
 import clusterSecrets = require('../cluster/cluster_secrets');
+import configDump = require('../admin-core/config_dump');
 import clusterBarrier = require('../cluster/cluster_barrier');
 // WHERE THE TWO PRIMORDIAL SECRETS COME FROM, and whether the keystore is
 // reading one at all — for the runtime line at the foot of every page
@@ -796,6 +797,13 @@ import GroupsPage = require('./web_groups');
 import AuditPage = require('./web_audit');
 import FederationPage = require('../federation/web_federation');
 import UsersPage = require('./web_users');
+// THE RULES THAT WERE `style=""` AND `<style>` (2026-11-10), each owned by the
+// page that draws them, read into the console's stylesheet: the console's
+// policy is `style-src 'self'`, with no 'unsafe-inline'.
+import CertificateDialogView = require('./web_certificate_dialog');
+import ExplorerPage = require('./web_explorer');
+import PqcBadgeView = require('./web_pqc_badge');
+import RiskPage = require('./web_risk');
 import WebShell = require('./web_shell');
 import RealmsPage = require('./web_realms');
 import ClaimsPage = require('./web_claims');
@@ -1263,8 +1271,9 @@ const SECTIONS = [
                'directory itself.' },
       { path: '/admin/wstrust', label: 'WS-Trust',
         blurb: 'The security token service at <code>/sts</code>, ' +
-               'WS-Trust 1.0 to 1.4, and the one setting it has of its own — ' +
-               'who its tokens say issued them. What an assertion CONTAINS ' +
+               'WS-Trust 1.0 to 1.4, and its settings. Its tokens name the ' +
+               'realm\'s OAuth issuer, which no setting changes (#523). What ' +
+               'an assertion CONTAINS ' +
                'is the SAML pages next door, because the assertion is built ' +
                'by the same two functions the SAML profiles use.' },
       { path: '/admin/wsfed', label: 'WS-Federation',
@@ -1348,6 +1357,13 @@ const SECTIONS = [
                '2026-09-16.' },
       // Beside the certificate it configures, and UNGROUPED: a `TLS` heading
       // over `TLS / mutual TLS` would say the label twice.
+      // #1360: beside the PKI page and the client truststore it links to.
+      { path: '/admin/pki/trust', label: 'PKI trust',
+        blurb: 'What this realm relies on in <strong>somebody else\'s ' +
+               'certificates</strong>: paranoid PKI mode and every use case ' +
+               'it holds to the full checks, the signer truststore, and an ' +
+               'inventory of every pinned certificate with its validity and ' +
+               'chain status.' },
       { path: '/admin/tls/trust', label: 'Client-certificate truststore',
         blurb: 'Every anchor the main port verifies a client ' +
                'certificate against (LDAPS 636 asks for none) — which, since ' +
@@ -2467,6 +2483,10 @@ const SECTIONS = [
                'certificate the main port and LDAPS 636 present, and ' +
                'SPIFFE\'s four sockets, because a socket has no path to put ' +
                'a realm segment in.' },
+      { path: '/admin/config-dump', label: 'Configuration dump',
+        blurb: 'Every configuration parameter of this running instance, ' +
+               'global and per realm, as one JSON download with every ' +
+               'sensitive value masked.' },
       { path: '/admin/config', label: 'Configuration',
         blurb: 'Every setting this service has, grouped by the protocol it ' +
                'belongs to, with where each value came from: a runtime ' +
@@ -2522,6 +2542,10 @@ const SECTIONS = [
                'asks for a client certificate, requires one, or neither. In ' +
                'a realm with a listener of its own, that listener and its ' +
                'settings; otherwise the default listeners it is served on.' },
+      // MALWARE SCANNING (#1501). Drawn by `admin-ui/malware_scan_admin.ts`.
+      { path: '/admin/malware-scanning', label: 'Malware scanning',
+        blurb: 'Whether uploaded files are scanned, and the ICAP service ' +
+               'that scans them.' },
       { path: '/admin/cells', label: 'Cells',
         blurb: 'One service deployed as several cells, each a copy of the ' +
                'whole stack in one legal jurisdiction: which cell this is, ' +
@@ -2551,6 +2575,16 @@ const SECTIONS = [
                'service\'s own Shared Signals event on the three ' +
                'applications\' receiver streams; a service administrator ' +
                'may send it to every realm.' },
+      // SIGN-IN APPEARANCE (#717), beside the announcement: what the people
+      // signing in to this realm see. Drawn by `web_sign_in_appearance.ts`
+      // from `GET /admin-api/branding`; the console itself keeps its look.
+      { path: '/admin/sign-in-appearance', label: 'Sign-in appearance',
+        blurb: 'How this realm\'s sign-in pages, its front door and its ' +
+               'user portal look: four colours checked against WCAG 2.2 AA ' +
+               'contrast, one of three layouts, a display name and an ' +
+               'uploaded logo (PNG, JPEG or WebP). A preview opens in a ' +
+               'new tab before anything is saved. The admin console keeps ' +
+               'its own look.' },
       { path: '/admin/rbac', label: 'Admin roles',
         blurb: 'Who holds the two roles that grant this console — Admin ' +
                'Read and Admin Write — granted and revoked here. They are ' +
@@ -3507,9 +3541,11 @@ class AdminConsole {
       store = persistence.status();
       effective = String(store.mode || store.configuredMode || 'memory');
       const db = store.database;
-      facts.database = effective === 'postgres'
-        ? (db ? 'postgres (' + db.host + ':' + db.port + '/' + db.database + ')'
-              : 'postgres')
+      // Either database engine (#677), named as its mode.
+      facts.database = (effective === 'postgres' || effective === 'mariadb')
+        ? (db ? effective + ' (' + db.host + ':' + db.port + '/' +
+                db.database + ')'
+              : effective)
         : effective === 'ldif'
           ? 'ldif (' + (store.dataDir || 'no data directory') + ')'
           : effective === 'memory' ? 'memory (nothing written down)'
@@ -3542,7 +3578,8 @@ class AdminConsole {
     }
     try {
       const password = secrets.describeDatabasePassword();
-      facts.databasePassword = effective !== 'postgres'
+      facts.databasePassword = (effective !== 'postgres' &&
+                                effective !== 'mariadb')
         ? 'not used (no database)'
         : password.configured
           ? password.label + (password.where && password.where.from
@@ -3696,6 +3733,8 @@ class AdminConsole {
       // removes it: the two together, because neither does it in both engines.
       // The same pair is on `details.fold` further down for the same reason.
       '.usermenu{position:relative}' +
+      '.menuphoto{width:22px;height:22px;border-radius:50%;' +
+      'object-fit:cover;vertical-align:middle;margin-right:6px}' +
       '.usermenu>summary{cursor:pointer;list-style:none;display:inline-flex;' +
       'gap:.4em;align-items:center;border:1px solid ' +
       '#d5d5dd;border-radius:6px;padding:4px ' +
@@ -4615,8 +4654,25 @@ class AdminConsole {
                '#prm-tab-' + tab + ':focus-visible~.prm-tablist ' +
                'label[for="prm-tab-' + tab + '"]{outline:2px solid #12107c}';
       }).join('');
-    log.debug("Leaving AdminConsole.stylesheet(). " + css.length + " bytes.");
-    return css;
+    // NO INLINE STYLE ANYWHERE IN THE CONSOLE (2026-11-10): what were
+    // `style=""` attributes and `<style>` blocks drawn with a page are rules
+    // here, so the shell's policy can drop 'unsafe-inline'.
+    const noInline = CertificateDialogView.CSS + ExplorerPage.scoped(
+      '.api-explorer') + PqcBadgeView.CSS + UsersPage.CSS + RiskPage.CSS +
+      '#geo-map{max-width:960px}' +
+      '.geo-swatch{display:inline-block;vertical-align:middle;' +
+      'margin:0 4px 0 12px}' +
+      'input.rank{width:4.5em}' +
+      // xacml/web_xacml.ts's warnings and scim/web_scim.ts's top-aligned
+      // tiles, which were `style=""` until the families' pages followed.
+      '.xacml-alert{color:#b00}.tiles.tiles-top{align-items:flex-start}' +
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) {
+        return '.indent-' + n + '{padding-left:' + (n * 1.4).toFixed(1) +
+               'rem}';
+      }).join('');
+    log.debug("Leaving AdminConsole.stylesheet(). " +
+              (css.length + noInline.length) + " bytes.");
+    return css + noInline;
   }
   // THE SHELL: the one document every console path answers. It carries no
   // fact and no credential — the static files are public — and its assets
@@ -7138,9 +7194,10 @@ class AdminConsole {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.configSettingsJson(). path=" + path);
-    const groups = this.settingsGroupsFor(path).filter(function (group) {
-      return !Array.isArray(only) || only.indexOf(group.group) >= 0;
-    });
+    const groups = configDump.maskGroups(this.settingsGroupsFor(path).filter(
+      function (group) {
+        return !Array.isArray(only) || only.indexOf(group.group) >= 0;
+      }));
     const all = groups.reduce(function (rows, group) {
       return rows.concat(group.settings);
     }, []);
@@ -7303,6 +7360,8 @@ class AdminConsole {
     const self = this;
     log.debug("Entering AdminConsole.configJson().");
     const json = config.snapshot();
+    // A sensitive parameter's value never leaves in an answer (#1478).
+    json.groups = configDump.maskGroups(json.groups);
     json.homes = SETTING_HOMES.map(function (row) {
       return { group: row.group, pages: row.pages,
                labels: row.pages.map(self.labelOfPath.bind(self)) };
@@ -8740,7 +8799,8 @@ class AdminConsole {
                           self.shellDocument(registered, elsewhere), {
         connect: ShellDocument.originsOf([elsewhere.oauth, elsewhere.api]),
         compress: true,
-        prefix: realms.currentPrefix()
+        prefix: realms.currentPrefix(),
+        isolated: true
       });
       log.debug("Leaving the static console shell.");
     };
@@ -8899,6 +8959,9 @@ const SETTING_HOMES = [
   // CSRF scheme are facts about the PROCESS and every browser-facing surface
   // shares them.
   { group: 'Web security', pages: ['/admin/config'] },
+  // WHICH SIGNATURE ALGORITHMS (#1368): a statement about every family, so it
+  // lives with the keys it governs.
+  { group: 'Signing algorithms', pages: ['/admin/config'] },
   // REPORTING (#956). The application is not a console page. The caps are
   // process settings, drawn on /admin/config with the other process facts.
   { group: 'Reporting', pages: ['/admin/config'] },
@@ -8992,6 +9055,7 @@ const SETTING_HOMES = [
   // TLS group moved here from /admin/tls, which keeps the truststore and the
   // certificate, and so did the realm listener's rows (#99).
   { group: 'Listeners', pages: ['/admin/listeners'] },
+  { group: 'Malware scanning', pages: ['/admin/malware-scanning'] },
   // ONE GROUP PER TLS LISTENER (#429): its own rows, generated in
   // common/config.js, and its client-certificate pair.
   { group: 'Listener: Main port', pages: ['/admin/listeners'] },
@@ -9015,6 +9079,10 @@ const SETTING_HOMES = [
   // realm's other way of issuing a credential, and it signs over the same
   // status lists the Credential status tab beside it draws.
   { group: 'W3C VC API', pages: ['/admin/vc'] },
+  // A PERSON'S PUBLISHED did:web (#1291), on the OpenID4VCI tab of the same
+  // page: the DID a credential may be bound to, and the realm's choice of
+  // who holds its key.
+  { group: 'Person DIDs', pages: ['/admin/vc'] },
   { group: 'Kerberos', pages: ['/admin/kerberos'] },
   { group: 'LDAP', pages: ['/admin/ldap'] },
   // A page of its own rather than a section of /admin/ldap, and the reason is
@@ -9104,6 +9172,9 @@ const SETTING_HOMES = [
   { group: 'Group claim', pages: ['/admin/groups'] },
   { group: 'Audit log', pages: ['/admin/audit'] },
   { group: 'Audit export', pages: ['/admin/audit-export'] },
+  { group: 'Sign-in appearance', pages: ['/admin/sign-in-appearance'] },
+  // What a person may set, so beside the people it is about (#719).
+  { group: 'Profile photos', pages: ['/admin/users'] },
   // On Protocols → Delegation since 2026-10-01, with the register's controls:
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },
@@ -10312,7 +10383,7 @@ const PROTOCOL_SETTINGS_PAGES = [
   { path: '/admin/oid4vci', title: 'OpenID4VCI', settingsPath: '/admin/vc',
     settingsPage: '/admin/oid4vci',
     // The W3C VC API's rows are drawn on this tab too (#598).
-    settingsGroup: ['OID4VCI', 'W3C VC API'],
+    settingsGroup: ['OID4VCI', 'W3C VC API', 'Person DIDs'],
     lead: '<strong>The OpenID4VCI credential issuer, and the settings ' +
           'around it.</strong> What a credential CONTAINS is <a ' +
           'href="/admin/vc#vc-tab-claims">Credential claims</a> on the ' +
@@ -10341,7 +10412,16 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>did:key</code> the person proved on their Self-issued IDs ' +
            'page, and its credentials carry that DID — so every copy, a ' +
            'batch\'s too, is linkable to the others. Off for every ' +
-           'configuration by default; <code>did:web</code> is not offered.',
+           'configuration by default; <code>did:web</code> is offered only ' +
+           'for a DID this realm publishes for the person and they proved ' +
+           'with a wallet, and the credential names its version.',
+           '<strong>A person may have this realm publish a did:web for ' +
+           'them</strong> (<code>did.personPublishing</code>, off by ' +
+           'default), from their Self-issued IDs page, at a random address ' +
+           'with every version of its keys kept. ' +
+           '<code>did.personCustody</code> says who holds the key: their ' +
+           'wallet (the default), this realm, or the person after one ' +
+           'download.',
            '<strong>The two DID settings change what a VERIFIER has to ' +
            'resolve, and they are restart-only.</strong> With ' +
            '<code>oid4vci.sdJwtIssuerDid</code> or ' +
@@ -10667,11 +10747,13 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>Issuer</code>, a JWT\'s <code>iss</code>, and the ' +
            'entityID SAML SSO and WS-Federation publish. There is no ' +
            'setting for it; it follows the public base URL.',
-           '<strong>Nothing about a request is checked.</strong> An ' +
-           '<code>OnBehalfOf</code> or <code>ActAs</code> element names ' +
-           'anybody and gets an assertion for them — this service polices no ' +
-           'delegation in WS-Trust, which <a href="/admin/delegation">' +
-           'Delegation</a> says beside every act it recorded.'],
+           '<strong>A delegation is decided by policy.</strong> An ' +
+           '<code>OnBehalfOf</code> or <code>ActAs</code> element goes to ' +
+           'the delegation policy (#108, #186), which refuses a ' +
+           '<code>may_act</code> naming somebody else in every mode and the ' +
+           'rest of what it decides in product mode. ' +
+           '<a href="/admin/delegation">Delegation</a> shows every act it ' +
+           'recorded.'],
     links: [['/sts', 'the token service, for a person'],
             ['/sts/cert', 'the certificate its assertions verify against'],
             ['/admin/saml-attributes', 'what goes into the assertion'],

@@ -80,6 +80,7 @@
 // scheduler, and nothing that asks "may TOTP be used" should load either.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import mode = require('./mode');
 import realms = require('./realms');
@@ -106,7 +107,8 @@ interface Mechanism {
   primary: boolean | null;       // the built-in default, or null: incapable
   secondFactor: boolean | null;
   email?: boolean;
-  what: string;
+  // Written on the mechanism's attribute in the model; set below.
+  what?: string;
 }
 
 // One row of FIELDS, below.
@@ -241,66 +243,32 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 const MECHANISMS: Mechanism[] = [
-  { id: 'password', label: 'Password', primary: true, secondFactor: true,
-    what: 'A password on the sign-in screen. As a SECOND factor it is the ' +
-          'password asked for after a wallet or other passwordless first ' +
-          'factor.' },
+  { id: 'password', label: 'Password', primary: true, secondFactor: true },
   // TWO ROWS AND ONE KIND OF KEY (#1135). Until then `passkey` was a key
   // enrolled in the `primary` role and `securityKey` one in the `mfa` role.
   // A key has no role now: both rows are asked at each sign-in, of every key
   // a person holds (`webauthnPolicy.useAllowed()`), and a key may be enrolled
   // while either accepts one. The ids are stored attribute names and stay.
   { id: 'passkey', label: 'Passkey (passwordless)',
-    primary: true, secondFactor: null,
-    what: 'Any passkey (WebAuthn credential) the person holds, signing them ' +
-          'in with no password. A passkey has no role: this row says, at ' +
-          'each sign-in, whether any of them may be a first factor in this ' +
-          'realm, unless the first factors of the authentication policy ' +
-          'an application names (appAuthnPolicy) say otherwise.' },
+    primary: true, secondFactor: null },
   { id: 'securityKey', label: 'Passkey (second factor)', primary: null,
-    secondFactor: true,
-    what: 'Any passkey (WebAuthn credential) the person holds, asked for ' +
-          'after a first factor. A passkey has no role: this row says, at ' +
-          'each sign-in, whether any of them may be a second factor in ' +
-          'this realm, unless the second factors of the authentication ' +
-          'policy an application names (appAuthnPolicy) say otherwise.' },
+    secondFactor: true },
   { id: 'totp', label: 'Authenticator app (TOTP)', primary: null,
-    secondFactor: true,
-    what: 'An RFC 6238 one-time code. Never a first factor: this service ' +
-          'holds the same shared secret the app does. Off here, nobody may ' +
-          'ENROL one; a person who already holds one is still asked for it, ' +
-          'because an off switch that downgraded every enrolled account to a ' +
-          'password alone would do something other than it says (this row ' +
-          'replaced totp.enabled, and keeps its contract).' },
+    secondFactor: true },
   { id: 'recoveryCode', label: 'Recovery code', primary: null,
-    secondFactor: true,
-    what: 'A single-use code from a set the person generated. Off here, no ' +
-          'new set may be generated; a set already held still works (this ' +
-          'row replaced backupCodes.enabled, and keeps its contract).' },
+    secondFactor: true },
   { id: 'emailCode', label: 'Emailed six-digit code', primary: false,
-    secondFactor: false, email: true,
-    what: 'A six-digit code mailed to the person\'s VERIFIED address. ' +
-          NIST_EMAIL_WARNING },
+    secondFactor: false, email: true },
   { id: 'emailLink', label: 'Emailed sign-in link', primary: false,
-    secondFactor: false, email: true,
-    what: 'A single-use link mailed to the person\'s VERIFIED address, which ' +
-          'completes the sign-in only in the browser that started it. ' +
-          NIST_EMAIL_WARNING },
+    secondFactor: false, email: true },
   { id: 'certificate', label: 'TLS client certificate', primary: true,
-    secondFactor: null,
-    what: 'A verified TLS client certificate: GET /tls/sign-in, or ' +
-          'Continue with your certificate on the sign-in screen.' },
+    secondFactor: null },
   { id: 'kerberos', label: 'Kerberos (SPNEGO)', primary: true,
-    secondFactor: null,
-    what: 'GET /authn/spnego with a Kerberos ticket.' },
+    secondFactor: null },
   { id: 'wallet', label: 'Wallet presentation', primary: true,
-    secondFactor: true,
-    what: '/authn/wallet with a credential this realm issued, or a SIOPv2 ' +
-          'self-issued ID Token from an enrolled key. As a SECOND factor, ' +
-          'the wallet presented after a password.' },
+    secondFactor: true },
   { id: 'federation', label: 'Federation partner', primary: true,
-    secondFactor: null,
-    what: 'A sign-in asserted by a configured federation partner.' }
+    secondFactor: null }
 ];
 
 const MECHANISM_BY_ID: Record<string, Mechanism> = {};
@@ -330,35 +298,18 @@ function attributeOf(key: string): string {
  * The policy's fields: one table read as the schema, the console form, the API
  * body, the validation of a save and the parse of an entry.
  */
-const FIELDS: PolicyField[] = ([
-  { key: 'requireSecondFactor', attribute: 'stsAuthnRequireSecondFactor',
-    type: 'enum', values: ['if-held', 'always'], dflt: 'if-held',
-    label: 'Second factor required',
-    what: '`if-held`: a person is asked for a second factor when they hold ' +
-          'one (or their entry says stsMfaRequired). `always`: everybody in ' +
-          'this realm is, and somebody who holds none is sent to enrol one ' +
-          'at their next sign-in. This replaced authn.mfaRequired. There is ' +
-          'no "never": a held factor is always asked for.' },
-  // #246 (rcbj, 2026-09-26): whether the people who can change everything
-  // must use a second factor "will vary by organization", so it is this
-  // policy's to say, in the default realm and inherited. `offer` is the
-  // default FOR NOW, at rcbj's word: an administrator with no second factor
-  // is shown the set-up step with an Ignore button, every sign-in.
-  { key: 'requireSecondFactorForAdministrators',
-    attribute: 'stsAuthnRequireSecondFactorForAdministrators',
-    type: 'enum', values: ['if-held', 'offer', 'always'], dflt: 'offer',
-    label: 'Second factor for administrators',
-    what: 'For anybody holding a console role (Admin Read or Admin Write) ' +
-          'who holds no second factor. `offer`: they are shown the step ' +
-          'that sets one up, with an Ignore button, at every sign-in. ' +
-          '`always`: they must set one up before they are signed in — ' +
-          'except the default realm\'s built-in administrator ' +
-          '(admin.bootstrapUsername), who is only ever offered one, so a ' +
-          'service is never left with nobody who can sign in. `if-held`: ' +
-          'as everybody else, by the field above. WEAKER THAN `always`: ' +
-          'an administrator on a password alone is an administrator anyone ' +
-          'with the password is.' }
-] as PolicyField[]).concat(MECHANISMS.reduce(function (out: PolicyField[], m) {
+// What each computed row says is written once, on its attribute in the model.
+const TABLE_WHAT = new Map<string, string>(ModelTables.schema('policy.authn').attributes
+  .map(function (row: any) {
+    return [row.name, row.what] as [string, string];
+  }));
+
+const FIELDS: PolicyField[] =
+  // Written in models/directory/policy_authn.tsp (#1390). What is passed here is
+  // what the code computes, so it has no second writing there.
+  ModelTables.fields('policy.authn', {}, {
+    before: 'emailCodeTtlS',
+    rows: MECHANISMS.reduce(function (out: PolicyField[], m) {
   (['primary', 'second-factor'] as Role[]).forEach(function (role) {
     const dflt = role === 'primary' ? m.primary : m.secondFactor;
     if (dflt === null) {
@@ -369,59 +320,16 @@ const FIELDS: PolicyField[] = ([
                dflt: dflt, mechanism: m.id, role: role, email: !!m.email,
                label: m.label + (role === 'primary' ? ' — as a first factor'
                                    : ' — as a second factor'),
-               what: m.what });
+               what: TABLE_WHAT.get(attributeOf(key)) });
   });
   return out;
-}, [])).concat([
-  { key: 'emailCodeTtlS', attribute: 'stsAuthnEmailCodeTtlS', type: 'int',
-    dflt: 300, min: 60, max: 600, unit: 'seconds', email: true,
-    label: 'How long an emailed code or link is valid',
-    what: 'From the moment it is sent. At most ten minutes, NIST SP ' +
-          '800-63B-4 ' +
-          'section 3.1.3.2\'s bound for an out-of-band secret.' },
-  { key: 'emailCodeAttempts', attribute: 'stsAuthnEmailCodeAttempts',
-    type: 'int', dflt: 5, min: 1, max: 10, unit: 'attempts', email: true,
-    label: 'Wrong codes before the sign-in step ends',
-    what: 'How many wrong codes one sign-in step accepts before it is ended ' +
-          'and the person starts again. The per-person and per-network rate ' +
-          'limits apply as well.' },
-  { key: 'emailResendS', attribute: 'stsAuthnEmailResendS', type: 'int',
-    dflt: 60, min: 15, max: 600, unit: 'seconds', email: true,
-    label: 'Shortest wait before another code or link is sent',
-    what: 'A new code or link replaces the last one, which stops working. At ' +
-          'most three are sent for one sign-in step.' },
-  { key: 'emailFailureLimit', attribute: 'stsAuthnEmailFailureLimit',
-    type: 'int', dflt: 100, min: 5, max: 100, unit: 'failures', email: true,
-    label: 'Consecutive failures before a person\'s email factor is turned off',
-    what: 'NIST SP 800-63B-4 section 3.2.2 asks for no more than 100. The ' +
-          'person, and their administrators, are told, and the person turns ' +
-          'it on again from the portal.' },
-  // A REMEMBERED BROWSER MAY STAND IN FOR THE SECOND FACTOR (#265, rcbj):
-  // off by default, for a period an administrator sets per realm (30 days by
-  // default), and never at the admin console or the user portal. It is a
-  // policy of the REALM because it is a statement about which evidence the
-  // realm accepts — the rest of this table's question.
-  { key: 'rememberedBrowserSkipsSecondFactor',
-    attribute: 'stsAuthnRememberedBrowserSkipsSecondFactor', type: 'bool',
-    dflt: false,
-    label: 'A remembered browser may skip the second factor',
-    what: 'OFF BY DEFAULT. On, a person signing in on a browser they chose ' +
-          'to remember is not asked for their second factor again within ' +
-          'the period below of last giving it on that browser. NEVER at the ' +
-          'admin console, the user portal or the protocol debugger; never ' +
-          'for an administrator; never while the sign-in\'s risk is medium ' +
-          'or higher; and the sign-in is then ONE factor to every relying ' +
-          'party — amr ["pwd"] and acr "1", as a password alone — so an ' +
-          'application asking for "mfa" is refused it. The browser is recognised by a ' +
-          'bearer cookie: whoever copies the cookie skips the second factor ' +
-          'too, until the copy is caught.' },
-  { key: 'rememberedBrowserDays', attribute: 'stsAuthnRememberedBrowserDays',
-    type: 'int', dflt: 30, min: 1, max: 400, unit: 'days',
-    label: 'How long a remembered browser skips the second factor',
-    what: 'Counted from the last time the person gave their second factor ' +
-          'on that browser. After it they are asked again, and giving it ' +
-          'starts the period again.' }
-]);
+}, [])
+  });
+
+MECHANISMS.forEach(function (m) {
+  m.what = TABLE_WHAT.get(attributeOf(fieldKeyOf(m.id,
+    m.primary === null ? 'second-factor' : 'primary')));
+});
 
 /**
  * The fields, by key.
@@ -444,55 +352,8 @@ const DEFAULTS: Readonly<Record<string, number | boolean | string>> =
  * The directory schema of `ou=authnPolicies`: its container, object class and
  * attributes, and the two person attributes the emailed factor uses.
  */
-const SCHEMA = {
-  container: 'ou=authnPolicies',
-  objectClasses: [
-    { name: 'stsAuthnPolicy',
-      what: 'This service\'s class for an authentication policy: which ' +
-            'mechanisms are accepted as a first and as a second factor, and ' +
-            'when a second factor is required. The entry is named by the ' +
-            'PROFILE (`cn=default`).' }
-  ],
-  attributes: FIELDS.map(function (field) {
-    return { name: field.attribute, what: field.what };
-  }).concat([
-    { name: 'description',
-      what: 'What the profile is for, for the next person.' },
-    // A NAMED AUTHENTICATION POLICY'S TWO LISTS (#1148).
-    { name: 'stsAuthnPolicyMechanism',
-      what: 'On a NAMED authentication policy (#1148, #1237): a ' +
-            'first-factor mechanism a sign-in it applies to allows — where ' +
-            'the application (appAuthnPolicy) or one of the person\'s ' +
-            'groups (stsAuthnPolicy) names it and its precedence is the ' +
-            'lowest named — password, password-mfa, webauthn, spnego, ' +
-            'wallet or federation, one value each. None allows every one ' +
-            'the realm allows.' },
-    { name: 'stsAuthnPolicySecondFactor',
-      what: 'On a NAMED authentication policy (#1148, #1237): a second ' +
-            'factor a sign-in it applies to allows — where the application ' +
-            '(appAuthnPolicy) or one of the person\'s groups ' +
-            '(stsAuthnPolicy) names it and its precedence is the lowest ' +
-            'named — password, securityKey, totp, recoveryCode, emailCode, ' +
-            'emailLink or wallet, one value each. None leaves the realm\'s ' +
-            'authentication policy as it is.' },
-    // ITS PRECEDENCE (#1237): the policy an application names and the
-    // policies a person's groups name compete, and the lowest wins.
-    { name: 'stsAuthnPolicyPrecedence',
-      what: 'On a NAMED authentication policy (#1237): which one applies ' +
-            'where several are named for one sign-in — by the application ' +
-            '(appAuthnPolicy) and by the person\'s groups (stsAuthnPolicy) ' +
-            '— the lowest, from 1 to 1000, ties by name. 100 when absent.' }
-  ]),
-  personAttributes: [
-    { name: 'stsMailFactor',
-      what: 'Which emailed second factor this person opted in to: `code` or ' +
-            '`link`. Absent: none. Set on /portal/mfa, cleared on /admin/mfa ' +
-            'and after too many consecutive failures.' },
-    { name: 'stsMailFactorFailures',
-      what: 'Consecutive failed emailed codes or links, reset by a success. ' +
-            'Maintained by this service.' }
-  ]
-};
+// The table is written in models/directory/policy_authn.tsp (#1390).
+const SCHEMA = ModelTables.schema('policy.authn');
 
 /**
  * The authentication policy: which mechanisms a realm accepts as a first factor
@@ -951,6 +812,24 @@ class AuthnPolicy {
     log.debug("Entering AuthnPolicy.requireSecondFactor().");
     const rules = profile || this.read(DEFAULT_PROFILE);
     log.debug("Leaving AuthnPolicy.requireSecondFactor().");
+    // EVERYBODY, IN PRODUCT (#1490, ASVS 5.0.0 6.3.3).
+    return require('./mode').requiresSecondFactorOfEveryone()
+      ? 'always' : String(rules.requireSecondFactor);
+  }
+
+  /**
+   * The realm's rule as configured, without product mode's "everybody": a
+   * service account is held to this one, having no person to answer a second
+   * factor.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the configured value
+   */
+  configuredSecondFactor(profile?: AuthnProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.configuredSecondFactor().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    log.debug("Leaving AuthnPolicy.configuredSecondFactor().");
     return String(rules.requireSecondFactor);
   }
 
@@ -968,7 +847,8 @@ class AuthnPolicy {
     log.debug("Entering AuthnPolicy.requireSecondFactorForAdministrators().");
     const rules = profile || this.read(DEFAULT_PROFILE);
     log.debug("Leaving AuthnPolicy.requireSecondFactorForAdministrators().");
-    return String(rules.requireSecondFactorForAdministrators);
+    return require('./mode').requiresSecondFactorOfEveryone()
+      ? 'always' : String(rules.requireSecondFactorForAdministrators);
   }
 
   // Whether a remembered browser may stand in for the second factor, and for
@@ -1423,7 +1303,20 @@ class AuthnPolicy {
     if (description) {
       attributes.description = description;
     }
-    if (!this.directory.writeAuthnPolicy(text, attributes)) {
+    // `{ ok: false }` is truthy. putEntry() answers it for a description
+    // that carries an operator code and writes nothing (#1416). Reading
+    // the store afterwards would answer the old policy, or none when this
+    // name is new, and a save that reports success either way is a lie.
+    // `false` is still the directory being full.
+    const written = this.directory.writeAuthnPolicy(text, attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). A description carries " +
+                "an operator code.");
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
+    if (!written) {
       log.debug("Leaving AuthnPolicy.saveNamed(). Not stored.");
       return errorCodes.mark({ ok: false,
                errors: ['The directory would not store the policy — it is ' +
@@ -1659,8 +1552,17 @@ class AuthnPolicy {
     if (!attributes.description) {
       delete attributes.description;
     }
+    // See saveNamed(): a truthy `{ ok: false }` is a description refusal,
+    // and `false` is the directory being full (#1416).
     const written = this.directory.writeAuthnPolicy(DEFAULT_PROFILE,
-                                                    attributes);
+                                                    attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug('Leaving AuthnPolicy.save(). A description carries an ' +
+                'operator code.');
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
     if (!written) {
       log.debug('Leaving AuthnPolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,
@@ -1776,6 +1678,7 @@ export = {
   active: slot.forward('active'),
   mailUsable: slot.forward('mailUsable'),
   requireSecondFactor: slot.forward('requireSecondFactor'),
+  configuredSecondFactor: slot.forward('configuredSecondFactor'),
   requireSecondFactorForAdministrators:
     slot.forward('requireSecondFactorForAdministrators'),
   emailSettings: slot.forward('emailSettings'),

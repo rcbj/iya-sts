@@ -762,8 +762,9 @@ class Credentials {
       helpers.log.debug("Leaving Credentials.keyProvider(). By MDS.");
       return String(att.model);
     }
-    // LAZILY, so this data module does not join the parent project's
-    // Kerberos COPY closure, which carries this file (`kerberos/CLAUDE.md`).
+    // LAZILY, which kept this data module out of the parent project's
+    // Kerberos COPY closure that carried this file (an obligation until
+    // #1280; the arrangement stands).
     const providers = require('../authn/passkey_providers');
     const named = providers.nameOf(k.aaguid);
     helpers.log.debug("Leaving Credentials.keyProvider(). " +
@@ -2793,6 +2794,69 @@ class Credentials {
   // account with a password that changes nothing and a log line that alarms
   // people.
   /**
+   * Stores a password hash an operator supplied in `admin.bootstrapPassword`
+   * as the bootstrap administrator's password, as it stands.
+   *
+   * @param username - the account
+   * @param hash - a `$scrypt$` or argon2id hash
+   * @returns `{ ok: true, username }`, or a refusal
+   */
+  writeSuppliedHash(username: string, hash: string): any {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.writeSuppliedHash().");
+    let written = false;
+    try {
+      written = directory.writePassword(username, hash, { history: [] });
+    } catch (e) {
+      log.debug("Caught in Credentials.writeSuppliedHash(): " +
+                ((e && e.message) || e));
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.writeSuppliedHash(). Not written.");
+      return errorCodes.mark({ ok: false, errors: ['The bootstrap ' +
+        'password hash could not be stored for ' + username + '.'] },
+        'STS-AUTHN-0060');
+    }
+    log.debug("Leaving Credentials.writeSuppliedHash().");
+    return { ok: true, username: username };
+  }
+
+  /**
+   * Writes a generated bootstrap password to a file only this user can read.
+   *
+   * @param username - the account
+   * @param password - the generated password
+   * @returns the file's path, or '' where the password is to be logged
+   */
+  writeBootstrapPassword(username: string, password: string): string {
+    const { log, config } = this.deps;
+    log.debug("Entering Credentials.writeBootstrapPassword().");
+    if (config.value('admin.logBootstrapPassword') === true) {
+      log.debug("Leaving Credentials.writeBootstrapPassword(). Logged.");
+      return '';
+    }
+    const nodeFs = require('fs');
+    const nodePath = require('path');
+    const dir = nodePath.resolve(String(config.value('persistence.dataDir')));
+    const file = nodePath.join(dir, 'bootstrap-admin-password');
+    try {
+      nodeFs.mkdirSync(dir, { recursive: true });
+      nodeFs.writeFileSync(file, username + ':' + password + '\n',
+                           { mode: 0o600 });
+      nodeFs.chmodSync(file, 0o600);
+    } catch (e) {
+      log.debug("Caught in Credentials.writeBootstrapPassword(): " +
+                ((e && e.message) || e));
+      // A service nobody can sign in to is worse than this line in its log.
+      log.debug("Leaving Credentials.writeBootstrapPassword(). Not written.");
+      return '';
+    }
+    log.debug("Leaving Credentials.writeBootstrapPassword().");
+    return file;
+  }
+
+  /**
    * Creates the bootstrap administrator a fresh product-mode service is
    * reached through, with a generated password announced in the log.
    *
@@ -2862,13 +2926,21 @@ class Credentials {
     // decides only what the password is.
     const supplied = String(config.value('admin.bootstrapPassword') || '');
     const password = supplied || this.generatePassword(username);
+    // A HASH IN PLACE OF THE PASSWORD (ASVS 5.0.0 13.3.1): a `$scrypt$` or
+    // argon2id value is stored as it stands, so the plaintext need never be
+    // in this service's configuration or its secret store. It is the
+    // operator's to have made at the policy's strength; nothing derived from
+    // the plaintext (a Kerberos key) exists for it until the password is
+    // changed, which the bootstrap banner asks for anyway.
+    const hashed = !!supplied && this.deps.crypto.isHashedSecret(supplied);
     // `generated` is TRUE only for one this service made up: it is what tells
     // `preparePassword()` to skip the checks that are about a person choosing
     // a password. A SUPPLIED one is somebody's choice and is held to the
     // policy, so that a value the policy refuses is found here rather than at
     // the first sign-in that cannot happen.
-    const written = this.setPassword(username, password,
-                                     { generated: !supplied });
+    const written = hashed
+      ? this.writeSuppliedHash(username, supplied)
+      : this.setPassword(username, password, { generated: !supplied });
     if (!written.ok && supplied) {
       // NOT REPLACED WITH A GENERATED ONE. Falling back would put a working
       // credential in the log of a deployment whose operator set this setting
@@ -2918,11 +2990,16 @@ class Credentials {
       log.debug('Leaving Credentials.bootstrap(). A configured password.');
       return { ran: true, username: username, supplied: true };
     }
+    // NOT IN THE LOG (#1493, ASVS 5.0.0 16.2.5): the password goes to a file only
+    // this service's user can read, unless an operator asked for the old way.
+    const held = this.writeBootstrapPassword(username, password);
     log.warn('=======================================================\n' +
              'PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n' +
              '\n' +
              '  username: ' + username + '\n' +
-             '  password: ' + password + '\n\nNobody in this realm\'s ' +
+             (held ? '  password: in the file ' + held + '\n'
+                   : '  password: ' + password + '\n') +
+             '\nNobody in this realm\'s ' +
              'directory held a credential, so this one was generated so that ' +
              'the service is reachable. It is stored as a hash and ' +
              'CANNOT be recovered — only reset.\n\nCHANGE IT. Sign in at ' +
@@ -6752,7 +6829,16 @@ class Credentials {
     const out = { people: Number(tally.people) || 0,
                   withPassword: Number(tally.withPassword) || 0,
                   withSecond: 0, withTotp: 0, withKeys: 0, primaryKeys: 0,
-                  passwordOnly: 0, unreadable: 0, noWayIn: 0 };
+                  passwordOnly: 0, unreadable: 0, noWayIn: 0,
+                  // WHEN THE DIRECTORY COUNTED THEM, AND FOR HOW LONG IT
+                  // KEEPS A COUNT AGAINST ANOTHER PROCESS'S WRITES (#684):
+                  // `ldap_server.js`'s `credentialTallies()` says why.
+                  // Not tiles: `AdminViews.directoryTilesOf()` lifts both
+                  // out beside them. Null where the directory did not say.
+                  countedAt: Number(tally.countedAt) || null,
+                  keptForSeconds: tally.keptForSeconds === undefined ||
+                                  tally.keptForSeconds === null
+                    ? null : Number(tally.keptForSeconds) };
     // The holders with a password and a second factor come off
     // `passwordOnly`, and those with no password and a sign-in key off
     // `noWayIn`; everybody else is a password or nothing.
@@ -8478,6 +8564,50 @@ class Credentials {
     const owner = String(directory.selfIssuedSubjectOwner(matches) || '');
     log.debug('Leaving Credentials.selfIssuedSubjectOwner().');
     return owner;
+  }
+
+  // A person's PUBLISHED DIDs (#1291), for `oid4vc/person_did.ts`: the
+  // values as stored (null where there is no store or no entry) and the
+  // whole list written back — hooks the directory passes in, as the
+  // self-issued subjects' are.
+  /**
+   * Reads a person's published DIDs.
+   *
+   * @param username - the person
+   * @returns the values as stored, or null with no store or entry
+   */
+  readPublishedDids(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.readPublishedDids().');
+    if (!directory || typeof directory.readPublishedDids !== 'function') {
+      log.debug('Leaving Credentials.readPublishedDids(). No store.');
+      return null;
+    }
+    const values = directory.readPublishedDids(String(username || ''));
+    log.debug('Leaving Credentials.readPublishedDids().');
+    return values;
+  }
+
+  /**
+   * Writes a person's whole list of published DIDs.
+   *
+   * @param username - the person
+   * @param values - the list
+   * @returns what the directory write answered, or false with no store
+   */
+  writePublishedDids(username, values) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.writePublishedDids().');
+    if (!directory || typeof directory.writePublishedDids !== 'function') {
+      log.debug('Leaving Credentials.writePublishedDids(). No store.');
+      return false;
+    }
+    const written = !!directory.writePublishedDids(String(username || ''),
+                                                   values);
+    log.debug('Leaving Credentials.writePublishedDids(). ' + written);
+    return written;
   }
 
   // THE DEVICE REGISTER (#130), for `common/devices.ts`: the directory's
@@ -11796,7 +11926,11 @@ class Credentials {
     }
     // #64: the authentication policy's `requireSecondFactor`, which replaced
     // `authn.mfaRequired`. `always` is the old `true`.
-    const byRealm = this.deps.authnPolicy.requireSecondFactor() === 'always';
+    // A SERVICE ACCOUNT has nobody to answer one, so product mode's "everybody"
+    // (#1490) means people; what the realm configured still applies to it.
+    const byRealm = (name && this.deps.serviceAccounts.isServiceAccountName(name)
+      ? this.deps.authnPolicy.configuredSecondFactor()
+      : this.deps.authnPolicy.requireSecondFactor()) === 'always';
     // #246: ADMINISTRATORS, by the same policy's own field — `offer` (the
     // default for now) shows the set-up step with an Ignore button, `always`
     // requires it. The default realm's built-in administrator is only ever
@@ -11811,8 +11945,7 @@ class Credentials {
       const roles = this.deps.consoleRolesOf(name);
       if (roles.read || roles.write) {
         const builtIn = this.deps.realms.currentId() === 'default' &&
-          name === String(config.value('admin.bootstrapUsername') || '')
-            .trim();
+          name === require('./bootstrap_name').current();
         byAdministrator = forAdmins === 'always' && !builtIn;
         offered = !byAdministrator;
       }
@@ -12480,6 +12613,8 @@ export = {
   readIdaVerifications: slot.forward('readIdaVerifications'),
   writeIdaVerifications: slot.forward('writeIdaVerifications'),
   readSelfIssuedSubjects: slot.forward('readSelfIssuedSubjects'),
+  readPublishedDids: slot.forward('readPublishedDids'),
+  writePublishedDids: slot.forward('writePublishedDids'),
   writeSelfIssuedSubjects: slot.forward('writeSelfIssuedSubjects'),
   selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
   deviceStore: slot.forward('deviceStore'),
@@ -12636,6 +12771,7 @@ export = {
   serviceAccountRefusesDoor: slot.forward('serviceAccountRefusesDoor'),
   rotatesThroughDestination: slot.forward('rotatesThroughDestination'),
   bootstrap: slot.forward('bootstrap'),
+  writeBootstrapPassword: slot.forward('writeBootstrapPassword'),
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,
   setDirectory: slot.forward('setDirectory'),

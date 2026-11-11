@@ -142,13 +142,7 @@ class OidfedApi {
     log.debug("Entering OidfedApi.action(). " + action);
     log.debug("Leaving OidfedApi.action().");
     return {
-      action: action, operationId: operationId, summary: summary,
-      description: description,
-      requestBodyRequired: required.length > 0,
-      requestBody: { type: 'object', properties: properties,
-                     required: required, examples: [example],
-                     additionalProperties: false },
-      responseDescription: 'What was done, with the record where there is one.'
+      action: action, operationId: operationId
     };
   }
 
@@ -164,33 +158,6 @@ class OidfedApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/oidfed', tag: 'OpenID Federation',
         operationId: 'getOidfed',
-        summary: 'This realm as an OpenID Federation entity: its role, ' +
-                 'Entity Configuration, keys, subordinates, Trust Anchors ' +
-                 'and Trust Marks',
-        description: 'Everything /admin/oidfed draws, out of the same view ' +
-                     'function: the realm\'s Entity Identifier and role ' +
-                     '(trust anchor, intermediate or leaf), its authority ' +
-                     'hints and federation endpoints, its Federation Entity ' +
-                     'Keys (public halves, states and history — never a ' +
-                     'private key), the subordinates it vouches for, the ' +
-                     'Trust Anchors it trusts, the Trust Mark types it ' +
-                     'issues, the marks it has issued and carries, the mark ' +
-                     'policies it publishes as a Trust Anchor, the ' +
-                     'resolutions it holds, and the claims of its current ' +
-                     'Entity Configuration — and, for each subordinate, ' +
-                     'whether it is suspended and its event history, the ' +
-                     'subordinates it has revoked with theirs (#137), and ' +
-                     'the Entity Collection crawl it keeps (#136). The ' +
-                     'keys, subordinates, revoked subordinates, Trust ' +
-                     'Anchors, issued and carried marks and mark policies ' +
-                     'are each one page, moved by a parameter of its own ' +
-                     'with `per` shared; `counts` holds each list\'s whole ' +
-                     'length and `paging` where each page is. A ' +
-                     'subordinate\'s `events` are its latest 25, with ' +
-                     '`eventsTotal`; the whole history is at ' +
-                     '/oidfed/subordinate-events. The ' +
-                     'oidfed.* settings are written through ' +
-                     'POST /admin-api/config/set-many.',
         mirrors: 'GET /admin/oidfed',
         parameters: [
           ['keysPage', 'the Federation Entity Keys'],
@@ -202,18 +169,14 @@ class OidfedApi {
           ['policiesPage', 'the Trust Mark policies']
         ].map(function (one: string[]): Json {
           return { name: one[0], in: 'query', required: false,
-                   schema: { type: 'integer', minimum: 1 },
+                   schema: { type: 'integer', minimum: 1, examples: [1] },
                    description: 'Which page of ' + one[1] + '. Clamped, ' +
                                 'like every page parameter here.' };
         }).concat([
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page, shared by the seven lists.' }
         ]),
-        responseDescription: 'The realm as a federation entity.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: 'This realm as /admin/oidfed draws ' +
-                                       'it.' },
         handler: function (req: Json, res: Json): Promise<void> {
           log.debug("Entering the management API OpenID Federation " +
                     "endpoint.");

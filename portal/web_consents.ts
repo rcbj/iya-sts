@@ -57,7 +57,7 @@ class ConsentsPages {
    */
   static form(fields: Record<string, string>, label: string): string {
     return '<form method="post" action="' + kit.esc(PATH) + '" ' +
-      'style="display:inline">' +
+      'class="inline-form">' +
       Object.keys(fields).map(function (name) {
         return '<input type="hidden" name="' + kit.esc(name) + '" value="' +
           kit.esc(fields[name]) + '">';

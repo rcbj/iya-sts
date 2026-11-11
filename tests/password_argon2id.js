@@ -65,7 +65,8 @@ const ARGON2_DEFAULT =
   /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/;
 
 // The DEFAULT password hash (#820): scrypt at N=2^15, r=8, p=1.
-const SCRYPT_DEFAULT = /^\$scrypt\$32768\$8\$1\$/;
+// In product at least p=3, OWASP's table (#1544).
+const SCRYPT_DEFAULT = /^\$scrypt\$32768\$8\$[13]\$/;
 
 // argon2id at OWASP's minimum, named, since it is no longer the default.
 const ARGON2 = { algorithm: 'argon2id' };
@@ -104,11 +105,13 @@ function historyOf(username) {
 async function inProduct(fn) {
   log.debug("Entering inProduct().");
   config.setOverride('global.mode', 'product');
+  config.setOverride('authn.allowOptionalSecondFactor', 'true');
   config.setOverride('risk.breachCheck', 'off');
   try {
     return await fn();
   } finally {
     config.clearOverride('global.mode');
+    config.clearOverride('authn.allowOptionalSecondFactor');
     config.clearOverride('risk.breachCheck');
     log.debug("Leaving inProduct().");
   }
@@ -343,9 +346,9 @@ async function sectionC(t) {
 
     // Back to scrypt: the upgrade goes either way.
     passwordPolicy.save('default', profileWith({ history: 0,
-      hashAlgorithm: 'scrypt', scryptLogN: 16, scryptParallelism: 2 }));
+      hashAlgorithm: 'scrypt', scryptLogN: 16, scryptParallelism: 3 }));
     t.check(credentials.verify(who, password).ok &&
-            /^\$scrypt\$65536\$8\$2\$/.test(storedOf(who)),
+            /^\$scrypt\$65536\$8\$3\$/.test(storedOf(who)),
             'C8. and a move back to scrypt is upgraded to scrypt\'s ' +
             'parameters', storedOf(who).slice(0, 24));
 
@@ -481,8 +484,8 @@ async function sectionF(t) {
     const after = storedOf(who);
     t.check(signIn.ok, 'F2. the sign-in succeeds', signIn.reason);
     t.check(SCRYPT_DEFAULT.test(after) &&
-            crypto.storedSecretMatchesSpec(after, null),
-            'F3. and the stored hash is now scrypt at 2^15, r=8, p=1',
+            crypto.storedSecretMatchesSpec(after, passwordPolicy.hashSpec()),
+            'F3. and the stored hash is now scrypt at the policy\'s parameters',
             after.slice(0, 24));
     t.check(crypto.verifySecret(password, after) &&
             credentials.verify(who, password).ok &&

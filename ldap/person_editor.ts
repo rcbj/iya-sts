@@ -150,6 +150,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import inetOrgPerson = require('../common/inetorgperson');
@@ -202,8 +203,14 @@ interface LocatedPerson {
 interface PersonDirectory {
   locate(key: string): LocatedPerson | null;
   // Replace one attribute's values (none removes it) and report it. Answers
-  // whether the entry was written.
-  write(dn: string, name: string, values: string[]): boolean;
+  // whether the entry was written. `{ ok: false }` is a description that
+  // carries an operator code: nothing was written, and the object is
+  // truthy (#1416).
+  write(dn: string, name: string, values: string[]): boolean | {
+    ok: false;
+    errors?: string[];
+    reason?: string;
+  };
 }
 
 interface EditRequest {
@@ -256,7 +263,12 @@ const MAX_VALUE_LENGTH = 1024;
 const SINGLE_VALUED = ['displayname', 'employeenumber', 'preferredlanguage',
                        'c', 'schacdateofbirth', 'employeestatus',
                        'placeofbirthcountry', 'placeofbirthregion',
-                       'placeofbirthlocality'];
+                       'placeofbirthlocality',
+                       // #1292: SCHAC's gender is SINGLE-VALUE, and the
+                       // other four stand for one fact each, as the OpenID
+                       // Connect claim each becomes is one value.
+                       'schacgender', 'middlename', 'timezone',
+                       'pictureurl', 'profileurl'];
 
 // The shaped attributes, lower-cased name -> format. See the header.
 const FORMATS: Record<string, string> = {
@@ -265,6 +277,9 @@ const FORMATS: Record<string, string> = {
   schacdateofbirth: 'date',
   preferredlanguage: 'language',
   labeleduri: 'uri',
+  // #1292: an http(s) URL, as `labeledURI`; the OpenID Connect claim each
+  // becomes is a URL, so a label after it is not offered in the example.
+  pictureurl: 'uri', profileurl: 'uri',
   seealso: 'dn', manager: 'dn', secretary: 'dn'
 };
 
@@ -323,7 +338,8 @@ const FIELD_GROUPS = [
   { id: 'name', label: 'Name',
     what: 'What the person is called: the two names every person must hold ' +
           '(cn and sn), the parts of them, and the names they were known by.',
-    attributes: ['cn', 'sn', 'givenName', 'displayName', 'initials',
+    attributes: ['cn', 'sn', 'givenName', 'middleName', 'displayName',
+                 'initials', 'schacGender',
                  'schacPersonalTitle', 'salutation', 'alsoKnownAs',
                  'birthFamilyName', 'birthGivenName', 'birthMiddleName'] },
   { id: 'contact', label: 'Contact',
@@ -332,7 +348,7 @@ const FIELD_GROUPS = [
           'is marked verified and the former one is told.',
     attributes: ['telephoneNumber', 'mobile', 'homePhone', 'pager',
                  'facsimileTelephoneNumber', 'preferredLanguage',
-                 'labeledURI'] },
+                 'timeZone', 'labeledURI', 'profileUrl', 'pictureUrl'] },
   { id: 'organization', label: 'Organization',
     what: 'Where they sit in the organization.',
     attributes: ['title', 'o', 'ou', 'businessCategory', 'departmentNumber',
@@ -404,7 +420,10 @@ const FIELD_EXAMPLES: Record<string, string> = {
   seealso: 'cn=staff,ou=groups,dc=example,dc=com',
   internationalisdnnumber: '+1 555 0105', telexnumber: '123456 ACME US',
   teletexterminalidentifier: 'ACME-01', x121address: '31102100000123',
-  mail: 'alice@example.com'
+  mail: 'alice@example.com',
+  middlename: 'Jane', schacgender: '2', timezone: 'Europe/Stockholm',
+  pictureurl: 'https://example.com/~alice/photo.jpg',
+  profileurl: 'https://example.com/~alice/'
 };
 
 // WHAT THE SIMPLE VIEW OFFERS: the names, the address and the contact details
@@ -604,7 +623,9 @@ class PersonEditor {
       const custom = flags.custom;
       const format = custom ? (SYNTAX_FORMATS[custom.syntax] || '')
                             : (FORMATS[key] || '');
-      // A POLICY REFERENCE (#1235): one value, from a closed set.
+      // A POLICY REFERENCE (#1235): one value, from a closed set. Its
+      // example is the first choice (`default`), a value the box may hold.
+      // `tests/person_fields.js` fails an editable attribute with none.
       const reference = PolicySelection.referenceOf('person', name);
       editable.push({ name: name, label: label, schema: schema,
                       multi: reference ? false
@@ -614,9 +635,10 @@ class PersonEditor {
                       note: format ? FORMAT_HINTS[format] : '',
                       group: reference ? 'policies'
                         : custom ? 'custom' : groupOf(name),
-                      example: custom
-                        ? (SYNTAX_EXAMPLES[custom.syntax] || '')
-                        : (FIELD_EXAMPLES[key] || ''),
+                      example: reference ? reference.choices[0]
+                        : custom
+                          ? (SYNTAX_EXAMPLES[custom.syntax] || '')
+                          : (FIELD_EXAMPLES[key] || ''),
                       simple: reference ? true
                         : SIMPLE_FIELDS.indexOf(key) >= 0,
                       custom: !!custom,
@@ -756,18 +778,20 @@ class PersonEditor {
           : ''
       });
     });
+    // One concept of each kind for the entry (#1390). The rows above stay
+    // by attribute name: the editor is a grid of whatever the realm offers.
+    const user = Classes.User.fromEntry(person.attributes);
+    const credential = Classes.Credential.fromEntry(person.attributes);
     log.debug("Leaving PersonEditor.editorFor(). " + person.dn);
     // The address as well, withheld from the editor but drawn beside it by
     // the page, whose `set-mail` form starts from it.
     return { dn: person.dn, attributes: attributes,
              withheld: universe.withheld,
-             mail: String((person.attributes.mail || [])[0] || ''),
+             mail: user.email || '',
              // Sign-in names (#644), withheld from the attribute grid the
              // same way mail is: the page draws them beside the address.
-             pseudonyms: (person.attributes.stspseudonym || []).map(String),
-             pseudonymPending: String(
-               (person.attributes.stspseudonymverifyaddress || [])[0] ||
-               '') };
+             pseudonyms: credential.pseudonym || [],
+             pseudonymPending: credential.pseudonymVerifyAddress || '' };
   }
 
   // -------------------------------------------------------------------------
@@ -1094,20 +1118,42 @@ class PersonEditor {
       return this.refused('STS-LDAP-0164', policy.message);
     }
     const written = directory.write(person.dn, lower, after);
-    audit({ category: 'admin', action: 'admin.user.attribute',
-            actor: String(ctx.actor || ''), target: person.dn,
-            outcome: written ? 'success' : 'failure',
-            errorCode: written ? undefined : 'STS-LDAP-0110',
-            // THE ATTRIBUTE AND THE ACT, NOT THE VALUE — see the header.
-            summary: (written ? '' : 'could not ') + mode + ' ' + row.name +
-                     ' on ' + person.dn,
-            detail: { attribute: row.name, mode: mode,
-                      values: after.length, via: String(ctx.via || '') } });
+    // `{ ok: false }` is truthy. writePersonAttribute() answers it when a
+    // description carries an operator code and writes nothing (#1416).
+    // The success answer below quotes every value, which is how that code
+    // would leave this process. Audit the failure before that return, and
+    // do not audit it as a success. `false` is still "not a person".
+    if (written && typeof written === 'object') {
+      audit({ category: 'admin', action: 'admin.user.attribute',
+              actor: String(ctx.actor || ''), target: person.dn,
+              outcome: 'failure', errorCode: 'STS-LDAP-0211',
+              // THE ATTRIBUTE AND THE ACT, NOT THE VALUE — see the header.
+              summary: 'could not ' + mode + ' ' + row.name + ' on ' +
+                       person.dn,
+              detail: { attribute: row.name, mode: mode,
+                        values: after.length, via: String(ctx.via || '') } });
+      log.debug("Leaving PersonEditor.update(). Not written.");
+      return this.refused('STS-LDAP-0211', (written.errors || [])[0] ||
+                          'The directory did not store the change.');
+    }
     if (!written) {
+      audit({ category: 'admin', action: 'admin.user.attribute',
+              actor: String(ctx.actor || ''), target: person.dn,
+              outcome: 'failure', errorCode: 'STS-LDAP-0110',
+              summary: 'could not ' + mode + ' ' + row.name + ' on ' +
+                       person.dn,
+              detail: { attribute: row.name, mode: mode,
+                        values: after.length, via: String(ctx.via || '') } });
       log.debug("Leaving PersonEditor.update(). Not written.");
       return this.refused('STS-LDAP-0110', 'The directory did not store the ' +
                           'change to ' + row.name + ' on ' + person.dn + '.');
     }
+    audit({ category: 'admin', action: 'admin.user.attribute',
+            actor: String(ctx.actor || ''), target: person.dn,
+            outcome: 'success',
+            summary: mode + ' ' + row.name + ' on ' + person.dn,
+            detail: { attribute: row.name, mode: mode,
+                      values: after.length, via: String(ctx.via || '') } });
     log.debug("Leaving PersonEditor.update(). " + mode + " " + row.name +
               ": " + before.length + " -> " + after.length + " value(s).");
     return { ok: true, dn: person.dn, attribute: row.name, mode: mode,

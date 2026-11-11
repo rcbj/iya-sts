@@ -1113,8 +1113,8 @@ function childMain() {
       const o = opts || {};
       const who = browser();
       const one = await start(who, pendingSignIn());
-      await respond(one, present(credential, holder, one.requestObject.nonce,
-                                 aud));
+      const wallet = await respond(one, present(credential, holder,
+                                                one.requestObject.nonce, aud));
       const page = await collect(who, one);
       const session = await signedInSession(who);
       if (session && !o.keep) {
@@ -1123,7 +1123,7 @@ function childMain() {
         });
       }
       return { ok: page.status === 303, code: page.code, page: page,
-               session: session, who: who };
+               session: session, who: who, wallet: wallet };
     }
 
     const d1 = holderKey();
@@ -1192,6 +1192,36 @@ function childMain() {
       return vcStatus.statusOf(statusKey) === vcStatus.INVALID;
     }), '8e. and the disown set its status-list entry INVALID, so a verifier ' +
         'elsewhere learns it');
+    // WHY, AND WHAT TO DO (#653). The list says only INVALID; the wallet's
+    // answer and the browser's page both say a global sign-out did it, when,
+    // and where a new credential is issued.
+    const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/;
+    const globalWallet = afterGlobal.wallet || {};
+    const globalSaid = String((globalWallet.json || {}).error_description ||
+                              '');
+    note(globalWallet.status === 400 &&
+         (globalWallet.json || {}).error === 'invalid_request' &&
+         /Token Status List index \d+ is INVALID — why: a global sign-out/
+           .test(globalSaid) &&
+         ISO.test(globalSaid) &&
+         globalSaid.indexOf(base + '/portal/wallet') > 0,
+         '8e-ii. the wallet is told why (a global sign-out), when, and where ' +
+         'a new credential is issued (#653)', globalSaid);
+    const globalPage = afterGlobal.page.json || {};
+    const globalView = globalPage.view || {};
+    const globalCheck = [].concat(globalView.checks || [])
+      .filter(function (c) { return c.name === 'Credential status'; })[0];
+    note(/global sign-out/.test(String((globalPage.errors || [])[0])) &&
+         /Wallet page of your account/
+           .test(String((globalPage.errors || [])[0])) &&
+         globalView.reissue === '/portal/wallet' &&
+         !!globalCheck && /why: a global sign-out/.test(globalCheck.detail),
+         '8e-iii. and so is the browser: the refusal names the global ' +
+         'sign-out, its Credential status check says why, and the view ' +
+         'carries the way to a new credential',
+         JSON.stringify({ errors: globalPage.errors,
+                          reissue: globalView.reissue,
+                          check: globalCheck }));
 
     // A CREDENTIAL ISSUED AFTERWARDS, on a fresh token, signs in again.
     const d2 = holderKey();
@@ -1217,6 +1247,15 @@ function childMain() {
          '8g. an administrator revoking it on the issued register refuses it ' +
          'too, STS-VC-0071', afterRevoke.page.status + ' ' +
          afterRevoke.code);
+    const revokedSaid = String(((afterRevoke.wallet || {}).json || {})
+      .error_description || '');
+    note(/revoked in this service's issued register \(the admin console\) at /
+           .test(revokedSaid) &&
+         revokedSaid.indexOf(base + '/portal/wallet') > 0 &&
+         ((afterRevoke.page.json || {}).view || {}).reissue ===
+           '/portal/wallet',
+         '8g-ii. the wallet and the page say an administrator revoked it, ' +
+         'when, and where a new one is issued (#653)', revokedSaid);
     note(await realms.run(DEFAULT, function () {
       return vcStatus.statusOf(freshRow.credentials[0].statusKey) ===
         vcStatus.INVALID;
@@ -1242,6 +1281,16 @@ function childMain() {
          whileSuspended.code === 'STS-VC-0071',
          '8j. suspending its status-list entry refuses it, STS-VC-0071',
          JSON.stringify(suspended) + ' ' + whileSuspended.code);
+    const suspendedSaid = String(((whileSuspended.wallet || {}).json || {})
+      .error_description || '');
+    const suspendedPage = whileSuspended.page.json || {};
+    note(/status list entry says SUSPENDED \(the admin console\) since /
+           .test(suspendedSaid) &&
+         suspendedSaid.indexOf('/portal/wallet') < 0 &&
+         !(suspendedPage.view || {}).reissue &&
+         /may reinstate it/.test(String((suspendedPage.errors || [])[0])),
+         '8j-ii. a suspension says so, when and by whom, and offers no new ' +
+         'credential: an administrator may lift it (#653)', suspendedSaid);
     const reinstated = await realms.run(DEFAULT, function () {
       return statusAdmin.statusAction(
         { idx: freshRow.credentials[0].statusKey, action: 'reinstate' },

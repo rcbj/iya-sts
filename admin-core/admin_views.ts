@@ -99,8 +99,10 @@
 // answering 500 with `baseUrlOf is not defined`, found by the job that
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
+import configDump = require('./config_dump');
 // The policy references a group may make (#1235, rule 3cx): a leaf.
 import PolicySelection = require('../common/policy_selection');
+import DomainClasses = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 // The credential store, for the ways-in list the new-person form offers.
 import credentials = require('../common/credentials');
@@ -1488,12 +1490,16 @@ class AdminViews {
                                                           : 'realm';
     const outsideRealm = authority === 'realm' &&
                          realms.currentId() !== identityRealm;
+    // SECURITY_ADMIN is the roster's `security` (#645), which implies read.
     const roles = (caller.roles || []).map(function (role) {
       return role === 'ADMIN_READ' ? 'read'
-        : (role === 'ADMIN_WRITE' ? 'write' : String(role).toLowerCase());
+        : (role === 'ADMIN_WRITE' ? 'write'
+          : (role === 'SECURITY_ADMIN' ? 'security'
+            : String(role).toLowerCase()));
     });
     const read = !outsideRealm && roles.indexOf('read') >= 0;
     const write = !outsideRealm && roles.indexOf('write') >= 0;
+    const security = !outsideRealm && roles.indexOf('security') >= 0;
     log.debug("Leaving AdminViews.apiGateStateOf(). " + authority + ".");
     return {
       enforced: true, available: rbac.available(), session: true,
@@ -1502,7 +1508,7 @@ class AdminViews {
       readGroup: config.value('admin.readGroup'),
       writeGroup: config.value('admin.writeGroup'),
       sessionRealm: identityRealm, foreignSession: false,
-      read: read || write, write: write,
+      read: read || write || security, write: write, security: security,
       roles: outsideRealm ? [] : roles,
       open: false, closed: false, windowOpens: true, empty: false,
       bootstrapPasswordRequired: false, windowWithheld: false,
@@ -1585,6 +1591,7 @@ class AdminViews {
                                 !rbac.passwordSignIn(session));
     const held = outsideRealm || passwordRequired
       ? Object.assign({}, asked, { roles: [], read: false, write: false,
+                                   security: false,
                                    open: false, openable: outsideRealm
                                      ? false : asked.openable })
       : asked;
@@ -1617,6 +1624,8 @@ class AdminViews {
       foreignSession: !!(found && found.foreign),
       read: enforced ? held.read : true,
       write: enforced ? held.write : true,
+      // #645: the Security Administrator's role, from the same answer.
+      security: enforced ? !!held.security : true,
       roles: enforced ? held.roles : rbac.ROLE_IDS.slice(0),
       open: enforced && held.open,
       closed: enforced && held.empty && !held.open && !held.roles.length,
@@ -2759,7 +2768,10 @@ class AdminViews {
       }).join('') + ')',
       missingAsked: asked,
       missing: asked ? attributePolicy.peopleMissing() : null,
+      // #700: `update` changes a definition's label, description and
+      // portal flags in place.
       actions: { define: 'define-person-attribute',
+                 update: 'update-person-attribute',
                  remove: 'remove-person-attribute' }
     };
     log.debug("Leaving AdminViews.attributePolicyExtras().");
@@ -2915,9 +2927,18 @@ class AdminViews {
     });
     log.debug("Leaving AdminViews.rolesPreview(). " +
               (answer.allowed ? 'Permit.' : 'Refused.'));
-    return Object.assign({ asked: { application: application, subject: who,
-                                    subjectKind: kind, kind: issuance },
-                           available: true }, answer);
+    // The passkey verdict's `code` is what the sign-in records when it acts on
+    // it; no console page draws it here, so it leaves the answer (#1355).
+    const shown: any = Object.assign({ asked: { application: application,
+                                                subject: who,
+                                                subjectKind: kind,
+                                                kind: issuance },
+                                       available: true }, answer);
+    if (shown.passkey) {
+      shown.passkey = Object.assign({}, shown.passkey);
+      delete shown.passkey.code;
+    }
+    return shown;
   }
 
   // Which person the four tables show values for, and where the page sends
@@ -3566,7 +3587,9 @@ class AdminViews {
     log.debug("Entering AdminViews.realmSettingRows(). realm=" + realm.id);
     const rows = Object.keys(realm.overrides).sort().map(function (key) {
       const setting = configSettingFor(key);
-      return { key: key, value: String(realm.overrides[key]),
+      // A sensitive parameter's value never leaves in an answer (#1478).
+      return { key: key,
+               value: configDump.maskKeyed(key, String(realm.overrides[key])),
                label: setting ? setting.label : key,
                group: setting ? setting.group : '' };
     });
@@ -3633,8 +3656,14 @@ class AdminViews {
           id: one.id, port: one.port, publicBaseUrl: one.publicBaseUrl,
           hostnames: one.hostnames, clientAuth: one.clientAuth,
           certificateSource: one.certificateFile ? 'file' : 'issued',
+          // Without `code`: `why` is what a page says, and the failure to
+          // bind is on the log under it (#1355).
           here: bound.filter(function (b: any): boolean {
             return b.id === one.id;
+          }).map(function (b: any): any {
+            const shown = Object.assign({}, b);
+            delete shown.code;
+            return shown;
           })[0] || null
         };
       }),
@@ -5288,32 +5317,6 @@ class AdminViews {
     };
   }
 
-  // One attribute off an entry the directory reader handed back, canonically
-  // spelled or not. `objectFor()` returns them canonically spelled and a caller
-  // asking for `cn` should not have to know that.
-  /**
-   * Returns an entry's first value of an attribute, matched case-insensitively.
-   *
-   * @param entry - a directory entry with an `attributes` object
-   * @param name - the attribute name
-   * @returns the first value as a string, or an empty string
-   */
-  firstAttributeValue(entry, name) {
-    const { log } = this.deps;
-    log.debug("Entering AdminViews.firstAttributeValue().");
-    if (!entry || !entry.attributes) {
-      log.debug("Leaving AdminViews.firstAttributeValue().");
-      return '';
-    }
-    const wanted = String(name).toLowerCase();
-    const key = Object.keys(entry.attributes).filter(function (one) {
-      return String(one).toLowerCase() === wanted;
-    })[0];
-    const values = key ? entry.attributes[key] : null;
-    log.debug("Leaving AdminViews.firstAttributeValue().");
-    return (values && values.length) ? String(values[0]) : '';
-  }
-
   // WHAT A BOX IS, WHICH IS THE ONE QUESTION `delegation_map.js` DELIBERATELY
   // CANNOT ANSWER. It is handed this function and asks it once per node.
   //
@@ -5402,7 +5405,9 @@ class AdminViews {
                 // application because that is what a front-end service is.
                 : node.chiefRole === 'initial' ? 'person' : 'application';
 
-    const cn = entry ? this.firstAttributeValue(entry, 'cn') : '';
+    // cn is a person's list; the box is labelled with its first value.
+    const cn = entry ?
+      (DomainClasses.User.fromEntry(entry.attributes).cn || [])[0] || '' : '';
     const appName = application ? (application.name || application.dnLabel) :
                     '';
     const label = cn || appName || node.id;
@@ -7460,6 +7465,78 @@ class AdminViews {
   // which is the half of a key pair meant to be handed around.
   // ---------------------------------------------------------------------------
   /**
+   * Builds `/admin/pki/trust` (#1360): paranoid PKI mode and every use case's
+   * row, this realm's signer truststore, what it pins as the audit last found
+   * it, and where the client-certificate truststore is. Certificates and
+   * sentences only; a refusal's code is recorded, never sent.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
+  pkiTrustJson(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.pkiTrustJson().");
+    // Lazily: libraries, and this module is loaded long before any of them.
+    const trust = require('../common/certificate_trust');
+    const signers = require('../common/signer_truststore');
+    const realmId = realms.currentId();
+    const master = trust.inForce(realmId);
+    const counters = trust.counters(realmId);
+    const rows = trust.PURPOSES.map(function (one) {
+      const on = trust.rowOn(one.id, realmId);
+      const count = counters[one.id];
+      return {
+        purpose: one.id, setting: one.setting, title: one.title,
+        covers: one.covers, adds: one.adds, anchors: one.anchors.slice(),
+        exemptions: one.exemptions.map(function (ex) {
+          return { check: ex.check, spec: ex.spec };
+        }),
+        phase: one.phase, on: on, inForce: master.inForce && on,
+        assessed: count.assessed, refused: count.refused,
+        lastRefusal: count.lastRefusal ? count.lastRefusal.why : ''
+      };
+    });
+    const entries = signers.list(realmId);
+    const audited = trust.lastAudit(realmId);
+    const page = this.pagedRows(req.query || {}, audited.pins || [],
+                                { noun: 'pins', name: 'pins' });
+    const limits = signers.limits();
+    const held = truststore ? truststore.list().anchors.length : 0;
+    log.debug("Leaving AdminViews.pkiTrustJson().");
+    return {
+      realm: realmId,
+      master: { value: master.master, inForce: master.inForce,
+                decidedBy: master.decidedBy, product: mode.isProduct() },
+      rows: rows,
+      truststore: {
+        installed: limits.installed, file: limits.file,
+        loadedFromFile: limits.loadedFromFile,
+        maxAnchors: limits.maxAnchors,
+        maxIntermediates: limits.maxIntermediates,
+        anchors: entries.filter(function (e) {
+          return e.kind === 'anchor';
+        }).length,
+        intermediates: entries.filter(function (e) {
+          return e.kind === 'intermediate';
+        }).length,
+        entries: entries
+      },
+      assessedAt: audited.assessedAt || 0,
+      pins: page.shown.map(function (pin) {
+        const shown = Object.assign({}, pin);
+        delete shown.code;
+        delete shown.pem;
+        delete shown.chain;
+        return shown;
+      }),
+      pinsTotal: (audited.pins || []).length,
+      pinsPaging: this.pagingJson(page.paging),
+      clientTruststore: { href: '/admin/tls/trust', count: held },
+      actions: require('./admin_actions').PKI_TRUST_ACTIONS.slice()
+    };
+  }
+
+  /**
    * Builds the client-certificate truststore's JSON; certificates only.
    *
    * @param req - the request
@@ -9258,7 +9335,7 @@ class AdminViews {
       paneFrom = 0;
     }
     const candidatePane = {
-      from: paneFrom, matched: candidateMatched.length,
+      from: paneFrom, matched: candidateMatched.length, countCapped: false,
       shown: candidateMatched.slice(paneFrom, paneFrom + CHOOSER_HITS)
     };
     // Who of the grants on this page has authenticated here, for the
@@ -9330,11 +9407,15 @@ class AdminViews {
           candidates: candidateShown,
           candidatesPaging: self.pagingJson(candidatePaging),
           // Held in memory, the list is every candidate: whole (#359's
-          // windowed answer carries the same two keys).
+          // windowed answer carries the same keys).
+          // `countCapped` is never true here (#1308): the list is in
+          // memory, so counting it costs nothing and is exact. The windowed
+          // answer's cap is still named, so a caller reads one shape.
           candidateSearch: {
             q: personWanted || null, total: candidates.length,
-            matched: candidateMatched.length, complete: true,
-            incomplete: null
+            matched: candidateMatched.length, countCapped: false,
+            countCap: ldapMod.CANDIDATE_COUNT_CAP,
+            complete: true, incomplete: null
           },
           picked: personAsked
             ? { asked: personAsked, candidate: picked }
@@ -9469,6 +9550,8 @@ class AdminViews {
     const census = await ldap.candidatePageAsync(0, 0, personWanted);
     const matched = Number(census.matched) || 0;
     const total = Number(census.total) || 0;
+    // MORE THAN `matched` (#1308): a needle's count stops at the cap.
+    const countCapped = census.countCapped === true;
     const candidateOptions = { name: 'candidates', defaultPer: CHOOSER_HITS,
                                noun: 'people' };
     let candidatePaging = this.pagingOf(req.query, matched,
@@ -9490,13 +9573,13 @@ class AdminViews {
     const known = built.knownKeys;
     const asked = await ldap.candidatePageAsync(
       candidatePaging.offset, candidatePaging.perPage, personWanted,
-      { total: total, matched: matched });
+      { total: total, matched: matched, countCapped: countCapped });
     const pageRows = this.markSeen(asked.rows, known);
     const same = candidatePaging.offset === paneFrom &&
       candidatePaging.perPage === CHOOSER_HITS;
     const paneAsked = same ? asked
       : await ldap.candidatePageAsync(paneFrom, CHOOSER_HITS, personWanted,
-          { total: total, matched: matched });
+          { total: total, matched: matched, countCapped: countCapped });
     const paneRows = same ? pageRows : this.markSeen(paneAsked.rows, known);
     // NOT A WHOLE PAGE, SAID (the review of #692): `matched` counts rows,
     // and a name a DN cannot hold, a shared RDN value and the walk's cap
@@ -9534,7 +9617,8 @@ class AdminViews {
     filterParams.personfrom = this.queryOne(req.query, 'personfrom');
     filterParams.person = personAsked;
     const candidatePane = {
-      from: paneFrom, matched: matched, shown: paneRows
+      from: paneFrom, matched: matched, countCapped: countCapped,
+      shown: paneRows
     };
     const knownHere: Record<string, boolean> = {};
     built.shown.forEach(function (row) {
@@ -9589,6 +9673,7 @@ class AdminViews {
         candidatesPaging: self.pagingJson(candidatePaging),
         candidateSearch: {
           q: personWanted || null, total: total, matched: matched,
+          countCapped: countCapped, countCap: ldap.CANDIDATE_COUNT_CAP,
           complete: incomplete === null, incomplete: incomplete
         },
         picked: personAsked
@@ -9719,20 +9804,22 @@ class AdminViews {
       json: (function () {
       return {
           serviceProviders: paged.shown.map(function (row) {
+            const provider =
+              DomainClasses.SamlServiceProvider.fromEntry(row.fields);
             return Object.assign(self.saml2Facts(base, row.identifier), {
               name: row.name, authentications: row.authentications,
               sessions: row.sessions,
               users: row.users, firstSeen: row.firstSeen,
               lastSeen: row.lastSeen,
               assertionConsumerServices: self.valuesFor(
-                  row.fields.samlAssertionConsumerService),
+                  provider.assertionConsumerService),
               singleLogoutServices:
-                self.valuesFor(row.fields.samlSingleLogoutService),
-              nameIdFormats: self.valuesFor(row.fields.samlNameIdFormat),
-              responseBindings: self.valuesFor(row.fields.samlResponseBinding),
-              lastRequestSigned: row.fields.samlAuthnRequestSigned === 'TRUE',
+                self.valuesFor(provider.singleLogoutService),
+              nameIdFormats: self.valuesFor(provider.nameIdFormat),
+              responseBindings: self.valuesFor(provider.responseBinding),
+              lastRequestSigned: provider.authnRequestSigned === 'TRUE',
               lastRequestVerification:
-                String(row.fields.samlAuthnRequestVerification || '')
+                String(provider.authnRequestVerification || '')
                   .split(' ')[0]
             });
           }),
@@ -9900,6 +9987,28 @@ class AdminViews {
       declaredScopes = declaredScopes
         .concat(listOf('oauthDelegatedPermission'), delegated);
     }
+    // THE TOKEN RESPONSE TYPES ENABLED ON THIS APPLICATION (#1296), and
+    // whether the realm honours them: `enforced` is RFC 9700 mode, `waived`
+    // section 2.1.2 waived by an administrator. The console draws the list
+    // with section 2.1.2's warning beside it. `oauth2_bcp.js` is asked
+    // LAZILY: it is built with oauth2 (9), after this file is required.
+    let bcpState = { enforced: false, waived: false };
+    try {
+      const bcp = require('../oauth-oidc/oauth2_bcp');
+      bcpState = { enforced: !!bcp.enabled(), waived: !!bcp.implicitWaived() };
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationObservedState(): " +
+                ((e && e.message) || e));
+      // A view tested on its own, with no OAuth stack: the list is still
+      // drawn, and the sentence beside it says the mode is off.
+      bcpState = { enforced: false, waived: false };
+    }
+    const tokenResponseTypes = {
+      enabled: listOf('oauthAllowedTokenResponseTypes')
+        .map(applications.canonicalResponseType),
+      enforced: bcpState.enforced,
+      waived: bcpState.waived
+    };
     const signed = String(fields.samlAuthnRequestSigned || '');
     const out = {
       oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
@@ -9917,7 +10026,8 @@ class AdminViews {
                         this.verificationOf(
                           fields.samlAuthnRequestVerification))
         : null,
-      samlObservedSigningCertificate: certificate
+      samlObservedSigningCertificate: certificate,
+      oauthAllowedTokenResponseTypes: tokenResponseTypes
     };
     log.debug("Leaving AdminViews.applicationObservedState().");
     return out;
@@ -10179,15 +10289,17 @@ class AdminViews {
       json: (function () {
       return {
           relyingParties: paged.shown.map(function (row) {
+            const provider =
+              DomainClasses.SamlServiceProvider.fromEntry(row.fields);
             return Object.assign(self.saml11Facts(base, row.identifier), {
               name: row.name, authentications: row.authentications,
               sessions: row.sessions,
               users: row.users, firstSeen: row.firstSeen,
               lastSeen: row.lastSeen,
               assertionConsumerServices: self.valuesFor(
-                  row.fields.samlAssertionConsumerService),
-              nameIdFormats: self.valuesFor(row.fields.samlNameIdFormat),
-              profiles: self.valuesFor(row.fields.samlResponseBinding).filter(
+                  provider.assertionConsumerService),
+              nameIdFormats: self.valuesFor(provider.nameIdFormat),
+              profiles: self.valuesFor(provider.responseBinding).filter(
                   function (v) {
                 return v === saml11.PROFILE_POST || v ===
                        saml11.PROFILE_ARTIFACT;
@@ -12697,11 +12809,12 @@ class AdminViews {
   // A PERSON'S KEY PAIRS, ON THEIR OWN PAGE (2026-09-13).
   //
   // The application's section above, for the other kind of holder: for each
-  // assertion profile, the key pair on the person's own entry — issued here or
-  // a certificate uploaded in its place — read into which certificate, issued
-  // by whom, through what chain, and whether this service holds the private
-  // half. `person_assertions.KEY_PAIR_ATTRIBUTES` names the attributes, which
-  // is the table the writer uses.
+  // assertion profile, EVERY key pair on the person's own entry (several
+  // since #1290, each with its state) — issued here or a certificate uploaded
+  // — read into which certificate, issued by whom, through what chain, and
+  // whether this service holds the private half.
+  // `person_assertions.KEY_PAIR_ATTRIBUTES` names the attributes, which is
+  // the table the writer uses.
   //
   // **THERE IS NO PRIVATE KEY IN THE STATE, EITHER HALF**, and that is a
   // difference from the application's which is the point rather than an
@@ -12731,37 +12844,45 @@ class AdminViews {
     pki.PURPOSES.forEach(function (purpose) {
       labels[purpose.id] = purpose.label;
     });
+    // SEVERAL KEY PAIRS PER PROFILE SINCE #1290, each a row with its state,
+    // and the cap the issue and upload controls are held to.
+    const max = Number(personAssertions.maxPerPerson() || 0);
     const purposes = personAssertions.PURPOSE_IDS.map(function (id) {
       const names = personAssertions.KEY_PAIR_ATTRIBUTES[id];
-      const value = function (name) {
-        log.debug("Entering value().");
-        log.debug("Leaving value().");
-        return record && name ? String(record[name] || '') : '';
-      };
-      const certificatePem = value(names.certificate);
-      const privateKeyHeld = !!value(names.privateKey);
-      const held = !!(record && (id === 'saml' ? record.hasSamlKeyPair
-                                               : record.hasKeyPair));
+      const keys = ((record && record.keys && record.keys[id]) || [])
+        .map(function (one) {
+          return {
+            handle: String(one.id || ''),
+            label: String(one.label || ''),
+            source: String(one.source || ''),
+            state: String(one.state || ''),
+            reason: String(one.reason || ''),
+            revokedAt: String(one.revokedAt || ''),
+            serialHex: String(one.serialHex || ''),
+            expiresAt: String(one.expiresAt || ''),
+            notAfter: String(one.notAfter || ''),
+            privateKeyHeld: !!one.privateKeyHeld,
+            certificate: one.certificatePem
+              ? self.certificateSummary(one.certificatePem) : null,
+            chain: self.pemCertificatesIn(String(one.chainPem || ''))
+              .map(self.certificateSummary.bind(self))
+          };
+        });
+      const valid = keys.filter(function (one) {
+        return one.state === 'valid';
+      }).length;
       const declared = record
         ? (id === 'saml' ? record.samlIssuers : record.issuers) : [];
       return {
         id: id,
         label: labels[id] || id,
-        attributes: { issuer: names.issuer, certificate: names.certificate,
-                      chain: names.chain, privateKey: names.privateKey,
-                      handle: names.handle, source: names.source,
-                      expiresAt: names.expiresAt, jwks: names.jwks },
-        held: held,
-        source: value(names.source) ||
-          (privateKeyHeld ? 'issued' : (certificatePem ? 'unrecorded' : '')),
-        privateKeyHeld: privateKeyHeld,
-        certificate: certificatePem ? self.certificateSummary(certificatePem) :
-                     null,
-        chain: self.pemCertificatesIn(value(names.chain))
-          .map(self.certificateSummary.bind(self)),
-        handle: value(names.handle),
+        attributes: { issuer: names.issuer, keys: names.keys,
+                      privateKey: names.privateKey },
+        held: valid > 0,
+        keys: keys,
+        valid: valid,
+        atCap: max > 0 && valid >= max,
         handleLabel: names.handleLabel,
-        expiresAt: value(names.expiresAt),
         issuers: declared.slice(),
         effectiveIssuers: record
           ? (id === 'saml' ? record.samlEffectiveIssuers
@@ -12781,19 +12902,21 @@ class AdminViews {
       },
       sealsAtRest: storable && keystore.persists(),
       selfService: !!config.value('pki.personSelfService'),
-      sources: applications.KEY_SOURCES.slice()
+      sources: applications.KEY_SOURCES.slice(),
+      maxPerPerson: max,
+      revocationReasons: personAssertions.REVOCATION_REASONS.slice()
     };
     state.json = {
       storable: storable,
       found: state.found,
       keyPairs: purposes.map(function (p) {
-        return { purpose: p.id, label: p.label, held: p.held, source: p.source,
-                 privateKeyHeld: p.privateKeyHeld, certificate: p.certificate,
-                 chain: p.chain, handle: p.handle, handleLabel: p.handleLabel,
-                 expiresAt: p.expiresAt, issuers: p.issuers,
-                 effectiveIssuers: p.effectiveIssuers,
+        return { purpose: p.id, label: p.label, held: p.held, keys: p.keys,
+                 valid: p.valid, atCap: p.atCap, handleLabel: p.handleLabel,
+                 issuers: p.issuers, effectiveIssuers: p.effectiveIssuers,
                  attributes: p.attributes };
       }),
+      maxPerPerson: max,
+      revocationReasons: personAssertions.REVOCATION_REASONS.slice(),
       caAvailable: chainAvailable,
       sealsAtRest: state.sealsAtRest,
       selfService: state.selfService,
@@ -13133,7 +13256,10 @@ class AdminViews {
               'fedProvisionGroups',
               'fedMayAssertAdministrators', 'fedSignRequest',
               'fedAllowUnsolicited', 'fedAcceptSignout',
-              'fedRequireSignedLogout', 'fedAllowUnencrypted']
+              'fedRequireSignedLogout', 'fedAllowUnencrypted',
+              // #930's two OpenID Connect switches.
+              'fedDiscovery', 'fedInitiateLogin', 'fedRefreshTokens',
+              'fedRegister', 'fedWebFinger']
         .indexOf(field.name) === -1 &&
         // A Trust Anchor to discover the OP through (#134) is OpenID
         // Connect's alone.
@@ -13228,7 +13354,15 @@ class AdminViews {
                                   row.protocol === 'saml11' ||
                                   row.protocol === 'wsfed')
                          ? metadata : null,
-                       jwks: jwks },
+                       jwks: jwks,
+                       // What an OpenID Connect partner registers as
+                       // initiate_login_uri (#930), answered only while
+                       // fedInitiateLogin is on.
+                       initiateLogin: row.protocol === 'oidc' &&
+                         row.role === 'service-provider'
+                         ? base + federation.PATHS.initiateLogin + '/' +
+                           encodeURIComponent(row.id)
+                         : null },
                        row.role === 'service-provider' ? signOut : {}),
           // The whole record, MINUS the one sensitive field. `fedClientSecret`
           // is replaced by a boolean saying whether one is set — which is the
@@ -13574,9 +13708,11 @@ class AdminViews {
     // the page then draws the list's counts, as it always did.
     // -----------------------------------------------------------------------
     const { credentials } = this.deps;
+    const tallied = deferTiles ? null : credentials.directoryFactorCounts();
     const directoryCounts = deferTiles ? null
-      : this.directoryTilesOf(all, credentials.directoryFactorCounts(),
+      : this.directoryTilesOf(all, tallied,
                               credentials.directoryPeopleNamed);
+    const directoryAge = this.directoryAgeOf(tallied);
     const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.usersListJson().");
     return {
@@ -13616,6 +13752,16 @@ class AdminViews {
           // — see above. `factors` and `authenticatedHere` stay the LIST's,
           // for the `?factor=` filter and for a caller that asked them.
           directoryCounts: directoryCounts,
+          // HOW OLD THOSE COUNTS ARE (#684). `directoryCountedAt` is when
+          // this process's directory counted them (ISO 8601), and
+          // `directoryCountsKeptFor` the most seconds it keeps a count
+          // against ANOTHER process's committed writes — its own and the
+          // ones it has applied end a count at once — or null where no
+          // other process can lag it (the directory in memory). So two
+          // workers inside that window may answer two figures, and the page
+          // says so rather than letting a tile move without a reason.
+          directoryCountedAt: directoryAge.countedAt,
+          directoryCountsKeptFor: directoryAge.keptForSeconds,
           registryCap: population.registryCap,
           filter: { q: wantedText || null, protocol: wantedProtocol || null,
                     factor: wantedFactor || null, kind: wantedKind || null },
@@ -13813,12 +13959,34 @@ class AdminViews {
       : named;
     const signedIn = n === null || n === undefined ? null
       : Math.min(n, tallied.people);
+    // The count's age is not a tile: `directoryAgeOf()` answers it beside
+    // them, so `directoryCounts` stays the tiles alone.
+    const tiles = Object.assign({}, tallied);
+    delete tiles.countedAt;
+    delete tiles.keptForSeconds;
     log.debug("Leaving AdminViews.directoryTilesOf().");
-    return Object.assign({}, tallied, {
+    return Object.assign(tiles, {
       signedInHere: signedIn,
       neverSignedInHere: signedIn === null ? null
         : tallied.people - signedIn
     });
+  }
+
+  // When the directory counted its tiles, and for how many seconds it keeps
+  // a count against another process's writes (#684); both null where it
+  // offers no tally or did not say.
+  private directoryAgeOf(tallied) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.directoryAgeOf().");
+    const at = tallied ? Number(tallied.countedAt) : NaN;
+    const kept = tallied ? tallied.keptForSeconds : null;
+    log.debug("Leaving AdminViews.directoryAgeOf().");
+    return {
+      countedAt: Number.isFinite(at) && at > 0
+        ? new Date(at).toISOString() : null,
+      keptForSeconds: kept === null || kept === undefined ? null
+        : Number(kept)
+    };
   }
 
   // The keys of the list's rows the register has seen authenticate.
@@ -13856,6 +14024,9 @@ class AdminViews {
       : null;
     const directoryCounts = this.directoryTilesOf(view.all, tallied, named);
     json.directoryCounts = directoryCounts;
+    const directoryAge = this.directoryAgeOf(tallied);
+    json.directoryCountedAt = directoryAge.countedAt;
+    json.directoryCountsKeptFor = directoryAge.keptForSeconds;
     json.directoryPeople = directoryCounts ? directoryCounts.people
       : view.population.directoryPeople;
     const users = json.users || [];
@@ -14989,11 +15160,28 @@ class AdminViews {
         mech: Object.assign({}, mech, {
           keys: (mech.keys || []).map(function (one) {
             // #470: the name, group and provider the passkey pages show.
-            return Object.assign({}, one,
+            const shown: any = Object.assign({}, one,
                                  { algorithm: credentials.keyAlgorithm(one),
                                    name: credentials.keyName(one),
                                    group: credentials.keyGroup(one),
                                    provider: credentials.keyProvider(one) });
+            // The two refusal marks keep their reason and time; the code
+            // stays on the stored key and the refused sign-in's audit row,
+            // since no console page draws it (#1355).
+            if (shown.attestationRefused) {
+              shown.attestationRefused = {
+                why: shown.attestationRefused.why,
+                at: shown.attestationRefused.at };
+            }
+            if (shown.policyRefused) {
+              shown.policyRefused = Object.keys(shown.policyRefused)
+                .reduce(function (out, reason) {
+                  const mark = shown.policyRefused[reason] || {};
+                  out[reason] = { why: mark.why, at: mark.at };
+                  return out;
+                }, {});
+            }
+            return shown;
           })
         }),
         totp: totp.settings(),
@@ -15005,6 +15193,8 @@ class AdminViews {
         inventsClaimValues: mode.inventsClaimValues(),
         devices: this.devicesJson({ user: key }),
         selfIssued: this.selfIssuedSubjectsJson({ user: key }),
+        // The DIDs this realm publishes for them (#1291).
+        publishedDids: this.publishedDidsJson({ user: key }),
         // The certificates stored on the entry (#1061), as
         // `GET /admin-api/users/certificates` answers them. Required when
         // drawn: `admin_actions.ts` is this module's other half and requires
@@ -15539,6 +15729,39 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // ONE PERSON'S PUBLISHED DIDs (#1291) — `GET
+  // /admin-api/users/published-dids`, the list the Published DIDs block on
+  // their /admin/users page draws: each did:web this realm publishes for
+  // them, with its document's address, custody, state and versions. Never a
+  // private key. At most `PersonDid.MAX_RECORDS`, so not paged.
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists one person's published DIDs; never a private key.
+   *
+   * @param query - the request's query
+   * @returns the JSON
+   */
+  publishedDidsJson(query) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.publishedDidsJson().");
+    // LAZILY: `person_did.ts` is built with the verifiable credentials
+    // family, after the console's libraries.
+    const personDid = require('../oid4vc/person_did');
+    const who = String((query && (query.user || query.username)) || '').trim();
+    const held = who ? personDid.list(who) : null;
+    const settings = personDid.settings();
+    log.debug("Leaving AdminViews.publishedDidsJson().");
+    return {
+      user: who,
+      entryFound: Array.isArray(held),
+      publishing: settings.publishing,
+      custody: settings.custody,
+      maxPerPerson: settings.maxPerPerson,
+      dids: held || []
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // ONE PERSON'S DEVICES (#130) — `GET /admin-api/users/devices`, the list
   // the Devices block on their /admin/users page draws: each device entry in
   // ou=devices they own, the applications that used it, and whether its
@@ -15774,6 +15997,8 @@ class AdminViews {
       capped: list.json.capped, scanLimit: list.json.scanLimit,
       directoryPeople: list.json.directoryPeople,
       directoryCounts: list.json.directoryCounts,
+      directoryCountedAt: list.json.directoryCountedAt,
+      directoryCountsKeptFor: list.json.directoryCountsKeptFor,
       filter: list.json.filter,
       page: list.json.page, pages: list.json.pages, perPage: list.json.perPage,
       firstRow: list.json.firstRow, lastRow: list.json.lastRow,
@@ -16029,6 +16254,7 @@ export = {
   appPasswordsJson: slot.forward('appPasswordsJson'),
   verificationsJson: slot.forward('verificationsJson'),
   selfIssuedSubjectsJson: slot.forward('selfIssuedSubjectsJson'),
+  publishedDidsJson: slot.forward('publishedDidsJson'),
   devicesJson: slot.forward('devicesJson'),
   passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
@@ -16190,6 +16416,7 @@ export = {
   umaOf: slot.forward('umaOf'),
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
+  pkiTrustJson: slot.forward('pkiTrustJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
   kerberosTrustsJson: slot.forward('kerberosTrustsJson'),
   krbtgtView: slot.forward('krbtgtView'),

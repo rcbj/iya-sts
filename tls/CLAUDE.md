@@ -41,7 +41,11 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   so every reader of `socket.authorized` — sign-in, RFC 8705, the XACML gate,
   SCIM, the request pool's forwarded flag — sees the answer. A demoted
   certificate still binds a token, as any unverified one does (RFC 8705 section
-  3).
+  3). **Since #1360 it asks the door's `holdPeer('tls-client', …)`** with the
+  DEFAULT realm's rows, which out of force is the path rules alone; under
+  paranoid PKI mode the hold adds the leaf's fields and the resumed verdict, and
+  a throw inside it demotes rather than leaving OpenSSL's answer.
+  `common/CLAUDE.md` (3dd, *Phase 1*) has the hold's shapes on each listener.
 * **The JA4 reader** (`client_hello.ts`, #62 P0) — see *THE CLIENT'S JA4
   FINGERPRINT*, below.
 * **Two routes**, both on the main app and visible to
@@ -175,13 +179,14 @@ is why that function is not a convenience.
 
 ## The serial number is random, and a constant one was a browser-only bug
 
-The self-signed certificate this module mints is regenerated at every start,
-its subject never varies (`CN=localhost, O=sts`), and it is the one a
-PERSON is asked to trust in a browser. Its serial was the constant `'03'` until
-2026-09-01 — chosen so that two of this service's certificates could be told
-apart in a packet capture — and NSS files a certificate under **(issuer,
-serial)**. So the second start of this service produced a different key under a
-pair Firefox had already seen, and Firefox refused the port outright:
+The self-signed certificate this module mints is regenerated at every start, its
+subject never varies (`CN=localhost, O=iya-sts`; `O=sts` before #1294), and it
+is the one a PERSON is asked to trust in a browser. Its serial was the constant
+`'03'` until 2026-09-01 — chosen so that two of this service's certificates
+could be told apart in a packet capture — and NSS files a certificate under
+**(issuer, serial)**. So the second start of this service produced a different
+key under a pair Firefox had already seen, and Firefox refused the port
+outright:
 
 ```
 SEC_ERROR_REUSED_ISSUER_AND_SERIAL
@@ -662,9 +667,10 @@ CA, Intermediate, Root.** Until #1064 it sent three. RFC 8446 section 4.4.2
 (RFC 5246 section 7.4.2 before it) allows either, and leaving the Root out was
 the old reading of "it is the anchor; relying on it having been sent is the
 mistake". What that reading missed is what a client SHOWS. Every Root this
-service builds is `CN=sts Root CA, O=sts`, and a fresh install builds a new
-one. So a client never handed the current Root completed the path from the
-Intermediate's issuer NAME against whatever same-named Root it already held.
+service builds is `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts`
+before #1294), and a fresh install builds a new one. So a client never
+handed the current Root completed the path from the Intermediate's issuer
+NAME against whatever same-named Root it already held.
 A Windows user reported it as "the Issuing CA and the Intermediate differ
 between installs but the Root is the same". Six fresh installs on two machines
 each had a Root of their own; the name was the only thing shared.
@@ -908,11 +914,12 @@ protocol job now; `tests/CLAUDE.md` carries that half.
 `tests/protocol/sts_pki_distribution_points.js` failed in `dispatch` mode only:
 *`…/pki/crl/process/intermediate.crl` is named by certificates of two different
 authorities — CN=sts Intermediate CA (Process), O=sts and CN=sts Intermediate CA
-(Process), O=sts*. Read off the kept stack, not guessed: the handshake and
-`GET /tls/server-certificate` chained to a process Intermediate built at
-14:53:56 **by the front process**, while `/pki/ca/process/intermediate.cer`
-(served by the front process) and every worker's `/admin-api/pki` held one
-built at 14:53:57 **by worker 33**. Same subject, same Root, different keys.
+(Process), O=sts* (the names before #1294). Read off the kept stack, not
+guessed: the handshake and `GET /tls/server-certificate` chained to a process
+Intermediate built at 14:53:56 **by the front process**, while
+`/pki/ca/process/intermediate.cer` (served by the front process) and every
+worker's `/admin-api/pki` held one built at 14:53:57 **by worker 33**. Same
+subject, same Root, different keys.
 
 The log gave the sequence, a `build-root` from `sts_admin_api_operations` on
 worker 33:
@@ -1327,6 +1334,24 @@ of a socket. `tests/truststore_admin.js` pins the primitives, the slot,
 the layer, the pin and the product refusal, the last three in a child process, and asserts
 the add and the remove as a REAL HANDSHAKE on a registered listener; `sts_admin_api_operations`
 and `sts_admin_console` drive both doors over HTTP with a CA they mint and remove.
+
+## THE ADMISSION RULE, UNDER PARANOID PKI MODE (#1360, 2026-11-06)
+
+Before #1360 this store took anything OpenSSL could parse, so a self-signed LEAF
+became an anchor for itself. With `anchor-admission` applying (the mode ASKED IN
+THE DEFAULT REALM, as `truststoreOpenToAnybody()` asks it, because these anchors are
+every listener's), `addAnchors()`'s strict path and the file's loader hold each
+block to `pki.anchorProblemSync()`. **The rule is the signer truststore's, and the
+synchronous door exists for this store**: `truststoreAction()` answers in the same
+tick, and the file is read at require. An intermediate is allowed too, since
+OpenSSL builds through one, and it may chain to the service Root.
+
+**A STORED ANCHOR THE RULE NOW REFUSES IS KEPT AND REPORTED** (`STS-TLS-0056`, the
+row's `unadmittable`), because taking a working deployment's anchor away silently
+is worse than an operator reading a red row. **A BLOCK OF THE FILE IT REFUSES IS
+LEFT OUT, NOT FATAL** (`STS-TLS-0057`): an expired CA in the file must not stop the
+service, and an anchor left out trusts less rather than more. `common/CLAUDE.md`
+(3dd) argues the mode.
 
 ## THE PROTOCOL POLICY, AND THE BIND ADDRESS
 
@@ -1895,7 +1920,7 @@ prototype and `Http2ServerRequest` keeps its state behind its own), so
 request gets express's own. **Not `http2-express`**, which #703 used first:
 it replaced `lazyrouter` on the shared `express.application`, so every
 express app in the process, and named itself in `X-Powered-By`;
-`common/CLAUDE.md` (`http2_express.ts`) has the adapter. Six things follow:
+`common/CLAUDE.md` (`http2_express.ts`) has the adapter. Nine things follow:
 
 * **A socket is a connection, not a request.** On an HTTP/2 request
   `req.socket` is node's proxy to the session's socket, shared with every
@@ -1933,6 +1958,19 @@ express app in the process, and named itself in `X-Powered-By`;
   entity is refused 400, `STS-HTTP-0024` — there, in `request_pool.proxy()`
   and in the debugger's API proxy, each asking `hostProblem()` itself
   because the process behind it believes the `host` it is sent.
+
+* **CONNECT is answered 501 on every HTTP listener (#1304)**, by
+  `common/connect_refusal.ts` on the server's `connect` event: node never
+  hands a CONNECT to the application (its target is an authority, not a
+  path), and on its own answered a 405 with no `Allow` over HTTP/2 and
+  dropped the connection over HTTP/1.1. `STS-HTTP-0025`; `common/CLAUDE.md`
+  has the module.
+* **A custom listener's `tls.http2` takes `true`, `false`, `on` or `off`**
+  (the strings or the JSON booleans), and decides that listener's offer
+  whatever `http.http2` says; `httpPolicyFor()` reads all four.
+* **The stream cap is on the Listeners page**, beside *HTTP/2 offered*, in
+  each TLS listener's tab (#1304): `http2MaxConcurrentStreams` from the view's
+  `http`, which is `httpPolicyFor()` itself.
 
 `tests/main_port_http2.js` holds all of it.
 

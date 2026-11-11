@@ -45,6 +45,12 @@ client was `sts-management-api` itself; a script that still authenticates as
 | `admin:read` | make any `GET` request |
 | `admin:write` | make anything else, meaning every `POST` that changes state |
 
+A scope covers every object of the realm the call is made in: `admin:read`
+reads any of them, by id or in a list, and an object of another realm is never
+found. A realm is the boundary between tenants, so a realm's own token is
+refused at any other realm's `/admin-api`. A default-realm token is the
+service's, and reaches every realm under its prefix (`/realm/{id}/admin-api`).
+
 To get a token, call the token endpoint with the client-credentials grant, the
 scopes you need, and `resource=<base>/admin-api`. The `resource` value sets
 the token's audience, and the API refuses a token audienced to anything else.
@@ -359,7 +365,7 @@ widen them with an override on `/admin/xacml`.
 | Role | `describe-role`, `add-member`, `remove-member`, `add-owner`, `remove-owner` |
 | Group | `add-member`, `add-owner`, `remove-owner` |
 | Service account | `add-service-account-owner`, `remove-service-account-owner`, `set-service-account-destination`, `rotate-password` |
-| Application | `set`, `add`, `remove` and `update-fields` (on `appName`, `description`, `appHomePageUrl`, `appCorsOrigin`, `oauthRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthBackchannelLogoutUri`, `samlAssertionConsumerService`, `samlSingleLogoutService`), `add-owner`, `remove-owner`, `regenerate-secret`, `rotate-secret`, `add-secret`, `remove-secret` |
+| Application | `set`, `add`, `remove` and `update-fields` (on `appName`, `description`, `appHomePageUrl`, `appCorsOrigin`, `oauthRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthBackchannelLogoutUri`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `oauthAllowedTokenResponseTypes`), `add-owner`, `remove-owner`, `regenerate-secret`, `rotate-secret`, `add-secret`, `remove-secret` |
 
 **Closed to its owners.** Some objects are closed to their owners, whoever
 they are:
@@ -383,6 +389,27 @@ says whether an object is closed and why.
 
 A call made with an owner's token is recorded in the audit log as made "as an
 owner".
+
+## Every answer matches the document
+
+Every operation in `GET /admin-api/openapi.json` declares a response model for
+each status it answers, and no model admits a member it does not declare. **The
+service checks each answer against its model before sending it, always**: there
+is no setting. A generated client can rely on this: a member it does not know
+cannot arrive. The `/account-api`, `/authn-api` and `/report-api` documents make
+the same promise.
+
+An object whose keys are data, such as a directory entry's attribute names, is
+declared as a map with typed values. A value whose shape is not this service's to
+state is marked `x-free-form`, with the reason.
+
+A federation act's `relationship` carries no credential and no directory entry:
+`GET /admin-api/federation?relationship=` says whether each credential is set.
+
+An answer that would not match is not sent. The caller gets a `500` with
+`{ "error": "server_error" }`, and the operator gets `STS-API-0139` in the log,
+naming the operation, the status and the member. That is a defect in the
+service, not in the request, so please report it.
 
 ## Who a call is recorded as
 
@@ -572,6 +599,77 @@ written through `/config/set-many` is held to its own list: an `enum`
 setting's `enumValues`, and for a comma-separated setting, every entry against
 its `csvValues`. `GET /admin-api/config` publishes both.
 
+### Query parameters and headers
+
+An operation takes the query parameters its entry in the OpenAPI document
+lists. A parameter it does not list is refused with a 400
+(`STS-API-0142`), and so is a value that does not fit a listed parameter's
+type, such as a word where an integer is declared (`STS-API-0143`). An empty
+value counts as absent. Every operation takes `cell`, and `DPoP` as a header.
+
+A request header is refused with a 400 (`STS-API-0144`) unless the operation
+declares it, it is a standard HTTP header, or it belongs to a family that
+browsers, proxies, CDNs, load balancers and tracing systems add: `Sec-*`,
+`X-Forwarded-*`, `Forwarded`, `Via`, `X-Real-IP`, `X-Request-Id`, `traceparent`, `tracestate`,
+`baggage`, the headers that carry a client certificate from an edge
+(`X-Client-Cert`, `X-SSL-Client-*`), and the families AWS, Google Cloud and
+Azure add at their edges (`CloudFront-*`, `X-Amz-*`, `X-Amzn-*`,
+`X-Cloud-Trace-Context`, `X-Goog-*`, `X-Azure-*`, `X-ARR-*`, `X-MS-*`,
+`X-Original-*`, `X-FD-*`, `X-AppGW-*`). A refusal names the parameter or
+header and never its value. `/account-api`, `/authn-api` and `/report-api` hold
+themselves to the same rule (their own codes); a protocol endpoint is not held
+to it.
+
+### Sign-in appearance
+
+Four operations set a realm's sign-in colours, layout and logo. They mirror
+Server configuration → Sign-in appearance. Each acts on the realm in the
+address, so `/realm/acme/admin-api/branding` is acme's appearance. What each
+setting does is on [Sign-in appearance](sign-in-appearance.md).
+
+| Operation | Scope | What it does |
+|---|---|---|
+| `GET /admin-api/branding` | `admin:read` | The layout, the four colours, the derived tones, the contrast of the text, the links and the button text against WCAG 2.2 AA (4.5:1), the display name, the logo's alternative text and link, the stored logo without its bytes, and `previewUrl`, the realm's preview address |
+| `POST /admin-api/branding/save` | `admin:write` | Writes the `branding.*` settings in the body. They are judged together, and nothing is written when any is refused |
+| `POST /admin-api/branding/logo` | `admin:write` | The body is the image. The optional `alt` query parameter sets its alternative text |
+| `POST /admin-api/branding/remove-logo` | `admin:write` | Removes the logo. The alternative text stays |
+
+A save takes these eight members: `branding.layout`, `branding.accentColor`,
+`branding.pageColor`, `branding.cardColor`, `branding.textColor`,
+`branding.displayName`, `branding.logoAlt` and `branding.logoLinkUrl`.
+`branding.logoMaxBytes` applies to the whole service. Set it with
+`POST /admin-api/config/set` in the default realm.
+
+```bash
+curl -X POST "$BASE/realm/acme/admin-api/branding/save" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"branding.layout":"split","branding.accentColor":"#0b5394",
+       "branding.displayName":"Example Corp"}'
+
+curl -X POST "$BASE/realm/acme/admin-api/branding/logo?alt=Example%20Corp" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: image/png' \
+  --data-binary @logo.png
+```
+
+The logo must be a PNG, a JPEG or a WebP. Its bytes decide the type, not the
+`Content-Type` header. Each side must be 16 to 2048 pixels, and the file at
+most `branding.logoMaxBytes` bytes. These refusals come back:
+
+| Status | Code | Why |
+|---|---|---|
+| `400` | `STS-AUTHN-0544` | Text or links below 4.5:1 against the card |
+| `400` | `STS-AUTHN-0551` | `branding.logoLinkUrl` is not an absolute `https` URL |
+| `400` | `STS-AUTHN-0548` | A logo without alternative text |
+| `400` | `STS-AUTHN-0547` | A side outside 16 to 2048 pixels |
+| `413` | `STS-AUTHN-0546` | Larger than `branding.logoMaxBytes` |
+| `415` | `STS-AUTHN-0545` | Not a PNG, a JPEG or a WebP |
+
+The codes are recorded in the audit log and the service log, not sent in
+the reply. The upload and the removal are audited with the image's digest.
+The image itself is not in the audit row. The design asked for `PUT` and
+`DELETE` on `/branding/logo`. They are `POST`s because every operation of
+this API is a `GET` or a `POST`, and the console sends its forms that way.
+
 ### The explorer
 
 `/admin/api-explorer` (Server configuration → API explorer) is a console page,
@@ -719,6 +817,9 @@ not asked there.
 
 ## Configuration
 
+To export every parameter at once, with sensitive values masked, see
+[Configuration dump](configuration-dump.md).
+
 `adminApi.*` and `admin.*` apply to the whole process: a trust realm cannot
 override them, because they decide who administers the service.
 
@@ -760,9 +861,12 @@ them on the console or with `POST /admin-api/config/set`.
   The way to see it is not to read the code: revoke a token through the API
   and RFC 7662 introspection calls it inactive, because there is one set of
   revoked jtis in the service and `/oauth2/revoke` writes to the same one.
-* **The OpenAPI document is generated, not written.** It is built from the
-  route table, so it cannot describe an operation that does not exist or
-  omit one that does. The explorer's copy is built by the same function.
+* **The OpenAPI document is written once, in the model.** Each operation is
+  TypeSpec under `models/api/` ([Abstract data model](data-model.md#api)), and
+  the service serves the operations its routes answer, so the document cannot
+  describe an operation that does not exist. The same declaration validates
+  each request and every answer. The explorer's copy is built by the same
+  function.
 * **A token, not a console session.** `/admin-api` is a machine surface with
   no browser and no sign-in screen, so it is reached the way a machine
   reaches any resource server. A console session is not an API credential,
@@ -813,8 +917,8 @@ them on the console or with `POST /admin-api/config/set`.
   lines with no dependency, where `swagger-ui-dist` would add about 11.7 MB
   and an install-time telemetry package, in an image built where there may be
   no network beyond the registry. It does what was needed — read the
-  document, fill a form, show the response — plus the equivalent `curl` line
-  beside each operation, which is what an operator actually copies. It is one
+  document, show what each operation can answer, fill a form, show the
+  response — plus the equivalent `curl` line beside each operation, which is what an operator actually copies. It is one
   of the few pages allowed a script, and it loads the script as a file
   (`script-src 'self'`), never inline.
 * **The document declares the credential.** It carries `security`, two
@@ -843,6 +947,7 @@ them on the console or with `POST /admin-api/config/set`.
 | `/admin/error-codes` | The `STS-API-*` codes behind each refusal, also at `GET /admin-api/error-codes` |
 | `/admin/audit` | The audit log, also at `GET /admin-api/audit` |
 | `/admin/audit-export` | Audit export destinations and this process's delivery figures. `GET /admin-api/audit-export` is Admin Read (`admin:read`). `POST /admin-api/audit-export/{add,update,remove,enable,disable,test}` is Admin Write (`admin:write`). A token and a secret header are absent from every answer. Examples for each destination are on [Audit export destinations](audit-export.md) |
+| `/admin/sign-in-appearance` | The realm's sign-in colours, layout and logo. `GET /admin-api/branding` is Admin Read (`admin:read`). `POST /admin-api/branding/{save,logo,remove-logo}` is Admin Write (`admin:write`). See [Sign-in appearance](#sign-in-appearance) |
 
 At startup the service logs how many operations the API has and whether a
 token is currently required.

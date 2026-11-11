@@ -183,7 +183,7 @@ class IdTokenEncryption {
       return { ok: true };
     }
     const enc = String(doc.id_token_encrypted_response_enc || '').trim() ||
-                DEFAULT_ENC;
+                applications.defaultJweEnc();
     log.debug("Leaving IdTokenEncryption.protectionFor(). " + alg + " " +
               enc);
     return { ok: true, alg: alg, enc: enc };

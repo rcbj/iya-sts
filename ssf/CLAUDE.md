@@ -629,7 +629,11 @@ rules read for a token:
   directory's mail index gives a name), fail-closed as the portal's page is;
 * a `session-revoked` naming a session reaches only tokens issued on it
   (`record.sessionId`);
-* a token issued after the event's second is left alone;
+* a token issued after the event's second is left alone — the event's
+  `event_timestamp`, else the SET's `toe`, else its `iat` (2026-11-10: RISC
+  gives `event_timestamp` to one type of fourteen, so an activation or reset
+  link's `account-credential-change-required` narrowed nothing and revoked a
+  portal token issued on a sign-in made after the link; G9, G10);
 * and a `credential-change` whose `change_type` is `create` reaches no
   token and no session (2026-10-27, run #4 of the suite): a credential
   ADDED takes nothing away, and the suite's own habit — create a person
@@ -642,6 +646,26 @@ rules read for a token:
   `sts_second_factor_doors` disables, enables and signs the person in to
   the portal within one second. Asked of `account_state.isDisabled()` per
   token; where nothing can be asked the event acts. G7 and G8.
+* **and a RISC event reporting the ACCOUNT HOLDER'S OWN act reaches nothing
+  (2026-11-03)** — the `initiating_entity: user` rule for the profile that
+  has no such member. A person revoking their own RFC 7523/7522 key pair
+  (#1290) or TLS client certificate for `keyCompromise` on the portal sends
+  CAEP's `credential-change` revoke (`user`, skipped) AND RISC's
+  `credential-compromise`; the portal acted on the second and revoked the
+  token the person had just made the report with, refresh token included,
+  so the portal's next call was `STS-ACCOUNT-0007`
+  (`sts_portal_signing_key` section 9, single-node: development only
+  observes). **The fact is not put on the wire**, since RISC defines no
+  member for it: `ssf.ts`'s `sendOneRiscEvent()` notes the act's `txn` on
+  the account's RISC row (`risc.ts`'s `noteOwnAct()`, `ownActs`, bounded by
+  `risc.eventsPerAccount`) when the door said `initiatingEntity: 'user'`,
+  before any SET of it is built, and `actOn()` skips a RISC SET whose `txn`
+  that row names (`ownAct()`). Only this service's own receivers share the
+  register, so a partner or a remote receiver is told exactly what it was.
+  A detector's compromise, an administrator's, and a SET whose row the
+  receiving process has not yet applied still act — the last is a race the
+  change-log's latency bounds (the row is written before the SET is
+  queued), and it errs towards acting. H1 to H4.
 
 **FOUND THROUGH THE INDEX, NEVER A WALK** (`tokenKeysNamed()`): the token
 register's `u:` and `s:` keys for every identifier the SET spells, and for
@@ -850,7 +874,10 @@ after delivery, so without the claim a second run of the job would send
   (#63).~~ Since #63 (2026-09-22) a person starts it at
   `/portal/forgot-password`, and `recovery-activated` is sent with the person
   as the initiating entity (`common/mail_uses.ts`).
-- The deprecated `sessions-revoked` is by hand only.
+- ~~The deprecated `sessions-revoked` is by hand only.~~ Since #164 a person's
+  device compromised or removed sends it (the table below), where
+  `risc.autoEmitTypes` names it, which by default it does not. By hand it is
+  always available.
 - A received event is acted on only by the console's and portal's own
   receivers (#62), and by a realm receiving a federation partner's Shared
   Signals (#153, #373).
@@ -1539,7 +1566,12 @@ Discovery's `scopes_supported` lists every published name. The default
 access-token lifetime (`oauth2.accessTokenTtlS`, 3600 seconds) meets the
 profile's sixty-minute ceiling; these tokens have no separate cap. Operations
 the profile does not name stay where they were: update, subjects and status
-are write; poll is read.
+are write; poll is read. **A poll that ACKNOWLEDGES is write (rcbj on #695,
+2026-11-04)**: RFC 8936's `ack` and `setErrs` delete events from the stream's
+queue, which is changing what this transmitter holds, so a non-empty `ack` or
+`setErrs` needs the write permission (`ssf.manage`) and a read-only token gets
+the 403 naming it; a poll that only collects is still read. This service's
+own receivers present their own credential and are not gated this way.
 
 Basic grants BOTH, and says so: a scheme with no scope in it cannot express the
 difference, and returning a read-only decision would be a refusal with nothing
@@ -2636,6 +2668,53 @@ of this directory needs:
 `tests/protocol/sts_ssf_foreign_receiver.js` (`local: true`) over HTTP, with
 one realm's transmitter as the partner.
 
+### WHAT THE CONFORMANCE SUITE'S RECEIVER PLANS FOUND (#932, 2026-11-02)
+
+`tests/protocol/sts_ssf_receiver_conformance.js` runs the OpenID
+Foundation's `openid-ssf-receiver-test-plan` and its CAEP interop twin, push
+and poll, with the suite as the partner's transmitter and an `ssf`
+relationship as the receiver. Each module waits for the receiver's acts, so
+the job presses the relationship's buttons. What the receiver lacked or got
+wrong, each fixed here and held by `tests/ssf_transmitters.js` section L:
+
+* **`signals-replace-stream`** (section 8.1.1.4): a PUT of the stream_id
+  and EVERY receiver-supplied property — `receiverSupplied()` builds them
+  for creation and replacement alike. A push stream gets a NEW
+  authorization header, and the digest held moves only once the partner
+  accepted it, so a refused replacement leaves the old header working.
+* **`signals-read-status`** (section 8.1.2.1). The status is held
+  (`streamStatus`), from a read, a set, or a `stream-updated` event
+  (section 8.1.5, which was received and ignored).
+* **A 401 asks for one fresh token.** The token cache trusted
+  `expires_in`; a transmitter that restarted or forgot the token refused
+  every act until the cached one ran out. A pasted `fedSignalsBearer` is
+  not retried.
+* **Discovery forgets the cached key set** (`client_jwks.forget()`): a
+  rediscovered partner with a new key had every SET unverified for
+  `oauth2.clientJwksRefetchS`, the throttle on refetching for an unknown
+  kid.
+* **`fedSignalsScope` defaults to `ssf.read ssf.manage`.** The profile
+  makes `ssf.manage` include read (this service's own transmitter does,
+  #334), but a transmitter checking each scope by name refused the reads
+  and the polls; asking for both is right under either reading.
+* **A `session-revoked` initiated by `policy` is a revocation.** It was
+  dropped as "an expiry at the partner", because THIS service's
+  transmitter says `policy` for a lifetime that ran out (*`initiating_entity`
+  IS NOT ALWAYS `admin` OR `user`*, above). CAEP 1.0 section 2 makes
+  `policy` a policy evaluation — the suite's own example is a device
+  policy violation — and section 3.1 says the session has been revoked. The
+  signal-response policy decides, as for every entity.
+* **A verification with no `state`** (transmitter-initiated, section 8.1.4)
+  is recorded as such and leaves `verifiedAt` alone; only the state this
+  realm asked with verifies the stream.
+
+**The job asserts the effect.** A signals-only partner's events change
+nothing by default (#374, rcbj's decision, unchanged), so the job builds
+the `signal-response` template with `signalsOnlyEndSessionEvents` and
+chooses it through `xacml.signalResponsePolicy`, signs the person in, and
+requires the suite's `session-revoked` to have ended the person's sessions
+with the reaction recorded.
+
 ## DETECTED COMPROMISES, AND THE LAST CREDENTIALS (#231, #236, #237, 2026-09-26)
 
 **Every row goes through `account_signals.ts`**, so `caep.autoEmitTypes`,
@@ -2944,3 +3023,5 @@ application and rotates its secret over the wire.
 ## The description page is a static surface's shell (#584, 2026-10-12)
 
 `GET /ssf` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `ssf/web_ssf_description.ts` from the `describeSsf` catalogs, with `/ssf/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds each stream's delivery method by name. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+**HTTP Basic needs Admin Write in product (#1473, ASVS 5.0.0 8.2.1)**: it grants both scopes and a password carries neither. `STS-SSF-0157`.

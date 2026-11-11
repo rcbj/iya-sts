@@ -38,5 +38,13 @@
   "profile.heading": "建立帳戶前還需要一些資訊",
   "profile.lead": "{partner} 已為您登入，但沒有傳送本服務建立您的帳戶所需的全部資訊。請填寫以下資訊以完成。",
   "profile.submit": "建立我的帳戶",
-  "profile.note": "這些資訊會保存在您在此處的帳戶中。您輸入的電子郵件地址會被記錄為未驗證。"
+  "profile.note": "這些資訊會保存在您在此處的帳戶中。您輸入的電子郵件地址會被記錄為未驗證。",
+  "webfinger.title": "尋找您的登入方式",
+  "webfinger.heading": "尋找您在何處登入",
+  "webfinger.lead": "輸入您在 {partner} 登入所用的地址，本服務會詢問該地址的主機您的帳戶在哪裡。",
+  "webfinger.label": "您的地址或 URL",
+  "webfinger.submit": "查詢",
+  "webfinger.found": "{identifier} 在 {issuer} 登入。",
+  "webfinger.continue": "繼續前往該處登入",
+  "webfinger.note": "在您繼續之前不會發生任何事：請確認這正是您預期登入的地方。"
 }

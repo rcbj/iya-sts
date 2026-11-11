@@ -21,6 +21,7 @@
   "title.commands": "OpenID Provider Commands",
   "title.claims": "自訂宣告",
   "title.config": "設定",
+  "title.config-dump": "設定傾印",
   "title.consent": "同意",
   "title.crypto-metadata": "密碼學",
   "title.home": "管理主控台",
@@ -68,6 +69,7 @@
   "title.ldap-roles": "角色項目",
   "title.ldap-spiffe": "SPIFFE 項目",
   "title.listeners": "接聽程式",
+  "title.malwareScanning": "惡意軟體掃描",
   "title.logout": "登出",
   "title.mail": "郵件",
   "title.mail-outbox": "郵件寄件匣",
@@ -107,6 +109,7 @@
   "title.ssf-dead-letters": "無法投遞的訊息",
   "title.ssf-transmitters": "來自夥伴的訊號",
   "title.tls-connection": "TLS 連線",
+  "title.pki-trust": "PKI 信任",
   "title.tls-trust": "用戶端憑證信任存放區",
   "title.token-lifetimes": "權杖有效期",
   "title.tokens-credential": "權杖——單一憑證",
@@ -140,5 +143,6 @@
   "title.vc-verifier-config": "驗證者請求",
   "title.worker-pools": "工作者集區",
   "title.broadcast": "廣播公告",
+  "title.sign-in-appearance": "登入外觀",
   "title.post-login-activities": "登入後活動"
 }

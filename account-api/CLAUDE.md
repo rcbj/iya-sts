@@ -1,5 +1,10 @@
 # CLAUDE.md — `account-api/`
 
+**The Account API OpenAPI document is written in `models/api/account.tsp` since #1390.**
+An operation's summary, description, tag, mirrors, statuses and answer model are there;
+its routing row (here and in `portal/`) keeps the path, the handler and the zod schemas,
+and `tests/model_openapi.js` holds those schemas to the model.
+
 ## 3ck. THE USER PORTAL'S ONLY DOOR (#568, 2026-10-12)
 
 `/account-api` is what the user portal draws every page from and sends every
@@ -50,6 +55,13 @@ the token's person, and refuses anything else (`STS-PORTAL-0618`) before
 saying anything about it, so the door is never a general resolver, or a
 way to learn whether somebody else holds a subject.
 
+**`POST /account-api/self-issued/dids` (#1291) names a published DID by its
+`rid` and acts only on the CALLER's** — `person_did.ts` looks the id up in the
+token's person's own records, so another person's id is `STS-VC-0172`
+exactly as a made-up one is, and nothing says whether it exists. A downloaded
+private key leaves through this operation's answer once (`view.fresh`) and
+through no GET.
+
 **`GET /account-api/delegate/candidates` is the one operation that answers
 about OTHER people (2026-10-20, `/portal/delegate`'s search)**, and it is
 built for that: it needs at least three characters, matches only the `uid`,
@@ -91,6 +103,16 @@ but not for this:
 7. the access policy, as the portal's pages asked it: `user-portal`, `read` for
    a GET and `manage-own` otherwise, the owner the subject (`0015`).
 
+**A RECENT SIGN-IN IS ASKED AFTER THE GATE, NOT AS PART OF IT (#1515, #1564,
+ASVS 5.0.0 7.5.1).** An operation that changes how the person signs in
+declares `recentAuth: true` in its provider's table, and `run()` answers it
+`200 { ok: false, stepUp: { prompt: 'login', maxAge } }` when the latest event
+of the sign-on session is older than `account.recentAuthMinutes` (0, never, in
+development; 15 in product). It is not a 401: the token is still a credential,
+and a 401 would have the runtime renew a token that is not what is stale. The
+runtime draws it as any `stepUp` (below). The flag, not a list here, is the
+record of which operations need it, so a new provider declares its own.
+
 The caller carries `session`, in the server-rendered portal's session shape,
 so a handler moved from a page reads the members it read there. **Its `id` is
 the SIGN-ON session's** — the session the token was issued on, from the token
@@ -121,6 +143,24 @@ parameter documented and a parameter refused are one declaration.
   password) with a CORS-safelisted `text/plain; x=json` and no preflight.
   `tests/account_api.js` section 6.
 
+**What a request may name (#1483, `/admin-api`'s #1476 rule).** After the
+gate and before the zod query, `run()` asks
+`common/request_headers.ts`'s `checkRequest()`, over the very parameter list
+the document publishes (`AccountApiSpec.parametersOf()`, cached per
+operation): an undeclared query name (`STS-ACCOUNT-0020`), a value its
+declared type does not hold (`0021`; a `vt.integer()` page documents as an
+`anyOf` and is left to zod, `0016`), a custom header (`0022`). Every operation
+declares `DPoP` and `X-Requested-With` (`implicitHeaders()`). `GET
+/account-api` carries `query` on each GET, the names its operation declares,
+and the portal's runtime sends a page's query filtered through them
+(`web_portal_runtime.ts`, `operationQuery()`): a page's address holds names
+only it means. `tests/api_request_names.js` holds it.
+
+**Examples (#1483, on #1475's rules).** In `models/api/account.tsp`, on each
+operation, replayed by Schemathesis's Examples phase with the fuzz
+person's real token: each is valid against its schema and names a thing that
+does not exist, or a page, so nothing is created, changed or signed out.
+
 ## WHAT AN ANSWER IS
 
 The portal's runtime (`portal/web_portal_runtime.ts`, `answered()`) draws a
@@ -132,7 +172,7 @@ POST's answer by these members, and every provider keeps to them:
 | `view` | The page drawn from it, in place — a secret, codes, a key, download links shown ONCE, never on a URL or in the history. A view that draws its own refusal says so (`refused`, `notOffered`, `tooMany`) and the refusal is not drawn twice. |
 | `go` | Another portal page, with the message. |
 | `errors` (with `ok: false`) | The page asked again, with the refusal. |
-| `stepUp` | A sign-in again with `prompt=login` and the `acr_values` it names, back to the page (CIBA, GNAP). A GET's view may answer it too. |
+| `stepUp` | A sign-in again with `prompt=login` and the `acr_values` or `maxAge` it names, back to the page (CIBA, GNAP, and the recent sign-in above). A GET's view may answer it too. |
 | `location` | Another site (a Claims Provider's sign-in). |
 | `files` | Each saved, `{ name, mime, base64 }`. |
 

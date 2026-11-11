@@ -38,5 +38,13 @@
   "profile.heading": "Algunos datos antes de crear su cuenta",
   "profile.lead": "{partner} inició su sesión, pero no envió todo lo que este servicio necesita para crear su cuenta. Indique los datos siguientes para terminar.",
   "profile.submit": "Crear mi cuenta",
-  "profile.note": "Estos datos se guardan en su cuenta aquí. Una dirección de correo electrónico que escriba se registra como no verificada."
+  "profile.note": "Estos datos se guardan en su cuenta aquí. Una dirección de correo electrónico que escriba se registra como no verificada.",
+  "webfinger.title": "Encontrar su inicio de sesión",
+  "webfinger.heading": "Encontrar dónde inicia sesión",
+  "webfinger.lead": "Escriba la dirección con la que inicia sesión en {partner}, y este servicio pregunta al host de esa dirección dónde está su cuenta.",
+  "webfinger.label": "Su dirección o URL",
+  "webfinger.submit": "Buscar",
+  "webfinger.found": "{identifier} inicia sesión en {issuer}.",
+  "webfinger.continue": "Continuar para iniciar sesión allí",
+  "webfinger.note": "No ocurre nada hasta que continúe: compruebe que es allí donde espera iniciar sesión."
 }

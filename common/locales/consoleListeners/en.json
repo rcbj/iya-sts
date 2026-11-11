@@ -71,6 +71,7 @@
   "noLimit": "no limit",
   "rowMaxConnections": "Open connections at most",
   "rowHttp2": "HTTP/2 offered",
+  "rowHttp2Streams": "HTTP/2 streams at once per connection",
   "headInForce": "In force on this listener",
   "inForceNote": "Each value is this listener's own where its row below sets one, and the service-wide default otherwise (<em>inherit</em>, an empty box, or -1 for a number).",
   "tabListeners": "Listeners",

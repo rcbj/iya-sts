@@ -21,6 +21,7 @@
   "title.commands": "OpenID Provider Commands",
   "title.claims": "Anpassade anspråk",
   "title.config": "Konfiguration",
+  "title.config-dump": "Konfigurationsdump",
   "title.consent": "Medgivande",
   "title.crypto-metadata": "Kryptografi",
   "title.home": "Administratörskonsol",
@@ -68,6 +69,7 @@
   "title.ldap-roles": "Rollposter",
   "title.ldap-spiffe": "SPIFFE-poster",
   "title.listeners": "Lyssnare",
+  "title.malwareScanning": "Skanning efter skadlig kod",
   "title.logout": "Utloggning",
   "title.mail": "E-post",
   "title.mail-outbox": "Utkorg för e-post",
@@ -107,6 +109,7 @@
   "title.ssf-dead-letters": "Obeställbara",
   "title.ssf-transmitters": "Signaler från partner",
   "title.tls-connection": "TLS-anslutning",
+  "title.pki-trust": "PKI-förtroende",
   "title.tls-trust": "Förtroendelager för klientcertifikat",
   "title.token-lifetimes": "Tokenlivslängder",
   "title.tokens-credential": "Tokener — ett intyg",
@@ -140,5 +143,6 @@
   "title.vc-verifier-config": "Verifierarbegäran",
   "title.worker-pools": "Arbetarpooler",
   "title.broadcast": "Sänd ett meddelande",
+  "title.sign-in-appearance": "Inloggningens utseende",
   "title.post-login-activities": "Aktiviteter efter inloggning"
 }

@@ -72,6 +72,7 @@
 // ---------------------------------------------------------------------------
 
 import WebPage = require('./web_page');
+import WebSafeDom = require('./web_safe_dom');
 import WebI18n = require('./web_i18n');
 import webMessages = require('./web_messages');
 import WebAccounts = require('./web_accounts');
@@ -220,8 +221,9 @@ class WebSurface extends WebPage {
     const slot = doc && doc.getElementById
       ? doc.getElementById('sts-accounts-slot') : null;
     if (slot) {
-      slot.innerHTML = WebSurface.realmLinks(
-        WebAccounts.controlHtml(after, this.t), this.prefix);
+      WebSafeDom.render(slot,
+        WebSurface.realmLinks(
+        WebAccounts.controlHtml(after, this.t), this.prefix));
     }
   }
 
@@ -282,6 +284,15 @@ class WebSurface extends WebPage {
   }
 
   /**
+   * The parameters this page was reached with.
+   *
+   * @returns them
+   */
+  pageQuery(): Json {
+    return WebPage.queryOf(this.env.location.search);
+  }
+
+  /**
    * The path and query being shown, without the realm prefix.
    *
    * @returns the path and query
@@ -320,9 +331,18 @@ class WebSurface extends WebPage {
       this.accountControl();
     const framed = this.options.frame ? this.options.frame(chooser + body, ctx)
                                       : chooser + body;
-    doc.title = title + (this.options.brand === undefined ? ' — IYA STS'
-                                                          : this.options.brand);
-    doc.body.innerHTML = WebSurface.realmLinks(framed, this.prefix);
+    // THE REALM'S BRAND (#717, `common/branding.ts`): its name ends the
+    // title in place of the surface's own suffix, and its header — the
+    // logo and the name — goes before the page, drawn on every page
+    // because the body is replaced on each. Nothing where the shell
+    // carries no brand, which is every shell of a realm that set nothing.
+    const brand = WebSurface.brandOf(doc.documentElement);
+    doc.title = title + (brand.name ? ' — ' + brand.name
+      : (this.options.brand === undefined ? ' — IYA STS'
+                                          : this.options.brand));
+    WebSafeDom.render(doc.body,
+      WebSurface.realmLinks(
+      WebSurface.brandHeader(brand) + framed, this.prefix));
     this.drawnAt = this.env.location.pathname + this.env.location.search;
     this.targetFragment();
     // A PAGE AFTER THE FIRST follows an act or a navigation, which may have
@@ -343,7 +363,7 @@ class WebSurface extends WebPage {
    * @returns nothing
    */
   drawProblem(title: string, detail: string): void {
-    const ctx = this.context(WebPage.queryOf(this.env.location.search));
+    const ctx = this.context(this.pageQuery());
     this.put(title, '<div class="card"><h1>' + WebSurface.esc(title) +
       '</h1><div class="err">' + WebSurface.esc(detail) + '</div></div>',
       ctx);
@@ -379,7 +399,7 @@ class WebSurface extends WebPage {
   async route(): Promise<void> {
     const path = this.surfacePath(this.env.location.pathname) ||
       this.options.base;
-    const query = WebPage.queryOf(this.env.location.search);
+    const query = this.pageQuery();
     this.t = await this.i18n.load({ uiLocales: query.ui_locales || '' });
     const page = this.find(path);
     if (!page) {
@@ -659,6 +679,48 @@ class WebSurface extends WebPage {
     // loaded with the page's where the list is on.
     await this.loadAccounts();
     await this.route();
+  }
+
+  /**
+   * The realm's brand facts the shell put on `<html>` (#717): the name, the
+   * logo's address, its alternative text and its link.
+   *
+   * @param root - the document's `<html>` element, or nothing
+   * @returns the facts, each '' where absent
+   */
+  static brandOf(root: Json): Json {
+    const read = function (name: string): string {
+      return root && typeof root.getAttribute === 'function'
+        ? String(root.getAttribute(name) || '') : '';
+    };
+    return { name: read('data-sts-brand-name'),
+             logo: read('data-sts-brand-logo'),
+             alt: read('data-sts-brand-alt'),
+             link: read('data-sts-brand-link') };
+  }
+
+  /**
+   * The brand header's markup, as `common/branding.ts`'s `headerMarkup()`
+   * draws it on the server (its preview): the logo, a link where one is
+   * set, and the name, each escaped; empty where there is neither.
+   *
+   * @param brand - `brandOf()`'s facts
+   * @returns the markup
+   */
+  static brandHeader(brand: Json): string {
+    const b = brand || {};
+    if (!b.name && !b.logo) {
+      return '';
+    }
+    const image = b.logo ? '<img class="sts-brand-logo" src="' +
+      WebSurface.esc(b.logo) + '" alt="' + WebSurface.esc(b.alt) + '">' : '';
+    const linked = image && /^https:\/\//.test(b.link)
+      ? '<a class="sts-brand-link" href="' + WebSurface.esc(b.link) +
+        '" rel="noopener noreferrer">' + image + '</a>'
+      : image;
+    return '<header class="sts-brand" id="sts-brand">' + linked +
+      (b.name ? '<span class="sts-brand-name">' + WebSurface.esc(b.name) +
+                '</span>' : '') + '</header>';
   }
 
   /**

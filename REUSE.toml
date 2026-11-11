@@ -23,23 +23,15 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
 SPDX-License-Identifier = "BUSL-1.1"
 
-# The byte-identical copies of the parent project's files, which have the
-# same owner, keep the parent project's MIT licence, and may not be edited
-# here to carry a header. "closest" lets a file's own header win, so this
-# service's own files under these paths (common/crypto_impl/pqc.js,
-# pqc_x509.js and xmldsig.js since #363, and the local: true jobs in
-# tests/protocol/) stay under the licence their header names.
+# The byte-identical copies of the parent project's protocol jobs, which
+# have the same owner, keep the parent project's MIT licence, and may not be
+# edited here to carry a header. "closest" lets a file's own header win, so
+# the local: true jobs in tests/protocol/ stay under the licence their header
+# names. common/crypto_impl/ and the eight Kerberos codec modules left this
+# list in #1280 (bbs2023.js in #663, pqc.js, pqc_x509.js and xmldsig.js in
+# #363): they are this service's own and carry its header.
 [[annotations]]
 path = [
-  "common/crypto_impl/**",
-  "kerberos/krb5_primitives.js",
-  "kerberos/krb5_asn1.js",
-  "kerberos/krb5_crypto.js",
-  "kerberos/krb5_messages.js",
-  "kerberos/krb5_ndr.js",
-  "kerberos/krb5_pac.js",
-  "kerberos/krb5_gss.js",
-  "kerberos/krb5_spnego.js",
   "tests/protocol/**",
 ]
 precedence = "closest"

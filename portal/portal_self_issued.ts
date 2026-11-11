@@ -34,6 +34,18 @@
 // does not hold drew "none enrolled", indistinguishable from a person who
 // enrolled nothing. The GET refuses it (STS-PORTAL-0616, 404) and the page
 // says why; an entry with nothing enrolled is still the empty list.
+//
+// **AND A did:web THIS REALM PUBLISHES FOR THE PERSON (#1291)**, from the
+// same page: *Publish a DID* — in `wallet` custody a link that proves the
+// wallet's key at `/authn/wallet?…&did_act=publish` (a sign-in, not a
+// form), in `realm` and `download` custody a POST that generates the key —
+// and, for each one published, its document, custody, versions and state,
+// *Add key*, *Rotate key* (in `wallet` custody two round trips: one signed
+// as the DID by a key it names now, then the new key; in `realm` custody one
+// act) and *Deactivate*. Those acts are `POST /account-api/self-issued/dids`;
+// a downloaded key is answered ONCE, in the answer's `fresh`, as
+// `/portal/keys`' one-time answers are (#671). `oid4vc/person_did.ts`
+// decides and audits every one; the identity is the token's here too.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -41,6 +53,7 @@ import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import validation = require('../common/validation');
 import siop = require('../oid4vc/siop');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -57,31 +70,40 @@ interface PortalSelfIssuedDeps {
   // A did:jwk's or did:key's DID document, resolved from the identifier
   // (`oid4vc/vc_did_resolver.ts`, `resolve()`); never a fetch.
   resolveDid?: (did: string, req: Json) => Promise<Json>;
+  // Whether the person may change the realm's settings (#655): the console
+  // roster of the realm the request is in, `admin-ui/admin_rbac.ts`'s
+  // `rolesOf()`. Left out, nobody is told they may.
+  mayConfigure?: (username: string) => boolean;
+  // The DIDs this realm publishes for people (#1291), `oid4vc/person_did.ts`.
+  personDid?: () => Json;
 }
 
-const REMOVE_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['remove', 'prefer', 'unprefer']))
-    .describe('`remove` (the default) takes the subject off; `prefer` ' +
-              'marks it as your preferred DID (#693), and `unprefer` ' +
-              'clears the mark.'),
-  subject: vz.string().max(2048)
-    .describe('The enrolled subject, from the list.')
-});
+const REMOVE_FORM = ModelZod.body('account', 'removeSelfIssued');
 
-const DID_QUERY = vz.object({
-  subject: vt.opt(vz.string().max(2048))
-    .describe('One of your enrolled self-issued subjects: a did:jwk or a ' +
-              'did:key. Left out, the page says to choose one.')
-});
+const DID_QUERY = ModelZod.query('account', 'getSelfIssuedDidDocument');
 
 // The methods whose DID document is the identifier itself, and so can be
 // shown with nothing fetched.
 const RESOLVED_METHODS = /^did:(jwk|key):/;
 
-const SELF_ISSUED_QUERY = vz.object({
-  enrolled: vt.opt(vt.oneOf(['1']))
-    .describe('`1` when the wallet sign-in has just enrolled a subject.')
-});
+// THE SETTING THAT TURNS THE PAGE ON, AND WHERE IT IS CHANGED (#655). The
+// page said the sign-in was off and not how to change that. The view names
+// the row and its environment variable — `tests/self_issued_off_note.js`
+// holds both to `config.js`'s row — and the console tab that draws its
+// group (`admin-ui/admin.ts`'s `SETTING_HOMES`: OID4VP is on `/admin/vc`,
+// the OpenID4VP settings tab), not `/admin/config`, which is the index of
+// where the groups are and has no form for this one.
+const SETTING_KEY = 'oid4vp.signInSelfIssued';
+const SETTING_ENV = 'OID4VP_SIGN_IN_SELF_ISSUED';
+const SETTING_PAGE = '/admin/vc#vc-tab-oid4vp';
+
+const SELF_ISSUED_QUERY = ModelZod.query('account', 'getSelfIssued');
+
+// A published DID's acts (#1291), on its own POST.
+const DID_FORM = ModelZod.body('account', 'actOnPublishedDid');
+
+// The one-time pane's file name for a downloaded key.
+const KEY_FILE = 'did-private-key.jwk.json';
 
 /**
  * `/portal/self-issued`'s account API operations: the wallet keys that sign
@@ -116,7 +138,52 @@ class PortalSelfIssued {
                const resolver = require('../oid4vc/vc_did_resolver');
                helpers.log.debug("Leaving resolveDid().");
                return resolver.resolve(did, {}, req);
+             },
+             // LAZILY, for `resolveDid`'s reason: the roster is the
+             // console's library, loaded at 18, after the portal (8a).
+             // Admin WRITE, because changing a setting is a write; asked of
+             // the realm the request is in, which is the realm whose
+             // setting is off — a realm administrator may write it
+             // (`admin_scope.ts` keeps only per-process rows from them).
+             mayConfigure: function mayConfigure(username: string): boolean {
+               helpers.log.debug("Entering mayConfigure().");
+               const rbac = require('../admin-ui/admin_rbac');
+               const realms = require('../common/realms');
+               const held = rbac.rolesOf(username, realms.currentId());
+               helpers.log.debug("Leaving mayConfigure().");
+               return !!(held && held.write);
+             },
+             // LAZILY, for `resolveDid`'s reason: built at 11-14, after the
+             // portal (8a).
+             personDid: function personDid(): Json {
+               helpers.log.debug("Entering personDid().");
+               helpers.log.debug("Leaving personDid().");
+               return require('../oid4vc/person_did');
              } };
+  }
+
+  // HOW TO TURN THE SIGN-IN ON, for a page that says it is off (#655):
+  // the setting, its environment variable and the console tab, and whether
+  // this person may change it there. A roster that cannot be read says
+  // "ask an administrator", the answer that sends nobody to a page that
+  // will refuse them.
+  private turnOn(username: string): Json {
+    const { log, mayConfigure } = this.deps;
+    log.debug("Entering PortalSelfIssued.turnOn().");
+    let administrator = false;
+    if (mayConfigure && username) {
+      try {
+        administrator = mayConfigure(username) === true;
+      } catch (e) {
+        log.debug("Caught in PortalSelfIssued.turnOn(): " +
+                  ((e && e.message) || e));
+        administrator = false;
+      }
+    }
+    log.debug("Leaving PortalSelfIssued.turnOn(). " + administrator);
+    return { setting: SETTING_KEY, env: SETTING_ENV,
+             administrator: administrator,
+             page: administrator ? SETTING_PAGE : null };
   }
 
   // WHERE A ROW'S DID DOCUMENT IS (2026-10-20, rcbj: "the link to the
@@ -142,6 +209,34 @@ class PortalSelfIssued {
              didResolved: RESOLVED_METHODS.test(subject) };
   }
 
+  // THE DIDs THIS REALM PUBLISHES FOR THE PERSON (#1291): whether it
+  // publishes, who holds the key, how many they may hold, and each one with
+  // its document's address, custody, state, versions and any change
+  // waiting for its new key. Never a private key.
+  private published(username: string): Json {
+    const { log, personDid } = this.deps;
+    log.debug("Entering PortalSelfIssued.published().");
+    if (!personDid) {
+      log.debug("Leaving PortalSelfIssued.published(). No library.");
+      return null;
+    }
+    const lib = personDid();
+    const settings = lib.settings();
+    const dids = lib.list(username) || [];
+    const active = dids.filter(function (one: Json): boolean {
+      return one.state !== 'deactivated';
+    }).length;
+    log.debug("Leaving PortalSelfIssued.published(). " + dids.length);
+    return { enabled: settings.publishing, custody: settings.custody,
+             maxPerPerson: settings.maxPerPerson,
+             keyAlgorithm: settings.keyAlgorithm,
+             active: active,
+             // Whether one more may be published now.
+             canPublish: settings.publishing &&
+                         active < settings.maxPerPerson,
+             dids: dids };
+  }
+
   /**
    * The page's view: the subjects enrolled for the person, and whether the
    * self-issued sign-in is on.
@@ -157,8 +252,12 @@ class PortalSelfIssued {
     log.debug("Entering PortalSelfIssued.view().");
     const held: Json[] = (listed === undefined ? siop.list(username)
                                                : listed) || [];
+    const enabled = !!config.value(SETTING_KEY);
     log.debug("Leaving PortalSelfIssued.view(). " + held.length);
-    return { enabled: !!config.value('oid4vp.signInSelfIssued'),
+    return { enabled: enabled,
+             // Where it is off, how it is turned on (#655); asked only then,
+             // so a page with the sign-in on reads no roster.
+             turnOn: enabled ? null : self.turnOn(username),
              // The account the Enrol link names (2026-10-20): which of the
              // browser's sessions the enrolment is for, when Switch user has
              // left several live (`oid4vc/vc_signin.ts`, startable()).
@@ -166,6 +265,8 @@ class PortalSelfIssued {
              // Whether the preferred DID is released as the `did` claim in
              // this realm (#693): the page says so beside the mark.
              didClaim: config.value('oauth2.didClaim') === true,
+             // The DIDs this realm publishes for them (#1291).
+             published: self.published(username),
              subjects: held.map(function (one: Json): Json {
                return Object.assign({ subject: String(one.subject),
                         label: String(one.label || ''),
@@ -199,7 +300,7 @@ class PortalSelfIssued {
    * @returns nothing
    */
   answer(ctx: AccountContext, res: Json, caller: AccountCaller,
-         enrolled: boolean): unknown {
+         enrolled: boolean, didDone?: string): unknown {
     const { log, siop } = this.deps;
     log.debug("Entering PortalSelfIssued.answer().");
     const who = caller.username;
@@ -224,6 +325,13 @@ class PortalSelfIssued {
     if (enrolled) {
       view.notice = ctx.translatorFor(who)
         .text('portalSelfIssued.doneEnrolled');
+    }
+    // A published DID's wallet act that just finished (#1291).
+    if (didDone) {
+      view.notice = ctx.translatorFor(who).text(
+        didDone === 'published' ? 'portalSelfIssued.pubPublishedDone'
+          : didDone === 'authorized' ? 'portalSelfIssued.pubAuthorizedDone'
+            : 'portalSelfIssued.pubChangedDone');
     }
     log.debug("Leaving PortalSelfIssued.answer().");
     return ctx.json(res, 200, view);
@@ -356,9 +464,19 @@ class PortalSelfIssued {
    */
   remove(ctx: AccountContext, res: Json, caller: AccountCaller,
          body: Json): unknown {
-    const { log, siop } = this.deps;
+    const { log, siop, personDid } = this.deps;
     log.debug("Entering PortalSelfIssued.remove().");
     const who = caller.username;
+    // A DID THIS REALM PUBLISHED FOR THEM (#1291) is DEACTIVATED rather
+    // than removed: its address is kept and answers 410, and the subject
+    // goes with it — the same act as its own Deactivate.
+    if (personDid && personDid().isHosted(siop.normalise(body.subject))) {
+      log.debug("Leaving PortalSelfIssued.remove(). A published DID.");
+      return this.didAct(ctx, null, res, caller,
+                         { action: 'deactivate',
+                           rid: personDid().ridOf(siop.normalise(
+                             body.subject)) });
+    }
     const result = siop.remove(who, body.subject, who);
     ctx.audit.record({
       category: 'authentication', action: 'portal.siop.remove',
@@ -380,6 +498,73 @@ class PortalSelfIssued {
   }
 
   /**
+   * A published DID's act (#1291): publish one whose key this realm
+   * generates, add or rotate a `realm`-custody DID's key, or deactivate
+   * one. `oid4vc/person_did.ts` decides and audits each; a downloaded
+   * private key is answered once, in `view.fresh`, and never again.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request, whose realm's base a new DID is minted on
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  didAct(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+         body: Json): unknown {
+    const { log, personDid } = this.deps;
+    log.debug("Entering PortalSelfIssued.didAct().");
+    const who = caller.username;
+    const lib = personDid ? personDid() : null;
+    const action = String(body.action || '');
+    if (!lib) {
+      log.debug("Leaving PortalSelfIssued.didAct(). No library.");
+      return ctx.refuse(res, 400, 'STS-VC-0167', 'This realm does not ' +
+                        'publish DIDs for people.');
+    }
+    if (action !== 'publish' && !body.rid) {
+      log.debug("Leaving PortalSelfIssued.didAct(). No DID named.");
+      return ctx.refuse(res, 400, 'STS-VC-0172', 'Name the published DID ' +
+                        '(rid) this act is about.', { view: this.view(who) });
+    }
+    let result: Json = null;
+    if (action === 'publish') {
+      result = lib.publishGenerated(who, req);
+    } else if (action === 'deactivate') {
+      result = lib.deactivate(who, body.rid, who, 'person');
+    } else {
+      result = lib.changeRealmKey(who, body.rid,
+                                  action === 'add-key' ? 'add' : 'rotate');
+    }
+    if (!result.ok) {
+      log.debug("Leaving PortalSelfIssued.didAct(). " + result.code);
+      // error-code: none — the library decided the code, on result.code
+      return ctx.refuse(res, 400, result.code, result.error,
+                        { view: this.view(who) });
+    }
+    const t = ctx.translatorFor(who);
+    const view = this.view(who);
+    if (result.privateJwk) {
+      // THE ONE TIME THE PRIVATE KEY LEAVES (#671's pattern): in this
+      // answer, as a file the page offers, and nowhere afterwards — the
+      // realm kept only the public half.
+      view.fresh = {
+        kind: 'did-key', rid: String(result.record.rid),
+        did: String(result.record.did),
+        file: { name: KEY_FILE, mime: 'application/json',
+                base64: Buffer.from(JSON.stringify(result.privateJwk,
+                                                   null, 2), 'utf8')
+                  .toString('base64') }
+      };
+    }
+    log.debug("Leaving PortalSelfIssued.didAct(). " + action);
+    return ctx.json(res, 200, { ok: true, view: view,
+      message: t.text(action === 'publish' ? 'portalSelfIssued.pubPublishedDone'
+        : action === 'deactivate' ? 'portalSelfIssued.pubDeactivatedDone'
+          : 'portalSelfIssued.pubChangedDone') });
+  }
+
+  /**
    * The operations, for `account-api/account_api.ts`.
    *
    * @param ctx - the account API's helpers
@@ -391,75 +576,21 @@ class PortalSelfIssued {
     log.debug("Entering PortalSelfIssued.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/self-issued',
-        operationId: 'getSelfIssued', tag: 'Self-issued IDs',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/self-issued',
-        summary: 'The wallet keys that sign you in with SIOPv2',
-        description: '`subjects`: each enrolled self-issued subject (a DID ' +
-          'or a JWK thumbprint), its label, when and by whom it was ' +
-          'enrolled, and how (`proof`: `wallet`, proved by you, or ' +
-          '`admin`, by an administrator), whether it is your ' +
-          'preferred DID (`preferred`, #693), and where the key came ' +
-          'from (`location`: `{ kind, value }` — `web`, the web wallet ' +
-          'at that address; `app`, a wallet app, by the name it ' +
-          'reported or \'\'; `dc_api`, your browser, by its origin or ' +
-          '\'\'; `admin`; or null, not recorded), and where its DID ' +
-          'document is (`didDocumentUrl`, a did:web\'s published ' +
-          'address, or `didResolved`, a did:jwk or did:key resolved from ' +
-          'the identifier at /portal/self-issued/did). `enabled`: whether ' +
-          'the self-issued sign-in is on; `didClaim`: whether the preferred ' +
-          'DID may be released as the `did` claim here. A ' +
-          'key is enrolled by proving it, at /authn/wallet?siop=1&enrol=1, ' +
-          'which comes back with `enrolled=1`; `notice` then says so. ' +
-          'Where the directory holds no entry for the person the token ' +
-          'names it is refused (STS-PORTAL-0616) rather than answered as ' +
-          'an empty list.',
-        query: SELF_ISSUED_QUERY,
-        statuses: {
-          404: 'The directory holds no entry for the token\'s person ' +
-               '(STS-PORTAL-0616).'
-        },
+        operationId: 'getSelfIssued', access: 'person', query: SELF_ISSUED_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
-          return self.answer(ctx, res, caller, input.query.enrolled === '1');
+          return self.answer(ctx, res, caller, input.query.enrolled === '1',
+                             String(input.query.did || ''));
         } },
       { method: 'GET', path: ctx.BASE + '/self-issued/did',
-        operationId: 'getSelfIssuedDidDocument', tag: 'Self-issued IDs',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/self-issued/did',
-        summary: 'The DID document of one of your enrolled did:jwk or ' +
-                 'did:key subjects',
-        description: '`document`: the DID document of `subject`, resolved ' +
-          'from the identifier itself — a did:jwk or did:key is its own ' +
-          'document, so nothing is published and nothing is fetched. Only ' +
-          'a subject enrolled for you: any other is refused ' +
-          '(STS-PORTAL-0618), and a did:web (its document is the one ' +
-          'published at its address, linked from the list) or a JWK ' +
-          'thumbprint (no DID) is refused (STS-PORTAL-0619). With no ' +
-          '`subject`, `{ subject: \'\', document: null }`.',
-        query: DID_QUERY,
-        statuses: {
-          400: 'A did:web or a JWK thumbprint, whose document is not the ' +
-               'identifier (STS-PORTAL-0619).',
-          404: 'Not one of your enrolled subjects (STS-PORTAL-0618).'
-        },
+        operationId: 'getSelfIssuedDidDocument', access: 'person', query: DID_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.didDocument(ctx, req, res, caller,
                                   String(input.query.subject || ''));
         } },
       { method: 'POST', path: ctx.BASE + '/self-issued',
-        operationId: 'removeSelfIssued', tag: 'Self-issued IDs',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/self-issued',
-        summary: 'Removes a self-issued subject of yours, or marks one ' +
-                 'as your preferred DID',
-        description: '`remove` (the default): the subject no longer signs ' +
-          'you in. One that is not enrolled for you is refused. `prefer` ' +
-          '(#693): marks one DID you PROVED with your wallet as your ' +
-          'preferred one — the one a client you consent to may be told as ' +
-          'the `did` claim, where the realm releases it ' +
-          '(`oauth2.didClaim`); a subject an administrator added, or a ' +
-          'JWK thumbprint, is refused (STS-PORTAL-0615). `unprefer` clears ' +
-          'the mark. Removing the preferred subject clears it too.',
-        body: REMOVE_FORM,
+        operationId: 'removeSelfIssued', access: 'person', recentAuth: true, body: REMOVE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           if (input.body.action === 'prefer' ||
@@ -467,6 +598,12 @@ class PortalSelfIssued {
             return self.prefer(ctx, res, caller, input.body);
           }
           return self.remove(ctx, res, caller, input.body);
+        } },
+      { method: 'POST', path: ctx.BASE + '/self-issued/dids',
+        operationId: 'actOnPublishedDid', access: 'person', recentAuth: true, body: DID_FORM,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.didAct(ctx, req, res, caller, input.body);
         } }
     ];
     log.debug("Leaving PortalSelfIssued.accountOperations().");

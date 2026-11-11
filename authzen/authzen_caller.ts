@@ -486,8 +486,9 @@ class AuthzenCaller {
         entry.token_endpoint_auth_method),
       boundJkt: jkt, proofOk: proofOk, boundThumbprint: thumb,
       certificate: !!mtls.peerCertificate(req),
-      certificateMatches: !!thumb && mtls.peerVerified(req) &&
-        mtls.presentedThumbprint(req) === thumb,
+      // RFC 8705 section 3 binds a token to a certificate, not to a CA: this is
+      // the match alone. The requirement below is what asks for a chain.
+      certificateMatches: !!thumb && mtls.presentedThumbprint(req) === thumb,
       mtlsAvailable: mtls.available()
     });
     if (required) {
@@ -495,7 +496,9 @@ class AuthzenCaller {
       return invalid(String(required.description || 'The token\'s sender ' +
                             'constraint was not met.'));
     }
-    if (bound && !(thumb && mtls.peerVerified(req) &&
+    // `.verified` (#1360): the object is always truthy, so a self-signed
+    // certificate satisfied "bound to a verified certificate" until then.
+    if (bound && !(thumb && mtls.peerVerified(req).verified &&
                    mtls.presentedThumbprint(req) === thumb)) {
       log.debug("Leaving AuthzenCaller.byToken(). Not bound to the " +
                 "certificate presented.");

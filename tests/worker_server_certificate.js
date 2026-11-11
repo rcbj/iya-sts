@@ -195,7 +195,7 @@ async function run(t) {
   // OWN certificate re-issued under a replaced Root — built here rather than
   // invented, so the three fields really are a set that agrees with itself.
   const wasRoot = pki.serviceRoot().certificatePem;
-  await pki.buildRoot({ organisation: 'sts' });
+  await pki.buildRoot({ organisation: 'iya-sts' });
   await pki.certifyRegistered();
   const second = tls.serverCertificateBundle();
   t.check(second.certPem !== front.certPem && wasRoot !== second.anchorPem,
@@ -255,7 +255,7 @@ async function run(t) {
   // the one this file opened with — a comparison against `front` here would be
   // asserting that section A did nothing.
   const serving = tls.serverCertificate().certPem;
-  const replaced = await pki.buildRoot({ organisation: 'sts' });
+  const replaced = await pki.buildRoot({ organisation: 'iya-sts' });
   t.check(replaced.ok, 'the Root is replaced underneath the listener, which ' +
           'is what a build-root on another process leaves behind here',
           (replaced.errors || []).join(' '));

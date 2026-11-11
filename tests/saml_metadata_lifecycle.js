@@ -149,6 +149,7 @@ async function run(t) {
   log.debug("Entering run().");
   const config = require('../common/config');
   const errorCodes = require('../common/error_codes');
+  const audit = require('../common/audit');
   const stsCrypto = require('../common/crypto');
   const app = require('../common/app');
   require('../ldap/ldap_server');
@@ -732,6 +733,16 @@ async function run(t) {
         return row.entityId === name;
       })[0] || null;
     };
+    // The code a refusal was recorded under, which is on its audit row and not
+    // in the list the API answers (#1355).
+    const auditedCode = function (name) {
+      log.debug("Entering auditedCode().");
+      const row = audit.list().filter(function (one) {
+        return one.action === 'saml2.metadata.mdq' && one.target === name;
+      })[0];
+      log.debug("Leaving auditedCode().");
+      return row ? row.errorCode : '';
+    };
     const unknown = function (label) {
       log.debug("Entering unknown().");
       const name = 'https://' + label + '-' + stamp + '.md.test/saml';
@@ -755,7 +766,7 @@ async function run(t) {
     t.equal(askedFor(bare), 0,
             'PRODUCT, no trust anchor: the MDQ responder is NEVER ASKED');
     t.check(!applications.get(bare), 'and nothing is registered');
-    t.check(refusedRow(bare) && refusedRow(bare).errorCode ===
+    t.check(refusedRow(bare) && auditedCode(bare) ===
             'STS-SAML-0080',
             'the entityID is listed as refused, STS-SAML-0080',
             JSON.stringify(refusedRow(bare)));
@@ -784,7 +795,7 @@ async function run(t) {
                 'PRODUCT with a realm anchor: the responder IS asked');
         t.check(!applications.get(unsignedName),
                 'an UNSIGNED answer registers nothing');
-        t.equal((refusedRow(unsignedName) || {}).errorCode,
+        t.equal(auditedCode(unsignedName),
                 'STS-SAML-0081', 'and it is listed, STS-SAML-0081');
 
         const strangerName = unknown('prod-stranger');
@@ -794,7 +805,7 @@ async function run(t) {
                  authnRequest(strangerName, '_p3'));
         await settle(strangerName, 1);
         t.check(!applications.get(strangerName) &&
-                (refusedRow(strangerName) || {}).errorCode ===
+                auditedCode(strangerName) ===
                 'STS-SAML-0081',
                 'an answer signed by ANOTHER key registers nothing, ' +
                 'STS-SAML-0081');
@@ -833,7 +844,10 @@ async function run(t) {
     const existing = newSp('prod-existing');
     served['/mdq/entities/' + existing] = { status: 200,
       body: entity(existing, { acs: 'https://existing.test/acs' }) };
-    await kit.withSettings(config, { 'global.mode': 'product' },
+    // Unanchored, which paranoid PKI mode refuses (the door's own test holds
+    // that): what this asserts is the lookup, so its row is off.
+    await kit.withSettings(config, { 'global.mode': 'product',
+                                     'pki.paranoidSamlSigner': false },
       async function () {
         redirect(probeHandler, '/saml2/sso', authnRequest(existing, '_e0'));
         await settle(existing, 1);
@@ -843,6 +857,154 @@ async function run(t) {
       'https://existing.test/acs') >= 0,
             'PRODUCT: a REGISTERED service provider with no metadata is ' +
             'still looked up and consumed');
+
+    // -----------------------------------------------------------------------
+    t.log.info('F1c. #1360: an administrator\'s act names the trust anchor');
+    // -----------------------------------------------------------------------
+    const requestSignature = require('../saml/request_signature');
+    const anchorOf = function (id) {
+      log.debug("Entering anchorOf().");
+      log.debug("Leaving anchorOf().");
+      return String([].concat(fieldsOf(id).samlSpMetadataSigningCertificate ||
+                              [])[0] || '').replace(/\s+/g, '');
+    };
+    const signersOf = function (id) {
+      log.debug("Entering signersOf().");
+      log.debug("Leaving signersOf().");
+      return [].concat(fieldsOf(id).samlSigningCertificate || [])
+        .map(function (one) {
+          return String(one).replace(/-----[^-]+-----/g, '')
+            .replace(/\s+/g, '');
+        });
+    };
+    const signedRequest = function (id, key) {
+      log.debug("Entering signedRequest().");
+      log.debug("Leaving signedRequest().");
+      return requestSignature.assess({
+        binding: 'post', rootLocalName: 'AuthnRequest',
+        xml: kit.signEnveloped(stsCrypto, authnRequest(id, '_n' + key.name),
+                               key),
+        fields: fieldsOf(id) });
+    };
+    await kit.withSettings(config, { 'pki.paranoid': 'on' }, async function () {
+      // A document an administrator gives, unsigned, at update.
+      const named = newSp('named', { samlSpMetadataUrl: base + '/md/named' });
+      const given = spMetadata.upload(named, entity(named,
+        { signing: anchor.cert.b64 }));
+      t.check(given.ok && anchorOf(named) === anchor.cert.b64,
+              'an administrator\'s unsigned document is accepted, and its ' +
+              'signing certificate becomes the anchor',
+              JSON.stringify(given.errors || anchorOf(named)));
+      t.equal(signedRequest(named, anchor).outcome, 'verified',
+              'and that anchor verifies a request signature');
+      t.check(signedRequest(named, stranger).outcome !== 'verified',
+              'and another key\'s does not', '');
+      // What is fetched later answers to it.
+      const fetchedBy = function (key) {
+        log.debug("Entering fetchedBy().");
+        const xml = entity(named, { signing: stranger.cert.b64,
+                                    acs: 'https://named-new.test/acs' });
+        served['/md/named'] = { status: 200,
+          body: key ? kit.signEnveloped(stsCrypto, xml, key) : xml };
+        log.debug("Leaving fetchedBy().");
+        return spMetadata.refresh(named, { quiet: true });
+      };
+      const unsignedFetch = await fetchedBy(null);
+      const foreignFetch = await fetchedBy(stranger);
+      t.check(!unsignedFetch.ok && !foreignFetch.ok &&
+              anchorOf(named) === anchor.cert.b64 &&
+              signersOf(named).indexOf(stranger.cert.b64) < 0,
+              'a later unsigned or foreign-signed fetch replaces nothing',
+              JSON.stringify([unsignedFetch.errors, foreignFetch.errors]));
+      const rotated = await fetchedBy(anchor);
+      t.check(rotated.ok && anchorOf(named) === anchor.cert.b64 &&
+              signersOf(named).indexOf(stranger.cert.b64) >= 0,
+              'one signed by the anchor may rotate the signing keys, and the ' +
+              'anchor stays', JSON.stringify(rotated.errors));
+      // An administrator's unsigned document, as real providers publish.
+      const again = spMetadata.upload(named, entity(named,
+        { signing: anchor.cert.b64, acs: 'https://named-again.test/acs' }));
+      t.check(again.ok && again.signature === 'unsigned' &&
+              anchorOf(named) === anchor.cert.b64 &&
+              [].concat(fieldsOf(named).samlAssertionConsumerService || [])
+                .indexOf('https://named-again.test/acs') >= 0,
+              'an unsigned document that keeps the held anchor is consumed, ' +
+              'its other fields updated', JSON.stringify(again.errors));
+      const noKey = spMetadata.upload(named, entity(named,
+        { acs: 'https://named-nokey.test/acs' }));
+      t.check(noKey.ok && anchorOf(named) === anchor.cert.b64 &&
+              signersOf(named).indexOf(anchor.cert.b64) >= 0,
+              'one that names no signing key trusts nothing new, so it is ' +
+              'consumed too', JSON.stringify(noKey.errors));
+      const another = spMetadata.upload(named, entity(named,
+        { signing: stranger.cert.b64, acs: 'https://named-other.test/acs' }));
+      t.check(!another.ok && anchorOf(named) === anchor.cert.b64 &&
+              signersOf(named).indexOf(stranger.cert.b64) < 0 &&
+              /samlSpMetadataSigningCertificate/.test(another.errors.join(' ')),
+              'one naming a different key is refused, naming the act that ' +
+              'replaces the anchor', JSON.stringify(another.errors));
+      const quietAgain = await fetchedBy(null);
+      t.check(!quietAgain.ok,
+              'and the background still may not take an unsigned document',
+              JSON.stringify(quietAgain.errors));
+      // Naming the anchor proves nothing unsigned: it is a public certificate,
+      // and whoever answers for the URL would be choosing the addresses.
+      served['/md/named'] = { status: 200, body: entity(named,
+        { signing: anchor.cert.b64, acs: 'https://named-swapped.test/acs' }) };
+      const swappedAcs = await spMetadata.refresh(named, { quiet: true });
+      t.check(!swappedAcs.ok &&
+              [].concat(fieldsOf(named).samlAssertionConsumerService || [])
+                .indexOf('https://named-swapped.test/acs') < 0,
+              'nor one that merely names the anchor and changes the addresses',
+              JSON.stringify(swappedAcs.errors));
+
+      // By hand: the certificate is the anchor before any explicit one exists.
+      const byHand = newSp('by-hand', {
+        samlSpMetadataUrl: base + '/md/by-hand' });
+      const set = applications.updateApplication(byHand, {
+        attribute: 'samlSigningCertificate', mode: 'add',
+        value: anchor.cert.b64 });
+      t.check(set.ok, 'a signing certificate is set by hand',
+              JSON.stringify(set.errors || ''));
+      t.equal(signedRequest(byHand, anchor).outcome, 'verified',
+              'and it verifies a request signature');
+      const handXml = entity(byHand, { signing: stranger.cert.b64 });
+      served['/md/by-hand'] = { status: 200, body: handXml };
+      const unsignedHand = await spMetadata.refresh(byHand, { quiet: true });
+      t.check(!unsignedHand.ok && !anchorOf(byHand) &&
+              signersOf(byHand).indexOf(stranger.cert.b64) < 0,
+              'a background fetch answers to it too',
+              JSON.stringify(unsignedHand.errors));
+      served['/md/by-hand'] = { status: 200,
+                                body: kit.signEnveloped(stsCrypto, handXml,
+                                                        anchor) };
+      const signedHand = await spMetadata.refresh(byHand, { quiet: true });
+      t.check(signedHand.ok && anchorOf(byHand) === anchor.cert.b64,
+              'and rotating the keys pins the anchor it answered to',
+              JSON.stringify(signedHand.errors));
+
+      // Nobody named anything.
+      const quiet = newSp('nobody', { samlSpMetadataUrl: base + '/md/nobody' });
+      served['/md/nobody'] = { status: 200, body: entity(quiet,
+        { signing: stranger.cert.b64 }) };
+      const unasked = await spMetadata.refresh(quiet, { quiet: true });
+      t.check(!unasked.ok && !anchorOf(quiet) && !signersOf(quiet).length,
+              'a background fetch with no anchor names none and writes nothing',
+              JSON.stringify(unasked.errors));
+      const looked = newSp('looked-up');
+      served['/mdq/entities/' + looked] = { status: 200, body: entity(looked,
+        { signing: stranger.cert.b64 }) };
+      const lookup = await spMetadata.mdqImport(looked,
+        { quiet: true, origin: 'request' });
+      t.check(!lookup.ok && !anchorOf(looked) && !signersOf(looked).length,
+              'nor does a lookup a request started',
+              JSON.stringify(lookup.errors));
+      // The first fetch an administrator asks for is that administrator's act.
+      const asked = await spMetadata.refresh(quiet, { actor: 'an operator' });
+      t.check(asked.ok && anchorOf(quiet) === stranger.cert.b64,
+              'but an administrator asking for that fetch is the act that does',
+              JSON.stringify(asked.errors));
+    });
 
     // -----------------------------------------------------------------------
     t.log.info('F2. #112: an operator\'s MDQ import');
@@ -863,6 +1025,8 @@ async function run(t) {
           JSON.stringify(viaAction.errors)) && !applications.get(opName),
                 'and so is the console/API action',
                 JSON.stringify(viaAction.errors));
+        // An administrator's import: the setting lets it through, and paranoid
+        // PKI mode takes it as that administrator's act (rcbj, #1360).
         const allowed = await kit.withSettings(config,
           { 'saml2.mdqImportWithoutAnchors': true },
           function () {
@@ -871,8 +1035,8 @@ async function run(t) {
         t.check(allowed.ok && allowed.created &&
                 /WITHOUT a signature check/.test(
                   (allowed.warnings || []).join(' ') + allowed.message),
-                'with saml2.mdqImportWithoutAnchors ON it is imported, ' +
-                'and the reply WARNS that nothing was verified',
+                'with that setting ON it is imported, and the reply WARNS ' +
+                'that nothing was verified',
                 JSON.stringify(allowed.errors || allowed.warnings));
         const signedOp = unknown('operator-signed');
         served['/mdq/entities/' + signedOp].body = kit.signEnveloped(
@@ -913,9 +1077,13 @@ async function run(t) {
       '/admin/saml2', {}, '')).json;
     t.check(relisted.mdqRefused.length >= 1 &&
             relisted.mdqRefused[0].entityId === viaModule &&
-            relisted.mdqRefused[0].errorCode === 'STS-SAML-0080',
-            'the newest refusal is FIRST',
+            !('errorCode' in relisted.mdqRefused[0]),
+            'the newest refusal is FIRST, and the answer carries no code',
             JSON.stringify(relisted.mdqRefused.slice(0, 2)));
+    t.check(audit.list().some(function (row) {
+      return row.action === 'saml2.metadata.mdq' &&
+             row.target === viaModule && row.errorCode === 'STS-SAML-0080';
+    }), 'its code is on the audit row');
     // The page as the static console draws it (#446): GET /admin-api/saml2
     // drawn by its renderer.
     const drawn = (await require('./tools/console_page.js')

@@ -245,7 +245,8 @@ function childMain() {
       .consolePage(ROOT).draw(riskAdmin.METRICS_PAGE, { window: '7d' })).html;
     t.check(/id="risk-timeline"/.test(html) &&
             /id="risk-by-level"/.test(html) &&
-            /background:#d93025/.test(html) &&
+            // The level bars are SVG since 2026-11-10: the colour is a fill.
+            /fill="#d93025"/.test(html) &&
             /id="risk-signals"/.test(html) &&
             /id="risk-process"/.test(html) &&
             /id="risk-feedback"/.test(html) &&

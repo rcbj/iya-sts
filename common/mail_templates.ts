@@ -68,6 +68,8 @@ import fs = require('fs');
 import path = require('path');
 import Html = require('./html');
 import helpers = require('./helpers');
+// sanitize-html ships no declarations this build reads; `any` as for busboy.
+const sanitizeHtml: any = require('sanitize-html');
 import i18n = require('./i18n');
 import errorCodes = require('./error_codes');
 
@@ -373,6 +375,19 @@ const BUILT_IN: TemplateSpec[] = [
           '{{justification}}</p><p>The policy allows emergency access to ' +
           'this. <a href="{{link}}">Review it</a>, and revoke it if it was ' +
           'not warranted.</p>' },
+  { id: 'pki-pin-status', category: 'security',
+    title: 'A certificate this realm relies on changed state',
+    values: ['changes'],
+    links: [],
+    subject: '{{service}}: a certificate this realm relies on changed state',
+    text: 'The daily audit of the certificates this realm relies on found ' +
+          'these changes:\n\n{{changes}}\n\nThe PKI trust page of the admin ' +
+          'console shows every one. You receive this because you hold Admin ' +
+          'Write in this realm.\n',
+    html: '<p>The daily audit of the certificates this realm relies on found ' +
+          'these changes:</p><p>{{changes}}</p><p>The PKI trust page of the ' +
+          'admin console shows every one. You receive this because you hold ' +
+          'Admin Write in this realm.</p>' },
   { id: 'administrator-alert', category: 'security',
     title: 'An act of the service, for administrators',
     values: ['username', 'when', 'act', 'why'],
@@ -511,16 +526,28 @@ const BUILT_IN: TemplateSpec[] = [
           '<strong>{{username}}</strong>.</p>' }
 ];
 
-// The HTML a template may not contain (header point 3). Case-insensitive.
-const FORBIDDEN_HTML: Array<[RegExp, string]> = [
-  [/<\s*(script|img|image|iframe|frame|object|embed|link|style|form|input|button|video|audio|source|svg|math|meta|base)\b/i,
-   'an element that loads or runs something'],
-  [/\s(src|srcset|background|poster|formaction|action|data|xlink:href|style)\s*=/i,
-   'an attribute that loads something (src, srcset, background, style…)'],
-  [/\son[a-z]+\s*=/i, 'an event handler attribute'],
-  [/url\s*\(/i, 'a CSS url()'],
-  [/(javascript|data|vbscript)\s*:/i, 'a javascript:, data: or vbscript: URI']
-];
+// WHAT A TEMPLATE'S HTML MAY CONTAIN (header point 3; #1477, ASVS 5.0.0 1.3.1):
+// an allow-list held by a well-known sanitizer, in place of a list of things to
+// refuse, which can only ever refuse what somebody thought of. A template it
+// would change is refused rather than quietly altered: the administrator should
+// see what will be sent. `problem()` compares against a run that keeps
+// everything, so that only the sanitizer's removals count and not its
+// re-serialisation of the markup.
+const MAIL_HTML_ALLOWED = {
+  allowedTags: ['a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2',
+                'h3', 'h4', 'hr', 'i', 'li', 'ol', 'p', 'pre', 'small', 'span',
+                'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u',
+                'ul'],
+  allowedAttributes: { a: ['href', 'title'], '*': ['dir', 'lang'] },
+  allowedSchemes: [],
+  allowProtocolRelative: false
+};
+const MAIL_HTML_KEEP_ALL = {
+  allowedTags: false,
+  allowedAttributes: false,
+  allowVulnerableTags: true,
+  allowedSchemesAppliedToAttributes: []
+};
 
 // #64: the id of the layout every message is wrapped in.
 const LAYOUT_ID = 'layout';
@@ -864,13 +891,12 @@ class MailTemplates {
              spec.links.map(function (l) { return '{{' + l + '}}'; })
                .join(', ') + '), because a reader may see no HTML at all';
     }
-    for (let i = 0; i < FORBIDDEN_HTML.length; i++) {
-      if (FORBIDDEN_HTML[i][0].test(html)) {
-        helpers.log.debug("Leaving MailTemplates.problem(). Forbidden.");
-        return 'the HTML part may not carry ' + FORBIDDEN_HTML[i][1] +
-               ': a message this service sends loads nothing and runs ' +
-               'nothing when it is opened';
-      }
+    if (/<!/.test(html) || sanitizeHtml(html, MAIL_HTML_ALLOWED) !==
+        sanitizeHtml(html, MAIL_HTML_KEEP_ALL)) {
+      helpers.log.debug("Leaving MailTemplates.problem(). Not allowed.");
+      return 'the HTML part may carry only text formatting, tables and links: ' +
+             'a message this service sends loads nothing and runs nothing ' +
+             'when it is opened';
     }
     const hrefs = html.match(/\shref\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi) || [];
     const badHref = hrefs.filter(function (one) {

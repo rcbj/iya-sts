@@ -48,24 +48,24 @@
     "text": "símbolos"
   },
   "password.FIELDS.minSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "Cuántos caracteres que no sean ni letra, ni dígito, ni espacio en blanco debe contener una contraseña. 0 desactiva la regla."
+    "en": "1121ccc1580b0c86",
+    "text": "Siempre 0. Se rechaza una política que exija símbolos: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición, de modo que esta política solo pide longitud."
   },
   "password.FIELDS.requireUppercase.label": {
     "en": "41d8365a4b5a8473",
     "text": "Exigir una letra mayúscula"
   },
   "password.FIELDS.requireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "Si una contraseña debe contener al menos una letra mayúscula, en cualquier sistema de escritura."
+    "en": "9ab7a52d3b16949e",
+    "text": "Siempre desactivado. Se rechaza una política que exija una mayúscula: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición."
   },
   "password.FIELDS.requireDigit.label": {
     "en": "eaa0c73c3cc00f02",
     "text": "Exigir un número"
   },
   "password.FIELDS.requireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "Si una contraseña debe contener al menos un dígito decimal."
+    "en": "9d7cd7fdbca971d9",
+    "text": "Siempre desactivado. Se rechaza una política que exija un número: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición."
   },
   "password.FIELDS.generatedLength.label": {
     "en": "9a6d2215cc16392c",
@@ -168,16 +168,16 @@
     "text": "Cuántas contraseñas ANTERIORES de una persona se recuerdan y se rechazan. La contraseña actual también se rechaza siempre mientras este valor sea mayor que 0, así que 5 significa que una contraseña nueva no puede ser ninguna de las seis últimas. 0 desactiva la regla. El atributo del borrador, con el significado del borrador. Cada contraseña recordada se guarda como el hash con el que ya estaba almacenada (argon2id o scrypt), en pwdHistory en la propia entrada de la persona, y comprobar una contraseña nueva cuesta una comparación de hash por cada contraseña recordada."
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "Cuántos caracteres que no sean ni letra, ni dígito, ni espacio en blanco debe contener una contraseña. 0 desactiva la regla."
+    "en": "1121ccc1580b0c86",
+    "text": "Siempre 0. Se rechaza una política que exija símbolos: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición, de modo que esta política solo pide longitud."
   },
   "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "Si una contraseña debe contener al menos una letra mayúscula, en cualquier sistema de escritura."
+    "en": "9ab7a52d3b16949e",
+    "text": "Siempre desactivado. Se rechaza una política que exija una mayúscula: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición."
   },
   "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "Si una contraseña debe contener al menos un dígito decimal."
+    "en": "9d7cd7fdbca971d9",
+    "text": "Siempre desactivado. Se rechaza una política que exija un número: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición."
   },
   "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
     "en": "9abc8e368dbfdf05",
@@ -234,22 +234,6 @@
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
     "text": "al menos {{n}} caracteres"
-  },
-  "password.sentences.minSymbolsOne": {
-    "en": "bcd5d7597e2d9c28",
-    "text": "al menos {{n}} símbolo (un carácter que no sea una letra, un número ni un espacio)"
-  },
-  "password.sentences.minSymbolsMany": {
-    "en": "59951161d553809a",
-    "text": "al menos {{n}} símbolos (caracteres que no sean una letra, un número ni un espacio)"
-  },
-  "password.sentences.uppercase": {
-    "en": "4a27754133d00695",
-    "text": "una letra mayúscula"
-  },
-  "password.sentences.digit": {
-    "en": "d24f1fa16d122006",
-    "text": "un número"
   },
   "password.sentences.history": {
     "en": "524e6c7233b4e109",
@@ -963,57 +947,29 @@
     "en": "02f30171dcced882",
     "text": "Bind simple de LDAP"
   },
-  "serviceAccount.DOORS.allowLdapBind.what": {
-    "en": "3a8c8bfe4923e585",
-    "text": "Un bind en 389 o 636 (RFC 4513)."
-  },
   "serviceAccount.DOORS.allowWsTrust.label": {
     "en": "a1d8fa9805648e7d",
     "text": "UsernameToken de WS-Trust"
-  },
-  "serviceAccount.DOORS.allowWsTrust.what": {
-    "en": "4d920a20f96a19a1",
-    "text": "Un UsernameToken de WS-Security enviado al servicio de tokens de seguridad."
   },
   "serviceAccount.DOORS.allowScim.label": {
     "en": "13441836ceee258a",
     "text": "HTTP Basic de SCIM"
   },
-  "serviceAccount.DOORS.allowScim.what": {
-    "en": "506c021bbd796caa",
-    "text": "HTTP Basic en /scim/v2 (RFC 7617)."
-  },
   "serviceAccount.DOORS.allowSsf.label": {
     "en": "5f0a37c29c6be8ab",
     "text": "HTTP Basic de Shared Signals"
-  },
-  "serviceAccount.DOORS.allowSsf.what": {
-    "en": "41e56e2806f5f363",
-    "text": "HTTP Basic en los endpoints /ssf (RFC 7617)."
   },
   "serviceAccount.DOORS.allowEst.label": {
     "en": "90892c78280ab239",
     "text": "HTTP Basic de EST"
   },
-  "serviceAccount.DOORS.allowEst.what": {
-    "en": "a40e0a702c1600f6",
-    "text": "HTTP Basic en /.well-known/est (RFC 7030 sección 3.2.3)."
-  },
   "serviceAccount.DOORS.allowKerberos.label": {
     "en": "b707a90f8fd22d69",
     "text": "Intercambio AS de Kerberos"
   },
-  "serviceAccount.DOORS.allowKerberos.what": {
-    "en": "22fac9e9e9e7d0a8",
-    "text": "Un AS-REQ cuya preautenticación demuestra la clave de la contraseña (RFC 4120), y MS-KKDCP."
-  },
   "serviceAccount.DOORS.allowPasswordGrant.label": {
     "en": "a55abf2085020a8c",
     "text": "Concesión password de OAuth 2.0"
-  },
-  "serviceAccount.DOORS.allowPasswordGrant.what": {
-    "en": "7fe8d96fec703361",
-    "text": "grant_type=password en el endpoint de token (RFC 6749 sección 4.3), cuando el dominio permite esa concesión."
   },
   "serviceAccount.SELECTORS.precedence.what": {
     "en": "3bc40f48dcc93e91",
@@ -1691,22 +1647,6 @@
     "en": "df463dd3d0380799",
     "text": "La clase de este servicio para una política de atributos: los atributos que toda persona de un dominio debe tener. Nombrada por el PERFIL (`cn=default`, o un perfil con nombre propio del dominio)."
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "En una persona o un grupo: la política de atributos que nombra, `default` o un perfil con nombre del dominio. Un valor."
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "se aplica a una persona que la nombra, o que está en un grupo que la nombra, cuando ninguna otra política que nombre tiene una precedencia menor que {{precedence}}"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "La clase de este servicio para un atributo personalizado de un dominio, en ou=attributeDefinitions, nombrada por el atributo (`cn=<name>`)."
@@ -1730,6 +1670,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "TRUE si un atributo personalizado tiene un solo valor, FALSE si tiene varios."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "TRUE cuando una persona ve sus propios valores de un atributo personalizado en la vista general del portal de usuario. FALSE, o ausente, de forma predeterminada."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "TRUE cuando una persona puede cambiar sus propios valores de un atributo personalizado en el portal de usuario. Implica stsAttributePortalVisible. FALSE, o ausente, de forma predeterminada."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "En una persona o un grupo: la política de atributos que nombra, `default` o un perfil con nombre del dominio. Un valor."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1743,17 @@
     "en": "3867ffa1e351efa2",
     "text": "El atributo personalizado {{name}} está definido en este dominio en {{dn}}. Ahora puede darse a una persona y exigirse en esta política."
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "El atributo personalizado {{name}} se ha cambiado. Su sintaxis y si admite varios valores siguen como estaban."
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "El atributo personalizado {{name}} ya no está definido en este dominio."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "se aplica a una persona que la nombra, o que está en un grupo que la nombra, cuando ninguna otra política que nombre tiene una precedencia menor que {{precedence}}"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

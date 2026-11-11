@@ -147,7 +147,7 @@ function childMain() {
       let r = await get(jar, start);
       for (let hop = 0; hop < 12; hop += 1) {
         const to = String((r.headers && r.headers.location) || '');
-        if (r.status >= 300 && r.status < 400 && /\/authn\/login\?authn=/
+        if (r.status >= 300 && r.status < 400 && /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/
             .test(to) && username) {
           const answer = await screen.submit({ port: port, jar: jar, at: to,
             fields: { action: 'login', username: username, password: 'x' } });
@@ -313,6 +313,9 @@ function childMain() {
          '4b. signing the DEFAULT out cleared the cookie and made the next ' +
          'live account (bob) the default',
          JSON.stringify({ dflt: defaultOf(jar), bob: liveFor(name('bob')) }));
+    note(r.headers['clear-site-data'] === undefined,
+         '4c. another account is still here, so storage is left alone (#1440)',
+         r.headers['clear-site-data']);
     await oidcSignIn(jar, name('carol'));
     v = await json(jar, 'GET', '/authn-api/logout');
     r = await json(jar, 'POST', '/authn-api/logout/accounts',
@@ -330,6 +333,9 @@ function childMain() {
          'and the cookie cleared', JSON.stringify({ status: r.status,
            next: r.json && r.json.next, bob: liveFor(name('bob')),
            carol: liveFor(name('carol')), jar: Object.keys(jar) }));
+    note(r.headers['clear-site-data'] === '"storage"',
+         '5c. the last account here is gone, so the browser is told to drop ' +
+         'storage, and never cookies (#1440)', r.headers['clear-site-data']);
 
     // --- RP-Initiated Logout -------------------------------------------------
     // An ID Token carries `sid` while back-channel (or front-channel) logout
@@ -343,6 +349,12 @@ function childMain() {
     note(liveFor(name('rp-alice')).length === 1,
          '6a. alice\'s id_token_hint from ANOTHER browser ends nothing: a ' +
          'bare sid stays untrusted', r.status);
+    const loaded = await screen.call({ port: port, jar: rp, method: 'GET',
+      path: '/oauth2/logout?id_token_hint=' + encodeURIComponent(aliceHint),
+      headers: { 'sec-fetch-dest': 'image', 'sec-fetch-mode': 'no-cors' } });
+    note(liveFor(name('rp-alice')).length === 1,
+         '6a-ii. an image naming a verified hint ends nothing (#1443)',
+         loaded.status);
     r = await get(rp, '/oauth2/logout?id_token_hint=' +
                   encodeURIComponent(aliceHint) +
                   '&post_logout_redirect_uri=' + encodeURIComponent(REDIRECT));

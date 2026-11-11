@@ -250,7 +250,11 @@ class Jar {
   get(name) {
     log.debug("Entering Jar.get(). " + name);
     log.debug("Leaving Jar.get().");
-    return this.cookies[name] || "";
+    // Product mode prefixes every `sts_` cookie on the wire
+    // (common/cookie_wire.ts, ASVS 5.0.0 3.3.1), so the inside name is
+    // asked under either prefix as well.
+    return this.cookies[name] || this.cookies["__Host-" + name] ||
+      this.cookies["__Secure-" + name] || "";
   }
 
   /**
@@ -265,6 +269,8 @@ class Jar {
     const out = new Jar();
     Object.assign(out.cookies, this.cookies);
     delete out.cookies[name];
+    delete out.cookies["__Host-" + name];
+    delete out.cookies["__Secure-" + name];
     log.debug("Leaving Jar.without().");
     return out;
   }
@@ -758,7 +764,7 @@ async function signInScreen(jar, start, username, password) {
   assert.ok(first.status >= 300 && first.status < 400 && first.location,
     "the authorization request did not send the browser to a sign-in " +
     "screen: " + first.status + " " + said(first.text));
-  assert.ok(/\/authn\/login\?authn=/.test(first.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(first.location),
     "no sign-in screen at " + first.location);
   const screen = { status: 0, text: "" };
   const posted = await postScreen(jar, first.location, username, password);

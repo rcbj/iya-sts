@@ -131,23 +131,27 @@ The same registration behaves differently in the two modes (`global.mode`):
   endpoint refuses any grant the list does not name with `unauthorized_client`,
   whether the list came from a dynamic registration (RFC 7591 `grant_types`) or
   an administrator. A client whose list omits `refresh_token` is issued no
-  refresh token. An empty list restricts nothing. The console offers one
+  refresh token. An empty list restricts nothing in development mode; in
+  product mode it allows `authorization_code` and `refresh_token` alone, unless
+  `oauth2.allowUndeclaredGrants` is on, so a `client_credentials` or token
+  exchange client must list its grant. The console offers one
   checkbox per grant this service implements, and a console or API write of
   any other value is refused. What a client has actually used is recorded
   separately, in `oauthGrantTypeObserved`, shown read-only beside
   `oauthGrantType` on the application's **OAuth 2.0 / OpenID Connect**
   sub-tab.
 * **Consent is on by default** (`oauth2.consentRequired`). A person approves
-  each client on `/oauth2/consent` the first time. Test realms often turn it
+  each client on `/oauth2/consent` the first time, and a public client every
+  time in product mode (`oauth2.consentAlwaysForPublicClients`). Test realms often turn it
   off with `"oauth2.consentRequired": false`. In production, leave it on.
 
 ## Which grants are available
 
 | Grant (`grant_type`) | Available | Recipe |
 |---|---|---|
-| `authorization_code` | always; PKCE is required of public clients in RFC 9700, OAuth 2.1 and product mode | [below](#authorization-code-with-pkce) |
+| `authorization_code` | always; PKCE is required of public clients in RFC 9700 and OAuth 2.1 mode, and of every client in product mode | [below](#authorization-code-with-pkce) |
 | `client_credentials` | always; refused for a public client in product mode | [below](#client-credentials) |
-| `refresh_token` | always | [below](#refresh-token) |
+| `refresh_token` | always; in product mode a chain of refreshes ends 30 days after its first token (`oauth2.refreshTokenMaxChainS`) | [below](#refresh-token) |
 | `password` | **development mode only**, and not while `oauth2.rfc9700` is on | [below](#password-development-only) |
 | `urn:ietf:params:oauth:grant-type:device_code` | while `oauth2.deviceAuthorization` is on (off by default) | [below](#device-authorization-rfc-8628) |
 | `urn:ietf:params:oauth:grant-type:jwt-bearer` | while `oauth2.jwtBearerGrant` is on (on by default) | [below](#jwt-bearer-rfc-7523) |
@@ -421,6 +425,7 @@ comes back still carries the whole grant.
 | Setting | Default | What it does |
 |---|---|---|
 | `oauth2.refreshTokenTtlS` | `86400` | The refresh token's absolute lifetime. |
+| `oauth2.refreshTokenMaxChainS` | `0` (`2592000` in product) | The absolute limit on a chain of refreshes, counted from its first refresh token. Past it the person signs in again. `0` is no limit. |
 | `oauth2.refreshIdleSeconds` | `86400` | How long an unused refresh token stays valid, in RFC 9700 mode only. |
 | `oauth2.revokeRefreshOnLogout` | `true` | Signing out ends the person's refresh tokens. |
 | `oauth2.refreshTokenRotation` | `false` | Issues a new refresh token on each use. Rotation is already on in RFC 9700, OAuth 2.1, FAPI and product mode. A replayed refresh token revokes the whole family. |
@@ -750,6 +755,66 @@ reverse. By default its audience must name this token endpoint or issuer.
 `oauth2.tokenExchangeAudience` set to `any-declared-relying-party` also
 accepts an audience naming an application registered in the realm. That is
 token forwarding; read the setting's warning before turning it on.
+
+### A Kerberos ticket as the subject, the actor or the token issued
+
+A Kerberos ticket may be the `subject_token` or the `actor_token`, and may be
+asked for as `requested_token_type` (#658). The token types are the
+[Kerberos Token Profile 1.1](https://docs.oasis-open.org/wss-m/wss/v1.1.1/os/wss-KerberosTokenProfile-v1.1.1-os.html)'s
+six URIs, the ones [WS-Trust](ws-trust.md#kerberos-tokens) uses, usually
+`http://docs.oasis-open.org/wss/oasis-wss-kerberos-token-profile-1.1#GSS_Kerberosv5_AP_REQ`.
+The token is the AP-REQ (or its GSS wrapping), base64url. Taken from
+`sts_kerberos_tokens.js`.
+
+**As the subject or the actor**, the ticket is for this authorization
+server's own SPN (`krb5.servicePrincipal`), checked by the Kerberos acceptor
+in both modes and good once. `oauth2.tokenExchangeKerberosInput` (on by
+default) turns it off.
+
+* **A delegated subject.** The exchanging client obtained the ticket by
+  Kerberos delegation, so it must be a Kerberos service as well as an OAuth
+  client: an application whose identifier is its `SPN@REALM` and which carries
+  the client's `oauthClientId`. The ticket is either an S4U2Proxy ticket
+  whose PAC's `S4U_DELEGATION_INFO` names the client last, or one bought with
+  a TGT forwarded to a client with `krb5TrustedForDelegation`. The services
+  before the client become the issued token's nested `act`, under the client.
+  A ticket that is neither is refused (`invalid_request`), unless its client is
+  the exchanging client's own service principal, which is a self exchange.
+* **The actor.** The ticket's client is the exchanging client's own service
+  principal.
+
+```bash
+# the front end is a Kerberos service AND the OAuth client that exchanges
+api applications/add '{"application":"HTTP/front.example.com@EXAMPLE.COM",
+  "attribute":"oauthClientId","value":"front"}'
+api applications/add '{"application":"HTTP/front.example.com@EXAMPLE.COM",
+  "attribute":"appAllowedToDelegateTo","value":"HTTP/sts.example.com@EXAMPLE.COM"}'
+```
+
+```
+POST /oauth2/token
+  grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+  &client_id=front&client_secret=<secret>
+  &subject_token=<the S4U2Proxy AP-REQ, base64url>
+  &subject_token_type=http://docs.oasis-open.org/wss/oasis-wss-kerberos-token-profile-1.1%23GSS_Kerberosv5_AP_REQ
+  &audience=https://back.example
+```
+
+**As the token issued**, with `oauth2.tokenExchangeKerberosOutput` on (it is
+off by default):
+
+* the one `audience` or `resource` must be an application that is a Kerberos
+  service;
+* the answer carries the AP-REQ in `access_token`, base64url, with
+  `issued_token_type` the URI asked for and `token_type` `N_A`
+  (RFC 8693 section 2.2.1). `session_key` and `session_key_etype` hold the
+  Authenticator's subkey, which the holder needs to use the token, so the
+  request must arrive over TLS;
+* `expires_in` is the AP-REQ's own window (`krb5.clockSkew`);
+* there is no refresh token and no ID Token;
+* a delegation's `act` chain becomes the ticket's `S4U_DELEGATION_INFO`;
+* a target in another Kerberos realm is reached through the
+  [trusts](configure-kerberos.md), as in WS-Trust.
 
 [Native SSO](configure-oidc-flows.md#native-sso) is a form of token exchange
 with an ID Token and a device secret.

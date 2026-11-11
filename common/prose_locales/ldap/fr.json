@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Les valeurs de response_type que ce client peut demander — les response_types de RFC 7591 section 2, issus d’un enregistrement ou écrits par un administrateur, chaque valeur étant un type de réponse (\"code\", \"code id_token\"). Le point de terminaison d’autorisation refuse tout autre type (unauthorized_client), dans tous les modes ; une liste vide ne restreint rien. Ce que le client a effectivement demandé figure dans oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "Les types de réponse qui émettent un jeton d’accès depuis le point de terminaison d’autorisation — token, code token, id_token token, code id_token token — que ce client peut utiliser là où le mode RFC 9700 est en vigueur (le mode product l’est toujours). Honorés uniquement tant que le domaine lève la section 2.1.2 de la RFC 9700 (oauth2.allowImplicitTokenResponses, jamais sous OAuth 2.1 ou FAPI) ; un type non listé ici est alors refusé (unauthorized_client). VIDE par défaut, et vide signifie aucun. Écrit par un administrateur ou par le propriétaire de l’application tant que le domaine autorise ces types, ou par un enregistrement dynamique dans les limites de oauth2.dynamicRegistrationTokenResponseTypes. La section 2.1.2 de la RFC 9700 dit que les clients NE DEVRAIENT PAS les utiliser."
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "Un type d’octroi que ce client a été vu utiliser au point de terminaison de jeton. Un enregistrement, pas une permission : oauthGrantType est ce qu’il peut utiliser."
@@ -580,8 +584,8 @@
     "text": "L’URI DE BASE AUQUEL SE RATTACHE CHAQUE PERMISSION QUE DÉFINIT CETTE APPLICATION, et ce qui rend un nom de permission unique au niveau global ici. Une permission est identifiée par cette valeur suivie de son nom — la base `https://example.com/` et le nom `write` donnent la permission `https://example.com/write` — ce qu’un client place dans une `scope` et ce vers quoi le jeton d’accès est ensuite AUDIENCÉ. Entra ID l’appelle l’Application ID URI et l’écrit `api://<guid>` ; la forme est la même et rien ici n’exige ce schéma.\n\nIL EST NORMALISÉ POUR SE TERMINER PAR UN SÉPARATEUR lorsqu’il est écrit via ce module — un `/` final est ajouté lorsqu’il n’y a ni `/`, ni `#`, ni `:` à la fin — car base + nom est une simple concaténation et `https://example.com` + `write` produirait sinon `https://example.comwrite`. Un `ldapmodify` atteint cet attribut comme tous les autres et n’est pas normalisé ; une base écrite à la main signifie donc exactement ce qu’elle dit.\n\nÀ VALEUR UNIQUE, et c’est le seul attribut de ce groupe qui ne pourrait pas être élargi sans trancher quelque chose : deux bases signifieraient que chaque permission de l’entrée aurait deux identifiants, et la recherche qui transforme une portée en audience devrait en choisir un à placer dans `aud`."
   },
   "applications.schema.attributes.oauthPermission.what": {
-    "en": "0c47fe049bbc6c7b",
-    "text": "UNE PERMISSION QU’EXPOSE CETTE APPLICATION, une valeur chacune. La valeur est le NOM de la permission — `read`, `write`, `Widgets.ReadWrite.All` — éventuellement suivi de `|` et d’une description : `write|Change widgets on somebody's behalf`. Le PREMIER `|` est le délimiteur et tous les suivants appartiennent à la description ; une description peut donc contenir ce caractère, mais pas un nom.\n\nLe nom doit être un jeton de portée OAuth valide (RFC 6749 section 3.3 — ni espace, ni guillemet double, ni barre oblique inverse), car c’est ce qu’un client placera dans un paramètre `scope` et ce qui reviendra dans la revendication `scope` du jeton. Rien ne l’impose lorsqu’un `ldapmodify` l’écrit ; ce module et les deux consoles le font.\n\nUNE PERMISSION DOIT EXISTER AVANT QUE QUOI QUE CE SOIT NE PUISSE LA RECEVOIR, c’est la seule règle d’ordre de cette fonctionnalité, vérifiée dans updateApplication() afin que le formulaire de la console et l’API de gestion ne puissent pas diverger à ce sujet. Elle est vérifiée lors de l’OCTROI et non ici : cet attribut est la définition, et une définition que personne n’a encore utilisée est la première étape ordinaire plutôt qu’une erreur."
+    "en": "7eb690e390462f2d",
+    "text": "UNE PERMISSION QU’EXPOSE CETTE APPLICATION, une valeur chacune. La valeur est le NOM de la permission — `read`, `write`, `Widgets.ReadWrite.All` — éventuellement suivi de `|` et d’une description : `write|Change widgets on somebody's behalf`. Le PREMIER `|` est le délimiteur et tous les suivants appartiennent à la description ; une description peut donc contenir ce caractère, mais pas un nom.\n\nLe nom doit être un jeton de portée OAuth valide (RFC 6749 section 3.3 — ni espace, ni guillemet double, ni barre oblique inverse), car c’est ce qu’un client placera dans un paramètre `scope` et ce qui reviendra dans la revendication `scope` du jeton. Un nom ou une description contenant un code d’erreur d’opérateur est également refusé : tous deux sont renvoyés sur chaque page qui liste la permission, et un code est enregistré plutôt qu’envoyé. Rien n’impose l’une ou l’autre de ces règles lorsqu’un `ldapmodify` écrit la valeur ; ce module et les deux consoles le font.\n\nUNE PERMISSION DOIT EXISTER AVANT QUE QUOI QUE CE SOIT NE PUISSE LA RECEVOIR, c’est la seule règle d’ordre de cette fonctionnalité, vérifiée dans updateApplication() afin que le formulaire de la console et l’API de gestion ne puissent pas diverger à ce sujet. Elle est vérifiée lors de l’OCTROI et non ici : cet attribut est la définition, et une définition que personne n’a encore utilisée est la première étape ordinaire plutôt qu’une erreur."
   },
   "applications.schema.attributes.oauthRoleGatedPermission.what": {
     "en": "fa1c86d8fb8ce2fb",
@@ -732,8 +736,8 @@
     "text": "RAPPEL (CALLBACK) D’UNE DEMANDE D’ACCÈS AUTHZEN (#1180) : une URL https que ce client, en tant que PEP AuthZEN, peut nommer comme callback.endpoint d’une demande d’accès — une par valeur, comparée exactement. Une demande qui en nomme une autre est refusée ; ce service n’appelle jamais une URL de rappel tirée d’une seule demande. Défini par un administrateur, jamais par l’appelant."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 section 3 : les valeurs acr que cette application, en tant que serveur de ressources, exige de l’authentification sous-jacente à un jeton d’accès — séparées par des espaces, la préférée en premier. Un jeton dont l’acr ne satisfait aucune d’elles reçoit un défi 401 insufficient_user_authentication avec celles-ci comme acr_values. Les niveaux 0 < 1 < mfa sont ordonnés ; hwk, phr et phrh sont satisfaits par un mot de passe accompagné d’une clé de sécurité ; toute autre valeur uniquement par cet acr exact. VIDE n’exige rien."
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 section 3 : les valeurs acr que cette application, en tant que serveur de ressources, exige de l’authentification sous-jacente à un jeton d’accès — séparées par des espaces, la préférée en premier. Un jeton dont l’acr ne satisfait aucune d’elles reçoit un défi 401 insufficient_user_authentication avec celles-ci comme acr_values. Les niveaux 0 < 1 < mfa sont ordonnés ; hwk est satisfait par un mot de passe accompagné d’une clé de sécurité ; phr et phrh uniquement par l’authentification résistante à l’hameçonnage qu’ils nomment (#723) ; toute autre valeur uniquement par cet acr exact. VIDE n’exige rien."
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1083,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "L’ENDROIT OÙ UN TIERS DÉMARRE UNE CONNEXION À CE CLIENT : l’initiate_login_uri d’OpenID Connect Core section 4, vers lequel /launch/{app} et le portail utilisateur envoient une personne avec iss, login_hint et target_link_uri. https uniquement, sans fragment."
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "LE LOGO DU CLIENT : le logo_uri de la section 2 d’OpenID Connect Registration, affiché sur les écrans de connexion et de consentement à côté du nom du client. Le navigateur de la personne le charge depuis cette adresse ; ce service ne le récupère jamais. Une URL https absolue."
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "LA POLITIQUE DE CONFIDENTIALITÉ DU CLIENT : le policy_uri de la section 2 d’OpenID Connect Registration, en lien depuis les écrans de connexion et de consentement. Une URL https absolue."
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "LES CONDITIONS D’UTILISATION DU CLIENT : le tos_uri de la section 2 d’OpenID Connect Registration, en lien depuis les écrans de connexion et de consentement. Une URL https absolue."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "INDIQUE SI UN ÉCHANGE DE JETON RFC 8693 EFFECTUÉ PAR CE CLIENT OBTIENT UN `refresh_token` À CÔTÉ DU JETON D’ACCÈS ÉCHANGÉ, en remplaçant oauth2.tokenExchangeRefreshToken pour lui seul. L’un de trois mots : `never`, `when-requested` (la valeur par défaut à l’échelle du service — le client le demande avec le `requested_token_type` de RFC 8693 section 2.1 et n’en obtient un que s’il l’a fait) ou `always`.\n\nIL EST LU SUR LE CLIENT QUI EFFECTUE L’ÉCHANGE et non sur l’audience, car le jeton d’actualisation est remis au client : c’est à cette partie qu’il revient de détenir, de révoquer et finalement d’utiliser cet identifiant. Le sujet SUR LEQUEL porte l’échange n’a, dans le cas intéressant, aucune entrée dans ce registre, puisque tout l’intérêt d’un échange est un subject_token venu d’ailleurs.\n\n**IL S’APPLIQUE AUX FAMILLES OAUTH 2.0 ET OPENID CONNECT ET À AUCUNE AUTRE, et contrairement à tous les autres attributs ici, cela est APPLIQUÉ.** Une entrée déclarée pour aucune des deux est refusée par les deux portes de la console et par l’API de gestion, qui nomment la famille à cocher d’abord — car une valeur ici est une politique concernant le point de terminaison de jeton, et une entrée qu’aucune requête de jeton ne peut jamais nommer la porterait en donnant l’impression qu’elle est en vigueur. Le bloc au-dessus de cette ligne le justifie. `ldapmodify` atteint cet attribut comme tous les autres et n’est pas vérifié.\n\nUNE VALEUR QUI N’EST PAS L’UN DES TROIS MOTS N’EST PAS UNE ERREUR À L’ÉCRITURE ET N’EST PAS SILENCIEUSE : settingFor() émet un avertissement nommant l’entrée, l’attribut et ce qu’il contient, et le paramètre à l’échelle du service décide — la même honnêteté à trois états que reçoit toute autre surcharge sur cette entrée."
@@ -1244,8 +1260,8 @@
     "text": "TRUE ou FALSE : le wsignin1.0 propre à cette partie de confiance reçoit-il une réponse, en remplaçant wsfed.spInitiatedSso. Un wsignin1.0 est une URL non signée ; FALSE ferme donc la porte plutôt que de prouver qui l’a ouverte."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "L’ENDROIT OÙ EST ENVOYÉ UN PING wsignoutcleanup1.0 pour cette application — l’URI de déconnexion de WS-Federation, celle que ce tableau n’avait pas jusqu’au 2026-08-30. DÉCLARÉE, non observée, ce qui en fait le pendant de samlSingleLogoutService plutôt que de wsfedReplyUrl : un nettoyage est envoyé lorsqu’une SESSION se termine, et à ce moment-là la requête qui aurait porté un wreply est terminée depuis longtemps.\n\n**ELLE N’EST PAS ENCORE LUE PAR LA DÉCONNEXION**, et cela est énoncé plutôt que sous-entendu. `cleanupTargetsFor()` construit sa liste à partir de `session.wsfedRealms`, qui enregistre le wreply vers lequel chaque réponse de connexion est réellement allée — ce que ce service interroge aujourd’hui est donc ce qu’il a OBSERVÉ, et cet attribut est ce qu’un opérateur a DÉCLARÉ. Ce sont deux faits différents, et le second est celui qu’une personne qui configure une application peut énoncer à l’avance. L’intégrer comme repli pour un wtrealm auquel on s’est connecté sans wreply est l’étape suivante évidente et n’est délibérément pas franchie ici : cette modification ajoute le champ et le stockage, et changer la destination d’un nettoyage est un changement de ce que fait le protocole."
+    "en": "677e7babd8d711d3",
+    "text": "L’ENDROIT OÙ EST ENVOYÉ UN PING wsignoutcleanup1.0 pour cette application — l’URI de déconnexion de WS-Federation, celle que ce tableau n’avait pas jusqu’au 2026-08-30. DÉCLARÉE, non observée, ce qui en fait le pendant de samlSingleLogoutService plutôt que de wsfedReplyUrl : un nettoyage est envoyé lorsqu’une SESSION se termine, et à ce moment-là la requête qui aurait porté un wreply est terminée depuis longtemps.\n\n**UNE ADRESSE DÉCLARÉE PRIME SUR UNE ADRESSE OBSERVÉE** (#747). `cleanupTargetsFor()` notifie chaque valeur d’ici pour un domaine auquel la session s’est connectée, et le wreply auquel est allée la réponse de connexion, que `session.wsfedRealms` enregistre, seulement si ceci est vide."
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",
@@ -1262,6 +1278,10 @@
   "applications.schema.attributes.krb5ClaimsPac.what": {
     "en": "0abf4d44f51d3755",
     "text": "LES REVENDICATIONS PAC PROPRES À CE SERVICE, sous forme de tableau JSON de lignes semblables à celles de la page Revendications PAC Kerberos du domaine. Ajoutées aux revendications que porte un ticket de service pour l’un des SPN de cette application (celles du TGT à partir duquel il a été émis), une ligne de l’application remplaçant la revendication du même nom. Uniquement tant que krb5.pacClaims est activé."
+  },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "LES REVENDICATIONS JWT DE JETON D’ACCÈS GNAP PROPRES À CE CLIENT, sous forme de tableau JSON de lignes semblables aux autres ensembles de revendications personnalisées. Ajoutées à un jeton jwt-signed et au JWT à l’intérieur d’un jeton jwt-encrypted émis pour ce client, une ligne de l’application remplaçant la ligne du domaine du même nom. Les revendications propres au jeton (access, flags, label, grant_id et les noms JWT) ne peuvent pas être remplacées. Les jetons macaroon, biscuit et zcap ne portent pas ces lignes."
   },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
@@ -1990,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Ce que le PEP a dit de lui-même lors de son enregistrement."
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 2.0 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 1.1 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que WS-Federation ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
   }
 }

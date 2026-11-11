@@ -172,5 +172,16 @@
   "attributes.removeCustom": "移除",
   "attributes.defineHeading": "定義自訂屬性",
   "attributes.labelPlaceholder": "識別證號碼",
-  "attributes.define": "定義屬性"
+  "attributes.define": "定義屬性",
+  "attributes.portal": "使用者入口網站",
+  "attributes.portalVisible": "在入口網站上向本人顯示",
+  "attributes.portalEditable": "允許本人在入口網站上變更",
+  "attributes.portalNote": "預設皆為關閉。允許變更時也會顯示。",
+  "attributes.portalStateHidden": "不顯示",
+  "attributes.portalStateVisible": "顯示",
+  "attributes.portalStateEditable": "顯示，可編輯",
+  "attributes.change": "變更",
+  "attributes.changeFixed": "語法以及是否包含多個值無法變更。",
+  "attributes.saveChange": "儲存變更",
+  "securityOnly": "只有安全管理員可以在此儲存、重設或執行原則，或為應用程式、群組或人員指定原則。您可以檢視所有原則；變更將被拒絕。"
 }

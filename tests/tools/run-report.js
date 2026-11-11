@@ -127,6 +127,16 @@
 //                          suite's) and no in-process file. By the FLAG and
 //                          not by name: `--only=conformance` is a substring,
 //                          and also picked up sts_scim_conformance.
+//   --lanes=<lane>[,...]   only the protocol jobs in these lanes
+//                          (MANIFEST.js's `lane`, `main` when a job names
+//                          none) — exact names, not substrings (#930).
+//   --not-lanes=<lane>[,...]
+//                          every protocol job except those in these lanes.
+//                          The pair is how CI splits the OpenID conformance
+//                          jobs across GitHub jobs that each fit six hours:
+//                          a lane is the unit the jobs already run side by
+//                          side in, so a job added to a lane lands in the CI
+//                          job that runs the lane without a list to edit.
 //   --list                 name the jobs that would run; run none
 //   --protocol[=on|off|only]
 //                          also (or only) run the protocol jobs under
@@ -264,7 +274,7 @@ const RUN_ID = new Date().toISOString().replace(/:/g, '-').replace(/\..+$/, '');
 function parseArgs(argv) {
   log.debug('Entering parseArgs().');
   const opts = { only: [], list: false, protocol: 'on', parent: '',
-                 conformanceOnly: false,
+                 conformanceOnly: false, lanes: [], notLanes: [],
                  reportDir: path.join(TESTS_DIR, 'report'),
                  timeoutMs: 300000, timeoutScale: 1, quiet: false,
                  help: false,
@@ -282,6 +292,13 @@ function parseArgs(argv) {
       opts.list = true;
     } else if (a === '--conformance-only') {
       opts.conformanceOnly = true;
+    } else if (a.indexOf('--lanes=') === 0 || a.indexOf('--not-lanes=') === 0) {
+      const into = a.indexOf('--lanes=') === 0 ? opts.lanes : opts.notLanes;
+      a.slice(a.indexOf('=') + 1).split(',').forEach(function (one) {
+        if (one.trim()) {
+          into.push(one.trim());
+        }
+      });
     } else if (a === '--help' || a === '-h') {
       opts.help = true;
     } else if (a === '--quiet') {
@@ -1444,7 +1461,8 @@ async function mintTheManagementApiToken(url) {
   log.debug('Entering mintTheManagementApiToken().');
   try {
     process.env.STS_ADMIN_API_TOKEN = await adminApiToken.tokenFor(url);
-    log.info('minted an /admin-api access token (admin:read admin:write, ' +
+    log.info('minted an /admin-api access token (admin:read admin:write ' +
+             'admin:security, ' +
              'audience ' + adminApiToken.audienceFor(url) + ')');
   } catch (e) {
     log.error('could not mint an /admin-api access token from ' + url + ': ' +
@@ -1522,8 +1540,9 @@ async function refreshAdminApiToken(instance, jobTimeoutMs) {
 // six validators and was killed at 300 s in a full run on a loaded machine
 // (its first driver alone took 78 s) while every case agreed; the other three
 // are the same kind of file. Its signer pass alone was measured at 6-17 min
-// on a machine running other sessions' stacks, so it has 25. A raise only
-// ever lengthens: the larger of this and --timeout wins, exactly as for a
+// on a machine running other sessions' stacks, so it had 25; it took about 28
+// beside a fuzz run and two other stacks (2026-11-10), so it has 45. A raise
+// only ever lengthens: the larger of this and --timeout wins, exactly as for a
 // protocol job.
 // exchange_policy_exhaustive (#186) walks 2,488,320 combinations of the
 // exchange policy's facts against its oracle — about six minutes alone,
@@ -1531,7 +1550,7 @@ async function refreshAdminApiToken(instance, jobTimeoutMs) {
 // suite runs; it has 30.
 const UNIT_WATCHDOG_MS = {
   exchange_policy_exhaustive: 1800000,
-  x509_limbo: 1500000,
+  x509_limbo: 2700000,
   nist_pkits: 600000,
   acvp_pqc: 600000,
   wycheproof: 600000
@@ -1802,6 +1821,12 @@ async function main() {
     if (opts.conformanceOnly) {
       theirs = theirs.filter(function (j) {
         return j.conformance;
+      });
+    }
+    if (opts.lanes.length || opts.notLanes.length) {
+      theirs = theirs.filter(function (j) {
+        return (!opts.lanes.length || opts.lanes.indexOf(j.lane) >= 0) &&
+               opts.notLanes.indexOf(j.lane) < 0;
       });
     }
     jobs.push.apply(jobs, theirs);

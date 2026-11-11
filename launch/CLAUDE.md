@@ -143,18 +143,25 @@ relying party cannot tell one it was sent from one pushed into its browser.
 The switches and their realm defaults are #710's, in
 `common/applications.js` and `common/config.js`.
 
-## Refusals are pages, in English
+## Refusals are the shared error page (#1327)
 
 Nothing has named a relying party to hand a protocol error to yet, so a
-refusal is a short page with an `STS-LAUNCH-*` code (#539: refusals are not
-translated). No script, so the service's default policy needs no change.
+refusal is a page, with an `STS-LAUNCH-*` code recorded and never shown.
+~~English (#539)~~ — **since #1327 it is `common/error_page.ts`'s page**:
+the sentence chosen by the code (`launchErrors.refusal.<code>`, falling back
+to `launchErrors.refusal.general`) in the page's language, the background
+collapsed, the start-over note and `/portal`, and the diagnostics — the
+application, `protocol` and `target` as the link sent them, who is signed
+in, and the English title and detail as data. The status is unchanged. No
+script, so the service's default policy needs no change.
 
 ## Tests
 
 `tests/launch.js` (in process): the four protocols' destinations, the switch
 refusing and allowing, the choice of protocol, an OpenID Connect `target`
 passed on when registered and refused (0007) when it is unregistered,
-observed, a prefix or extension, another scheme or host, the launch
+observed, a prefix or extension, another scheme or host, the refusal
+page's shape and its French (c2, c3, #1327), the launch
 record and `/oauth2/authorize` honouring and spending it, and the portal's
 and the console's links.
 

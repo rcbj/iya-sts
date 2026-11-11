@@ -153,8 +153,13 @@ function realmBase(realm) {
 function squash(text) {
   log.debug("Entering squash().");
   log.debug("Leaving squash().");
+  // THE SHARED ERROR PAGE (#1326, #1327) opens with the language chooser
+  // and keeps the English what and why in its diagnostics, below the
+  // translated sentence: the chooser is dropped and the window is wide
+  // enough to hold both.
   return String(text || "").replace(/<style[\s\S]*?<\/style>/g, " ")
-    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+    .replace(/<details class="language-row">[\s\S]*?<\/details>/g, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
 function htmlDecode(text) {
@@ -359,7 +364,7 @@ async function toTheDoor(cookies, startUrl) {
       }
       // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
       // answered through the one helper where the walk is sent to it.
-      if (/\/authn\/login\?authn=/.test(next)) {
+      if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(next)) {
         r = await signInAt(cookies, next, PERSON);
         continue;
       }
@@ -405,13 +410,28 @@ async function toTheDoor(cookies, startUrl) {
 }
 
 // A FEDERATED SIGN-IN THROUGH THE IDP REALM: `partner` is the jar holding
-// the partner realm's session, `browser` the service provider's.
+// the partner realm's session, `browser` the service provider's. The two
+// realms share one origin and so one `sts_session` slot, which is why they
+// are two jars. But it is ONE browser: product mode binds a federated flow to
+// the browser that began it (an `sts_fed_flow_*` cookie set by the SP realm's
+// /federation/login/, `bindFlowToBrowser()` in federation/federation_sp.ts,
+// STS-FED-0237), so the SP's jar starts with the flow cookies the beginning
+// set — and nothing of the partner realm's session.
 async function realmSignIn(relationship) {
   log.debug("Entering realmSignIn(). " + relationship);
   const partner = jar();
   const door = await toTheDoor(partner, realmBase(SP) + "/federation/login/" +
                                         relationship);
-  const browser = jar();
+  const held = partner.dump();
+  const flow = {};
+  Object.keys(held).forEach(function (name) {
+    if (/^(?:__(?:Host|Secure)-)?sts_fed_/.test(name)) {
+      flow[name] = held[name];
+    }
+  });
+  const browser = jar({ dump: function () {
+    return flow;
+  } });
   let r = door.method === "GET" ? await hop(browser, door.url)
                                 : await postForm(browser, door.url,
                                                  door.fields);

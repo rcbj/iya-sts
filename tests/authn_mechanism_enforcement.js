@@ -226,7 +226,7 @@ function childMain() {
       return m.authn.beginAuthentication({ returnTo: '/mech/after',
         protocol: 'mech-probe', application: 'mech-spnego' });
     });
-    note(/^\/authn\/spnego\?authn=/.test(straight),
+    note(/^\/authn\/spnego(?:\?app=[^#]*)?[?#]authn=/.test(straight),
          'D. one mechanism allowed routes as the one value did — spnego ' +
          'straight to /authn/spnego', straight);
     await make('mech-door');
@@ -252,7 +252,7 @@ function childMain() {
     const who = w.browser();
     const screen = await viewAt(who, screenAt);
     const sv = screen.view || {};
-    note(/^\/authn\/login\?authn=/.test(screenAt) && screen.status === 200 &&
+    note(/^\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(screenAt) && screen.status === 200 &&
          sv.screen === true && sv.password === false &&
          !sv.email.code && !sv.email.link && !sv.kerberos &&
          sv.wallet && /\/authn\/wallet/.test(sv.wallet.href) &&
@@ -315,7 +315,7 @@ function childMain() {
     const reprompt = await w.request('GET', authorize,
                                      { browser: signedIn });
     note(reprompt.status === 302 &&
-         /\/authn\/login\?authn=/.test(String(reprompt.headers.location)) &&
+         /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(reprompt.headers.location)) &&
          reprompt.code === 'STS-OAUTH-0945',
          'F. an authorization request on a password session, for a client ' +
          'allowing a key or a wallet, is sent to sign in again',
@@ -340,7 +340,7 @@ function childMain() {
       '&wreply=' + encodeURIComponent('https://rp.mech.example/wsfed');
     const wsfed = await w.request('GET', signIn, { browser: signedIn });
     note(wsfed.status === 303 &&
-         /\/authn\/login\?authn=/.test(String(wsfed.headers.location)) &&
+         /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(wsfed.headers.location)) &&
          wsfed.code === 'STS-WSFED-0017',
          'G. a WS-Federation sign-in on a password session is sent to sign ' +
          'in again', wsfed.status + ' ' + wsfed.headers.location + ' ' +

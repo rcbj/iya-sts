@@ -984,6 +984,9 @@ let sessionObserver = null;
 // The scheduler job's id, and its interval's setting.
 const SESSION_EXPIRY_JOB = 'authn.session-expiry';
 const SESSION_SWEEP_SETTING = 'authn.sessionSweepS';
+// Sessions walked, read through the window, or ended between two turns of
+// the event loop in the sliced sweep (#704; sweepExpiredSessionsInSlices()).
+const SESSION_SWEEP_SLICE = 500;
 // The account sets' clean-up job (#561).
 const ACCOUNT_SET_EXPIRY_JOB = 'authn.account-set-expiry';
 
@@ -1422,6 +1425,15 @@ class Authn {
       log.debug("Leaving Authn.sessionEnded().");
       return 'expired';
     }
+    // AN ADMINISTRATOR ENDED EVERY SESSION (#1520, ASVS 5.0.0 7.4.5). One
+    // instant rather than a walk of the population, so ending them costs the
+    // same whatever the number of people.
+    const endedBefore = Number(this.deps.config.value(
+      'authn.sessionsEndedBefore'));
+    if (endedBefore > 0 && Number(session.startedAt || 0) < endedBefore) {
+      log.debug("Leaving Authn.sessionEnded(). Ended by an administrator.");
+      return 'expired';
+    }
     const idle = this.sessionIdleTimeoutMs();
     if (idle && session.chosen !== false && session.lastSeenAt &&
         now - session.lastSeenAt > idle) {
@@ -1498,13 +1510,47 @@ class Authn {
       log.debug("Leaving Authn.noteSessionChanged(). No session.");
       return false;
     }
-    // A read error is not "the session is gone": the change is written so a
-    // parent that only the index holds still records backsConsole.
+    // A READ THAT FAILED IS NOT "THE SESSION IS GONE", AND NOT "IT IS LIVE"
+    // EITHER (#695, from #350; rcbj's decision). Until #695 a failed read
+    // re-set the caller's whole session, so that a parent the window had
+    // loaded from the index still recorded `backsConsole`. The store's
+    // tombstone kept that write from reviving a STORED session another
+    // request had ended meanwhile, but the realm map took the row back, and
+    // this process answered the ended session as live until it was evicted.
+    //
+    // Now only `backsConsole` is merged, and only onto a row this process
+    // already holds, in the realm map. An ended session is deleted from that
+    // map, so a row found there is one nobody has ended here; a row found
+    // nowhere is left alone, and nothing is created. With today's window
+    // the held case does not arise — `get()` answers from its cache and then
+    // from the realm map before it asks the store, so a failed read means
+    // neither holds the row — and the merge is there so that a window which
+    // ever reads in another order still cannot revive anything (the test
+    // reaches it with a stubbed read). The cost is stated rather than
+    // hidden: a parent held nowhere, read while the store is failing, does
+    // not record that it backs the console. The flag is a record — ORed by
+    // `mergeSessionRows()` and filed in the index, read by no decision —
+    // and losing it is cheaper than a session that came back. The caller's
+    // other in-place edits are not written on a failed read at all: nothing
+    // is known about the row they would belong to.
     if (this.windowOn()) {
       const read = sessionWindow.get(realms.currentId(), session.id);
       if (!read.ok && read.error) {
-        sessions.set(session.id, session);
-        log.debug("Leaving Authn.noteSessionChanged(). Re-set.");
+        const local = sessions.get(session.id);
+        if (!local) {
+          log.debug("Leaving Authn.noteSessionChanged(). The read failed " +
+                    "and no row is held here; nothing was set.");
+          return false;
+        }
+        if (session.backsConsole !== true) {
+          log.debug("Leaving Authn.noteSessionChanged(). The read failed; " +
+                    "no backsConsole to merge onto the held row.");
+          return false;
+        }
+        local.backsConsole = true;
+        sessions.set(session.id, local);
+        log.debug("Leaving Authn.noteSessionChanged(). The read failed; " +
+                  "backsConsole merged onto the held row.");
         return true;
       }
       if (!read.ok) {
@@ -5043,6 +5089,123 @@ class Authn {
     return gone + shed;
   }
 
+  /**
+   * `sweepExpiredSessions()`, a slice at a time (#704): the body of the
+   * session-expiry scheduler job. The same decisions, made by the same
+   * `sessionEnded()` and ended through the same `expireSession()`, with a
+   * turn of the event loop between realms, every SESSION_SWEEP_SLICE
+   * sessions of a realm's walk, and every SESSION_SWEEP_SLICE ends — so the
+   * process that runs it answers requests while it does. The synchronous
+   * form stays, for a caller that wants the count now.
+   *
+   * @returns a promise of how many sessions were ended
+   */
+  async sweepExpiredSessionsInSlices() {
+    const { realms, log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.sweepExpiredSessionsInSlices().");
+    const nowMs = Date.now();
+    let gone = 0;
+    const turn = function (): Promise<void> {
+      log.debug("Entering turn().");
+      log.debug("Leaving turn().");
+      return new Promise(function (resolve: () => void): void {
+        setImmediate(resolve);
+      });
+    };
+    // A session the sweep ends, and why; '' when it is live. Hot path: asked
+    // of every session of every realm, so no Entering/Leaving pair — it
+    // would add two log lines per session held.
+    const whyEnded = function (session: any): string {
+      if (session.expires && session.expires <= nowMs) {
+        return 'expired';
+      }
+      return self.sessionEnded(session, nowMs) || '';
+    };
+    for (const realm of realms.list()) {
+      const store = sessions.realmMap(realm.id);
+      if (self.windowOn()) {
+        const keys = realms.run(realm, function (): any {
+          const idle = self.sessionIdleTimeoutMs();
+          const cutoff = idle > 0 ? nowMs - idle : 0;
+          return sessionWindow.indexKeys('session.expired',
+                                         [realm.id, nowMs, cutoff]);
+        });
+        for (let i = 0; keys && i < keys.length;
+             i += SESSION_SWEEP_SLICE) {
+          realms.run(realm, function (): void {
+            keys.slice(i, i + SESSION_SWEEP_SLICE).forEach(
+              function (digest: string): void {
+                const loaded = sessionWindow.loadByDigest(realm.id, digest);
+                if (!loaded.ok) {
+                  return;
+                }
+                const why = whyEnded(loaded.session);
+                if (!why) {
+                  return;
+                }
+                self.expireSession(store, loaded.session.id, loaded.session,
+                                   'the session sweep', why);
+                gone++;
+              });
+          });
+          await turn();
+        }
+        await turn();
+        continue;
+      }
+      if (!store || !store.size) {
+        continue;
+      }
+      // Collected first and ended afterwards, for the synchronous form's
+      // reason; the walk is in slices, and a Map's iterator survives what
+      // other code writes between them.
+      const expired: any[] = [];
+      const it = store.entries();
+      let done = false;
+      while (!done) {
+        for (let i = 0; i < SESSION_SWEEP_SLICE; i++) {
+          const step = it.next();
+          if (step.done) {
+            done = true;
+            break;
+          }
+          const session = step.value[1];
+          const why = session ? whyEnded(session) : '';
+          if (why) {
+            expired.push([step.value[0], session, why]);
+          }
+        }
+        if (!done) {
+          await turn();
+        }
+      }
+      for (let i = 0; i < expired.length; i += SESSION_SWEEP_SLICE) {
+        realms.run(realm, function (): void {
+          expired.slice(i, i + SESSION_SWEEP_SLICE).forEach(
+            function (one: any[]): void {
+              self.expireSession(store, one[0], one[1], 'the session sweep',
+                                 one[2]);
+              gone++;
+            });
+        });
+        await turn();
+      }
+      await turn();
+    }
+    const shed = this.shedSubjectSurplus();
+    if (gone) {
+      log.info('authn: the session sweep ended ' + gone + ' expired ' +
+               'session(s). Each one is an audit row and a CAEP ' +
+               'session-revoked, which is the whole reason the sweep exists: ' +
+               'an expiry noticed only when somebody comes back is an expiry ' +
+               'nobody is ever told about.');
+    }
+    log.debug("Leaving Authn.sweepExpiredSessionsInSlices(). " +
+              (gone + shed) + " ended.");
+    return gone + shed;
+  }
+
   // ---------------------------------------------------------------------------
   // THE SIZE CAP (#345, #350): `authn.maxSessions` per realm, checked where a
   // session is CREATED, because a bound cannot wait for the expiry job.
@@ -7406,6 +7569,29 @@ class Authn {
    * @param detail - the request, credential, application and risk
    * @returns the session, or null when refused
    */
+  /**
+   * Records when a session's latest authentication really happened, for a
+   * federated sign-in whose partner says (#1554). Never moves it forward.
+   *
+   * @param session - the session
+   * @param seconds - the partner's authentication time, 0 if it gave none
+   * @returns nothing
+   */
+  backdateAuthentication(session, seconds) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.backdateAuthentication().");
+    const at = Number(seconds) || 0;
+    if (session && at > 0 && at < Number(session.authTime || 0)) {
+      session.authTime = at;
+      const events = Array.isArray(session.events) ? session.events : [];
+      if (events.length) {
+        events[events.length - 1].at = at;
+      }
+      sessions.set(session.id, session);
+    }
+    log.debug("Leaving Authn.backdateAuthentication().");
+  }
+
   startSession(res, username, amr, acr, via, detail) {
     const { log } = this.deps;
     log.debug("Entering Authn.startSession().");
@@ -8906,9 +9092,14 @@ class Authn {
     // wsignout1.0, SAML 2.0 Single Logout and /logout are four words for one
     // act, and a revocation at each would be four that could come to disagree.
     //
-    // Only the REFRESH tokens. An access token issued on this session expires
-    // in an hour and revoking it would take away the evidence of what the
-    // session did; the refresh token is the thirty-day credential a sign-out is
+    // AND IN PRODUCT THE ACCESS TOKENS (#1449, ASVS 5.0.0 7.4.1): a sign-out has
+    // to stop what this service would still accept, and the register keeps the
+    // row, so the evidence survives. An ID Token is not revoked: RP-Initiated
+    // Logout accepts one as `id_token_hint` after the session has ended.
+    //
+    // In development only the REFRESH tokens: an access token issued on this
+    // session expires in an hour, and the refresh token is the thirty-day
+    // credential a sign-out is
     // supposed to be about, and leaving it live is what made signing out mean
     // nothing to the back channel. A GLOBAL logout revokes the access tokens
     // too — but it does that itself, as a separate stated act, rather than by
@@ -8930,10 +9121,16 @@ class Authn {
     // so an offline token of theirs would be a live credential nobody holds
     // (`applications.HOSTED_SURFACE_CLIENT_IDS`).
     if (id) {
+      const revokesAccess = this.deps.mode.revokesAccessTokensAtSignOut();
       const revoked = stats.revokeWhere(function (record) {
         const clientId = String(record.client_id || '');
-        return record.sessionId === id &&
-               String(record.typ || '') === 'Refresh' &&
+        if (record.sessionId !== id) {
+          return false;
+        }
+        if (String(record.typ || '') === 'Bearer') {
+          return revokesAccess;
+        }
+        return String(record.typ || '') === 'Refresh' &&
                (String(record.scope || '').split(/\s+/)
                  .indexOf('offline_access') < 0 ||
                 applications.HOSTED_SURFACE_CLIENT_IDS
@@ -8952,7 +9149,7 @@ class Authn {
         log.info('Back-Channel Logout section 2.7: signing out of session ' +
                  id + ' ' +
             'revoked ' + revoked +
-                 ' refresh token(s) issued on it. Without that, a sign-out ' +
+                 ' token(s) issued on it. Without that, a sign-out ' +
                  'drops a cookie and leaves a thirty-day credential in the ' +
                  'client\'s hands.');
       }
@@ -10077,6 +10274,35 @@ class Authn {
    * @param req - the request
    * @returns the accounts, in the order they joined the set
    */
+  /**
+   * Tells the browser to drop this origin's storage when a sign-out left no
+   * account in it (#1440, ASVS 5.0.0 14.3.1). Only `"storage"`, and only then:
+   * `"cookies"` reaches every cookie of the registrable domain, so it would
+   * end every other realm's sessions, and storage belongs to every tab. So it
+   * is withheld while another account is signed in here OR this browser has
+   * an account set for another realm, whose tabs share this origin. Each
+   * application still clears its own tab before it leaves.
+   *
+   * @param req - the request the sign-out came in on
+   * @param res - its response
+   * @returns nothing
+   */
+  clearSiteDataAfterSignOut(req, res) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.clearSiteDataAfterSignOut().");
+    const own = AccountSets.cookieName();
+    const elsewhere = String((req && req.headers && req.headers.cookie) || '')
+      .split(';').map(function (part) {
+        return part.trim().split('=')[0];
+      }).some(function (name) {
+        return /^sts_accounts(?:_|$)/.test(name) && name !== own;
+      });
+    if (!elsewhere && !this.signedInAccounts(req).length) {
+      res.setHeader('Clear-Site-Data', '"storage"');
+    }
+    log.debug("Leaving Authn.clearSiteDataAfterSignOut().");
+  }
+
   signedInAccounts(req) {
     const { log } = this.deps;
     const self = this;
@@ -11109,6 +11335,13 @@ class Authn {
       // languages the relying party asked this screen to be drawn in, ahead
       // of the person's own and the browser's (`common/page_locale.ts`).
       uiLocales: String(opts.uiLocales || '').slice(0, 256),
+      // WHY A PERSON WITH A SESSION IS ASKED AGAIN (#1302): `prompt_login`
+      // or `max_age`, from the authorization endpoint, and '' otherwise —
+      // anything else a caller passes is dropped, because the screen draws
+      // a catalog sentence per value and has none for it.
+      reauthentication: ['prompt_login', 'max_age'].indexOf(
+        String(opts.reauthentication || '')) >= 0
+        ? String(opts.reauthentication) : '',
       federation: home,
       expires: Date.now() + this.pendingTtlMs()
     };
@@ -11940,6 +12173,77 @@ class Authn {
    * @param id - the step id
    * @returns the step, or null
    */
+  /**
+   * Ties a sign-in step to the first browser that asks about it (#1454, ASVS
+   * 5.0.0 14.2.1). The step's id travels in an address, so an id that leaks
+   * from a log or a history must not be usable from another browser.
+   *
+   * @param id - the step's id
+   * @param sessionId - the session of the browser asking
+   * @returns false where another browser holds the step
+   */
+  /**
+   * The application a sign-in step belongs to, for its shell's branding.
+   *
+   * @param name - the address's parameter
+   * @param id - the step's id
+   * @returns the application, or ''
+   */
+  stepApplication(name: string, id: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Authn.stepApplication().");
+    let out = '';
+    if (name === 'authn') {
+      const record: any = pending.get(id);
+      out = String((record && record.application) || '');
+    } else if (name === 'mfa' || name === 'change') {
+      const step: any = (name === 'mfa' ? pendingMfa : pendingPasswordChange)
+        .get(id);
+      out = String((step && step.authn && step.authn.application) || '');
+    }
+    log.debug("Leaving Authn.stepApplication().");
+    return out;
+  }
+
+  private isOwnersBrowser(req: any, username: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Authn.isOwnersBrowser().");
+    let seen: any = null;
+    try {
+      seen = require('../common/browser_devices').recognize(req, username);
+    } catch (e) {
+      log.debug("Caught in Authn.isOwnersBrowser(): " +
+                ((e && e.message) || e));
+      seen = null;
+    }
+    log.debug("Leaving Authn.isOwnersBrowser().");
+    return !!(seen && seen.device && seen.flags && !seen.flags.replayed &&
+              !seen.flags.foreign && seen.device.status !== 'compromised');
+  }
+
+  claimStepForBrowser(id: unknown, sessionId: string,
+                      kind?: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Authn.claimStepForBrowser().");
+    const store: any = kind === 'pending' ? pending
+      : kind === 'password-change' ? pendingPasswordChange : pendingMfa;
+    const step = store.get(String(id || ''));
+    if (!step) {
+      log.debug("Leaving Authn.claimStepForBrowser(). No step.");
+      return true;
+    }
+    if (!sessionId) {
+      log.debug("Leaving Authn.claimStepForBrowser(). No session.");
+      return !step.browserSession;
+    }
+    if (!step.browserSession) {
+      step.browserSession = sessionId;
+      store.set(String(id), step);
+    }
+    log.debug("Leaving Authn.claimStepForBrowser().");
+    return step.browserSession === sessionId;
+  }
+
   mfaStepFor(id: unknown, accepts?: string): any {
     const { log } = this.deps;
     log.debug("Entering Authn.mfaStepFor().");
@@ -12614,7 +12918,10 @@ class Authn {
     const view: any = { page: page, id: String(mfaId),
                         username: String(step.username),
                         passwordless: !!step.passwordless,
-                        links: this.stepLinks(page, step) };
+                        links: this.stepLinks(page, step),
+                        // WHO IS ASKING (#1300), as on the screen.
+                        clientDisplay: this.clientDisplay(step.authn &&
+                                                   step.authn.application) };
     if (page === 'totp') {
       // What the AUTHENTICATOR was told, off the person's own enrolment, so
       // the field asks for the right number of digits.
@@ -13234,7 +13541,9 @@ class Authn {
     // consumer then restarts THIS flow there from the start the record
     // holds (`restartPendingAtHome()`). It names a record and carries
     // nothing else; single-cell mode adds nothing.
-    const forRestart = cells.isMulti() && record && record.id
+    // In product it goes by the step's cookie (#1487).
+    const forRestart = cells.isMulti() && record && record.id &&
+      !this.deps.mode.hidesStepIds()
       ? '&authn=' + encodeURIComponent(String(record.id)) : '';
     const links = options.map(function (one) {
       return { id: String(one.id), label: String(one.label || ''),
@@ -13304,8 +13613,10 @@ class Authn {
       return { state: 'withheld-mfa', href: '' };
     }
     log.debug("Leaving Authn.kerberosOption(). Offered.");
+    // In product the id goes by cookie, set with this page's view (#1487).
     return { state: 'offered',
-             href: SPNEGO_PATH + '?authn=' + encodeURIComponent(record.id) };
+             href: SPNEGO_PATH + (this.deps.mode.hidesStepIds() ? ''
+               : '?authn=' + encodeURIComponent(record.id)) };
   }
 
   // ---------------------------------------------------------------------------
@@ -13689,6 +14000,13 @@ class Authn {
       // no Sign In, the passkey button the way in.
       usernameless: usernameless,
       email: emailFirst,
+      // WHO IS ASKING (#1300): the client's name, logo, privacy policy and
+      // terms, where it registered any of them; null otherwise.
+      clientDisplay: this.clientDisplay(record.application),
+      // WHY THIS IS A SECOND SIGN-IN (#1302): `prompt_login`, `max_age`, or
+      // '' — a first sign-in, or any other reason. The browser draws the
+      // one-line notice for it; the screen is otherwise the same.
+      reauthentication: String(record.reauthentication || ''),
       // THE CERTIFICATE ON THIS CONNECTION (#1051): "Continue as <name>
       // with your certificate", where `certificateOption()` says so.
       certificate: screenOffered && !usernameless
@@ -14077,9 +14395,17 @@ class Authn {
   signInShell(req, res, application: string, person?: string): void {
     const { log, app } = this.deps;
     log.debug("Entering Authn.signInShell().");
+    // THE CLIENT'S LOGO (#1300) is loaded by the browser from the client's
+    // own address, so this page's `img-src` names exactly that origin —
+    // the shell is drawn per request, for one pending sign-in's
+    // application, which is why the policy can say so here rather than
+    // allowing every https image on every sign-in page.
+    const shown = this.clientDisplay(application);
     const html = ShellDocument.document({
       title: 'Sign in — IYA STS',
-      attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
+      attributes: ([['data-sts-prefix', realms.currentPrefix()],
+                    ['data-sts-step-fragment',
+                     this.deps.mode.hidesStepIds() ? '1' : '']] as
                    Array<[string, string]>)
         .concat(PageLocale.shellAttributes(req, application || '',
                                            person || '')),
@@ -14094,8 +14420,43 @@ class Authn {
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     ShellDocument.serve(app, req, res, html,
-                        { csp: { 'style-src': "'self'" } });
+                        { csp: { 'style-src': "'self'" },
+                          images: shown && shown.logoOrigin
+                            ? [shown.logoOrigin] : [] });
     log.debug("Leaving Authn.signInShell().");
+  }
+
+  // ===========================================================================
+  // WHO IS ASKING (#1300): what the sign-in pages and the consent screen show
+  // about the OAuth client a sign-in is for — OpenID Connect Registration
+  // section 2's `logo_uri`, `policy_uri` and `tos_uri`, read by
+  // `applications.clientDisplayOf()`, which holds each to https again. Null
+  // for a sign-in with no application, one that is not an OAuth client (a
+  // SAML service provider's entity ID answers to no client_id) and a client
+  // that registered none of the three, and the pages then draw nothing.
+  // ===========================================================================
+  /**
+   * What the sign-in pages show about the client a sign-in is for.
+   *
+   * @param application - the pending sign-in's application, or ''
+   * @returns `{ name, logo, logoOrigin, policy, tos }`, or null
+   */
+  clientDisplay(application: unknown): any {
+    const { log, applications } = this.deps;
+    log.debug("Entering Authn.clientDisplay().");
+    let shown: any = null;
+    try {
+      shown = application ? applications.clientDisplayOf(String(application))
+                          : null;
+    } catch (e) {
+      log.debug("Caught in Authn.clientDisplay(): " +
+                ((e && e.message) || e));
+      // No directory in this process: a sign-in page without the client's
+      // picture, never a sign-in refused over it.
+      shown = null;
+    }
+    log.debug("Leaving Authn.clientDisplay().");
+    return shown;
   }
 
   /**
@@ -15919,10 +16280,15 @@ class Authn {
                       (hardwareRefusal ? hardwareRefusal.why : '') || ''),
       // NO POST-QUANTUM KEY WHERE ONE IS REQUIRED (#718): the refusal the
       // ceremony would end in, said before it runs.
-      postQuantumRefused: pqRefusal ? { code: pqRefusal.code,
-                                        why: pqRefusal.why } : null,
+      // These facts are an answer of `/authn-api`, so each refusal's code is
+      // a MARK and no member (#1355): `mfaWebauthnOptions()` reads it to
+      // record, and the screen needs only the sentence.
+      postQuantumRefused: pqRefusal
+        ? errorCodes.mark({ why: pqRefusal.why }, pqRefusal.code) : null,
       // NO KEY THAT CAN EARN `phrh` (#739), said before the ceremony.
-      hardwareRefused: hardwareRefusal,
+      hardwareRefused: hardwareRefusal
+        ? errorCodes.mark({ why: hardwareRefusal.why }, hardwareRefusal.code)
+        : null,
       // AND WHERE TO GET ONE (#946): the panel's links, drawn in the page's
       // language — the refusal above stays English (#539).
       postQuantumHelp: pqRefusal ? this.postQuantumHelp() : null,
@@ -17756,7 +18122,13 @@ class Authn {
       // `attempt()` where none is shared.
       const allowed = await websecurity.attemptShared('sign-in', req,
                                                       username);
-      if (!allowed.ok) {
+      // THE OWNER'S OWN BROWSER IS NOT REFUSED BY SOMEBODY ELSE'S FLOOD (#1448,
+      // ASVS 5.0.0 6.1.1): anybody can fill the identity bucket, so a browser
+      // this person has already signed in from goes on to the password, still
+      // under the address limit and the growing wait.
+      if (!allowed.ok && !(allowed.kind === 'identity' &&
+                           this.isOwnersBrowser(req, username) &&
+                           !websecurity.blocked('sign-in', req, ''))) {
         log.warn('authn: too many sign-in attempts for "' + username + '" (' +
                  allowed.kind + ' bucket). Refusing for ' +
                  allowed.retryAfterS +
@@ -17775,6 +18147,7 @@ class Authn {
       // factor right after, so the password-only-door refusal does not
       // apply. It passes no `door`, so an app password is NEVER accepted
       // here.
+      await websecurity.waitAfterFailures(username);
       // ON LIBUV'S THREAD POOL (#756): the synchronous door held a request
       // worker for the whole scrypt (about 70 ms), a fifth of a worker under
       // a sign-in load. The answer is `verify()`'s; the rate limit above was
@@ -17784,6 +18157,7 @@ class Authn {
         { via: 'the sign-in screen', allowPasswordReset: true,
           secondFactor: 'asked-next' });
       if (!credential.ok) {
+        websecurity.noteFailure(username);
         log.info('authn: the sign-in for "' + username + '" was refused (' +
                  credential.reason + '): ' + credential.detail);
         log.debug("Leaving Authn.screenAct(). The credential was " +
@@ -17801,6 +18175,7 @@ class Authn {
       // their password four times is not one attempt from a lockout the
       // moment they get it right.
       await websecurity.succeededShared('sign-in', req, username);
+      websecurity.forgetFailures(username);
       // A PASSWORD KNOWN FROM A DATA BREACH MUST BE CHANGED BEFORE THIS
       // SIGN-IN FINISHES (#62 P6, `risk.breachCheckAtSignIn`). It verified,
       // so it is this person's — and it is on a list people guess from.
@@ -18196,10 +18571,12 @@ class Authn {
       return;
     }
     // On the thread pool, as the sign-in screen's check (#756).
+    await websecurity.waitAfterFailures(step.username);
     const credential = await credentials.verifyAsync(step.username,
       String(body.password || ''),
       { via: 'the password-factor screen', secondFactor: 'asked-next' });
     if (!credential.ok) {
+      websecurity.noteFailure(step.username);
       log.info('authn: the password second factor for "' + step.username +
                '" was refused (' + credential.reason + ').');
       errorCodes.mark(res, errorCodes.codeOf(credential) ||
@@ -18209,6 +18586,7 @@ class Authn {
       return;
     }
     await websecurity.succeededShared('sign-in', req, step.username);
+    websecurity.forgetFailures(step.username);
     pendingMfa.delete(mfaId);
     const amr = this.firstAmrOf(step).concat(['pwd']);
     // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up step.
@@ -18355,9 +18733,10 @@ class Authn {
     // would refuse — and recorded as the refusal it is, a session refused.
     if (facts.postQuantumRefused) {
       const refusal = facts.postQuantumRefused;
+      const refusalCode = errorCodes.codeOf(refusal);
       audit.audit({
         action: 'session.refuse', actor: String(found.step.username || ''),
-        errorCode: refusal.code,
+        errorCode: refusalCode,
         protocol: String((found.step.authn && found.step.authn.protocol) ||
                          'OAuth 2.0 / OIDC'), channel: 'http', target: '',
         summary: 'a session for ' + String(found.step.username || '') +
@@ -18369,7 +18748,7 @@ class Authn {
           credential: 'webauthn'
         })
       });
-      errorCodes.mark(res, refusal.code);
+      errorCodes.mark(res, refusalCode);
       this.stepRefused(res, refusal.why);
       log.debug('Leaving Authn.mfaWebauthnOptions(). No post-quantum key.');
       return;
@@ -18378,9 +18757,10 @@ class Authn {
     // armed. A registration would not earn it either.
     if (facts.hardwareRefused) {
       const refusal = facts.hardwareRefused;
+      const refusalCode = errorCodes.codeOf(refusal);
       audit.audit({
         action: 'session.refuse', actor: String(found.step.username || ''),
-        errorCode: refusal.code,
+        errorCode: refusalCode,
         protocol: String((found.step.authn && found.step.authn.protocol) ||
                          'OAuth 2.0 / OIDC'), channel: 'http', target: '',
         summary: 'a session for ' + String(found.step.username || '') +
@@ -18391,7 +18771,7 @@ class Authn {
           credential: 'webauthn'
         })
       });
-      errorCodes.mark(res, refusal.code);
+      errorCodes.mark(res, refusalCode);
       this.stepRefused(res, refusal.why);
       log.debug('Leaving Authn.mfaWebauthnOptions(). No phrh key.');
       return;
@@ -19286,6 +19666,24 @@ class Authn {
       next();
     });
 
+    // A SHELL WHOSE STEP IS IN THE FRAGMENT (#1454), in product: the server
+    // never sees the id, so it draws the shell and the page finds the step.
+    [SELECT_IDP_PATH, ACCOUNTS_PATH, LOGIN_PATH, PASSWORD_CHANGE_PATH,
+      EMAIL_CODE_PATH, EMAIL_LINK_PATH, EMAIL_LINK_OPEN_PATH]
+      .concat(Object.keys(STEP_PAGES).map(function (page) {
+        return STEP_PAGES[page];
+      })).forEach((path) => {
+        app.get(path, (req, res, next) => {
+          const q = req.query || {};
+          if (!this.deps.mode.hidesStepIds() || q.authn || q.mfa || q.change) {
+            return next();
+          }
+          const asked = String(q.app || '');
+          return this.signInShell(req, res,
+            /^[A-Za-z0-9_.:~-]{1,256}$/.test(asked) ? asked : '', '');
+        });
+      });
+
     app.get(SELECT_IDP_PATH, (req, res) => {
       log.debug("Entering the federation chooser.");
       const asked = validation.check(req, 'query', PENDING_ID_QUERY);
@@ -19435,12 +19833,18 @@ class Authn {
     // which outranks the cookie, so a choice that did not reach the entry
     // would change nothing for them — and sends the browser back with a 303
     // to a LOCAL path (`PageLocale.safeReturn()`), never to one a request
-    // named elsewhere. No CSRF token: the session cookie is SameSite=Lax, so a
-    // cross-site POST carries no session and writes no entry, and a cookie
-    // choosing a language is not worth defending. A tag no catalog answers
+    // named elsewhere. A page of another site may not write it (#1442): a
+    // static shell has no token to bake in, so the browser's own Origin and
+    // Sec-Fetch-Site are the check. A tag no catalog answers
     // is refused in English (rcbj's decision on #539: errors stay English).
     app.post(LANGUAGE_PATH, (req, res) => {
       log.debug('Entering the language chooser endpoint.');
+      if (require('../common/cors').crossSiteBrowserRequest(req)) {
+        errorCodes.mark(res, 'STS-I18N-0015');
+        log.debug('Leaving the language chooser endpoint. Another site.');
+        return res.status(403).type('text/plain').send('The language is ' +
+          'chosen from a page of this service.');
+      }
       const posted = validation.checkParsed(parseBody(req), 'body',
                                             LANGUAGE_FORM);
       if (!posted.ok) {
@@ -19616,8 +20020,13 @@ scheduler.register({
   owner: 'authn/authn.ts',
   everySetting: SESSION_SWEEP_SETTING,
   everySettingUnit: 's',
+  // IN SLICES (#704): the job runs on a request worker since #408, and a
+  // walk of every session of every realm in one turn held that worker.
   run: function (): any {
-    return { ended: slot.get().sweepExpiredSessions() };
+    return slot.get().sweepExpiredSessionsInSlices().then(
+      function (ended: number): any {
+        return { ended: ended };
+      });
   }
 });
 
@@ -19777,6 +20186,7 @@ export = {
   afterAccountSignOut: slot.forward('afterAccountSignOut'),
   hintAccountKey: slot.forward('hintAccountKey'),
   signedInAccounts: slot.forward('signedInAccounts'),
+  clearSiteDataAfterSignOut: slot.forward('clearSiteDataAfterSignOut'),
   accountChoiceNeeded: slot.forward('accountChoiceNeeded'),
   accountTicketFor: slot.forward('accountTicketFor'),
   spendAccountTicket: slot.forward('spendAccountTicket'),
@@ -19785,6 +20195,8 @@ export = {
   pendingForAccounts: slot.forward('pendingForAccounts'),
   accountsView: slot.forward('accountsView'),
   accountsAct: slot.forward('accountsAct'),
+  sweepExpiredSessions: slot.forward('sweepExpiredSessions'),
+  sweepExpiredSessionsInSlices: slot.forward('sweepExpiredSessionsInSlices'),
   sweepAccountSets: slot.forward('sweepAccountSets'),
   sweepAccountSetsInSlices: slot.forward('sweepAccountSetsInSlices'),
   sweepAccountSetsBudgeted: slot.forward('sweepAccountSetsBudgeted'),
@@ -19801,6 +20213,7 @@ export = {
   // module keeps calling sessionOf() and keeps seeing its own realm only.
   consoleSession: slot.forward('consoleSession'),
   startSession: slot.forward('startSession'),
+  backdateAuthentication: slot.forward('backdateAuthentication'),
   // THE RELYING-PARTY HALF (2026-09-06), for `common/oidc_rp.ts` and for the
   // two surfaces that read what it makes. Three functions and no more: a
   // caller that wanted to create one of these without going through the code
@@ -19916,6 +20329,8 @@ export = {
   // The wallet as a factor (#38's follow-ups): read a second-factor step,
   // finish one with a presentation, and ask for a second factor after one.
   mfaStepFor: slot.forward('mfaStepFor'),
+  claimStepForBrowser: slot.forward('claimStepForBrowser'),
+  stepApplication: slot.forward('stepApplication'),
   finishWithWallet: slot.forward('finishWithWallet'),
   beginSecondFactorAfterWallet: slot.forward('beginSecondFactorAfterWallet'),
   beginSecondFactorAfterFederation:
@@ -19961,6 +20376,9 @@ export = {
   // the emailed factor's shells.
   stepPagePath: slot.forward('stepPagePath'),
   mfaView: slot.forward('mfaView'),
+  // #1300: who is asking, for the emailed factor's view and the consent
+  // screen.
+  clientDisplay: slot.forward('clientDisplay'),
   stepRefused: slot.forward('stepRefused'),
   mfaTotpAct: slot.forward('mfaTotpAct'),
   mfaBackupCodeAct: slot.forward('mfaBackupCodeAct'),

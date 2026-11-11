@@ -917,11 +917,9 @@ function checkMonitorAndSource(t) {
   t.equal(monitor.snapshot('acme').requests, 0,
           'and ACME\'s are its own');
 
-  const ldapSource = fs.readFileSync(path.join(__dirname, '..', 'ldap',
-                                               'ldap_server.js'), 'utf8');
-  const secretBlock = ldapSource.slice(
-    ldapSource.indexOf('const SECRET_ATTRIBUTES = ['),
-    ldapSource.indexOf('];', ldapSource.indexOf('const SECRET_ATTRIBUTES')));
+  const secretBlock = JSON.stringify(JSON.parse(fs.readFileSync(
+    path.join(__dirname, '..', 'models', 'generated',
+      'directory.names.json'), 'utf8')).secret).replace(/"/g, "'");
   core.SECRET_ATTRIBUTES.forEach(function (name) {
     t.check(secretBlock.indexOf("'" + name.toLowerCase() + "'") >= 0,
             name + ' is withheld from every reader of the LDAP socket');

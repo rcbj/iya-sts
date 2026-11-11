@@ -77,6 +77,7 @@ interface RouteTable {
   put(path: string, ...handlers: Handler[]): unknown;
   delete(path: string, ...handlers: Handler[]): unknown;
   all(path: string, ...handlers: Handler[]): unknown;
+  use(path: string, ...handlers: Handler[]): unknown;
 }
 
 // The protection API's resource object, whose absence turns the API off.
@@ -932,13 +933,6 @@ class UmaSurface {
          .set('Cache-Control', 'no-store').send(JSON.stringify(ids));
       log.debug('Leaving GET ' + RREG_PATH + '. ' + ids.length);
     });
-    app.all(RREG_PATH, function (req, res) {
-      log.debug('Entering ' + req.method + ' ' + RREG_PATH + '.');
-      if (!self.offCheck(res)) {
-        self.unsupported(res, RREG_PATH);
-      }
-      log.debug('Leaving ' + req.method + ' ' + RREG_PATH + '.');
-    });
 
     // ---------------------------------------------------------------------
     // GET, PUT, DELETE /uma/rreg/:id (sections 3.2.2–3.2.4).
@@ -1028,12 +1022,39 @@ class UmaSurface {
       res.status(204).set('Cache-Control', 'no-store').end();
       log.debug('Leaving DELETE ' + PATH_ID + '.');
     });
-    app.all(PATH_ID, function (req, res) {
-      log.debug('Entering ' + req.method + ' ' + PATH_ID + '.');
-      if (!self.offCheck(res)) {
-        self.unsupported(res, PATH_ID);
+    // 405 IS MIDDLEWARE AND NOT A ROUTE, for /admin/sts-metadata's reason
+    // (oauth-oidc/oauth2.ts's /oauth2/par): app.all() registers a layer per
+    // verb, including CONNECT, and the metadata probe calls every one. Node
+    // refuses CONNECT before a response. This sits after the routes, which
+    // have already answered a verb they take, and lists nothing. The
+    // collection takes GET and POST; the item takes GET, PUT and DELETE.
+    // A deeper path is not this endpoint. (2026-11-01)
+    app.use(RREG_PATH, function (req, res, next) {
+      const beneath = req.path !== '/' && req.path !== '';
+      const one = beneath && /^\/[^/]+$/.test(req.path);
+      const where = one ? PATH_ID : RREG_PATH;
+      log.debug('Entering ' + req.method + ' ' + where + '.');
+      if (!beneath && (req.method === 'GET' || req.method === 'POST' ||
+                       req.method === 'HEAD')) {
+        log.debug('Leaving ' + req.method + ' ' + RREG_PATH +
+                  '. A verb the route answers.');
+        return next();
       }
-      log.debug('Leaving ' + req.method + ' ' + PATH_ID + '.');
+      if (beneath && !one) {
+        log.debug('Leaving ' + req.method + ' ' + RREG_PATH +
+                  '. A path beneath the item.');
+        return next();
+      }
+      if (one && (req.method === 'GET' || req.method === 'PUT' ||
+                  req.method === 'DELETE' || req.method === 'HEAD')) {
+        log.debug('Leaving ' + req.method + ' ' + PATH_ID +
+                  '. A verb the route answers.');
+        return next();
+      }
+      if (!self.offCheck(res)) {
+        self.unsupported(res, where);
+      }
+      log.debug('Leaving ' + req.method + ' ' + where + '.');
     });
 
     // ---------------------------------------------------------------------
@@ -1069,8 +1090,16 @@ class UmaSurface {
          .send(JSON.stringify({ ticket: made.value }));
       log.debug('Leaving POST ' + PERM_PATH + '.');
     });
-    app.all(PERM_PATH, function (req, res) {
+    // The same middleware, for POST only. A path beneath is not this
+    // endpoint, so it is left for whatever registered it.
+    app.use(PERM_PATH, function (req, res, next) {
       log.debug('Entering ' + req.method + ' ' + PERM_PATH + '.');
+      if (req.method === 'POST' ||
+          (req.path !== '/' && req.path !== '')) {
+        log.debug('Leaving ' + req.method + ' ' + PERM_PATH +
+                  '. A verb the route answers, or a path beneath.');
+        return next();
+      }
       if (!self.offCheck(res)) {
         self.unsupported(res, PERM_PATH);
       }

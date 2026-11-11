@@ -458,6 +458,52 @@ The console page needs Admin Write to change anything, and the API needs an
 reaches the others through the directory; with request workers, both doors are
 answered by the front process, which is the one that holds the listener.
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product
+mode, the gated doors and the file also hold each block to the admission rule of
+the [signer truststore](signer-truststore.md#adding-a-certificate): a self-signed
+CA is an anchor, another CA must chain to something held, and a leaf is refused.
+An anchor already stored that the rule now refuses is kept, flagged on the page and
+logged once (`STS-TLS-0056`). A block of the file it refuses is left out
+(`STS-TLS-0057`). This truststore is for TLS handshakes; for everything else see
+the [signer truststore](signer-truststore.md).
+
+Under paranoid PKI mode a server this service dials may not present a self-signed
+certificate until it is [accepted by name](signer-truststore.md#accepting-one-certificate-by-name),
+or configured as that dialer's own CA. A private CA is reached by naming it in the
+dialer's CA file as before: if its certificates name no revocation source, there is
+no check to perform.
+
+Under paranoid PKI mode a client certificate is also held to more than OpenSSL's
+answer on the main port, custom listeners, LDAPS and the debugger: the leaf is not a CA, its keyUsage and extendedKeyUsage
+fit client authentication, revocation is consulted before the connection is read, a
+failure inside the check refuses, and a resumed session keeps what its full handshake
+concluded. A certificate that fails is treated as unverified rather than breaking the
+handshake. See the `tls-client` row of the [use cases](pki-use-cases.md). A registered
+`self_signed_tls_client_auth` certificate is held to its validity and keyUsage too,
+while equality stays the method (`tls-client-self-signed`). The channel between cells
+asks the same of the leaf under a row of its own, `cell-peer`, and consults this
+service's own register for revocation.
+
+**A TLS handshake has no realm in it, so a realm's own rows mostly do not decide
+it.** The path that names a realm arrives after the handshake is over, so which
+realm's setting applies depends on the listener:
+
+| Where a client certificate arrives | Whose settings decide |
+|---|---|
+| The main port, a custom listener, LDAPS, the debugger listener | The **default realm's** `pki.paranoid` and `pki.paranoidTlsClient`, whichever realm the request later names |
+| The channel between cells | `pki.paranoid` and `pki.paranoidCellPeer`, read outside any realm |
+| A use case decided on a request, such as `tls-client-self-signed` | The realm of that request |
+
+So setting `pki.paranoid` or `pki.paranoidTlsClient` in another realm changes nothing
+at these handshakes, in either direction: it neither turns the hold on for that realm
+nor weakens it. To change them, change the default realm's rows.
+
+SPIFFE's gRPC sockets belong to one realm each, told apart by address. There, the
+realm's own `pki.paranoid` and `pki.paranoidTlsClient` decide one thing: whether the
+SPIRE Server API may bind in plain text when it could not be given a TLS identity.
+They add no check to each connection there: those sockets verify a caller's SVID
+themselves, as [SPIFFE](spiffe.md) describes.
+
 **Why it starts empty.** The certificate authority whose clients it verifies is
 often generated in somebody's *browser* minutes before the connection, and
 exists nowhere else, so no configuration file could hold it and no image could
@@ -479,6 +525,11 @@ only a leaf from a TLS client Issuing CA with `clientAuth` signs anybody in.
 
 ### Signing in with a certificate: `GET /tls/sign-in`
 
+In product mode a browser must reach this address as a page: typed by the
+person, or by a link on this same origin. A link from another site, a frame or
+an image gets 403. A program such as `curl` sends no `Sec-Fetch-*` headers and is
+not affected.
+
 A request with a verified certificate starts a sign-on session — the same
 session the password screen, the KDC and the SAML profiles start, so the holder
 is signed in to every surface on the port. In order:
@@ -495,7 +546,13 @@ is signed in to every surface on the port. In order:
    for one from an anchor somebody installed, the realm of the request
    (`/realm/<id>/tls/sign-in`, else the default realm) and the person whose
    entry stores it — refused, with `session.refusedAsStored`, when no entry or
-   several do (above).
+   several do (above);
+5. **in product mode, a person who owes a second factor is not signed in here**
+   (`STS-TLS-0060`), because this address cannot ask for one. The answer says
+   to sign in on the sign-in screen and choose the certificate there, which
+   asks for the second factor. A program presenting a certificate elsewhere
+   (WS-Trust, token exchange, RFC 8705, LDAP SASL EXTERNAL, PKINIT) is not
+   affected.
 
 The answer is **JSON**: `signedIn`, the session, whether a certificate was
 presented and verified, the `x5t#S256` thumbprint the token endpoint would bind
@@ -530,7 +587,10 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
 
 * **L7 (TLS-terminating) proxy**: `global.trustProxy` believes
   `X-Forwarded-Proto` and `X-Forwarded-Host`, and `global.trustedProxies`
-  narrows that to the proxy's own addresses. Monitoring → TLS connection
+  narrows that to the proxy's own addresses. In product mode, with
+  `global.trustedProxies` empty, no caller's `X-Forwarded-*` headers are
+  believed: the client's address is the connection's, and the scheme and host
+  are the request's own. Set it to your proxy's addresses. Monitoring → TLS connection
   shows what a request carried and what was believed. A client certificate cannot cross such
   a proxy.
 * **L4 load balancer with TLS passthrough** — the supported front for client
@@ -596,9 +656,9 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.signatureAlgorithms` | `STS_TLS_SIGALGS` | OpenSSL's list without DSA and SHA-224, brainpool omitted by policy | no | The signature schemes signed with, accepted, and asked for in a CertificateRequest; empty means OpenSSL's. |
 | `tls.trustAnchorsFile` | `STS_TLS_TRUST_ANCHORS_FILE` | *(empty)* | no | A PEM file of CA certificates client certificates are verified against, loaded at startup; unreadable or empty is fatal. |
 | `tls.trustIssuedClientCertificates` | `STS_TLS_TRUST_ISSUED_CLIENT_CERTIFICATES` | `true` | no | Add this service's Root to the client truststore, so a certificate a person issued on the portal signs them in. |
-| `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` | no | The RSA key size of the listener certificate made at startup. |
+| `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` (`3072` in product) | no | The RSA key size of the listener certificate made at startup. |
 | `tls.selfSignedValidityYears` | `STS_TLS_SELF_SIGNED_YEARS` | `2` | no | How long that certificate is valid. |
-| `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `sts` | no | The O= of its subject. |
+| `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `iya-sts` | no | The O= of its subject. |
 | `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener and main port share is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |
 | `tls.mainPortSharedTickets` | `STS_TLS_MAIN_PORT_SHARED_TICKETS` | `true` | no | The main port seals its session tickets under the cluster's shared key, so a session resumes on any node. `false` keeps a key per node. |
 | `tls.sessionTimeoutS` | `STS_TLS_SESSION_TIMEOUT_S` | `300` | yes | How long a TLS session may be resumed, on every TLS listener that does not set its own (`listener<Id>.sessionTimeoutS`; `-1` inherits). It was `tls.mainSessionTimeoutS`, the main port's alone, until #429. |
@@ -610,7 +670,8 @@ refusal of an application's certificate — is the same in both modes. See
 | `http.maxConnections` | `STS_HTTP_MAX_CONNECTIONS` | `0` | yes | How many connections an HTTP listener holds at once; `0` is no limit. |
 | `http.http2MaxConcurrentStreams` | `STS_HTTP_HTTP2_MAX_CONCURRENT_STREAMS` | `100` | yes | How many streams (requests) one HTTP/2 connection may have open at once; a stream past it is refused (`REFUSED_STREAM`). Node's own is unbounded. Per listener as `listener<Id>.http2MaxConcurrentStreams` and a custom listener's `tls.http2MaxConcurrentStreams`. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe `X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS-terminating proxy. |
-| `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. |
+| `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. Empty believes forwarded headers from any caller in development and from none in product. |
+| `security.hstsIncludeSubDomains` | `STS_SECURITY_HSTS_INCLUDE_SUBDOMAINS` | `false` (`true` in product) | yes | Adds `includeSubDomains` to `Strict-Transport-Security`, which only product mode sends. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
 | `global.proxyProtocolTimeoutMs` | `STS_PROXY_PROTOCOL_TIMEOUT_MS` | `30000` | yes | How long a trusted proxy may take to send a complete header. |
 | `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | Whether a presented certificate is checked for revocation: `off`, `soft-fail`, `hard-fail`, or `auto` (hard in product, soft in development). |
@@ -626,6 +687,28 @@ See [Configuration](configuration.md) for how a value is resolved and where it
 is changed: on Server configuration → Listeners (`/admin/listeners`, or
 `/admin/config` for `global.*`), through
 `POST /admin-api/config/set`, or in an appconfig file.
+
+## Product mode and the main port
+
+Product mode serves its main port over TLS only: with `global.https` off the
+process does not start. The plain-HTTP revocation and SCEP listener stays,
+because RFC 5280, RFC 5019 and RFC 8894 expect it there.
+
+Set `tls.certificateFile` to a publicly trusted chain before people use a
+product deployment. A certificate this service minted does not stop it starting,
+so a new install still works, but it does not meet ASVS 5.0.0 requirement 12.2.2
+and `/admin/mode` says so.
+
+## Strict-Transport-Security
+
+In product mode, every response that arrives over TLS carries
+`Strict-Transport-Security: max-age=31536000; includeSubDomains`. It applies to
+the whole host name, every port included, and to every subdomain of it. Turn off
+`security.hstsIncludeSubDomains` if a subdomain must still answer over plain
+HTTP; the header then carries `max-age` alone. A browser that has seen the
+header refuses an untrusted certificate with no way to click through, so give
+the service a certificate browsers trust before people use it in product mode. The plain-HTTP revocation
+and SCEP listener never sends the header. Development mode does not send it.
 
 ## Design decisions
 

@@ -205,7 +205,24 @@ interface ClaimAttributesDeps {
   audit: { audit(row: Record<string, unknown>): unknown };
   errorCodes: { mark<T>(target: T, code: string): T };
   selections: Record<string, string[]>;
+  // THE AMBIENT REALM'S CUSTOM ATTRIBUTES (#700), as
+  // `attribute_policy.ts`'s `definitions()` lists them. Optional, so a test
+  // supplying the rest need not supply it: none means the catalogue alone.
+  customDefinitions?(): CustomDefinition[];
 }
+
+// A custom attribute's definition, the members this module reads (#700).
+interface CustomDefinition {
+  name: string;
+  label?: string;
+  syntax?: string;
+  multi?: boolean;
+  description?: string;
+}
+
+// A catalogue row made of a custom attribute (#700): the catalogue's shape,
+// marked, with the syntax it was made from.
+type CustomRow = CatalogueRow & { custom: true; syntax: string };
 
 // ---------------------------------------------------------------------------
 // The catalogue, indexed.
@@ -276,6 +293,42 @@ CATALOGUE.forEach(function (row) {
     BY_CLAIM.get(top).push(row);
   }
 });
+
+// ---------------------------------------------------------------------------
+// A REALM'S CUSTOM ATTRIBUTES ARE CATALOGUE ROWS TOO (#700, a follow-up of
+// #396).
+//
+// The catalogue above is the PROCESS's: `vc_claims.ts`'s table, fixed when
+// this module loads. A realm's custom attributes (`ou=attributeDefinitions`,
+// `common/CLAUDE.md` 3co) are the REALM's, defined and removed while the
+// service runs, so they cannot be in it. `customRows()` makes a row of each
+// for the ambient realm, and every reader below that used to walk
+// `CATALOGUE` walks `rows()` — the catalogue, then the realm's rows — so a
+// custom attribute is selected, previewed, issued, announced and requested by
+// the paths a catalogue attribute is, and no issuance site changed.
+//
+// WHAT A CUSTOM ROW IS:
+//   * its CLAIM is its own name, flat (`costCentreCode`), in every set; a
+//     SAML attribute and a PAC claim are named by it too. An administrator
+//     who wants another name has the attribute claims (#94) for that.
+//   * its value is the DIRECTORY's and nothing else: `from` is null, so
+//     `vc_claims.ts`'s `valueFor()` never invents one in either mode, and a
+//     person without a value carries no claim.
+//   * the syntax decides the JSON type: `integer` a number (as text past
+//     what a JSON number carries exactly), `boolean` true or false, `date`
+//     YYYY-MM-DD (stored YYYYMMDD); the rest as stored. A multi-valued
+//     attribute is an array of every value. A SAML attribute and a PAC claim
+//     carry text whatever the syntax.
+//   * a name that is ALSO a catalogue claim name (a custom `birthdate`) is
+//     left out — the catalogue's claim would otherwise be overwritten by
+//     whichever row came second — and logged once per realm and register.
+//
+// A selection naming a custom attribute that is later removed selects
+// nothing (`selectedRows()` keeps only rows that exist), and the name stays
+// in the stored list, so defining it again brings the selection back.
+// ---------------------------------------------------------------------------
+const CUSTOM_CACHE = new Map<string, { signature: string;
+                                      rows: CustomRow[] }>();
 
 // The sets are admin_stats.js's, read from there rather than written out again:
 // a set added over there has to appear here, and a copy of the list is how it
@@ -408,7 +461,15 @@ class ClaimAttributes {
       vcClaims: vcClaims,
       audit: audit,
       errorCodes: errorCodes,
-      selections: selections
+      selections: selections,
+      // LAZILY (#700): `attribute_policy.ts` is the directory's register,
+      // and this module is loaded at 5, long before the directory fills the
+      // policy's slot; asked at the read, it answers for the ambient realm.
+      customDefinitions: function customDefinitions(): CustomDefinition[] {
+        log.debug("Entering customDefinitions().");
+        log.debug("Leaving customDefinitions().");
+        return require('./attribute_policy').definitions();
+      }
     };
   }
 
@@ -437,6 +498,119 @@ class ClaimAttributes {
   }
 
   // -------------------------------------------------------------------------
+  // THE REALM'S CUSTOM ROWS (#700) — see CUSTOM_CACHE above.
+  // -------------------------------------------------------------------------
+
+  // A custom attribute's stored value as its claim. Returned typed for the
+  // JSON sets; `CatalogueRow.toClaim` is declared to return text, which is
+  // what the SAML and PAC sets make of any value anyway.
+  private static customClaimValue(syntax: string, value: unknown): any {
+    const text = String(value == null ? '' : value);
+    if (syntax === 'integer') {
+      const number = Number(text);
+      return Number.isSafeInteger(number) ? number : text;
+    }
+    if (syntax === 'boolean') {
+      return text.toUpperCase() === 'TRUE';
+    }
+    if (syntax === 'date') {
+      const m = /^(\d{4})(\d{2})(\d{2})$/.exec(text);
+      return m ? m[1] + '-' + m[2] + '-' + m[3] : text;
+    }
+    return text;
+  }
+
+  /**
+   * Returns the ambient realm's custom attributes as catalogue rows, each
+   * claimed under its own name and valued from the directory only.
+   *
+   * @returns the rows, by name; none where the realm defines none
+   */
+  // A HOT PATH: every issuance and every selection read asks it. No
+  // Entering/Leaving pair, which would drown the log in lines per token.
+  customRows(): CustomRow[] {
+    const { log } = this.deps;
+    let defs: CustomDefinition[] = [];
+    if (typeof this.deps.customDefinitions === 'function') {
+      try {
+        defs = [].concat(this.deps.customDefinitions() || []);
+      } catch (e) {
+        // A register that cannot be read offers nothing extra: the
+        // catalogue is still every set's.
+        log.debug("Caught in ClaimAttributes.customRows(): " +
+                  ((e && e.message) || e));
+        defs = [];
+      }
+    }
+    const realm = realms.currentId();
+    const plain = defs.map(function (one) {
+      return { name: String(one.name || ''), label: String(one.label || ''),
+               syntax: String(one.syntax || 'string'), multi: !!one.multi };
+    }).filter(function (one) {
+      return one.name !== '';
+    });
+    const signature = JSON.stringify(plain);
+    const held = CUSTOM_CACHE.get(realm);
+    if (held && held.signature === signature) {
+      return held.rows;
+    }
+    const rows: CustomRow[] = [];
+    plain.forEach(function (one) {
+      const lower = one.name.toLowerCase();
+      if (BY_LDAP.has(lower) || BY_CLAIM.has(lower)) {
+        log.warn(errorCodes.tag('STS-REG-0366') + 'claims: the custom ' +
+                 'attribute ' + one.name + ' in realm ' + realm + ' is ' +
+                 'named as a catalogue claim is, so it is not offered to ' +
+                 'the claim sets; an attribute claim (#94) can carry it ' +
+                 'under another name.');
+        return;
+      }
+      const syntax = one.syntax;
+      rows.push({
+        ldap: one.name, claim: [one.name],
+        label: one.label || one.name,
+        schema: 'Custom attribute of this realm (' + syntax + ')',
+        from: null, ldpTerm: null, byDefault: false, multi: one.multi,
+        toClaim: function (value: unknown): string {
+          return ClaimAttributes.customClaimValue(syntax, value);
+        },
+        custom: true, syntax: syntax
+      });
+    });
+    CUSTOM_CACHE.set(realm, { signature: signature, rows: rows });
+    return rows;
+  }
+
+  /**
+   * Returns every row a claim set may select from in the ambient realm: the
+   * catalogue, then the realm's custom attributes (#700).
+   *
+   * @returns the rows, in that order
+   */
+  rowsInRealm(): CatalogueRow[] {
+    const { log } = this.deps;
+    log.debug("Entering ClaimAttributes.rowsInRealm().");
+    const custom = this.customRows();
+    log.debug("Leaving ClaimAttributes.rowsInRealm(). " + custom.length +
+              " custom.");
+    return custom.length ? CATALOGUE.concat(custom) : CATALOGUE;
+  }
+
+  // One row by its LDAP name, lower-cased: the catalogue's, else the
+  // realm's.
+  private rowByLdap(key: string): CatalogueRow | undefined {
+    const { log } = this.deps;
+    log.debug("Entering ClaimAttributes.rowByLdap().");
+    const lower = String(key || '').toLowerCase();
+    const found = BY_LDAP.get(lower) || this.customRows().filter(
+      function (row) {
+        return row.ldap.toLowerCase() === lower;
+      })[0];
+    log.debug("Leaving ClaimAttributes.rowByLdap(). " + !!found);
+    return found;
+  }
+
+  // -------------------------------------------------------------------------
   // Reading the selection.
   // -------------------------------------------------------------------------
 
@@ -460,7 +634,7 @@ class ClaimAttributes {
       return [];
     }
     log.debug("Leaving ClaimAttributes.selectedRows().");
-    return CATALOGUE.filter(function (row) {
+    return this.rowsInRealm().filter(function (row) {
       return chosen.indexOf(row.ldap.toLowerCase()) >= 0;
     });
   }
@@ -520,19 +694,20 @@ class ClaimAttributes {
     log.debug("Entering ClaimAttributes.checkNames().");
     const errors: string[] = [];
     const wanted = new Set<string>();
-    (Array.isArray(names) ? names : []).forEach(function (name) {
+    (Array.isArray(names) ? names : []).forEach((name) => {
       const key = String(name == null ? '' : name).trim().toLowerCase();
       if (!key) {
         return;
       }
-      if (!BY_LDAP.has(key)) {
+      if (!this.rowByLdap(key)) {
         errors.push('There is no attribute called "' +
-                    String(name).slice(0, 80) + '" in the catalogue.');
+                    String(name).slice(0, 80) + '" in the catalogue or ' +
+                    'among this realm\'s custom attributes.');
         return;
       }
       wanted.add(key);
     });
-    const out = CATALOGUE.filter(function (row) {
+    const out = this.rowsInRealm().filter(function (row) {
       return wanted.has(row.ldap.toLowerCase());
     }).map(function (row) {
       return row.ldap;
@@ -612,7 +787,7 @@ class ClaimAttributes {
       }),
       own.map(function (name) { return name.toLowerCase(); }), mode);
     log.debug("Leaving ClaimAttributes.effectiveRows(). " + mode + ".");
-    return CATALOGUE.filter(function (row) {
+    return this.rowsInRealm().filter(function (row) {
       return keys.indexOf(row.ldap.toLowerCase()) >= 0;
     });
   }
@@ -748,7 +923,7 @@ class ClaimAttributes {
     const keys = names.map(function (name) {
       return String(name).toLowerCase();
     });
-    const rows = CATALOGUE.filter(function (row) {
+    const rows = this.rowsInRealm().filter(function (row) {
       return keys.indexOf(row.ldap.toLowerCase()) >= 0;
     });
     if (!rows.length) {
@@ -772,7 +947,7 @@ class ClaimAttributes {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.allNames().");
     log.debug("Leaving ClaimAttributes.allNames().");
-    return CATALOGUE.map(function (row) {
+    return this.rowsInRealm().map(function (row) {
       return row.ldap;
     });
   }
@@ -905,15 +1080,15 @@ class ClaimAttributes {
     }
     const errors: string[] = [];
     const wanted = new Set<string>();
-    (names || []).forEach(function (name) {
+    (names || []).forEach((name) => {
       const key = String(name == null ? '' : name).trim().toLowerCase();
       if (!key) {
         return;
       }
-      if (!BY_LDAP.has(key)) {
+      if (!this.rowByLdap(key)) {
         errors.push('There is no attribute called "' + name + '" in the ' +
-                    'catalogue. GET /admin-api/claims lists every one of ' +
-                    'them.');
+                    'catalogue or among this realm\'s custom attributes. ' +
+                    'GET /admin-api/claims lists every one of them.');
         return;
       }
       wanted.add(key);
@@ -931,14 +1106,20 @@ class ClaimAttributes {
     const before = new Set<string>(selections[id] || []);
     const added: string[] = [];
     const removed: string[] = [];
+    // A REMOVED name may be a custom attribute the realm no longer defines
+    // (#700): it is spelled as it was stored.
+    const spelled = (key: string): string => {
+      const row = this.rowByLdap(key);
+      return row ? row.ldap : key;
+    };
     wanted.forEach(function (key) {
       if (!before.has(key)) {
-        added.push(BY_LDAP.get(key).ldap);
+        added.push(spelled(key));
       }
     });
     before.forEach(function (key) {
       if (!wanted.has(key)) {
-        removed.push(BY_LDAP.get(key).ldap);
+        removed.push(spelled(key));
       }
     });
     selections[id] = Array.from(wanted);
@@ -975,8 +1156,8 @@ class ClaimAttributes {
     // `ad://ext/<attribute>:<hex>`, and claimValuesFor() finds it by that name.
     const pac = this.isKerberosSet(setId);
     const names: string[] = [];
-    attributes.forEach(function (ldapName) {
-      const row = BY_LDAP.get(String(ldapName).toLowerCase());
+    attributes.forEach((ldapName) => {
+      const row = this.rowByLdap(String(ldapName));
       const name = !row ? '' : pac ? row.ldap
         : (saml ? row.claim.join('.') : row.claim[0]);
       if (name && names.indexOf(name) < 0) {
@@ -1149,10 +1330,26 @@ class ClaimAttributes {
     log.debug("Entering ClaimAttributes.samlAttributesFor(). setId=" + setId +
               ", user=" + username);
     const built = this.claimsFor(setId, username, application);
+    const custom = new Set<string>(this.customRows().map(function (row) {
+      return row.ldap.toLowerCase();
+    }));
     const out = built.report.map(function (item) {
-      const attribute: { name: string; value: unknown;
+      const attribute: { name: string; value?: unknown; values?: string[];
                          namespace?: string } =
         { name: item.claim, value: item.value };
+      // A CUSTOM ATTRIBUTE (#700) is text in an assertion whatever its
+      // syntax, and a multi-valued one is ONE <Attribute> with an
+      // <AttributeValue> per value (the builders' `values`), never one
+      // string of them all.
+      if (custom.has(String(item.ldap).toLowerCase())) {
+        const list = [].concat(item.value).map(String);
+        delete attribute.value;
+        if (Array.isArray(item.value)) {
+          attribute.values = list;
+        } else {
+          attribute.value = list[0];
+        }
+      }
       if (setId === 'saml11') {
         attribute.namespace = stats.DEFAULT_SAML11_NAMESPACE;
       }
@@ -1208,7 +1405,8 @@ class ClaimAttributes {
     const { log, vcClaims } = this.deps;
     log.debug("Entering ClaimAttributes.catalogueValuesFor(). user=" +
               username);
-    const built = vcClaims.subjectClaimsFor(username, {}, CATALOGUE);
+    const built = vcClaims.subjectClaimsFor(username, {},
+                                            this.rowsInRealm());
     const byLdap: Record<string, any> = {};
     built.report.forEach(function (item) {
       byLdap[item.ldap.toLowerCase()] = item;
@@ -1268,7 +1466,13 @@ class ClaimAttributes {
     const hash = raw.indexOf('#');
     const base = hash >= 0 ? raw.slice(0, hash) : raw;
     const tag = hash >= 0 ? raw.slice(hash) : '';
-    const rows = BY_CLAIM.get(base.toLowerCase());
+    // A CUSTOM ATTRIBUTE IS ASKED FOR BY ITS OWN NAME (#700), which is
+    // never a catalogue claim's (customRows() leaves such a one out).
+    const custom = this.customRows().filter(function (row) {
+      return row.ldap.toLowerCase() === base.toLowerCase();
+    });
+    const rows = BY_CLAIM.get(base.toLowerCase()) ||
+      (custom.length ? custom : null);
     if (!rows || !rows.length) {
       log.debug("Leaving ClaimAttributes.rowsForClaim().");
       return null;
@@ -1354,7 +1558,7 @@ class ClaimAttributes {
         wanted.add(row.ldap.toLowerCase());
       });
     });
-    const rows = CATALOGUE.filter(function (row) {
+    const rows = this.rowsInRealm().filter(function (row) {
       return wanted.has(row.ldap.toLowerCase());
     });
     const built = vcClaims.subjectClaimsFor(username, {}, rows);
@@ -1464,6 +1668,14 @@ class ClaimAttributes {
                    grouped: false });
       }
     });
+    // The realm's custom attributes (#700), each by its own name.
+    this.customRows().forEach(function (row) {
+      if (!seen.has(row.ldap)) {
+        seen.add(row.ldap);
+        out.push({ claim: row.ldap, ldap: row.ldap, label: row.label,
+                   grouped: false });
+      }
+    });
     log.debug("Leaving ClaimAttributes.requestableClaims(). " + out.length +
               " name(s).");
     return out;
@@ -1482,7 +1694,7 @@ class ClaimAttributes {
   catalogueRows() {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.catalogueRows().");
-    const out = CATALOGUE.map((row) => {
+    const out = this.rowsInRealm().map((row) => {
       const sets: Record<string, boolean> = {};
       SET_IDS.forEach((id) => {
         sets[id] = this.isSelected(id, row.ldap);
@@ -1491,7 +1703,14 @@ class ClaimAttributes {
                schema: row.schema, sets: sets,
                // Whether a person's value is GENERATED where the entry has
                // none, which the console's catalogue table says (#446).
-               generated: !!row.from };
+               generated: !!row.from,
+               // A custom attribute of this realm (#700), which the console
+               // draws under a group of its own.
+               custom: !!(row as CustomRow).custom,
+               // Its syntax, which the console's "defined by" column names
+               // in the reader's language; null for a catalogue row.
+               syntax: (row as CustomRow).custom
+                 ? (row as CustomRow).syntax : null };
     });
     log.debug("Leaving ClaimAttributes.catalogueRows(). " + out.length +
               " row(s).");
@@ -1623,6 +1842,9 @@ export = {
   previewFor: slot.forward('previewFor'),
   catalogueValuesFor: slot.forward('catalogueValuesFor'),
   catalogueRows: slot.forward('catalogueRows'),
+  // The catalogue and the ambient realm's custom attributes (#700), for a
+  // reader that walked CATALOGUE (ssf/caep.ts).
+  rowsInRealm: slot.forward('rowsInRealm'),
   // OIDC Core 5.5's half. Read by oauth-oidc/oauth2.ts at the UserInfo
   // endpoint and by admin-ui/admin.ts for the page that documents it — one
   // resolver, so the vocabulary the console publishes cannot drift from the

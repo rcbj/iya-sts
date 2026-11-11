@@ -3,6 +3,8 @@
   "heading": "Sign out",
   "startAgain": "Start again",
   "startAgainEnd": ".",
+  "reauthenticate.lead": "Ending your other sessions needs a recent sign-in. Sign in again and you will come back to this page, where you can tick them again.",
+  "reauthenticate.signIn": "Sign in again",
   "inventory.holding": "Everything this service is still holding for <code>{username}</code>, across every protocol family it speaks.",
   "inventory.globalButton": "Global logout — end everything below",
   "inventory.globalNote": "The default. A POST to <code>/logout</code> with nothing selected does exactly this. Verifiable credentials, and the DIDs they are bound to, stay valid.",

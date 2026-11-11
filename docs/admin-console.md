@@ -29,13 +29,19 @@ registry has a page of its own, [Applications](applications.md).
 
 ## Who may use the console
 
-**Every page and every form under `/admin` needs a sign-in and one of two
+**Every page and every form under `/admin` needs a sign-in and one of three
 roles**:
 
 * **Admin Read** may look at every page and change nothing.
-* **Admin Write** may post every form. **Write implies read**, because a role
-  that could change a page it was not allowed to see would be a trap rather
-  than a permission.
+* **Admin Write** may post every form except the ones that change security.
+  **Write implies read**, because a role that could change a page it was not
+  allowed to see would be a trap rather than a permission.
+* **Security Administrator** may change security: save or reset a policy on
+  **Directory → Policies**, name a policy on an application, group or person,
+  grant or revoke this role, and act on the account of a person who holds it.
+  Admin Write cannot do any of these. It implies read and **not** write, so it
+  can be given to somebody who is not otherwise an administrator. See
+  [the Security Administrator](security-administrator.md).
 
 The console signs in **in your browser, as a client of this service's own
 authorization server**: the page sends you to `/oauth2/authorize` as the
@@ -69,6 +75,11 @@ Switch user list and Sign out, so the way back is on the page. Switching is
 not the *Sign in again* window that appears when a session ends: that one
 signs the tab's own account in again and refuses anybody else.
 
+**A sign-in that leaves the page keeps a form's choices and nothing typed.**
+When the console sends the browser away to sign in and back, the form on the
+page comes back with its ticks, radio buttons and menus as they were. Text typed into it is
+not kept in the browser's storage, so type it again.
+
 **There is no setting that turns the gate off.** What `global.mode` changes is
 whether the password typed at the sign-in screen is *checked*:
 
@@ -80,11 +91,12 @@ whether the password typed at the sign-in screen is *checked*:
 * **In product mode** the password is verified, and the console is the
   administrative surface of a deployed identity service.
 
-### The roles are two directory groups
+### The roles are three directory groups
 
-The two roles are **two ordinary groups in the embedded directory** —
-`admin.readGroup` and `admin.writeGroup`, `cn=admin-read` and `cn=admin-write`
-by default — not a store of the console's own. So there are **four doors onto
+The three roles are **three ordinary groups in the embedded directory** —
+`admin.readGroup`, `admin.writeGroup` and `admin.securityGroup`,
+`cn=admin-read`, `cn=admin-write` and `cn=security-admin` by default — not a
+store of the console's own. So there are **four doors onto
 one membership**, and a grant made through any of them is visible through all
 of them:
 
@@ -97,6 +109,16 @@ of them:
 
 A role no test can grant is a role no test can exercise.
 
+**On `/admin/rbac` you find the person by typing part of a username.** Where
+the directory is kept in the database, a search's count stops at 100,000:
+past that the page says *more than 100,000 matches* and pages only through
+the first 100,000, so type more of the name to narrow it.
+`GET /admin-api/rbac` says the same with `candidateSearch.countCapped`.
+On PostgreSQL a search of three letters or digits or more is answered from
+the login-name index, so a rare name is found at once however many people
+the realm holds; one or two characters, or any search on MariaDB, reads
+through the realm's people instead.
+
 **Each trust realm has administrators of its own, confined to it.** The
 console asks the roster of the realm a person signed in through; the default
 realm's roster is the service roster over every realm. A realm's own
@@ -105,12 +127,23 @@ administrators cannot reach anything about the process as a whole.
 
 ### The bootstrap administrator
 
-At startup the service makes **`admin`** (`admin.bootstrapUsername`) in the
+In product mode a default name (`admin`, `root`, `sa`, `administrator`, or none)
+is replaced by an unpredictable generated name. Set `admin.bootstrapUsername` to
+choose your own (`admin.allowDefaultUsername` keeps a default name, for a test
+stack).
+
+At startup the service makes the bootstrap administrator (`admin.bootstrapUsername`,
+**`admin`** in development) in the
 default realm if it is absent, puts it in both role groups, and marks a newly
 created account `pwdReset: TRUE`, so its first sign-in asks for a new password
 before anything else. In development any password gets it to that screen; in
-product mode its password is `admin.bootstrapPassword`, or one generated and
-written to the log once. It cannot be deleted or renamed through the console,
+product mode its password is `admin.bootstrapPassword`, or one generated at the
+first start. A generated one is written, with the name, to the file
+`bootstrap-admin-password` in `persistence.dataDir` as `name:password`, readable
+only by the service, and the log names the account and says where. `admin.logBootstrapPassword` writes
+it to the log instead, which only a test stack should do. In product mode it
+must also set up a second factor at that first sign-in (see
+[Authentication](authentication.md#requiring-a-second-factor-of-everybody)). It cannot be deleted or renamed through the console,
 `/admin-api`, SCIM or LDAP. Taking `admin` out of the role groups is still
 possible, and is on you.
 
@@ -328,6 +361,17 @@ A request that was *refused* records nothing, so this is a list of identities
 that got somewhere, not of names that were tried. Applications are never listed
 here — they are on [Applications](applications.md).
 
+**The tiles count the realm's whole directory; the list is capped.** The
+list reads at most the first 5,000 directory people (`credentials.factorScanLimit`)
+and adds everybody this service has seen, so the footer's *known in total* is
+the list's length. The footer says when the list is capped and shows the
+directory's own count beside it, which is `directoryPeople` on
+`GET /admin-api/users`. Compare that figure, not `known`, with `totalResults`
+from `GET /scim/v2/Users`. With a database, the directory may keep its counts
+for up to ten seconds against changes another process committed. A note under
+the tiles shows when they were counted and how old they are, and the API
+carries the same as `directoryCountedAt` and `directoryCountsKeptFor`.
+
 `?user=<name>` drills into one person's page, **drawn as tabs**:
 
 | Tab | What it holds |
@@ -420,8 +464,10 @@ attribute is a text box (empty clears it); a multi-valued one is one box per
 value, with **+** to add a box and the bin to delete one. Every box shows an
 example of a valid value, and every field's name carries a tooltip saying
 what it is and what it takes. **Save** writes what changed on that tab and
-nothing else; what one attribute refuses does not undo another, and a refused
-save comes back with every box as you left it. It needs **Admin Write**.
+nothing else, all or nothing: when one attribute is refused, what the save had
+already changed is put back, and the refusal says so (or names any value that
+could not be put back). A refused save comes back with every box as you left
+it. It needs **Admin Write**.
 `POST /admin-api/users/update-fields` is the same save, with `fields` naming
 each attribute and its value or values.
 
@@ -752,7 +798,12 @@ required. They belong to the realm (`ou=attributeDefinitions`) and are not
 inherited. `POST /admin-api/policies/define-person-attribute` and
 `remove-person-attribute` do the same over the API; a custom attribute cannot be
 removed while anybody holds a value of it or any of the realm's policies
-requires it.
+requires it. The **User portal** column says whether the person sees the
+attribute on the portal, and whether they may change it there; both are off
+by default, and the define form has a box for each. **Change** on a row edits
+the label, the description and those two boxes
+(`update-person-attribute`); letting the person change it also shows it. The
+syntax and whether it holds several values are fixed once it is defined.
 `/admin/users/new` and a person's Attributes tab outline every required field
 in red and mark it *required*.
 
@@ -837,9 +888,9 @@ names `default` or another policy.
 
 Three behaviours are the directory being consistent with itself:
 
-* **A member that names nothing is written, not refused.** This directory
-  does no referential integrity, so refusing here would make the *dangling*
-  state this page reports impossible to produce from it.
+* **A member that names nothing is refused.** A group lists only people,
+  groups and applications that exist, deleting one takes it out of every group
+  that listed it, and renaming one moves it in every group.
 * **An empty group is allowed**, although RFC 4519 makes `member` MUST on a
   `groupOfNames`: SCIM already creates one, and the two doors should not
   disagree about what the directory holds.
@@ -899,21 +950,17 @@ each row.
 
 **Membership is read from `member`, `uniqueMember` and `memberUid` together.**
 `memberUid` holds a bare user name where the other two hold a DN, so it is
-resolved under `ou=users`. Three disagreements are reported rather than smoothed
-over, and each is a state a client can reach in two operations:
+resolved under `ou=users`. Every member names an entry this directory holds:
+a member that names nothing is refused, and a delete or a rename keeps every
+group in step. Two things are shown rather than smoothed over:
 
-* a **dangling** member — a value naming an entry this directory does not
-  hold. Deleting a user does not remove its DN from the groups that list it,
-  so the count of membership values and the count that resolve are shown
-  separately: a group whose seven members resolve to five is not seven members
-  with nothing wrong.
 * a member that is itself a **group**. Nesting is shown and never expanded: the
   row links to that group's page and nobody inside it is counted, because
   nothing in this service walks a group tree.
 * an entry whose own **`memberOf`** names a group that does not list it back.
   In directories that have `memberOf` the server keeps it in step with
-  `member`; this one keeps nothing in step. Those entries are listed under their
-  own heading.
+  `member`; this one does not keep `memberOf` (#1622). Those entries are listed
+  under their own heading.
 
 **A member links to `/admin/users` only for somebody this service has seen
 authenticate**, and is marked *never here* otherwise. The directory holds an
@@ -1639,7 +1686,8 @@ audit events, and shows how far that delivery has got. The same controls are
 a file, a webhook, Splunk HEC and LogRhythm are on
 [Audit export destinations](audit-export.md).
 
-A destination is syslog (TCP by default, or UDP, or TLS), a filesystem path,
+A destination is syslog (TCP by default, or UDP, or TLS; product mode accepts
+TLS only unless `audit.allowPlainSyslog` is on), a filesystem path,
 a webhook, Splunk HEC, or LogRhythm, which uses the syslog adapter. Each
 process delivers the events in its own audit ring. The figures on this page
 are this process: queue depth, delivered, awaiting, retrying, permanently
@@ -1675,6 +1723,58 @@ including RFC 6598 `100.64.0.0/10`, is refused in product mode unless
 refused when that setting is on. A filesystem path is absolute, and when
 `auditExport.fileRoots` is set it lies under one of those directories. The
 settings take effect on the next run.
+
+## Server configuration pages worth explaining
+
+### Configuration dump — `/admin/config-dump`
+
+Downloads every configuration parameter, global and per realm, as one JSON
+file with every sensitive value masked. See
+[Configuration dump](configuration-dump.md).
+
+### Sign-in appearance — `/admin/sign-in-appearance`
+
+Server configuration → Sign-in appearance sets how this realm's sign-in
+pages look: the sign-in screen and every step after it, consent, GNAP's
+interaction pages, the federation pages, `/logout`, the front door `/` and
+the user portal. The admin console keeps its own look. Every value belongs
+to the realm the console is in, so `/realm/acme/admin/sign-in-appearance`
+changes acme's sign-in pages and no other realm's. A realm administrator
+may change their own realm's appearance. What each setting does is on
+[Sign-in appearance](sign-in-appearance.md).
+
+The page has four tabs:
+
+* **Colours.** The accent (buttons, links and focus rings), the page, the
+  card and the text, each a colour picker with its hex value beside it. One
+  Save sends all four, and they are judged together. Text or links below
+  WCAG 2.2 AA contrast (4.5:1) against the card are refused, and then
+  nothing is saved. Below the form, the contrast of the text, the links and
+  the button text is shown with its ratio, and the derived tones are shown:
+  the button text (black or white, whichever reads better on the accent),
+  the quieter text, the borders and the rules. Nobody sets those.
+* **Layout and logo.** The layout (*centered*, *split* or *banner*), the
+  display name, the logo's alternative text and the logo's link, saved
+  together. Under them is the stored logo with its type, size in pixels and
+  bytes, digest, and who uploaded it and when. You can upload a PNG, a JPEG
+  or a WebP, up to `branding.logoMaxBytes`. The file's bytes decide its
+  type, not its name. The upload replaces the realm's logo. A logo needs
+  alternative text, which you can type beside the file. *Remove logo*
+  removes it, and the sign-in pages then show none.
+* **Preview.** The four colours and a layout, filled in with the saved
+  values. *Open the preview in a new tab* shows a sample of this realm's
+  sign-in card with the values in the form, before anything is saved.
+  Nothing on the preview signs anybody in. It shows the saved logo and
+  display name.
+* **Settings.** The *Sign-in appearance* settings group, as on every page
+  that owns a group. It also holds `branding.logoMaxBytes`, which applies to
+  the whole service and can be changed only in the default realm, and the
+  Reset that drops a realm's own value.
+
+The same controls are `GET /admin-api/branding` (Admin Read, `admin:read`)
+and `POST /admin-api/branding/save`, `/branding/logo` and
+`/branding/remove-logo` (Admin Write, `admin:write`). See
+[Management API](management-api.md#sign-in-appearance).
 
 ## Protocols pages worth explaining
 
@@ -1744,6 +1844,18 @@ to the two token sets and UserInfo (whose `sub` a client must check against the
 ID Token's), not to the SAML sets, where an attribute called `exp` collides with
 nothing; the additive rule still protects SAML, because a WS-Federation relying
 party keys off the claim URIs this service writes.
+
+**The realm's custom attributes can be ticked too** (#700). The ticked
+catalogue on each of these pages, and on **Kerberos → PAC claims**, lists the
+realm's custom attributes after the standard ones. Each is claimed under its
+own name and typed by its syntax in a token: an `integer` is a number, a
+`boolean` is `true` or `false`, and a `date` is `YYYY-MM-DD`. A multi-valued
+one is an array, or one `<AttributeValue>` per value in an assertion. The
+value always comes from the person's entry and is never invented. A client
+can ask for one by name in an OpenID Connect claims request. A custom
+attribute named like a standard claim (a custom `birthdate`) is not offered
+(`STS-REG-0366`); a directory-attribute claim can carry it under another
+name.
 
 **A claim can carry any directory attribute** (#94). *Add a
 directory-attribute claim* on each of these pages (`add-attribute-claim` on

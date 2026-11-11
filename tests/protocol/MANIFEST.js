@@ -31,7 +31,7 @@ const log = bunyan.createLogger({ name: 'MANIFEST',
 // `browser: true` means the job drives Chrome through selenium-webdriver. There
 // are THREE that are coverage of this working tree's own pages, which is why
 // `--no-browser` names them when it leaves them out — and, since #571, the
-// four OpenID conformance drivers whose plans sign somebody in, which play
+// five OpenID conformance drivers whose plans sign somebody in, which play
 // the suite's person in Chrome (`conformance_browser.js`) because the
 // suite's own browser cannot run the scripted sign-in screen. Those stay in
 // their conformance lanes: one Chrome each, one page at a time.
@@ -43,7 +43,13 @@ const log = bunyan.createLogger({ name: 'MANIFEST',
 // draw, and nothing but the second notices it drawing a menu against the wrong
 // row's path. The third, `sts_portal_device_webauthn.js` (#258), is the
 // portal's: the one scripted step on `/portal/devices`, run by Chrome against
-// a virtual authenticator, which no HTTP job can make.
+// a virtual authenticator, which no HTTP job can make. And
+// `sts_eudi_wallet_portal.js` (#668) hands the portal's offers and sign-in
+// requests to a real wallet's web UI in the same Chrome — the eudi-dev
+// wallet, a child of the job — which no wallet written here can stand in
+// for. Its native counterpart, `sts_oid4vc_wallet.js` (#694), needs no
+// browser: rcbj/oid4vc-wallet answers from its command line, and the job
+// follows what it prints in a cookie jar.
 //
 // ---------------------------------------------------------------------------
 // `docker: true` MEANS THE JOB NEEDS A REMOTE PEP CONTAINER, AND IT IS A
@@ -178,6 +184,12 @@ const JOBS = [
   // realm's roster only when that realm's bootstrap window is closed, and
   // then revokes what it granted.
   { file: 'sts_realm_administrators.js', browser: false },
+  // THE SECURITY ADMINISTRATOR (#645, 2026-11-02): Admin Write refused a
+  // Directory → Policies save, a grant of the role and a holder's account;
+  // a person holding only the role let through to the save and refused an
+  // ordinary write. `local: true`: the role and the gate are ours. It grants
+  // the role to a person of its own and takes it back.
+  { file: 'sts_security_admin.js',       browser: false },
   // HOW MANY REALMS ONE CLUSTER MAY HOLD (#368): the create past
   // realms.maxCount is refused (through /admin-api and the console),
   // lowering the cap removes nothing, and a write of the cap from inside
@@ -322,6 +334,17 @@ const JOBS = [
   // second question: asserted over HTTP, so written here. GNAP's half is
   // `sts_gnap_rs.js` section 8.
   { file: 'sts_access_token_status.js',  browser: false },
+  // #1368: what a realm is configured to sign and accept is what it publishes.
+  { file: 'sts_signature_policy.js',     browser: false, local: true },
+  // #1368: a post-quantum authority's CRL and OCSP response, verified here.
+  { file: 'sts_pki_pq_revocation.js',    browser: false, local: true },
+  // #1299: oauth2.dpopReplayCacheSize is a PER-REALM cap, consulted at the
+  // DPoP replay check. `local: true`: the setting and the per-realm store are
+  // ours, and it is asserted over HTTP. It must run in single-node and cluster
+  // (dispatched workers), which is the case it exists for — a worker reading
+  // the PROCESS value rather than the ambient realm's would be a product bug
+  // the fuzz stack's process-env floor hides. It leaves two realms standing.
+  { file: 'sts_dpop_replay_realm_cap.js', browser: false, local: true },
   // #107: a key proved by mutual TLS under the pinned and PKI trust models,
   // revocation in both, the binding to an application entry, rotation at the
   // authority, the per-client override and the product default. Presents
@@ -570,7 +593,13 @@ const JOBS = [
   // token is confined, and in the `cluster` mode both nodes name one leader
   // and a step-down hands it over. `local: true`: this repository's own
   // /admin and /admin-api.
-  { file: 'sts_scheduler.js',            browser: false },
+  // ITS OWN WATCHDOG (2026-11-03). Sections 6 and 7 poll every node's full
+  // job list until they agree, and a realm job has a row per realm, so the
+  // job's time grows with the realms the jobs before it leave standing:
+  // 185 s, 220 s and 272 s in three cluster runs, then cut off at the
+  // default 300 s in section 7. Asking one realm's rows would make it
+  // constant; until then the bound says what it costs.
+  { file: 'sts_scheduler.js',            browser: false, timeoutMs: 600000 },
   // MONITORING → WORKER POOLS (#327, 2026-09-28): GET /admin-api/worker-pools
   // answers the request and surface pools with the seven figures, adding
   // up, drawn by the front process; no post-quantum pool since #363; the
@@ -1086,6 +1115,13 @@ const JOBS = [
   // either mode. It replaces, here, the parent's in-process delegation jobs,
   // which lose their fixture rules without a directory (kerberos/CLAUDE.md).
   { file: 'sts_kerberos_delegation.js',  browser: false },
+  // KERBEROS TOKENS IN WS-TRUST AND THE TOKEN EXCHANGE (#658, 2026-11-03):
+  // over TCP 88 and HTTP, in either mode (it builds its own services and
+  // person): a person's AP-REQ for the service SPN as the WS-Trust
+  // requester, an S4U2Proxy ticket inside ActAs, a GSS Kerberos token issued
+  // for the back end and opened with its keytab, and the same ticket as an
+  // RFC 8693 subject_token for an access token and for a Kerberos token.
+  { file: 'sts_kerberos_tokens.js',      browser: false },
   // A KERBEROS SIGN-OUT OUTLIVES THE NEXT AS EXCHANGE (#111, 2026-09-23):
   // over TCP 88, a TGT from before a global sign-out refused
   // KDC_ERR_TGT_REVOKED, a new AS exchange straight after it accepted, the
@@ -1152,6 +1188,53 @@ const JOBS = [
   // self-issued sign-in and its refusals, and the Verifier's form_post.
   // `local: true`: this repository's own door.
   { file: 'sts_siop.js',                 browser: false },
+  // A PERSON'S DID (#693, 2026-11-03): a did:jwk proved and an administrator's
+  // by value, the preferred DID, the `did` claim in the ID Token and at
+  // UserInfo and never in the access token or introspection, left out for a
+  // claims request without the scope, a pairwise client (until it opts in),
+  // an undeclared client, a cleared preference and a disabled account; and
+  // OpenID4VCI holder binding to the proved DID by a `kid` proof, with its
+  // refusals. In a throwaway realm in the stack's mode. `local: true`: this
+  // repository's claim, binding and enrolment.
+  { file: 'sts_did_claim.js',            browser: false },
+  // A did:web PROVED AT THE TEST PEER (#693, 2026-11-03): the peer's `did`
+  // role (tests/peer/peer_did.js) publishes the document, and records each
+  // fetch — enrolled by proof with its key pinned after one fetch, a token
+  // failing its other checks dialling nothing, the sign-in, a key rotated
+  // under the pin refused, proved again, a withdrawn document, and a
+  // product realm never dialling the peer's private address. Needs the
+  // peer (`testPeer`). `local: true`.
+  { file: 'sts_siop_did_web.js',         browser: false,
+    testPeer: true },
+  // A did:web THIS REALM PUBLISHES FOR A PERSON (#1291, 2026-11-03): wallet
+  // custody end to end over the sign-in surface — the wallet's round trip
+  // with did_act=publish, the document at /users/<rid>/did.json, a sign-in
+  // with the did:web — the two-proof key change and its refusals, versions
+  // answered from the history, holder binding naming the version, realm
+  // custody from the portal, the disabled account's 410 and its restoring,
+  // and the person's and an administrator's deactivations. In a throwaway
+  // realm in the stack's mode (product pins global.publicBaseUrl first).
+  // `local: true`: this repository's feature.
+  { file: 'sts_person_did.js',           browser: false },
+  // A PERSON'S PROFILE PHOTO (#719, 2026-11-05): the upload's refusals, the
+  // public address and its headers, the metadata gone, the portal's card, and
+  // removal. Reaches the default realm's people only. `local: true`: this
+  // repository's portal and account API.
+  { file: 'sts_profile_photo.js',        browser: false },
+  // THE NATIVE OID4VC WALLET (#694, 2026-11-04): rcbj/oid4vc-wallet (built
+  // into the tests image, tests/Dockerfile's oid4vc-wallet stage) run as
+  // this job's child from its command line — `accept`, `present
+  // --approve|--refuse`, `self-issued` — with a throwaway HOME and its
+  // storage key in a file, never a desktop key ring. In a throwaway realm on
+  // a host of two labels (the runner maps `<host>.example.com`, since a
+  // did:web cannot name `sts`): a portal offer accepted as a batch, each
+  // copy's index VALID and on its portal row; an OpenID4VP sign-in approved
+  // and refused; the JWK thumbprint, did:jwk and did:key enrolled, each
+  // signing in, the thumbprint removed and refused (STS-VC-0091); a did:web
+  // this realm publishes with the wallet's key, signing in; Remove all, every
+  // index INVALID, the revoked copy refused (STS-VC-0072). `local: true`:
+  // this repository's portal, issuer, Verifier and self-issued sign-in.
+  { file: 'sts_oid4vc_wallet.js',        browser: false },
   // THE x509_san_dns AND x509_hash CLIENT IDENTIFIERS (#230, 2026-09-26):
   // each prefix's Request Object checked as a wallet checks it — the x5c
   // chain to the service Root, the signature, the dNSName or the hash — a
@@ -1185,6 +1268,16 @@ const JOBS = [
   // Recount now queued on the scheduler. `local: true`: this repository's
   // console and management API.
   { file: 'sts_passkey_report.js',       browser: false },
+  // PARANOID PKI MODE (#1360). `local: true`: this repository's settings and
+  // console. The settings job writes the default realm's master for a moment
+  // to prove the one row a request can reach at the client truststore, which
+  // every listener reads, so it is `exclusive`.
+  { file: 'sts_paranoid_pki_settings.js', browser: false, exclusive: true },
+  { file: 'sts_paranoid_pki_console.js', browser: true },
+  { file: 'sts_paranoid_pki_tls.js', browser: false, exclusive: true },
+  { file: 'sts_paranoid_pki_outbound.js', browser: false },
+  { file: 'sts_paranoid_pki_signers.js', browser: false },
+  { file: 'sts_paranoid_pki_attestation.js', browser: false },
   // DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123): the
   // console page's shell, the five operations in the document and the gate,
   // the view and its group chooser, the refusals (a missing group 0530),
@@ -1204,6 +1297,18 @@ const JOBS = [
   // portal and the API it is read back through are this repository's. AFTER
   // sts_devices.js, which holds the register this one writes to.
   { file: 'sts_portal_device_webauthn.js', browser: true },
+  // THE USER PORTAL WITH A REAL WALLET (#668): the eudi-dev wallet (built
+  // into the tests image from rcbj/eudi-dev, tests/Dockerfile's eudi-wallet
+  // stage) run as this job's child beside Chrome, its consent dialog pressed
+  // like the portal's buttons. In a throwaway realm whose web wallet it is:
+  // an IdentityCredential offered on /portal/wallet and stored as a batch,
+  // each copy's status-list index on its portal row and VALID; a wallet
+  // sign-in disclosing `sub` alone; Remove on one copy and Remove all; every
+  // index INVALID in the published list, decoded here, and the removed
+  // credential refused (STS-VC-0072); a self-issued key enrolled, signing
+  // in, removed, and refused (STS-VC-0091). `local: true`: this
+  // repository's portal, issuer, Verifier and status list.
+  { file: 'sts_eudi_wallet_portal.js',   browser: true },
   // A TPM KEY ATTESTATION'S FRESHNESS OVER EST (#257, 2026-10-06):
   // /nonce (draft-ietf-lamps-attestation-freshness section 5.1), a device
   // enrolment over a fresh TPM2_Certify statement built here, the same
@@ -1250,6 +1355,16 @@ const JOBS = [
   // see half-way through.
   { file: 'sts_tlsfuzzer.js',            browser: false,
     timeoutMs: 2700000, exclusive: true },
+  // SCHEMATHESIS AGAINST THE FOUR APIS AND THE PROTOCOL SURFACE (#1299,
+  // OURS): provisions three realm profiles and a fuzz person, then runs the
+  // CLI (pinned in the tests image by tests/schemathesis/build-schemathesis.sh)
+  // through tests/schemathesis/auth_proxy.js against each (realm x surface).
+  // `local` because it drives this service's own /admin-api to provision;
+  // `exclusive` because it creates realms and fuzzes the whole surface hard;
+  // the `fuzz` mode of run-tests.sh stands up its own network-isolated
+  // product stack. schemathesis_kit.js holds the PLAN and the run.
+  { file: 'sts_schemathesis.js',         browser: false, local: true,
+    timeoutMs: 21600000, exclusive: true },
   // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
   // 2026-09-26): each Working Group suite, pinned and installed in the tests
   // image by tests/vc-suites/fetch-suites.sh, run against the W3C VC API
@@ -1277,7 +1392,8 @@ const JOBS = [
   // repository's oid4vc/vc_api.ts.
   { file: 'sts_vc_api_product.js',       browser: false },
   // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
-  // tenant and aud_sub in the ID Token, tenant refused for another realm,
+  // tenant and aud_sub in the ID Token (the first two when a claims request
+  // names them, #1292), tenant refused for another realm,
   // domain_hint's home-realm discovery. `local: true`: this repository's
   // authorization server and API.
   { file: 'sts_enterprise_extensions.js', browser: false },
@@ -1304,6 +1420,10 @@ const JOBS = [
   // `local: true`.
   { file: 'sts_provider_commands.js',    browser: false,
     testPeer: true },
+  // WHAT SOMEBODY OUTSIDE THIS SERVICE WRITES DOES NOT TAKE A PAGE DOWN
+  // (#1353), and a federation act's answer names no credential (#1354).
+  // `local: true`.
+  { file: 'sts_outside_values.js',       browser: false },
   // A FEDERATION PARTNER'S SHARED SIGNALS (#153, 2026-09-26; #373 and #374,
   // 2026-10-01): one realm's transmitter as the partner, another realm
   // receiving through federation relationships by poll and push, blocking
@@ -1333,9 +1453,31 @@ const JOBS = [
   // the plans, so the watchdog went from three hours to four and a half.
   { file: 'sts_oidcc_conformance.js',    browser: true,
     conformance: true, timeoutMs: 16200000, lane: 'conformance' },
+  // THE SAME SUITE AS THE OPENID PROVIDER (#930, 2026-11-02): its OpenID
+  // Connect relying-party plans — basic, implicit, hybrid, configuration,
+  // dynamic, the three form-post ones, third-party-initiated login, logout
+  // and refresh tokens — against an inbound OpenID Connect federation
+  // relationship, the one way this service is somebody's relying party. A
+  // lane of its own, `conformance-rp`, beside the OpenID Provider job's,
+  // which is the memory mode's long pole by hours: about two hundred
+  // modules, most a sign-in of a few seconds and a negative one's
+  // five-second wait. A two-hour watchdog. `local: true`: this repository's
+  // federation relying party. No classical twin (its header says why).
+  { file: 'sts_oidcc_rp_conformance.js', browser: true,
+    conformance: true, timeoutMs: 7200000, lane: 'conformance-rp' },
   // Shared Signals (#187): the transmitter and CAEP interop plans, push and
   // poll, the CAEP events emitted by the job as the module asks for them.
   { file: 'sts_ssf_oidf_conformance.js', browser: false,
+    conformance: true, timeoutMs: 3600000,
+    lane: 'conformance-b' },
+  // Shared Signals, the other direction (#932): the receiver and CAEP
+  // interop receiver plans, push and poll — the suite the transmitter, the
+  // job the administrator pressing the relationship's stream buttons — and
+  // the CAEP session-revoked's effect on the person's sessions asserted. No
+  // classical twin: the suite verifies nothing this realm signs. In
+  // `conformance-b`, whose jobs together stay well under the OpenID Connect
+  // lane, the conformance half's longest pole, so the bound does not move.
+  { file: 'sts_ssf_receiver_conformance.js', browser: false,
     conformance: true, timeoutMs: 3600000,
     lane: 'conformance-b' },
   // OpenID Federation 1.1 (#187): the deployed-entity plan for a Leaf realm
@@ -1354,7 +1496,10 @@ const JOBS = [
     lane: 'conformance-b' },
   // OpenID4VP 1.0 (#187): the verifier plan, by direct_post and
   // direct_post.jwt; the job plays the End-User the Verifier sends to the
-  // wallet, and makes the suite's issuer key at run time.
+  // wallet, and makes the suite's issuer key at run time. Since #935 also
+  // the HAIP verifier plan, for SD-JWT VC and ISO mdoc: four more plans with
+  // the twins, about a third more than the twelve that took seven and a
+  // half minutes (2026-11-02), well inside the two hours here.
   { file: 'sts_oid4vp_conformance.js',   browser: false,
     conformance: true, timeoutMs: 7200000,
     lane: 'conformance-b' },
@@ -1434,6 +1579,8 @@ const JOBS = [
   // (and on an application's override), ignored where they are read once a
   // realm holding them is switched; and GET /admin/mode and /admin-api/mode.
   { file: 'sts_mode_weak_settings.js',   browser: false },
+  // The configuration dump shows every parameter and no secret.
+  { file: 'sts_config_dump.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
@@ -1696,6 +1843,9 @@ const LOCAL_HELPERS = [
   // `authn_signin.js`; it was a copy of the parent's (listed in HELPERS
   // until then).
   'consent_screen.js',
+  // A GET sent as a browser's top-level navigation (#1443), which Node's
+  // fetch cannot send: sts_backchannel_logout.js, sts_multi_account.js.
+  'navigation.js',
   // The sign-in screen over `/authn-api` (#571): the shell, the view and
   // the act, with the CSRF binding — what every job that signs somebody in
   // at /authn/login goes through since the screen became a static surface.
@@ -1714,6 +1864,10 @@ const LOCAL_HELPERS = [
   // from (#568): the static portal signs in as the public client
   // `sts-user-portal` and draws every page from `/account-api`.
   'portal_signin.js',
+  // The reporting application's sign-in (#1299): a DPoP-bound
+  // `report:use report:admin` token for the public client `sts-report`, for
+  // the Schemathesis auth proxy. There is no other report-api sign-in helper.
+  'report_signin.js',
   // What the OpenID conformance suite's drivers share (#187): the suite's
   // API, a plan run module by module, and the ledger of argued failures and
   // known warnings. `sts_fapi_conformance.js` keeps its own copy (#176).

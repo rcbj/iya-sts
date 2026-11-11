@@ -62,7 +62,12 @@
 // `pageParamsOf()` keeps only the first of a repeated parameter, and a query
 // value may hold no control character (`common/validation.js`), so a line
 // break is refused at the gate. RFC 4514 escapes a `;` inside a DN value
-// (`\;`), so an unescaped one is never part of a DN.
+// (`\;`), so an unescaped one is never part of a DN. The query is at most
+// `GROUPS_QUERY_MAX` characters (4096). Fifty ordinary names fit. A longer
+// value is refused before it is split (STS-AUTHN-0496): a stock Node parser
+// resets the connection once the incoming bytes pass about 64KiB, and
+// percent-encoding turns one character into twelve, so 4096 stays inside
+// the line the parser accepts.
 //
 // TWO STORES, AND WHY TWO. `post_login.activities` holds what an
 // administrator decided — the activity, the groups, the numbers, the state —
@@ -119,6 +124,15 @@ const LIMITS = {
 // The most groups one started activity names. A bound on what one start
 // resolves and what one run unions, not a design limit anybody has met.
 const MAX_GROUPS = 50;
+
+// The `groups` query on GET /admin-api/post-login-activities, in decoded
+// characters. One request line is what a stock Node parser accepts before
+// it resets the connection (Node 24 writes a 431 and then RSTs once the
+// incoming bytes pass about 64KiB). Percent-encoding turns one character
+// into twelve, and 4096 * 12 stays under that reset. Fifty ordinary group
+// DNs fit. The handler refuses a longer value before groupNamesOf walks it
+// (STS-AUTHN-0496, #1434).
+const GROUPS_QUERY_MAX = 4096;
 
 // The group chooser's page: `WebKit.CHOOSER_HITS`, which the console's
 // `chooserPane()` draws twenty of at a time. Written here because this
@@ -288,23 +302,59 @@ class PostLoginActivities {
                                                                : given)
       .forEach(function (one: any): void {
         const text = String(one == null ? '' : one);
-        let name = '';
+        // A character at a time into a list, joined at each separator.
+        // `name += c` copies the whole name per character, and a request
+        // line of tens of kilobytes would stall the one thread (#1434).
+        const chars: string[] = [];
         for (let i = 0; i < text.length; i++) {
           const c = text.charAt(i);
           if (c === '\\' && i + 1 < text.length) {
-            name += c + text.charAt(i + 1);
+            chars.push(c);
+            chars.push(text.charAt(i + 1));
             i += 1;
           } else if (c === ';') {
-            keep(name);
-            name = '';
+            keep(chars.join(''));
+            chars.length = 0;
           } else {
-            name += c;
+            chars.push(c);
           }
         }
-        keep(name);
+        keep(chars.join(''));
       });
     log.debug("Leaving PostLoginActivities.groupNamesOf(). " + out.length);
     return out;
+  }
+
+  /**
+   * Whether `groups` on a page query is longer than one request line can
+   * carry. An array (a repeated parameter) is the sum of its strings. A
+   * value inside the cap, and a query that names no groups, is `null`.
+   *
+   * @param query - the page's query
+   * @returns `{ ok: false, errors }` or `null`
+   */
+  static groupsQueryProblem(query: any): Json | null {
+    log.debug("Entering PostLoginActivities.groupsQueryProblem().");
+    const given = query && typeof query === 'object' ? query.groups
+                                                      : undefined;
+    const parts = given === undefined || given === null ? []
+      : Array.isArray(given) ? given : [given];
+    let length = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const one = parts[i];
+      if (typeof one === 'string') {
+        length += one.length;
+      }
+    }
+    if (length > GROUPS_QUERY_MAX) {
+      log.debug("Leaving PostLoginActivities.groupsQueryProblem(). " +
+                "Too long.");
+      return { ok: false, errors: [
+        'The groups query is longer than ' + GROUPS_QUERY_MAX +
+        ' characters, which is as much as one request line can carry.'] };
+    }
+    log.debug("Leaving PostLoginActivities.groupsQueryProblem().");
+    return null;
   }
 
   // A started activity's row as the store holds it, with every field it
@@ -564,10 +614,11 @@ class PostLoginActivities {
   }
 
   private refused(code: string, errors: string[]): Json {
-    const { log } = this.deps;
+    const { log, errorCodes } = this.deps;
     log.debug("Entering PostLoginActivities.refused(). " + code);
     log.debug("Leaving PostLoginActivities.refused().");
-    return { ok: false, errorCode: code, errors: errors };
+    // A mark and no member (#1355): the API answers this object whole.
+    return errorCodes.mark({ ok: false, errors: errors }, code);
   }
 
   // The same people, as a duplicate start is judged: the same set of group
@@ -592,7 +643,7 @@ class PostLoginActivities {
    *   or `;`-separated; none for everybody in the realm), `intervalDays`,
    *   `maxMails`, `perRun`
    * @param ctx - `{ actor, via }`: who started it, and through which door
-   * @returns `{ ok, started }`, or `{ ok: false, errorCode, errors }`
+   * @returns `{ ok, started }`, or `{ ok: false, errors }`, marked
    */
   async start(body: Json, ctx: Json): Promise<Json> {
     const { log, started, runs, randomId, now, realms } = this.deps;
@@ -711,7 +762,7 @@ class PostLoginActivities {
    * @param act - `pause`, `resume` or `end`
    * @param id - the started activity
    * @param ctx - `{ actor, via }`
-   * @returns `{ ok, started }`, or `{ ok: false, errorCode, errors }`
+   * @returns `{ ok, started }`, or `{ ok: false, errors }`, marked
    */
   move(act: string, id: string, ctx: Json): Json {
     const { log, started, now, realms } = this.deps;
@@ -1139,6 +1190,8 @@ export = {
   ACTIVITIES: ACTIVITIES,
   LIMITS: LIMITS,
   MAX_GROUPS: MAX_GROUPS,
+  GROUPS_QUERY_MAX: GROUPS_QUERY_MAX,
+  groupsQueryProblem: PostLoginActivities.groupsQueryProblem,
   CHOOSER_HITS: CHOOSER_HITS,
   STATES: STATES,
   ACTS: PostLoginActivities.ACTS,

@@ -183,7 +183,7 @@ function childMain() {
         .toString('utf8') : '';
     }
     function pendingOf(location) {
-      const m = /[?&]authn=([^&]+)/.exec(location || '');
+      const m = /[?&#]authn=([^&]+)/.exec(location || '');
       if (!m) {
         return null;
       }
@@ -351,6 +351,25 @@ function childMain() {
       r = await request('GET', unsolicited(spOff), alice.cookie);
       note(r.status === 403 && r.code === 'STS-SAML-0091',
            'A2. and with a session too', r.status + ' ' + r.code);
+      // THE PAGE IS THE SHARED ERROR PAGE (#1327): the code's sentence in
+      // the box, the background collapsed, the way back to the portal, and
+      // the diagnostics — the service provider, the target, who is signed
+      // in, the English detail — with the STS code nowhere on it.
+      note(/<div class="warn" role="alert">Sign-in started at this identity provider is turned off for this service provider\./
+             .test(r.text) &&
+           r.text.indexOf('<details class="prose">') >= 0 &&
+           /href="[^"]*\/portal"/.test(r.text) &&
+           r.text.indexOf('<section class="diagnostics"') >= 0 &&
+           r.text.indexOf('Incident ID') >= 0 &&
+           r.text.indexOf('<code>' + spOff + '</code>') >= 0 &&
+           r.text.indexOf('<code>rs-' + stamp + '</code>') >= 0 &&
+           r.text.indexOf('<code>si-alice-' + stamp + '</code>') >= 0 &&
+           r.text.indexOf('saml2.idpInitiatedSso is off') >= 0 &&
+           r.text.indexOf('STS-SAML-0091') < 0 &&
+           /<select[^>]*name="lang"|class="language-row"/.test(r.text),
+           'A2b. the refusal is the shared error page: the sentence, the ' +
+           'background, the portal, the diagnostics and the language ' +
+           'chooser, and no error code', r.text.slice(0, 400));
       r = await request('GET', unsolicited(spOn));
       note(r.status === 303 && /\/authn\//.test(r.location),
            'A3. for one whose entry sets saml2IdpInitiatedSso TRUE, with no ' +
@@ -414,6 +433,15 @@ function childMain() {
            'C1. a SAML 1.1 link with only a TARGET, for a relying party that ' +
            'did not opt in, is REFUSED by default — 403, STS-SAML-0113, no ' +
            'sign-in screen', r.status + ' ' + r.code + ' ' + r.location);
+      note(/<div class="warn" role="alert">Sign-in started at this identity provider is turned off for this relying party\./
+             .test(r.text) &&
+           r.text.indexOf('<details class="prose">') >= 0 &&
+           r.text.indexOf('<section class="diagnostics"') >= 0 &&
+           r.text.indexOf('<code>' + rpOff + '</code>') >= 0 &&
+           r.text.indexOf('STS-SAML-0113') < 0,
+           'C1b. and the SAML 1.1 refusal is the shared error page too ' +
+           '(#1327): the sentence, the background, the relying party in ' +
+           'the diagnostics, no error code', r.text.slice(0, 400));
       r = await request('GET', sso11(rpOn), alice.cookie);
       note(r.status === 200 && /name="SAMLResponse"/.test(r.text) &&
            /name="TARGET"/.test(r.text),
@@ -457,6 +485,12 @@ function childMain() {
       // an automated client's sign-in as risky (`isbot`), which would make
       // the sign-in itself the step-up.
       config.setOverride('global.mode', 'product');
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
+      // Product asks before single sign-on (ASVS 5.0.0 7.6.2); what is
+      // tested here is who may start a sign-in and the risk step-up, so the
+      // question is switched off. tests/asvs_protocol_rules.js tests it.
+      config.setOverride('saml2.ssoConsent', false);
+      config.setOverride('saml11.ssoConsent', false);
       userAgent = BROWSER_UA;
       try {
         const spProduct = party('idp-on-p', 'saml2-service-provider',
@@ -466,6 +500,41 @@ function childMain() {
         const carolName = 'si-carol-' + stamp;
         const carol = await signedInWithPassword(carolName, PASSWORD,
                                                  spProduct);
+        // ASVS 5.0.0 7.6.2: with the question on (product's default, off
+        // above for the rest of this block), single sign-on through the
+        // link anybody can send asks first, and a Deny is RequestDenied.
+        config.setOverride('saml2.ssoConsent', true);
+        try {
+          const asked = await request('GET', unsolicited(spProduct),
+                                      carol.cookie);
+          note(asked.status === 303 &&
+               String(asked.location || '').indexOf('/oauth2/consent') >= 0,
+               'D-consent (product). single sign-on to a service provider ' +
+               'the person has not agreed to goes to the consent screen',
+               asked.status + ' ' + asked.location);
+          const said = await request('GET', unsolicited(spProduct,
+            { consent_error: 'access_denied',
+              consent_error_description: 'no' }), carol.cookie);
+          note(said.code === 'STS-SAML-0120' &&
+               /status:RequestDenied"/.test(samlResponseOf(said)),
+               'D-consent (product). and a Deny is a RequestDenied Response ' +
+               '(STS-SAML-0120)', said.status + ' ' + said.code);
+          // Allow, filed as the screen files it (consent.record()), and the
+          // same link signs in rather than asking again: no loop.
+          const consentMod = require(ROOT + '/common/consent');
+          const filed = consentMod.record(carolName, spProduct,
+                                          [consentMod.SSO_SIGN_IN_SCOPE]);
+          const allowed = await request('GET', unsolicited(spProduct),
+                                        carol.cookie);
+          note(filed.stored && allowed.status === 200 &&
+               /status:Success"/.test(samlResponseOf(allowed)),
+               'D-consent (product). and after an Allow the same link ' +
+               'signs in, without asking again',
+               JSON.stringify(filed.stored) + ' ' + allowed.status + ' ' +
+               allowed.location);
+        } finally {
+          config.setOverride('saml2.ssoConsent', false);
+        }
         await riskSection(' (product)', carol, spProduct, rpProduct);
         // LAST, so nothing above stands on a session a failed attempt may
         // have made riskier: the wrong password is refused at the screen.
@@ -481,6 +550,9 @@ function childMain() {
              startedWrong.status + ' ' + wrong.status + ' ' + wrong.next);
       } finally {
         userAgent = '';
+        config.clearOverride('saml2.ssoConsent');
+        config.clearOverride('saml11.ssoConsent');
+        config.clearOverride('authn.allowOptionalSecondFactor');
         config.clearOverride('global.mode');
       }
 

@@ -188,6 +188,29 @@ async function partB(t) {
 
 async function partC(t) {
   log.debug("Entering partC().");
+  // A FILE OF THE WRONG KIND (#1480, ASVS 5.0.0 5.2.2).
+  const junk = ['192.0.2.9'].concat(new Array(9).fill('not an address'))
+    .join('\n');
+  config.clearOverride('risk.maxSkippedLinesPercent');
+  t.check(Number(config.value('risk.maxSkippedLinesPercent')) === 10,
+          'C0-0. the default share of lines that may fail is ten percent');
+  const skippedOut = await riskDatasets.importVersion({
+    dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+    content: junk, version: 'skip-1', source: 'upload', activate: false });
+  const skippedRows = await riskStore.listVersions('default',
+                                                   'iplist.operator-allow');
+  t.check(!skippedOut.ok && skippedRows.some(function (one) {
+    return one.version === 'skip-1' && one.state === 'refused' &&
+      one.errorCode === 'STS-RISK-0056';
+  }), 'C0. a file mostly of lines that are not rows is refused',
+  JSON.stringify(skippedOut));
+  config.setOverride('risk.maxSkippedLinesPercent', '100');
+  const skippedIn = await riskDatasets.importVersion({
+    dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+    content: junk, version: 'skip-2', source: 'upload', activate: false });
+  config.setOverride('risk.maxSkippedLinesPercent', '100');
+  t.check(skippedIn.ok, 'C0-ii. at 100 it is accepted, as before',
+          JSON.stringify(skippedIn));
   const wrong = await riskDatasets.importVersion({
     dataset: 'iplist.reputation', format: 'ip-list', content: '192.0.2.1',
     version: 'rep-bad', sha256: 'a'.repeat(64), source: 'upload' });
@@ -409,6 +432,31 @@ async function partI(t) {
   }) && view.datasets.length === Object.keys(riskDatasets.CATALOGUE).length,
           'I2. an import through the page\'s action loads, and the view ' +
           'draws every dataset and the lookup', JSON.stringify(imported));
+  // The fuzz run on d96b74093: a reload naming a realm with a NUL in it
+  // reached PostgreSQL and was answered 500. Each of the four non-import
+  // actions refuses an unknown realm or dataset before the store is asked,
+  // and repeats neither value back.
+  const odd = '\u009d\u0000';
+  const refusals = [];
+  for (const action of ['activate', 'delete', 'reload', 'rollback']) {
+    refusals.push(await riskAdmin.riskAction({
+      action: action, dataset: 'iplist.reputation', realm: odd,
+      version: 'v1' }, 'a test'));
+    refusals.push(await riskAdmin.riskAction({
+      action: action, dataset: 'no-such' + odd, realm: '',
+      version: 'v1' }, 'a test'));
+  }
+  t.check(refusals.every(function (r) {
+    return r && r.ok === false &&
+           require('../common/error_codes').codeOf(r) === 'STS-RISK-0011' &&
+           JSON.stringify(r).indexOf('\\u0000') < 0;
+  }) && /no realm by that name/.test(refusals[0].errors[0]) &&
+     /no dataset by that name/.test(refusals[1].errors[0]),
+  'I3. activate, delete, reload and rollback refuse a realm or dataset that ' +
+  'does not exist before the store is asked, naming neither value',
+  JSON.stringify(refusals.map(function (r) {
+    return r && r.errors;
+  })));
   log.debug("Leaving partI().");
 }
 
@@ -649,6 +697,9 @@ async function run(t) {
   if (!realms.get('acme')) {
     realms.create({ id: 'acme', name: 'risk datasets test' });
   }
+  // The fixtures below hold a few lines each, some of them on purpose not rows;
+  // C0 restores the shipped share to test it (#1480).
+  config.setOverride('risk.maxSkippedLinesPercent', '100');
   riskStore.reset();
   riskDatasets.forget();
   await partK(t);
@@ -664,6 +715,7 @@ async function run(t) {
   await partI(t);
   await partJ(t);
   await partL(t);
+  config.clearOverride('risk.maxSkippedLinesPercent');
   log.debug("Leaving run().");
 }
 

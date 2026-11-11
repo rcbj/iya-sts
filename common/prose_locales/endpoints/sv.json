@@ -435,9 +435,29 @@
     "en": "3bc74315dcf2fb5e",
     "text": "Katalogen över förtroendesfärer"
   },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "Tjänstens ikon"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "De offentliga ytornas kortformatmall"
+  },
+  "endpoints.route./web/theme.css.name": {
+    "en": "955c14dc632bdf90",
+    "text": "Formatmallen för en domäns inloggningsutseende"
+  },
+  "endpoints.route./web/branding/logo.name": {
+    "en": "2ce72d622f586a26",
+    "text": "En domäns inloggningslogotyp"
+  },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "En persons profilfoto"
+  },
+  "endpoints.route./web/branding/preview.name": {
+    "en": "54aca7174dc0a2b0",
+    "text": "En förhandsvisning av inloggningsutseendet"
   },
   "endpoints.route./web/locales/catalogs.json.name": {
     "en": "54bbd31e0a5afc5b",
@@ -566,6 +586,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "Rapportapplikationens inkorg för Shared Signals"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "Det som rapportprogrammets användarmeny ritar"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",
@@ -754,6 +778,14 @@
   "endpoints.route./admin-api/pki.name": {
     "en": "bc458d477b4de7d9",
     "text": "Certifikatutfärdaren som den här sfären har"
+  },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "Paranoid PKI-läge, signerarnas förtroendelager och vad som är fäst"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "Ändra signerarnas förtroendelager, en paranoid-rad eller kontrollera de fästa certifikaten igen"
   },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
@@ -955,6 +987,10 @@
     "en": "ec5770a23a0c10c0",
     "text": "En persons självutfärdade (SIOPv2) subjekt"
   },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "En persons publicerade DID:er"
+  },
   "endpoints.route./admin-api/users/verifications.name": {
     "en": "aa12d03c659af2a0",
     "text": "En persons identitetsverifieringar"
@@ -1044,8 +1080,8 @@
     "text": "De attesterade agenterna"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "Spärra, häv spärr för eller glöm en agent"
+    "en": "db7439843e5d6273",
+    "text": "Spärra, häv spärr för eller glöm en agent, eller skapa en join-token"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",
@@ -1151,6 +1187,26 @@
     "en": "b485a2ff39ac01b5",
     "text": "Felkoder"
   },
+  "endpoints.route./admin-api/audit-export.name": {
+    "en": "6215b564a1d4430f",
+    "text": "Granskningsexport"
+  },
+  "endpoints.route./admin-api/audit-export/:action.name": {
+    "en": "b9a19e739aa5ebd6",
+    "text": "Ändra granskningsexportens mål"
+  },
+  "endpoints.route./admin-api/branding.name": {
+    "en": "4f6e7c69e356bf65",
+    "text": "Inloggningens utseende"
+  },
+  "endpoints.route./admin-api/branding/logo.name": {
+    "en": "febcf32d571a0fbf",
+    "text": "Ladda upp inloggningslogotypen"
+  },
+  "endpoints.route./admin-api/branding/:action.name": {
+    "en": "d7fa23e10dac9b1d",
+    "text": "Ändra inloggningens utseende"
+  },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",
     "text": "Granskningslogg"
@@ -1174,6 +1230,10 @@
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
     "text": "Definiera anpassade lyssnare, eller mappa applikationer till dem"
+  },
+  "endpoints.route./admin-api/config-dump.name": {
+    "en": "9d414a56d337e804",
+    "text": "Konfigurationsdump"
   },
   "endpoints.route./admin-api/config/:action.name": {
     "en": "7e8873a02dca9738",
@@ -1523,6 +1583,22 @@
     "en": "561e36f4539a01de",
     "text": "Starta en federerad inloggning"
   },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "En inloggning som partnern startar (initiate_login_uri)"
+  },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "Ett begäranobjekt som referens"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "Hitta en persons OpenID-leverantör med WebFinger"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "Påståendekonsumenttjänstens fragmentskript"
+  },
   "endpoints.route./federation/acs/:id.name": {
     "en": "fff6118cbd019f5e",
     "text": "Assertion consumer service / wreply / redirect_uri"
@@ -1558,6 +1634,10 @@
   "endpoints.route./federation/metadata/:id.name": {
     "en": "1bd56e73b838da2d",
     "text": "Den här tjänstens EGNA SAML-metadata, per partner"
+  },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Klientmetadata för en Bluesky-relation (#746)"
   },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",
@@ -1863,10 +1943,6 @@
     "en": "267337fd3ad0ab7f",
     "text": "OP-iframe (check_session_iframe)"
   },
-  "endpoints.route./oauth2/check_session.js.name": {
-    "en": "d9f2d9b37bfe6db9",
-    "text": "Skript för OP-iframe"
-  },
   "endpoints.route./oauth2/logout.name": {
     "en": "9901e3b8fd763f16",
     "text": "Sessionsavslut (end_session_endpoint)"
@@ -2131,6 +2207,10 @@
     "en": "7d0bcaaf2c946cba",
     "text": "En applikations DID-dokument"
   },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "En persons publicerade DID-dokument"
+  },
   "endpoints.route./.well-known/did-configuration.json.name": {
     "en": "ea3b5de3683521ad",
     "text": "Domain Linkage Credential"
@@ -2382,5 +2462,17 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (ett klientcertifikat begärs, krävs aldrig)"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "Skanning efter skadlig kod"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "Testa skannern"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "Kontrollera granskningsloggens integritet"
   }
 }

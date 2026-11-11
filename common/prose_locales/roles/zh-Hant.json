@@ -96,12 +96,16 @@
     "text": "擁有者（#607），同 OWNER_READ。授權 owner:write 權限：透過 /admin-api 變更其擁有的物件，範圍以 access-control 原則的擁有者規則對每種類型允許的動作為限——絕不建立、刪除或重新命名物件，也絕不涉及對擁有者受保護的物件。"
   },
   "roles.native.ADMIN_READ.what": {
-    "en": "7d6481dffa0d517c",
-    "text": "Admin Read：/admin-api 上的每個「讀取」。由主控台的 Admin Read 與 Admin Write 群組（Admin Write 隱含 Admin Read）以及此處列出的應用程式持有。授權 admin:read 權限。"
+    "en": "a2f5894dfa0c0db6",
+    "text": "Admin Read：/admin-api 上的每項讀取。由主控台的 Admin Read、Admin Write 及安全管理員群組（另外兩者皆包含 Admin Read）以及此處列出的應用程式持有。授權 admin:read 權限。"
   },
   "roles.native.ADMIN_WRITE.what": {
     "en": "ecff5f0bc1a5a16a",
     "text": "Admin Write：每個會「變更」任何東西的 /admin-api 操作。由主控台的 Admin Write 群組以及此處列出的應用程式持有。授權 admin:write 權限。在權杖上它不隱含 Admin Read：權杖可以攜帶任一範圍，而原則會要求操作所需的那一個。"
+  },
+  "roles.native.SECURITY_ADMIN.what": {
+    "en": "78a47eddc95e9db3",
+    "text": "安全管理員：變更安全性的 /admin-api 作業——目錄 → 原則中的原則、為應用程式、群組或人員指定的原則、授予此角色，以及持有此角色之人員的帳戶。Admin Write 無法執行這些作業。由主控台的安全管理員群組及此處列出的應用程式持有。授權 admin:security 權限。"
   },
   "roles.native.ADMIN_CONSOLE.what": {
     "en": "5661913dba04f59a",
@@ -164,7 +168,15 @@
     "text": "Admin Write"
   },
   "roles.console.write.what": {
-    "en": "476b1b61c16b02e4",
-    "text": "提交此主控台上的每個表單——撤銷權杖、新增自訂宣告、變更設定、建立人員、授予角色。「它包含讀取」，因此僅屬於此角色的成員就能使用整個主控台。"
+    "en": "933448e4b37b9349",
+    "text": "提交此主控台上的每個表單——撤銷權杖、新增自訂宣告、變更設定、建立人員、授予角色——但變更安全性的表單除外，那些屬於安全管理員。它包含讀取，因此僅持有此角色的成員可以使用主控台的其餘部分。"
+  },
+  "roles.console.security.label": {
+    "en": "eb026fe212244f20",
+    "text": "安全管理員"
+  },
+  "roles.console.security.what": {
+    "en": "238007ebd246b860",
+    "text": "變更安全性：在目錄 → 原則中儲存或重設原則，為應用程式、群組或人員指定原則，授予或撤銷此角色，以及對持有此角色之人員的帳戶執行作業。Admin Write 無法執行其中任何一項。它包含讀取而不包含寫入，因此可由本身不是管理員的人員持有。"
   }
 }

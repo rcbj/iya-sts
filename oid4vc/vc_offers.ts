@@ -964,16 +964,18 @@ class VcOffers {
    * @param req - the request
    * @param configurationIds - the configurations on offer
    * @param mode - the use case
-   * @param options - `user`, whom a pre-authorized offer is for, and
+   * @param options - `user`, whom a pre-authorized offer is for,
    *   `signingAlg`, the algorithm its credential is signed with ('' for the
-   *   configured one)
+   *   configured one), and `sessionId`, the sign-on session the offer was
+   *   made on ('' for none)
    * @returns `{ offer, issuerState, preAuthorizedCode, txCode, mode,
    *   expires }`, `expires` when the offer and its code stop being honoured
    *   (ms since the epoch)
    */
   buildCredentialOffer(req: any, configurationIds: string[],
                          mode: string, options?: { user?: any;
-                                                   signingAlg?: string }) {
+                                                   signingAlg?: string;
+                                                   sessionId?: string }) {
     const { log, logArtifact, baseUrlOf, randomId, userFor, config,
             issuerStates, preAuthorizedCodes } = this.deps;
     log.debug("Entering VcOffers.buildCredentialOffer(). mode=" + mode);
@@ -1007,6 +1009,12 @@ class VcOffers {
         user: opts.user || userFor(this.vciOfferUsername()),
         deferred: mode === 'deferred',
         signingAlg: String(opts.signingAlg || ''),
+        // THE SIGN-ON SESSION THE OFFER WAS MADE ON (#666), where it was
+        // made on one (`/portal/wallet`): the offer's authority IS that
+        // session, so the token request is judged on its risk, not on a
+        // standing this process happens to hold for the person. The stable
+        // `sid`, as an authorization code records `session_id`.
+        sessionId: String(opts.sessionId || ''),
         expires: expires
       });
       offer.grants = {
@@ -1111,7 +1119,10 @@ class VcOffers {
                                             ask.mode,
                                             { user: ask.user || null,
                                               signingAlg: ask.signingAlg ||
-                                                          '' });
+                                                          '',
+                                              sessionId: session &&
+                                                session.id
+                                                ? String(session.id) : '' });
     // Sweep expired offers, states, codes and transactions while here. Each
     // is keyed by a digest (#614), so the sweep removes by the key it walks
     // rather than through `delete()`, which would hash it again.

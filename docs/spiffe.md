@@ -715,6 +715,8 @@ method table, node attestation, workload attestation where the native module is
 present, and automatic authority rotation. See
 [what is not checked](what-is-not-checked.md).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a presented SVID must carry the extendedKeyUsage X509-SVID section 4.3 recommends. A federated authority must be an in-date certificate authority when it is accepted, and a federated SVID is exempt from revocation because its authority publishes nothing this service may dial. A node attestor's certificate is held to its fields, and to revocation where its chain names a source. AWS's pinned certificates are asked only for their validity window, and an RSA-1024 signature from a region this service has no certificate for is refused, because the fallback certificate expired on 2024-06-05 and AWS publishes per-region certificates only, and Sigstore's certificate is read at its notBefore, as that specification says. `pki.paranoidSpiffeSvid` and `pki.paranoidSpiffeAttestation` turn these rows off.
+
 ## Configuration
 
 SPIFFE has about a hundred settings, grouped below. Every runtime setting can be
@@ -743,7 +745,7 @@ are reconciled, which happens whenever one of the realm's settings changes.
 | `spiffe.jwtSvidTtl` | `STS_SPIFFE_JWT_SVID_TTL` | `300` | yes | The default JWT-SVID lifetime. |
 | `spiffe.agentSvidTtl` | `STS_SPIFFE_AGENT_SVID_TTL` | `0` | yes | The lifetime of an agent's SVID from AttestAgent and RenewAgent; 0 means `spiffe.svidTtl`. |
 | `spiffe.svidSubject` | `STS_SPIFFE_SVID_SUBJECT` | `C=US,O=SPIRE` | yes | The X.501 subject of every X509-SVID, SPIRE's own by default; it cannot be empty. |
-| `spiffe.caSubject` | `STS_SPIFFE_CA_SUBJECT` | `CN=sts SPIFFE {kind} ({trustDomain}),O=sts` | yes | The subject of the self-signed fallback authority and of every downstream CA. |
+| `spiffe.caSubject` | `STS_SPIFFE_CA_SUBJECT` | `CN=iya-sts SPIFFE {kind} ({trustDomain}),O=iya-sts` | yes | The subject of the self-signed fallback authority and of every downstream CA. |
 | `spiffe.retainedAuthorities` | `STS_SPIFFE_RETAINED_AUTHORITIES` | `4` | yes | How many self-signed X.509 and JWT authorities a rotation keeps in the bundle (at least 2). |
 | `spiffe.clockSkew` | `STS_SPIFFE_CLOCK_SKEW` | `60` | yes | How far out a caller's clock may be when its X509-SVID's validity is checked. |
 

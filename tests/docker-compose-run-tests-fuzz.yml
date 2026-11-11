@@ -1,0 +1,67 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# tests/docker-compose-run-tests-fuzz.yml — THE `fuzz` MODE'S LAYER (#1299).
+#
+# Layered over docker-compose-run-tests.yml (run-tests.sh, FUZZ_COMPOSE_FILE)
+# ONLY in the `fuzz` mode, which runs only when named
+# (`--modes=fuzz --only=schemathesis`). It makes the stack's one network
+# INTERNAL: no gateway, no route off the host. Schemathesis throws any input
+# at the service, URL-shaped values among them; with the network internal,
+# even a dial the service were tricked into making fails at the network layer,
+# so the run stays on this device. Every container the stack needs — postgres,
+# openbao, the service, the runner — is on this same network, so intra-stack
+# DNS and traffic are unchanged; only egress is gone.
+#
+# `version: '2.4'` matches the base file (the root CLAUDE.md's rule). The base
+# names the network `default` (bridge, with the run's /24); this adds
+# `internal: true` to it, which compose merges onto the base definition.
+version: '2.4'
+
+networks:
+  default:
+    internal: true
+
+# THE RUNNER'S FUZZ MARKER. `sts_schemathesis.js` (#1299) runs only in this
+# mode and declines in every other, the way the cells jobs read
+# STS_TEST_CELL_*_URL — a marker the cells compose overlay sets on this same
+# `tests` service and tools/modes.sh does not. It is here, on the overlay, and
+# NOT in modes.sh, because modes.sh's own rule is that every mode names every
+# variable (tests/unit_job_environment.js), so a fuzz marker put there would
+# have to be added to all six arms and to the runner's scrub list. Only the
+# `fuzz` mode layers this file, so only the `fuzz` mode's runner sees the
+# marker, and a bare `./run-tests.sh` leaves it unset. A unit job that
+# inherits it reads it for nothing, as it does the cells markers.
+services:
+  tests:
+    environment:
+      - STS_TEST_FUZZ=1
+      # Empty runs every cell. A comma-separated list of exact surface keys
+      # (admin-api does not select admin-api-service) runs only those.
+      # Forwarded by run-tests.sh's MODE_ENV when the caller set it, because
+      # sudo empties the environment. The default must stay empty.
+      - STS_SCHEMATHESIS_SURFACES=${STS_SCHEMATHESIS_SURFACES:-}
+
+  # THE PROCESS-LEVEL DPoP FALLBACK (#1299). The kit re-asserts each realm's
+  # DPoP replay headroom and short window before every cell (schemathesis_kit.js
+  # `reassertRealm`), but a cell's own fuzzing can reset a realm's `oauth2.dpop*`
+  # mid-cell, and a realm's override may not have reached the request worker that
+  # checks a proof. So the PROCESS defaults are the big values here, and any
+  # realm with no override in force falls back to them rather than to the 10000
+  # live-ID cap and 600s window (2 × 300s skew) of `env/defaults.js`, which the
+  # fuzzer's proof volume fills in minutes (STS-OAUTH-0554 / STS-CORE-0097). A
+  # realm override still wins; this is only the floor. Literal values, so BARE
+  # with a value (the docker-compose.yml rule: an empty one would be wrong).
+  sts:
+    environment:
+      - STS_OAUTH2_DPOP_IAT_SKEW_S=30
+      - STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE=200000
+      # SIGN-IN RISK SCORING OFF AT THE PROCESS LEVEL (#1299, rcbj: "just
+      # disable risk scoring for the data fuzzing test"). The fuzz realms set
+      # risk.assessSignIns=false as an override, but a cell's own fuzzing can
+      # call config/reset-all (now excluded) or config/reset and clear the
+      # override, after which risk scoring came back on mid-cell and logged the
+      # fuzz person out. A process default holds for the WHOLE run whatever a
+      # realm override does, exactly as the DPoP floor above does — the fuzz
+      # person is not a real user and its risk is test noise. Literal, so BARE.
+      - STS_RISK_ASSESS_SIGN_INS=false

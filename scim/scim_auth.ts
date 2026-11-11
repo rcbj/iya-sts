@@ -742,7 +742,7 @@ const SCHEME_DESCRIPTIONS = Object.freeze({
     'certificate authority (an anchor somebody added) is the person or ' +
     'application whose entry stores it, byte for byte, in ' +
     'userCertificate, and nothing else: stored on no entry or on several, ' +
-    'it is not this credential (STS-SCIM-0084, STS-SCIM-0085). A ' +
+    'it is not this credential. A ' +
     'person\'s certificate this realm issued is filed under its subject ' +
     'in RFC 4514 form. It is not recorded again here: ' +
     'tls_server.js records a certificate once per CONNECTION on ' +
@@ -750,8 +750,8 @@ const SCHEME_DESCRIPTIONS = Object.freeze({
     'other end. A certificate this realm issued to an APPLICATION is ' +
     'that application, and may do only what its oauthAllowedScope ' +
     'declares: the read scope to read and the write scope to write, ' +
-    'asked on every request, so one that declares neither is refused ' +
-    '(STS-SCIM-0083). A person\'s certificate, issued here or stored ' +
+    'asked on every request, so one that declares neither is refused. ' +
+    'A person\'s certificate, issued here or stored ' +
     'on their entry, may do both.'
 });
 
@@ -779,7 +779,7 @@ const POLICY = Object.freeze({
     'oauthAllowedScope declares of the two above, asked on every request: ' +
     'one that declares neither is refused, one that declares only the read ' +
     'scope may only read, and removing a declaration cuts the certificate ' +
-    'off at once (STS-SCIM-0083).',
+    'off at once.',
   rfc: 'RFC 7644 section 2 requires a provider to be ABLE to map an ' +
     'authenticated client to an access control policy. This is that ' +
     'policy. It is two lines because in development mode this service ' +
@@ -789,8 +789,7 @@ const POLICY = Object.freeze({
   tied: 'A SCOPE IS TIED TO A CLIENT (#110). The SCIM scopes are issued only ' +
     'to a client whose oauthAllowedScope declares them, in both modes, and ' +
     'a token is honoured only while its client still declares the scope it ' +
-    'uses — so removing the declaration cuts off tokens already issued ' +
-    '(STS-SCIM-0079).'
+    'uses — so removing the declaration cuts off tokens already issued.'
 });
 
 // The routes whose answers carry the scim namespace's prose (#543).
@@ -1509,8 +1508,11 @@ class ScimAuth {
     const isClient = !claims.username &&
       (!sub || (!!clientId &&
                 (sub === clientId || sub === 'urn:sts:client:' + clientId)));
-    const principal = String((isClient ? clientId : '') || claims.username ||
-                             sub || clientId).trim();
+    // `sub` first: it cannot be reassigned and a username can (ASVS 5.0.0
+    // 10.3.3).
+    const principal = String((isClient ? clientId : '') ||
+                             require('../common/helpers').nameForSubject(sub) ||
+                             claims.username || sub || clientId).trim();
 
     log.debug("Leaving ScimAuth.attemptBearer(). " + row + " for " +
               (principal || '(unnamed)') + ".");
@@ -1591,6 +1593,13 @@ class ScimAuth {
     // exactly what the branch it replaced did — refuse the reserved string,
     // accept everything else including an empty password — and in product mode
     // it verifies against the hashed `userPassword` on the person's entry.
+    const websecurity = require('../common/websecurity');
+    if (websecurity.doorBlocked('scim-basic', req, username)) {
+      log.debug("Leaving ScimAuth.attemptBasic(). Too many failures.");
+      return this.coded('STS-SCIM-0089',
+        this.unauthenticated(req, 'Too many failed attempts. Wait and try ' +
+                             'again.'));
+    }
     const early = req[ScimAuth.BASIC_VERDICT];
     const checked = (early && early.username === username &&
                      early.digest === stsCrypto.digest('sha256', password,
@@ -1599,6 +1608,7 @@ class ScimAuth {
       : credentials.verify(username, password, { via: 'SCIM HTTP Basic',
                                                  door: 'scim' });
     if (!checked.ok) {
+      websecurity.doorFailed('scim-basic', req, username);
       log.debug("Leaving ScimAuth.attemptBasic(). The credential was " +
                 "refused: " +
                 checked.reason);
@@ -1619,6 +1629,7 @@ class ScimAuth {
           'directory entry, and a person with none cannot authenticate at ' +
           'all.'));
     }
+    websecurity.doorSucceeded('scim-basic', req, username);
     log.debug("Leaving ScimAuth.attemptBasic(). " + username + " is accepted.");
     return {
       ok: true, scheme: 'basic', principal: username, isClient: false,
@@ -2623,11 +2634,19 @@ class ScimAuth {
       gate = loadTlsClientCertificates().checkSocket(socket,
                                                      { stored: true });
     } catch (e) {
-      // No certificate authority in this process, so nothing here was issued by
-      // one and there is nothing to refuse.
+      // THE GATE COULD NOT ANSWER, SO THIS IS NOT THE CREDENTIAL (#1360). It
+      // used to fall through to the subject DN below, so a fault in the gate
+      // named whoever the certificate's subject said.
       log.debug("Caught in ScimAuth.attemptClientCertificate(): " +
                 ((e && e.message) || e));
-      gate = null;
+      audit.failure('STS-SCIM-0088', {
+        protocol: 'SCIM', channel: 'http', target: req.originalUrl || req.url,
+        summary: 'the identity gate could not answer about a verified client ' +
+                 'certificate, so it was not taken as a SCIM credential',
+        outcome: 'error'
+      });
+      log.debug("Leaving ScimAuth.attemptClientCertificate(). No gate.");
+      return null;
     }
     // AN OUTSIDE AUTHORITY'S CERTIFICATE NOT STORED ON EXACTLY ONE ENTRY
     // (#1061, rcbj 2026-10-27). It was filed under its subject DN, and any
@@ -3326,6 +3345,22 @@ class ScimAuth {
 
   // THE SECOND HALF: the scope, the funnel, the session and the policy, for a
   // credential that was accepted.
+  /**
+   * The console groups a person is a member of.
+   *
+   * @param name - the person
+   * @returns the groups' common names
+   */
+  private consoleGroupsOf(name: unknown): string[] {
+    const { log } = this.deps;
+    log.debug("Entering ScimAuth.consoleGroupsOf().");
+    const held = require('../admin-ui/admin_rbac').rolesOf(String(name || ''));
+    log.debug("Leaving ScimAuth.consoleGroupsOf().");
+    return ((held && held.groups) || []).map(function (one: any) {
+      return one.cn;
+    });
+  }
+
   private settleDecision(req, wanted?, decision?) {
     const { log, hasScope, accessGate, errorCodes, scopePolicy } = this.deps;
     log.debug("Entering ScimAuth.settleDecision().");
@@ -3465,13 +3500,28 @@ class ScimAuth {
     // unedited service it permits — the built-in policy asks for a role only
     // where somebody has required one. So this changes nothing until a
     // deployment writes a rule, which is the contract every mode here follows.
+    // A CREDENTIAL WITH NO SCOPE NAMES NOTHING IT MAY DO (#1473, ASVS 5.0.0
+    // 8.2.1, 8.2.2), so in product the person behind it needs a console role.
+    // Asked of the policy, in the request, as `REMOTE_PEPS` is: an operator who
+    // edits the access-control document changes the answer.
+    const unscopedPerson = !!row && !row.scoped && !row.applicationScoped &&
+      !decision.application && !decision.anonymous && wanted !== 'none' &&
+      this.deps.mode.restrictsUnscopedPeople();
     const answer = accessGate.check({
       resource: accessGate.RESOURCE.SCIM,
+      requiredRoles: unscopedPerson
+        ? (wanted === 'write' ? ['ADMIN_WRITE']
+                              : ['ADMIN_READ', 'ADMIN_WRITE'])
+        : undefined,
       action: wanted === 'write' ? accessGate.ACTION.WRITE
                                  : accessGate.ACTION.READ,
       subject: { name: (session && session.user && session.user.username) ||
                        decision.principal || '',
                  authenticated: !decision.anonymous,
+                 // The roster's own answer: a subject with no groups resolves
+                 // no group-held role in the register.
+                 groups: unscopedPerson
+                   ? this.consoleGroupsOf(decision.principal) : undefined,
                  sessionId: session ? session.id : null },
       context: { method: req.method, path: req.originalUrl || req.url,
                  scheme: decision.scheme }

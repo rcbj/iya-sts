@@ -90,7 +90,7 @@ function documentWith(authRequired) {
   log.debug("Leaving documentWith().");
   return spec.buildSpec(adminApi.ROUTES, {
     baseUrl: 'https://sts.example:8081',
-    version: '0.1.20260910000000',
+    version: '1.0.0.20261104000000',
     authRequired: authRequired
   });
 }
@@ -167,10 +167,14 @@ async function run(t) {
     // AND THE CONSOLE'S OWN OPERATIONS (#454), everything under
     // `/admin-api/console`, which take `admin:console`.
     const consoleOp = /^\/admin-api\/console(\/|$)/.test(row.path);
+    // AND A DIRECTORY → POLICIES WRITE (#645), which takes admin:security.
+    const policyWrite = row.method.toUpperCase() !== 'GET' &&
+                        row.path === '/admin-api/policies/{action}';
     const wanted = feed ? 'device:compliance'
       : (consoleOp ? 'admin:console'
-        : (row.method.toUpperCase() === 'GET' ? 'admin:read'
-                                              : 'admin:write'));
+        : (policyWrite ? 'admin:security'
+          : (row.method.toUpperCase() === 'GET' ? 'admin:read'
+                                                : 'admin:write')));
     const security = row.operation.security;
     if (!Array.isArray(security) || !security.length) { return true; }
     const named = (security[0] || {}).oauth2 || [];
@@ -263,6 +267,10 @@ async function run(t) {
           }),
           'and makes its one exception, the MDM feed at ' +
           '/admin-api/device-compliance, which the document describes');
+  // #645: a security change takes admin:security in the gate.
+  t.check(/securityChange \? 'admin:security'/.test(apiSource),
+          'and a security change, which the gate asks admin:security for ' +
+          '(common/security_operations.ts)');
   t.check(/consoleOp \? 'admin:console'/.test(apiSource) &&
           /path === '\/console' \|\| path\.indexOf\('\/console\/'\) === 0/
             .test(apiSource),
@@ -303,7 +311,10 @@ async function run(t) {
           'every buildSpec() call site was found',
           callSites.length + ' call(s)');
   const handRolled = callSites.filter(function (site) {
-    return site.source.indexOf('specOptions(') < 0;
+    // `responseChecks.install()`'s is the one call that publishes nothing: it
+    // reads only the response models, whichever way the gate stands (#1353).
+    return site.source.indexOf('specOptions(') < 0 &&
+      site.source.indexOf('reads only the response models') < 0;
   });
   t.check(handRolled.length === 0,
           'and every one of them takes its options from ' +

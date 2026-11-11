@@ -65,7 +65,7 @@ services:
       - STS_PUBLIC_BASE_URL=${STS_PUBLIC_BASE_URL:-https://sts-lb:8081}
       # `sts-lb` among the names, because it is the name every client here
       # verifies; the rest are the default list's.
-      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-sts-lb,localhost,sts,sts2,sts-mock,sts.example.com}
+      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-sts-lb,sts-lb.example.com,localhost,sts,sts2,sts-mock,sts.example.com}
 
   sts2:
     extends:
@@ -88,7 +88,7 @@ services:
       - STS_PROXY_PROTOCOL=${STS_PROXY_PROTOCOL:-off}
       - STS_TRUSTED_PROXIES=${STS_TRUSTED_PROXIES:-}
       - STS_PUBLIC_BASE_URL=${STS_PUBLIC_BASE_URL:-https://sts-lb:8081}
-      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-sts-lb,localhost,sts,sts2,sts-mock,sts.example.com}
+      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-sts-lb,sts-lb.example.com,localhost,sts,sts2,sts-mock,sts.example.com}
       - STS_SPIFFE_GRPC_HOST=${STS2_ADDRESS:-172.30.0.20}
       - STS_EXTRA_IPS=
     volumes:
@@ -126,6 +126,11 @@ services:
         condition: service_started
 
   tests:
+    # The balancer's dotted name (#694), for the reason the base file's
+    # `tests` maps `sts.example.com`: a did:web needs a host of two labels.
+    # TLS is passed through, so it is in both nodes' STS_TLS_HOSTNAMES.
+    extra_hosts:
+      - "sts-lb.example.com:${STS_LB_ADDRESS:-172.30.0.30}"
     environment:
       # tools/fresh-connections.js, sts_cluster_alternation.js and
       # run-report.js's bulk lane — the mode names all three (modes.sh); the

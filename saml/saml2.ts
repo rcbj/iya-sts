@@ -266,7 +266,9 @@ class Saml2Assertions {
   //                         request. A service provider that checks either —
   //                         most do — refuses an assertion without them, and
   //                         the refusal reads as a signature problem to anybody
-  //                         who has not met it before.
+  //                         who has not met it before. notOnOrAfter omitted is
+  //                         the Conditions instant, the same string: a second
+  //                         iso() is a second clock.
   //   sessionIndex          the AuthnStatement's SessionIndex. It defaults to
   //                         the assertion's own ID, which is what the two older
   //                         callers got and is fine while nothing logs out;
@@ -434,13 +436,18 @@ class Saml2Assertions {
     // as before, because that is what every existing caller's output has been
     // and a self-closing element is not the same document as one with an empty
     // child.
+    //
+    // NotOnOrAfter is the Conditions instant (`exp`) unless the caller named
+    // one. Two iso() calls are two Date.now() reads, and the confirmation and
+    // the Conditions then disagree by a millisecond (2026-11-01,
+    // wsfed_saml2_token). The string written here is the string on Conditions.
     const scd = opts.subjectConfirmation;
+    const confirmUntil = scd ? (scd.notOnOrAfter || exp) : '';
     const confirmation = scd
       ? '<saml:SubjectConfirmation ' +
           'Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">' +
           '<saml:SubjectConfirmationData' +
-          (scd.notOnOrAfter ?
-           ' NotOnOrAfter="' + xmlEscape(scd.notOnOrAfter) + '"' : '') +
+          ' NotOnOrAfter="' + xmlEscape(confirmUntil) + '"' +
           (scd.recipient ?
            ' Recipient="' + xmlEscape(scd.recipient) + '"' : '') +
           (scd.inResponseTo ?

@@ -12,6 +12,9 @@
 // and the link that enrols one by proving it at `/authn/wallet` — a plain
 // link, because that is a sign-in, not a form. And `/portal/self-issued/did`
 // (2026-10-20), one enrolled did:jwk's or did:key's resolved document.
+// And since #1291 the DIDs this realm PUBLISHES for the person: *Publish a
+// DID*, each one's document, custody, versions and state, *Add key*,
+// *Rotate key* and *Deactivate*, and a downloaded key's one-time pane.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -22,6 +25,10 @@ type Json = any;
 type PortalPage = import('../types/account-api').PortalPage;
 
 const PATH = kit.BASE + '/self-issued';
+// A published DID's acts (#1291).
+const DIDS_PATH = PATH + '/dids';
+// Where a wallet round trip starts.
+const WALLET = '/authn/wallet?siop=1&enrol=1';
 // The DID document of one enrolled did:jwk or did:key (2026-10-20).
 const DID_PATH = PATH + '/did';
 // What a subject's one-line cell shows of it: its start and its end.
@@ -67,9 +74,9 @@ class SelfIssuedPages {
         kit.esc(one.enrolledAt ? t.date(one.enrolledAt) : '') +
         (one.by ? ' (' + kit.esc(one.by) + ')' : '') + '</td><td>' +
         // How it was enrolled (#693): proved with the person's wallet, or
-        // by an administrator, unproven.
-        (one.proof === 'wallet' ? t.html('portalSelfIssued.proofWallet')
-                                : t.html('portalSelfIssued.proofAdmin')) +
+        // by an administrator, unproven — or a DID this realm published
+        // with a key it keeps or handed over (#1291).
+        SelfIssuedPages.proofText(one.proof, t) +
         '</td><td>' + SelfIssuedPages.locationCell(one.location, t) +
         '</td><td>' + SelfIssuedPages.preferCell(one, t) + '</td><td>' +
         '<form method="post" action="' + kit.esc(PATH) + '">' +
@@ -112,7 +119,243 @@ class SelfIssuedPages {
           '</a></p><p class="sub">' + t.html('portalSelfIssued.enrolNote') +
           ' ' + t.html('portalSelfIssued.reprove') + '</p>'
         : '<p class="sub" id="siop-off">' + t.html('portalSelfIssued.off') +
-          '</p>') + '</div>';
+          SelfIssuedPages.turnOnNote(view.turnOn, t) + '</p>') + '</div>' +
+      SelfIssuedPages.publishedCard(view, ctx);
+  }
+
+  /**
+   * How a subject was enrolled, in words: proved with a wallet, added by
+   * an administrator, or a DID this realm published with a key it keeps or
+   * handed over (#1291).
+   *
+   * @param proof - the row's `proof`
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static proofText(proof: string, t: Json): string {
+    if (proof === 'wallet') {
+      return t.html('portalSelfIssued.proofWallet');
+    }
+    if (proof === 'realm') {
+      return t.html('portalSelfIssued.proofRealm');
+    }
+    if (proof === 'issued') {
+      return t.html('portalSelfIssued.proofIssued');
+    }
+    return t.html('portalSelfIssued.proofAdmin');
+  }
+
+  /**
+   * A wallet round trip's link for a published DID's act (#1291), in this
+   * tab's account.
+   *
+   * @param act - the `did_act` marker
+   * @param view - the page's view, for `loginHint`
+   * @returns the href, escaped
+   */
+  static walletLink(act: string, view: Json): string {
+    return kit.esc(WALLET + '&did_act=' + encodeURIComponent(act) +
+      (view.loginHint ? '&login_hint=' +
+        encodeURIComponent(String(view.loginHint)) : ''));
+  }
+
+  /**
+   * One button posting a published DID's act (#1291).
+   *
+   * @param action - the act
+   * @param rid - the DID's id, or ''
+   * @param label - the button's text, already HTML
+   * @param cls - the button's class, or ''
+   * @returns the HTML
+   */
+  static didForm(action: string, rid: string, label: string,
+                 cls: string): string {
+    return '<form method="post" action="' + kit.esc(DIDS_PATH) + '">' +
+      '<input type="hidden" name="action" value="' + kit.esc(action) + '">' +
+      (rid ? '<input type="hidden" name="rid" value="' + kit.esc(rid) +
+             '">' : '') +
+      '<button type="submit"' + (cls ? ' class="' + cls + '"' : '') + '>' +
+      label + '</button></form>';
+  }
+
+  /**
+   * The DIDs this realm publishes for the person (#1291): the custody, the
+   * cap, *Publish a DID*, each DID with its document, versions, state and
+   * acts, and — once — a downloaded private key.
+   *
+   * @param view - the page's view
+   * @param ctx - the render context
+   * @returns the HTML, or '' where the realm publishes none and they hold
+   *   none
+   */
+  static publishedCard(view: Json, ctx: Json): string {
+    const t = ctx.t;
+    const pub = view.published;
+    if (!pub || (!pub.enabled && !(pub.dids || []).length)) {
+      return '';
+    }
+    const rows = (pub.dids || []).map(function (one: Json): string {
+      return SelfIssuedPages.publishedRow(one, view, t);
+    });
+    let publish = '';
+    if (pub.enabled && pub.canPublish) {
+      publish = pub.custody === 'wallet'
+        ? '<p><a class="button" id="did-publish" href="' +
+          SelfIssuedPages.walletLink('publish', view) + '">' +
+          t.html('portalSelfIssued.pubPublish') + '</a></p>'
+        : SelfIssuedPages.didForm('publish', '',
+                                  t.html('portalSelfIssued.pubPublish'), '');
+    }
+    return SelfIssuedPages.freshPane(view, t) +
+      '<div class="card" id="did-published"><h2>' +
+      t.html('portalSelfIssued.pubHeading') + '</h2><p class="sub">' +
+      t.html('portalSelfIssued.pubSub') + '</p>' +
+      (pub.enabled
+        ? '<p class="sub" id="did-custody">' +
+          (pub.custody === 'realm'
+            ? t.html('portalSelfIssued.pubCustodyRealm')
+            : pub.custody === 'download'
+              ? t.html('portalSelfIssued.pubCustodyDownload')
+              : t.html('portalSelfIssued.pubCustodyWallet')) + '</p>' +
+          '<p class="sub">' + t.html('portalSelfIssued.pubCap',
+            { active: String(pub.active), max: String(pub.maxPerPerson) }) +
+          '</p>'
+        : '<p class="sub" id="did-off">' +
+          t.html('portalSelfIssued.pubOff') + '</p>') +
+      (rows.length
+        ? '<div class="scrollx"><table class="grid"><tr><th>' +
+          t.html('portalSelfIssued.pubColDid') + '</th><th>' +
+          t.html('portalSelfIssued.pubColCustody') + '</th><th>' +
+          t.html('portalSelfIssued.pubColVersions') + '</th><th>' +
+          t.html('portalSelfIssued.pubColState') + '</th><th></th></tr>' +
+          rows.join('') + '</table></div>'
+        : '<p id="did-none">' + t.html('portalSelfIssued.pubNone') + '</p>') +
+      publish + '</div>';
+  }
+
+  /**
+   * One published DID's row (#1291).
+   *
+   * @param one - the DID, as the view lists it
+   * @param view - the page's view
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static publishedRow(one: Json, view: Json, t: Json): string {
+    const active = one.state === 'active';
+    const custody = one.custody === 'realm'
+      ? t.html('portalSelfIssued.pubCustodyShortRealm')
+      : one.custody === 'download'
+        ? t.html('portalSelfIssued.pubCustodyShortDownload')
+        : t.html('portalSelfIssued.pubCustodyShortWallet');
+    const versions = (one.versions || []).map(function (v: Json): string {
+      const change = v.change === 'add-key'
+        ? t.html('portalSelfIssued.pubChangeAdd')
+        : v.change === 'rotate-key'
+          ? t.html('portalSelfIssued.pubChangeRotate')
+          : t.html('portalSelfIssued.pubChangeCreate');
+      return '<li>' + t.html('portalSelfIssued.pubVersionLine',
+        { n: String(v.versionId), when: v.created ? t.date(v.created) : '' }) +
+        ' ' + change +
+        ' (' + (v.keys || []).map(function (k: Json): string {
+          return '<code title="' + kit.esc(k.id) + '">' +
+            kit.esc(SelfIssuedPages.middle(k.id)) + '</code>';
+        }).join(', ') + ')</li>';
+    });
+    let acts = '';
+    if (active && one.custody === 'realm') {
+      acts = SelfIssuedPages.didForm('add-key', one.rid,
+               t.html('portalSelfIssued.pubAddKey'), '') +
+             SelfIssuedPages.didForm('rotate-key', one.rid,
+               t.html('portalSelfIssued.pubRotateKey'), '');
+    } else if (active && one.proof === 'wallet') {
+      acts = one.pending
+        ? '<p class="sub">' + t.html('portalSelfIssued.pubPendingNote') +
+          '</p><a class="button" href="' +
+          SelfIssuedPages.walletLink('key.' + one.rid, view) + '">' +
+          t.html('portalSelfIssued.pubProveNew') + '</a>'
+        : '<a class="button" href="' +
+          SelfIssuedPages.walletLink('authorize-add.' + one.rid, view) +
+          '">' + t.html('portalSelfIssued.pubAddKey') + '</a> ' +
+          '<a class="button" href="' +
+          SelfIssuedPages.walletLink('authorize-rotate.' + one.rid, view) +
+          '">' + t.html('portalSelfIssued.pubRotateKey') + '</a>';
+    } else if (active && one.proof === 'issued') {
+      acts = '<p class="sub">' + t.html('portalSelfIssued.pubProveIssued') +
+        '</p>';
+    }
+    if (active) {
+      acts += SelfIssuedPages.didForm('deactivate', one.rid,
+                t.html('portalSelfIssued.pubDeactivate'), 'danger');
+    }
+    return '<tr id="did-' + kit.esc(one.rid) + '"><td><code class="oneline ' +
+      'subject" title="' + kit.esc(one.did) + '">' +
+      kit.esc(SelfIssuedPages.middle(one.did)) + '</code>' +
+      '<div class="didlink"><a href="' + kit.esc(one.documentUrl) +
+      '" title="' + kit.esc(one.documentUrl) + '" target="_blank" ' +
+      'rel="noopener noreferrer">' + t.html('portalSelfIssued.pubDocument') +
+      '</a></div></td><td>' +
+      custody + '</td><td>' +
+      '<details><summary>' + t.html('portalSelfIssued.pubCurrent',
+        { n: String(one.currentVersion) }) + '</summary><ul>' +
+      versions.join('') + '</ul></details></td><td>' +
+      t.html(one.state === 'active' ? 'portalSelfIssued.pubStateActive'
+        : one.state === 'suspended' ? 'portalSelfIssued.pubStateSuspended'
+          : 'portalSelfIssued.pubStateDeactivated') + '</td><td>' + acts +
+      '</td></tr>';
+  }
+
+  /**
+   * A downloaded DID key's one-time pane (#1291, #671's pattern): the file
+   * the answer carried, offered once, and a warning that it will not come
+   * back. '' on every other drawing.
+   *
+   * @param view - the page's view
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static freshPane(view: Json, t: Json): string {
+    const fresh = view.fresh;
+    if (!fresh || fresh.kind !== 'did-key' || !fresh.file) {
+      return '';
+    }
+    return '<div class="fresh" id="did-fresh"><h3>' +
+      t.html('portalSelfIssued.pubFreshHeading') + '</h3><p><code>' +
+      kit.esc(String(fresh.did)) + '</code></p><p>' +
+      t.html('portalSelfIssued.pubFreshNote') + '</p>' +
+      '<div class="dl-row"><a class="dl" id="did-fresh-download" ' +
+      'download="' + kit.esc(fresh.file.name) + '" title="' +
+      kit.esc(fresh.file.name) + '" href="' +
+      kit.esc('data:' + fresh.file.mime + ';base64,' + fresh.file.base64) +
+      '">' + t.html('portalSelfIssued.pubFreshDownload') + '</a></div></div>';
+  }
+
+  /**
+   * How the sign-in is turned on, after the sentence saying it is off
+   * (#655), or '': to a person who may change the realm's settings, the
+   * setting, its environment variable and a link to the console tab that
+   * draws it; to anybody else, the setting to ask an administrator for.
+   * The link is root-relative, so the runtime puts it in the realm as it
+   * does every other (`realmLinks()`).
+   *
+   * @param turnOn - the view's `turnOn`, or nothing
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static turnOnNote(turnOn: Json, t: Json): string {
+    if (!turnOn || !turnOn.setting) {
+      return '';
+    }
+    const named = { setting: String(turnOn.setting),
+                    env: String(turnOn.env || '') };
+    if (turnOn.administrator === true && turnOn.page) {
+      return ' <span id="siop-turn-on">' +
+        t.html('portalSelfIssued.offAdmin', named) + ' <a href="' +
+        kit.esc(String(turnOn.page)) + '">' +
+        t.html('portalSelfIssued.offAdminLink') + '</a></span>';
+    }
+    return ' <span id="siop-ask-admin">' +
+      t.html('portalSelfIssued.offAsk', named) + '</span>';
   }
 
   /**
@@ -186,7 +429,7 @@ class SelfIssuedPages {
     const back = '<p><a href="' + kit.esc(PATH) + '">' +
       t.html('portalSelfIssued.didBack') + '</a></p>';
     const head = '<div class="card didpage"><h2>' +
-      t.html('portalSelfIssued.didHeading') + '</h2>';
+      t.html('portalSelfIssued.pubHeading') + '</h2>';
     if (view.ok === false || !view.subject || !view.document) {
       return head + '<p class="sub" id="siop-did-none">' +
         t.html('portalSelfIssued.didChoose') + '</p>' + back + '</div>';
@@ -276,7 +519,9 @@ class SelfIssuedPages {
       return '<strong>' + t.html('portalSelfIssued.isPreferred') +
         '</strong> ' + form('unprefer', t.html('portalSelfIssued.unprefer'));
     }
-    if (one.proof === 'wallet' && /^did:/.test(String(one.subject))) {
+    // A proved DID, or one this realm published for them (#1291).
+    if ((one.proof === 'wallet' || one.proof === 'realm' ||
+         one.proof === 'issued') && /^did:/.test(String(one.subject))) {
       return form('prefer', t.html('portalSelfIssued.prefer'));
     }
     return '';

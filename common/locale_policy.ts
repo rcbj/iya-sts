@@ -82,6 +82,7 @@
 // in both modes: it decides only what language a reader sees.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
@@ -183,11 +184,7 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
 // THE ONE SELECTOR A NAMED PROFILE CARRIES (#1238): its precedence. What it
 // covers names it (REFERENCES), so the console and the API draw this row
 // and no list.
-const SELECTORS = [
-  { key: 'precedence', attribute: 'stsLocalePrecedence',
-    what: 'Which named locale policy wins where several are named for a ' +
-          'page: the lowest, from 1 to 1000.' }
-];
+const SELECTORS = ModelTables.selectors('policy.locale');
 /**
  * How `common/policy_selection.ts` reads a named profile (#1238).
  */
@@ -204,29 +201,10 @@ const REFERENCES = Object.freeze({ application: 'appLocalePolicy',
  * The policy's fields: one table read as the schema, the console form, the
  * API body, the validation of a save and the parse of an entry.
  */
-const FIELDS: PolicyField[] = [
-  { key: 'defaultLocale', attribute: 'stsLocaleDefault', type: 'locale',
-    dflt: 'en',
-    label: 'Default language and region',
-    what: 'A BCP 47 language tag (RFC 5646), such as en, fr-CA or zh-TW. ' +
-          'Pages are drawn in it when the request, the person\'s ' +
-          'preferredLanguage, the language chooser and the browser name ' +
-          'nothing a catalog answers; dates and numbers are formatted for ' +
-          'it even where no catalog does. Mail to a person whose entry ' +
-          'names no language is written in it. Replaces the setting ' +
-          'mail.defaultLanguage.' },
-  { key: 'populatePreferredLanguage',
-    attribute: 'stsLocalePopulatePreferredLanguage', type: 'bool',
-    dflt: true,
-    label: 'Give a new person this language',
-    what: 'ON BY DEFAULT. A person entry created in this realm without a ' +
-          'preferredLanguage (RFC 2798 section 2.7) is given the default ' +
-          'language above as one — by the console, the management API, ' +
-          'SCIM, a federated or self-service sign-up, or a bulk load. A ' +
-          'named profile applies where the application that caused the ' +
-          'creation names it, or one of the person\'s groups does. ' +
-          'Existing entries are never rewritten.' }
-];
+const FIELDS: PolicyField[] =
+  // Written in models/directory/policy_locale.tsp (#1390). What is passed here is
+  // what the code computes, so it has no second writing there.
+  ModelTables.fields('policy.locale');
 
 /**
  * The fields, by key.
@@ -249,34 +227,8 @@ const DEFAULTS: Readonly<Record<string, boolean | string>> =
  * The directory schema of `ou=localePolicies`: its container, object class
  * and attributes.
  */
-const SCHEMA = {
-  container: 'ou=localePolicies',
-  objectClasses: [
-    { name: 'stsLocalePolicy',
-      what: 'This service\'s class for a locale policy: the language a ' +
-            'realm\'s pages fall back to and gives a new person. Named by ' +
-            'the PROFILE (`cn=default`, or a named profile an application ' +
-            'or a group names).' }
-  ],
-  attributes: FIELDS.map(function (field) {
-    return { name: field.attribute, what: field.what };
-  }).concat(SELECTORS.map(function (field) {
-    return { name: field.attribute, what: field.what };
-  })).concat([
-    { name: 'description',
-      what: 'What the profile is for, for the next person.' }
-  ]),
-  // ON A PERSON (#539): what population wrote, so a page can tell the
-  // policy's language from the person's own.
-  personAttributes: [
-    { name: 'stsPreferredLanguagePopulated',
-      what: 'The preferredLanguage the locale policy gave this person when ' +
-            'their entry was created. While preferredLanguage still equals ' +
-            'it, it is the POLICY\'s choice and a page ranks it below the ' +
-            'browser\'s language; once anybody sets another, it is the ' +
-            'person\'s. Written by this service only.' }
-  ]
-};
+// The table is written in models/directory/policy_locale.tsp (#1390).
+const SCHEMA = ModelTables.schema('policy.locale');
 
 /**
  * The locale policy: the language a realm's pages fall back to and give a new
@@ -929,7 +881,17 @@ class LocalePolicy {
     if (ranked) {
       attributes[SELECTION.precedenceAttribute] = String(ranked.precedence);
     }
-    const written = this.directory.writeLocalePolicy(which, attributes);
+    // `{ ok: false }` is truthy. putEntry() answers it for a description
+    // that carries an operator code and writes nothing (#1416); `false`
+    // is still the directory being full.
+    const written = this.directory.writeLocalePolicy(which, attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug('Leaving LocalePolicy.save(). A description carries an ' +
+                'operator code.');
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
     if (!written) {
       log.debug('Leaving LocalePolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,

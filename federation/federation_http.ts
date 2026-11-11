@@ -343,6 +343,20 @@ const OUTBOUND_TRANSPORT = {
  * one checked.
  */
 class FederationHttp {
+
+  // ONE VALUE IN application/x-www-form-urlencoded (the WHATWG serializer:
+  // a space as `+`, everything else outside A-Z a-z 0-9 `*-._` escaped),
+  // which is what RFC 6749 section 2.3.1 asks of a Basic client id and
+  // secret.
+  /**
+   * Encodes one value as application/x-www-form-urlencoded.
+   *
+   * @param value - the text
+   * @returns the encoded text
+   */
+  static formEncoded(value: string): string {
+    return new URLSearchParams([['v', String(value)]]).toString().slice(2);
+  }
   /**
    * The three relationship attributes that may hold a URL this service will
    * fetch from.
@@ -607,18 +621,26 @@ class FederationHttp {
   // -------------------------------------------------------------------------
   // RESOLVE ONCE, AND SAY WHICH ADDRESS THE CONNECTION MAY USE.
   //
-  // In development (`mode.dialsInternalAddresses()`) the name is resolved by
-  // the connection itself and nothing is pinned. In product every address
-  // the name resolves to is checked and the first is what the request
-  // connects to — resolving twice is how a name that answered a public
-  // address to the check answers a private one to the connection. Never
-  // rejects.
+  // `security.outboundAllowedHosts`, where it is set, is asked FIRST AND IN
+  // BOTH MODES (#1526, #1550; #1577): the setting says an influenced request
+  // may reach only those hosts, and `revocation_status.js`'s `hostAllowed()`
+  // has always applied it in both. Until #1577 the development return below
+  // came first, so a list an operator set was ignored there.
+  //
+  // Then, in development (`mode.dialsInternalAddresses()`), the name is
+  // resolved by the connection itself and nothing is pinned, so a listed
+  // internal host is still dialled. In product every address the name
+  // resolves to is checked and the first is what the request connects to —
+  // resolving twice is how a name that answered a public address to the
+  // check answers a private one to the connection. Never rejects.
   // -------------------------------------------------------------------------
   /**
    * Resolves a host once and says which address the connection may use.
    *
-   * In development nothing is checked or pinned; in product every address the
-   * name resolves to is checked and the first is pinned. Never rejects.
+   * A host `security.outboundAllowedHosts` leaves out is refused in either
+   * mode. Otherwise, in development nothing is checked or pinned; in product
+   * every address the name resolves to is checked and the first is pinned.
+   * Never rejects.
    *
    * @param hostname - the host name or IP literal
    * @returns a promise of `{ ok, address, family }`, or `{ ok: false, kind, why
@@ -632,6 +654,23 @@ class FederationHttp {
     const modeModule = this.deps.mode || mode;
     log.debug("Entering FederationHttp.vetHost(). hostname=" + hostname);
     const host = String(hostname || '').replace(/^\[|\]$/g, '');
+    // THE HOSTS THIS SERVICE MAY DIAL, where the operator names them (#1526,
+    // ASVS 5.0.0 13.2.4), in either mode. Empty allows any host the mode
+    // otherwise allows, as before.
+    const allowed: string[] = [].concat(
+      this.deps.config.value('security.outboundAllowedHosts') || [])
+      .join(',').split(',').map(function (one: string) {
+        return one.trim().toLowerCase();
+      }).filter(Boolean);
+    const named = host.toLowerCase();
+    if (allowed.length && !allowed.some(function (one) {
+      return one.charAt(0) === '.' ? named.endsWith(one) : named === one;
+    })) {
+      log.debug("Leaving FederationHttp.vetHost(). Not on the list.");
+      return Promise.resolve({ ok: false, address: '', family: 0,
+        kind: 'internal',
+        why: '"' + host + '" is not in security.outboundAllowedHosts.' });
+    }
     if (modeModule.dialsInternalAddresses()) {
       log.debug("Leaving FederationHttp.vetHost(). Development: not pinned.");
       return Promise.resolve({ ok: true, address: '', family: 0 });
@@ -1381,7 +1420,8 @@ class FederationHttp {
             response.on('end', function () {
               const ok = status >= 200 && status < 300;
               done({ ok: ok, status: status, body: Buffer.concat(chunks),
-                     contentType: contentType, kind: ok ? '' : 'status',
+                     contentType: contentType, headers: response.headers,
+                     kind: ok ? '' : 'status',
                      why: ok ? '' : 'it answered ' + status });
             });
             response.on('error', function (e) {
@@ -1898,11 +1938,72 @@ class FederationHttp {
                                     'fedResponseType=id_token and its ' +
                                     'keys in fedJwks' });
     }
-    const raw = String((record && record[attribute]) || '');
+    log.debug("Leaving FederationHttp.fetchJson(). Dialling.");
+    return this.dial(record, attribute,
+                     String((record && record[attribute]) || ''), opts);
+  }
+
+  // -------------------------------------------------------------------------
+  // A PARTNER'S DISCOVERY DOCUMENT (#930), the fifth thing a relationship
+  // may dial, and a separate argument in a separate function as the header
+  // requires rather than a fifth name in DIALLABLE. Its address is not an
+  // attribute: it is {fedPeer}/.well-known/openid-configuration (OpenID
+  // Connect Discovery 1.0 section 4), DERIVED from the issuer an
+  // administrator configured and from nothing a request carries — the same
+  // provenance DIALLABLE stands on, one step removed. Only for a
+  // relationship that asked for it (`fedDiscovery`), and under every rule
+  // `fetchJson()` keeps: the kill switch, the transport policy, no
+  // redirect, the cap, the timeout. What comes back is judged by the
+  // caller: its issuer must be fedPeer exactly.
+  // -------------------------------------------------------------------------
+  /**
+   * Fetches an OpenID Connect relationship's discovery document, from the
+   * address its `fedPeer` names. Never rejects.
+   *
+   * @param record - the federation relationship, with `fedDiscovery` on
+   * @returns a promise of `{ ok, status, json, text, url, errorCode, why }`
+   */
+  fetchDiscovery(record: any): Promise<FetchResult> {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.fetchDiscovery().");
+    // The register's own `discovers()` is the caller's to ask (this module
+    // does not require federation.js — see its header); the attribute is
+    // read here as a second, cheaper guard.
+    if (!record || record.fedProtocol !== 'oidc' ||
+        !/^(true|yes|1|on)$/i.test(String(record.fedDiscovery || '').trim())) {
+      log.debug("Leaving FederationHttp.fetchDiscovery(). Not asked for.");
+      return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+                               url: '', errorCode: 'STS-FED-0046',
+                               why: 'this relationship does not read its ' +
+                                    'partner\'s discovery document ' +
+                                    '(fedDiscovery is off)' });
+    }
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.fetchDiscovery(). Outbound is off.");
+      return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+                               url: '', errorCode: 'STS-FED-0047',
+                               why: 'federation.outbound is off, so this ' +
+                                    'service fetches no discovery document' });
+    }
+    const url = String(record.fedPeer || '').trim().replace(/\/+$/, '') +
+      '/.well-known/openid-configuration';
+    log.debug("Leaving FederationHttp.fetchDiscovery(). " + url);
+    return this.dial(record, 'the discovery document of fedPeer', url,
+                     { method: 'GET' });
+  }
+
+  // The request itself, for fetchJson() and fetchDiscovery(): `raw` is the
+  // address their own rules allowed, and `attribute` names it in a message.
+  private dial(record: any, attribute: string, raw: string,
+               options?: FetchOptions): Promise<FetchResult> {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.dial().");
+    const opts = options || {};
+    const id = (record && record.fedId) || '?';
     const problem = this.urlVerdict(raw);
     if (problem.why) {
-      log.debug("Leaving FederationHttp.fetchJson(). " + problem.why);
-      log.debug("Leaving FederationHttp.fetchJson().");
+      log.debug("Leaving FederationHttp.dial(). " + problem.why);
+      log.debug("Leaving FederationHttp.dial().");
       return Promise.resolve({ ok: false, status: 0, json: null, text: '',
                                url: raw,
                                errorCode: problem.errorCode || 'STS-FED-0048',
@@ -1921,7 +2022,7 @@ class FederationHttp {
     }
     const policy = this.tlsFor(target.origin);
     if (secure && !policy.ok) {
-      log.debug("Leaving FederationHttp.fetchJson(). " + policy.why);
+      log.debug("Leaving FederationHttp.dial(). " + policy.why);
       return Promise.resolve({ ok: false, status: 0, json: null, text: '',
                                url: raw, errorCode: policy.errorCode,
                                why: attribute + ' cannot be dialled: ' +
@@ -1941,18 +2042,26 @@ class FederationHttp {
       headers['Authorization'] = 'Bearer ' + opts.bearer;
     }
     if (opts.basic) {
-      headers['Authorization'] = 'Basic ' +
-        Buffer.from(String(opts.basic.user) + ':' + String(opts.basic.pass))
-              .toString('base64');
+      // RFC 6749 SECTION 2.3.1: the client id and the secret are EACH
+      // application/x-www-form-urlencoded before they are joined and
+      // base64-encoded, and the server decodes them so. Joined raw, a secret
+      // holding `%`, `+`, `:` or a non-ASCII character reaches the partner
+      // as some other secret; the conformance suite's dynamically
+      // registered clients get such secrets on purpose (#930). An id and a
+      // secret of unreserved characters are unchanged by it.
+      headers['Authorization'] = 'Basic ' + Buffer.from(
+        FederationHttp.formEncoded(String(opts.basic.user)) + ':' +
+        FederationHttp.formEncoded(String(opts.basic.pass)))
+        .toString('base64');
     }
 
     const cap = this.maxBodyBytes();
     const transport = secure ? this.deps.https : this.deps.http;
-    log.debug("Leaving FederationHttp.fetchJson().");
+    log.debug("Leaving FederationHttp.dial().");
     return new Promise<FetchResult>((resolve) => {
       const done = function (result) {
         log.debug("Entering done().");
-        log.debug("Leaving FederationHttp.fetchJson(). ok=" + result.ok +
+        log.debug("Leaving FederationHttp.dial(). ok=" + result.ok +
                   ', status=' + result.status);
         resolve(Object.assign({ url: raw }, result));
         log.debug("Leaving done().");
@@ -2024,7 +2133,7 @@ class FederationHttp {
             try {
               json = JSON.parse(text);
             } catch (e) {
-              log.debug("Caught in a callback in fetchJson(): " +
+              log.debug("Caught in a callback in dial(): " +
                         ((e && e.message) || e));
               // Not JSON. Kept rather than failed here, because an OAuth
               // error is often served as HTML by a proxy in front of the
@@ -2048,7 +2157,7 @@ class FederationHttp {
           });
         });
       } catch (e) {
-        log.debug("Caught in FederationHttp.fetchJson(): " +
+        log.debug("Caught in FederationHttp.dial(): " +
                   ((e && e.message) || e));
         // A malformed option rather than a network failure — new URL() has
         // already succeeded by here, so this is a bug in the caller and is
@@ -2183,6 +2292,10 @@ export = {
    * Forwards to `FederationHttp.fetchJson()`.
    */
   fetchJson: slot.forward('fetchJson'),
+  /**
+   * Forwards to `FederationHttp.fetchDiscovery()`.
+   */
+  fetchDiscovery: slot.forward('fetchDiscovery'),
   /**
    * Forwards to `FederationHttp.outboundAllowed()`.
    */

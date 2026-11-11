@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Ang mga response_type value na puwedeng hingin ng client na ito — ang response_types ng RFC 7591 section 2, mula sa isang registration o isinulat ng isang administrator, bawat value ay isang response type (\"code\", \"code id_token\"). Tinatanggihan ng authorization endpoint ang anumang iba (unauthorized_client), sa bawat mode; walang nililimitahan ang walang lamang listahan. Ang talagang hiningi ng client ay ang oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "Ang mga response type na naglalabas ng access token mula sa authorization endpoint — token, code token, id_token token, code id_token token — na maaaring gamitin ng client na ito kung saan umiiral ang RFC 9700 mode (laging umiiral ito sa product mode). Iginagalang lang habang iniuurong ng realm ang RFC 9700 section 2.1.2 (oauth2.allowImplicitTokenResponses, hindi kailanman sa ilalim ng OAuth 2.1 o FAPI); kung gayon ay tinatanggihan ang type na hindi nakalista rito (unauthorized_client). WALANG LAMAN bilang default, at ang walang laman ay nangangahulugang wala. Isinusulat ng isang administrator o ng may-ari ng application habang pinapayagan ng realm ang mga type na ito, o ng isang dynamic registration sa loob ng oauth2.dynamicRegistrationTokenResponseTypes. Sinasabi ng RFC 9700 section 2.1.2 na HINDI DAPAT gamitin ng mga client ang mga ito."
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "Isang grant type na nakitang ginagamit ng client na ito sa token endpoint. Record ito, hindi permission: ang oauthGrantType ang puwede nitong gamitin."
@@ -580,8 +584,8 @@
     "text": "ANG BASE URI NA PINAGSASABITAN NG BAWAT PERMISSION NA DINE-DEFINE NG APPLICATION NA ITO, at ang nagpapanatiling globally unique ng pangalan ng permission dito. Kinikilala ang permission sa value na ito na sinusundan ng pangalan nito — ang base na `https://example.com/` at pangalang `write` ay ang permission na `https://example.com/write` — na siyang inilalagay ng client sa isang `scope` at kung saan pagkatapos naka-AUDIENCE ang access token. Tinatawag ito ng Entra ID na Application ID URI at binabaybay na `api://<guid>`; pareho ang hugis at walang anuman dito ang nangangailangan ng scheme na iyon.\n\nNINO-NORMALIZE ITO PARA MAGTAPOS SA ISANG SEPARATOR kapag isinulat sa pamamagitan ng module na ito — nagdadagdag ng trailing na `/` kung walang `/`, `#` o `:` sa dulo — dahil plain concatenation ang base + name at kung hindi ay magbubunga ang `https://example.com` + `write` ng `https://example.comwrite`. Naaabot ng isang `ldapmodify` ang attribute na ito gaya ng iba at hindi nino-normalize, kaya ang base na isinulat nang mano-mano ay eksaktong nangangahulugan ng sinasabi nito.\n\nSINGLE-VALUED, at ito ang nag-iisang attribute sa grupong ito na hindi mapapalawak nang hindi nagpapasya ng isang bagay: ang dalawang base ay mangangahulugang may dalawang identifier ang bawat permission sa entry, at kailangang pumili ng isa ang lookup na nagbabago ng scope tungo sa audience para ilagay sa `aud`."
   },
   "applications.schema.attributes.oauthPermission.what": {
-    "en": "0c47fe049bbc6c7b",
-    "text": "ISANG PERMISSION NA INILALANTAD NG APPLICATION NA ITO, isang value bawat isa. Ang value ay ang PANGALAN ng permission — `read`, `write`, `Widgets.ReadWrite.All` — na opsyonal na sinusundan ng `|` at isang description: `write|Change widgets on somebody's behalf`. Ang UNANG `|` ang delimiter at bawat kasunod ay bahagi ng description, kaya puwedeng maglaman ng character ang description at hindi ang pangalan.\n\nDapat legal na OAuth scope token ang pangalan (RFC 6749 section 3.3 — walang space, walang double quote, walang backslash), dahil iyon ang ilalagay ng client sa isang `scope` parameter at ang babalik sa `scope` claim ng token. Walang nagpapatupad niyon kapag isinulat ito ng isang `ldapmodify`; ipinapatupad ito ng module na ito at ng dalawang console.\n\nDAPAT UMIIRAL ANG PERMISSION BAGO MAIBIGAY ITO SA ANUMAN, na siyang nag-iisang patakaran sa pagkakasunod-sunod ng feature na ito at sinusuri sa updateApplication() para hindi magkasalungat ang console form at ang management API tungkol dito. Sinusuri ito sa GRANT at hindi dito: ang attribute na ito ang definition, at ang definition na wala pang gumagamit ay ang karaniwang unang hakbang sa halip na pagkakamali."
+    "en": "7eb690e390462f2d",
+    "text": "ISANG PERMISSION NA INILALANTAD NG APPLICATION NA ITO, isang value bawat isa. Ang value ay ang PANGALAN ng permission — `read`, `write`, `Widgets.ReadWrite.All` — na opsyonal na sinusundan ng `|` at isang description: `write|Change widgets on somebody's behalf`. Ang UNANG `|` ang delimiter at bawat kasunod ay bahagi ng description, kaya puwedeng maglaman ng character ang description at hindi ang pangalan.\n\nDapat legal na OAuth scope token ang pangalan (RFC 6749 section 3.3 — walang space, walang double quote, walang backslash), dahil iyon ang ilalagay ng client sa isang `scope` parameter at ang babalik sa `scope` claim ng token. Tinatanggihan din ang pangalan o paglalarawan na may operator error code: parehong ibinabalik ang mga ito sa bawat pahinang naglilista ng permission, at itinatala ang code sa halip na ipadala. Walang nagpapatupad ng alinman sa dalawang patakaran kapag isinulat ng isang `ldapmodify` ang value; ipinapatupad ito ng module na ito at ng dalawang console.\n\nDAPAT UMIIRAL ANG PERMISSION BAGO MAIBIGAY ITO SA ANUMAN, na siyang nag-iisang patakaran sa pagkakasunod-sunod ng feature na ito at sinusuri sa updateApplication() para hindi magkasalungat ang console form at ang management API tungkol dito. Sinusuri ito sa GRANT at hindi dito: ang attribute na ito ang definition, at ang definition na wala pang gumagamit ay ang karaniwang unang hakbang sa halip na pagkakamali."
   },
   "applications.schema.attributes.oauthRoleGatedPermission.what": {
     "en": "fa1c86d8fb8ce2fb",
@@ -732,8 +736,8 @@
     "text": "CALLBACK NG AUTHZEN ACCESS REQUEST (#1180): isang https URL na maaaring ipangalan ng client na ito, bilang AuthZEN PEP, bilang callback.endpoint ng isang access request — isa bawat value, eksaktong tugma. Tinatanggihan ang request na may ibang pinangalanan; hindi kailanman nagda-dial ang serbisyong ito ng callback URL na galing lang sa isang request. Itinatakda ng administrator, hindi kailanman ng caller."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 section 3: ang mga acr value na hinihingi ng application na ito, bilang resource server, sa authentication sa likod ng isang access token — pinaghihiwalay ng espasyo, ang pinakagusto ang una. Ang token na walang natutugunang acr ay hinahamon ng 401 insufficient_user_authentication na ang mga ito ang acr_values. Nakaayos ang mga level na 0 < 1 < mfa; ang hwk, phr at phrh ay natutugunan ng password kasama ang security key; ang anumang ibang value ay ng eksaktong acr na iyon lang. ANG WALANG LAMAN ay walang hinihingi."
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 section 3: ang mga acr value na hinihingi ng application na ito, bilang resource server, sa authentication sa likod ng isang access token — pinaghihiwalay ng espasyo, ang pinakagusto ang una. Ang token na walang natutugunang acr ay hinahamon ng 401 insufficient_user_authentication na ang mga ito ang acr_values. Nakaayos ang mga level na 0 < 1 < mfa; ang hwk ay natutugunan ng password kasama ang security key; ang phr at phrh ay ng phishing-resistant na authentication na pinangangalanan nila lang (#723); ang anumang ibang value ay ng eksaktong acr na iyon lang. ANG WALANG LAMAN ay walang hinihingi."
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1083,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "KUNG SAAN SINISIMULAN NG ISANG THIRD PARTY ANG SIGN-IN SA CLIENT NA ITO: ang initiate_login_uri ng OpenID Connect Core section 4, kung saan ipinapadala ng /launch/{app} at ng user portal ang isang tao kasama ang iss, login_hint at target_link_uri. https lang, walang fragment."
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "ANG LOGO NG CLIENT: ang logo_uri ng OpenID Connect Registration section 2, iginuguhit sa sign-in at consent screen sa tabi ng pangalan ng client. Nilo-load ito ng browser ng tao mula sa address na ito; hindi ito kailanman kinukuha ng serbisyong ito. Isang absolute na https URL."
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "ANG PATAKARAN SA PRIVACY NG CLIENT: ang policy_uri ng OpenID Connect Registration section 2, naka-link mula sa sign-in at consent screen. Isang absolute na https URL."
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "ANG MGA TUNTUNIN NG SERBISYO NG CLIENT: ang tos_uri ng OpenID Connect Registration section 2, naka-link mula sa sign-in at consent screen. Isang absolute na https URL."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "KUNG ANG RFC 8693 TOKEN EXCHANGE NA GINAWA NG CLIENT NA ITO AY NAKAKAKUHA NG `refresh_token` KATABI NG NA-EXCHANGE NA ACCESS TOKEN, na nangingibabaw sa oauth2.tokenExchangeRefreshToken para dito lang. Isa sa tatlong salita: `never`, `when-requested` (ang default para sa buong serbisyo — humihingi ang client gamit ang `requested_token_type` ng RFC 8693 section 2.1 at nakakakuha lang kung humingi ito) o `always`.\n\nBINABASA ITO SA CLIENT NA GUMAGAWA NG EXCHANGE at hindi sa audience, dahil ibinibigay ang refresh token sa client: credential iyon ng partidong iyon na hahawakan, ire-revoke at kalaunan ay ire-redeem. Ang subject na PINATUTUNGKULAN ng exchange ay walang entry sa registry na ito sa kawili-wiling kaso, dahil ang buong punto ng exchange ay isang subject_token mula sa ibang lugar.\n\n**NAAANGKOP ITO SA MGA PAMILYANG OAUTH 2.0 AT OPENID CONNECT AT HINDI SA IBA, at hindi tulad ng bawat ibang attribute dito, IPINAPATUPAD ITO.** Ang entry na hindi idineklara para sa alinman ay tinatanggihan ng parehong pinto ng console at ng management API, na pinapangalanan ang pamilyang dapat munang i-tsek — dahil ang value dito ay patakaran tungkol sa token endpoint, at ang entry na hindi kailanman mapapangalanan ng anumang token request ay magdadala nito na parang may bisa. Ipinapaliwanag ito ng block sa itaas ng row na ito. Naaabot ng `ldapmodify` ang attribute na ito tulad ng bawat iba at hindi ito sinusuri.\n\nANG VALUE NA HINDI ISA SA TATLONG SALITA AY HINDI ERROR SA ORAS NG PAGSULAT AT HINDI RIN TAHIMIK: nagbababala ang settingFor() na pinapangalanan ang entry, ang attribute at ang hawak nito, at ang setting para sa buong serbisyo ang nagpapasya — ang parehong three-state na katapatan na nakukuha ng bawat ibang override sa entry na ito."
@@ -1244,8 +1260,8 @@
     "text": "TRUE o FALSE: sinasagot ba ang sariling wsignin1.0 ng relying party na ito, na nangingibabaw sa wsfed.spInitiatedSso. Unsigned URL ang wsignin1.0, kaya isinasara ng FALSE ang pinto sa halip na patunayan kung sino ang nagbukas nito."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "KUNG SAAN IPINAPADALA ANG wsignoutcleanup1.0 PING para sa application na ito — ang logout URI ng WS-Federation, at ang wala sa table na ito hanggang 2026-08-30. IDINEKLARA, hindi naobserbahan, kaya kapatid ito ng samlSingleLogoutService at hindi ng wsfedReplyUrl: ipinapadala ang cleanup kapag nagtapos ang isang SESSION, at sa oras na iyon ay matagal nang tapos ang request na magdadala sana ng wreply.\n\n**HINDI PA ITO BINABASA NG SIGN-OUT**, at sinasabi ito nang tahasan sa halip na ipahiwatig. Binubuo ng `cleanupTargetsFor()` ang listahan nito mula sa `session.wsfedRealms`, na nagtatala ng wreply na talagang pinuntahan ng bawat sign-in response — kaya ang pini-ping ng serbisyong ito ngayon ay ang NAOBSERBAHAN nito, at ang attribute na ito ay ang IDINEKLARA ng operator. Dalawang magkaibang katotohanan ang mga ito at ang ikalawa ang kayang sabihin nang maaga ng taong nagse-set up ng application. Ang pagkabit nito bilang fallback para sa realm na pinag-sign in-an nang walang wreply ay ang halatang susunod na hakbang at sadyang hindi ginagawa rito: idinadagdag ng pagbabagong ito ang field at ang storage, at ang pagbabago kung saan napupunta ang cleanup ay pagbabago sa ginagawa ng protocol."
+    "en": "677e7babd8d711d3",
+    "text": "KUNG SAAN IPINAPADALA ANG wsignoutcleanup1.0 PING para sa application na ito — ang logout URI ng WS-Federation, at ang wala sa table na ito hanggang 2026-08-30. IDINEKLARA, hindi naobserbahan, kaya kapatid ito ng samlSingleLogoutService at hindi ng wsfedReplyUrl: ipinapadala ang cleanup kapag nagtapos ang isang SESSION, at sa oras na iyon ay matagal nang tapos ang request na magdadala sana ng wreply.\n\n**NANGUNGUNA ANG IDINEKLARANG ADDRESS SA NAOBSERBAHAN** (#747). Pina-ping ng `cleanupTargetsFor()` ang bawat value dito para sa realm na na-sign in-an ng session, at ang wreply na pinuntahan ng sign-in response, na itinatala ng `session.wsfedRealms`, kapag walang laman lang ito."
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",
@@ -1262,6 +1278,10 @@
   "applications.schema.attributes.krb5ClaimsPac.what": {
     "en": "0abf4d44f51d3755",
     "text": "ANG SARILING MGA PAC CLAIM NG SERBISYONG ITO, bilang JSON array ng mga row tulad ng sa Kerberos PAC claims page ng realm. Idinadagdag sa mga claim na dala ng service ticket para sa isa sa mga SPN ng application na ito (ang sa TGT na pinagmulan nito), pinapalitan ng row ng application ang claim na may parehong pangalan. Habang naka-on lang ang krb5.pacClaims."
+  },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "ANG SARILING MGA GNAP ACCESS-TOKEN JWT CLAIM NG CLIENT NA ITO, bilang JSON array ng mga row tulad ng ibang custom-claim set. Idinadagdag sa jwt-signed token at sa JWT sa loob ng jwt-encrypted token na na-issue sa client na ito, pinapalitan ng row ng application ang row ng realm na may parehong pangalan. Hindi maaaring i-override ang sariling mga claim ng token (access, flags, label, grant_id at ang mga JWT name). Hindi dala ng mga macaroon, biscuit at zcap token ang mga row na ito."
   },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
@@ -1990,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Anuman ang sinabi ng PEP tungkol sa sarili nito nang mag-register ito."
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng SAML 2.0 sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa saml2.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng SAML 1.1 sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa saml11.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng WS-Federation sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa wsfed.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
   }
 }

@@ -379,7 +379,7 @@ async function signInAndAuthorize(meta, params, options) {
     // Every cookie the sign-in set, as a browser keeps them: since #561 that
     // is `sts_accounts` as well as `sts_session`, and the ticket the sign-in
     // returns with names the set.
-    ? (/(?:^|; )sts_session=/.test(signedIn.cookie) ? signedIn.cookie : "")
+    ? (/(?:^|; )(?:__Host-)?sts_session=/.test(signedIn.cookie) ? signedIn.cookie : "")
     : "";
   let next = signedIn.location;
 
@@ -498,7 +498,7 @@ async function testLoginScreen(meta, verify) {
     "an unauthenticated request should be sent to the authentication " +
         "service, got HTTP " + first.status + ".");
   const toService = first.headers.get("location");
-  assert.ok(/^(https?:\/\/[^/]+)?\/authn\/login\?authn=[^&]+$/.test(toService),
+  assert.ok(/^(https?:\/\/[^/]+)?\/authn\/login(?:\?app=[^#]*)?[?#]authn=[^&]+$/.test(toService),
     "and the redirect should name the sign-in screen with the id of the " +
         "request it stashed. Got: " + toService);
   assert.ok(!/code=/.test(toService),
@@ -642,7 +642,7 @@ async function testLoginScreen(meta, verify) {
   assert.strictEqual(forced.status, 302,
     "prompt=login should send the person to the authentication service even " +
         "with a session, got HTTP " + forced.status + ".");
-  assert.ok(/\/authn\/login\?authn=/.test(forced.headers.get("location")),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(forced.headers.get("location")),
     "and it is the sign-in screen it should send them to, not the client. " +
         "Got: " + forced.headers.get("location"));
   // …and the return URL it stashed must have had `prompt` taken off it, or the
@@ -725,7 +725,7 @@ async function testLoginScreen(meta, verify) {
   assert.strictEqual(afterLogout.status, 302,
     "after signing out the next request should be sent to the " +
         "authentication service again, got HTTP " + afterLogout.status + ".");
-  assert.ok(/\/authn\/login\?authn=/.test(afterLogout.headers.get("location")),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(afterLogout.headers.get("location")),
     "and that is where it should go — a dropped session means signing in " +
     "again, not a code. Got: " + afterLogout.headers.get("location"));
   log.info("[login] OK — signing out ends the session.");

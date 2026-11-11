@@ -318,7 +318,7 @@ async function authorize(b, params, who) {
   log.debug("Entering authorize().");
   let r = await b.go("GET", R + "/oauth2/authorize?" + form(params));
   if ((r.status === 302 || r.status === 303) &&
-      /\/authn\/login\?authn=/.test(r.location) && who) {
+      /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location) && who) {
     const signed = await signIn(b, r.location, who);
     r = await b.go("GET", signed.location);
   }
@@ -413,6 +413,12 @@ async function setUp() {
   await ok(realmApi + "/config/set", { key: "oauth2.openRegistration",
                                        value: true },
            "opened dynamic registration in the realm");
+  // EdDSA is in HASH_OF below, and since #1292 a realm signs with it only
+  // with `keys.eddsaSigning` on (off by default, for the OpenID
+  // conformance suite's sake).
+  await ok(realmApi + "/config/set", { key: "keys.eddsaSigning",
+                                       value: true },
+           "turned EdDSA signing on in the realm");
   const mode = await send(base + R + "/oauth2/rfc9700");
   strict = !!(mode.body && mode.body.enabled);
   log.info("RFC 9700 mode in the realm: " + strict +
@@ -639,7 +645,7 @@ async function test() {
   check("prompt=select_account sends a signed-in person to choose the " +
         "account: the account picker, or the sign-in screen", function () {
     assert.ok((r.status === 302 || r.status === 303) &&
-              /\/authn\/(login|accounts)\?authn=/.test(r.location),
+              /\/authn\/(login|accounts)(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
               r.status + " " + r.location);
   });
 

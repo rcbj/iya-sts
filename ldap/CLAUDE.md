@@ -10,6 +10,15 @@ directory is also the STORE for four other things: people, groups, applications
 below, for the submodule's placement rules, which have already cost something
 three times.
 
+**These names are modelled in TypeSpec in `models/directory/` (#1390).** Every
+object's table is written there and generated for the service, and so are the
+spelling lists (`STANDARD_NAMES`, `OWN_NAMES`, `SECRET_ATTRIBUTES`), from
+`models/directory/names.tsp` into the `directory.names.json` this module reads
+through `ModelTables.names()`.
+The directory still enforces nothing; a module reads an entry through its domain
+concept (`common/domain_map.ts`), and this module, the store itself, reads raw
+attributes (`models/CLAUDE.md`).
+
 **636 RE-KEYS WHEN THE LISTENER CERTIFICATE IS RE-ISSUED (2026-09-21)** — `rekeyLdaps()`,
 registered on `tls_server.onServerCertificateChange()`, runs at bind and again after
 every `build-root`; before that a replaced Root left 636 on a dead chain until a
@@ -359,7 +368,9 @@ from `listen()`* is the rule this is an instance of.
    answers for one of those and silently loses the other, so each row says which
    rule caught it. The three disagreements it reports are the point of the page and
    none of them is a defect to fix: a **dangling** member (this directory does not
-   do referential integrity, so a delete leaves the DN behind), a member that is
+   do referential integrity before 2026-11-10, so an older store may hold one;
+   since then a write may not add one and a delete takes its DN out of every
+   group), a member that is
    itself a **group** (nesting is shown, never expanded — nothing here walks it),
    and an entry whose own `memberOf` names a group that does not list it back
    (nothing here maintains `memberOf`; it is not even a standard attribute). Note
@@ -787,6 +798,12 @@ ldif or multi-cell service is unchanged.
     realm's groups (never its people, never a membership), a page of at
     most 100 from a clamped offset, the excluded DNs left out before the
     paging; `groupsNamed()` resolves cns or DNs, a name asked twice once.
+  - **`federatedGroupAuthorityAsync()` (#1306)** asks the store whether an
+    entry names a group a partner's token named, by the derived
+    `grantinggroup` value key: two `byAttribute` questions, asynchronous,
+    `LIMIT 1`, after the walk of the resident entries — `federation/CLAUDE.md`
+    argues it. A row written before #1306 is keyed by #1311's one-time
+    backfill (`persistence/CLAUDE.md`).
   - `personCount()` is the store's count (above); `allPersons()` pages
     `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it.
   - **THE REQUESTS ARE ASYNCHRONOUS WHERE THEY READ MANY ROWS (#616,
@@ -898,12 +915,53 @@ ldif or multi-cell service is unchanged.
       store gives these pages carries no code, so `storeAsked()` marks it
       `STS-LDAP-0139` and `/admin-api` answers it 503; anything else is a
       500 (`STS-LDAP-0176`, `mgmt-api/admin_api.ts`'s
-      `answerDirectoryFailure()`). **A known cost, not fixed:** a needle
-      search's `rdnCount` is `position($3 in rdn_value) > 0`, which no
-      index serves, so it reads every direct child of `ou=users` in the
-      realm (the page itself stops at the next match, inside the rdn
-      walk). It is asked asynchronously and once per page; a trigram
-      index or a prefix-only search would be what stops it.
+      `answerDirectoryFailure()`). **A needle search's count is CAPPED**
+      (#1308, rcbj's decision 2026-11-04): `rdnCount` is
+      `position($3 in rdn_value) > 0` (MariaDB: `LOCATE`), which no index
+      serves, so it is counted inside a `LIMIT cap + 1` subquery and stops
+      at the cap and one more. The cap is `WINDOWED_PAGE_CAP`, 100,000 —
+      the walk's own, so every match counted is one the pager can reach
+      and the count costs no more than the deepest page; `rdnCountCap()`
+      in `persistence/directory_queries.js` clamps a caller's cap to it
+      for both dialects. An answer over the cap is MORE THAN the cap:
+      `candidatePageAsync()` answers `matched` as the cap and
+      `countCapped: true` (and `incomplete.capped`), `/admin-api/rbac`
+      carries `candidateSearch.countCapped` and `countCap`, and the
+      console's pane says "of more than N matches"
+      (`consoleKit.chooser.showingMore`). Held in memory the count is
+      exact and `countCapped` false. **A selective needle is an index
+      probe (#1310, 2026-11-04):** the cap bounds the matches counted, not
+      the rows read, so until #1310 a needle matching FEW children read
+      every child to learn that, and so did its page. On PostgreSQL the
+      count and the page are now asked of `sts_ldap_entries_uid_trgm` —
+      schema version 23's `pg_trgm` GIN over `rdn_value`, partial on
+      `ou=users`, built for `/portal/delegate` and already the right index,
+      so NO new index and NO schema version — as `rdn_value LIKE $n ESCAPE
+      '\'` with the needle's `%`, `_` and `\` escaped and the index's
+      condition repeated. `rdn_value` and the needle are both lower-cased,
+      so LIKE matches what `position()` did. The predicates sit in a
+      `MATERIALIZED` CTE with the LIMIT outside it: with the LIMIT beside
+      them the planner chose the rdn index's ordered read for a page whose
+      needle matched 0.2% of 2M children (467,564 buffers, 1.2 s, where
+      the trigram index read 5,234 in 13 ms). The COUNT goes this way for
+      every such needle; the PAGE only when its matches are few —
+      `candidatePageAsync()` passes its count, and `matchesCheaper()`
+      reads the page by its matches when `matched² ≤ walk × total` and the
+      count was not capped, else the walk, so a page reads at most
+      `matched` rows either way. Measured on postgres:18, 300,000 people:
+      an eleven-match needle's count read 22 buffers to `position()`'s
+      17,698, and its page 22 to the walk's 56,001
+      (`tests/directory_parent_statistics.js` F). **Which needles:** under
+      `ou=users`, with three ASCII letters or digits in a row
+      (`needleIndexed()`). pg_trgm extracts no trigram from less, so **a
+      one- or two-character needle (or one like `a.b`) is still #1308's
+      read of the parent's children**, stopped by the cap only when it is
+      broad; such a needle usually is, and a narrow one is a third
+      character away. **On MariaDB nothing changes**: a needle stays
+      `LOCATE` and a bounded scan of the parent, because MariaDB has no
+      substring index — FULLTEXT is word-based, and the n-gram parser is
+      MySQL's (`WITH PARSER ngram` on 11.8.9 answers `Function 'ngram' is
+      not defined`; the official image ships no Mroonga) — `mariadb/CLAUDE.md`.
     - **Still a whole walk on a request path**, recorded as `owed` in
       `tests/no_full_directory_walk_in_requests.js`: SCIM's user list for
       any filter but `userName eq` (asked of the name index since #616).
@@ -2268,8 +2326,23 @@ mode.
   `ou=users` whose username is already here is 68, because one person is one
   entry however they got in — LDAP has no notion of a username and a real
   directory would get this from the schema subsystem this mock does not have),
-  and one is deliberately NOT: deleting a user leaves its DN in every group that lists
-  it, because referential integrity is a directory feature and not a protocol rule.
+  and one was deliberately NOT until 2026-11-10: deleting a user left its DN in every
+  group that listed it. **A delete now takes a person's, group's or application's DN
+  out of every group and its name out of every role (#1612, rcbj: "deleting any
+  person, group, or application object that is then recreated should not
+  automatically inherit any roles. It all has to be readded")** —
+  `forgetGroupMemberships()` through the group index, and `roles.forgetMember()`.
+  **And a member that names nothing can no longer be ADDED** (rcbj, the same
+  day): `membersNamingNothing()`, asked by `writeGroupEntry()` (SCIM, the
+  console, `/admin-api`), `createGroup()`, `addGroupMember()` and the LDAP add
+  and modify handlers, refuses it as `STS-LDAP-0212` (LDAP
+  `constraintViolation`). Only the values a write adds are asked about. **And a
+  rename (modifyDN) carries the entry's memberships with it**: every group listing
+  the old DN lists the new one (`moveGroupMemberships()`, through the index), a
+  person's `memberUid` follows their username, and `roles.renameMember()` moves the
+  username or group name on every role. So no group or role can be left naming
+  something that is not there. Until then a rename left the old DN in the groups
+  that listed it.
 
 ---
 
@@ -3050,7 +3123,11 @@ Seven attributes and a slot of their own —
 module's require time like the nine before it. A person may hold an **RFC 7523
 signing key pair** now: `stsAssertionIssuer`, `stsAssertionJwks`,
 `stsAssertionCertificate`, `stsAssertionCertificateChain`, `stsAssertionKid`,
-`stsAssertionExpiresAt` and `stsAssertionPrivateKey`.
+`stsAssertionExpiresAt` and `stsAssertionPrivateKey`. **SINCE #1290
+(2026-11-03) THREE PER PROFILE**: `stsAssertionIssuer`, `stsAssertionKeyPair`
+(one JSON record per key pair) and `stsAssertionPrivateKey` (one sealed value
+per key pair issued here), and the same three for SAML — see the section on
+`stsSamlAssertion*` below and `common/CLAUDE.md` 3ab, continued.
 `common/person_assertions.js` (rule 3ab) owns what they MEAN — including the one
 refusal the feature exists for, that a person's key may assert about that person
 and about nobody else — and this module owns the store they live in, which is
@@ -3116,6 +3193,36 @@ random keys are the same pair under `ou=applications`, `krb5ServiceKeys` and
   and `toSearchEntry()` sends the same sentence. **An `ldapmodify` replace that writes
   that sentence back destroys the keys**, which the KDC then reports as unreadable; the
   next password set or verified sign-in makes new ones.
+
+## `stsPublishedDid`: A PERSON'S PUBLISHED DIDs, AND WHY AN ATTRIBUTE OF ITS OWN (#1291, 2026-11-03)
+
+Each did:web this realm publishes for a person (`oid4vc/person_did.ts`) is
+one JSON value of `stsPublishedDid` on their entry: its random id, the DID,
+the custody, every version of its keys with what authorized each, a pending
+authorization, its deactivation, and — `realm` custody — the private key,
+sealed. **A NEW ATTRIBUTE rather than more members on the
+`stsSelfIssuedSubject` value**, because the two have different lifetimes: a
+deactivated DID LEAVES the self-issued list (it no longer signs in, is
+preferred or is released) while its record must STAY (its address answers 410
+for good and its versions stay resolvable). Folding the record into the
+subject's value would have made every reader of the subject list —
+`ownerOf()`, `list()`, the sign-in, the claim — skip deactivated values, and
+one that forgot would sign a person in with a DID they deactivated.
+
+* **Withheld from every read** (`SECRET_ATTRIBUTES`): the versions are not
+  secret, but the value carries a sealed private key in `realm` custody and a
+  pending authorization, and a document's history is answered by its own
+  address and the resolver, never by a directory dump.
+  `CREDENTIAL_ATTRIBUTE_DOORS` names the portal and the console as its only
+  writers, and `persistence/directory_merge.js` keeps it whole-valued
+  (`SINGLE`): two nodes' lists are never merged value by value.
+* **No holder query and no index here.** The random id finds its entry
+  through the per-realm persisted index `did.personDids` (`<rid> -> { did,
+  sub }`), and the entry through `nameForSubject()` and `locateEntry()` — two
+  lookups, never a walk — so the attribute is not in `ASKED_ATTRIBUTES` and
+  no `SCHEMA_VERSION` changed.
+* `readPublishedDids()` / `writePublishedDids()` only carry the strings,
+  as `readSelfIssuedSubjects()` does; `common/credentials.ts` passes them on.
 
 ## PRODUCT MODE SEEDS THE TREE AND NOTHING ELSE (2026-09-12)
 
@@ -3262,6 +3369,20 @@ as given, which is how a directory moves between two instances. Two values, and
 an unchanged hash written back, are handled before any of that. A refusal is
 **LDAP_CONSTRAINT_VIOLATION (19)**, what a ppolicy server answers.
 `tests/password_policy.js` drives both handlers in process.
+
+## THE SECURITY ADMINISTRATOR'S WRITES OVER THE SOCKET (#645, 2026-11-02)
+
+`securityNeedOf()`, asked by `directoryWriteRefusal()` before the Admin
+Write rule: an entry under a Directory → Policies container, the role's
+group (`admin.securityGroup`), a policy reference attribute on an add or a
+modify, a `memberOf` naming that group (a grant, since `admin_rbac.ts`
+honours both directions), and a holder's entry other than the bound DN's
+own need the Security Administrator's role (`rolesGrant(roles,
+'security')`), held through the default realm's roster or the operation's
+realm's — Admin Write or not; anybody else is refused `STS-LDAP-0203`.
+Product mode only, as the rest of this rule. The add and the modify pass
+their values by type (`ldapValuesByType()`); a modify's value DELETE is left
+out, since taking a value away grants nothing. `admin-ui/CLAUDE.md` 8a-ii.
 
 ## WHO MAY WRITE THIS DIRECTORY OVER THE SOCKET, IN PRODUCT MODE (2026-09-12)
 
@@ -3592,6 +3713,18 @@ neither returns it on a search, lets a filter see it, nor answers a compare agai
 it. Nothing else here changed: the slot's `read()` walks
 `personAssertions.ATTRIBUTES`, which grew, and `write()` is one attribute at a time
 already. `common/CLAUDE.md` 3ab carries the design.
+
+### SEVERAL KEY PAIRS, AND THE SLOT'S WRITE TAKES A LIST (#1290, 2026-11-03)
+
+A person holds several RFC 7523 and RFC 7522 key pairs now, one value each in
+`stsAssertionKeyPair` / `stsSamlAssertionKeyPair` and the private halves in
+`stsAssertionPrivateKey` / `stsSamlAssertionPrivateKey` (both withheld from
+an LDAP read, as before). `OWN_NAMES` carries the six names and no longer the
+fourteen single-valued ones. The slot's `write(username, name, value)` takes
+an ARRAY as well as one value and still ASSIGNS rather than appends: the
+register hands over the attribute's whole set, so a revoked key pair's private
+half is gone when the register says so. The asked-names index carries the two
+`…keypair` names (schema version 31, `persistence/CLAUDE.md`).
 
 ## `stsMfaRequired` AND THE PASSWORD RESET LINK (2026-09-13)
 
@@ -3933,7 +4066,16 @@ Three things here are this directory's.
 
   None of the offered attributes feeds the username index (`uid` and the RDN
   are withheld) or the address verification (`mail` is withheld). That is why
-  the in-place write is safe without `putEntry()`'s index bookkeeping.
+  the in-place write is safe without `putEntry()`'s index bookkeeping. A
+  `description` whose value carries an operator code is still refused and
+  not written (`STS-LDAP-0211`, #1416): this writer does not go through
+  `putEntry()`, which refuses the same value, and the editor's success
+  answer quotes the values it stored.
+
+  A policy reference (`stsServiceAccountPolicy`, `stsAttributePolicy` and
+  the others `PolicySelection` declares on a person) is editable and is not
+  in `FIELD_EXAMPLES`. Its example is the first choice, `default`.
+  `tests/person_fields.js` fails an editable row that has none.
 
 **THE SLOT** is `personEditor.setDirectory({ locate, write })`, filled beside
 the group-claims slot and validated whole. `locate(key)` answers a person
@@ -4038,7 +4180,10 @@ this directory's:
   of the names. One missing a required attribute is logged under
   STS-FED-0158 and nobody is created, so `authn.startSession()` refuses the
   sign-in as it refuses an unprovisioned person. No other automatic create
-  happens in product mode.
+  happens in product mode. **It is the backstop since #701**: the federation
+  door asks the same question first and sends the newcomer to a form for the
+  missing values (`federation/CLAUDE.md`), so this refusal is reached only for
+  a name nobody can be asked for, or a form whose values still fall short.
 * **The LDAP add (65, STS-LDAP-0162)** asks after the password policy, with
   the RDN's value counted as the entry's own (RFC 4512 2.3.1); nothing is
   derived — an LDAP client writes what it sends. **The LDAP modify (65,
@@ -4174,3 +4319,13 @@ policy kind follows are `common/policy_selection.ts`'s (3cx).
   HOLDERS of the attribute (the store's asked-names index in a window,
   `passkeyScanAsync()` with a row shape of its own), at most
   `POLICY_HOLDER_READ`, and says when it stopped first; never the realm.
+
+## `stsProfilePhoto`: A RECORD ON THE ENTRY, AND NOT THE IMAGE (#719, 2026-11-05)
+
+One JSON value: the id of the person's row in `profilePhoto.images`, who put it
+there, a partner's address and when it was fetched, or `declined`. Withheld from
+reads because the id is the capability the public address is made of. Written
+only through `writeProfilePhoto()`, which sets `pictureUrl` in the same act so a
+claim never names a photo the record does not. `noteAccountChange()` removes the
+row when the entry is deleted. `common/CLAUDE.md` (3db) argues the rest.
+

@@ -198,6 +198,8 @@
 // other per-person store in `common/` is.
 // ===========================================================================
 
+import ModelTables = require('./model_tables');
+import Classes = require('./domain_classes');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -654,52 +656,73 @@ class Devices {
     }
   }
 
+  // The entry as the domain model says it means (#1390). The secret hash is
+  // named because the device record has always carried it for the Native SSO
+  // check; nothing else asks.
+  private static conceptOf(entry: Json): IyaDomain.Device {
+    helpers.log.debug("Entering Devices.conceptOf().");
+    const held = Classes.Device.fromEntry((entry && entry.attributes) || {},
+                                          { secrets: ['secretHash'] });
+    helpers.log.debug("Leaving Devices.conceptOf().");
+    return held;
+  }
+
+  // ONE ARGUMENT, ON PURPOSE: three callers hand this to `.map()`, which
+  // passes the index second, so an optional second parameter here would be
+  // handed a number for every row but the first.
   private static fromEntry(entry: Json): Device {
     helpers.log.debug("Entering Devices.fromEntry().");
+    const out = Devices.fromConcept(entry, Devices.conceptOf(entry));
+    helpers.log.debug("Leaving Devices.fromEntry().");
+    return out;
+  }
+
+  // ONE CONCEPT PER ENTRY: this runs for every device on every read of the
+  // register. A caller that wants a field of its own from the same entry
+  // makes the concept itself and hands it in.
+  private static fromConcept(entry: Json, d: IyaDomain.Device): Device {
+    helpers.log.debug("Entering Devices.fromConcept().");
     const a = (entry && entry.attributes) || {};
-    // A HOT PATH: once per attribute of every device on every read of the
-    // register, so no Entering/Leaving pair — it would drown the log.
-    const one = function (name: string): string {
-      return String((a[name] || [])[0] || '');
-    };
-    const keys = (a.stsdevicekey || []).map(Devices.parsed)
+    const keys = (d.key || []).map(Devices.parsed)
       .filter(function (k: Json) {
         return k && typeof k.id === 'string' && KEY_KINDS.indexOf(k.kind) >= 0;
       });
-    const enrolment = Devices.parsed(one('stsdeviceenrolment')) || {};
-    helpers.log.debug("Leaving Devices.fromEntry().");
+    const enrolment = Devices.parsed(d.enrolment) || {};
+    const compliance = d.compliance || '';
+    const riskLevel = d.riskLevel || '';
+    helpers.log.debug("Leaving Devices.fromConcept().");
     return {
-      id: one('cn'), dn: String(entry.dn || ''), owner: one('owner'),
+      id: d.identifier || '', dn: String(entry.dn || ''),
+      owner: d.owner || '',
       // Every entry #130 wrote was a Native SSO device of a PERSON and
       // carries neither attribute; that is what an absent one says.
-      ownerKind: one('stsdeviceownerkind') || 'person',
-      label: one('description'),
-      applications: (a.stsdeviceapplication || []).map(String),
+      ownerKind: d.ownerKind || 'person',
+      label: d.description || '',
+      applications: d.applications || [],
       keys: keys,
-      attestation: Devices.levelOf(keys,
-                                   !!Devices.parsed(one('stsdevicebrowser'))),
-      compliance: COMPLIANCE_STATES.indexOf(one('stsdevicecompliance')) >= 0
-        ? one('stsdevicecompliance') : 'unknown',
-      complianceChange: Devices.parsed(one('stsdevicecompliancechange')),
-      status: one('stsdevicestatus') === 'compromised' ? 'compromised'
-                                                       : 'active',
-      statusChange: Devices.parsed(one('stsdevicestatuschange')),
-      riskLevel: RISK_LEVELS.indexOf(one('stsdevicerisklevel')) >= 0
-        ? one('stsdevicerisklevel') : '',
-      riskChange: Devices.parsed(one('stsdeviceriskchange')),
-      platform: one('stsdeviceplatform'),
-      model: one('stsdevicemodel'),
-      os: one('stsdeviceos'),
+      attestation: Devices.levelOf(keys, !!Devices.parsed(d.browser)),
+      compliance: COMPLIANCE_STATES.indexOf(compliance) >= 0
+        ? compliance : 'unknown',
+      complianceChange: Devices.parsed(d.complianceChange),
+      status: d.status === 'compromised' ? 'compromised' : 'active',
+      statusChange: Devices.parsed(d.statusChange),
+      riskLevel: RISK_LEVELS.indexOf(riskLevel) >= 0 ? riskLevel : '',
+      riskChange: Devices.parsed(d.riskChange),
+      platform: d.platform || '',
+      model: d.model || '',
+      os: d.os || '',
       enrolment: {
         method: String(enrolment.method || 'native-sso'),
         at: String(enrolment.at || ''),
         actor: String(enrolment.actor || '')
       },
-      secretHash: one('stsdevicesecrethash'),
-      session: one('stsdevicesession'),
-      lastUsed: one('stsdevicelastused'),
-      created: one('createtimestamp'),
-      browser: Devices.parsed(one('stsdevicebrowser'))
+      secretHash: d.secretHash || '',
+      session: d.session || '',
+      lastUsed: d.lastUsed || '',
+      // The directory's own operational attribute, which this concept does
+      // not carry (#1390).
+      created: String((a.createtimestamp || [])[0] || ''),
+      browser: Devices.parsed(d.browser)
     };
   }
 
@@ -1680,17 +1703,17 @@ class Devices {
       return out;
     }
     out.available = true;
-    const marker = ANDROID_MARKER_ATTRIBUTE.toLowerCase();
     const holders: Json[] = await this.store('holdersAsync', 'device',
       'stsDeviceKey', ANDROID_READ_ATTRIBUTES) || [];
     out.holders = holders.length;
     for (let i = 0; i < holders.length; i += 1) {
       const holder = holders[i];
-      const read = Devices.fromEntry({ dn: holder.dn,
-                                       attributes: holder.attributes });
+      const concept = Devices.conceptOf(holder);
+      const read = Devices.fromConcept({ dn: holder.dn,
+                                         attributes: holder.attributes },
+                                       concept);
       const want = Devices.androidMarkerOf(read.keys);
-      const have = ((holder.attributes || {})[marker] || []).map(String)
-        .sort();
+      const have = (concept.androidKey || []).slice().sort();
       if (want.join('\n') !== have.join('\n')) {
         const fresh = this.byId(read.id);
         if (fresh && this.write(fresh)) {
@@ -2405,12 +2428,9 @@ class Devices {
             secretMembers.join(', ')) + ', and nothing was stored.');
     }
     const thumbprint = stsCrypto.jwkThumbprint(jwk);
-    const pub: Json = {};
-    Object.keys(jwk).sort().forEach(function (m) {
-      pub[m] = jwk[m];
-    });
     log.debug("Leaving Devices.jwkMaterial().");
-    return { thumbprint: thumbprint, material: { jwk: pub } };
+    return { thumbprint: thumbprint,
+             material: { jwk: Devices.publicJwkMembers(jwk) } };
   }
 
   // The webauthn half: a credential the OWNER already enrolled, linked to
@@ -3462,6 +3482,34 @@ class Devices {
    * @param isLive - whether the secret's session is live
    * @returns the view
    */
+  /**
+   * A JWK's members as a device key keeps them: RFC 7517's parameters are
+   * strings, numbers, booleans and lists of strings, and the person proving
+   * the key wrote this object. An object under any member made the realm's
+   * whole device list unanswerable (#1353), so it is left out at the write and
+   * at the read, where a key stored before this still is one.
+   *
+   * @param jwk - the key
+   * @returns its members, sorted, those of a JWK's kinds only
+   */
+  static publicJwkMembers(jwk: Json): Json {
+    helpers.log.debug("Entering Devices.publicJwkMembers().");
+    const pub: Json = {};
+    Object.keys(jwk || {}).sort().forEach(function (m) {
+      const value = jwk[m];
+      const kept = typeof value === 'string' || typeof value === 'boolean' ||
+        (typeof value === 'number' && Number.isFinite(value)) ||
+        (Array.isArray(value) && value.every(function (one) {
+          return typeof one === 'string';
+        }));
+      if (kept) {
+        pub[m] = value;
+      }
+    });
+    helpers.log.debug("Leaving Devices.publicJwkMembers().");
+    return pub;
+  }
+
   static view(device: Device, isLive?: (session: string) => boolean): Json {
     helpers.log.debug("Entering Devices.view().");
     const attestedBy = device.keys.filter(function (k) {
@@ -3473,7 +3521,11 @@ class Devices {
       ownerKind: device.ownerKind, label: device.label,
       applications: device.applications.slice(0),
       keys: device.keys.map(function (k) {
-        return JSON.parse(JSON.stringify(k));
+        const copy = JSON.parse(JSON.stringify(k));
+        if (copy.material && copy.material.jwk) {
+          copy.material.jwk = Devices.publicJwkMembers(copy.material.jwk);
+        }
+        return copy;
       }),
       keyKinds: Devices.keyKindsOf(device),
       attestation: {
@@ -3515,81 +3567,8 @@ class Devices {
    * The object classes and attributes of a device entry, for
    * `/admin/ldap/devices`.
    */
-  static readonly SCHEMA = {
-    objectClasses: [
-      { name: 'device', where: 'RFC 4519 section 3.4', standard: true,
-        what: 'cn, and the standard owner and description.' },
-      { name: 'stsDevice', where: 'this service (#130, #164)',
-        standard: false,
-        what: 'Every stsDevice* attribute below: the owner\'s kind, the ' +
-              'applications, the keys, attestation, compliance, status, ' +
-              'the descriptive labels, the enrolment and Native SSO.' }
-    ],
-    attributes: [
-      { name: 'cn', kind: 'single', what: 'The device id, a UUID.' },
-      { name: 'owner', kind: 'single',
-        what: 'The DN of its one owner: a person or an application.' },
-      { name: 'stsDeviceOwnerKind', kind: 'single',
-        what: 'person or application.' },
-      { name: 'description', kind: 'single', what: 'Its label.' },
-      { name: 'stsDeviceApplication', kind: 'multi',
-        what: 'The DN of every application that used it.' },
-      { name: 'stsDeviceKey', kind: 'multi',
-        what: 'One JSON value per key: id, kind (x509, jwk, webauthn), ' +
-              'thumbprint, label, added, addedBy, proof, attestation and ' +
-              'the public material. Never a secret.' },
-      { name: 'stsDeviceKeyThumbprint', kind: 'multi',
-        what: '<kind>:<thumbprint> per key, derived from stsDeviceKey on ' +
-              'every write so an LDAP filter can find a device by its key.' },
-      { name: 'stsDeviceCredentialId', kind: 'multi',
-        what: 'The credential id of each linked WebAuthn key, derived from ' +
-              'stsDeviceKey on every write so a sign-in finds its device ' +
-              'by index.' },
-      { name: 'stsDeviceAndroidKey', kind: 'multi',
-        what: 'The id of each key attested by an Android chain whose ' +
-              'serials were kept, derived from stsDeviceKey on every write ' +
-              'so the Android attestation recheck reads only the devices ' +
-              'holding one (#615).' },
-      { name: 'stsDeviceAttestation', kind: 'single',
-        what: 'attested when any key\'s attestation was verified, else ' +
-              'self-asserted. Derived on every write.' },
-      { name: 'stsDeviceCompliance', kind: 'single',
-        what: 'compliant or not-compliant; absent is unknown.' },
-      { name: 'stsDeviceComplianceChange', kind: 'single',
-        what: 'JSON: the last compliance change — status, previous, at, ' +
-              'source (admin, mdm, test-control, caep), actor, reason.' },
-      { name: 'stsDeviceStatus', kind: 'single',
-        what: 'compromised; absent is active.' },
-      { name: 'stsDeviceStatusChange', kind: 'single',
-        what: 'JSON: the last status change.' },
-      { name: 'stsDeviceRiskLevel', kind: 'single',
-        what: 'LOW, MEDIUM or HIGH (CAEP\'s risk levels); absent is ' +
-              'unassessed. Set by risk scoring and by a compromise.' },
-      { name: 'stsDeviceRiskChange', kind: 'single',
-        what: 'JSON: the last risk level change — level, previous, at, ' +
-              'source (risk, compromise, admin), actor, reason.' },
-      { name: 'stsDeviceBrowser', kind: 'single',
-        what: 'JSON: a remembered browser\'s state (#265) — the token ' +
-              'generation, when it and the one before were issued, the ' +
-              'browser it was bound to, and when the second factor was ' +
-              'last given on it. No token and no secret.' },
-      { name: 'stsDevicePlatform', kind: 'single',
-        what: 'ios, ipados, android, macos, windows, linux, chromeos or ' +
-              'other.' },
-      { name: 'stsDeviceModel', kind: 'single', what: 'Descriptive.' },
-      { name: 'stsDeviceOs', kind: 'single', what: 'Descriptive.' },
-      { name: 'stsDeviceEnrolment', kind: 'single',
-        what: 'JSON: method (native-sso, admin, portal, est, scep), at, ' +
-              'actor.' },
-      { name: 'stsDeviceSecretHash', kind: 'single', sensitive: true,
-        what: 'SHA-256 of its Native SSO device_secret. Withheld from ' +
-              'every LDAP read.' },
-      { name: 'stsDeviceSession', kind: 'single',
-        what: 'The sign-on session the secret is good for.' },
-      { name: 'stsDeviceLastUsed', kind: 'single',
-        what: 'When it was last used, ISO 8601.' }
-    ]
-  };
+  // The table is written in models/directory/device.tsp (#1390).
+  static readonly SCHEMA = ModelTables.schema('device');
 
   /**
    * The `/admin-api` route whose answer carries this module's prose (#543

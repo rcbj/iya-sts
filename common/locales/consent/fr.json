@@ -7,6 +7,7 @@
   "scope.permissionNamed": "la permission « {name} »",
   "scope.ordinary": "une portée ordinaire : ce service ne lui attribue aucune signification et la placera telle quelle dans la revendication scope du jeton",
   "scope.did": "votre DID préféré — l’identifiant décentralisé que vous avez prouvé avec votre portefeuille et marqué comme préféré sur votre page d’identifiants auto-émis. C’est la même valeur pour chaque application à qui vous le communiquez, qui pourraient donc vous reconnaître comme une seule personne",
+  "scope.signIn": "vous connecter à cette application. Elle apprend qui vous êtes, dans la réponse de connexion de son protocole, chaque fois que vous l’ouvrez.",
   "detail.understood": "comprise par <code>{resource}</code> ; le jeton d’accès sera adressé à <code>{audience}</code>",
   "detail.described": "{description} — comprise par <code>{resource}</code> ; le jeton d’accès sera adressé à <code>{audience}</code>",
   "detailsNote": "Cette demande comporte <strong>{count, plural, one {# détail d’autorisation} other {# détails d’autorisation}}</strong> (RFC 9396). Ils vous sont soumis à chaque fois : Autoriser accepte exactement ce qui est listé, pour cette seule demande.",
@@ -18,5 +19,10 @@
   "deny": "Refuser",
   "meta.allow": "Autoriser inscrit une valeur <code>{attribute}</code> par portée sur votre fiche sous <code>ou=users</code>, afin que la question ne vous soit plus posée pour celles-ci. Refuser renvoie <code>access_denied</code> à l’application et n’enregistre rien.",
   "meta.nothingIssued": "Rien n’a encore été émis. Cet écran correspond à <code>oauth2.consentRequired</code>, activé par défaut ; /admin/consent permet de consulter et de retirer chaque réponse donnée ici.",
-  "meta.consentingFor": "Consentement pour : <code>{protocol}</code>"
+  "meta.consentingFor": "Consentement pour : <code>{protocol}</code>",
+  "client.policy": "Politique de confidentialité",
+  "client.tos": "Conditions d’utilisation",
+  "resources": "Elle sera utilisée sur :",
+  "duration": "Cet accord reste valable jusqu’à ce que vous le retiriez depuis votre compte.",
+  "lifetime": "À chaque fois, elle peut conserver l’accès jusqu’à {hours} heures."
 }

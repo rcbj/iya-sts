@@ -153,6 +153,16 @@ and the screen says so rather than looking like a broken session. A GET does
 not have this problem. The alternative, `SameSite=None`, would be a decision
 needing its own argument; `Lax` is deliberate.
 
+**In product mode a person is asked, once per relying party, before a session
+they already have signs them in to it** (ASVS 5.0.0 7.6.2): a `wsignin1.0`
+carries no signature, so without the question any page could sign a person in
+to any registered relying party. It is the [consent screen](oauth-oidc.md#consent)
+OpenID Connect uses; an Allow is kept and answers every later sign-in to that
+relying party, and a Deny is a 403 page (`STS-WSFED-0031`).
+`wsfed.ssoConsent` turns it on (product) or off (development), and
+`wsfedSsoConsent` on the application's entry overrides it for one relying
+party.
+
 ### Who may start a sign-in
 
 Two switches, each a realm setting with a per-relying-party override on the
@@ -238,14 +248,15 @@ in `wreq` instead.
 ### Signing out
 
 `wsignout1.0` ends the session — the same one OAuth and SAML read, so they are
-signed out too — and loads each relying party's `wreply` with
+signed out too — and loads each relying party's `wsfedSignOutUri`, or with none
+set the `wreply` its sign-in went to, with
 `wa=wsignoutcleanup1.0` as a one-pixel image, printing the same URLs as links so
 a failed cleanup can be seen. With a `wreply` on the request, the page offers a
 **link** back rather than redirecting, because a redirect would abandon the
 cleanups. The cleanup images are what front-channel logout is, so that one
 response widens `img-src` to `*`: a cleanup ping is by definition a third-party
-origin, and the URLs are ones the relying parties themselves supplied as
-`wreply`. `wsignoutcleanup1.0` arriving here ends the session and sends no
+origin, and the URLs are ones an administrator declared or the relying parties
+themselves supplied as `wreply`. `wsignoutcleanup1.0` arriving here ends the session and sends no
 cleanups of its own, which would loop between two identity providers. The
 protocol-independent `/logout` sends the same cleanups; see
 [Signing out](signing-out.md).
@@ -300,6 +311,8 @@ nothing more). `wreqptr` is refused by design.
 | `wtrealm` | any relying party; it is filed in the register | a **registered** relying party only — one an administrator, dynamic registration, an OpenID Federation or this service's seeding put there, not one the register merely recorded from an earlier sign-in. Any other is a 404 page (`STS-WSFED-0021`) before the sign-in screen, and nothing is recorded (#496) |
 | `wreply` | used as it stands; with none, the registered one, and with none registered the request is refused | must be one of the `wsfedReplyUrl` values on the `wtrealm`'s application entry, exact match; with none, the registered one. An address development merely observed is refused until an operator confirms it |
 | Password at the sign-in screen | any password but `invalid` | verified |
+| Single sign-on to a relying party the person has not agreed to | answered | asked first, once (`wsfed.ssoConsent`) |
+| A parameter given twice, or in both the query string and the body | not refused for that reason | refused, 400 (`STS-CORE-0173`) |
 | Given name, surname, mail, display name, UPN | invented, and described that way in the metadata | read off the directory entry, or omitted — and the signed metadata describes them that way |
 
 The `wauth` step-up, the `wreqptr` refusal and `wctx` round trip behave the
@@ -314,6 +327,7 @@ and a registered reply address only, whatever the mode. See
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | The lifetime of the assertion and of the RSTR's `wsu:Lifetime`; per relying party with `wsfedAssertionLifetimeMin`. |
 | `wsfed.idpInitiatedSso` | `STS_WSFED_IDP_INITIATED_SSO` | `false` | yes | Whether `/wsfed/initiate/{rp}` signs a person in to a relying party that did not ask; per relying party with `wsfedIdpInitiatedSso`. |
 | `wsfed.spInitiatedSso` | `STS_WSFED_SP_INITIATED_SSO` | `true` | yes | Whether a relying party's `wsignin1.0` is answered; per relying party with `wsfedSpInitiatedSso`. |
+| `wsfed.ssoConsent` | `STS_WSFED_SSO_CONSENT` | `true` in product, `false` in development | yes | Ask a person once per relying party before single sign-on signs them in to it; per relying party with `wsfedSsoConsent`. |
 
 The assertion's issuer, signature algorithm, skew and attributes are the shared
 `saml.*` settings and the SAML attribute sets — see the

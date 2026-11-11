@@ -216,10 +216,11 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
 #[tracing::instrument(level = "debug", skip_all)]
 async fn start(options: Options, info: version::VersionInfo) {
     tracing::info!(
-        "xacml-pep: version {} (build {}{}, {}). M.N is the service's own \
-         release; the build number is this image's.",
+        "xacml-pep: version {} ({}built {}{}, {}). The release is the \
+         service's own; the build number is this image's.",
         info.version,
-        info.build,
+        if info.release { "a RELEASE build, " } else { "" },
+        info.built_at,
         if info.commit.is_empty() {
             String::new()
         } else {
@@ -229,7 +230,7 @@ async fn start(options: Options, info: version::VersionInfo) {
             "stamped at image build time"
         } else {
             "COMPUTED AT STARTUP — this is not a built image, so the build \
-             number is when this process started"
+             time is when this process started"
         }
     );
     tracing::info!(
@@ -418,11 +419,19 @@ fn main() {
     log::install("xacml-pep", log::parse_level(&level));
     if args.get(1).map(String::as_str) == Some("--stamp") {
         let dir = args.get(2).map(String::as_str).unwrap_or(".");
-        let info = version::stamp(Path::new(dir));
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&info).unwrap_or_default()
-        );
+        // A release flag without a valid BUILD_NUMBER is refused (#1317):
+        // the message names both variables, and the non-zero exit fails the
+        // image build at its `RUN`, as `common/version.js --stamp` does.
+        match version::stamp(Path::new(dir)) {
+            Ok(info) => println!(
+                "{}",
+                serde_json::to_string_pretty(&info).unwrap_or_default()
+            ),
+            Err(refusal) => {
+                eprintln!("{}", refusal);
+                std::process::exit(1);
+            }
+        }
         return;
     }
     let here = std::env::current_dir().unwrap_or_else(|_| ".".into());

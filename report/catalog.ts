@@ -758,8 +758,8 @@ function passkeyCeremonySource(): SourceSpec {
     field('outcome', 'string', 'success or refused.', undefined,
       ['success', 'refused']),
     field('errorCode', 'string',
-      'The error code a refused ceremony was recorded under ' +
-      '(STS-AUTHN-0022 where the browser gave up); empty on success.'),
+      'The error code a refused ceremony was recorded under; empty on ' +
+      'success.'),
     field('actor', 'string',
       'The person, where known; empty before a usernameless passkey ' +
       'names anybody.'),

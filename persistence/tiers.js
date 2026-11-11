@@ -286,6 +286,19 @@ function joinGroup(globalAttrs, cellAttrs) {
 const GLOBAL_MINTED = {
   // Configuration, which every cell must hold the same copy of.
   'authorization_servers.profiles': 'the named authorization servers',
+  // The audit export destinations (#641): a URL, a format and a sealed
+  // credential each, no personal data, and every cell delivers its own
+  // events to the same ones. Each cell's position in its own ring is
+  // `audit.export.cursors`, which is cell-tier with the ring it walks.
+  'audit.export.destinations': 'where a realm\'s audit events are ' +
+    'delivered',
+  // A realm's sign-in logo (#717): configuration every cell's sign-in
+  // pages draw, as the mail templates are.
+  'branding.assets': 'a realm\'s sign-in logo',
+  // What the daily audit of a realm's pinned certificates last found (#1360):
+  // the certificates are configuration every cell relies on alike.
+  'pki.pins.lastAudit': 'what a realm\'s pinned certificate audit last ' +
+    'found',
   'mail.templates': 'a realm\'s wording of its messages',
   'oauth2.commandIssuer': 'the issuer a realm\'s provider commands use',
   'oauth2.commandMetadata': 'what each client says it supports',
@@ -363,12 +376,21 @@ const CELL_MINTED = [
   'admin_stats.nums', 'admin_stats.scimCounts', 'admin_stats.tokenHolders',
   'admin_stats.tokens',
   'admin_stats.users', 'attribute_sources.status', 'audit.events',
+  // A destination's cursor over THIS cell's audit ring (#641), beside the
+  // ring itself: another cell's cursor would point into events it never held.
+  'audit.export.cursors',
   'audit.nums', 'authn.pending',
   'authn.pendingMfa', 'authn.pendingPasswordChange', 'authn.sessions',
   'authn.webauthnCredentials', 'authorization_details.consented',
   'caep.register', 'cells.deliveries', 'cells.exports', 'cells.projections',
   'claim_attributes.selections', 'consent_screen.pending',
   'credentials.pendingBackupCodes', 'credentials.pendingKeys',
+  // A person's published DIDs' index (#1291): a random id to the person it
+  // belongs to — somebody's, beside their entry in this cell.
+  'did.personDids',
+  // A person's profile photo (#719): their image, beside their entry in this
+  // cell, and reached by an id stamped with the cell that minted it.
+  'profilePhoto.images',
   // An administrator's enrolment for somebody (#945). Keyed by both
   // names, so it cannot share pendingKeys, and it is this cell's
   // ceremony in the same way: the begin and the finish may be two nodes
@@ -379,9 +401,15 @@ const CELL_MINTED = [
   'devices.androidRecheck',
   'devices.events', 'dpop.issuedNonces', 'federation.signalBlocks',
   'federation.unmapped', 'federation_sp.contexts',
+  // A partner's refresh token held for one session (#930): the session's
+  // cell's, as the session is.
+  'federation_sp.partnerRefresh',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',
+  // What the validation door answered in this cell (#1360): counters, as the
+  // monitors' are.
+  'pki.door.counts',
   'gnap.tokenValues', 'gnap.userCodes', 'gnap.userRefs', 'krb5.principals',
   // USER-MANAGED ACCESS (#1168): every one of its six stores is somebody's
   // or minted here. A registered resource names its OWNER, a person, and
@@ -474,10 +502,12 @@ const CELL_PREFIXES = ['enrollment_monitor.', 'test.'];
 // per cluster, and a cell IS a cluster — so a job whose work is the global
 // tier's (rotating a realm's signing keys, the krbtgt key, a SPIFFE authority,
 // the OpenID Federation key; expiring a client secret; purging the global
-// used-assertion history) would run once PER CELL if its run were claimed in
-// the cell's database. Their runs are claimed in the global tier instead,
-// under `GLOBAL_RUN_SCOPE`, so exactly one cell runs each slot. Every other
-// job's work is what its own cell holds, and it runs in every cell.
+// used-assertion history or the global tier's expired minted rows and
+// tombstones) would
+// run once PER CELL if its run were claimed in the cell's database. Their
+// runs are claimed in the global tier instead, under `GLOBAL_RUN_SCOPE`, so
+// exactly one cell runs each slot. Every other job's work is what its own
+// cell holds, and it runs in every cell.
 // ---------------------------------------------------------------------------
 const GLOBAL_JOBS = [
   'signing.rotate', 'signing.retire', 'signing.rotate-now',
@@ -486,7 +516,14 @@ const GLOBAL_JOBS = [
   'oidfed.registrations-expire', 'federation.encryption-key-retire',
   'spiffe.authority-rotation', 'spiffe.sigstore-tuf-refresh',
   'oauth2.client-secret-expiry', 'oauth2.used-assertion-purge',
-  'saml2.sp-metadata-refresh', 'ssf.stream-maintenance', 'ssf.foreign-poll'
+  'saml2.sp-metadata-refresh', 'ssf.stream-maintenance', 'ssf.foreign-poll',
+  // The global tier's half of the minted expiry purge (#695): before it was
+  // a job of its own every cell's leader purged the one global sts_minted.
+  // The cell's half, persistence.minted-expiry-purge, runs in every cell.
+  'persistence.minted-expiry-purge-global',
+  // And the global tier's tombstone sweep, for the same reason (#1313);
+  // the cell's half, persistence.tombstone-purge, runs in every cell.
+  'persistence.tombstone-purge-global'
 ];
 // The claim scope a global job's run is claimed under.
 const GLOBAL_RUN_SCOPE = 'scheduler.run.global';

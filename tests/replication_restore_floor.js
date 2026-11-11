@@ -52,14 +52,15 @@ function makeLog() {
         one['o' + i] = 'present';
       }
       out = rowsOf([one]);
-    } else if (/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
-                 .test(text)) {
+    } else if ((/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
+                 .test(text) ||
+               /sts:(latestChangeSeq|changeCeiling) /.test(text))) {
       db.maxes.push(db.log.length);
       if (db.openedAt === undefined) {
         db.openedAt = db.log.length;
       }
       out = rowsOf([{ seq: db.log.length }]);
-    } else if (/FROM sts_changes WHERE seq > /.test(text)) {
+    } else if (/sts:changesSince /.test(text)) {
       const after = Number(bound[0]);
       const limit = Number(bound[1]) || 500;
       out = rowsOf(db.log.filter(function (row) {
@@ -288,6 +289,7 @@ function inChild(t) {
     STS_PUBLIC_BASE_URL: 'https://idp.example',
     STS_KEYS_SOURCE: 'persisted',
     STS_KEYS_KEK_PROVIDER: 'file',
+    STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
     STS_KEYS_KEK_FILE: kek,
     STS_CLUSTER_MODE: 'off'
   });

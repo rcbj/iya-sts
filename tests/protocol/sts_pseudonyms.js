@@ -163,6 +163,52 @@ async function signIn(who) {
   return c;
 }
 
+// A SIGN-IN THAT MAY BE REFUSED: the token's payload, or null when the
+// portal's sign-in did not end in a token.
+async function signInOrRefused(who) {
+  log.debug("Entering signInOrRefused().");
+  try {
+    const c = await signIn(who);
+    log.debug("Leaving signInOrRefused(). Signed in.");
+    return payloadOf(c.token);
+  } catch (e) {
+    log.debug("Caught in signInOrRefused(): " + ((e && e.message) || e));
+    log.debug("Leaving signInOrRefused(). Refused.");
+    return null;
+  }
+}
+
+// The realm's mode, from GET /admin-api/mode.
+async function realmMode() {
+  log.debug("Entering realmMode().");
+  const r = await call("GET", realmBase() + "/admin-api/mode");
+  assert.strictEqual(r.status, 200, "GET /admin-api/mode: " + r.status +
+                     " " + r.text.slice(0, 300));
+  log.debug("Leaving realmMode().");
+  return String(r.json && r.json.mode);
+}
+
+// WHAT AN ADDRESS NOBODY HOLDS SIGNS IN AS (step 9). Development checks no
+// password and files a whole address under its local part, so FOLD is Bob.
+// Product checks the password of the entry the WHOLE name finds — a uid or
+// a live pseudonym — and folds nothing, so with no live holder FOLD is
+// refused. Either way it is not Alice while her address is pending, which is
+// what step 9 is about. (First run in product mode: 2026-11-02.)
+function assertNotYetAlice(payload, mode, aliceSubject, bobSubject, when) {
+  log.debug("Entering assertNotYetAlice().");
+  if (mode === "product") {
+    assert.strictEqual(payload, null, when + ": product mode signed in " +
+      "an address no uid or live pseudonym holds: " +
+      JSON.stringify(payload));
+  } else {
+    assert.ok(payload, when + ": development mode refused the address");
+    assert.strictEqual(payload.sub, bobSubject);
+    assert.strictEqual(payload.username, BOB);
+    assert.notStrictEqual(payload.sub, aliceSubject);
+  }
+  log.debug("Leaving assertNotYetAlice().");
+}
+
 async function openThePortal() {
   log.debug("Entering openThePortal().");
   await ok(realmBase() + "/admin-api/applications/add",
@@ -238,7 +284,7 @@ function linkParams(link) {
   try {
     const u = new URL(link);
     out = { user: u.searchParams.get("user") || "",
-            token: u.searchParams.get("token") || "" };
+            token: new URLSearchParams(u.hash.slice(1)).get("token") || "" };
   } catch (e) {
     log.debug("Caught in linkParams(): " + ((e && e.message) || e));
     out = { user: "", token: "" };
@@ -497,19 +543,18 @@ async function theMailedLink(aliceSubject, bobSubject) {
     assert.ok(link, String(message.Text || "").slice(0, 400));
     assert.ok(link.indexOf("/portal/verify-email") < 0, link);
   });
-  const before = await signIn(FOLD);
-  const beforePayload = payloadOf(before.token);
-  check("9. before the link is spent the address is the other person",
-        function () {
-    assert.strictEqual(beforePayload.sub, bobSubject);
-    assert.strictEqual(beforePayload.username, BOB);
-    assert.notStrictEqual(beforePayload.sub, aliceSubject);
+  const mode = await realmMode();
+  const beforePayload = await signInOrRefused(FOLD);
+  check("9. before the link is spent the address is not its owner (" +
+        mode + ")", function () {
+    assertNotYetAlice(beforePayload, mode, aliceSubject, bobSubject,
+                      "before the link is spent");
   });
   const params = linkParams(link);
   const looked = await call("GET", realmBase() +
     "/account-api/verify-pseudonym?user=" +
-    encodeURIComponent(params.user) + "&token=" +
-    encodeURIComponent(params.token));
+    encodeURIComponent(params.user), undefined,
+    { "X-Link-Token": params.token });
   const still = await listed(alice);
   check("9. opening the link spends nothing", function () {
     assert.strictEqual(looked.status, 200, looked.text.slice(0, 300));
@@ -531,13 +576,12 @@ async function theMailedLink(aliceSubject, bobSubject) {
   });
   const dropped = await alice.api("POST", "/account-api/pseudonyms",
                                   { action: "remove", value: FOLD });
-  const back = await signIn(FOLD);
-  const backPayload = payloadOf(back.token);
-  check("9. after removal the address is the other person again",
-        function () {
+  const backPayload = await signInOrRefused(FOLD);
+  check("9. after removal the address is not its owner again (" + mode +
+        ")", function () {
     assert.strictEqual(dropped.status, 200, dropped.text.slice(0, 300));
-    assert.strictEqual(backPayload.sub, bobSubject);
-    assert.strictEqual(backPayload.username, BOB);
+    assertNotYetAlice(backPayload, mode, aliceSubject, bobSubject,
+                      "after removal");
   });
   const waiting = await alice.api("POST", "/account-api/pseudonyms",
                                   { action: "add", value: CANCEL_ADDRESS });

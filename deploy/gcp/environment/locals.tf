@@ -57,9 +57,13 @@ locals {
   # arrives at the VM for 443. So each row is published by Docker on the
   # VM (`-p <listener>:<container>`, units/sts-node.service.tftpl), and the
   # container listens where it always has — 8081 behind 443, 8082 behind 80.
+  # NO PLAIN LDAP ON 389 (rcbj, 2026-11-10, AWS's locals.tf): the ASVS L2
+  # hardening (#1490) turns `ldap.plainListener` off in product, so a product
+  # node binds nothing there, and a published 389 was a port nobody answers
+  # (on AWS its health check replaced a healthy node). LDAPS on 636 is the
+  # directory's only published port.
   published_ports = merge({
     https = { listener = 443, container = 8081 }
-    ldap  = { listener = 389, container = 389 }
     ldaps = { listener = 636, container = 636 }
     pki   = { listener = var.pki_listener_port, container = 8082 }
     }, var.publish_kerberos ? {

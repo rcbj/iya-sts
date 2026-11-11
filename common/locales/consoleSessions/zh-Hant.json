@@ -88,5 +88,6 @@
   "accounts.added": "新增的帳戶",
   "accounts.switched": "切換預設",
   "accounts.forgotten": "忘記的帳戶",
-  "accounts.expired": "過期的已記住帳戶"
+  "accounts.expired": "過期的已記住帳戶",
+  "endAll": "結束此信任領域中的所有工作階段"
 }

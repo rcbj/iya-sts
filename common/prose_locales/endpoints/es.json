@@ -435,9 +435,29 @@
     "en": "3bc74315dcf2fb5e",
     "text": "El directorio de dominios de confianza"
   },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "El icono del servicio"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "La hoja de estilo de tarjeta de las superficies públicas"
+  },
+  "endpoints.route./web/theme.css.name": {
+    "en": "955c14dc632bdf90",
+    "text": "La hoja de estilo de la apariencia de inicio de sesión de un dominio"
+  },
+  "endpoints.route./web/branding/logo.name": {
+    "en": "2ce72d622f586a26",
+    "text": "El logotipo de inicio de sesión de un dominio"
+  },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "La foto de perfil de una persona"
+  },
+  "endpoints.route./web/branding/preview.name": {
+    "en": "54aca7174dc0a2b0",
+    "text": "Una vista previa de la apariencia de inicio de sesión"
   },
   "endpoints.route./web/locales/catalogs.json.name": {
     "en": "54bbd31e0a5afc5b",
@@ -566,6 +586,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "La bandeja de Shared Signals de la aplicación de informes"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "Lo que dibuja el menú de usuario de la aplicación de informes"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",
@@ -754,6 +778,14 @@
   "endpoints.route./admin-api/pki.name": {
     "en": "bc458d477b4de7d9",
     "text": "La autoridad de certificación que tiene este dominio"
+  },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "Modo PKI paranoico, el almacén de confianza de firmantes y lo que está fijado"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "Cambiar el almacén de confianza de firmantes, una fila paranoica, o volver a comprobar las fijaciones"
   },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
@@ -955,6 +987,10 @@
     "en": "ec5770a23a0c10c0",
     "text": "Los sujetos autoemitidos (SIOPv2) de una persona"
   },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "Los DID publicados de una persona"
+  },
   "endpoints.route./admin-api/users/verifications.name": {
     "en": "aa12d03c659af2a0",
     "text": "Las verificaciones de identidad de una persona"
@@ -1044,8 +1080,8 @@
     "text": "Los agentes atestiguados"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "Prohibir, readmitir u olvidar un agente"
+    "en": "db7439843e5d6273",
+    "text": "Prohibir, readmitir u olvidar un agente, o emitir un join token"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",
@@ -1151,6 +1187,26 @@
     "en": "b485a2ff39ac01b5",
     "text": "Códigos de error"
   },
+  "endpoints.route./admin-api/audit-export.name": {
+    "en": "6215b564a1d4430f",
+    "text": "Exportación de auditoría"
+  },
+  "endpoints.route./admin-api/audit-export/:action.name": {
+    "en": "b9a19e739aa5ebd6",
+    "text": "Cambiar los destinos de exportación de auditoría"
+  },
+  "endpoints.route./admin-api/branding.name": {
+    "en": "4f6e7c69e356bf65",
+    "text": "Apariencia del inicio de sesión"
+  },
+  "endpoints.route./admin-api/branding/logo.name": {
+    "en": "febcf32d571a0fbf",
+    "text": "Subir el logotipo de inicio de sesión"
+  },
+  "endpoints.route./admin-api/branding/:action.name": {
+    "en": "d7fa23e10dac9b1d",
+    "text": "Cambiar la apariencia del inicio de sesión"
+  },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",
     "text": "Registro de auditoría"
@@ -1174,6 +1230,10 @@
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
     "text": "Definir escuchas personalizadas, o asignarles aplicaciones"
+  },
+  "endpoints.route./admin-api/config-dump.name": {
+    "en": "9d414a56d337e804",
+    "text": "Volcado de la configuración"
   },
   "endpoints.route./admin-api/config/:action.name": {
     "en": "7e8873a02dca9738",
@@ -1523,6 +1583,22 @@
     "en": "561e36f4539a01de",
     "text": "Iniciar un inicio de sesión federado"
   },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "Un inicio de sesión que inicia el socio (initiate_login_uri)"
+  },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "Un objeto de solicitud por referencia"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "Encontrar el proveedor OpenID de una persona por WebFinger"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "El script de fragmento del servicio consumidor de aserciones"
+  },
   "endpoints.route./federation/acs/:id.name": {
     "en": "fff6118cbd019f5e",
     "text": "Servicio consumidor de aserciones / wreply / redirect_uri"
@@ -1558,6 +1634,10 @@
   "endpoints.route./federation/metadata/:id.name": {
     "en": "1bd56e73b838da2d",
     "text": "Los metadatos SAML PROPIOS de este servicio, por socio"
+  },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Metadatos de cliente de una relación de Bluesky (#746)"
   },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",
@@ -1863,10 +1943,6 @@
     "en": "267337fd3ad0ab7f",
     "text": "OP iframe (check_session_iframe)"
   },
-  "endpoints.route./oauth2/check_session.js.name": {
-    "en": "d9f2d9b37bfe6db9",
-    "text": "Script del OP iframe"
-  },
   "endpoints.route./oauth2/logout.name": {
     "en": "9901e3b8fd763f16",
     "text": "Fin de sesión (end_session_endpoint)"
@@ -2131,6 +2207,10 @@
     "en": "7d0bcaaf2c946cba",
     "text": "El documento DID de una aplicación"
   },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "El documento DID publicado de una persona"
+  },
   "endpoints.route./.well-known/did-configuration.json.name": {
     "en": "ea3b5de3683521ad",
     "text": "Domain Linkage Credential"
@@ -2382,5 +2462,17 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (se pide un certificado de cliente, nunca se exige)"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "Análisis de malware"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "Probar el analizador"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "Comprobar la integridad del registro de auditoría"
   }
 }

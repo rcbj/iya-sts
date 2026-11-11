@@ -82,6 +82,8 @@
 // ---------------------------------------------------------------------------
 
 // The one place this service hashes (#453).
+import ModelTables = require('../common/model_tables');
+import DomainClasses = require('../common/domain_classes');
 import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 // The error-code registry (a leaf). A refused write's code is marked on the
@@ -161,56 +163,8 @@ interface XacmlStoreDeps {
 // because this directory is schemaless and a container of entries carrying
 // invented attributes needs to say what they mean somewhere.
 // ---------------------------------------------------------------------------
-const SCHEMA = {
-  objectClasses: [
-    { name: 'xacmlPolicy',
-      what: 'One XACML 3.0 Policy or PolicySet, stored as the document it ' +
-            'was authored as. THIS CONTAINER IS THE POLICY REPOSITORY — an ' +
-            'ldapmodify of xacmlPolicyDocument here changes what the PDP ' +
-            'decides on the next request.' }
-  ],
-  attributes: [
-    { name: 'xacmlPolicyId',
-      what: 'The PolicyId or PolicySetId inside the document. DERIVED at ' +
-            'write time and used for listing and for resolving a ' +
-            'PolicyIdReference; the document is the truth.' },
-    { name: 'xacmlPolicyDocument',
-      what: 'The XACML 3.0 XML. THIS IS THE POLICY. Everything else on the ' +
-            'entry is derived from it.' },
-    { name: 'xacmlVersion',
-      what: 'The Version attribute of the document. Derived.' },
-    { name: 'xacmlKind',
-      what: '"Policy" or "PolicySet". Derived.' },
-    { name: 'xacmlCombiningAlgId',
-      what: 'The rule- or policy-combining algorithm the document names. ' +
-            'Derived, and shown on the console because it is the single ' +
-            'most consequential line in a policy.' },
-    { name: 'xacmlEnabled',
-      what: '"TRUE" or "FALSE". A disabled policy stays in the repository ' +
-            'and is not evaluated. NOT derived — it is the one thing here ' +
-            'that is a fact about the deployment rather than about the ' +
-            'document, which is why it is an attribute rather than a ' +
-            'comment in the XML.' },
-    { name: 'xacmlIsRoot',
-      what: '"TRUE" on the policy the PDP starts from. A repository with no ' +
-            'root decides nothing and says so; a repository with two is ' +
-            'refused at write time rather than picking one.' },
-    { name: 'description',
-      what: "The document's own <Description>, where it has one." },
-    // #564: APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION. Two facts about
-    // the DEPLOYMENT, like xacmlEnabled, and neither derived from the
-    // document — so an edit of the document through any door keeps them.
-    { name: 'xacmlApplication',
-      what: 'The identifier of the application that OWNS this policy, ' +
-            'which decides the details of that application\'s ' +
-            'authorization_details types. Such a policy is never the ' +
-            'root, is never reached by a PolicyIdReference from the root, ' +
-            'and is never sent to a remote PEP.' },
-    { name: 'xacmlOrphanedAt',
-      what: 'When the owning application was deleted. The policy is kept, ' +
-            'disabled, for audit, until an administrator removes it.' }
-  ]
-};
+// The table is written in models/directory/xacml_policy.tsp (#1390).
+const SCHEMA = ModelTables.schema('xacmlPolicy');
 
 // The directory functions, installed by `ldap/ldap_server.js`.
 let directory: PolicyDirectory | null = null;
@@ -632,7 +586,6 @@ class XacmlStore {
    * empty when there is no directory
    */
   all(): PolicyRow[] {
-    const self = this;
     const { log } = this.deps;
     log.debug('Entering XacmlStore.all().');
     if (!this.haveDirectory()) {
@@ -640,20 +593,21 @@ class XacmlStore {
       return [];
     }
     const rows = directory.allPolicies().map(function (entry) {
-      const at = self.attributeReader(entry.attributes);
+      const policy = DomainClasses.XacmlPolicy.fromEntry(entry.attributes);
       return {
         name: entry.name,
         dn: entry.dn,
-        id: at('xacmlPolicyId'),
-        kind: at('xacmlKind') || 'Policy',
-        version: at('xacmlVersion') || '1.0',
-        combiningAlgId: at('xacmlCombiningAlgId') || '',
-        description: at('description') || '',
-        enabled: at('xacmlEnabled') !== 'FALSE',
-        isRoot: at('xacmlIsRoot') === 'TRUE',
-        document: at('xacmlPolicyDocument') || '',
-        application: at('xacmlApplication') || null,
-        orphanedAt: at('xacmlOrphanedAt') || null
+        id: policy.identifier === undefined ? null : policy.identifier,
+        kind: policy.kind || 'Policy',
+        version: policy.version || '1.0',
+        combiningAlgId: policy.combiningAlgorithm || '',
+        description: (policy.description || [])[0] || '',
+        // A missing mark is not FALSE: only one that says so disables it.
+        enabled: policy.enabled !== false,
+        isRoot: policy.isRoot === true,
+        document: policy.document || '',
+        application: policy.application || null,
+        orphanedAt: policy.orphanedAt || null
       };
     });
     log.debug('Leaving XacmlStore.all(). ' + rows.length + ' policy(ies).');
@@ -661,7 +615,8 @@ class XacmlStore {
   }
 
   // -------------------------------------------------------------------------
-  // READING AN ATTRIBUTE BACK, CASE-INSENSITIVELY, BECAUSE LDAP IS.
+  // WHY `all()` READS THROUGH THE CONCEPT, WHICH FINDS AN ATTRIBUTE IN ANY CASE
+  // (#1390; `common/domain_map.ts`).
   //
   // RFC 4512: attribute type names are case-insensitive, and this directory
   // normalises them to lower case on the way in. So an entry written with
@@ -673,34 +628,9 @@ class XacmlStore {
   // `xacmlIsRoot` read as undefined, and the PDP answered NotApplicable to
   // everything — with a repository that plainly had a policy in it and no
   // error anywhere. `federation.js` reads `stored.attributes.fedid` in lower
-  // case for exactly this reason; this does it through one function so that
-  // the fifteen call sites cannot each get it right separately.
+  // case for exactly this reason; a concept does it in one place so that no
+  // read can get it wrong separately.
   // -------------------------------------------------------------------------
-  private attributeReader(attributes: Record<string, any> | null |
-                            undefined): (name: string) => string | null {
-    const self = this;
-    const { log } = this.deps;
-    log.debug("Entering XacmlStore.attributeReader().");
-    const lowered = {};
-    Object.keys(attributes || {}).forEach(function (key) {
-      lowered[key.toLowerCase()] = attributes[key];
-    });
-    log.debug("Leaving XacmlStore.attributeReader().");
-    return function (name) {
-      return self.one(lowered[String(name).toLowerCase()]);
-    };
-  }
-
-  private one(value: unknown): string | null {
-    const { log } = this.deps;
-    log.debug("Entering XacmlStore.one().");
-    if (Array.isArray(value)) {
-      log.debug("Leaving XacmlStore.one().");
-      return value.length ? String(value[0]) : null;
-    }
-    log.debug("Leaving XacmlStore.one().");
-    return value === undefined || value === null ? null : String(value);
-  }
 
   /**
    * Returns one policy entry by name.

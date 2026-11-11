@@ -16,7 +16,9 @@
 //      its lookup needs, compares a name, a mail address and a UUID
 //      lower-cased as a JSON array for `@>`, never lets a `%` in a DN become
 //      a wildcard, bounds a page at 1,000, and refuses a query it does not
-//      know. `answerOf()` shapes rows as `readEntry()` always did.
+//      know. `answerOf()` shapes rows as `readEntry()` always did. A
+//      needle's `rdnCount` is capped (#1308): A23–A26, its LIMIT outside a
+//      MATERIALIZED CTE (#1310).
 //   B. THE DRIVER'S DOOR: `directoryQuery()` runs exactly the builder's
 //      statement on the READ pool and answers in the directory's shape; an
 //      unknown query is a rejection, not a statement.
@@ -233,6 +235,44 @@ function builders(t) {
           JSON.stringify(withRdn));
   t.equal(queries.answerOf('rdnCount', [{ n: '7' }]), 7,
           'A22. rdnCount answers a number');
+  // A NEEDLE'S COUNT IS CAPPED (#1308): the matches are counted inside a
+  // LIMIT of the cap and one more, so the store answers at most cap + 1.
+  // The LIMIT is outside a MATERIALIZED CTE since #1310, so the planner
+  // prices the whole read and the LIMIT still stops it.
+  const capped = queries.rdnCount('default', users, 'Li');
+  t.check(/^WITH m AS MATERIALIZED \(SELECT 1 AS one FROM /
+      .test(capped.text) &&
+          /position\(\$3 in rdn_value\) > 0\) SELECT count\(\*\)::bigint /
+            .test(capped.text) &&
+          /FROM \(SELECT one FROM m LIMIT \$4\) AS matched$/
+            .test(capped.text) &&
+          capped.values[2] === 'li' &&
+          capped.values[3] === queries.RDN_COUNT_CAP + 1 &&
+          queries.RDN_COUNT_CAP === 100000,
+          'A23. rdnCount counts inside a LIMIT of the cap and one more, ' +
+          '100,001 when no cap is asked', JSON.stringify(capped));
+  const every = queries.rdnCount('default', users, '', 50);
+  t.check(!/position\(/.test(every.text) && /LIMIT \$3\)/.test(every.text) &&
+          every.values.length === 3 && every.values[2] === 51,
+          'A24. an empty needle adds no predicate and is capped the same ' +
+          'way', JSON.stringify(every));
+  t.check(queries.rdnCount('default', users, 'a', 2).values[3] === 3 &&
+          queries.rdnCount('default', users, 'a', 500000).values[3] ===
+            100001 &&
+          queries.rdnCount('default', users, 'a', 0).values[3] === 100001 &&
+          queries.rdnCount('default', users, 'a', 'x').values[3] === 100001,
+          'A25. a caller\'s cap is honoured below the walk\'s, never above ' +
+          'it, and nonsense is the walk\'s');
+  // Under, at and over a cap of 2: what the LIMIT lets the store answer,
+  // and what that answer means to the caller (more than the cap past it).
+  const most = queries.rdnCount('default', users, 'a', 2).values[3];
+  const said = [1, 2, 3, 9].map(function (matches) {
+    const n = queries.answerOf('rdnCount',
+                               [{ n: String(Math.min(matches, most)) }]);
+    return n > 2 ? 'more than 2' : String(n);
+  });
+  t.equal(said.join(','), '1,2,more than 2,more than 2',
+          'A26. under the cap, at it, and over it (one more, and many more)');
   log.debug("Leaving builders().");
 }
 
@@ -277,13 +317,14 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 29 ===');
-  t.equal(postgres.SCHEMA_VERSION, 29,
-          'C1. the driver writes schema version 29 (#222, #391 phase 6, ' +
+  t.log.info('=== C. schema version 31 ===');
+  t.equal(postgres.SCHEMA_VERSION, 31,
+          'C1. the driver writes schema version 31 (#222, #391 phase 6, ' +
           '#432 phase 5, #618, #623, #630, #639, #350, #754, the uid ' +
           'trigram index, #820\'s sts_minted_index and its sort_at, #956, ' +
           '#1024\'s and #1028\'s asked names, #1028\'s date indexes, ' +
-          '#1045\'s report pieces)');
+          '#1045\'s report pieces, #677\'s lock rows, #1290\'s key pair ' +
+          'names)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -386,8 +427,8 @@ async function schema(t) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 29;
-  }), 'C6. and records version 29');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 31;
+  }), 'C6. and records version 31');
   // THE TWO INDEXES VERSION 18 REPLACED (#618) are dropped where the
   // catalogue still lists them, after the indexes that replace them.
   const retired = [];

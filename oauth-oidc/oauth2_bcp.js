@@ -200,6 +200,11 @@ const errorCodes = require('../common/error_codes');
 //                true before this file existed. These are the rows that say
 //                what the service already did, and they are here so that
 //                nobody has to read the code to find out.
+//   'waived'   — enforced by the mode and turned off in this realm by an
+//                administrator's setting, which the row's note names. One row
+//                can say it, `no-implicit` (and `prefer-code`, which is what
+//                is left once it has refused), and only because section 2.1.2
+//                is a SHOULD NOT (#1295; see implicitWaived()).
 //
 // Most rows are cited by `requirement:` on the refusal they produce. Five are
 // not, and that is right rather than an omission — a requirement met by DOING
@@ -566,22 +571,44 @@ const REQUIREMENTS = [
           'detectable for a client that has no PKCE.' },
 
   // --- section 2.1.2 — the implicit grant ---------------------------------
+  // THE ONE ROW AN ADMINISTRATOR MAY WAIVE (#1295): both fields are
+  // functions, as response-over-tls's are, because the answer is the
+  // realm's `oauth2.allowImplicitTokenResponses` — see implicitWaived().
   { id: 'no-implicit', section: '2.1.2', level: 'SHOULD NOT',
-    appliesTo: 'client (enforced by this server)', enforced: 'yes',
+    appliesTo: 'client (enforced by this server)',
+    enforced: function () {
+      log.debug("Entering the no-implicit enforcement report.");
+      const waived = implicitWaived();
+      log.debug("Leaving the no-implicit enforcement report.");
+      return waived ? 'waived' : 'yes';
+    },
     title: 'Do not use the implicit grant or any response type issuing an ' +
            'access token',
-    note: 'response_type values naming `token` — token, code token, id_token ' +
-          'token, code id_token token — are refused with ' +
-          'unsupported_response_type, and the metadata stops advertising ' +
-          'them and drops the implicit grant type. `id_token` and `code ' +
-          'id_token` remain: they issue no access token from the ' +
-          'authorization endpoint, which is the property section 2.1.2 is ' +
-          'about.' },
+    note: function () {
+      log.debug("Entering the no-implicit note.");
+      const waived = implicitWaived();
+      log.debug("Leaving the no-implicit note.");
+      return (waived ? WAIVER_NOTE + ' ' : '') +
+        'response_type values naming `token` — token, code token, id_token ' +
+        'token, code id_token token — are refused with ' +
+        'unsupported_response_type, and the metadata stops advertising ' +
+        'them. `id_token` and `code id_token` remain, with the implicit ' +
+        'grant type RFC 7591 section 2.1 pairs them with: they issue no ' +
+        'access token from the authorization endpoint, which is the ' +
+        'property section 2.1.2 is about.';
+    } },
 
   { id: 'prefer-code', section: '2.1.2', level: 'SHOULD',
-    appliesTo: 'client', enforced: 'yes',
+    appliesTo: 'client',
+    enforced: function () {
+      log.debug("Entering the prefer-code enforcement report.");
+      const waived = implicitWaived();
+      log.debug("Leaving the prefer-code enforcement report.");
+      return waived ? 'waived' : 'yes';
+    },
     title: 'Use response_type=code',
-    note: 'What is left once the token-bearing response types are gone. The ' +
+    note: 'What is left once the token-bearing response types are gone, so ' +
+          'it is waived exactly where no-implicit is. The ' +
           'consequence is worth seeing rather than reading: with the mode ' +
           'on, the debugger\'s implicit pane gets a protocol error instead ' +
           'of an access token in a fragment.' },
@@ -1453,6 +1480,133 @@ function enabled() {
          fapi.enabled() || mode.enforcesOauthSecurityBcp();
 }
 
+// ---------------------------------------------------------------------------
+// SECTION 2.1.2 WAIVED BY AN ADMINISTRATOR (#1295, rcbj's decision,
+// 2026-11-03).
+//
+// Product mode implies this mode and no realm can turn it off, so before this
+// a product deployment could not offer `id_token token`, `code token` or `code
+// id_token token` — and the OpenID Connect Implicit, Hybrid and Dynamic OP
+// certification profiles need them. Section 2.1.2 is a SHOULD NOT, the one
+// requirement of the mode a deployment may knowingly decline, so
+// `oauth2.allowImplicitTokenResponses` waives THAT ROW and nothing else: the
+// mode stays on (enabled() is unchanged), and every other row — PKCE, exact
+// redirect matching, the nonce, the password grant, refresh rotation — still
+// holds. It is a config row, so only an administrator can set it, and
+// `config.set` audits the change.
+//
+// OAUTH 2.1 AND FAPI IGNORE IT. OAuth 2.1 removes the implicit grant from the
+// framework outright (a MUST, not a SHOULD NOT), and a FAPI profile is a
+// stricter profile layered on this mode that the setting has no business
+// loosening. A realm asking for either has asked for the stricter answer, and
+// the waiver would make the mode it named a lie.
+//
+// EVERY DOOR ASKS THIS ONE FUNCTION — the authorization endpoint
+// (checkAuthorizationRequest), registration (checkClientRegistration), the
+// metadata (applyToMetadata) and the report (the `no-implicit` row) — so the
+// four cannot disagree about which realm is waived.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether an administrator waived RFC 9700 section 2.1.2 in the
+ * ambient realm (`oauth2.allowImplicitTokenResponses`), which OAuth 2.1 mode
+ * and every FAPI profile override.
+ *
+ * @returns true when the token-bearing response types are allowed despite
+ *   the mode
+ */
+function implicitWaived() {
+  log.debug("Entering implicitWaived().");
+  const waived = !!config.value('oauth2.allowImplicitTokenResponses') &&
+                 !oauth21.enabled() && !fapi.enabled();
+  log.debug("Leaving implicitWaived(). " + waived);
+  return waived;
+}
+
+// ---------------------------------------------------------------------------
+// WHETHER THE REALM ALLOWS THE TOKEN RESPONSE TYPES AT ALL (#1296): where RFC
+// 9700 mode is off section 2.1.2 is not enforced, and where it is on only
+// the waiver above lifts it. What an application may LIST in
+// `oauthAllowedTokenResponseTypes` (applications.js refuses a value written
+// while this is false, STS-REG-0364) — the realm making the flows POSSIBLE,
+// rcbj's words on #1296, beside each application ENABLING them.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether the ambient realm allows the token response types: RFC 9700
+ * mode is off, or section 2.1.2 is waived in it.
+ *
+ * @returns true when an application may have them enabled
+ */
+function tokenResponsesAllowed() {
+  log.debug("Entering tokenResponsesAllowed().");
+  const allowed = !enabled() || implicitWaived();
+  log.debug("Leaving tokenResponsesAllowed(). " + allowed);
+  return allowed;
+}
+
+// The token response types a client registering itself may enable for
+// itself in the ambient realm (#1296, rcbj's decision 3), each in the
+// canonical word order; empty by default.
+/**
+ * Reads `oauth2.dynamicRegistrationTokenResponseTypes`.
+ *
+ * @returns the canonical values
+ */
+function dynamicRegistrationTokenResponseTypes() {
+  log.debug("Entering dynamicRegistrationTokenResponseTypes().");
+  const raw = config.value('oauth2.dynamicRegistrationTokenResponseTypes');
+  const values = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
+    })
+    .filter(function (one, index, all) {
+      return one !== '' && all.indexOf(one) === index;
+    });
+  log.debug("Leaving dynamicRegistrationTokenResponseTypes(). " +
+            values.length + " value(s).");
+  return values;
+}
+
+// The sentence the report carries when the row is waived: who, by what, and
+// what is still in force — so a reader of GET /oauth2/rfc9700 does not
+// conclude the mode is off. Since #1296 it says the waiver is per
+// application, and names the setting that lets a client enable a type for
+// itself.
+const WAIVER_NOTE = 'WAIVED IN THIS REALM BY AN ADMINISTRATOR: ' +
+  'oauth2.allowImplicitTokenResponses is on, so the response types below ' +
+  'are advertised and accepted — but only for an application whose ' +
+  'oauthAllowedTokenResponseTypes lists the one asked for, set by an ' +
+  'administrator or the application\'s owner, or by a client registering ' +
+  'itself within oauth2.dynamicRegistrationTokenResponseTypes. Section ' +
+  '2.1.2 is a SHOULD NOT, and every other requirement of this mode stays ' +
+  'in force.';
+
+/**
+ * The requirements an administrator waived in the ambient realm, as data for
+ * `GET /oauth2/rfc9700` and `/admin/mode`.
+ *
+ * @returns `[{ requirement, section, level, setting }]`, empty when nothing
+ *   is waived or the mode is off
+ */
+function waivers() {
+  log.debug("Entering waivers().");
+  if (!enabled() || !implicitWaived()) {
+    log.debug("Leaving waivers(). None.");
+    return [];
+  }
+  log.debug("Leaving waivers(). no-implicit.");
+  // #1296: the waiver is PER APPLICATION — `attribute` is what enables a
+  // type on one, and `dynamicRegistration` the setting naming which a client
+  // registering itself may enable, with its value.
+  return [{ requirement: 'no-implicit', section: 'RFC 9700 2.1.2',
+            level: 'SHOULD NOT',
+            setting: 'oauth2.allowImplicitTokenResponses',
+            perApplication: true,
+            attribute: 'oauthAllowedTokenResponseTypes',
+            dynamicRegistration: {
+              setting: 'oauth2.dynamicRegistrationTokenResponseTypes',
+              value: dynamicRegistrationTokenResponseTypes() } }];
+}
+
 // OAuth 2.1 section 8.4.2 makes the wildcard a MUST, so that mode ignores the
 // setting that can turn it off — see oauth21.js's `loopback-any-port` row.
 function loopbackPortWildcard() {
@@ -1501,22 +1655,23 @@ function registeredUrisFor(client) {
       client.redirect_uris.length) {
     log.debug("Leaving registeredUrisFor(). " + client.redirect_uris.length +
               " URI(s) from this client's own entry.");
+    // `source` is read by a person on an error page (2026-11-04), so it
+    // says whose list it is rather than where the directory keeps it.
     return { list: client.redirect_uris.map(String),
-             source: 'this client\'s own entry in the application registry ' +
-                     '(ou=applications, attribute oauthRedirectUri)' };
+             source: 'registered for this client' };
   }
   // OAuth 2.1 section 2.3.1: a client registers ITS OWN complete redirect URI,
   // and a list every client may use is the opposite of that — so that mode
   // answers with nothing to match and `checkRedirectUri()` refuses by name.
   if (oauth21.enabled()) {
     log.debug("Leaving registeredUrisFor(). OAuth 2.1 mode reads no fallback.");
-    return { list: [], source: 'this client\'s own entry (OAuth 2.1 mode ' +
-                               'does not read oauth2.redirectUris)' };
+    return { list: [], source: 'registered for this client (OAuth 2.1 ' +
+                               'mode does not read oauth2.redirectUris)' };
   }
   const list = configuredRedirectUris();
   log.debug("Leaving registeredUrisFor(). " + list.length + " URI(s) from " +
       "oauth2.redirectUris.");
-  return { list: list, source: 'the oauth2.redirectUris setting' };
+  return { list: list, source: 'listed in the oauth2.redirectUris setting' };
 }
 
 // Only "none" — or nothing at all — says public. The DEFAULTING is not done
@@ -1714,14 +1869,19 @@ function checkRedirectUri(opts) {
         return { ok: true, matched: own[i], how: result.how };
       }
     }
-    log.debug("Leaving checkRedirectUri(). Not one of the client's own.");
+    // THE REGISTERED URIs ARE NEVER NAMED TO THE CALLER (#1331, rcbj): a
+    // refusal that listed them handed whoever sent the request the exact
+    // value to aim at, in the error_description and on the error page.
+    // Only the address the request sent is named; the operator finds the
+    // registered set on the application, and here at debug.
+    log.debug("Leaving checkRedirectUri(). Not one of the client's own (" +
+              own.length + " registered: " + own.join(', ') + ").");
     return { ok: false, errorCode: 'STS-OAUTH-0569', error: 'invalid_request',
              requirement: 'redirect-exact-match',
-             description: 'OIDC Core section 3.1.2.1: redirect_uri must ' +
-                          'exactly match one of the redirect URIs registered ' +
-                          'for this client, and "' + presentedUri + '" ' +
-                          'matches none of its ' + own.length + ': ' +
-                          own.join(', ') + '. This holds in every mode.' };
+             description: 'OIDC Core section 3.1.2.1: "' + presentedUri +
+                          '" is not a redirect URI registered for this ' +
+                          'client, and a redirect_uri must match a ' +
+                          'registered one exactly.' };
   }
   const presented = String(opts.redirectUri || '');
   const parsed = parseUri(presented);
@@ -1776,17 +1936,17 @@ function checkRedirectUri(opts) {
     }
   }
   if (!matched) {
-    log.debug("Leaving checkRedirectUri(). No registered URI matches.");
+    // Named to the operator only (#1331), as the check above.
+    log.debug("Leaving checkRedirectUri(). No registered URI matches (" +
+              registered.list.length + " " + registered.source + ": " +
+              registered.list.join(', ') + ").");
     return { ok: false, errorCode: 'STS-OAUTH-0122', error: 'invalid_request',
              requirement: 'redirect-exact-match',
-             description: 'RFC 9700 section 2.1: redirect_uri must match one ' +
-                          'of the URIs registered for this client by exact ' +
-                          'string comparison (RFC 3986 section 6.2.1). ' +
-                          '"' + presented + '" matches none ' +
-                              'of the ' +
-                          registered.list.length + ' in ' + registered.source +
-                          ': ' +
-                          registered.list.join(', ') + '.' };
+             description: 'RFC 9700 section 2.1: "' + presented + '" is ' +
+                          'not a redirect URI registered for this client, ' +
+                          'and a redirect_uri must match a registered one ' +
+                          'by exact string comparison (RFC 3986 section ' +
+                          '6.2.1).' };
   }
   log.debug("Leaving checkRedirectUri(). Accepted by " + matched.how + ".");
   return { ok: true, matched: matched.uri, how: matched.how };
@@ -1820,13 +1980,23 @@ function checkPostLogoutRedirectUri(opts) {
       return uriMatches(uri, presented).ok;
     });
     if (!found) {
-      log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
+      // `reason` and `citation` are a sentence's (2026-11-04): "<reason>
+      // (<citation>)", where the description is the log's. `notRegistered`
+      // tells the signed-out page to draw its warning box (#1302), which
+      // names the address asked for and, since #1331, never the registered
+      // ones: listing them handed the caller the value to aim at.
+      log.debug("Leaving checkPostLogoutRedirectUri(). Not registered (" +
+                declared.length + " registered: " + declared.join(', ') +
+                ").");
       return { ok: false, errorCode: 'STS-OAUTH-0123',
                error: 'invalid_request', requirement: 'no-open-redirector',
+               reason: 'it is not a post-logout redirect URI this client ' +
+                       'registered',
+               notRegistered: true,
+               citation: 'RP-Initiated Logout 1.0 section 3',
                description: 'RP-Initiated Logout 1.0 section 3: "' +
-                 presented + '" is not among the ' + declared.length +
-                 ' post_logout_redirect_uri(s) this client registered: ' +
-                 declared.join(', ') + '.' };
+                 presented + '" is not a post-logout redirect URI this ' +
+                 'client registered.' };
     }
     log.debug("Leaving checkPostLogoutRedirectUri(). Registered.");
     return { ok: true };
@@ -2122,8 +2292,10 @@ function checkAuthorizationRequest(opts) {
   const types = opts.types || [];
   const client = opts.client;
 
-  // Section 2.1.2 — no access token from the authorization endpoint.
-  if (types.indexOf('token') >= 0) {
+  // Section 2.1.2 — no access token from the authorization endpoint, unless
+  // an administrator waived it in this realm (#1295) AND the application has
+  // the type enabled (#1296, below).
+  if (types.indexOf('token') >= 0 && !implicitWaived()) {
     log.debug("Leaving checkAuthorizationRequest(). The response type issues " +
               "an access token.");
     return { ok: false, errorCode: 'STS-OAUTH-0126',
@@ -2134,6 +2306,37 @@ function checkAuthorizationRequest(opts) {
                           'authorization endpoint. Use response_type=code' +
                           (types.indexOf('id_token') >= 0 ?
                            ' or code id_token' : '') + '.' };
+  }
+
+  // THE REALM MAKES THEM POSSIBLE; THE APPLICATION ENABLES THEM (#1296,
+  // rcbj's decision 2). A waived realm honours a token response type only
+  // for a client whose `oauthAllowedTokenResponseTypes` lists it — empty by
+  // default, and empty means none — written by an administrator, the
+  // application's owner, or a dynamic registration within the realm's own
+  // list. `unauthorized_client`, RFC 6749 sections 4.1.2.1 and 4.2.2.1's
+  // word for a client "not authorized to request an authorization code [or
+  // access token] using this method": the server supports the response
+  // type, which is why it is not 0126's `unsupported_response_type`, and
+  // this client may not use it.
+  if (types.indexOf('token') >= 0) {
+    const asked = types.slice(0).sort().join(' ');
+    const allowed = applications.allowedTokenResponseTypesOf(
+      query.client_id);
+    if (allowed.indexOf(asked) < 0) {
+      log.debug("Leaving checkAuthorizationRequest(). The application does " +
+                "not have the token response type enabled.");
+      return { ok: false, errorCode: 'STS-OAUTH-0998',
+               error: 'unauthorized_client', requirement: 'no-implicit',
+               description: 'RFC 9700 section 2.1.2: this realm allows the ' +
+                            'response types that issue an access token from ' +
+                            'the authorization endpoint only to applications ' +
+                            'that have them enabled, and client "' +
+                            String(query.client_id || '') + '" does not ' +
+                            'have "' + asked + '" enabled ' +
+                            '(oauthAllowedTokenResponseTypes). An ' +
+                            'administrator or the application\'s owner ' +
+                            'enables it.' };
+    }
   }
 
   // OAUTH 2.1 — PKCE FOR CONFIDENTIAL CLIENTS TOO, and the method REQUIRED.
@@ -2170,6 +2373,16 @@ function checkAuthorizationRequest(opts) {
                             'here with a token_endpoint_auth_method other ' +
                             'than "none" is treated as confidential, for ' +
                             'which PKCE is RECOMMENDED rather than required.' };
+    }
+    // EVERY CODE-FLOW CLIENT, IN PRODUCT (#1495, ASVS 5.0.0 10.4.6).
+    if (require('../common/mode').requiresPkceOfEveryClient()) {
+      log.debug("Leaving checkAuthorizationRequest(). A confidential client " +
+                "sent no code_challenge.");
+      return { ok: false, errorCode: 'STS-OAUTH-1002', error: 'invalid_request',
+               requirement: 'pkce-confidential-clients',
+               description: 'This server requires PKCE (RFC 7636) of every ' +
+                            'client. Send code_challenge and ' +
+                            'code_challenge_method=S256.' };
     }
     log.warn('RFC 9700 section 2.1.1: confidential client "' +
              (query.client_id || '') +
@@ -2320,25 +2533,44 @@ function checkClientRegistration(metadata) {
                           'way to make it safe. Register for ' +
                           'authorization_code and use PKCE.' };
   }
-  if (grants.indexOf('implicit') >= 0) {
+  const responses = Array.isArray(meta.response_types) ?
+                    meta.response_types.map(String) : [];
+  const withToken = responses.filter(function (one) {
+    return one.split(/\s+/).indexOf('token') >= 0;
+  });
+  // THE IMPLICIT GRANT IS REFUSED ONLY WHERE NOTHING TOKEN-FREE NEEDS IT
+  // (#1295). RFC 7591 section 2.1 and OpenID Connect Registration pair
+  // `id_token` and `code id_token` with the implicit grant, and the
+  // authorization endpoint allows both in this mode — they issue no access
+  // token there, which is all section 2.1.2 is about. Refusing every
+  // `implicit` made the registration those response types call for
+  // impossible. So it is refused when no registered response type is one
+  // that needs it, and when a token-bearing one is registered beside it (the
+  // grant would then be for that one, which 0134 below refuses on its own).
+  // An administrator's waiver of section 2.1.2 lifts both refusals.
+  const waived = implicitWaived();
+  const tokenFreeIdToken = responses.some(function (one) {
+    const words = one.split(/\s+/);
+    return words.indexOf('id_token') >= 0 && words.indexOf('token') < 0;
+  });
+  if (grants.indexOf('implicit') >= 0 && !waived &&
+      (!tokenFreeIdToken || withToken.length)) {
     log.debug("Leaving checkClientRegistration(). It asked for the implicit " +
-              "grant.");
+              "grant with no token-free response type needing it.");
     return { ok: false, errorCode: 'STS-OAUTH-0133',
              error: 'invalid_client_metadata', requirement: 'no-implicit',
              description: 'RFC 9700 section 2.1.2: the implicit grant issues ' +
                           'an access token from the authorization endpoint, ' +
                           'where it travels through the browser and lands in ' +
                           'history, logs and referrers. This server refuses ' +
-                          'those response types, so it will not register a ' +
-                          'client for the grant either. Register for ' +
-                          'authorization_code.' };
+                          'those response types, so it registers the ' +
+                          'implicit grant only beside `id_token` or `code ' +
+                          'id_token`, which issue no access token there and ' +
+                          'are what RFC 7591 section 2.1 pairs it with. ' +
+                          'Register for authorization_code, or for one of ' +
+                          'those response types.' };
   }
-  const responses = Array.isArray(meta.response_types) ?
-                    meta.response_types.map(String) : [];
-  const withToken = responses.filter(function (one) {
-    return one.split(/\s+/).indexOf('token') >= 0;
-  });
-  if (withToken.length) {
+  if (withToken.length && !waived) {
     log.debug("Leaving checkClientRegistration(). A response type issues an " +
               "access token.");
     return { ok: false, errorCode: 'STS-OAUTH-0134',
@@ -2352,6 +2584,49 @@ function checkClientRegistration(metadata) {
                           'honour. `code` and `code id_token` issue no ' +
                           'access token from that endpoint and are ' +
                           'registrable.' };
+  }
+  // A CLIENT ENABLES A TOKEN RESPONSE TYPE FOR ITSELF ONLY WITHIN THE
+  // REALM'S LIST (#1296, rcbj's decision 3). A waived realm makes these
+  // response types POSSIBLE; each client still needs them enabled, and a
+  // registration that asks for one is the client enabling it for itself —
+  // the types it registers are recorded as its
+  // `oauthAllowedTokenResponseTypes` (applications.js,
+  // applyRegistrationFields()). So it may ask only for what
+  // `oauth2.dynamicRegistrationTokenResponseTypes` names, EMPTY by default:
+  // a production realm that waives section 2.1.2 for one administered
+  // application does not thereby open the flows to every client that
+  // registers itself, and a realm that wants open self-registration of them
+  // (the OpenID Foundation's Dynamic OP plan) says so in a setting of its
+  // own. Its own code rather than 0134's: 0134 says the realm refuses the
+  // types, and this realm allows them — to clients it was told about.
+  // RFC 7592's update asks this same function, so an update follows the
+  // same rule.
+  if (withToken.length) {
+    const selfService = dynamicRegistrationTokenResponseTypes();
+    const outside = withToken.map(function (one) {
+      return one.split(/\s+/).filter(Boolean).sort().join(' ');
+    }).filter(function (one, index, all) {
+      return selfService.indexOf(one) < 0 && all.indexOf(one) === index;
+    });
+    if (outside.length) {
+      log.debug("Leaving checkClientRegistration(). A token response type " +
+                "outside the realm's dynamic-registration list.");
+      return { ok: false, errorCode: 'STS-OAUTH-0999',
+               error: 'invalid_client_metadata', requirement: 'no-implicit',
+               description: 'RFC 9700 section 2.1.2: this realm allows the ' +
+                            'response types that issue an access token from ' +
+                            'the authorization endpoint only to applications ' +
+                            'that have them enabled, and a client ' +
+                            'registering itself may enable only ' +
+                            (selfService.length
+                              ? '"' + selfService.join('", "') + '"'
+                              : 'none of them') +
+                            ' (oauth2.dynamicRegistrationTokenResponseTypes' +
+                            '). ' +
+                            '"' + outside.join('", "') + '" is not on that ' +
+                            'list; ask an administrator to enable it on the ' +
+                            'application, or register for `code`.' };
+    }
   }
   // PRODUCT MODE: A PUBLIC CLIENT MAY NOT REGISTER FOR client_credentials
   // (2026-09-17). OAuth 2.1 refuses the same combination in its own mode
@@ -3792,10 +4067,15 @@ function coreRefreshRefusal(claims, body, presentedClient) {
                description: 'RFC 6749 section 6: a refresh must not request ' +
                             'a scope the original grant did not carry ' +
                             '(and RFC 9700 section 2.3 restricts a token\'s ' +
-                            'privileges to the minimum). This grant carries ' +
-                            '"' + (claims.scope || '') + '" ' +
-                            'and the request asks additionally ' +
-                            'for: ' + extra.join(', ') + '.' };
+                            'privileges to the minimum). ' +
+                            // A grant with no scope is said to carry none,
+                            // rather than quoted as "".
+                            (claims.scope
+                              ? 'This grant carries "' + claims.scope +
+                                '" and the request asks additionally for: '
+                              : 'This grant carries no scope, and the ' +
+                                'request asks for: ') +
+                            extra.join(', ') + '.' };
     }
   }
   log.debug("Leaving coreRefreshRefusal(). Nothing refused.");
@@ -4416,20 +4696,30 @@ function applyToMetadata(metadata) {
     log.debug("Leaving applyToMetadata(). RFC 9700 mode is off.");
     return metadata;
   }
-  if (Array.isArray(metadata.response_types_supported)) {
+  // Section 2.1.2's response types stay where an administrator waived it in
+  // this realm (#1295) — what the endpoint accepts is what is advertised.
+  if (Array.isArray(metadata.response_types_supported) && !implicitWaived()) {
     metadata.response_types_supported =
         metadata.response_types_supported.filter(function (type) {
       return String(type).split(/\s+/).indexOf('token') < 0;
     });
   }
   if (Array.isArray(metadata.grant_types_supported)) {
-    // `implicit` (section 2.1.2) and `password` (section 2.4) both come out. A
-    // metadata document is a promise the endpoint has to keep, and the token
-    // endpoint now refuses both — a client configured from a list that still
-    // named them would be misled by this server rather than by its own code.
+    // `password` (section 2.4) comes out: the token endpoint refuses it, and
+    // a client configured from a list that still named it would be misled by
+    // this server rather than by its own code.
+    //
+    // `implicit` STAYS WHILE A RESPONSE TYPE THAT USES IT IS ADVERTISED
+    // (#1295). It came out with the token response types until then, which
+    // left `id_token` and `code id_token` advertised beside a grant list
+    // without the grant RFC 7591 section 2.1 and OpenID Connect Discovery
+    // pair them with — and registration refused that grant too. Decided by
+    // impliesImplicitGrant(), which fapi.js's narrowing asks again.
+    const keepImplicit = impliesImplicitGrant(
+      metadata.response_types_supported);
     metadata.grant_types_supported = metadata.grant_types_supported.filter(
         function (grant) {
-      return grant !== 'implicit' && grant !== 'password';
+      return grant !== 'password' && (grant !== 'implicit' || keepImplicit);
     });
   }
   // S256 only, since `plain` is refused at the authorization endpoint. This is
@@ -4441,6 +4731,31 @@ function applyToMetadata(metadata) {
   oauth21.applyToMetadata(metadata);
   log.debug("Leaving applyToMetadata(). The mode narrowed three members.");
   return metadata;
+}
+
+// Whether a response_types_supported list needs the implicit grant beside it:
+// any value naming `token` or `id_token` (RFC 7591 section 2.1's table).
+// A list that is not an array says nothing, and is read as needing it, so the
+// grant is never dropped on a document this function did not see.
+/**
+ * Tells whether a `response_types_supported` list carries a response type
+ * that RFC 7591 section 2.1 pairs with the implicit grant.
+ *
+ * @param types - the list
+ * @returns true when the implicit grant belongs beside it
+ */
+function impliesImplicitGrant(types) {
+  log.debug("Entering impliesImplicitGrant().");
+  if (!Array.isArray(types)) {
+    log.debug("Leaving impliesImplicitGrant(). No list.");
+    return true;
+  }
+  const needs = types.some(function (type) {
+    const words = String(type).split(/\s+/);
+    return words.indexOf('token') >= 0 || words.indexOf('id_token') >= 0;
+  });
+  log.debug("Leaving impliesImplicitGrant(). " + needs);
+  return needs;
 }
 
 // What GET /oauth2/rfc9700 publishes, and what a test reads to find out whether
@@ -4483,6 +4798,13 @@ function state() {
       'oauth2.fapi': fapi.profile() || null,
       'oauth2.redirectUris': configuredRedirectUris(),
       'oauth2.loopbackPortWildcard': loopbackPortWildcard(),
+      // #1295: the stored value, beside `waived` below, which is whether it
+      // is in force (OAuth 2.1 and FAPI ignore it).
+      'oauth2.allowImplicitTokenResponses':
+        !!config.value('oauth2.allowImplicitTokenResponses'),
+      // #1296: what a client registering itself may enable, canonical.
+      'oauth2.dynamicRegistrationTokenResponseTypes':
+        dynamicRegistrationTokenResponseTypes(),
       'global.https': mainPortIsTls(),
       // Not part of this mode and reported beside it anyway: a client author
       // reading this page to find out what it is talking to needs to know that
@@ -4511,6 +4833,10 @@ function state() {
     // The same five as one block, with what turned rotation on — the console
     // page and both reports read this rather than each deciding for itself.
     sender_constraints: senderConstraints.state(),
+    // #1295: what an administrator waived in this realm, as data — the
+    // `no-implicit` row says `waived` and why; this is the list a caller
+    // reads without scanning the rows.
+    waived: waivers(),
     // Reported beside the settings because it is the one thing here that a
     // caller cannot infer from its own request: it already knows what scheme it
     // used, and what it wants to know is whether that was the only option.
@@ -4562,6 +4888,14 @@ capabilities.provide('oauth.refresh-rotation');
 module.exports = {
   REQUIREMENTS: REQUIREMENTS,
   enabled: enabled,
+  // #1295: section 2.1.2 waived by an administrator, and the list of waivers.
+  implicitWaived: implicitWaived,
+  waivers: waivers,
+  // #1296: whether an application may have them enabled, and what a client
+  // registering itself may enable.
+  tokenResponsesAllowed: tokenResponsesAllowed,
+  dynamicRegistrationTokenResponseTypes: dynamicRegistrationTokenResponseTypes,
+  impliesImplicitGrant: impliesImplicitGrant,
   isConfidential: isConfidential,
   declaredPublic: declaredPublic,
   credentialOnFile: credentialOnFile,

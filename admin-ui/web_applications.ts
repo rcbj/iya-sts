@@ -1345,7 +1345,10 @@ class ApplicationsPage {
         // declared for `did`.
         { id: 'tab-credentials',
           label: t.text('consoleApplications.a2.tabCredentials'),
-          html: forFamilies(OAUTH,
+          // WS-TRUST AUTHENTICATES WITH THESE TOO (#519, #521, #747): a client
+          // secret and a message-signing certificate, which a WS-Trust-only
+          // application had no tab to reach.
+          html: forFamilies(OAUTH.concat(['wstrust']),
             ApplicationsPage.applicationCredentialsSection(ctx, json,
               carryBack)) +
             forFamilies(['did'], '<h3 id="credentials-did">' +
@@ -2339,7 +2342,52 @@ class ApplicationsPage {
     return ApplicationsPage.observedBlock(row, t, 'cfg-oauth-observed',
       t.text('consoleApplications.a2.observedTip'),
       ['oauthGrantTypeObserved', 'oauthResponseTypeObserved',
-       'appRedirectUriObserved', 'oauthScope', 'appAuthorizationServer']);
+       'appRedirectUriObserved', 'oauthScope', 'appAuthorizationServer'],
+      ApplicationsPage.tokenResponseTypesLine(row, t));
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE TOKEN RESPONSE TYPES ENABLED ON THE APPLICATION (#1296, rcbj's
+  // decision 5): a line under the observed ones, each value with a WARNING
+  // mark rather than a check — RFC 9700 section 2.1.2 says clients SHOULD
+  // NOT use them — and a sentence saying whether this realm honours them:
+  // waived (honoured for exactly these), enforced and not waived (honoured
+  // for none), or RFC 9700 mode off (not enforced, so the list narrows
+  // nothing). Drawn where the application enables one, or where the realm
+  // waives the section and the answer is "none". The values are edited in
+  // the field grid below, like every declared list.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the line of token response types an application has enabled.
+   *
+   * @param row - the application's view, `page.config.observed` in it
+   * @param t - the page's translator (#539)
+   * @returns the line as HTML, or ''
+   */
+  static tokenResponseTypesLine(row, t) {
+    const observed = row && row.page && row.page.config
+      ? row.page.config.observed : null;
+    const state = observed && observed.oauthAllowedTokenResponseTypes;
+    if (!state) {
+      return '';
+    }
+    const enabled: string[] = [].concat(state.enabled || []);
+    if (!enabled.length && !(state.enforced && state.waived)) {
+      return '';
+    }
+    const sentence = !enabled.length ? 'consoleApplications.a2.tokenTypesNone'
+      : !state.enforced ? 'consoleApplications.a2.tokenTypesNoMode'
+        : state.waived ? 'consoleApplications.a2.tokenTypesHonoured'
+          : 'consoleApplications.a2.tokenTypesNotHonoured';
+    return '<div class="fg-observed-row" id="cfg-token-response-types">' +
+      '<code>oauthAllowedTokenResponseTypes</code>' +
+      enabled.map(function (one) {
+        return '<span class="fg-seen fg-undeclared"' +
+          kit.tip(t.text('consoleApplications.a2.tokenTypesTip')) + '>' +
+          kit.warnIcon() + kit.esc(one) + '</span>';
+      }).join('') + '</div>' +
+      '<div class="fg-observed-row sub">' +
+      kit.warn('<p>' + t.html(sentence) + '</p>') + '</div>';
   }
 
   /**
@@ -4240,11 +4288,10 @@ class ApplicationsPage {
       '</p><p>' + t.html('consoleApplications.fga.p2') + '</p>',
       t.text('consoleApplications.fga.label'));
     // WHY IT CANNOT BE DECIDED WITH, in the view's own sentence (English,
-    // as every refusal is), with its code. "No policy" is not a fault —
+    // as every refusal is). "No policy" is not a fault —
     // the Create button below is its answer — so it is not warned about.
     const fault = !fga.usable && fga.failure !== 'no-policy'
-      ? kit.warn('<code>' + kit.esc(fga.code) + '</code> ' +
-                 kit.esc(fga.why) + (fga.enforced
+      ? kit.warn(kit.esc(fga.why) + (fga.enforced
                    ? ' ' + t.html('consoleApplications.fga.faultEnforced')
                    : ''),
                  t.text('consoleApplications.fga.faultLabel'))

@@ -79,7 +79,8 @@ const log = require("bunyan").createLogger({ name: "authn_signin",
 function pendingIdOf(where) {
   log.debug("Entering pendingIdOf().");
   const text = String(where || "");
-  const m = text.match(/[?&](?:authn|change)=([^&#]+)/);
+  // [?&#]: product mode moves a step's id into the fragment (#1454).
+  const m = text.match(/[?&#](?:authn|change)=([^&#]+)/);
   log.debug("Leaving pendingIdOf().");
   return m ? decodeURIComponent(m[1]) : text;
 }
@@ -463,8 +464,48 @@ async function signIn(base, where, fields, options) {
   log.debug("Entering signIn().");
   const opts = options || {};
   const answer = await submit(base, where, fields, opts);
-  const out = await ignoreOffer(base, answer);
+  const out = await skipPostLogin(base, await ignoreOffer(base, answer));
   log.debug("Leaving signIn(). " + out.next);
+  return out;
+}
+
+// SKIP A HELD POST-LOGIN ACTIVITY (#1096, #1299). A sign-in whose realm has a
+// post-login policy (e.g. pqc-passkey-migration) lands on the /authn/post-login
+// step instead of the redirect — which the admin-api fuzz cell can turn on
+// mid-run, so its own re-sign then stuck there and the token never recovered.
+// A test cannot register a post-quantum passkey, so where the activity is
+// SKIPPABLE (view.postLogin.canSkip) this presses Skip and carries on, exactly
+// as ignoreOffer() presses Ignore on an optional set-up step. Both
+// console_signin and report_signin sign in through here, so both are covered.
+// Where it is REQUIRED (the allotted time has passed) it cannot be skipped and
+// cannot be done here, so the answer is returned unchanged and the caller's own
+// "expected a redirect" assertion fails loudly — the right outcome for a cell
+// that made its own sign-in impossible.
+async function skipPostLogin(base, answer) {
+  log.debug("Entering skipPostLogin().");
+  void base;
+  let out = answer;
+  for (let i = 0; i < 3; i++) {
+    const atStep = out.next === "mfa" && (out.step === "post-login" ||
+      /\/authn\/post-login(\?|$)/.test(String(out.location || "")));
+    if (!atStep) {
+      break;
+    }
+    const opened = await step(out.location, { cookie: out.cookie });
+    if (!(opened.view && opened.view.postLogin &&
+          opened.view.postLogin.canSkip)) {
+      log.debug("Leaving skipPostLogin(). A required post-login activity.");
+      out.opened = opened;
+      out.text = opened.text;
+      return out;
+    }
+    const skipped = await stepAct(opened, "post-login/skip", {});
+    skipped.setCookies = (out.setCookies || []).concat(
+      skipped.setCookies || []);
+    skipped.skippedPostLogin = true;
+    out = skipped;
+  }
+  log.debug("Leaving skipPostLogin(). " + out.next);
   return out;
 }
 
@@ -502,7 +543,8 @@ async function step(where, options) {
   })[0] || "";
   const base = url.origin + url.pathname.slice(0, url.pathname.length -
                                                 path.length);
-  const id = url.searchParams.get("mfa") || "";
+  const id = url.searchParams.get("mfa") ||
+    new URLSearchParams(url.hash.slice(1)).get("mfa") || "";
   const key = url.searchParams.get("key") || "";
   const page = opts.page || STEP_PAGES[path] || "totp";
   let cookie = String(opts.cookie || "");
@@ -537,7 +579,7 @@ async function step(where, options) {
            text: text, view: json && json.view,
            csrf: (json && json.csrf) || "", cookie: cookie,
            setCookies: setCookies, id: id, page: page, key: key,
-           t: url.searchParams.get("t") || "", base: base };
+           t: new URLSearchParams(url.hash.slice(1)).get("t") || "", base: base };
 }
 
 /**
@@ -903,7 +945,8 @@ async function signOut(base, fields, options) {
 function isConsent(where) {
   log.debug("Entering isConsent().");
   log.debug("Leaving isConsent().");
-  return /\/oauth2\/consent\?(?:[^#]*&)?consent=/.test(String(where || ""));
+  return /\/oauth2\/consent(?:\?[^#]*)?[?&#]consent=/
+    .test(String(where || ""));
 }
 
 /**
@@ -920,7 +963,8 @@ async function consentPage(where, options) {
   const opts = options || {};
   const url = new URL(String(where));
   const base = url.origin + url.pathname.replace(/\/oauth2\/consent$/, "");
-  const id = url.searchParams.get("consent") || "";
+  const id = url.searchParams.get("consent") ||
+    new URLSearchParams(url.hash.slice(1)).get("consent") || "";
   let cookie = String(opts.cookie || "");
   const setCookies = [];
   const extra = opts.headers || {};

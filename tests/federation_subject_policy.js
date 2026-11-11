@@ -244,9 +244,17 @@ function childMain() {
       let linkAt = '';
       let opened = null;
       for (let hop = 0; hop < 30; hop += 1) {
+        // The flow's cookie gone: a different browser (#1497).
+        if (opts.dropFlowCookie) {
+          Object.keys(jar).filter(function (k) {
+            return /sts_fed_flow_/.test(k);
+          }).forEach(function (k) {
+            delete jar[k];
+          });
+        }
         const at = String(r.headers.location || '');
         const screenAt = r.status >= 300 && r.status < 400 &&
-          /\/authn\/login\?authn=/.test(at)
+          /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at)
           ? new URL(at, base) : null;
         // A SECOND-FACTOR STEP IS A PAGE OF THE SAME SURFACE SINCE #572:
         // opened as the browser opens it (its shell, then its view), and
@@ -255,12 +263,13 @@ function childMain() {
             /\/authn\/(totp|webauthn|mfa-setup|backup-code|password-factor|email-code|email-link)\?/
               .test(at)) {
           r = await authnScreen.openStep({ port: port, ca: caPem, jar: jar,
-            at: new URL(at, base).pathname + new URL(at, base).search });
+            at: new URL(at, base).pathname + new URL(at, base).search +
+              new URL(at, base).hash });
           r.isStep = true;
         }
         if (screenAt &&
             screenAt.pathname.indexOf('/realm/' + SP + '/') === 0) {
-          linkAt = screenAt.pathname + screenAt.search;
+          linkAt = screenAt.pathname + screenAt.search + screenAt.hash;
           opened = await authnScreen.open({ port: port, ca: caPem, jar: jar,
                                            at: linkAt });
           trail.linkScreens += 1;
@@ -272,7 +281,7 @@ function childMain() {
           }
         } else if (screenAt) {
           r = await authnScreen.submit({ port: port, ca: caPem, jar: jar,
-            at: screenAt.pathname + screenAt.search,
+            at: screenAt.pathname + screenAt.search + screenAt.hash,
             fields: { action: 'login', username: idpUser,
                       password: IDP_PASSWORD } });
           if (r.next !== 'redirect') {
@@ -395,6 +404,9 @@ function childMain() {
       config.setOverride('security.rateLimitPerIdentity', '100000');
       if (MODE === 'product') {
         config.setOverride('global.mode', 'product');
+        config.setOverride('security.allowUnscopedPeople', 'true');
+        config.setOverride('authn.allowOptionalSecondFactor', 'true');
+        config.setOverride('totp.window', '1');
       }
     });
     const created = inSp(function () {
@@ -561,14 +573,33 @@ function childMain() {
          hop += 1) {
       other = await request('GET', other.headers.location);
     }
-    note(handedOver && other.status === 403 && viewOf(other) &&
-         viewOf(other).kind === 'refused' &&
-         /different browser/.test(viewOf(other).why) &&
-         codesSince(mark).indexOf('STS-FED-0111') >= 0 &&
+    // Product binds every sign-in step to its browser (#1454), so there the
+    // second browser is stopped before the federation's own check is reached.
+    const refusedElsewhere = MODE === 'product'
+      ? other.status === 400 &&
+        codesSince(mark).indexOf('STS-AUTHN-0552') >= 0
+      : other.status === 403 && viewOf(other) &&
+        viewOf(other).kind === 'refused' &&
+        /different browser/.test(viewOf(other).why) &&
+        codesSince(mark).indexOf('STS-FED-0111') >= 0;
+    note(handedOver && refusedElsewhere &&
          attr(entryOf(VICTIM), 'federationLink').length === 0,
          '1i-0. the linking screen completed in ANOTHER browser is refused ' +
-         '(STS-FED-0111) and links nothing', other.status + ' ' +
+         'and links nothing', other.status + ' ' +
          JSON.stringify(codesSince(mark)));
+
+    // A FLOW FINISHED IN ANOTHER BROWSER THAN STARTED IT (#1497).
+    if (MODE === 'product') {
+      const WANDERER = 'fsp-wander-' + MODE;
+      makePerson(WANDERER, 'local-wander@sp.example');
+      mark = auditCount();
+      got = await signIn(WANDERER, { dropFlowCookie: true });
+      note(got.r.status === 401 &&
+           codesSince(mark).indexOf('STS-FED-0237') >= 0,
+           '1i-00. a federated answer that arrives in another browser is ' +
+           'refused (STS-FED-0237)', got.r.status + ' ' +
+           JSON.stringify(codesSince(mark)));
+    }
 
     // CANCEL
     const CAROL = 'fsp-carol-' + MODE;
@@ -641,30 +672,135 @@ function childMain() {
          '1l. somebody a second factor is REQUIRED of meets the enrolment ' +
          'step, and nothing is linked', 'setup=' + got.trail.setup);
 
-    // PRODUCT, AND A PARTNER THAT SENDS NO NAMES OR ADDRESS: the realm's
-    // attribute policy (#396) refuses to create the newcomer, and the
-    // refusal page carries ITS code, STS-FED-0158 — not #358's, and not the
-    // generic "the directory declined" (STS-FED-0090). The scope is cut to
+    // PRODUCT, AND A PARTNER THAT SENDS NO NAMES OR ADDRESS. The realm's
+    // attribute policy (#396) would refuse to create the newcomer, and since
+    // #701 this ENTERPRISE partner's newcomer is ASKED for exactly what is
+    // missing, on the form #729 built for consumer providers
+    // (`/federation/profile/{handle}`, STS-FED-0188), and created from the
+    // values given; the address they type is unverified. The refusal,
+    // STS-FED-0158 — not #358's, and not the generic "the directory
+    // declined" (STS-FED-0090) — is what is left when a required attribute
+    // is not one a person can be given a value of, which 1m-0-iv makes by
+    // stubbing the person editor's answer for `sn`. The scope is cut to
     // `openid`, so the partner releases none of the three.
     if (MODE === 'product') {
+      const viewOf = function (r) {
+        const m = /data-sts-state="([^"]*)"/.exec(String((r && r.text) ||
+                                                         ''));
+        if (!m) {
+          return null;
+        }
+        const text = m[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+          .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&');
+        try {
+          return JSON.parse(text).view;
+        } catch (e) {
+          // A `node -e` child has no logger: the failure is carried on the
+          // view the assertion prints.
+          return { kind: 'unreadable', error: String((e && e.message) || e) };
+        }
+      };
+      const follow = async function (r) {
+        for (let hop = 0; hop < 12; hop += 1) {
+          const at = String(r.headers.location || '');
+          if (r.status >= 300 && r.status < 400 && at) {
+            r = await request('GET', at);
+            continue;
+          }
+          return r;
+        }
+        return r;
+      };
       const BARE = 'fsp-bare-' + MODE;
       const bareSub = partnerSubjectOf(BARE);
       const bareName = REL + '~sub-' +
         bareSub.replace(/^urn:uuid:/i, '').toLowerCase();
       const scoped = setRel('fedScope', 'openid');
-      const markAt = marks.length;
-      const auditAt = auditCount();
-      got = await signIn(BARE, {});
-      const bareMarks = marks.slice(markAt);
-      setRel('fedScope', 'openid profile email');
-      note(scoped.ok && got.r.status === 403 && !entryOf(bareName) &&
-           bareMarks.indexOf('STS-FED-0158') >= 0 &&
-           bareMarks.indexOf('STS-FED-0090') < 0 &&
-           codesSince(auditAt).indexOf('STS-AUTHN-0180') >= 0,
-           '1m-0. product: a partner that sends no givenName, sn or mail ' +
-           'creates nobody, refused STS-FED-0158 by the attribute policy',
-           got.r.status + ' marks=' + JSON.stringify(bareMarks) + ' ' +
-           String(got.r.text || '').replace(/\s+/g, ' ').slice(0, 200));
+      try {
+        let markAt = marks.length;
+        got = await signIn(BARE, {});
+        let bareMarks = marks.slice(markAt);
+        const form = viewOf(got.r);
+        const names = form && Array.isArray(form.fields)
+          ? form.fields.map(function (f) {
+            return f.name;
+          }).sort().join(',') : '';
+        note(scoped.ok && got.r.status === 200 &&
+             /\/federation\/profile\/fed-/.test(got.r.path) &&
+             form && form.kind === 'profile' &&
+             names === 'givenName,mail,sn' &&
+             bareMarks.indexOf('STS-FED-0188') >= 0 &&
+             bareMarks.indexOf('STS-FED-0158') < 0 && !entryOf(bareName),
+             '1m-0. product: an enterprise partner that sends no givenName, ' +
+             'sn or mail sends its newcomer to /federation/profile, asked ' +
+             'for exactly those three, and nobody is created yet (#701)',
+             got.r.status + ' ' + got.r.path + ' ' + names + ' marks=' +
+             JSON.stringify(bareMarks));
+        const prefix = '/realm/' + SP;
+        const done = form ? await follow(await request('POST',
+          prefix + form.action,
+          { form: { csrf: form.csrf, givenName: 'Bare', sn: 'Newcomer',
+                    mail: 'bare@typed.example', title: 'Smuggled' } }))
+          : { status: 0, text: '' };
+        const created = entryOf(bareName);
+        note(done.status === 200 && !!created &&
+             attr(created, 'givenName')[0] === 'Bare' &&
+             attr(created, 'sn')[0] === 'Newcomer' &&
+             attr(created, 'mail')[0] === 'bare@typed.example' &&
+             !attr(created, 'stsMailVerified').length &&
+             !attr(created, 'title').length &&
+             attr(created, 'cn').length > 0 &&
+             attr(created, 'federationLink').length === 1,
+             '1m-0-ii. the values given finish the sign-in: the entry is ' +
+             'created and linked with them, a cn made of the names, the ' +
+             'typed address unverified, and nothing the form did not ask',
+             done.status + ' ' +
+             JSON.stringify(created && created.attributes).slice(0, 400));
+        // A RETURNING person is not asked: the entry now holds everything.
+        markAt = marks.length;
+        got = await signIn(BARE, {});
+        bareMarks = marks.slice(markAt);
+        note(got.r.status === 200 && !/\/federation\/profile\//.test(
+               String(got.r.path || '')) &&
+             bareMarks.indexOf('STS-FED-0188') < 0,
+             '1m-0-iii. the same person signing in again is not asked',
+             got.r.status + ' ' + got.r.path + ' ' +
+             JSON.stringify(bareMarks));
+        // A NAME NOBODY CAN BE ASKED FOR keeps the refusal: the person
+        // editor is made to disown `sn` for the length of one sign-in.
+        const OTHER = 'fsp-bare2-' + MODE;
+        const otherSub = partnerSubjectOf(OTHER);
+        const otherName = REL + '~sub-' +
+          otherSub.replace(/^urn:uuid:/i, '').toLowerCase();
+        const editor = require(ROOT + '/ldap/person_editor');
+        const realCheck = editor.checkCreateValues;
+        editor.checkCreateValues = function (name) {
+          if (String(name).toLowerCase() === 'sn') {
+            return null;
+          }
+          return realCheck.apply(this, arguments);
+        };
+        markAt = marks.length;
+        const auditAt = auditCount();
+        try {
+          got = await signIn(OTHER, {});
+        } finally {
+          editor.checkCreateValues = realCheck;
+        }
+        bareMarks = marks.slice(markAt);
+        note(got.r.status === 403 && !entryOf(otherName) &&
+             bareMarks.indexOf('STS-FED-0158') >= 0 &&
+             bareMarks.indexOf('STS-FED-0188') < 0 &&
+             bareMarks.indexOf('STS-FED-0090') < 0 &&
+             codesSince(auditAt).indexOf('STS-AUTHN-0180') >= 0,
+             '1m-0-iv. product: a required attribute nobody can be asked ' +
+             'for keeps the refusal, STS-FED-0158, and creates nobody',
+             got.r.status + ' marks=' + JSON.stringify(bareMarks) + ' ' +
+             String(got.r.text || '').replace(/\s+/g, ' ').slice(0, 200));
+      } finally {
+        setRel('fedScope', 'openid profile email');
+      }
     }
 
     // NOBODY OF THAT NAME: a namespaced entry under the partner's subject.
@@ -695,30 +831,34 @@ function childMain() {
     // relationship leaves empty), the partner's sub is urn:uuid:, and the
     // entry is <relationship>~sub-<uuid>. Product mode, and a realm whose
     // ldap.autocreateUsers is off, still create it when the relationship
-    // switch is on. Restored afterwards: later sections match on
-    // preferred_username.
+    // switch is on. Restored in a `finally`: later sections match on
+    // preferred_username, and a sign-in that throws must not leave the
+    // overrides on for them (tests/CLAUDE.md's rule).
     const cleared = setRel('fedUsernameSource', '');
     inSp(function () {
       config.setOverride('ldap.autocreateUsers', 'false');
     });
-    const UMA = 'fsp-sub-' + MODE;
-    const sub = partnerSubjectOf(UMA);
-    got = await signIn(UMA, {});
-    const uuid = String(sub || '').replace(/^urn:uuid:/i, '').toLowerCase();
-    const expected = REL + '~sub-' + uuid;
-    const made = entryOf(expected);
-    note(cleared.ok && /^urn:uuid:/i.test(String(sub || '')) &&
-         got.r.status === 200 && made && !entryOf(UMA) &&
-         !entryOf(REL + '~' + UMA) &&
-         attr(made, 'federationLink').length === 1 &&
-         attr(made, 'uid')[0] === expected,
-         '1n. a partner urn:uuid subject is filed as ' + expected +
-         ' and signed in, with ldap.autocreateUsers off',
-         got.r.status + ' ' + String(sub) + ' ' + !!made);
-    setRel('fedUsernameSource', 'preferred_username');
-    inSp(function () {
-      config.clearOverride('ldap.autocreateUsers');
-    });
+    try {
+      const UMA = 'fsp-sub-' + MODE;
+      const sub = partnerSubjectOf(UMA);
+      got = await signIn(UMA, {});
+      const uuid = String(sub || '').replace(/^urn:uuid:/i, '').toLowerCase();
+      const expected = REL + '~sub-' + uuid;
+      const made = entryOf(expected);
+      note(cleared.ok && /^urn:uuid:/i.test(String(sub || '')) &&
+           got.r.status === 200 && made && !entryOf(UMA) &&
+           !entryOf(REL + '~' + UMA) &&
+           attr(made, 'federationLink').length === 1 &&
+           attr(made, 'uid')[0] === expected,
+           '1n. a partner urn:uuid subject is filed as ' + expected +
+           ' and signed in, with ldap.autocreateUsers off',
+           got.r.status + ' ' + String(sub) + ' ' + !!made);
+    } finally {
+      setRel('fedUsernameSource', 'preferred_username');
+      inSp(function () {
+        config.clearOverride('ldap.autocreateUsers');
+      });
+    }
 
     // =======================================================================
     // 2. ADMINISTRATORS
@@ -989,7 +1129,9 @@ function runMode(t, modeName) {
   }
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
-      env: Object.assign(clean, { LOG_LEVEL: 'fatal', FSP_ROOT: ROOT,
+      env: Object.assign(clean, {
+        STS_SECURITY_FILE_ROOTS: os.tmpdir(),
+        LOG_LEVEL: 'fatal', FSP_ROOT: ROOT,
                                   FSP_OUT: out, FSP_MODE: modeName }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });
