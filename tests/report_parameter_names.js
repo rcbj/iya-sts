@@ -32,8 +32,9 @@
 //      refused at its door with the refusal a run's bag always had (400
 //      invalid_query "Parameters are names and values.", STS-REPORT-0004), a
 //      filter naming a 65-character parameter is refused when it is saved
-//      for its query ("A parameter name is a string.", STS-REPORT-0030, the
-//      sentence an empty `param` already had), and 64 characters is still
+//      for its query ("A parameter name is a string of 1 to 64
+//      characters.", STS-REPORT-0030, the refusal an empty `param` already
+//      had, its sentence now naming the bound), and 64 characters is still
 //      accepted in both.
 //   D. A DEFINITION STORED BEFORE THE CHANGE whose filter names a
 //      65-character parameter (no migration: no backward compatibility) is
@@ -217,14 +218,15 @@ function childMain() {
          'C2a. a run naming a 64-character parameter is accepted',
          brief(r));
     const PARAM = JSON.stringify({ error: 'invalid_query',
-      error_description: 'A parameter name is a string.' });
+      error_description: 'A parameter name is a string of 1 to 64 ' +
+        'characters.' });
     const filtered = Object.assign({}, document,
       { where: { op: 'eq', field: 'username', param: N65 } });
     r = await define({ name: 'filtered', document: filtered });
     note(r.status === 400 && r.text === PARAM,
          'C3. a filter naming a 65-character parameter is refused when ' +
-         'saved, 400 invalid_query "A parameter name is a string." (it ' +
-         'was saved until then)', brief(r));
+         'saved, 400 invalid_query "A parameter name is a string of 1 to ' +
+         '64 characters." (it was saved until then)', brief(r));
     const filtered64 = Object.assign({}, document,
       { where: { op: 'eq', field: 'username', param: N64 } });
     r = await define({ name: 'filtered64', document: filtered64 });

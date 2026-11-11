@@ -771,7 +771,7 @@ class Query {
     if (under(issues, 'param').length) {
       log.debug("Leaving Query.leaf(). Param name.");
       return this.fail('STS-REPORT-0004', 'invalid_query',
-        'A parameter name is a string.');
+        'A parameter name is a string of 1 to 64 characters.');
     }
     const typed = this.leafValue(node, String(node.op));
     log.debug("Leaving Query.leaf().");

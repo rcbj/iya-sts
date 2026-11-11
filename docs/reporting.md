@@ -949,7 +949,7 @@ is `{ "op", "field", "value" }` or `{ "op", "field", "param" }`. A value
 and a parameter together are refused. A parameter name is a string of 1
 to 64 characters, as a parameter bag's keys are, so a definition never
 names a parameter a run could not supply; a longer or empty one is
-refused, "A parameter name is a string.". The
+refused, "A parameter name is a string of 1 to 64 characters.". The
 bag is supplied beside a saved definition, not inside an ad hoc document
 that already has `source`.
 
