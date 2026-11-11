@@ -120,8 +120,8 @@ const CASES = [
     code: 'TS2353', word: 'modelHasNoSuchMember' },
   { api: 'Management', file: 'admin-core/admin_actions.ts',
     what: 'a body member no operation of the action\'s table takes',
-    anchor: "const id = String(body.id || body.relationship || '').trim();",
-    edit: "const id = String(body.id || body.relationship || '').trim() + " +
+    anchor: "const identifier = String(body.rp || '').trim();",
+    edit: "const identifier = String(body.rp || '').trim() + " +
           'body.modelHasNoSuchField;',
     code: 'TS2339', word: 'modelHasNoSuchField' },
   { api: 'Authentication', file: 'authn/authn.ts',
