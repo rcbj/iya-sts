@@ -6704,7 +6704,11 @@ class Credentials {
   // ~165,000 names, every one refused and logged, and a request worker was
   // held for minutes. Those names are answered unknown instead (an empty
   // Map: the list draws them with no factors, counted in no tile), and the
-  // census is logged once. Any other throw is still answered one at a time.
+  // census is logged once. Any other throw is still answered one at a time,
+  // as is a directory that offers no census. That answer passes
+  // `withoutRecoveryCodes`, so neither recovery-code read runs:
+  // `backupCodeStatus()`, or `recoveryAdvised`'s `backupCodesOf()` for a
+  // person who holds a second factor.
   // ---------------------------------------------------------------------------
   private static storeRefused(errorCodes, e) {
     helpers.log.debug("Entering Credentials.storeRefused().");
@@ -9302,6 +9306,9 @@ class Credentials {
    * authenticator app and recovery codes.
    *
    * @param username - the person
+   * @param [opts] - `withoutRecoveryCodes` skips both recovery-code reads
+   *   (#786). The census asks for that: no tile reports them, and it
+   *   throws `recoveryAdvised` away
    * @returns `{ username, password, primaryKeys, mfaKeys, keys, totp, … }`
    */
   mechanismsFor(username, opts?) {
@@ -9325,6 +9332,13 @@ class Credentials {
     // address verified (`common/mail_factor.ts` argues why). Asked lazily —
     // that module reaches the mail channel, which requires the directory.
     const mailFactor = this.mailFactorOf(name);
+    // Not read for a caller that counts and filters a list (#786): no tile
+    // and no filter reads a recovery code, and on a large directory each
+    // read was another store round trip per person. `recoveryAdvised`
+    // reads the same attribute again (`backupCodesOf()`), and the census
+    // throws that flag away (`factsOf()`), so it is left false rather
+    // than computed.
+    const skipRecovery = !!(opts && opts.withoutRecoveryCodes);
     log.debug("Leaving Credentials.mechanismsFor().");
     return {
       username: name,
@@ -9368,11 +9382,8 @@ class Credentials {
       // is generated when the person asks to see one and stored — hashed — only
       // once they confirm they have kept it. `recoveryAdvised` below is what
       // replaced the automatic issue.
-      // Not read for a caller that counts and filters a list (#786): no tile
-      // and no filter reads it, and on a large directory it was a third
-      // store read per person.
-      backupCodes: opts && opts.withoutRecoveryCodes ? null
-                                                     : this.backupCodeStatus(name),
+      // Skipped with `recoveryAdvised` when `skipRecovery` is set, above.
+      backupCodes: skipRecovery ? null : this.backupCodeStatus(name),
       // Is a second factor required of them? A person holding an `mfa` key or
       // an enrolled authenticator is saying their password alone is not enough,
       // so the sign-in screen demands it as well — which is what makes the flag
@@ -9421,9 +9432,12 @@ class Credentials {
       // A KEY IS A SECOND FACTOR ONLY BESIDE A PASSWORD (#1135), as
       // `addKey()`'s advice reads it: a passwordless person's keys are their
       // way in, with no second step for a code to stand in for.
-      recoveryAdvised: backupCodes.offered() &&
-                       ((uses.mfa > 0 && password) || totpEnrolled) &&
-                       !this.backupCodesOf(name),
+      // False, unread, when the caller asked not to read recovery codes
+      // (#786): the census does not report this flag.
+      recoveryAdvised: skipRecovery ? false :
+                       (backupCodes.offered() &&
+                        ((uses.mfa > 0 && password) || totpEnrolled) &&
+                        !this.backupCodesOf(name)),
       // IS A SECOND FACTOR REQUIRED OF THEM (2026-09-13), whether or not they
       // hold one — by an administrator on their entry, or by the realm. It is
       // NOT `mfaRequired` above, which is what they HOLD: somebody required to
