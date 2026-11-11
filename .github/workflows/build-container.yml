@@ -364,10 +364,13 @@ jobs:
       #
       # Tagged with the FULL version the image itself reports, M.N.O.<build>
       # (read out of its version.json, so the tag and the stamp cannot
-      # disagree), and a floating `latest`. A RELEASE build (#1317) is also
-      # tagged with the bare release, `M.N.O` (`:1.0.0`); an ordinary build
-      # no longer touches that tag, so `:1.0.0` names the release that was
-      # cut and is not overwritten by every later merge. From main ONLY
+      # disagree), the bare release `M.N.O` (`:1.0.0`, VERSION's), and a
+      # floating `latest`. THE BARE TAG IS ON EVERY BUILD OF main SINCE
+      # 2026-11-10 (rcbj): from #1317 until then only a RELEASE build carried
+      # it, and the first main publish of 1.0.0 went out with no `:1.0.0` at
+      # all. So `:1.0.0` is the newest main build of 1.0.0 and moves with each
+      # merge, and `M.N.O.<build>` is still the one name for one build (a
+      # release build's being `1.0.0.0`). From main ONLY
       # (rcbj, 2026-10-02): develop
       # published a `develop` tag for a day, and too much went out that was
       # not ready. A develop build, and a run started by hand from any branch
@@ -409,11 +412,18 @@ jobs:
           for v in "${VERSION}" "${PEP_VERSION}"; do
             test -n "${v}" && test "${v}" != null
           done
-          # The bare M.N.O tag, for a release build only (#1317).
-          RELEASE_TAG=""
+          # The bare M.N.O tag, on every build of main (2026-11-10). Both
+          # images must be builds of that release, or the tag would name two
+          # releases; a release build (#1317) must number them alike as well.
+          RELEASE_TAG="$(tr -d '[:space:]' < VERSION)"
+          for v in "${VERSION}" "${PEP_VERSION}"; do
+            case "${v}" in
+              "${RELEASE_TAG}".*) ;;
+              *) echo "${v} is not a build of ${RELEASE_TAG}." >&2; exit 1 ;;
+            esac
+          done
           if [ "$(docker run --rm --entrypoint cat rcbj/sts:ci \
                   version.json | jq -r .release)" = true ]; then
-            RELEASE_TAG="$(tr -d '[:space:]' < VERSION)"
             test "${PEP_VERSION}" = "${VERSION}" || {
               echo "A release must number both images alike:" >&2
               echo "${VERSION} against PEP ${PEP_VERSION}." >&2
@@ -428,7 +438,7 @@ jobs:
             echo "Not main: nothing is published."
           else
             echo "Publishing ${VERSION} (PEP ${PEP_VERSION})," \
-                 "${RELEASE_TAG:-no release tag} and ${FLOAT}."
+                 "${RELEASE_TAG} and ${FLOAT}."
           fi
 
       - name: Log in to Docker Hub
@@ -460,9 +470,7 @@ jobs:
           while read -r src name version; do
             for registry in ghcr.io/rcbj docker.io/iyasec; do
               dst="${registry}/${name}"
-              # RELEASE_TAG is empty for an ordinary build, and the word
-              # splitting drops it.
-              for tag in "${version}" "${FLOAT}" ${RELEASE_TAG}; do
+              for tag in "${version}" "${RELEASE_TAG}" "${FLOAT}"; do
                 docker tag "${src}" "${dst}:${tag}"
                 docker push "${dst}:${tag}"
               done
