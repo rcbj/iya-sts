@@ -326,14 +326,24 @@ model Request {
               cite: "WS-Trust 1.3 section 8.1" })
   cancelTarget?: string;
 
-  /** A Kerberos token's (#658). Read off the whole document, as it was. */
+  /**
+   * A Kerberos token's (#658). Read off the whole document like every part,
+   * so a signed request carries it inside its signed Body (rcbj, #1579):
+   * a copy in a header would otherwise ask for a forwardable ticket, or a
+   * forwarded TGT, that nobody signed for.
+   */
   @element(#{ xml: "Forwardable", occurs: "optional", read: true,
-              cite: "WS-Trust 1.3 section 9.3" })
+              inSignedBody: true, cite: "WS-Trust 1.3 section 9.3" })
   forwardable?: string;
 
-  /** A Kerberos token's (#658). Read off the whole document, as it was. */
+  /**
+   * A Kerberos token's (#658). Read off the whole document like every part,
+   * so a signed request carries it inside its signed Body (rcbj, #1579):
+   * a copy in a header would otherwise ask for a forwardable ticket, or a
+   * forwarded TGT, that nobody signed for.
+   */
   @element(#{ xml: "Delegatable", occurs: "optional", read: true,
-              cite: "WS-Trust 1.3 section 9.3" })
+              inSignedBody: true, cite: "WS-Trust 1.3 section 9.3" })
   delegatable?: string;
 }
 

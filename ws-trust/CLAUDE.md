@@ -1035,8 +1035,8 @@ policy, a registered AppliesTo, the lifetime's clamp, a Kerberos token's
 acceptance. The Kerberos Token Profile's token and value types are
 `../kerberos/krb5_tokens.ts`'s. The text inside a part — a token, an
 address, a reason — is written where its value is, inside a part the model
-orders. **One gap recorded and not changed**: `Forwardable` and `Delegatable`
-(#658) are read off the whole document too and are not in `RST_PARTS`, so a
-signed request may carry them outside its signed Body; the model marks them
-`read` and not `inSignedBody`, as the code has them. Adding them is a
-behaviour change owed rcbj's decision.
+orders. **`Forwardable` and `Delegatable` (#658) are signed parts too** (rcbj,
+#1579): they are read off the whole document like every other part, so
+they are `inSignedBody` and in `RST_PARTS`, and a signed request carrying
+either outside its signed Body is `STS-WSTRUST-0046`. Until then a copy in a
+header asked for a forwardable ticket, or a forwarded TGT, nobody signed for.

@@ -187,7 +187,8 @@ function readers(t) {
   'B. the elements holding another party\'s token are the model\'s');
   t.check(WsModel.childNames('wst.RequestSecurityToken', 'inSignedBody')
     .join() === 'RequestType,KeyType,TokenType,AppliesTo,Lifetime,' +
-    'OnBehalfOf,ActAs,RenewTarget,ValidateTarget,CancelTarget',
+    'OnBehalfOf,ActAs,RenewTarget,ValidateTarget,CancelTarget,' +
+    'Forwardable,Delegatable',
   'B. the elements a signed request carries in its Body are the model\'s, ' +
   'in the order #521\'s refusal names them');
   t.check(WsModel.relative('wst.action', 'issueFinal', 'urn:t') ===
