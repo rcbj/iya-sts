@@ -53,7 +53,8 @@ on:
         default: ''
 
 permissions:
-  contents: read
+  # Written, for the release's git tags on a build of main (2026-11-11).
+  contents: write
   # The private image mirror on ghcr.io, read for the base images, and the
   # public ghcr.io/rcbj/iya-sts package, written.
   packages: write
@@ -530,6 +531,60 @@ jobs:
                 artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
             )
           done
+
+      # ---------------------------------------------------------------------
+      # THE GIT TAGS OF A PUBLISHED BUILD (rcbj, 2026-11-11), on main only and
+      # only once the images are out, so a tag never names a build that did
+      # not publish. Two, named as the images are with a `v` in front:
+      #
+      #   v<M.N.O>.<build>  the full version the service image reports
+      #                     (`v1.0.0.20261111001746`): one build, never moved.
+      #   v<M.N.O>          the release (`v1.0.0`), VERSION's: moved to the
+      #                     newest main build of that release, as the image's
+      #                     `:1.0.0` tag is.
+      #
+      # Through the REST API with the job's token rather than a `git push`, so
+      # the checkout's depth and credentials do not matter. A tag the token
+      # pushes starts no other workflow, which is what is wanted here.
+      # ---------------------------------------------------------------------
+      - name: Tag the release in git
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.publish-plan.outputs.version }}
+          RELEASE_TAG: ${{ steps.publish-plan.outputs.release_tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          full="v${VERSION}"
+          release="v${RELEASE_TAG}"
+          # The full version names one build: made once, refused if it
+          # already names another commit.
+          if gh api "repos/${repo}/git/ref/tags/${full}" >/dev/null 2>&1; then
+            at="$(gh api "repos/${repo}/git/ref/tags/${full}" \
+                  --jq .object.sha)"
+            test "${at}" = "${SHA}" || {
+              echo "::error::${full} already names ${at}, not ${SHA}."
+              exit 1
+            }
+          else
+            gh api -X POST "repos/${repo}/git/refs" \
+              -f ref="refs/tags/${full}" -f sha="${SHA}" >/dev/null
+          fi
+          # The release moves to this build.
+          if gh api "repos/${repo}/git/ref/tags/${release}" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/${repo}/git/refs/tags/${release}" \
+              -f sha="${SHA}" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/${repo}/git/refs" \
+              -f ref="refs/tags/${release}" -f sha="${SHA}" >/dev/null
+          fi
+          echo "Tagged ${SHA} as ${full} and ${release}."
+          {
+            echo ""
+            echo "Git tags: \`${full}\` and \`${release}\` on \`${SHA}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # if: always() — when a step above fails, the container's log is the only
       # place the reason exists (a MODULE_NOT_FOUND, a context file that was not
