@@ -1637,7 +1637,6 @@ declare namespace IyaApi.Report {
   type QueryResult = { "source"?: string; "fields"?: Array<string>; "rows"?: Array<Record<string, unknown> | null>; "truncated"?: boolean };
   type Realm = { "id"?: string; "name"?: string; "prefix"?: string };
   type Realms = { "current"?: Realm; "realms"?: Array<Realm> | null };
-  type RunParameters = Record<string, unknown> | null;
   type Schedule = { "definition"?: { "id"?: string; "name"?: string; "owner"?: string; "ownerName"?: string; "schedule"?: string; "scheduleEnabled"?: boolean; "notify"?: boolean; "nextRunAt"?: string | null; "lastSlotAt"?: string | null; "failures"?: Array<{ "at"?: string | null; "description"?: string }> }; "jobs"?: Array<Job>; "jobCount"?: number };
   type SchedulePage = { "scope"?: "mine" | "realm"; "owner"?: string | null; "page"?: number; "pages"?: number; "per"?: number; "total"?: number; "schedules"?: Array<Schedule> };
   type ShareWrite = { "groups": Array<string> };
@@ -1654,7 +1653,7 @@ declare namespace IyaApi.Report {
     "DELETE /report-api/definitions/{id}": { method: "DELETE"; path: "/report-api/definitions/{id}"; body: {}; query: {}; answers: { 200: Deleted } };
     "GET /report-api/definitions/{id}": { method: "GET"; path: "/report-api/definitions/{id}"; body: {}; query: {}; answers: { 200: DefinitionEnvelope } };
     "POST /report-api/definitions/{id}": { method: "POST"; path: "/report-api/definitions/{id}"; body: DefinitionWrite; query: {}; answers: { 200: DefinitionEnvelope } };
-    "POST /report-api/definitions/{id}/run": { method: "POST"; path: "/report-api/definitions/{id}/run"; body: RunParameters; query: {}; answers: { 202: JobEnvelope } };
+    "POST /report-api/definitions/{id}/run": { method: "POST"; path: "/report-api/definitions/{id}/run"; body: ParameterBag; query: {}; answers: { 202: JobEnvelope } };
     "POST /report-api/definitions/{id}/share": { method: "POST"; path: "/report-api/definitions/{id}/share"; body: ShareWrite; query: {}; answers: { 200: DefinitionEnvelope } };
     "GET /report-api/groups": { method: "GET"; path: "/report-api/groups"; body: {}; query: { "q"?: string; "page"?: number }; answers: { 200: GroupPage } };
     "GET /report-api/jobs": { method: "GET"; path: "/report-api/jobs"; body: {}; query: { "page"?: number; "per"?: number; "after"?: string; "limit"?: number }; answers: { 200: JobList } };

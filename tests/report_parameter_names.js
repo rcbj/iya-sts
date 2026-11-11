@@ -24,10 +24,22 @@
 //      wrong in one of those as well is answered for that: a definition that
 //      does not exist is 404, a schedule that is not cron and a document
 //      naming no source are their own sentences.
-//   C. A RUN'S PARAMETERS ARE NOT STORED, and their names were never
-//      bounded: a run naming a 65-character or an empty name is accepted,
-//      and a definition whose filter names a 65-character parameter runs
-//      with it.
+//   C. A RUN'S PARAMETERS ARE HELD TO THE SAME BOUND, and so is a filter's
+//      `param` (rcbj's decision on #1579, 2026-11-11, a deliberate change):
+//      until then a run's body was `RunParameters`, unbounded in name, and a
+//      run naming a 65-character or an empty name was accepted, as was a
+//      definition whose filter named a 65-character parameter. Now a run is
+//      refused at its door with the refusal a run's bag always had (400
+//      invalid_query "Parameters are names and values.", STS-REPORT-0004), a
+//      filter naming a 65-character parameter is refused when it is saved
+//      for its query ("A parameter name is a string.", STS-REPORT-0030, the
+//      sentence an empty `param` already had), and 64 characters is still
+//      accepted in both.
+//   D. A DEFINITION STORED BEFORE THE CHANGE whose filter names a
+//      65-character parameter (no migration: no backward compatibility) is
+//      listed and read without its document and parameters, which no longer
+//      hold to the model every answer is held to (they made the list a 500),
+//      and a run of it is refused 400 for its query rather than failing.
 // ===========================================================================
 const path = require('path');
 const fs = require('fs');
@@ -192,21 +204,38 @@ function childMain() {
                   token, body);
     };
     r = await run(id, { [N65]: 1 });
-    note(r.status === 202 || r.status === 200,
-         'C1. a run naming a 65-character parameter is accepted: a run\'s ' +
-         'parameters are not stored', brief(r));
+    note(refusedForNames(r),
+         'C1. a run naming a 65-character parameter is refused 400 ' +
+         'invalid_query, "Parameters are names and values." (it was ' +
+         'accepted until rcbj\'s decision of 2026-11-11)', brief(r));
     r = await run(id, { '': 1 });
-    note(r.status === 202 || r.status === 200,
-         'C2. and so is one naming an empty one', brief(r));
+    note(refusedForNames(r),
+         'C2. and so is one naming an empty one (accepted until then)',
+         brief(r));
+    r = await run(id, { [N64]: 2 });
+    note(r.status === 202,
+         'C2a. a run naming a 64-character parameter is accepted',
+         brief(r));
+    const PARAM = JSON.stringify({ error: 'invalid_query',
+      error_description: 'A parameter name is a string.' });
     const filtered = Object.assign({}, document,
       { where: { op: 'eq', field: 'username', param: N65 } });
     r = await define({ name: 'filtered', document: filtered });
+    note(r.status === 400 && r.text === PARAM,
+         'C3. a filter naming a 65-character parameter is refused when ' +
+         'saved, 400 invalid_query "A parameter name is a string." (it ' +
+         'was saved until then)', brief(r));
+    const filtered64 = Object.assign({}, document,
+      { where: { op: 'eq', field: 'username', param: N64 } });
+    r = await define({ name: 'filtered64', document: filtered64 });
     const withParam = r.json && r.json.definition;
     note(r.status === 200 && !!withParam,
-         'C3. a filter may name a 65-character parameter', brief(r));
-    r = await run(withParam ? withParam.id : 'none', { [N65]: OWNER });
-    note(r.status === 202 || r.status === 200,
-         'C4. and the definition runs with it', brief(r));
+         'C3a. a filter naming a 64-character parameter is saved',
+         brief(r));
+    r = await run(withParam ? withParam.id : 'none', { [N64]: OWNER });
+    note(r.status === 202,
+         'C4. and the definition runs with it (the 65-character one ran ' +
+         'until then, and can no longer be saved)', brief(r));
     const many = {};
     for (let i = 0; i < 33; i++) {
       many['p' + i] = i;
@@ -214,6 +243,37 @@ function childMain() {
     r = await run(id, many);
     note(r.status === 400 && r.text === NAMES,
          'C5. a run naming 33 parameters is still refused', brief(r));
+
+    // --- D. a definition stored before the change -------------------------
+    const stores = require(ROOT_DIR + '/report/stores');
+    const stored = withParam ? stores.getDefinition(withParam.id) : null;
+    if (stored) {
+      stored.document.where.param = N65;
+      stored.parameters = { [N65]: OWNER };
+      stores.putDefinition(stored);
+    }
+    note(!!stored, 'precondition: a stored definition naming a ' +
+         '65-character parameter, as one saved before the change was');
+    const staleId = stored ? stored.id : 'none';
+    r = await call(port, 'GET', '/report-api/definitions', token);
+    const listed = r.json && Array.isArray(r.json.definitions) ?
+      r.json.definitions.filter(function (one) {
+        return one.id === staleId;
+      })[0] : null;
+    note(r.status === 200 && listed && listed.editable === true &&
+         listed.document === undefined && listed.parameters === undefined,
+         'D1. the list still answers (it was a 500: every answer is held ' +
+         'to the model), carrying the definition without its document and ' +
+         'parameters', brief(r));
+    r = await call(port, 'GET', '/report-api/definitions/' + staleId, token);
+    note(r.status === 200 && r.json && r.json.definition &&
+         r.json.definition.name === 'filtered64' &&
+         r.json.definition.document === undefined,
+         'D2. reading it answers the same, not a 500', brief(r));
+    r = await run(staleId, {});
+    note(r.status === 400 && r.text === PARAM,
+         'D3. a run of it is refused 400 for its query, not a failure',
+         brief(r));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
@@ -269,7 +329,7 @@ async function run(t) {
 
 module.exports = {
   name: 'report_parameter_names',
-  describe: 'a saved parameter\'s name is 1 to 64 characters, the model\'s ' +
-            'bound, refused exactly as the hand check refused it (#1579)',
+  describe: 'a parameter\'s name is 1 to 64 characters, the model\'s ' +
+            'bound, in a saved bag, a run and a filter (#1579)',
   run: run
 };

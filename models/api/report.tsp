@@ -38,8 +38,8 @@
 // `report/jobs.ts`; the model states it now (`ParameterBag`). A nullable value
 // is a type list (`["string", "null"]`), JSON Schema 2020-12's form, and an
 // enumerated one lists null among its values as well. A schema that may be
-// null where it is used still says so itself — `Filter`'s six forms,
-// `ParameterBag` and `RunParameters` — so that every use of it is the plain
+// null where it is used still says so itself — `Filter`'s six forms and
+// `ParameterBag` — so that every use of it is the plain
 // `$ref`.
 //
 // **KEYS THAT ARE DATA ARE A TYPED MAP**: a result row's (the fields the query
@@ -292,7 +292,11 @@ namespace IyaSts.Api.Report {
   }) @component model `FilterParam` {
     `op`: "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith" | "in";
     `field`: FieldId;
-    @js(#{`minLength`:1}) `param`: string
+    @js(#{
+      `minLength`:1,
+      `maxLength`:64,
+      `description`:"The parameter's name, 1 to 64 characters, as a parameter bag's names are."
+    }) `param`: string
   }
 
 @js(#{
@@ -377,11 +381,13 @@ namespace IyaSts.Api.Report {
 // `propertyNames`, which OpenAPI 3.0.3 could not state, so `jobs.ts` asked it
 // until this document became 3.1.0 (rcbj, #1579, 2026-11-11).
 //
-// A RUN'S PARAMETERS ARE `RunParameters`, NOT `ParameterBag`, because a run
-// stores nothing and its names were never bounded: a filter's `param` may be
-// 65 characters, and a definition naming one runs with it
-// (`tests/report_parameter_names.js`). Holding a run to the saved bag's name
-// bound would refuse what was accepted.
+// A RUN'S PARAMETERS ARE A `ParameterBag` TOO, and a filter's `param` is a
+// name of 1 to 64 characters (`FilterParam`): rcbj's decision on #1579,
+// 2026-11-11. Until then a run's body was `RunParameters`, the same bag with
+// no name bound, because a run stores nothing and a filter could name a
+// 65-character parameter; a definition can now name no parameter a run could
+// not supply, so the two bags were one and `RunParameters` is deleted
+// (`tests/report_parameter_names.js`).
 @js(#{`$types`:#["string","null"],`maxLength`:200}) @hoisted scalar ParameterText extends string;
 
 @hoisted union ParameterScalar {ParameterText, numeric, boolean}
@@ -396,14 +402,8 @@ namespace IyaSts.Api.Report {
     `$types`:#["object","null"],
     `maxProperties`:32,
     `propertyNames`:#{`type`:"string",`minLength`:1,`maxLength`:64},
-    `description`:"Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none."
+    `description`:"Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none."
   }) @component model `ParameterBag` is Record<ParameterValue>;
-
-@js(#{
-    `$types`:#["object","null"],
-    `maxProperties`:32,
-    `description`:"Parameter name to the value this run uses in place of the saved one: at most 32 names. A string, a number, a boolean, null, or a short array of those. Not a nested object. A run's parameters are not stored, so a name is not held to a saved name's length; one the filter does not name is ignored."
-  }) @component model `RunParameters` is Record<ParameterValue>;
   
 
 @component model `DefinitionWrite` {
@@ -1258,7 +1258,7 @@ op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/
   "post",
   #{
     `summary`:"Run a saved definition",
-    `description`:"Always a job. The body is a parameter object, not a query document. A key in the body overrides the stored default. An empty body uses the stored defaults. The stored document already carries locale.",
+    `description`:"Always a job. The body is a parameter object, not a query document. A key in the body overrides the stored default, and one the filter does not name is ignored. The body is held to a saved parameter bag's bounds, names of 1 to 64 characters among them, and is not stored. An empty body uses the stored defaults. The stored document already carries locale.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
     `responses`:#{
       `202`:#{
@@ -1303,7 +1303,7 @@ op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}}
   })
 op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
-  `requestBody/content/application~1json/schema`: `RunParameters`,
+  `requestBody/content/application~1json/schema`: `ParameterBag`,
   `responses/202/content/application~1json/schema`: `JobEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,

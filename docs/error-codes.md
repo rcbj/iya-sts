@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5424** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5425** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -99,7 +99,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 185
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 58
+* [Reporting (`STS-REPORT`)](#sts-report) — 59
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 16
 
 ## STS-HTTP
@@ -6161,6 +6161,7 @@ Raised from: report/.
 | `STS-REPORT-0057` | A query parameter of a /report-api request held a value its declared type does not, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
 | `STS-REPORT-0058` | A /report-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
 | `STS-REPORT-0059` | A token was refused because the person it names no longer exists. | HTTP 401 |
+| `STS-REPORT-0060` | A stored report definition no longer holds to the Reports API model (a filter naming a parameter longer than 64 characters, saved before #1579 bounded it), so it is answered without its document and parameters, and a run of it is refused for its query. | recorded |
 
 ## STS-AUDIT
 
