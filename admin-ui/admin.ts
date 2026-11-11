@@ -6724,7 +6724,7 @@ class AdminConsole {
   // and they were two vocabularies for one question that did not line up: eight
   // kinds against fourteen families, five of those families having no kind at
   // all, and a reader made to choose in both. Worse, the two are on opposite
-  // sides of the line `applications.js`'s EDITABLE header draws — a family is
+  // sides of the line application.tsp's editability header draws — a family is
   // DECLARED and a kind is DERIVED, written by `seen()` when a protocol
   // actually recognises the identifier — so the select let a form assert a
   // sighting that had not happened, and `view()`'s `recordedProtocols` had to

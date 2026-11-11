@@ -14,8 +14,8 @@
 // that can be decided without a store: the media type, the three members, the
 // strict base64url, the header's shape, the account key's shape, the
 // signature, the Replay-Nonce, the External Account Binding (section 7.3.4),
-// the payload schemas of each resource, the contact URIs, and RFC 9773's
-// certificate identifier.
+// the payload schemas of each resource (the model's since #1579), the
+// contact URIs, and RFC 9773's certificate identifier.
 //
 // **A LIBRARY (rule 3).** It registers no route and holds no state, so an
 // in-process test can require it and `acme/acme.ts` can be the only file that
@@ -59,8 +59,9 @@ import clusterSecrets = require('../cluster/cluster_secrets');
 import cells = require('../common/cells');
 import validation = require('../common/validation');
 import InstanceSlot = require('../common/instance_slot');
-
-const vz = validation.z;
+// THE REQUEST SHAPES AND THE REGISTERS ARE THE MODEL'S (#1579):
+// `models/enrollment/acme.tsp`. A leaf.
+import EnrollmentModel = require('../common/enrollment_model');
 
 // The media type RFC 8555 section 6.2 requires of every POST body.
 /**
@@ -76,35 +77,23 @@ const MEDIA_TYPE = 'application/jose+json';
 const ERROR_PREFIX = 'urn:ietf:params:acme:error:';
 
 // ---------------------------------------------------------------------------
-// THE SIGNATURE ALGORITHMS AN ACCOUNT KEY MAY USE.
-//
-// RFC 8555 section 6.2 requires RS256 and recommends ES256; the rest are the
-// asymmetric algorithms `common/crypto.js` verifies whose key type has an RFC
-// 7638 thumbprint — which is the condition, because an ACME account IS its
-// key's thumbprint (section 7.3.1 finds an existing account by key).
-//
-// **LEFT OUT, EACH FOR ITS REASON:** `none` and every HMAC (section 6.2 says a
-// server MUST NOT accept them outside an External Account Binding); ES256K,
-// which no ACME client sends; and the post-quantum algorithms, whose key type
-// `AKP` has no RFC 7638 member list — an account key with no thumbprint is an
-// account `newAccount` could never find again. A request with any of them is
-// answered `badSignatureAlgorithm` with this list in `algorithms`, as the
-// section asks.
+// THE SIGNATURE ALGORITHMS AN ACCOUNT KEY MAY USE, AND THE MACS AN EXTERNAL
+// ACCOUNT BINDING MAY BE MADE WITH: the model's `account-algorithms` and
+// `eab-algorithms` registers (#1579), whose comments say why each is in and
+// what is left out. A request with another is answered
+// `badSignatureAlgorithm` with the list in `algorithms`, in the model's
+// order, as section 6.2 asks.
 // ---------------------------------------------------------------------------
 /**
  * The signature algorithms an account key may use: the asymmetric ones with an
  * RFC 7638 thumbprint, since an account is its key's thumbprint.
  */
-const ACCOUNT_ALGS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
-                      'ES256', 'ES384', 'ES512', 'EdDSA'];
+const ACCOUNT_ALGS = EnrollmentModel.names('acme', 'account-algorithms');
 
-// The MACs an External Account Binding may be made with (section 7.3.4 names
-// HS256 as the one a CA "MUST" support; the other two are the same
-// construction with a longer hash and cost nothing to accept).
 /**
  * The MACs an External Account Binding may be made with.
  */
-const EAB_ALGS = ['HS256', 'HS384', 'HS512'];
+const EAB_ALGS = EnrollmentModel.names('acme', 'eab-algorithms');
 
 // The smallest RSA account key accepted. RFC 8555 names no floor; 2048 is the
 // floor every public CA applies and the one the CA/Browser Forum requires of a
@@ -127,29 +116,16 @@ const PRIVATE_JWK_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k'];
 // The curve each ECDSA algorithm is pinned to (RFC 7518 section 3.4).
 const EC_CURVE_FOR = { ES256: 'P-256', ES384: 'P-384', ES512: 'P-521' };
 
-// The revocation reasons a SUBSCRIBER may give (RFC 5280 section 5.3.1 codes).
-// RFC 8555 section 7.6 lets a server refuse any; these are the ones that are
-// statements a certificate holder can make. `cACompromise` (2) and
-// `aACompromise` (10) are about an AUTHORITY's key; `certificateHold` (6) is
-// the one reversible reason and nothing here un-holds; 7 is unassigned; and
-// `removeFromCRL` (8) exists only inside a delta CRL.
+// The revocation reasons a SUBSCRIBER may give (RFC 5280 section 5.3.1 codes):
+// the model's `revocation-reasons` register (#1579), which says why each of
+// the others is refused.
 /**
  * The RFC 5280 revocation reasons a subscriber may give, by code.
  */
-const REVOCATION_REASONS = {
-  0: 'unspecified',
-  1: 'keyCompromise',
-  3: 'affiliationChanged',
-  4: 'superseded',
-  5: 'cessationOfOperation',
-  9: 'privilegeWithdrawn'
-};
+const REVOCATION_REASONS = EnrollmentModel.map('acme', 'revocation-reasons',
+                                               true);
 
 const B64URL = /^[A-Za-z0-9_-]*$/;
-
-// A value this module reads out of an attacker's document is capped before
-// anything else looks at it; the route's own size limit caps the whole body.
-const MAX_MEMBER = 1048576;
 
 // What `AcmeJws` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -1224,107 +1200,34 @@ const slot = new InstanceSlot<AcmeJws>(
   log);
 
 // ---------------------------------------------------------------------------
-// THE FLATTENED JWS JSON OBJECT. Exactly three members: RFC 8555 section 6.2
-// says the JWS MUST NOT have an unprotected header, and a `signatures` array is
-// the general serialization, which the section does not allow either.
+// THE DOCUMENTS AN ACME REQUEST CARRIES ARE THE MODEL'S (#1579):
+// `models/enrollment/acme.tsp`'s `@body` models — the flattened JWS JSON
+// object (exactly three members: section 6.2 allows no unprotected header and
+// no general serialization), the protected header (loose, because RFC 7515
+// ignores an unknown member unless `crit` names it, and `crit` is refused by
+// name above), the External Account Binding's header (exactly `alg`, `kid`
+// and `url`, no nonce) and each resource's payload. Each validator is built
+// from the model by `common/enrollment_model.ts` with the bounds in the order
+// the hand-written schemas had them, which is what a refusal's `detail`
+// quotes; `tests/enrollment_model_wire.js` holds every refusal to it.
 // ---------------------------------------------------------------------------
-const FLATTENED = vz.strictObject({
-  protected: vz.string().min(1).max(MAX_MEMBER),
-  payload: vz.string().max(MAX_MEMBER),
-  signature: vz.string().min(1).max(MAX_MEMBER)
-});
+const FLATTENED = EnrollmentModel.body('acme', 'flattened');
 
-// ---------------------------------------------------------------------------
-// THE PROTECTED HEADER (section 6.2). `looseObject` because RFC 7515 says an
-// unknown member is ignored unless named in `crit` — and `crit` itself is on
-// the refused list above, so nothing unknown can be made to matter.
-// ---------------------------------------------------------------------------
-const HEADER = vz.looseObject({
-  alg: vz.string().min(1).max(32),
-  nonce: vz.string().min(1).max(256).optional(),
-  url: vz.string().min(1).max(2048),
-  jwk: vz.looseObject({ kty: vz.string().min(1).max(8) }).optional(),
-  kid: vz.string().min(1).max(2048).optional()
-});
-
-// ---------------------------------------------------------------------------
-// THE PAYLOAD SCHEMAS, one per resource (section 7). Loose where the RFC says
-// unknown fields are ignored, strict where a member's presence would change
-// what is asked for and this server does not offer it.
-// ---------------------------------------------------------------------------
-const CONTACTS = vz.array(vz.string().min(1).max(320)).max(10);
+const HEADER = EnrollmentModel.body('acme', 'protected-header');
 
 /**
- * The payload schema of `newAccount`.
+ * The payload schema of each resource, from the model.
  */
-const NEW_ACCOUNT = vz.looseObject({
-  contact: CONTACTS.optional(),
-  termsOfServiceAgreed: vz.boolean().optional(),
-  onlyReturnExisting: vz.boolean().optional(),
-  externalAccountBinding: vz.looseObject({}).optional()
-});
-
-/**
- * The payload schema of an account update.
- */
-const ACCOUNT_UPDATE = vz.looseObject({
-  contact: CONTACTS.optional(),
-  status: vz.string().max(32).optional(),
-  termsOfServiceAgreed: vz.boolean().optional()
-});
-
-const IDENTIFIER = vz.strictObject({
-  type: vz.string().min(1).max(64),
-  value: vz.string().min(1).max(1024)
-});
-
-/**
- * The payload schema of `newOrder`.
- */
-const NEW_ORDER = vz.looseObject({
-  identifiers: vz.array(IDENTIFIER).min(1).max(100),
-  notBefore: vz.string().max(64).optional(),
-  notAfter: vz.string().max(64).optional(),
-  profile: vz.string().min(1).max(64).optional(),
-  replaces: vz.string().min(1).max(1024).optional()
-});
-
-/**
- * The payload schema of an order's finalize.
- */
-const FINALIZE = vz.looseObject({
-  csr: vz.string().min(1).max(MAX_MEMBER)
-});
-
-/**
- * The payload schema of `revokeCert`.
- */
-const REVOKE = vz.looseObject({
-  certificate: vz.string().min(1).max(MAX_MEMBER),
-  reason: vz.number().int().min(-1000).max(1000).optional()
-});
-
-/**
- * The payload schema of an authorization's deactivation.
- */
-const AUTHZ_UPDATE = vz.looseObject({
-  status: vz.literal('deactivated')
-});
-
-/**
- * The payload schema of `keyChange`'s inner JWS.
- */
-const KEY_CHANGE_INNER = vz.looseObject({
-  account: vz.string().min(1).max(2048),
-  oldKey: vz.looseObject({ kty: vz.string().min(1).max(8) })
-});
-
-// A challenge response is `{}` (section 7.5.1); a challenge type that needed
-// fields would define them, and `sts-entry-binding-01` needs none.
-/**
- * The payload schema of a challenge response: any object.
- */
-const CHALLENGE_RESPONSE = vz.looseObject({});
+const SCHEMAS = {
+  NEW_ACCOUNT: EnrollmentModel.body('acme', 'new-account'),
+  ACCOUNT_UPDATE: EnrollmentModel.body('acme', 'account-update'),
+  NEW_ORDER: EnrollmentModel.body('acme', 'new-order'),
+  FINALIZE: EnrollmentModel.body('acme', 'finalize'),
+  REVOKE: EnrollmentModel.body('acme', 'revoke'),
+  AUTHZ_UPDATE: EnrollmentModel.body('acme', 'authz-update'),
+  KEY_CHANGE_INNER: EnrollmentModel.body('acme', 'key-change-inner'),
+  CHALLENGE_RESPONSE: EnrollmentModel.body('acme', 'challenge-response')
+};
 
 // ---------------------------------------------------------------------------
 // THE REPLAY-NONCE (section 6.5), AND WHY IT CARRIES ITS OWN PROOF.
@@ -1371,11 +1274,7 @@ const NONCE_SECRET_VAR = 'STS_ACME_NONCE_SECRET';
 // the route can look the key up by `kid`; `verifyEabMac()` is the MAC, in
 // constant time inside `common/crypto.js`.
 // ---------------------------------------------------------------------------
-const EAB_HEADER = vz.strictObject({
-  alg: vz.string().min(1).max(16),
-  kid: vz.string().min(1).max(512),
-  url: vz.string().min(1).max(2048)
-});
+const EAB_HEADER = EnrollmentModel.body('acme', 'eab-header');
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -1400,10 +1299,7 @@ export = {
   MIN_RSA_BITS: MIN_RSA_BITS,
   REVOCATION_REASONS: REVOCATION_REASONS,
   NONCE_SECRET_VAR: NONCE_SECRET_VAR,
-  schemas: { NEW_ACCOUNT: NEW_ACCOUNT, ACCOUNT_UPDATE: ACCOUNT_UPDATE,
-             NEW_ORDER: NEW_ORDER, FINALIZE: FINALIZE, REVOKE: REVOKE,
-             AUTHZ_UPDATE: AUTHZ_UPDATE, KEY_CHANGE_INNER: KEY_CHANGE_INNER,
-             CHALLENGE_RESPONSE: CHALLENGE_RESPONSE },
+  schemas: SCHEMAS,
   refusal: slot.forward('refusal'),
   isJoseJson: slot.forward('isJoseJson'),
   decodeB64url: slot.forward('decodeB64url'),

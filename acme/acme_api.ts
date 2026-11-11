@@ -44,6 +44,8 @@
 // replace.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
@@ -123,7 +125,12 @@ class AcmeApi {
    * @param status - the HTTP status
    * @param body - the answer
    */
-  sendJson(res, status, body) {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering AcmeApi.sendJson(). status=" + status);
     const rows = res.locals && res.locals.protocolEndpoints;
@@ -160,7 +167,7 @@ class AcmeApi {
     const { log, parseBody, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering AcmeApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/acme', tag: 'ACME',
         operationId: 'getAcme',
         mirrors: 'GET /admin/cert-issuance',
@@ -206,7 +213,8 @@ class AcmeApi {
           log.debug("Leaving the management API ACME monitor endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/acme/:action', tag: 'ACME',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/acme/:action', tag: 'ACME',
         mirrors: 'POST /admin/acme',
         handler: function (req, res) {
           log.debug("Entering the management API ACME action endpoint.");
@@ -240,7 +248,7 @@ class AcmeApi {
           { action: 'revoke-certificate', operationId: 'revokeAcmeCertificate' },
           { action: 'add-host-name', operationId: 'addAcmeHostName' },
           { action: 'remove-host-name', operationId: 'removeAcmeHostName' }
-        ] }
+        ] })
     ];
     log.debug("Leaving AcmeApi.buildRoutes().");
     return ROUTES;

@@ -100,6 +100,9 @@ import pkijs = require('pkijs');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
+// THE SIGNED ATTRIBUTES' VALUES ARE THE MODEL'S (#1579):
+// `models/enrollment/scep.tsp`. A leaf.
+import EnrollmentModel = require('../common/enrollment_model');
 const { log } = helpers;
 
 // ---------------------------------------------------------------------------
@@ -205,21 +208,17 @@ const KEY_TRANSPORTS = ['RSAES-PKCS1-v1_5 (rsaEncryption)',
 /**
  * The SCEP messageType values (RFC 8894 sections 3.2.1.2 and 3.2.1.3).
  */
-const MESSAGE_TYPES = {
-  3: 'CertRep', 17: 'RenewalReq', 19: 'PKCSReq', 20: 'CertPoll',
-  21: 'GetCert', 22: 'GetCRL'
-};
+const MESSAGE_TYPES = EnrollmentModel.map('scep', 'message-types', true);
 
 /**
  * The pkiStatus values: SUCCESS, FAILURE and PENDING.
  */
-const PKI_STATUS = { SUCCESS: '0', FAILURE: '2', PENDING: '3' };
+const PKI_STATUS = EnrollmentModel.map('scep', 'pki-status');
 
 /**
  * The failInfo values a FAILURE carries.
  */
-const FAIL_INFO = { badAlg: '0', badMessageCheck: '1', badRequest: '2',
-                    badTime: '3', badCertId: '4' };
+const FAIL_INFO = EnrollmentModel.map('scep', 'fail-info');
 
 // RFC 8894 section 3.2.1.5: sixteen octets.
 /**

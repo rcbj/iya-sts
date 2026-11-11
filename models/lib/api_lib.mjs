@@ -13,8 +13,20 @@
 //
 // In `@js`, a key that starts with `$` says how a schema differs from what its
 // type implies. Every other key is written as it stands.
+//
+// TWO OF THEM READ A LIST THE SERVICE OWNS AS DATA (#1579): `$enumFrom`
+// writes a string's `enum`, and `$membersFrom` writes one member of an
+// object per entry, from an export of a module under the repository root that
+// requires nothing — `common/enrollment_profiles.js`'s profiles, and
+// `common/app_password_doors.js`'s doors. The list is the code's because
+// four protocols and five password doors decide on it; the document a caller
+// reads, the validator a request meets and the API types are generated from
+// it, so a profile or a door is added in one place.
 // ---------------------------------------------------------------------------
 
+import { createRequire } from 'module';
+import path from 'path';
+import url from 'url';
 import bunyan from 'bunyan';
 
 const log = bunyan.createLogger({
@@ -28,6 +40,32 @@ const JS = Symbol.for('iya.api.js');
 const HOISTED = Symbol.for('iya.api.hoisted');
 const COMPONENT = Symbol.for('iya.api.component');
 const PROJECTS = Symbol.for('iya.api.projects');
+
+// The repository root, which a `$enumFrom` or `$membersFrom` module is under.
+const ROOT = path.join(path.dirname(url.fileURLToPath(import.meta.url)),
+  '..', '..');
+
+const requireData = createRequire(import.meta.url);
+
+/**
+ * The list a `$enumFrom` or `$membersFrom` names.
+ *
+ * @param from - `{ module, export }`, the module relative to the root
+ * @returns a copy of the list
+ */
+function listFrom(from) {
+  log.debug("Entering listFrom().");
+  const list = requireData(path.join(ROOT, from.module))[from.export];
+  if (!Array.isArray(list) || !list.every(function (one) {
+    return typeof one === 'string';
+  })) {
+    log.debug("Leaving listFrom(). Not a list.");
+    throw new Error(from.module + ' exports no list of strings as ' +
+      from.export + '.');
+  }
+  log.debug("Leaving listFrom().");
+  return list.slice();
+}
 
 const PRIMITIVES = { string: 'string', integer: 'integer', numeric: 'number',
   boolean: 'boolean' };
@@ -85,6 +123,15 @@ function applied(schema, extras) {
       out.additionalProperties = true;
     } else if (key === '$types') {
       out.type = extras[key];
+    } else if (key === '$enumFrom') {
+      out.enum = listFrom(extras[key]);
+    } else if (key === '$membersFrom') {
+      const from = extras[key];
+      out.properties = Object.assign({}, out.properties);
+      listFrom(from).forEach(function (id) {
+        out.properties[from.prefix + id] = Object.assign({}, from.member,
+          { description: from.describe.split('{id}').join(id) });
+      });
     } else if (key === '$comb') {
       if (out.anyOf) {
         out[extras[key]] = out.anyOf;
@@ -360,8 +407,24 @@ function typeOf(schema) {
     return schema.$ref.split('/').pop().replace(/[^A-Za-z0-9_]/g, '_');
   }
   const options = schema.anyOf || schema.oneOf;
-  if (options) {
+  // ALTERNATIVES THAT ONLY CONSTRAIN (`anyOf: [{ required: ['profile'] },
+  // { required: ['id'] }]`) say which members must be present, not what the
+  // value is: the value is the rest of the schema (#1579). They were read as
+  // `unknown`, which typed such a body as nothing.
+  const shaping = options && options.some(function (one) {
+    return one && typeof one === 'object' && ['type', 'properties', '$ref',
+      'enum', 'const', 'items', 'anyOf', 'oneOf'].some(function (key) {
+      return one[key] !== undefined;
+    });
+  });
+  if (options && shaping) {
     return Array.from(new Set(options.map(typeOf))).join(' | ');
+  }
+  if (options) {
+    const rest = Object.assign({}, schema);
+    delete rest.anyOf;
+    delete rest.oneOf;
+    return typeOf(rest);
   }
   if (schema.const !== undefined) {
     return JSON.stringify(schema.const);
@@ -393,16 +456,77 @@ function typeOf(schema) {
   }
   if (schema.properties) {
     const required = schema.required || [];
-    return '{ ' + Object.keys(schema.properties).map(function (name) {
+    const members = Object.keys(schema.properties).map(function (name) {
       return JSON.stringify(name) + (required.indexOf(name) < 0 ? '?: ' : ': ') +
         typeOf(schema.properties[name]);
-    }).join('; ') + ' }';
+    });
+    // AN OPEN OBJECT (#1579): a member the schema does not name is still
+    // allowed, so reading one is too.
+    if (schema.additionalProperties === true ||
+        (schema.additionalProperties &&
+         typeof schema.additionalProperties === 'object')) {
+      members.push('[member: string]: unknown');
+    }
+    return '{ ' + members.join('; ') + ' }';
   }
   return schema.type === 'object' ? 'Record<string, unknown>' : 'unknown';
 }
 
 /**
- * The declarations of every request and response of every document.
+ * One operation as the handler that serves it is typed (#1579): its method
+ * and path (which a table of actions is found by), what it takes — the JSON body, the query's names and types — and what it answers,
+ * by status, for every 2xx status the model gives a JSON answer. A body the
+ * model does not declare is `{}`, so reading a member of it fails to
+ * compile; a body that is not JSON (an upload) is `unknown`.
+ *
+ * @param method - the operation's method
+ * @param path - its path, as the document writes it
+ * @param operation - the OpenAPI operation
+ * @returns the type's text
+ */
+function operationType(method, path, operation) {
+  log.debug("Entering operationType().");
+  const content = (operation.requestBody && operation.requestBody.content) ||
+    null;
+  let body = '{}';
+  if (content && content['application/json']) {
+    body = typeOf(content['application/json'].schema);
+  } else if (content) {
+    body = 'unknown';
+  }
+  const query = {};
+  const required = [];
+  (operation.parameters || []).filter(function (one) {
+    return one.in === 'query';
+  }).forEach(function (one) {
+    query[one.name] = one.schema;
+    if (one.required) {
+      required.push(one.name);
+    }
+  });
+  const answers = [];
+  Object.keys(operation.responses || {}).sort().forEach(function (status) {
+    const media = /^2[0-9][0-9]$/.test(status) &&
+      operation.responses[status].content &&
+      operation.responses[status].content['application/json'];
+    if (media) {
+      answers.push(status + ': ' + typeOf(media.schema));
+    }
+  });
+  log.debug("Leaving operationType().");
+  return '{ method: ' + JSON.stringify(method.toUpperCase()) + '; path: ' +
+    JSON.stringify(path) + '; body: ' + body + '; query: ' + (Object.keys(query).length > 0
+    ? typeOf({ properties: query, required: required }) : '{}') +
+    '; answers: { ' + answers.join('; ') + (answers.length ? ' }' : '}') +
+    ' }';
+}
+
+/**
+ * The declarations of every request and response of every document: the
+ * reusable schemas, and `Operations`, every operation by its operationId,
+ * which every operation of the five documents carries since #1579 (the
+ * Reports API's were keyed by `METHOD path` until then). The handlers of the
+ * five APIs are typed by it through `types/api-handlers.d.ts`.
  *
  * @param served - the documents, by name
  * @returns the text of `types/api.generated.d.ts`
@@ -412,8 +536,9 @@ export function renderApiTypes(served) {
   const lines = ['// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, ' +
     'LLC', '// SPDX-License-Identifier: BUSL-1.1', '//',
   '// GENERATED from models/api/ (#1390). Do not edit: change the model and',
-  '// run tests/tools/regenerate-model-docs.sh. tests/model_openapi.js fails',
-  '// when this differs.', ''];
+  '// run tests/tools/regenerate-model-docs.sh. tests/model_domain.js fails',
+  '// when this differs. The handlers are typed by it (#1579): see',
+  '// types/api-handlers.d.ts.', ''];
   Object.keys(served).sort().forEach(function (name) {
     const document = served[name];
     lines.push('declare namespace IyaApi.' + name.charAt(0).toUpperCase() +
@@ -423,41 +548,20 @@ export function renderApiTypes(served) {
       lines.push('  type ' + key.replace(/[^A-Za-z0-9_]/g, '_') + ' = ' +
         typeOf(schemas[key]) + ';');
     });
+    lines.push('  interface Operations {');
     Object.keys(document.paths).sort().forEach(function (path) {
       Object.keys(document.paths[path]).sort().forEach(function (method) {
         const operation = document.paths[path][method];
-        const id = operation.operationId;
-        if (!id) {
-          return;
+        if (!operation.operationId) {
+          log.debug("Leaving renderApiTypes(). No operationId.");
+          throw new Error('The ' + name + ' document\'s ' +
+            method.toUpperCase() + ' ' + path + ' has no operationId.');
         }
-        const body = operation.requestBody && operation.requestBody.content &&
-          operation.requestBody.content['application/json'];
-        if (body) {
-          lines.push('  type ' + id + 'Body = ' + typeOf(body.schema) + ';');
-        }
-        const query = {};
-        const required = [];
-        (operation.parameters || []).filter(function (one) {
-          return one.in === 'query';
-        }).forEach(function (one) {
-          query[one.name] = one.schema;
-          if (one.required) {
-            required.push(one.name);
-          }
-        });
-        if (Object.keys(query).length > 0) {
-          lines.push('  type ' + id + 'Query = ' + typeOf({ properties: query,
-            required: required }) + ';');
-        }
-        const answer = (operation.responses || {})['200'];
-        const media = answer && answer.content &&
-          answer.content['application/json'];
-        if (media) {
-          lines.push('  type ' + id + 'Answer = ' + typeOf(media.schema) + ';');
-        }
+        lines.push('    ' + JSON.stringify(operation.operationId) + ': ' +
+          operationType(method, path, operation) + ';');
       });
     });
-    lines.push('}', '');
+    lines.push('  }', '}', '');
   });
   log.debug("Leaving renderApiTypes().");
   return lines.join('\n');

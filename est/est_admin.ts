@@ -55,18 +55,6 @@ import consoleModel = require('./est_console');
 import InstanceSlot = require('../common/instance_slot');
 
 const esc = admin.esc;
-const vz = validation.z;
-const vt = validation.types;
-
-const PAGE_QUERY = vz.looseObject({
-  certificatesPage: vt.opt(vt.integer(1, 1000000)),
-  page: vt.opt(vt.integer(1, 1000000)),
-  per: vt.opt(vt.integer(1, 1000)),
-  format: vt.opt(vt.oneOf(['json', 'JSON', 'html'])),
-  notice: vt.opt(vt.message),
-  error: vt.opt(vt.message)
-});
-
 // What `EstAdmin` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
@@ -122,30 +110,6 @@ class EstAdmin {
       consoleModel: consoleModel,
       esc: esc
     };
-  }
-
-  /**
-   * Validates a page's query, answering 400 when it is malformed.
-   *
-   * @param req - the request
-   * @param res - the response
-   * @returns true when the query was refused and answered
-   */
-  queryRefused(req, res) {
-    const { log, validation, errorCodes } = this.deps;
-    log.debug("Entering EstAdmin.queryRefused().");
-    const query = validation.check(req, 'query', PAGE_QUERY);
-    if (!query.ok) {
-      errorCodes.mark(res, 'STS-EST-0030');
-      res.status(400)
-         .type('text/plain')
-         .set('Cache-Control', 'no-store')
-         .send(query.detail);
-      log.debug("Leaving EstAdmin.queryRefused(). Refused.");
-      return true;
-    }
-    log.debug("Leaving EstAdmin.queryRefused().");
-    return false;
   }
 
   // THE ROUTES, registered where they always were: the module exports

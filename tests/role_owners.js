@@ -179,9 +179,9 @@ async function theActs(t) {
     person('ra-ann');
     adminActions.rolesAction({ action: 'create-role', role: 'ra-staff' });
     const added = adminActions.rolesAction({ action: 'add-owner',
-      role: 'ra-staff', owner: 'ra-ann', actor: 'an-operator' });
+      role: 'ra-staff', owner: 'ra-ann' }, { actor: 'an-operator' });
     const removed = adminActions.rolesAction({ action: 'remove-owner',
-      role: 'ra-staff', owner: dnOf('ra-ann'), actor: 'an-operator' });
+      role: 'ra-staff', owner: dnOf('ra-ann') }, { actor: 'an-operator' });
     const refused = adminActions.rolesAction({ action: 'add-owner',
       role: 'ra-staff', owner: 'ra-nobody' });
     const unknown = adminActions.rolesAction({ action: 'no-such' });

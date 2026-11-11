@@ -235,6 +235,11 @@ import sessionWindow = require('./session_window');
 // LIBRARY that requires only `common/` leaves and nothing of this file, so
 // the require closes no cycle and moves no route.
 import AccountSets = require('./account_sets');
+// THE SESSION AS THE MODEL SAYS IT MEANS (#1579): `models/domain/session.tsp`
+// is the one statement of a session's shape, so the readers below that
+// project a session onto a page, an answer or a decision read it through
+// `Session.fromRecord()` rather than off the raw record.
+import DomainClasses = require('../common/domain_classes');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
@@ -1240,6 +1245,15 @@ interface AuthnDeps {
  * path it returns, and finds the session with `sessionOf()` when the browser
  * comes back.
  */
+// A RESPONSE TO ANY OF THE AUTHENTICATION API'S OPERATIONS (#1579), for the
+// answer helpers every act shares (`stepAnswer()`, the refusals): what they
+// answer at a literal 2xx status must be one of the model's answers. Each act
+// `/authn-api` hands its response to is typed by its own operation instead.
+type AnyAuthnAnswering = IyaApi.AuthnAnswering<keyof IyaApi.Authn.Operations>;
+// What an act says comes next: the model's `next`, of a step's answer.
+type AuthnNext =
+  IyaApi.AnswerAt200<IyaApi.Authn.Operations, 'checkCode'>['next'];
+
 class Authn {
   // The sign-in surface's bundle, once read (`signInBundle()`, #571).
   private bundleFile: any = null;
@@ -2912,7 +2926,7 @@ class Authn {
                displayName: account.displayName || entry.displayName,
                state: 'signed-in',
                signedInAt: self.sessionStartedAt(session) || 0,
-               authTime: Number(session.authTime) || 0,
+               authTime: Authn.sessionView(session).authTime || 0,
                current: !!(own && own.id === sid) };
     });
     const remembered = Object.keys(row.remembered || {}).map(function (key) {
@@ -6308,10 +6322,41 @@ class Authn {
   sessionStartedAt(session) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionStartedAt().");
-    const first = session && Array.isArray(session.events) &&
-                  session.events.length ? session.events[0] : null;
+    const view = Authn.sessionView(session);
+    const first = view.events && view.events.length ? view.events[0] : null;
     log.debug("Leaving Authn.sessionStartedAt().");
-    return ((first && first.at) || (session && session.authTime) || 0) * 1000;
+    return ((first && first.at) || view.authTime || 0) * 1000;
+  }
+
+  /**
+   * A session as the `Session` concept, or an empty one for no session.
+   *
+   * @param session - the session record, or nothing
+   * @returns the concept
+   */
+  static sessionView(session): IyaDomain.Session {
+    helpers.log.debug("Entering Authn.sessionView().");
+    const view = session && typeof session === 'object'
+      ? DomainClasses.Session.fromRecord(session)
+      : {} as IyaDomain.Session;
+    helpers.log.debug("Leaving Authn.sessionView().");
+    return view;
+  }
+
+  /**
+   * When a session's person last authenticated, in seconds: its latest
+   * event, else its `authTime`.
+   *
+   * @param session - the session record, or nothing
+   * @returns the instant in seconds, or 0
+   */
+  static lastAuthenticatedAt(session): number {
+    helpers.log.debug("Entering Authn.lastAuthenticatedAt().");
+    const view = Authn.sessionView(session);
+    const events = view.events || [];
+    const latest = events.length ? events[events.length - 1] : null;
+    helpers.log.debug("Leaving Authn.lastAuthenticatedAt().");
+    return Number((latest && latest.at) || view.authTime || 0);
   }
 
   // HOW A PERSON IS SIGNED IN, READ THROUGH A RELYING-PARTY SESSION
@@ -6347,14 +6392,15 @@ class Authn {
         fromParent = true;
       }
     }
-    const events = Array.isArray(source.events) ? source.events.length : 1;
+    const view = Authn.sessionView(source);
+    const events = view.events ? view.events.length : 1;
     log.debug("Leaving Authn.signOnFactsFor(). fromParent=" + fromParent);
     return {
       startedAt: this.sessionStartedAt(source),
-      authTime: (source.authTime || 0) * 1000,
-      amr: (source.amr || []).slice(),
-      acr: source.acr || '',
-      authentications: events + (source.eventsDropped || 0),
+      authTime: (view.authTime || 0) * 1000,
+      amr: (view.methods || []).slice(),
+      acr: view.assuranceLevel || '',
+      authentications: events + (view.eventsDropped || 0),
       fromParent: fromParent,
       // Whether the sign-on session is bound to a browser key (#725).
       deviceBound: deviceBound.bindingOf(source)
@@ -11642,7 +11688,10 @@ class Authn {
    * @param action - `register` or `skip`
    * @returns nothing; the answer is sent
    */
-  postLoginAct(req: any, res: any, stepId: string, action: string): void {
+  postLoginAct(req: any,
+               res: IyaApi.AuthnAnswering<'registerPostLoginPasskey' |
+                 'skipPostLoginActivity'>, stepId: string,
+               action: string): void {
     const { log, baseUrlOf, audit, errorCodes, postLogin,
       credentials } = this.deps;
     log.debug("Entering Authn.postLoginAct(). " + action);
@@ -11918,7 +11967,12 @@ class Authn {
    * @param body - the answer
    * @returns nothing
    */
-  answerJson(res, status: number, body: any): void {
+  // TYPED BY THE OPERATION (#1579): through an `/authn-api` handler's
+  // response the answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  answerJson<R, S extends number>(res: R, status: S,
+                                  body: IyaApi.AnswerOf<R, S>): void;
+  answerJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering Authn.answerJson(). " + status);
     res.status(status).type('application/json')
@@ -11979,7 +12033,7 @@ class Authn {
    *   a classical passkey refused where a post-quantum one is required
    * @returns nothing
    */
-  screenRefused(res, record, message: string,
+  screenRefused(res: AnyAuthnAnswering, record, message: string,
     extra?: { status?: number, unknownCredential?: string,
     noAutofill?: boolean, postQuantumRequired?: boolean }): void {
     const { log } = this.deps;
@@ -12036,8 +12090,8 @@ class Authn {
    * @param query - the query parameter carrying the id
    * @returns nothing
    */
-  stepAnswer(res, next: string, step: string, id: string, path: string,
-             query: string): void {
+  stepAnswer(res: AnyAuthnAnswering, next: AuthnNext, step: string,
+             id: string, path: string, query: string): void {
     const { log } = this.deps;
     log.debug("Entering Authn.stepAnswer(). " + next + " " + step);
     const location = realms.currentPrefix() + path + '?' + query + '=' +
@@ -12992,7 +13046,7 @@ class Authn {
    * @param status - the HTTP status, 400 where left out
    * @returns nothing
    */
-  stepRefused(res: any, why: string, status?: number): void {
+  stepRefused(res: AnyAuthnAnswering, why: string, status?: number): void {
     const { log } = this.deps;
     log.debug("Entering Authn.stepRefused(). " + (status || 400));
     this.answerJson(res, status || 400, { ok: false, next: 'refused',
@@ -13163,7 +13217,8 @@ class Authn {
    * @param mfaId - the step id
    * @returns nothing
    */
-  mfaStartOver(req: any, res: any, mfaId: string): void {
+  mfaStartOver(req: any, res: IyaApi.AuthnAnswering<'startOver'>,
+               mfaId: string): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.mfaStartOver().");
     void req;
@@ -13190,7 +13245,9 @@ class Authn {
    * @param changeId - the step id
    * @returns nothing
    */
-  passwordChangeStartOver(req: any, res: any, changeId: string): void {
+  passwordChangeStartOver(
+    req: any, res: IyaApi.AuthnAnswering<'startOverFromPasswordChange'>,
+    changeId: string): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.passwordChangeStartOver().");
     void req;
@@ -14238,7 +14295,8 @@ class Authn {
    * @param home - the person's home cell
    * @returns a promise settled when the answer is sent
    */
-  async restartPendingAtHome(req, res, pendingId: string, fallback: string,
+  async restartPendingAtHome(req, res: AnyAuthnAnswering, pendingId: string,
+                             fallback: string,
                              home: string): Promise<void> {
     const { log } = this.deps;
     log.debug("Entering Authn.restartPendingAtHome(). home=" + home);
@@ -14570,7 +14628,8 @@ class Authn {
    * @param res - the response
    * @returns true when it answered
    */
-  refuseAccountsUnread(req, res) {
+  refuseAccountsUnread(req, res: IyaApi.AuthnAnswering<'getAccountChoice' |
+    'selectAccount' | 'useAnotherAccount' | 'forgetAccount'>) {
     const { log, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering Authn.refuseAccountsUnread().");
@@ -14705,7 +14764,9 @@ class Authn {
    * @param record - the pending sign-in, waiting on an account choice
    * @param body - `{ action, account }`
    */
-  accountsAct(req, res, record, body): void {
+  accountsAct(req,
+              res: IyaApi.AuthnAnswering<'selectAccount' |
+                'useAnotherAccount' | 'forgetAccount'>, record, body): void {
     const { log, audit, stats, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering Authn.accountsAct(). " + body.action);
@@ -15584,7 +15645,8 @@ class Authn {
   }
 
   // The step, or null with the refusal already sent.
-  passwordChangeStep(res, changeId) {
+  passwordChangeStep(res: IyaApi.AuthnAnswering<'getPasswordChange'>,
+                     changeId) {
     const { log, oauthError, errorCodes } = this.deps;
     log.debug('Entering Authn.passwordChangeStep().');
     const step = pendingPasswordChange.get(changeId);
@@ -17725,7 +17787,11 @@ class Authn {
    * @param body - the act's fields, `action` naming it
    * @returns a promise settled when the answer is sent
    */
-  async screenAct(req, res, record, body): Promise<void> {
+  async screenAct(req,
+                  res: IyaApi.AuthnAnswering<'signInWithPassword' |
+                    'cancelSignIn' | 'continueAnonymously' |
+                    'continueWithCertificate' | 'signInByEmail' |
+                    'signInWithPasskey'>, record, body): Promise<void> {
     const { log, baseUrlOf, randomId, config, gate, credentials,
       websecurity, mode, errorCodes, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.screenAct(). " +
@@ -18274,7 +18340,8 @@ class Authn {
    * @param body - `{ new_password, confirm_password }`
    * @returns a promise settled when the answer is sent
    */
-  async passwordChangeAct(req, res, changeId, step, body): Promise<void> {
+  async passwordChangeAct(req, res: IyaApi.AuthnAnswering<'changePassword'>,
+                          changeId, step, body): Promise<void> {
     const { log, baseUrlOf, credentials, audit, errorCodes } = this.deps;
     log.debug('Entering Authn.passwordChangeAct().');
     const base = baseUrlOf(req);
@@ -18356,7 +18423,7 @@ class Authn {
    * @param why - the sentence
    * @returns nothing
    */
-  passwordChangeRefused(res, why: string): void {
+  passwordChangeRefused(res: AnyAuthnAnswering, why: string): void {
     const { log } = this.deps;
     log.debug('Entering Authn.passwordChangeRefused().');
     this.answerJson(res, 400, { ok: false, next: 'refused',
@@ -18434,7 +18501,8 @@ class Authn {
    * @param body - `{ code }`
    * @returns a promise settled when the answer is sent
    */
-  async mfaTotpAct(req: any, res: any, mfaId: string,
+  async mfaTotpAct(req: any, res: IyaApi.AuthnAnswering<'checkCode'>,
+                   mfaId: string,
                    body: any): Promise<void> {
     const { log, baseUrlOf, websecurity, credentials, errorCodes } =
       this.deps;
@@ -18494,7 +18562,9 @@ class Authn {
    * @param body - `{ code }`
    * @returns a promise settled when the answer is sent
    */
-  async mfaBackupCodeAct(req: any, res: any, mfaId: string,
+  async mfaBackupCodeAct(req: any,
+                         res: IyaApi.AuthnAnswering<'spendRecoveryCode'>,
+                         mfaId: string,
                          body: any): Promise<void> {
     const { log, baseUrlOf, websecurity, credentials, errorCodes } =
       this.deps;
@@ -18549,7 +18619,9 @@ class Authn {
    * @param body - `{ password }`
    * @returns a promise settled when the answer is sent
    */
-  async mfaPasswordAct(req: any, res: any, mfaId: string,
+  async mfaPasswordAct(req: any,
+                       res: IyaApi.AuthnAnswering<'checkFactorPassword'>,
+                       mfaId: string,
                        body: any): Promise<void> {
     const { log, baseUrlOf, websecurity, credentials, errorCodes } =
       this.deps;
@@ -18631,7 +18703,8 @@ class Authn {
    *   registration that failed on the device (#944), or ''
    * @returns nothing; the answer is sent
    */
-  mfaWebauthnOptions(req: any, res: any, mfaId: string, key: string,
+  mfaWebauthnOptions(req: any, res: IyaApi.AuthnAnswering<'passkeyStepOptions'>,
+                     mfaId: string, key: string,
                      lane?: string, algorithms?: string): void {
     // `audit` from the deps (#912), as every other writer of its rows.
     const { log, baseUrlOf, errorCodes, webauthnPolicy, audit } = this.deps;
@@ -18829,7 +18902,10 @@ class Authn {
    * @param body - `{ code }` for `confirm`
    * @returns a promise settled when the answer is sent
    */
-  async mfaSetupAct(req: any, res: any, setupId: string, action: string,
+  async mfaSetupAct(req: any,
+                    res: IyaApi.AuthnAnswering<'beginAppEnrolment' |
+                      'confirmAppEnrolment' | 'beginKeyEnrolment' |
+                      'ignoreOffer'>, setupId: string, action: string,
                     body: any): Promise<void> {
     const { log, baseUrlOf, credentials, websecurity, audit,
       errorCodes } = this.deps;
@@ -19046,7 +19122,8 @@ class Authn {
    * @param posted - `{ credential }`, the ceremony's JSON form
    * @returns nothing; the answer is sent
    */
-  mfaWebauthnAct(req: any, res: any, mfaId: string, posted: any): any {
+  mfaWebauthnAct(req: any, res: IyaApi.AuthnAnswering<'finishPasskeyStep'>,
+                 mfaId: string, posted: any): any {
     const { log, baseUrlOf, errorCodes, credentials, stats, mode,
       webauthnVerifier, webauthnPolicy } = this.deps;
     const self = this;
@@ -20165,6 +20242,11 @@ export = {
   // itself would be a second place to get the handle check wrong.
   sessionStartedAt: slot.forward('sessionStartedAt'),
   signOnFactsFor: slot.forward('signOnFactsFor'),
+  // A session read through the `Session` concept (#1579), and when its
+  // person last authenticated: what every reader outside this module that
+  // projects a session asks, so none of them reads the raw record.
+  sessionView: Authn.sessionView,
+  lastAuthenticatedAt: Authn.lastAuthenticatedAt,
   // A session's binding to a browser key (#725), for the session rows the
   // sign-out and the console draw.
   deviceBindingOf: deviceBound.bindingOf,

@@ -32,12 +32,15 @@
 // refusal in `report_api.ts` is, through `reportSend()`), and a report's own
 // answer declares each of its three media types.
 //
-// **IT STAYS OPENAPI 3.0.3**, which `tests/report_query.js` pins, so a nullable
-// value is `nullable: true`, and two things follow from how the validator reads
-// that. An enumerated nullable value has to list null itself, since `enum` is
-// asked apart from `type`. And `nullable` cannot stand beside a `$ref`, so a
-// schema that may be null where it is used says so itself: `Filter` and
-// `ParameterBag`.
+// **IT IS OPENAPI 3.1.0 SINCE rcbj's DECISION ON #1579 (2026-11-11)**, as the
+// other four documents are. It was 3.0.3 until then, which has no
+// `propertyNames`, so a saved parameter's name length was asked by hand in
+// `report/jobs.ts`; the model states it now (`ParameterBag`). A nullable value
+// is a type list (`["string", "null"]`), JSON Schema 2020-12's form, and an
+// enumerated one lists null among its values as well. A schema that may be
+// null where it is used still says so itself — `Filter`'s six forms and
+// `ParameterBag` — so that every use of it is the plain
+// `$ref`.
 //
 // **KEYS THAT ARE DATA ARE A TYPED MAP**: a result row's (the fields the query
 // selected) and a parameter bag's (the names the filter uses). What a field
@@ -62,7 +65,7 @@ using IyaSts.Api.Common;
 
 @apiDocument(#{
   `x-iya-every-operation`:#[#{`name`:"DPoP",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP <token> requires."},#{`name`:"X-Requested-With",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it."}],
-  `openapi`:"3.0.3",
+  `openapi`:"3.1.0",
   `info`:#{
     `title`:"IYA STS reports",
     `version`:"1",
@@ -111,7 +114,7 @@ namespace IyaSts.Api.Report {
     @js(#{`description`:"The realm's path prefix; empty for the default realm."}) `prefix`?: string
   }
 
-@component model `Realms` {`current`?: `Realm`; @js(#{`nullable`:true}) `realms`?: (`Realm`)[]}
+@component model `Realms` {`current`?: `Realm`; @js(#{`$types`:#["array","null"]}) `realms`?: (`Realm`)[]}
 
 @component model `Me` {
     @js(#{`description`:"The path of the person's own photo, or empty."}) `photo`?: string
@@ -121,7 +124,7 @@ namespace IyaSts.Api.Report {
     @js(#{
       `description`:"This service's clock, in milliseconds: the `since` of the next ask."
     }) `now`?: numeric;
-    @js(#{`nullable`:true}) `everyMs`?: numeric;
+    @js(#{`$types`:#["number","null"]}) `everyMs`?: numeric;
     `announcements`?: (WithIdAtMessage)[]
   }
 
@@ -159,9 +162,9 @@ namespace IyaSts.Api.Report {
       `schedule`?: string;
       `scheduleEnabled`?: boolean;
       `notify`?: boolean;
-      @js(#{`nullable`:true}) `nextRunAt`?: string;
-      @js(#{`nullable`:true}) `lastSlotAt`?: string;
-      `failures`?: ({@js(#{`nullable`:true}) `at`?: string; `description`?: string})[]
+      @js(#{`$types`:#["string","null"]}) `nextRunAt`?: string;
+      @js(#{`$types`:#["string","null"]}) `lastSlotAt`?: string;
+      `failures`?: ({@js(#{`$types`:#["string","null"]}) `at`?: string; `description`?: string})[]
     };
     @js(#{
       `description`:"The most recent scheduled jobs, newest first, at most five."
@@ -171,7 +174,7 @@ namespace IyaSts.Api.Report {
 
 @component model `SchedulePage` {
     `scope`?: "mine" | "realm";
-    @js(#{`nullable`:true}) `owner`?: string;
+    @js(#{`$types`:#["string","null"]}) `owner`?: string;
     `page`?: integer;
     `pages`?: integer;
     `per`?: integer;
@@ -236,38 +239,110 @@ namespace IyaSts.Api.Report {
 
   
 
+// THE FILTER'S GRAMMAR (#1579): what `report/query.ts` checked by hand, so the
+// document a caller reads and the check a request meets are one declaration.
+// A node is one of five closed forms told apart by `op`, and each may be null,
+// which is no filter wherever a filter stands. The operators are the grammar's;
+// which of them a field takes, the field itself, its type and how deep a tree
+// may nest are the catalog's and the code's, checked after the shape.
+@js(#{`minLength`:1}) @hoisted scalar FieldId extends string;
+
 @js(#{
-    `nullable`:true,
+    `$types`:#["object","null"],
+    `description`:"and or or over between 1 and 16 filters."
+  }) @component model `FilterLogical` {
+    `op`: "and" | "or";
+    @js(#{`minItems`:1,`maxItems`:16}) `args`: (`Filter`)[]
+  }
+
+@js(#{`$types`:#["object","null"],`description`:"not over one filter."}) @component model `FilterNot` {
+    `op`: "not";
+    `arg`: `Filter`
+  }
+
+@js(#{
+    `$types`:#["object","null"],
+    `description`:"isNull names the field and nothing else."
+  }) @component model `FilterIsNull` {
+    `op`: "isNull";
+    `field`: FieldId
+  }
+
+@js(#{
+    `$types`:#["object","null"],
+    `description`:"A comparison with one value: a string, a number, a boolean or null, which the field's type then decides."
+  }) @component model `FilterValue` {
+    `op`: "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith";
+    `field`: FieldId;
+    `value`: StringOrNumericOrBoolean2
+  }
+
+@js(#{
+    `$types`:#["object","null"],
+    `description`:"in, with between 1 and 50 values."
+  }) @component model `FilterIn` {
+    `op`: "in";
+    `field`: FieldId;
+    @js(#{`minItems`:1,`maxItems`:50}) `value`: (StringOrNumericOrBoolean2)[]
+  }
+
+@js(#{
+    `$types`:#["object","null"],
+    `description`:"A comparison whose value is a saved definition's parameter, named here and given when the definition runs."
+  }) @component model `FilterParam` {
+    `op`: "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith" | "in";
+    `field`: FieldId;
+    @js(#{
+      `minLength`:1,
+      `maxLength`:64,
+      `description`:"The parameter's name, 1 to 64 characters, as a parameter bag's names are."
+    }) `param`: string
+  }
+
+@js(#{
     `description`:"A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter."
-  }) @component model `Filter` {
-    `op`?: string;
-    `field`?: string;
-    `value`?: StringOrNumericOrBooleanEtc9;
-    `param`?: string;
-    `args`?: (`Filter`)[];
-    `arg`?: `Filter`
+  }) @component union `Filter` {
+    `FilterLogical`,
+    `FilterNot`,
+    `FilterIsNull`,
+    `FilterValue`,
+    `FilterIn`,
+    `FilterParam`
   }
 
 @component model `QueryDocument` {
     @js(#{
+      `minLength`:1,
       `description`:"One source, by its id in the catalog: {{sources}}. An array is invalid_query."
     }) `source`: string;
     @js(#{
-      `nullable`:true,
-      `description`:"The fields. A count may name none, as three presets do."
-    }) `select`?: (string)[];
+      `$types`:#["array","null"],
+      `maxItems`:64,
+      `uniqueItems`:true,
+      `description`:"The fields, at most 64, each once. A count may name none, as three presets do."
+    }) `select`?: (FieldId)[];
     `where`?: `Filter`;
-    @js(#{`nullable`:true}) `orderBy`?: ({`field`?: string; `dir`?: "asc" | "desc"})[];
+    @js(#{
+      `$types`:#["array","null"],
+      `maxItems`:8,
+      `description`:"At most 8 entries, each a field and a direction, and a field once."
+    }) `orderBy`?: ({`field`: FieldId; `dir`: "asc" | "desc"})[];
     @js(#{`minimum`:1}) `limit`?: integer;
     `format`?: "json" | "csv" | "pdf";
     `mode`?: "auto" | "sync" | "async";
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `maxLength`:35,
+      `pattern`:"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
       `description`:"A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi."
     }) `locale`?: string;
-    @js(#{`nullable`:true,`enum`:#["count",null]}) `aggregate`?: string;
-    @js(#{`nullable`:true}) `groupBy`?: (string)[]
+    @js(#{`$types`:#["string","null"],`enum`:#["count",null]}) `aggregate`?: string;
+    @js(#{
+      `$types`:#["array","null"],
+      `maxItems`:8,
+      `uniqueItems`:true,
+      `description`:"The fields a count groups by, at most 8, each once."
+    }) `groupBy`?: (FieldId)[]
   }
 
   
@@ -284,7 +359,7 @@ namespace IyaSts.Api.Report {
   }
 
 @js(#{
-    `nullable`:true,
+    `$types`:#["object","null"],
     `description`:"One row: a field's id to what it holds. The keys are the fields the query selected, and `count` where it counted."
   }) @hoisted model QueryResult_rows_i_h9 is Record<QueryResult_rows_i_ap_h8>;
   
@@ -300,14 +375,44 @@ namespace IyaSts.Api.Report {
 
   
 
+// WHAT A SAVED PARAMETER MAY HOLD (#1579), which `report/jobs.ts` checked by
+// hand: at most 32 names, each a string of at most 200 characters, a number, a
+// boolean, null, or a list of 1 to 32 of those. A name is 1 to 64 characters,
+// `propertyNames`, which OpenAPI 3.0.3 could not state, so `jobs.ts` asked it
+// until this document became 3.1.0 (rcbj, #1579, 2026-11-11).
+//
+// A RUN'S PARAMETERS ARE A `ParameterBag` TOO, and a filter's `param` is a
+// name of 1 to 64 characters (`FilterParam`): rcbj's decision on #1579,
+// 2026-11-11. Until then a run's body was `RunParameters`, the same bag with
+// no name bound, because a run stores nothing and a filter could name a
+// 65-character parameter; a definition can now name no parameter a run could
+// not supply, so the two bags were one and `RunParameters` is deleted
+// (`tests/report_parameter_names.js`).
+@js(#{`$types`:#["string","null"],`maxLength`:200}) @hoisted scalar ParameterText extends string;
+
+@hoisted union ParameterScalar {ParameterText, numeric, boolean}
+
+@js(#{`minItems`:1,`maxItems`:32}) @hoisted model ParameterList is Array<ParameterScalar>;
+
 @js(#{
-    `nullable`:true,
-    `description`:"Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none."
-  }) @component model `ParameterBag` is Record<StringOrNumericOrBooleanEtc9>;
+    `description`:"A string, a number, a boolean, null, or a list of 1 to 32 of those. A string is at most 200 characters."
+  }) @hoisted union ParameterValue {ParameterText, numeric, boolean, ParameterList}
+
+@js(#{
+    `$types`:#["object","null"],
+    `maxProperties`:32,
+    `propertyNames`:#{`type`:"string",`minLength`:1,`maxLength`:64},
+    `description`:"Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none."
+  }) @component model `ParameterBag` is Record<ParameterValue>;
   
 
 @component model `DefinitionWrite` {
-    @js(#{`maxLength`:120}) `name`: string;
+    @js(#{
+      `minLength`:1,
+      `maxLength`:120,
+      `pattern`:"\\S",
+      `description`:"What the definition is called: at most 120 characters, not only spaces."
+    }) `name`: string;
     `document`: `QueryDocument`;
     `parameters`?: `ParameterBag`;
     @js(#{`description`:"A UTC cron expression, or empty."}) `schedule`?: string;
@@ -334,17 +439,17 @@ namespace IyaSts.Api.Report {
     }) `schedule`?: string;
     `scheduleEnabled`?: boolean;
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `description`:"When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence."
     }) `nextRunAt`?: string;
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `description`:"The most recent occurrence the schedule has taken (queued, or skipped with a note), or null."
     }) `lastSlotAt`?: string;
     `notify`?: boolean;
     `editable`?: boolean;
-    @js(#{`format`:"date-time",`nullable`:true}) `createdAt`?: string;
-    @js(#{`format`:"date-time",`nullable`:true}) `modifiedAt`?: string;
+    @js(#{`format`:"date-time",`$types`:#["string","null"]}) `createdAt`?: string;
+    @js(#{`format`:"date-time",`$types`:#["string","null"]}) `modifiedAt`?: string;
     `document`?: `QueryDocument`;
     `parameters`?: `ParameterBag`;
     `groups`?: (string)[];
@@ -363,25 +468,27 @@ namespace IyaSts.Api.Report {
 
 @component model `Deleted` {@js(#{`description`:"The definition's id."}) `deleted`?: string}
 
-@component model `ShareWrite` {`groups`: (string)[]}
+@js(#{`minLength`:1,`description`:"A group's DN in this realm."}) @hoisted scalar GroupDn extends string;
+
+@component model `ShareWrite` {`groups`: (GroupDn)[]}
 
 @component model `Job` {
     `id`?: string;
     `status`?: "queued" | "running" | "completed" | "failed" | "cancelled" | "expired";
     `format`?: string;
-    @js(#{`nullable`:true}) `submittedAt`?: string;
-    @js(#{`nullable`:true}) `completedAt`?: string;
-    @js(#{`nullable`:true}) `byteSize`?: integer;
+    @js(#{`$types`:#["string","null"]}) `submittedAt`?: string;
+    @js(#{`$types`:#["string","null"]}) `completedAt`?: string;
+    @js(#{`$types`:#["integer","null"]}) `byteSize`?: integer;
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `description`:"The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial."
     }) `error`?: string;
-    @js(#{`nullable`:true}) `definitionId`?: string;
-    @js(#{`nullable`:true}) `definitionName`?: string;
+    @js(#{`$types`:#["string","null"]}) `definitionId`?: string;
+    @js(#{`$types`:#["string","null"]}) `definitionName`?: string;
     `source`?: string;
     `fields`?: (string)[];
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `enum`:#["every-person","asked","limit","source","run","schedule",null],
       `description`:"Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule."
     }) `queuedBecause`?: string;
@@ -392,7 +499,7 @@ namespace IyaSts.Api.Report {
 
 @component model `JobList` {
     `jobs`?: (`Job`)[];
-    @js(#{`nullable`:true}) `next`?: string;
+    @js(#{`$types`:#["string","null"]}) `next`?: string;
     @js(#{`description`:"Absent on a cursor page."}) `page`?: integer;
     `pages`?: integer;
     `per`?: integer;
@@ -402,6 +509,7 @@ namespace IyaSts.Api.Report {
 @endpoint("/report-api",
   "get",
   #{
+    `operationId`:"getIndex",
     `summary`:"The report API index",
     `description`:"Names the catalog and realms addresses, and carries the service version the application draws in its footer.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -424,7 +532,7 @@ namespace IyaSts.Api.Report {
       }
     }
   })
-op `get__report_api`(`responses/200/content/application~1json/schema`: `Index`,
+op `getIndex`(`responses/200/content/application~1json/schema`: `Index`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -433,6 +541,7 @@ op `get__report_api`(`responses/200/content/application~1json/schema`: `Index`,
 @endpoint("/report-api/openapi.json",
   "get",
   #{
+    `operationId`:"getOpenApi",
     `summary`:"This document",
     `description`:"The description of the released routes.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -455,7 +564,7 @@ op `get__report_api`(`responses/200/content/application~1json/schema`: `Index`,
       }
     }
   })
-op `get__report_api_openapi_json`(`responses/200/content/application~1json/schema`: `OpenApiDocument`,
+op `getOpenApi`(`responses/200/content/application~1json/schema`: `OpenApiDocument`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -464,6 +573,7 @@ op `get__report_api_openapi_json`(`responses/200/content/application~1json/schem
 @endpoint("/report-api/realms",
   "get",
   #{
+    `operationId`:"getRealms",
     `summary`:"The trust realms",
     `description`:"The realm this request is in, and every realm with its id, name and path prefix where realms are active (null where they are not). The application draws its realm field and switch from it.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -486,7 +596,7 @@ op `get__report_api_openapi_json`(`responses/200/content/application~1json/schem
       }
     }
   })
-op `get__report_api_realms`(`responses/200/content/application~1json/schema`: `Realms`,
+op `getRealms`(`responses/200/content/application~1json/schema`: `Realms`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -495,6 +605,7 @@ op `get__report_api_realms`(`responses/200/content/application~1json/schema`: `R
 @endpoint("/report-api/groups",
   "get",
   #{
+    `operationId`:"getGroups",
     `summary`:"Search the realm's groups",
     `description`:"The groups of this realm whose name or DN contains `q` (case-insensitive; empty matches every group), five a page in name order, each with its own `mail` attribute or an empty string. The definition page builds its share list from it; a definition's groups are who is emailed its result, at that address (#989).",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -533,7 +644,7 @@ op `get__report_api_realms`(`responses/200/content/application~1json/schema`: `R
       }
     ]
   })
-op `get__report_api_groups`(`parameters/0/schema`: string,
+op `getGroups`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: `GroupPage`,
   `responses/401/content/application~1json/schema`: `Error`,
@@ -544,6 +655,7 @@ op `get__report_api_groups`(`parameters/0/schema`: string,
 @endpoint("/report-api/signals",
   "get",
   #{
+    `operationId`:"getSignals",
     `summary`:"This application's Shared Signals inbox",
     `description`:"The CAEP and RISC events this application's own stream delivered in this realm, newest first, twenty a page by default (#1042). report:admin sees every one (`scope` realm); anybody else sees only the events about themselves (`scope` own), and an application sees none. Each row says what this application did with it: the sessions it ended and the tokens of its own client it revoked for the person named, or why it did nothing. `receiving` is false, with `why`, when nothing can arrive. `per` is at most 100.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -582,7 +694,7 @@ op `get__report_api_groups`(`parameters/0/schema`: string,
       }
     ]
   })
-op `get__report_api_signals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+op `getSignals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:100}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: `SignalPage`,
   `responses/401/content/application~1json/schema`: `Error`,
@@ -593,6 +705,7 @@ op `get__report_api_signals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
 @endpoint("/report-api/me",
   "get",
   #{
+    `operationId`:"getMe",
     `summary`:"What the user menu draws",
     `description`:"The path of the signed-in person's own profile photo on this realm (#719), empty where they have none. It answers only about the token's person.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -615,7 +728,7 @@ op `get__report_api_signals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       }
     }
   })
-op `get__report_api_me`(`responses/200/content/application~1json/schema`: `Me`,
+op `getMe`(`responses/200/content/application~1json/schema`: `Me`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -624,6 +737,7 @@ op `get__report_api_me`(`responses/200/content/application~1json/schema`: `Me`,
 @endpoint("/report-api/announcements",
   "get",
   #{
+    `operationId`:"getAnnouncements",
     `summary`:"Announcements for everybody signed in",
     `description`:"What an administrator broadcast to this application (#1086) after `since` — the `now` this operation answered the tab's first ask with — within ssf.announcementKeepS, oldest first. With no `since` it answers only `now`. `everyMs` is how often an open tab asks again.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -655,7 +769,7 @@ op `get__report_api_me`(`responses/200/content/application~1json/schema`: `Me`,
       }
     ]
   })
-op `get__report_api_announcements`(@js(#{`minimum`:0}) `parameters/0/schema`: integer,
+op `getAnnouncements`(@js(#{`minimum`:0}) `parameters/0/schema`: integer,
   `responses/200/content/application~1json/schema`: `AnnouncementPage`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -665,6 +779,7 @@ op `get__report_api_announcements`(@js(#{`minimum`:0}) `parameters/0/schema`: in
 @endpoint("/report-api/schedules",
   "get",
   #{
+    `operationId`:"getSchedules",
     `summary`:"The scheduled definitions and their runs",
     `description`:"Every definition that carries a schedule, with when it next runs, the occurrence it last took, the notes a skipped run left, and its most recent scheduled jobs. A report:use token sees the definitions it owns or is shared; report:admin sees every one in the realm and may name one owner with `owner` (a urn:uuid subject or a username). A report:use token that names another owner is refused with forbidden (403). Paged; `per` is at most 100.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -709,7 +824,7 @@ op `get__report_api_announcements`(@js(#{`minimum`:0}) `parameters/0/schema`: in
       }
     ]
   })
-op `get__report_api_schedules`(`parameters/0/schema`: string,
+op `getSchedules`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:100}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `SchedulePage`,
@@ -721,6 +836,7 @@ op `get__report_api_schedules`(`parameters/0/schema`: string,
 @endpoint("/report-api/catalog",
   "get",
   #{
+    `operationId`:"getCatalog",
     `summary`:"The report catalog",
     `description`:"Every source. Each field has an id, a meaning, a type, whether it can be filtered, sorted or grouped, and its operators. paging is limit. relationships is empty. retention is the English sentence for how long the rows last.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -743,7 +859,7 @@ op `get__report_api_schedules`(`parameters/0/schema`: string,
       }
     }
   })
-op `get__report_api_catalog`(`responses/200/content/application~1json/schema`: `Catalog`,
+op `getCatalog`(`responses/200/content/application~1json/schema`: `Catalog`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -752,6 +868,7 @@ op `get__report_api_catalog`(`responses/200/content/application~1json/schema`: `
 @endpoint("/report-api/catalog/{id}",
   "get",
   #{
+    `operationId`:"getCatalogSource",
     `summary`:"One report source",
     `description`:"The same object the catalog lists for one id.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -788,7 +905,7 @@ op `get__report_api_catalog`(`responses/200/content/application~1json/schema`: `
       }
     ]
   })
-op `get__report_api_catalog__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `getCatalogSource`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `SourceEnvelope`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -799,6 +916,7 @@ op `get__report_api_catalog__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: 
 @endpoint("/report-api/queries",
   "post",
   #{
+    `operationId`:"runQuery",
     `summary`:"Run a query",
     `description`:"Synchronous when the source is bounded and the limit fits the sync caps. Otherwise 202 and a job. mode sync over the cap is result_too_large. A body over the byte cap or a sync call over the time cap is refused whole.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -838,7 +956,7 @@ op `get__report_api_catalog__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: 
     },
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`source`:"users",`select`:#["username"],`limit`:1,`mode`:"sync",`format`:"json"}}}}
   })
-op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `QueryDocument`,
+op `runQuery`(`requestBody/content/application~1json/schema`: `QueryDocument`,
   `responses/200/content/application~1json/schema`: `QueryResult`,
   `responses/200/content/text~1csv/schema`: string,
   @js(#{`format`:"binary"}) `responses/200/content/application~1pdf/schema`: string,
@@ -853,6 +971,7 @@ op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `Q
 @endpoint("/report-api/definitions",
   "get",
   #{
+    `operationId`:"getDefinitions",
     `summary`:"List definitions",
     `description`:"The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows. `limit` is the older spelling of `per`, read when `per` is absent.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -898,7 +1017,7 @@ op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `Q
       }
     ]
   })
-op `get__report_api_definitions`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+op `getDefinitions`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:200}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:200}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DefinitionList`,
@@ -910,6 +1029,7 @@ op `get__report_api_definitions`(@js(#{`minimum`:1}) `parameters/0/schema`: inte
 @endpoint("/report-api/definitions",
   "post",
   #{
+    `operationId`:"createDefinition",
     `summary`:"Create a definition",
     `description`:"Stores the document. parameters is the bag a schedule runs with. A missing value can still be type-checked; it is not stored as a dummy, and the schedule will not run until the value is saved.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -937,7 +1057,7 @@ op `get__report_api_definitions`(@js(#{`minimum`:1}) `parameters/0/schema`: inte
     },
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`name`:"example",`document`:#{`source`:"no-such-source",`limit`:1}}}}}
   })
-op `post__report_api_definitions`(`requestBody/content/application~1json/schema`: `DefinitionWrite`,
+op `createDefinition`(`requestBody/content/application~1json/schema`: `DefinitionWrite`,
   `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
@@ -948,6 +1068,7 @@ op `post__report_api_definitions`(`requestBody/content/application~1json/schema`
 @endpoint("/report-api/definitions/{id}",
   "get",
   #{
+    `operationId`:"getDefinition",
     `summary`:"Read a definition",
     `description`:"An id the caller may not see is not_found, the same answer as an id that does not exist.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -984,7 +1105,7 @@ op `post__report_api_definitions`(`requestBody/content/application~1json/schema`
       }
     ]
   })
-op `get__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `getDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -995,6 +1116,7 @@ op `get__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schem
 @endpoint("/report-api/definitions/{id}",
   "post",
   #{
+    `operationId`:"replaceDefinition",
     `summary`:"Replace a definition",
     `description`:"The owner, or report:admin. parameters omitted keeps the stored bag. parameters null clears it.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1036,7 +1158,7 @@ op `get__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schem
     ],
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`name`:"example",`document`:#{`source`:"no-such-source",`limit`:1}}}}}
   })
-op `post__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `replaceDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: `DefinitionWrite`,
   `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
@@ -1049,6 +1171,7 @@ op `post__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sche
 @endpoint("/report-api/definitions/{id}",
   "delete",
   #{
+    `operationId`:"deleteDefinition",
     `summary`:"Delete a definition",
     `description`:"The owner, or report:admin. A share cannot delete.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1085,7 +1208,7 @@ op `post__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sche
       }
     ]
   })
-op `delete__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `deleteDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `Deleted`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -1096,6 +1219,7 @@ op `delete__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sc
 @endpoint("/report-api/definitions/{id}/share",
   "post",
   #{
+    `operationId`:"shareDefinition",
     `summary`:"Share a definition",
     `description`:"Replaces the group list. A share can run and retrieve. It cannot edit or delete. Each value is a group DN in this realm.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1137,7 +1261,7 @@ op `delete__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sc
     ],
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`groups`:#[]}}}}
   })
-op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `shareDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: `ShareWrite`,
   `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
@@ -1150,8 +1274,9 @@ op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/
 @endpoint("/report-api/definitions/{id}/run",
   "post",
   #{
+    `operationId`:"runDefinition",
     `summary`:"Run a saved definition",
-    `description`:"Always a job. The body is a parameter object, not a query document. A key in the body overrides the stored default. An empty body uses the stored defaults. The stored document already carries locale.",
+    `description`:"Always a job. The body is a parameter object, not a query document. A key in the body overrides the stored default, and one the filter does not name is ignored. The body is held to a saved parameter bag's bounds, names of 1 to 64 characters among them, and is not stored. An empty body uses the stored defaults. The stored document already carries locale.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
     `responses`:#{
       `202`:#{
@@ -1195,7 +1320,7 @@ op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/
     ],
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}}
   })
-op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `runDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: `ParameterBag`,
   `responses/202/content/application~1json/schema`: `JobEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
@@ -1209,6 +1334,7 @@ op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/
 @endpoint("/report-api/jobs",
   "get",
   #{
+    `operationId`:"getJobs",
     `summary`:"List jobs",
     `description`:"Newest first, in numbered pages: `page` and `per` (50 unless given, at most 200), with page, pages, per and total beside the rows. A caller may page by cursor instead: `after` is the previous page's next id and `limit` its size. A job id in the list is not permission to read a job the token cannot see.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1261,7 +1387,7 @@ op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/
       }
     ]
   })
-op `get__report_api_jobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+op `getJobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:200}) `parameters/1/schema`: integer,
   `parameters/2/schema`: string,
   `parameters/3/schema`: integer,
@@ -1274,6 +1400,7 @@ op `get__report_api_jobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
 @endpoint("/report-api/jobs",
   "post",
   #{
+    `operationId`:"queueJob",
     `summary`:"Queue a job",
     `description`:"The same document as a query, forced to a job even when it would have fit in one synchronous call.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1305,7 +1432,7 @@ op `get__report_api_jobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
     },
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`source`:"no-such-source",`limit`:1}}}}
   })
-op `post__report_api_jobs`(`requestBody/content/application~1json/schema`: `QueryDocument`,
+op `queueJob`(`requestBody/content/application~1json/schema`: `QueryDocument`,
   `responses/202/content/application~1json/schema`: `JobEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
@@ -1317,6 +1444,7 @@ op `post__report_api_jobs`(`requestBody/content/application~1json/schema`: `Quer
 @endpoint("/report-api/jobs/{id}",
   "get",
   #{
+    `operationId`:"getJob",
     `summary`:"Read a job",
     `description`:"The owner and report:admin also receive the query document. A hidden id is job_not_found.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1353,7 +1481,7 @@ op `post__report_api_jobs`(`requestBody/content/application~1json/schema`: `Quer
       }
     ]
   })
-op `get__report_api_jobs__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `getJob`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `JobEnvelope`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -1364,6 +1492,7 @@ op `get__report_api_jobs__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: str
 @endpoint("/report-api/jobs/{id}/cancel",
   "post",
   #{
+    `operationId`:"cancelJob",
     `summary`:"Cancel a job",
     `description`:"A queued job becomes cancelled. A running job is asked to stop and is not returned in part.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1400,7 +1529,7 @@ op `get__report_api_jobs__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: str
       }
     ]
   })
-op `post__report_api_jobs__id__cancel`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `cancelJob`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `JobEnvelope`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -1411,6 +1540,7 @@ op `post__report_api_jobs__id__cancel`(@js(#{`maxLength`:64}) `parameters/0/sche
 @endpoint("/report-api/jobs/{id}/result",
   "get",
   #{
+    `operationId`:"getJobResult",
     `summary`:"Download a result",
     `description`:"The artifact bytes. The media type is the format. A job id is not enough: the token must be allowed to see the job. Past artifact retention the result is gone.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1459,7 +1589,7 @@ op `post__report_api_jobs__id__cancel`(@js(#{`maxLength`:64}) `parameters/0/sche
       }
     ]
   })
-op `get__report_api_jobs__id__result`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `getJobResult`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `QueryResult`,
   `responses/200/content/text~1csv/schema`: string,
   @js(#{`format`:"binary"}) `responses/200/content/application~1pdf/schema`: string,

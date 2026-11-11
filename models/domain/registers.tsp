@@ -261,6 +261,9 @@ model OpenIdFederationEntity {
   what: "What the directory keeps about any entry."
 })
 model DirectoryEntry {
+  @fromAttr(#{attr: "entryUUID"})
+  entryUuid?: string;
+
   @fromAttr(#{attr: "createTimestamp"})
   `createTimestamp`?: string;
 

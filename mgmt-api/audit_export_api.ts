@@ -16,6 +16,8 @@
 // It registers no route. `mgmt-api/admin_api.ts` spreads `ROUTES`.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -90,7 +92,12 @@ class AuditExportApi {
    * @param status - the HTTP status
    * @param body - the body
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering AuditExportApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
@@ -195,11 +202,11 @@ class AuditExportApi {
       type: 'object', properties: { id: p.id }, required: ['id'],
       examples: [{ id: 'siem' }], additionalProperties: false
     };
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/audit-export',
         tag: 'Monitoring', operationId: 'getAuditExport',
         mirrors: 'GET ' + PAGE,
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API audit export endpoint.");
           const view = loadExport().view();
           view.settings = loadAdmin().configSettingsJson(PAGE);
@@ -207,9 +214,9 @@ class AuditExportApi {
           log.debug("Leaving the management API audit export endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/audit-export/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/audit-export/:action',
         tag: 'Monitoring', mirrors: 'POST ' + PAGE,
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API audit export action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -244,7 +251,7 @@ class AuditExportApi {
           { action: 'disable',
             operationId: 'disableAuditExportDestination' },
           { action: 'test', operationId: 'testAuditExportDestination' }
-        ] }
+        ] })
     ];
     log.debug("Leaving AuditExportApi.buildRoutes().");
     return ROUTES;

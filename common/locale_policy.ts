@@ -88,6 +88,7 @@ import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import i18n = require('./i18n');
 import InstanceSlot = require('./instance_slot');
+import DomainMap = require('./domain_map');
 import PolicySelection = require('./policy_selection');
 // The sentences `describe()` makes are filled from SENTENCES below, so the
 // server can translate them into a console reader's language (#543).
@@ -484,7 +485,9 @@ class LocalePolicy {
       inherited: found.from === 'default-realm',
       from: found.from,
       dn: entry ? entry.dn : '',
-      description: entry ? String(this.firstValue(at, 'description')) : '',
+      // The description is the concept's (#1579).
+      description: entry ? String((DomainMap.fieldOf('LocalePolicy',
+        'description', at) || [])[0] || '') : '',
       sources: sources,
       problems: problems,
       // It decides only what language a reader sees: in force in both modes.

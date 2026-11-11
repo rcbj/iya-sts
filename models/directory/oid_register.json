@@ -1,6 +1,6 @@
 {
- "root": "1.3.6.1.4.1.32473",
- "placeholder": true,
+ "root": "1.3.6.1.4.1.67607",
+ "placeholder": false,
  "attributes": {
   "acmeAllowedProfiles": 1,
   "acmeCertificateLifetimeDays": 2,
@@ -536,6 +536,8 @@
   "stsAuthnTotpSecondFactor": 530,
   "stsAuthnWalletPrimary": 531,
   "stsAuthnWalletSecondFactor": 532,
+  "stsAuthzenApplication": 746,
+  "stsAuthzenCallbackUri": 747,
   "stsBackupCodes": 533,
   "stsBootstrapAdministrator": 534,
   "stsCertificateHostName": 535,

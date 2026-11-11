@@ -43,6 +43,8 @@
 // replace.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
@@ -128,7 +130,12 @@ class ScepApi {
    * @param status - the HTTP status
    * @param body - the reply
    */
-  send(res, status, body) {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  send<R, S extends number>(res: R, status: S,
+       body: IyaApi.AnswerOf<R, S>): void;
+  send(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering ScepApi.send(). status=" + status);
     const rows = res.locals && res.locals.protocolEndpoints;
@@ -167,7 +174,7 @@ class ScepApi {
     const { log, loadScepConsole, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering ScepApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/scep', tag: 'SCEP',
         operationId: 'getScep',
         mirrors: 'GET /admin/cert-issuance',
@@ -212,7 +219,7 @@ class ScepApi {
         handler: function (req, res) {
           log.debug("Entering the management API SCEP monitor endpoint.");
           const model = loadScepConsole();
-          const query = model.queryOf(req);
+          const query = model.queryOf(req, 'monitor');
           if (!query.ok) {
             errorCodes.mark(res, 'STS-SCEP-0060');
             self.send(res, 400, { ok: false, errors: [query.detail] });
@@ -223,7 +230,8 @@ class ScepApi {
           log.debug("Leaving the management API SCEP monitor endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/scep/:action', tag: 'SCEP',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/scep/:action', tag: 'SCEP',
         mirrors: 'POST /admin/scep',
         handler: function (req, res) {
           log.debug("Entering the management API SCEP action endpoint.");
@@ -258,7 +266,7 @@ class ScepApi {
           { action: 'revoke-certificate', operationId: 'revokeScepCertificate' },
           { action: 'add-host-name', operationId: 'addScepHostName' },
           { action: 'remove-host-name', operationId: 'removeScepHostName' }
-        ] }
+        ] })
     ];
     log.debug("Leaving ScepApi.buildRoutes().");
     return ROUTES;

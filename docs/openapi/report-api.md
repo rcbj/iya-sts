@@ -24,6 +24,8 @@ Unless an operation below says otherwise, any status it does not list answers th
 
 ## GET /report-api
 
+`getIndex`
+
 **The report API index**
 
 Names the catalog and realms addresses, and carries the service version the application draws in its footer.
@@ -65,6 +67,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/announcements
 
+`getAnnouncements`
+
 **Announcements for everybody signed in**
 
 What an administrator broadcast to this application (#1086) after `since` — the `now` this operation answered the tab's first ask with — within ssf.announcementKeepS, oldest first. With no `since` it answers only `now`. `everyMs` is how often an open tab asks again.
@@ -87,7 +91,7 @@ Scope: `report:use`, `report:admin`.
 | `announcements[].at` | string |  |  |
 | `announcements[].id` | string |  |  |
 | `announcements[].message` | string |  |  |
-| `everyMs` | number |  |  |
+| `everyMs` | number, or null |  |  |
 | `now` | number |  | This service's clock, in milliseconds: the `since` of the next ask. |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
@@ -105,6 +109,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/catalog
+
+`getCatalog`
 
 **The report catalog**
 
@@ -147,26 +153,41 @@ Scope: `report:use`, `report:admin`.
 | `sources[].presets[].document` | object |  |  |
 | `sources[].presets[].document.aggregate` | one of `count`, `null` |  |  |
 | `sources[].presets[].document.format` | one of `json`, `csv`, `pdf` |  |  |
-| `sources[].presets[].document.groupBy` | list |  |  |
+| `sources[].presets[].document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `sources[].presets[].document.groupBy[]` | string |  |  |
 | `sources[].presets[].document.limit` | integer |  |  |
-| `sources[].presets[].document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `sources[].presets[].document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `sources[].presets[].document.mode` | one of `auto`, `sync`, `async` |  |  |
-| `sources[].presets[].document.orderBy` | list |  |  |
-| `sources[].presets[].document.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `sources[].presets[].document.orderBy[].field` | string |  |  |
-| `sources[].presets[].document.select` | list |  | The fields. A count may name none, as three presets do. |
+| `sources[].presets[].document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `sources[].presets[].document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `sources[].presets[].document.orderBy[].field` | string | yes |  |
+| `sources[].presets[].document.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `sources[].presets[].document.select[]` | string |  |  |
 | `sources[].presets[].document.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `sources[].presets[].document.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `sources[].presets[].document.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `sources[].presets[].document.where.args` | list |  |  |
-| `sources[].presets[].document.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `sources[].presets[].document.where.field` | string |  |  |
-| `sources[].presets[].document.where.op` | string |  |  |
-| `sources[].presets[].document.where.param` | string |  |  |
-| `sources[].presets[].document.where.value` | list, or string, or number, or boolean |  |  |
-| `sources[].presets[].document.where.value[]` | object |  | Nested deeper than this page draws. |
+| `sources[].presets[].document.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `sources[].presets[].document.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `sources[].presets[].document.where (shape 1).args` | list | yes |  |
+| `sources[].presets[].document.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `sources[].presets[].document.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `sources[].presets[].document.where (shape 2)` | object |  | not over one filter. |
+| `sources[].presets[].document.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `sources[].presets[].document.where (shape 2).op` | one of `not` | yes |  |
+| `sources[].presets[].document.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `sources[].presets[].document.where (shape 3).field` | string | yes |  |
+| `sources[].presets[].document.where (shape 3).op` | one of `isNull` | yes |  |
+| `sources[].presets[].document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `sources[].presets[].document.where (shape 4).field` | string | yes |  |
+| `sources[].presets[].document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `sources[].presets[].document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `sources[].presets[].document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `sources[].presets[].document.where (shape 5).field` | string | yes |  |
+| `sources[].presets[].document.where (shape 5).op` | one of `in` | yes |  |
+| `sources[].presets[].document.where (shape 5).value` | list | yes |  |
+| `sources[].presets[].document.where (shape 5).value[]` | object |  | Nested deeper than this page draws. |
+| `sources[].presets[].document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `sources[].presets[].document.where (shape 6).field` | string | yes |  |
+| `sources[].presets[].document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `sources[].presets[].document.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `sources[].presets[].id` | string |  |  |
 | `sources[].presets[].name` | string |  |  |
 | `sources[].relationships` | list |  |  |
@@ -188,6 +209,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/catalog/{id}
+
+`getCatalogSource`
 
 **One report source**
 
@@ -231,26 +254,41 @@ Scope: `report:use`, `report:admin`.
 | `source.presets[].document` | object |  |  |
 | `source.presets[].document.aggregate` | one of `count`, `null` |  |  |
 | `source.presets[].document.format` | one of `json`, `csv`, `pdf` |  |  |
-| `source.presets[].document.groupBy` | list |  |  |
+| `source.presets[].document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `source.presets[].document.groupBy[]` | string |  |  |
 | `source.presets[].document.limit` | integer |  |  |
-| `source.presets[].document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `source.presets[].document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `source.presets[].document.mode` | one of `auto`, `sync`, `async` |  |  |
-| `source.presets[].document.orderBy` | list |  |  |
-| `source.presets[].document.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `source.presets[].document.orderBy[].field` | string |  |  |
-| `source.presets[].document.select` | list |  | The fields. A count may name none, as three presets do. |
+| `source.presets[].document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `source.presets[].document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `source.presets[].document.orderBy[].field` | string | yes |  |
+| `source.presets[].document.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `source.presets[].document.select[]` | string |  |  |
 | `source.presets[].document.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `source.presets[].document.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `source.presets[].document.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `source.presets[].document.where.args` | list |  |  |
-| `source.presets[].document.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `source.presets[].document.where.field` | string |  |  |
-| `source.presets[].document.where.op` | string |  |  |
-| `source.presets[].document.where.param` | string |  |  |
-| `source.presets[].document.where.value` | list, or string, or number, or boolean |  |  |
-| `source.presets[].document.where.value[]` | string, or number, or boolean |  |  |
+| `source.presets[].document.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `source.presets[].document.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `source.presets[].document.where (shape 1).args` | list | yes |  |
+| `source.presets[].document.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `source.presets[].document.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `source.presets[].document.where (shape 2)` | object |  | not over one filter. |
+| `source.presets[].document.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `source.presets[].document.where (shape 2).op` | one of `not` | yes |  |
+| `source.presets[].document.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `source.presets[].document.where (shape 3).field` | string | yes |  |
+| `source.presets[].document.where (shape 3).op` | one of `isNull` | yes |  |
+| `source.presets[].document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `source.presets[].document.where (shape 4).field` | string | yes |  |
+| `source.presets[].document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `source.presets[].document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `source.presets[].document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `source.presets[].document.where (shape 5).field` | string | yes |  |
+| `source.presets[].document.where (shape 5).op` | one of `in` | yes |  |
+| `source.presets[].document.where (shape 5).value` | list | yes |  |
+| `source.presets[].document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `source.presets[].document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `source.presets[].document.where (shape 6).field` | string | yes |  |
+| `source.presets[].document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `source.presets[].document.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `source.presets[].id` | string |  |  |
 | `source.presets[].name` | string |  |  |
 | `source.relationships` | list |  |  |
@@ -280,6 +318,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/definitions
 
+`getDefinitions`
+
 **List definitions**
 
 The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows. `limit` is the older spelling of `per`, read when `per` is absent.
@@ -301,30 +341,45 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definitions` | list |  |  |
-| `definitions[].createdAt` | string, date-time |  |  |
+| `definitions[].createdAt` | string, date-time, or null |  |  |
 | `definitions[].document` | object |  |  |
 | `definitions[].document.aggregate` | one of `count`, `null` |  |  |
 | `definitions[].document.format` | one of `json`, `csv`, `pdf` |  |  |
-| `definitions[].document.groupBy` | list |  |  |
+| `definitions[].document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definitions[].document.groupBy[]` | string |  |  |
 | `definitions[].document.limit` | integer |  |  |
-| `definitions[].document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definitions[].document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definitions[].document.mode` | one of `auto`, `sync`, `async` |  |  |
-| `definitions[].document.orderBy` | list |  |  |
-| `definitions[].document.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `definitions[].document.orderBy[].field` | string |  |  |
-| `definitions[].document.select` | list |  | The fields. A count may name none, as three presets do. |
+| `definitions[].document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `definitions[].document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `definitions[].document.orderBy[].field` | string | yes |  |
+| `definitions[].document.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `definitions[].document.select[]` | string |  |  |
 | `definitions[].document.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `definitions[].document.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `definitions[].document.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definitions[].document.where.args` | list |  |  |
-| `definitions[].document.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definitions[].document.where.field` | string |  |  |
-| `definitions[].document.where.op` | string |  |  |
-| `definitions[].document.where.param` | string |  |  |
-| `definitions[].document.where.value` | list, or string, or number, or boolean |  |  |
-| `definitions[].document.where.value[]` | string, or number, or boolean |  |  |
+| `definitions[].document.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `definitions[].document.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `definitions[].document.where (shape 1).args` | list | yes |  |
+| `definitions[].document.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definitions[].document.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `definitions[].document.where (shape 2)` | object |  | not over one filter. |
+| `definitions[].document.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definitions[].document.where (shape 2).op` | one of `not` | yes |  |
+| `definitions[].document.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `definitions[].document.where (shape 3).field` | string | yes |  |
+| `definitions[].document.where (shape 3).op` | one of `isNull` | yes |  |
+| `definitions[].document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `definitions[].document.where (shape 4).field` | string | yes |  |
+| `definitions[].document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `definitions[].document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `definitions[].document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `definitions[].document.where (shape 5).field` | string | yes |  |
+| `definitions[].document.where (shape 5).op` | one of `in` | yes |  |
+| `definitions[].document.where (shape 5).value` | list | yes |  |
+| `definitions[].document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `definitions[].document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `definitions[].document.where (shape 6).field` | string | yes |  |
+| `definitions[].document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `definitions[].document.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `definitions[].editable` | boolean |  |  |
 | `definitions[].failures` | list |  |  |
 | `definitions[].failures[]` | object |  | A run a schedule skipped: `reportNoteFailure()`. |
@@ -333,16 +388,16 @@ Scope: `report:use`, `report:admin`.
 | `definitions[].groups` | list |  |  |
 | `definitions[].groups[]` | string |  |  |
 | `definitions[].id` | string |  |  |
-| `definitions[].lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definitions[].modifiedAt` | string, date-time |  |  |
+| `definitions[].lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definitions[].modifiedAt` | string, date-time, or null |  |  |
 | `definitions[].name` | string |  |  |
-| `definitions[].nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definitions[].nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definitions[].notify` | boolean |  |  |
 | `definitions[].owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definitions[].ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
-| `definitions[].parameters` | map |  | Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definitions[].parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definitions[].parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definitions[].parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none. |
+| `definitions[].parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definitions[].parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definitions[].schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definitions[].scheduleEnabled` | boolean |  |  |
 | `page` | integer |  |  |
@@ -366,6 +421,8 @@ Scope: `report:use`, `report:admin`.
 
 ## POST /report-api/definitions
 
+`createDefinition`
+
 **Create a definition**
 
 Stores the document. parameters is the bag a schedule runs with. A missing value can still be type-checked; it is not stored as a dummy, and the schedule will not run until the value is saved.
@@ -386,31 +443,46 @@ Scope: `report:use`, `report:admin`.
 | `document` | object | yes |  |
 | `document.aggregate` | one of `count`, `null` |  |  |
 | `document.format` | one of `json`, `csv`, `pdf` |  |  |
-| `document.groupBy` | list |  |  |
+| `document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `document.groupBy[]` | string |  |  |
 | `document.limit` | integer |  |  |
-| `document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `document.mode` | one of `auto`, `sync`, `async` |  |  |
-| `document.orderBy` | list |  |  |
-| `document.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `document.orderBy[].field` | string |  |  |
-| `document.select` | list |  | The fields. A count may name none, as three presets do. |
+| `document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `document.orderBy[].field` | string | yes |  |
+| `document.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `document.select[]` | string |  |  |
 | `document.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `document.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `document.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `document.where.args` | list |  |  |
-| `document.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `document.where.field` | string |  |  |
-| `document.where.op` | string |  |  |
-| `document.where.param` | string |  |  |
-| `document.where.value` | list, or string, or number, or boolean |  |  |
-| `document.where.value[]` | string, or number, or boolean |  |  |
-| `name` | string | yes |  |
+| `document.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `document.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `document.where (shape 1).args` | list | yes |  |
+| `document.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `document.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `document.where (shape 2)` | object |  | not over one filter. |
+| `document.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `document.where (shape 2).op` | one of `not` | yes |  |
+| `document.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `document.where (shape 3).field` | string | yes |  |
+| `document.where (shape 3).op` | one of `isNull` | yes |  |
+| `document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `document.where (shape 4).field` | string | yes |  |
+| `document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `document.where (shape 5).field` | string | yes |  |
+| `document.where (shape 5).op` | one of `in` | yes |  |
+| `document.where (shape 5).value` | list | yes |  |
+| `document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `document.where (shape 6).field` | string | yes |  |
+| `document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `document.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
+| `name` | string | yes | What the definition is called: at most 120 characters, not only spaces. |
 | `notify` | boolean |  | Mail the owner when a scheduled run finishes. The message links to the job. It does not contain rows. |
-| `parameters` | map |  | Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `parameters.{key}[]` | string, or number, or boolean |  |  |
+| `parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none. |
+| `parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `schedule` | string |  | A UTC cron expression, or empty. |
 | `scheduleEnabled` | boolean |  |  |
 
@@ -419,30 +491,45 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definition` | object |  |  |
-| `definition.createdAt` | string, date-time |  |  |
+| `definition.createdAt` | string, date-time, or null |  |  |
 | `definition.document` | object |  |  |
 | `definition.document.aggregate` | one of `count`, `null` |  |  |
 | `definition.document.format` | one of `json`, `csv`, `pdf` |  |  |
-| `definition.document.groupBy` | list |  |  |
+| `definition.document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definition.document.groupBy[]` | string |  |  |
 | `definition.document.limit` | integer |  |  |
-| `definition.document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definition.document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definition.document.mode` | one of `auto`, `sync`, `async` |  |  |
-| `definition.document.orderBy` | list |  |  |
-| `definition.document.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `definition.document.orderBy[].field` | string |  |  |
-| `definition.document.select` | list |  | The fields. A count may name none, as three presets do. |
+| `definition.document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `definition.document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `definition.document.orderBy[].field` | string | yes |  |
+| `definition.document.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `definition.document.select[]` | string |  |  |
 | `definition.document.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `definition.document.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `definition.document.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definition.document.where.args` | list |  |  |
-| `definition.document.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definition.document.where.field` | string |  |  |
-| `definition.document.where.op` | string |  |  |
-| `definition.document.where.param` | string |  |  |
-| `definition.document.where.value` | list, or string, or number, or boolean |  |  |
-| `definition.document.where.value[]` | string, or number, or boolean |  |  |
+| `definition.document.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `definition.document.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `definition.document.where (shape 1).args` | list | yes |  |
+| `definition.document.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definition.document.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `definition.document.where (shape 2)` | object |  | not over one filter. |
+| `definition.document.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definition.document.where (shape 2).op` | one of `not` | yes |  |
+| `definition.document.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `definition.document.where (shape 3).field` | string | yes |  |
+| `definition.document.where (shape 3).op` | one of `isNull` | yes |  |
+| `definition.document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `definition.document.where (shape 4).field` | string | yes |  |
+| `definition.document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `definition.document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `definition.document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `definition.document.where (shape 5).field` | string | yes |  |
+| `definition.document.where (shape 5).op` | one of `in` | yes |  |
+| `definition.document.where (shape 5).value` | list | yes |  |
+| `definition.document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `definition.document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `definition.document.where (shape 6).field` | string | yes |  |
+| `definition.document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `definition.document.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `definition.editable` | boolean |  |  |
 | `definition.failures` | list |  |  |
 | `definition.failures[]` | object |  | A run a schedule skipped: `reportNoteFailure()`. |
@@ -451,16 +538,16 @@ Scope: `report:use`, `report:admin`.
 | `definition.groups` | list |  |  |
 | `definition.groups[]` | string |  |  |
 | `definition.id` | string |  |  |
-| `definition.lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definition.modifiedAt` | string, date-time |  |  |
+| `definition.lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definition.modifiedAt` | string, date-time, or null |  |  |
 | `definition.name` | string |  |  |
-| `definition.nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definition.nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definition.notify` | boolean |  |  |
 | `definition.owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definition.ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
-| `definition.parameters` | map |  | Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definition.parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definition.parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definition.parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none. |
+| `definition.parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definition.parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definition.schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definition.scheduleEnabled` | boolean |  |  |
 
@@ -487,6 +574,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/definitions/{id}
 
+`getDefinition`
+
 **Read a definition**
 
 An id the caller may not see is not_found, the same answer as an id that does not exist.
@@ -506,30 +595,45 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definition` | object |  |  |
-| `definition.createdAt` | string, date-time |  |  |
+| `definition.createdAt` | string, date-time, or null |  |  |
 | `definition.document` | object |  |  |
 | `definition.document.aggregate` | one of `count`, `null` |  |  |
 | `definition.document.format` | one of `json`, `csv`, `pdf` |  |  |
-| `definition.document.groupBy` | list |  |  |
+| `definition.document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definition.document.groupBy[]` | string |  |  |
 | `definition.document.limit` | integer |  |  |
-| `definition.document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definition.document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definition.document.mode` | one of `auto`, `sync`, `async` |  |  |
-| `definition.document.orderBy` | list |  |  |
-| `definition.document.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `definition.document.orderBy[].field` | string |  |  |
-| `definition.document.select` | list |  | The fields. A count may name none, as three presets do. |
+| `definition.document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `definition.document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `definition.document.orderBy[].field` | string | yes |  |
+| `definition.document.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `definition.document.select[]` | string |  |  |
 | `definition.document.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `definition.document.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `definition.document.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definition.document.where.args` | list |  |  |
-| `definition.document.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definition.document.where.field` | string |  |  |
-| `definition.document.where.op` | string |  |  |
-| `definition.document.where.param` | string |  |  |
-| `definition.document.where.value` | list, or string, or number, or boolean |  |  |
-| `definition.document.where.value[]` | string, or number, or boolean |  |  |
+| `definition.document.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `definition.document.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `definition.document.where (shape 1).args` | list | yes |  |
+| `definition.document.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definition.document.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `definition.document.where (shape 2)` | object |  | not over one filter. |
+| `definition.document.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definition.document.where (shape 2).op` | one of `not` | yes |  |
+| `definition.document.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `definition.document.where (shape 3).field` | string | yes |  |
+| `definition.document.where (shape 3).op` | one of `isNull` | yes |  |
+| `definition.document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `definition.document.where (shape 4).field` | string | yes |  |
+| `definition.document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `definition.document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `definition.document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `definition.document.where (shape 5).field` | string | yes |  |
+| `definition.document.where (shape 5).op` | one of `in` | yes |  |
+| `definition.document.where (shape 5).value` | list | yes |  |
+| `definition.document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `definition.document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `definition.document.where (shape 6).field` | string | yes |  |
+| `definition.document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `definition.document.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `definition.editable` | boolean |  |  |
 | `definition.failures` | list |  |  |
 | `definition.failures[]` | object |  | A run a schedule skipped: `reportNoteFailure()`. |
@@ -538,16 +642,16 @@ Scope: `report:use`, `report:admin`.
 | `definition.groups` | list |  |  |
 | `definition.groups[]` | string |  |  |
 | `definition.id` | string |  |  |
-| `definition.lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definition.modifiedAt` | string, date-time |  |  |
+| `definition.lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definition.modifiedAt` | string, date-time, or null |  |  |
 | `definition.name` | string |  |  |
-| `definition.nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definition.nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definition.notify` | boolean |  |  |
 | `definition.owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definition.ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
-| `definition.parameters` | map |  | Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definition.parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definition.parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definition.parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none. |
+| `definition.parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definition.parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definition.schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definition.scheduleEnabled` | boolean |  |  |
 
@@ -574,6 +678,8 @@ Scope: `report:use`, `report:admin`.
 
 ## POST /report-api/definitions/{id}
 
+`replaceDefinition`
+
 **Replace a definition**
 
 The owner, or report:admin. parameters omitted keeps the stored bag. parameters null clears it.
@@ -595,31 +701,46 @@ Scope: `report:use`, `report:admin`.
 | `document` | object | yes |  |
 | `document.aggregate` | one of `count`, `null` |  |  |
 | `document.format` | one of `json`, `csv`, `pdf` |  |  |
-| `document.groupBy` | list |  |  |
+| `document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `document.groupBy[]` | string |  |  |
 | `document.limit` | integer |  |  |
-| `document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `document.mode` | one of `auto`, `sync`, `async` |  |  |
-| `document.orderBy` | list |  |  |
-| `document.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `document.orderBy[].field` | string |  |  |
-| `document.select` | list |  | The fields. A count may name none, as three presets do. |
+| `document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `document.orderBy[].field` | string | yes |  |
+| `document.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `document.select[]` | string |  |  |
 | `document.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `document.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `document.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `document.where.args` | list |  |  |
-| `document.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `document.where.field` | string |  |  |
-| `document.where.op` | string |  |  |
-| `document.where.param` | string |  |  |
-| `document.where.value` | list, or string, or number, or boolean |  |  |
-| `document.where.value[]` | string, or number, or boolean |  |  |
-| `name` | string | yes |  |
+| `document.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `document.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `document.where (shape 1).args` | list | yes |  |
+| `document.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `document.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `document.where (shape 2)` | object |  | not over one filter. |
+| `document.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `document.where (shape 2).op` | one of `not` | yes |  |
+| `document.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `document.where (shape 3).field` | string | yes |  |
+| `document.where (shape 3).op` | one of `isNull` | yes |  |
+| `document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `document.where (shape 4).field` | string | yes |  |
+| `document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `document.where (shape 5).field` | string | yes |  |
+| `document.where (shape 5).op` | one of `in` | yes |  |
+| `document.where (shape 5).value` | list | yes |  |
+| `document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `document.where (shape 6).field` | string | yes |  |
+| `document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `document.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
+| `name` | string | yes | What the definition is called: at most 120 characters, not only spaces. |
 | `notify` | boolean |  | Mail the owner when a scheduled run finishes. The message links to the job. It does not contain rows. |
-| `parameters` | map |  | Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `parameters.{key}[]` | string, or number, or boolean |  |  |
+| `parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none. |
+| `parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `schedule` | string |  | A UTC cron expression, or empty. |
 | `scheduleEnabled` | boolean |  |  |
 
@@ -628,30 +749,45 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definition` | object |  |  |
-| `definition.createdAt` | string, date-time |  |  |
+| `definition.createdAt` | string, date-time, or null |  |  |
 | `definition.document` | object |  |  |
 | `definition.document.aggregate` | one of `count`, `null` |  |  |
 | `definition.document.format` | one of `json`, `csv`, `pdf` |  |  |
-| `definition.document.groupBy` | list |  |  |
+| `definition.document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definition.document.groupBy[]` | string |  |  |
 | `definition.document.limit` | integer |  |  |
-| `definition.document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definition.document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definition.document.mode` | one of `auto`, `sync`, `async` |  |  |
-| `definition.document.orderBy` | list |  |  |
-| `definition.document.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `definition.document.orderBy[].field` | string |  |  |
-| `definition.document.select` | list |  | The fields. A count may name none, as three presets do. |
+| `definition.document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `definition.document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `definition.document.orderBy[].field` | string | yes |  |
+| `definition.document.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `definition.document.select[]` | string |  |  |
 | `definition.document.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `definition.document.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `definition.document.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definition.document.where.args` | list |  |  |
-| `definition.document.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definition.document.where.field` | string |  |  |
-| `definition.document.where.op` | string |  |  |
-| `definition.document.where.param` | string |  |  |
-| `definition.document.where.value` | list, or string, or number, or boolean |  |  |
-| `definition.document.where.value[]` | string, or number, or boolean |  |  |
+| `definition.document.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `definition.document.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `definition.document.where (shape 1).args` | list | yes |  |
+| `definition.document.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definition.document.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `definition.document.where (shape 2)` | object |  | not over one filter. |
+| `definition.document.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definition.document.where (shape 2).op` | one of `not` | yes |  |
+| `definition.document.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `definition.document.where (shape 3).field` | string | yes |  |
+| `definition.document.where (shape 3).op` | one of `isNull` | yes |  |
+| `definition.document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `definition.document.where (shape 4).field` | string | yes |  |
+| `definition.document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `definition.document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `definition.document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `definition.document.where (shape 5).field` | string | yes |  |
+| `definition.document.where (shape 5).op` | one of `in` | yes |  |
+| `definition.document.where (shape 5).value` | list | yes |  |
+| `definition.document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `definition.document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `definition.document.where (shape 6).field` | string | yes |  |
+| `definition.document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `definition.document.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `definition.editable` | boolean |  |  |
 | `definition.failures` | list |  |  |
 | `definition.failures[]` | object |  | A run a schedule skipped: `reportNoteFailure()`. |
@@ -660,16 +796,16 @@ Scope: `report:use`, `report:admin`.
 | `definition.groups` | list |  |  |
 | `definition.groups[]` | string |  |  |
 | `definition.id` | string |  |  |
-| `definition.lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definition.modifiedAt` | string, date-time |  |  |
+| `definition.lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definition.modifiedAt` | string, date-time, or null |  |  |
 | `definition.name` | string |  |  |
-| `definition.nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definition.nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definition.notify` | boolean |  |  |
 | `definition.owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definition.ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
-| `definition.parameters` | map |  | Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definition.parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definition.parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definition.parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none. |
+| `definition.parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definition.parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definition.schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definition.scheduleEnabled` | boolean |  |  |
 
@@ -702,6 +838,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## DELETE /report-api/definitions/{id}
+
+`deleteDefinition`
 
 **Delete a definition**
 
@@ -746,9 +884,11 @@ Scope: `report:use`, `report:admin`.
 
 ## POST /report-api/definitions/{id}/run
 
+`runDefinition`
+
 **Run a saved definition**
 
-Always a job. The body is a parameter object, not a query document. A key in the body overrides the stored default. An empty body uses the stored defaults. The stored document already carries locale.
+Always a job. The body is a parameter object, not a query document. A key in the body overrides the stored default, and one the filter does not name is ignored. The body is held to a saved parameter bag's bounds, names of 1 to 64 characters among them, and is not stored. An empty body uses the stored defaults. The stored document already carries locale.
 
 Scope: `report:use`, `report:admin`.
 
@@ -764,20 +904,20 @@ Scope: `report:use`, `report:admin`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| (the answer) | map |  | Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `.{key}` | list, or string, or number, or boolean |  |  |
-| `.{key}[]` | string, or number, or boolean |  |  |
+| (the answer) | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none. |
+| `.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `.{key}[]` | string, or null, or number, or boolean |  |  |
 
 **202**: The job.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -785,30 +925,45 @@ Scope: `report:use`, `report:admin`.
 | `job.query` | object |  |  |
 | `job.query.aggregate` | one of `count`, `null` |  |  |
 | `job.query.format` | one of `json`, `csv`, `pdf` |  |  |
-| `job.query.groupBy` | list |  |  |
+| `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
-| `job.query.orderBy` | list |  |  |
-| `job.query.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `job.query.orderBy[].field` | string |  |  |
-| `job.query.select` | list |  | The fields. A count may name none, as three presets do. |
+| `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `job.query.orderBy[].field` | string | yes |  |
+| `job.query.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `job.query.select[]` | string |  |  |
 | `job.query.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `job.query.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `job.query.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.args` | list |  |  |
-| `job.query.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.field` | string |  |  |
-| `job.query.where.op` | string |  |  |
-| `job.query.where.param` | string |  |  |
-| `job.query.where.value` | list, or string, or number, or boolean |  |  |
-| `job.query.where.value[]` | string, or number, or boolean |  |  |
+| `job.query.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `job.query.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `job.query.where (shape 1).args` | list | yes |  |
+| `job.query.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `job.query.where (shape 2)` | object |  | not over one filter. |
+| `job.query.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 2).op` | one of `not` | yes |  |
+| `job.query.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `job.query.where (shape 3).field` | string | yes |  |
+| `job.query.where (shape 3).op` | one of `isNull` | yes |  |
+| `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `job.query.where (shape 4).field` | string | yes |  |
+| `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `job.query.where (shape 5).field` | string | yes |  |
+| `job.query.where (shape 5).op` | one of `in` | yes |  |
+| `job.query.where (shape 5).value` | list | yes |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `job.query.where (shape 6).field` | string | yes |  |
+| `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `job.query.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **400**: invalid_query or result_too_large.
 
@@ -847,6 +1002,8 @@ Scope: `report:use`, `report:admin`.
 
 ## POST /report-api/definitions/{id}/share
 
+`shareDefinition`
+
 **Share a definition**
 
 Replaces the group list. A share can run and retrieve. It cannot edit or delete. Each value is a group DN in this realm.
@@ -866,37 +1023,52 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `groups` | list | yes |  |
-| `groups[]` | string |  |  |
+| `groups[]` | string |  | A group's DN in this realm. |
 
 **200**: The definition.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definition` | object |  |  |
-| `definition.createdAt` | string, date-time |  |  |
+| `definition.createdAt` | string, date-time, or null |  |  |
 | `definition.document` | object |  |  |
 | `definition.document.aggregate` | one of `count`, `null` |  |  |
 | `definition.document.format` | one of `json`, `csv`, `pdf` |  |  |
-| `definition.document.groupBy` | list |  |  |
+| `definition.document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definition.document.groupBy[]` | string |  |  |
 | `definition.document.limit` | integer |  |  |
-| `definition.document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definition.document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definition.document.mode` | one of `auto`, `sync`, `async` |  |  |
-| `definition.document.orderBy` | list |  |  |
-| `definition.document.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `definition.document.orderBy[].field` | string |  |  |
-| `definition.document.select` | list |  | The fields. A count may name none, as three presets do. |
+| `definition.document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `definition.document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `definition.document.orderBy[].field` | string | yes |  |
+| `definition.document.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `definition.document.select[]` | string |  |  |
 | `definition.document.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `definition.document.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `definition.document.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definition.document.where.args` | list |  |  |
-| `definition.document.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `definition.document.where.field` | string |  |  |
-| `definition.document.where.op` | string |  |  |
-| `definition.document.where.param` | string |  |  |
-| `definition.document.where.value` | list, or string, or number, or boolean |  |  |
-| `definition.document.where.value[]` | string, or number, or boolean |  |  |
+| `definition.document.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `definition.document.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `definition.document.where (shape 1).args` | list | yes |  |
+| `definition.document.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definition.document.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `definition.document.where (shape 2)` | object |  | not over one filter. |
+| `definition.document.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `definition.document.where (shape 2).op` | one of `not` | yes |  |
+| `definition.document.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `definition.document.where (shape 3).field` | string | yes |  |
+| `definition.document.where (shape 3).op` | one of `isNull` | yes |  |
+| `definition.document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `definition.document.where (shape 4).field` | string | yes |  |
+| `definition.document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `definition.document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `definition.document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `definition.document.where (shape 5).field` | string | yes |  |
+| `definition.document.where (shape 5).op` | one of `in` | yes |  |
+| `definition.document.where (shape 5).value` | list | yes |  |
+| `definition.document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `definition.document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `definition.document.where (shape 6).field` | string | yes |  |
+| `definition.document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `definition.document.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `definition.editable` | boolean |  |  |
 | `definition.failures` | list |  |  |
 | `definition.failures[]` | object |  | A run a schedule skipped: `reportNoteFailure()`. |
@@ -905,16 +1077,16 @@ Scope: `report:use`, `report:admin`.
 | `definition.groups` | list |  |  |
 | `definition.groups[]` | string |  |  |
 | `definition.id` | string |  |  |
-| `definition.lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definition.modifiedAt` | string, date-time |  |  |
+| `definition.lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definition.modifiedAt` | string, date-time, or null |  |  |
 | `definition.name` | string |  |  |
-| `definition.nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definition.nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definition.notify` | boolean |  |  |
 | `definition.owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definition.ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
-| `definition.parameters` | map |  | Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definition.parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definition.parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definition.parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none, or a run gives none. |
+| `definition.parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definition.parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definition.schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definition.scheduleEnabled` | boolean |  |  |
 
@@ -947,6 +1119,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/groups
+
+`getGroups`
 
 **Search the realm's groups**
 
@@ -993,6 +1167,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/jobs
 
+`getJobs`
+
 **List jobs**
 
 Newest first, in numbered pages: `page` and `per` (50 unless given, at most 200), with page, pages, per and total beside the rows. A caller may page by cursor instead: `after` is the previous page's next id and `limit` its size. A job id in the list is not permission to read a job the token cannot see.
@@ -1015,11 +1191,11 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `jobs` | list |  |  |
-| `jobs[].byteSize` | integer |  |  |
-| `jobs[].completedAt` | string |  |  |
-| `jobs[].definitionId` | string |  |  |
-| `jobs[].definitionName` | string |  |  |
-| `jobs[].error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `jobs[].byteSize` | integer, or null |  |  |
+| `jobs[].completedAt` | string, or null |  |  |
+| `jobs[].definitionId` | string, or null |  |  |
+| `jobs[].definitionName` | string, or null |  |  |
+| `jobs[].error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `jobs[].fields` | list |  |  |
 | `jobs[].fields[]` | string |  |  |
 | `jobs[].format` | string |  |  |
@@ -1027,31 +1203,46 @@ Scope: `report:use`, `report:admin`.
 | `jobs[].query` | object |  |  |
 | `jobs[].query.aggregate` | one of `count`, `null` |  |  |
 | `jobs[].query.format` | one of `json`, `csv`, `pdf` |  |  |
-| `jobs[].query.groupBy` | list |  |  |
+| `jobs[].query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `jobs[].query.groupBy[]` | string |  |  |
 | `jobs[].query.limit` | integer |  |  |
-| `jobs[].query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `jobs[].query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `jobs[].query.mode` | one of `auto`, `sync`, `async` |  |  |
-| `jobs[].query.orderBy` | list |  |  |
-| `jobs[].query.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `jobs[].query.orderBy[].field` | string |  |  |
-| `jobs[].query.select` | list |  | The fields. A count may name none, as three presets do. |
+| `jobs[].query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `jobs[].query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `jobs[].query.orderBy[].field` | string | yes |  |
+| `jobs[].query.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `jobs[].query.select[]` | string |  |  |
 | `jobs[].query.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `jobs[].query.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `jobs[].query.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `jobs[].query.where.args` | list |  |  |
-| `jobs[].query.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `jobs[].query.where.field` | string |  |  |
-| `jobs[].query.where.op` | string |  |  |
-| `jobs[].query.where.param` | string |  |  |
-| `jobs[].query.where.value` | list, or string, or number, or boolean |  |  |
-| `jobs[].query.where.value[]` | string, or number, or boolean |  |  |
+| `jobs[].query.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `jobs[].query.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `jobs[].query.where (shape 1).args` | list | yes |  |
+| `jobs[].query.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `jobs[].query.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `jobs[].query.where (shape 2)` | object |  | not over one filter. |
+| `jobs[].query.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `jobs[].query.where (shape 2).op` | one of `not` | yes |  |
+| `jobs[].query.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `jobs[].query.where (shape 3).field` | string | yes |  |
+| `jobs[].query.where (shape 3).op` | one of `isNull` | yes |  |
+| `jobs[].query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `jobs[].query.where (shape 4).field` | string | yes |  |
+| `jobs[].query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `jobs[].query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `jobs[].query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `jobs[].query.where (shape 5).field` | string | yes |  |
+| `jobs[].query.where (shape 5).op` | one of `in` | yes |  |
+| `jobs[].query.where (shape 5).value` | list | yes |  |
+| `jobs[].query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `jobs[].query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `jobs[].query.where (shape 6).field` | string | yes |  |
+| `jobs[].query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `jobs[].query.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `jobs[].queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `jobs[].source` | string |  |  |
 | `jobs[].status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `jobs[].submittedAt` | string |  |  |
-| `next` | string |  |  |
+| `jobs[].submittedAt` | string, or null |  |  |
+| `next` | string, or null |  |  |
 | `page` | integer |  | Absent on a cursor page. |
 | `pages` | integer |  |  |
 | `per` | integer |  |  |
@@ -1073,6 +1264,8 @@ Scope: `report:use`, `report:admin`.
 
 ## POST /report-api/jobs
 
+`queueJob`
+
 **Queue a job**
 
 The same document as a query, forced to a job even when it would have fit in one synchronous call.
@@ -1092,37 +1285,52 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `aggregate` | one of `count`, `null` |  |  |
 | `format` | one of `json`, `csv`, `pdf` |  |  |
-| `groupBy` | list |  |  |
+| `groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `groupBy[]` | string |  |  |
 | `limit` | integer |  |  |
-| `locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `mode` | one of `auto`, `sync`, `async` |  |  |
-| `orderBy` | list |  |  |
-| `orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `orderBy[].field` | string |  |  |
-| `select` | list |  | The fields. A count may name none, as three presets do. |
+| `orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `orderBy[].field` | string | yes |  |
+| `select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `select[]` | string |  |  |
 | `source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `where.args` | list |  |  |
-| `where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `where.field` | string |  |  |
-| `where.op` | string |  |  |
-| `where.param` | string |  |  |
-| `where.value` | list, or string, or number, or boolean |  |  |
-| `where.value[]` | string, or number, or boolean |  |  |
+| `where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `where (shape 1).args` | list | yes |  |
+| `where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `where (shape 1).op` | one of `and`, `or` | yes |  |
+| `where (shape 2)` | object |  | not over one filter. |
+| `where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `where (shape 2).op` | one of `not` | yes |  |
+| `where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `where (shape 3).field` | string | yes |  |
+| `where (shape 3).op` | one of `isNull` | yes |  |
+| `where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `where (shape 4).field` | string | yes |  |
+| `where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `where (shape 5).field` | string | yes |  |
+| `where (shape 5).op` | one of `in` | yes |  |
+| `where (shape 5).value` | list | yes |  |
+| `where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `where (shape 6).field` | string | yes |  |
+| `where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 
 **202**: The job.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -1130,30 +1338,45 @@ Scope: `report:use`, `report:admin`.
 | `job.query` | object |  |  |
 | `job.query.aggregate` | one of `count`, `null` |  |  |
 | `job.query.format` | one of `json`, `csv`, `pdf` |  |  |
-| `job.query.groupBy` | list |  |  |
+| `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
-| `job.query.orderBy` | list |  |  |
-| `job.query.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `job.query.orderBy[].field` | string |  |  |
-| `job.query.select` | list |  | The fields. A count may name none, as three presets do. |
+| `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `job.query.orderBy[].field` | string | yes |  |
+| `job.query.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `job.query.select[]` | string |  |  |
 | `job.query.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `job.query.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `job.query.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.args` | list |  |  |
-| `job.query.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.field` | string |  |  |
-| `job.query.where.op` | string |  |  |
-| `job.query.where.param` | string |  |  |
-| `job.query.where.value` | list, or string, or number, or boolean |  |  |
-| `job.query.where.value[]` | string, or number, or boolean |  |  |
+| `job.query.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `job.query.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `job.query.where (shape 1).args` | list | yes |  |
+| `job.query.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `job.query.where (shape 2)` | object |  | not over one filter. |
+| `job.query.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 2).op` | one of `not` | yes |  |
+| `job.query.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `job.query.where (shape 3).field` | string | yes |  |
+| `job.query.where (shape 3).op` | one of `isNull` | yes |  |
+| `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `job.query.where (shape 4).field` | string | yes |  |
+| `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `job.query.where (shape 5).field` | string | yes |  |
+| `job.query.where (shape 5).op` | one of `in` | yes |  |
+| `job.query.where (shape 5).value` | list | yes |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `job.query.where (shape 6).field` | string | yes |  |
+| `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `job.query.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **400**: invalid_query, unknown_field, unsupported_operation or result_too_large.
 
@@ -1185,6 +1408,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/jobs/{id}
 
+`getJob`
+
 **Read a job**
 
 The owner and report:admin also receive the query document. A hidden id is job_not_found.
@@ -1204,11 +1429,11 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -1216,30 +1441,45 @@ Scope: `report:use`, `report:admin`.
 | `job.query` | object |  |  |
 | `job.query.aggregate` | one of `count`, `null` |  |  |
 | `job.query.format` | one of `json`, `csv`, `pdf` |  |  |
-| `job.query.groupBy` | list |  |  |
+| `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
-| `job.query.orderBy` | list |  |  |
-| `job.query.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `job.query.orderBy[].field` | string |  |  |
-| `job.query.select` | list |  | The fields. A count may name none, as three presets do. |
+| `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `job.query.orderBy[].field` | string | yes |  |
+| `job.query.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `job.query.select[]` | string |  |  |
 | `job.query.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `job.query.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `job.query.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.args` | list |  |  |
-| `job.query.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.field` | string |  |  |
-| `job.query.where.op` | string |  |  |
-| `job.query.where.param` | string |  |  |
-| `job.query.where.value` | list, or string, or number, or boolean |  |  |
-| `job.query.where.value[]` | string, or number, or boolean |  |  |
+| `job.query.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `job.query.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `job.query.where (shape 1).args` | list | yes |  |
+| `job.query.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `job.query.where (shape 2)` | object |  | not over one filter. |
+| `job.query.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 2).op` | one of `not` | yes |  |
+| `job.query.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `job.query.where (shape 3).field` | string | yes |  |
+| `job.query.where (shape 3).op` | one of `isNull` | yes |  |
+| `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `job.query.where (shape 4).field` | string | yes |  |
+| `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `job.query.where (shape 5).field` | string | yes |  |
+| `job.query.where (shape 5).op` | one of `in` | yes |  |
+| `job.query.where (shape 5).value` | list | yes |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `job.query.where (shape 6).field` | string | yes |  |
+| `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `job.query.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -1264,6 +1504,8 @@ Scope: `report:use`, `report:admin`.
 
 ## POST /report-api/jobs/{id}/cancel
 
+`cancelJob`
+
 **Cancel a job**
 
 A queued job becomes cancelled. A running job is asked to stop and is not returned in part.
@@ -1283,11 +1525,11 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -1295,30 +1537,45 @@ Scope: `report:use`, `report:admin`.
 | `job.query` | object |  |  |
 | `job.query.aggregate` | one of `count`, `null` |  |  |
 | `job.query.format` | one of `json`, `csv`, `pdf` |  |  |
-| `job.query.groupBy` | list |  |  |
+| `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
-| `job.query.orderBy` | list |  |  |
-| `job.query.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `job.query.orderBy[].field` | string |  |  |
-| `job.query.select` | list |  | The fields. A count may name none, as three presets do. |
+| `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `job.query.orderBy[].field` | string | yes |  |
+| `job.query.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `job.query.select[]` | string |  |  |
 | `job.query.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `job.query.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `job.query.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.args` | list |  |  |
-| `job.query.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.field` | string |  |  |
-| `job.query.where.op` | string |  |  |
-| `job.query.where.param` | string |  |  |
-| `job.query.where.value` | list, or string, or number, or boolean |  |  |
-| `job.query.where.value[]` | string, or number, or boolean |  |  |
+| `job.query.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `job.query.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `job.query.where (shape 1).args` | list | yes |  |
+| `job.query.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `job.query.where (shape 2)` | object |  | not over one filter. |
+| `job.query.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 2).op` | one of `not` | yes |  |
+| `job.query.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `job.query.where (shape 3).field` | string | yes |  |
+| `job.query.where (shape 3).op` | one of `isNull` | yes |  |
+| `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `job.query.where (shape 4).field` | string | yes |  |
+| `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `job.query.where (shape 5).field` | string | yes |  |
+| `job.query.where (shape 5).op` | one of `in` | yes |  |
+| `job.query.where (shape 5).value` | list | yes |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `job.query.where (shape 6).field` | string | yes |  |
+| `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `job.query.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -1342,6 +1599,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/jobs/{id}/result
+
+`getJobResult`
 
 **Download a result**
 
@@ -1367,8 +1626,8 @@ As `application/json`:
 | `fields[]` | string |  |  |
 | `rows` | list |  |  |
 | `rows[]` | map |  | One row: a field's id to what it holds. The keys are the fields the query selected, and `count` where it counted. |
-| `rows[].{key}` | list, or string, or number, or boolean |  |  |
-| `rows[].{key}[]` | string, or number, or boolean |  |  |
+| `rows[].{key}` | list, or string, or null, or number, or boolean |  |  |
+| `rows[].{key}[]` | string, or null, or number, or boolean |  |  |
 | `source` | string |  |  |
 | `truncated` | boolean |  |  |
 
@@ -1413,6 +1672,8 @@ As `text/csv`.
 
 ## GET /report-api/me
 
+`getMe`
+
 **What the user menu draws**
 
 The path of the signed-in person's own profile photo on this realm (#719), empty where they have none. It answers only about the token's person.
@@ -1447,6 +1708,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/openapi.json
+
+`getOpenApi`
 
 **This document**
 
@@ -1489,6 +1752,8 @@ Scope: `report:use`, `report:admin`.
 
 ## POST /report-api/queries
 
+`runQuery`
+
 **Run a query**
 
 Synchronous when the source is bounded and the limit fits the sync caps. Otherwise 202 and a job. mode sync over the cap is result_too_large. A body over the byte cap or a sync call over the time cap is refused whole.
@@ -1508,26 +1773,41 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `aggregate` | one of `count`, `null` |  |  |
 | `format` | one of `json`, `csv`, `pdf` |  |  |
-| `groupBy` | list |  |  |
+| `groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `groupBy[]` | string |  |  |
 | `limit` | integer |  |  |
-| `locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `mode` | one of `auto`, `sync`, `async` |  |  |
-| `orderBy` | list |  |  |
-| `orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `orderBy[].field` | string |  |  |
-| `select` | list |  | The fields. A count may name none, as three presets do. |
+| `orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `orderBy[].field` | string | yes |  |
+| `select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `select[]` | string |  |  |
 | `source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `where.args` | list |  |  |
-| `where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `where.field` | string |  |  |
-| `where.op` | string |  |  |
-| `where.param` | string |  |  |
-| `where.value` | list, or string, or number, or boolean |  |  |
-| `where.value[]` | string, or number, or boolean |  |  |
+| `where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `where (shape 1).args` | list | yes |  |
+| `where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `where (shape 1).op` | one of `and`, `or` | yes |  |
+| `where (shape 2)` | object |  | not over one filter. |
+| `where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `where (shape 2).op` | one of `not` | yes |  |
+| `where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `where (shape 3).field` | string | yes |  |
+| `where (shape 3).op` | one of `isNull` | yes |  |
+| `where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `where (shape 4).field` | string | yes |  |
+| `where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `where (shape 5).field` | string | yes |  |
+| `where (shape 5).op` | one of `in` | yes |  |
+| `where (shape 5).value` | list | yes |  |
+| `where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `where (shape 6).field` | string | yes |  |
+| `where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 
 **200**: The JSON, CSV or PDF body. JSON is an object with rows and truncated false. CSV is RFC 4180. PDF is PDF 1.4.
 
@@ -1539,8 +1819,8 @@ As `application/json`:
 | `fields[]` | string |  |  |
 | `rows` | list |  |  |
 | `rows[]` | map |  | One row: a field's id to what it holds. The keys are the fields the query selected, and `count` where it counted. |
-| `rows[].{key}` | list, or string, or number, or boolean |  |  |
-| `rows[].{key}[]` | string, or number, or boolean |  |  |
+| `rows[].{key}` | list, or string, or null, or number, or boolean |  |  |
+| `rows[].{key}[]` | string, or null, or number, or boolean |  |  |
 | `source` | string |  |  |
 | `truncated` | boolean |  |  |
 
@@ -1553,11 +1833,11 @@ As `text/csv`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -1565,30 +1845,45 @@ As `text/csv`.
 | `job.query` | object |  |  |
 | `job.query.aggregate` | one of `count`, `null` |  |  |
 | `job.query.format` | one of `json`, `csv`, `pdf` |  |  |
-| `job.query.groupBy` | list |  |  |
+| `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
-| `job.query.orderBy` | list |  |  |
-| `job.query.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `job.query.orderBy[].field` | string |  |  |
-| `job.query.select` | list |  | The fields. A count may name none, as three presets do. |
+| `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `job.query.orderBy[].field` | string | yes |  |
+| `job.query.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `job.query.select[]` | string |  |  |
 | `job.query.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `job.query.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `job.query.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.args` | list |  |  |
-| `job.query.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `job.query.where.field` | string |  |  |
-| `job.query.where.op` | string |  |  |
-| `job.query.where.param` | string |  |  |
-| `job.query.where.value` | list, or string, or number, or boolean |  |  |
-| `job.query.where.value[]` | string, or number, or boolean |  |  |
+| `job.query.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `job.query.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `job.query.where (shape 1).args` | list | yes |  |
+| `job.query.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `job.query.where (shape 2)` | object |  | not over one filter. |
+| `job.query.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `job.query.where (shape 2).op` | one of `not` | yes |  |
+| `job.query.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `job.query.where (shape 3).field` | string | yes |  |
+| `job.query.where (shape 3).op` | one of `isNull` | yes |  |
+| `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `job.query.where (shape 4).field` | string | yes |  |
+| `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `job.query.where (shape 5).field` | string | yes |  |
+| `job.query.where (shape 5).op` | one of `in` | yes |  |
+| `job.query.where (shape 5).value` | list | yes |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
+| `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `job.query.where (shape 6).field` | string | yes |  |
+| `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `job.query.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **400**: invalid_query, unknown_source is 404, unknown_field, unsupported_operation, unsupported_format or result_too_large.
 
@@ -1619,6 +1914,8 @@ As `text/csv`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/realms
+
+`getRealms`
 
 **The trust realms**
 
@@ -1662,6 +1959,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/schedules
 
+`getSchedules`
+
 **The scheduled definitions and their runs**
 
 Every definition that carries a schedule, with when it next runs, the occurrence it last took, the notes a skipped run left, and its most recent scheduled jobs. A report:use token sees the definitions it owns or is shared; report:admin sees every one in the realm and may name one owner with `owner` (a urn:uuid subject or a username). A report:use token that names another owner is refused with forbidden (403). Paged; `per` is at most 100.
@@ -1682,19 +1981,19 @@ Scope: `report:use`, `report:admin`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `owner` | string |  |  |
+| `owner` | string, or null |  |  |
 | `page` | integer |  |  |
 | `pages` | integer |  |  |
 | `per` | integer |  |  |
 | `schedules` | list |  |  |
 | `schedules[].definition` | object |  |  |
 | `schedules[].definition.failures` | list |  |  |
-| `schedules[].definition.failures[].at` | string |  |  |
+| `schedules[].definition.failures[].at` | string, or null |  |  |
 | `schedules[].definition.failures[].description` | string |  |  |
 | `schedules[].definition.id` | string |  |  |
-| `schedules[].definition.lastSlotAt` | string |  |  |
+| `schedules[].definition.lastSlotAt` | string, or null |  |  |
 | `schedules[].definition.name` | string |  |  |
-| `schedules[].definition.nextRunAt` | string |  |  |
+| `schedules[].definition.nextRunAt` | string, or null |  |  |
 | `schedules[].definition.notify` | boolean |  |  |
 | `schedules[].definition.owner` | string |  |  |
 | `schedules[].definition.ownerName` | string |  |  |
@@ -1702,11 +2001,11 @@ Scope: `report:use`, `report:admin`.
 | `schedules[].definition.scheduleEnabled` | boolean |  |  |
 | `schedules[].jobCount` | integer |  | How many scheduled jobs the definition has in all. |
 | `schedules[].jobs` | list |  | The most recent scheduled jobs, newest first, at most five. |
-| `schedules[].jobs[].byteSize` | integer |  |  |
-| `schedules[].jobs[].completedAt` | string |  |  |
-| `schedules[].jobs[].definitionId` | string |  |  |
-| `schedules[].jobs[].definitionName` | string |  |  |
-| `schedules[].jobs[].error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `schedules[].jobs[].byteSize` | integer, or null |  |  |
+| `schedules[].jobs[].completedAt` | string, or null |  |  |
+| `schedules[].jobs[].definitionId` | string, or null |  |  |
+| `schedules[].jobs[].definitionName` | string, or null |  |  |
+| `schedules[].jobs[].error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `schedules[].jobs[].fields` | list |  |  |
 | `schedules[].jobs[].fields[]` | string |  |  |
 | `schedules[].jobs[].format` | string |  |  |
@@ -1714,30 +2013,45 @@ Scope: `report:use`, `report:admin`.
 | `schedules[].jobs[].query` | object |  |  |
 | `schedules[].jobs[].query.aggregate` | one of `count`, `null` |  |  |
 | `schedules[].jobs[].query.format` | one of `json`, `csv`, `pdf` |  |  |
-| `schedules[].jobs[].query.groupBy` | list |  |  |
+| `schedules[].jobs[].query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `schedules[].jobs[].query.groupBy[]` | string |  |  |
 | `schedules[].jobs[].query.limit` | integer |  |  |
-| `schedules[].jobs[].query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `schedules[].jobs[].query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `schedules[].jobs[].query.mode` | one of `auto`, `sync`, `async` |  |  |
-| `schedules[].jobs[].query.orderBy` | list |  |  |
-| `schedules[].jobs[].query.orderBy[].dir` | one of `asc`, `desc` |  |  |
-| `schedules[].jobs[].query.orderBy[].field` | string |  |  |
-| `schedules[].jobs[].query.select` | list |  | The fields. A count may name none, as three presets do. |
+| `schedules[].jobs[].query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
+| `schedules[].jobs[].query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
+| `schedules[].jobs[].query.orderBy[].field` | string | yes |  |
+| `schedules[].jobs[].query.select` | list |  | The fields, at most 64, each once. A count may name none, as three presets do. |
 | `schedules[].jobs[].query.select[]` | string |  |  |
 | `schedules[].jobs[].query.source` | string | yes | One source, by its id in the catalog: users, groups, applications, federation, authMechanisms, auditEvents, authActivity, serviceMetrics, reportJobs, credentialHolders, attributeSources, postLoginProgress, passkeyHistory, passkeyCeremonies, authzenSubjects, authzenResources, authzenActions. An array is invalid_query. |
-| `schedules[].jobs[].query.where` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
-| `schedules[].jobs[].query.where.arg` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `schedules[].jobs[].query.where.args` | list |  |  |
-| `schedules[].jobs[].query.where.args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
-| `schedules[].jobs[].query.where.field` | string |  |  |
-| `schedules[].jobs[].query.where.op` | string |  |  |
-| `schedules[].jobs[].query.where.param` | string |  |  |
-| `schedules[].jobs[].query.where.value` | list, or string, or number, or boolean |  |  |
-| `schedules[].jobs[].query.where.value[]` | object |  | Nested deeper than this page draws. |
+| `schedules[].jobs[].query.where` | one of 6 shapes |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. |
+| `schedules[].jobs[].query.where (shape 1)` | object |  | and or or over between 1 and 16 filters. |
+| `schedules[].jobs[].query.where (shape 1).args` | list | yes |  |
+| `schedules[].jobs[].query.where (shape 1).args[]` | object |  | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `schedules[].jobs[].query.where (shape 1).op` | one of `and`, `or` | yes |  |
+| `schedules[].jobs[].query.where (shape 2)` | object |  | not over one filter. |
+| `schedules[].jobs[].query.where (shape 2).arg` | object | yes | A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter. The same shape as the member holding it. |
+| `schedules[].jobs[].query.where (shape 2).op` | one of `not` | yes |  |
+| `schedules[].jobs[].query.where (shape 3)` | object |  | isNull names the field and nothing else. |
+| `schedules[].jobs[].query.where (shape 3).field` | string | yes |  |
+| `schedules[].jobs[].query.where (shape 3).op` | one of `isNull` | yes |  |
+| `schedules[].jobs[].query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
+| `schedules[].jobs[].query.where (shape 4).field` | string | yes |  |
+| `schedules[].jobs[].query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
+| `schedules[].jobs[].query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
+| `schedules[].jobs[].query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
+| `schedules[].jobs[].query.where (shape 5).field` | string | yes |  |
+| `schedules[].jobs[].query.where (shape 5).op` | one of `in` | yes |  |
+| `schedules[].jobs[].query.where (shape 5).value` | list | yes |  |
+| `schedules[].jobs[].query.where (shape 5).value[]` | object |  | Nested deeper than this page draws. |
+| `schedules[].jobs[].query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
+| `schedules[].jobs[].query.where (shape 6).field` | string | yes |  |
+| `schedules[].jobs[].query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
+| `schedules[].jobs[].query.where (shape 6).param` | string | yes | The parameter's name, 1 to 64 characters, as a parameter bag's names are. |
 | `schedules[].jobs[].queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `schedules[].jobs[].source` | string |  |  |
 | `schedules[].jobs[].status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `schedules[].jobs[].submittedAt` | string |  |  |
+| `schedules[].jobs[].submittedAt` | string, or null |  |  |
 | `scope` | one of `mine`, `realm` |  |  |
 | `total` | integer |  |  |
 
@@ -1756,6 +2070,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/signals
+
+`getSignals`
 
 **This application's Shared Signals inbox**
 

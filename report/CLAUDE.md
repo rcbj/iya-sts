@@ -5,6 +5,15 @@
 source ids. Change an operation or a schema there, and it reaches the served document
 and the response checks.
 
+**Every operation carries an `operationId` since #1579 (2026-11-11)**, named as
+the other four documents name theirs (`getDefinitions`, `createDefinition`,
+`replaceDefinition`, `runDefinition`, `queueJob`, `getJobResult`, …). It was the
+only document without them, so `IyaApi.Report.Operations` was keyed by
+`METHOD path`; it is keyed by the id now, and each serving function in
+`report_api.ts` is typed by `ReportRequest<'getJobs'>` /
+`ReportAnswering<'getJobs'>`. A new operation owes one, unique in the
+document: the generator refuses an operation without it.
+
 ## WHAT A REQUEST MAY NAME (#1483, `/admin-api`'s #1476 rule)
 
 `reportRoute()` asks `reportShapeRefused()` first, after the token: the
@@ -66,12 +75,12 @@ and `docs/configuration.md`.
 | File | What it is |
 |---|---|
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
-| `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
+| `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. A definition, a share and a run's parameters are held to the model's `DefinitionWrite`, `ShareWrite` and `ParameterBag` here, at the door (#1579). A saved parameter's name (1 to 64 characters) is the model's `ParameterBag` `propertyNames` since the document became OpenAPI 3.1.0 (rcbj, #1579, 2026-11-11), and the hand check in `jobs.ts` is gone; the door finds the issue and `jobs.save()` refuses it where that check stood, so a request wrong in its definition id, schedule or document as well is still answered for those first. **A run's parameters are the same `ParameterBag`, and a filter's `param` is a name of 1 to 64 characters (`FilterParam`) — rcbj's decision on #1579, 2026-11-11, a deliberate change**: until then a run's body was `RunParameters`, unbounded in name, and a filter could name a 65-character parameter, so a run naming one was accepted. Now a run's bad name is refused at the run's door with the refusal its bag always had (400 `invalid_query` "Parameters are names and values.", `STS-REPORT-0004`), and a filter naming one is refused when saved for its query ("A parameter name is a string.", `STS-REPORT-0030`). **A definition stored before then with a long `param` is not migrated**: every answer is held to the model, so its document would make the whole definitions list a 500; `reportDefinitionView()` answers such a row without its document and parameters (noted once per row, `STS-REPORT-0060`), so the owner can replace or delete it, and a run of it is refused 400 for its query, a schedule skips it with a note. `tests/report_parameter_names.js` holds all of it. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
 | `catalog.ts` | The seventeen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
 | `passkey_ceremonies.ts` | The `passkeyCeremonies` source's projection of the ceremony audit rows (#1107). A library; reaches `authn/webauthn_ceremonies` lazily. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
-| `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
+| `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. The document's SHAPE is `models/api/report.tsp`'s `QueryDocument` and `Filter*` forms, checked through `ModelZod` (#1579); the catalog, the field types, parameters, the filter's depth and the size caps are checked here, and every refusal keeps its code and sentence. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
 | `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |

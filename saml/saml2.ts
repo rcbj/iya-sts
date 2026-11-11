@@ -65,6 +65,9 @@ import stats = require('../common/admin_stats');
 // cycle with this file. See each one's header.
 import documentSettings = require('./document_settings');
 import authnContext = require('./authn_context');
+// The vocabularies and the assertion's order are the model's (#1579):
+// `models/saml/saml2.tsp`. A leaf.
+import SamlModel = require('./saml_model');
 /**
  * The XML Encryption content ciphers, `common/crypto.js`'s table.
  */
@@ -355,13 +358,15 @@ class Saml2Assertions {
     const delegates = Array.isArray(opts.delegates) ? opts.delegates : [];
     const delegationEl = delegates.length
       ? '<saml:Condition xmlns:xsi="http://www.w3.org/2001/XMLSchema-' +
-        'instance" xmlns:del="urn:oasis:names:tc:SAML:2.0:conditions:' +
-        'delegation" xsi:type="del:DelegationRestrictionType">' +
+        'instance" xmlns:del="' +
+        SamlModel.term('saml2.condition', 'delegationNamespace') +
+        '" xsi:type="' + SamlModel.term('saml2.condition', 'delegationType') +
+        '">' +
         delegates.map(function (one) {
           return '<del:Delegate' + (one.instant
             ? ' DelegationInstant="' + xmlEscape(one.instant) + '"' : '') +
             '><saml:NameID Format="' + xmlEscape(one.format ||
-              'urn:oasis:names:tc:SAML:2.0:nameid-format:entity') + '">' +
+              SamlModel.term('saml2.nameIdFormat', 'entity')) + '">' +
             xmlEscape(one.nameId) + '</saml:NameID></del:Delegate>';
         }).join('') + '</saml:Condition>'
       : '';
@@ -428,7 +433,7 @@ class Saml2Assertions {
     // default rather than becoming what a Web SSO service provider asked for.
     // A caller that was asked for a format passes it.
     const nameIdFormat = opts.nameIdFormat ||
-      'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified';
+      SamlModel.term('saml2.nameIdFormat', 'unspecified');
     const nameIdValue = opts.nameIdValue == null ? subject : opts.nameIdValue;
     // <SubjectConfirmationData>, which the Web Browser SSO profile requires and
     // the other two callers have no request to answer. Built as an
@@ -441,48 +446,65 @@ class Saml2Assertions {
     // one. Two iso() calls are two Date.now() reads, and the confirmation and
     // the Conditions then disagree by a millisecond (2026-11-01,
     // wsfed_saml2_token). The string written here is the string on Conditions.
+    //
+    // EVERY ELEMENT BELOW IS WRITTEN IN THE MODEL'S ORDER (#1579): each
+    // start tag's attributes through `SamlModel.attributes()` and each
+    // element's children through `SamlModel.children()`, from
+    // `models/saml/saml2.tsp`, where the schema's sequence is stated once.
     const scd = opts.subjectConfirmation;
     const confirmUntil = scd ? (scd.notOnOrAfter || exp) : '';
+    const bearer = SamlModel.term('saml2.confirmation', 'bearer');
     const confirmation = scd
       ? '<saml:SubjectConfirmation ' +
-          'Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">' +
+          'Method="' + bearer + '">' +
           '<saml:SubjectConfirmationData' +
-          ' NotOnOrAfter="' + xmlEscape(confirmUntil) + '"' +
-          (scd.recipient ?
-           ' Recipient="' + xmlEscape(scd.recipient) + '"' : '') +
-          (scd.inResponseTo ?
-           ' InResponseTo="' + xmlEscape(scd.inResponseTo) + '"' : '') +
+          SamlModel.attributes('saml2.SubjectConfirmationData', {
+            notOnOrAfter: confirmUntil, recipient: scd.recipient,
+            inResponseTo: scd.inResponseTo }) +
           '/></saml:SubjectConfirmation>'
       : '<saml:SubjectConfirmation ' +
-        'Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"/>';
+        'Method="' + bearer + '"/>';
     const sessionIndex = opts.sessionIndex || id;
     const authnInstant = opts.authnInstant || now;
     const authnStatement = opts.attributeQuery ? ''
-      : '<saml:AuthnStatement ' +
-        'AuthnInstant="' + xmlEscape(authnInstant) + '" ' +
-            'SessionIndex="' +
-          xmlEscape(sessionIndex) + '">' +
-        '<saml:AuthnContext><saml:AuthnContextClassRef>' +
-          xmlEscape(authnContextClassRef) +
-        '</saml:AuthnContextClassRef></saml:AuthnContext>' +
+      : '<saml:AuthnStatement' +
+        SamlModel.attributes('saml2.AuthnStatement', {
+          authnInstant: authnInstant, sessionIndex: sessionIndex }) + '>' +
+        SamlModel.children('saml2.AuthnStatement', {
+          authnContext: '<saml:AuthnContext><saml:AuthnContextClassRef>' +
+            xmlEscape(authnContextClassRef) +
+            '</saml:AuthnContextClassRef></saml:AuthnContext>' }) +
         '</saml:AuthnStatement>';
-    const xml =
-      '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"' +
-        ' ID="' + id + '" Version="2.0" IssueInstant="' + now + '">' +
-        '<saml:Issuer>' + xmlEscape(issuer) + '</saml:Issuer>' +
-        '<saml:Subject><saml:NameID' +
+    const nameIdEl = '<saml:NameID' +
           (opts.nameQualifier ? ' NameQualifier="' +
                                 xmlEscape(opts.nameQualifier) + '"' : '') +
           (opts.spNameQualifier ? ' SPNameQualifier="' +
                                   xmlEscape(opts.spNameQualifier) + '"' : '') +
           ' Format="' + xmlEscape(nameIdFormat) + '">' +
-          xmlEscape(nameIdValue) + '</saml:NameID>' +
-        (opts.attributeQuery ? '' : confirmation) + '</saml:Subject>' +
-        '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +
-        '">' + delegationEl + audienceEl + '</saml:Conditions>' +
-        authnStatement +
-        '<saml:AttributeStatement>' + attributeEls +
-        '</saml:AttributeStatement></saml:Assertion>';
+          xmlEscape(nameIdValue) + '</saml:NameID>';
+    const xml =
+      '<saml:Assertion xmlns:saml="' +
+        SamlModel.term('saml2.namespace', 'assertion') + '"' +
+        SamlModel.attributes('saml2.Assertion', { id: id,
+                                                  issueInstant: now }) +
+        '>' +
+        SamlModel.children('saml2.Assertion', {
+          issuer: '<saml:Issuer>' + xmlEscape(issuer) + '</saml:Issuer>',
+          subject: '<saml:Subject>' +
+            SamlModel.children('saml2.Subject', {
+              nameId: nameIdEl,
+              subjectConfirmation: opts.attributeQuery ? '' : confirmation
+            }) + '</saml:Subject>',
+          conditions: '<saml:Conditions' +
+            SamlModel.attributes('saml2.Conditions', {
+              notBefore: notBefore, notOnOrAfter: exp }) + '>' +
+            SamlModel.children('saml2.Conditions', {
+              condition: delegationEl, audienceRestriction: audienceEl }) +
+            '</saml:Conditions>',
+          authnStatement: authnStatement,
+          attributeStatement: '<saml:AttributeStatement>' + attributeEls +
+            '</saml:AttributeStatement>'
+        }) + '</saml:Assertion>';
     // Counted here rather than at the call sites: WS-Trust and WS-Federation
     // both come through this function, so this counts every SAML 2.0 assertion
     // instead of every one somebody remembered to count. `exp` is the

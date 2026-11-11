@@ -18,45 +18,32 @@
 //   1. `validation.checkDocument()` — the service-wide SANITISATION of any JSON
 //      body: bounded depth, bounded key count, and no prototype-polluting
 //      member names (`__proto__`, `constructor`, `prototype`) at any depth.
-//   2. **these schemas** — the SHAPE: every known member's JSON type, a length
-//      cap on every string, an item cap on every array and a member cap on
-//      every object, URI formats where RFC 9635 says "absolute URI", and NO
-//      control characters in any string. That last one is sanitisation too: a
-//      label, a class_id or a display name is echoed onto the approval page,
-//      the audit log and the console, and a C0 control character in it is never
-//      meaningful.
+//   2. **these schemas** — the SHAPE, which since #1579 is the MODEL's
+//      (`models/gnap/gnap.tsp`, rendered by `models/lib/gnap_lib.mjs`): every
+//      known member's JSON type, a length cap on every string, an item cap on
+//      every array and a member cap on every object, URI formats where RFC
+//      9635 says "absolute URI", and NO control characters in any string.
+//      That last one is sanitisation too: a label, a class_id or a display
+//      name is echoed onto the approval page, the audit log and the console,
+//      and a C0 control character in it is never meaningful.
 //   3. `gnap_request.ts`'s walk — the SEMANTICS, refused with the GNAP error
 //      code the specification names: a flag twice is `invalid_flag`, a missing
 //      label in a multi-token request is `invalid_request`, a key in two
 //      formats is `invalid_client`.
 //
-// **WHICH IS WHY `required` AND `enum` ARE NOT IN THESE SCHEMAS.** A schema
-// that enforced `required: ["client"]` would answer a request with no client as
-// a generic shape error — `invalid_request`, "must have required property" —
-// where section 2.3 makes it `invalid_client`, and an `enum` on `flags` would
-// turn section 2.1.1's `invalid_flag` into the same. The walk refuses both, by
-// name, with the right code; the schema would pre-empt it with a worse answer.
-// It is the trade `mgmt-api/admin_api.ts`'s `structureOnly()` made, for this
-// reason.
-//
-// **`additionalProperties` IS OPEN WHERE RFC 9635 HAS AN EXTENSION REGISTRY** —
-// the grant request (section 10.3), the client (10.7), its display (10.8), the
-// subject request (10.5), a start mode object (10.9), the hints (10.11), a
-// proof object (10.16) and an access right (section 8: "API-specific fields")
-// — because refusing a registered extension this implementation does not know
-// would refuse a conforming client. It is CLOSED where the document is fixed:
-// the continuation body (section 5.1), the rotation body (6.1.1) and the finish
-// object (2.5.2).
+// Why `required` and enumerations are not in the schemas, and which objects
+// are open, is argued in the model's header, beside the declarations it is
+// about. This module compiles what the model rendered and names the most
+// useful error.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `GnapSchemas` takes the logger and the schemas compiled at load
-// through its constructor, and the two schema builders are static methods of
-// `SchemaParts`. The tables are still built and compiled at require time, for
-// the reason given above `COMPILED`. The module still exports `SCHEMAS` and
-// `validate` as FACADES forwarding to the instance the composition root builds
-// (#50, R2), for `gnap_request.ts`. A process that loads this module without
+// through its constructor. The tables are read from the model and compiled
+// at require time, for the reason given above `COMPILED`. The module still
+// exports `SCHEMAS` and `validate` as FACADES forwarding to the instance the
+// composition root builds (#50, R2), for `gnap_request.ts`. A process that loads this module without
 // the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
@@ -66,304 +53,20 @@ import Ajv2020Module = require('ajv/dist/2020');
 import addFormatsModule = require('ajv-formats');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
-import validation = require('../common/validation');
+import GnapModel = require('./gnap_model');
 
 const Ajv2020: any = Ajv2020Module;
 const addFormats: any = addFormatsModule;
-const log = helpers.log;
 
-const CAP = validation.CAP;
+// THE SCHEMAS ARE THE MODEL'S (#1579): `models/gnap/gnap.tsp` renders each
+// document, its shared types as `$defs`, and `gnap_model.ts` puts
+// `common/validation.js`'s caps in. Until #1579 they were written here by
+// hand, and the rendered ones are byte for byte what was written.
+const SCHEMAS: Record<string, any> = GnapModel.schemas();
 
-// A string with no C0 control character and no DEL.
-const SAFE = '^[^\\u0000-\\u001f\\u007f]*$';
-
-// The two schema builders the tables below are written with. Static, and
-// reaching for the module's logger, because they run while the tables are
-// built at load — before any instance exists.
-class SchemaParts {
-  static str(max?: number) {
-    log.debug("Entering SchemaParts.str().");
-    log.debug("Leaving SchemaParts.str().");
-    return { type: 'string', maxLength: max || CAP.DEFAULT, pattern: SAFE };
-  }
-
-  static strings(maxItems: number, maxLength?: number) {
-    log.debug("Entering SchemaParts.strings().");
-    log.debug("Leaving SchemaParts.strings().");
-    return { type: 'array', maxItems: maxItems,
-             items: SchemaParts.str(maxLength || CAP.URI) };
-  }
-}
-
-const str = SchemaParts.str;
-const strings = SchemaParts.strings;
-
-const DEFS: Record<string, any> = {
-  uri: { type: 'string', maxLength: CAP.URI, format: 'uri', pattern: SAFE },
-  // A logo may be a data: image (section 2.3.2), which is legitimately long.
-  logoUri: { type: 'string', maxLength: CAP.TEXT,
-             pattern: '^(data:image/[A-Za-z0-9.+-]+;base64,' +
-                      '[A-Za-z0-9+/=]*|[A-Za-z][A-Za-z0-9+.-]*:[^\\u0000-\\u001f\\u007f\\s]*)$' },
-  accessRight: {
-    anyOf: [
-      str(CAP.URI),
-      {
-        type: 'object', maxProperties: 64,
-        properties: {
-          type: str(CAP.URI),
-          actions: strings(100, CAP.NAME),
-          locations: strings(100, CAP.URI),
-          datatypes: strings(100, CAP.NAME),
-          privileges: strings(100, CAP.NAME),
-          identifier: str(CAP.URI)
-        },
-        additionalProperties: true
-      }
-    ]
-  },
-  access: { type: 'array', maxItems: 200,
-            items: { $ref: '#/$defs/accessRight' } },
-  proof: {
-    anyOf: [
-      str(64),
-      { type: 'object', maxProperties: 16,
-        properties: { method: str(64), alg: str(64),
-                      'content-digest-alg': str(64) },
-        additionalProperties: true }
-    ]
-  },
-  jwk: {
-    type: 'object', maxProperties: 32,
-    properties: {
-      kty: str(16), alg: str(64), kid: str(CAP.IDENTIFIER), crv: str(32),
-      use: str(16),
-      x: str(512), y: str(512), n: str(4096), e: str(64),
-      x5c: { type: 'array', maxItems: 10, items: str(CAP.TEXT) }
-    },
-    additionalProperties: true
-  },
-  key: {
-    anyOf: [
-      str(CAP.IDENTIFIER),
-      {
-        type: 'object', maxProperties: 16,
-        properties: {
-          proof: { $ref: '#/$defs/proof' },
-          jwk: { $ref: '#/$defs/jwk' },
-          cert: { type: 'string', maxLength: CAP.TEXT,
-                  pattern: '^[A-Za-z0-9+/=\\s-]*$' },
-          'cert#S256': { type: 'string', maxLength: 128,
-                         pattern: '^[A-Za-z0-9_-]*$' }
-        },
-        additionalProperties: true
-      }
-    ]
-  },
-  subId: {
-    type: 'object', maxProperties: 16,
-    properties: {
-      format: str(64), uri: str(CAP.URI), email: str(CAP.NAME),
-      iss: str(CAP.URI),
-      sub: str(CAP.URI), id: str(CAP.URI), phone_number: str(32), url: str(
-          CAP.URI),
-      identifiers: { type: 'array', maxItems: 20,
-                     items: { type: 'object', maxProperties: 16 } }
-    },
-    additionalProperties: true
-  },
-  subIds: { type: 'array', maxItems: 20, items: { $ref: '#/$defs/subId' } },
-  tokenRequest: {
-    type: 'object', maxProperties: 32,
-    properties: {
-      access: { $ref: '#/$defs/access' },
-      label: str(CAP.NAME),
-      flags: strings(16, 64)
-    },
-    additionalProperties: true
-  },
-  accessToken: {
-    anyOf: [
-      { $ref: '#/$defs/tokenRequest' },
-      { type: 'array', maxItems: 32, items: { $ref: '#/$defs/tokenRequest' } }
-    ]
-  },
-  subject: {
-    type: 'object', maxProperties: 16,
-    properties: {
-      sub_id_formats: strings(20, 64),
-      assertion_formats: strings(10, 64),
-      sub_ids: { $ref: '#/$defs/subIds' }
-    },
-    additionalProperties: true
-  },
-  client: {
-    anyOf: [
-      str(CAP.IDENTIFIER),
-      {
-        type: 'object', maxProperties: 32,
-        properties: {
-          key: { $ref: '#/$defs/key' },
-          class_id: str(CAP.IDENTIFIER),
-          display: {
-            type: 'object', maxProperties: 16,
-            properties: { name: str(CAP.NAME), uri: { $ref: '#/$defs/uri' },
-                          logo_uri: { $ref: '#/$defs/logoUri' } },
-            additionalProperties: true
-          }
-        },
-        additionalProperties: true
-      }
-    ]
-  },
-  user: {
-    anyOf: [
-      str(CAP.TOKEN),
-      {
-        type: 'object', maxProperties: 16,
-        properties: {
-          sub_ids: { $ref: '#/$defs/subIds' },
-          assertions: {
-            type: 'array', maxItems: 10,
-            items: { type: 'object', maxProperties: 8,
-                     properties: { format: str(64), value: str(CAP.LARGE) },
-                     additionalProperties: true }
-          }
-        },
-        additionalProperties: true
-      }
-    ]
-  },
-  interact: {
-    type: 'object', maxProperties: 16,
-    properties: {
-      start: {
-        type: 'array', maxItems: 16,
-        items: { anyOf: [str(64), { type: 'object', maxProperties: 16,
-                                    properties: { mode: str(64) },
-                                    additionalProperties: true }] }
-      },
-      finish: {
-        type: 'object',
-        properties: { method: str(64), uri: { $ref: '#/$defs/uri' },
-                      nonce: str(256),
-                      hash_method: str(64) },
-        additionalProperties: false
-      },
-      hints: {
-        type: 'object', maxProperties: 16,
-        properties: { ui_locales: strings(32, 64) },
-        additionalProperties: true
-      },
-      // #738. Not an RFC 9635 member: the short names phr and phrh, sent
-      // as a string or as an array (a repeated value). 256 so an EAP URI
-      // is a token the walker can decline, not a schema refusal.
-      // Unknown siblings stay accepted (additionalProperties below).
-      acr: { anyOf: [str(256), { type: 'array', maxItems: 16,
-                                 items: str(256) }] }
-    },
-    additionalProperties: true
-  },
-  resourceServer: {
-    anyOf: [
-      str(CAP.IDENTIFIER),
-      { type: 'object', maxProperties: 16,
-        properties: { key: { $ref: '#/$defs/key' } },
-        additionalProperties: true }
-    ]
-  },
-  // A GNAP access token value: token68 (RFC 9110 section 11.2), which every
-  // format this AS issues satisfies. A ZCAP is the long one.
-  tokenValue: { type: 'string', maxLength: CAP.TEXT,
-                pattern: '^[A-Za-z0-9._~+/-]*=*$' }
-};
-
-const SCHEMAS: Record<string, any> = {
-  // RFC 9635 section 2 (plus RFC 9767 section 4's existing_access_token).
-  grantRequest: {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:iya-sts:gnap:grant-request',
-    type: 'object', maxProperties: 64,
-    properties: {
-      access_token: { $ref: '#/$defs/accessToken' },
-      subject: { $ref: '#/$defs/subject' },
-      client: { $ref: '#/$defs/client' },
-      user: { $ref: '#/$defs/user' },
-      interact: { $ref: '#/$defs/interact' },
-      interact_ref: str(256),
-      existing_access_token: { $ref: '#/$defs/tokenValue' }
-    },
-    additionalProperties: true,
-    $defs: DEFS
-  },
-  // Section 5.1: nothing, or the interaction reference.
-  continuation: {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:iya-sts:gnap:continuation',
-    type: 'object',
-    properties: { interact_ref: { type: 'string', maxLength: 256,
-                                  pattern: '^[A-Za-z0-9._~-]*$' } },
-    additionalProperties: true,
-    $defs: DEFS
-  },
-  // Section 5.3.
-  modification: {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:iya-sts:gnap:modification',
-    type: 'object', maxProperties: 64,
-    properties: {
-      access_token: { $ref: '#/$defs/accessToken' },
-      subject: { $ref: '#/$defs/subject' },
-      user: { $ref: '#/$defs/user' },
-      interact: { $ref: '#/$defs/interact' }
-    },
-    additionalProperties: true,
-    $defs: DEFS
-  },
-  // Section 6.1.1.
-  rotation: {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:iya-sts:gnap:rotation',
-    type: 'object', maxProperties: 4,
-    properties: { key: { $ref: '#/$defs/key' } },
-    additionalProperties: true,
-    $defs: DEFS
-  },
-  // RFC 9767 section 3.3.
-  introspection: {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:iya-sts:gnap:introspection',
-    type: 'object', maxProperties: 32,
-    properties: {
-      access_token: { $ref: '#/$defs/tokenValue' },
-      proof: str(64),
-      resource_server: { $ref: '#/$defs/resourceServer' },
-      access: { $ref: '#/$defs/access' }
-    },
-    additionalProperties: true,
-    $defs: DEFS
-  },
-  // RFC 9767 section 3.4.
-  registration: {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'urn:iya-sts:gnap:registration',
-    type: 'object', maxProperties: 32,
-    properties: {
-      access: { $ref: '#/$defs/access' },
-      resource_server: { $ref: '#/$defs/resourceServer' },
-      token_formats_supported: strings(16, 64),
-      token_introspection_required: { type: 'boolean' },
-      // THIS SERVICE'S EXTENSION (#432 phase 5): the owner of each
-      // identifier in the set, an identifier to the DN of a person or a
-      // group — `gnap_ownership.ts`. `gnap_rs.ts`'s `register()` holds each
-      // key to an identifier the set carries and each value to an entry.
-      resource_owners: { type: 'object', maxProperties: 256,
-                         propertyNames: { maxLength: 1024 },
-                         additionalProperties: str(1024) }
-    },
-    additionalProperties: true,
-    $defs: DEFS
-  }
-};
+// A string with no C0 control character and no DEL: the model's pattern for
+// every string that states none.
+const SAFE = GnapModel.SAFE;
 
 // Compiled ONCE, at require time, so a schema that does not compile fails the
 // service loudly at start rather than the first request that needs it.

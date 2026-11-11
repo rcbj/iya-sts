@@ -40,11 +40,13 @@ model PolicyPassword {
   })
   pwdAttribute?: (string)[];
   @attr(#{
+    kind: "single",
     what: "The shortest password this service will set, counted in characters (Unicode code points, so an emoji is one). The attribute is draft-behera-ldap-password-policy's. Twelve is the default; NIST SP 800-63B asks for at least 8, and 15 where a password is the only factor.",
     field: #{key: "minLength", type: "int", dflt: 12, min: 1, max: 1024, label: "Minimum length", unit: "characters"}
   })
   pwdMinLength?: int32;
   @attr(#{
+    kind: "single",
     what: "How many of a person's PREVIOUS passwords are remembered and refused. The current password is always refused as well while this is above 0, so 5 means a new password may be none of the last six. 0 turns the rule off. The draft's attribute, with the draft's meaning. Each remembered password is kept as the hash it was already stored as (argon2id or scrypt), in pwdHistory on the person's own entry, and checking a new password costs one hash comparison per one remembered.",
     field: #{key: "history", type: "int", dflt: 5, min: 0, max: 24, label: "Previous passwords that may not be reused", unit: "passwords"}
   })
@@ -52,21 +54,25 @@ model PolicyPassword {
   // NO COMPOSITION RULES (#1444, ASVS 5.0.0 6.2.5). The three rows stay so the
   // entry's shape does not change; crossFieldProblems() refuses any other value.
   @attr(#{
+    kind: "single",
     what: "Always 0. A policy that asks for symbols is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted, so length is what this policy asks for.",
     field: #{key: "minSymbols", type: "int", dflt: 0, min: 0, max: 16, label: "Minimum number of symbols", unit: "symbols"}
   })
   stsPwdMinSymbols?: int32;
   @attr(#{
+    kind: "single",
     what: "Always off. A policy that requires an uppercase letter is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted.",
     field: #{key: "requireUppercase", type: "bool", dflt: false, label: "Require an uppercase letter"}
   })
   stsPwdRequireUppercase?: boolean;
   @attr(#{
+    kind: "single",
     what: "Always off. A policy that requires a number is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted.",
     field: #{key: "requireDigit", type: "bool", dflt: false, label: "Require a number"}
   })
   stsPwdRequireDigit?: boolean;
   @attr(#{
+    kind: "single",
     what: "How long a password this service MAKES UP is — for a new user created from the console or /admin-api, an operator's Generate, and the product-mode bootstrap account. It must be at least the minimum length and at least twice the symbol count plus two. Twenty characters from a 90-character alphabet is about 130 bits.",
     field: #{key: "generatedLength", type: "int", dflt: 20, min: 12, max: 128, label: "Length of a generated password", unit: "characters"}
   })
@@ -88,41 +94,49 @@ model PolicyPassword {
   // OWASP's minimum the default.
   // -------------------------------------------------------------------------
   @attr(#{
+    kind: "single",
     what: "The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying; one that is not in this algorithm with these parameters is hashed again at the person's next verified sign-in. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt.",
     field: #{key: "hashAlgorithm", type: "enum", dflt: "scrypt", optional: true, label: "Password hash algorithm"}
   })
   stsPwdHashAlgorithm?: string;
   @attr(#{
+    kind: "single",
     what: "The memory one argon2id hash uses, in kibibytes (m). 19456 KiB (19 MiB) is OWASP's minimum and the least this service will write. Raising it makes a stolen store slower to attack, and every sign-in uses that much more memory.",
     field: #{key: "argon2Memory", type: "int", optional: true, label: "argon2id memory", unit: "KiB"}
   })
   stsPwdArgon2Memory?: int32;
   @attr(#{
+    kind: "single",
     what: "How many passes argon2id makes over its memory (t). 2 is OWASP's minimum at 19 MiB; each pass adds the same time again.",
     field: #{key: "argon2Iterations", type: "int", optional: true, label: "argon2id iterations", unit: "passes"}
   })
   stsPwdArgon2Iterations?: int32;
   @attr(#{
+    kind: "single",
     what: "How many lanes argon2id divides its memory into (p). It is part of the hash, not a thread count: node computes a hash on one thread whatever this says. 1 is OWASP's figure.",
     field: #{key: "argon2Parallelism", type: "int", optional: true, label: "argon2id parallelism", unit: "lanes"}
   })
   stsPwdArgon2Parallelism?: int32;
   @attr(#{
+    kind: "single",
     what: "scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default, 2^15 with p=1, is below it.",
     field: #{key: "scryptLogN", type: "int", optional: true, label: "scrypt cost (log2 of N)"}
   })
   stsPwdScryptLogN?: int32;
   @attr(#{
+    kind: "single",
     what: "scrypt's block size for a newly stored password while the algorithm is scrypt. Memory is about 128 × N × r bytes; 8 is the figure RFC 7914 and OWASP give.",
     field: #{key: "scryptBlockSize", type: "int", optional: true, label: "scrypt block size (r)"}
   })
   stsPwdScryptBlockSize?: int32;
   @attr(#{
+    kind: "single",
     what: "scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts.",
     field: #{key: "scryptParallelism", type: "int", optional: true, label: "scrypt parallelism (p)"}
   })
   stsPwdScryptParallelism?: int32;
   @attr(#{
+    kind: "single",
     what: "Which named password policy wins where several are named for one person: the lowest, from 1 to 1000.",
     selector: #{key: "precedence"}
   })

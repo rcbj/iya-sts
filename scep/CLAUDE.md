@@ -23,6 +23,23 @@ What a certificate may be issued for, what goes in it and where it is kept are
 and `common/CLAUDE.md` and that file's header argue it. The counters are
 `common/enrollment_monitor.ts`'s.
 
+## WHAT SCEP TAKES AND ANSWERS IS THE MODEL'S (#1579, 2026-11-10)
+
+SCEP's messages are CMS, and the DER work stays in `scep_cms.ts`.
+**`models/enrollment/scep.tsp` states the facts the code reads**: the query
+every request carries (`operation` one of the operations, `message` bounded
+and possibly empty; a parameter the model does not name is dropped), the
+four operations with their methods (only one that answers POST may be POSTed;
+the 405's `Allow` is the operation's methods) and media types, the
+capabilities GetCACaps announces in order (`CAPABILITIES`), and the values
+of a CertRep's signed attributes: `MESSAGE_TYPES`, `PKI_STATUS` and
+`FAIL_INFO` are the model's registers, read by `scep_cms.ts`. What stays in
+code: everything about a message's bytes, the algorithms (`DIGESTS`,
+`SIGNATURES`, `CIPHERS`, the OIDs), which failInfo a core refusal maps to,
+the transaction store and every decision the core makes.
+`tests/enrollment_model_wire.js` holds every operation's answer, each
+refusal and the CertRep values to the record taken before the switch.
+
 ## The decisions
 
 ### The authorization is the challenge, and the principal is the entry it names

@@ -116,6 +116,7 @@ import countryCodes = require('../common/country_codes');
 // The error codes (common/error_codes.js). A LEAF that requires nothing, so it
 // adds nothing to the short list of what this library may require.
 import errorCodes = require('../common/error_codes');
+import DomainMap = require('../common/domain_map');
 
 // One row of the catalogue — see THE CATALOGUE below.
 interface CatalogueRow {
@@ -1392,9 +1393,10 @@ class VcClaims {
     const { log } = this.deps;
     log.debug("Entering VcClaims.updatedAtOf().");
     const attributes = this.directoryAttributes(name);
-    const stamp = attributes && [].concat(attributes.modifytimestamp ||
-                                          attributes.createtimestamp ||
-                                          [])[0];
+    // The two stamps are DirectoryEntry's (#1579).
+    const stamp = attributes && (DomainMap.fieldOf('DirectoryEntry',
+      'modifyTimestamp', attributes) || DomainMap.fieldOf('DirectoryEntry',
+      'createTimestamp', attributes));
     const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(
       String(stamp || ''));
     if (!m) {

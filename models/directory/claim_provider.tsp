@@ -33,8 +33,14 @@ namespace IyaSts.Directory;
   ]
 })
 model ClaimProvider {
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The claims provider's whole record as one JSON value: its issuer, endpoints, client identifier, authentication method, scope, the claims it answers and how they are delivered. Written by the console and the management API."
+  })
   stsClaimProviderData?: DirectoryJson;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The client secret this service presents to the claims provider, sealed where a key-encryption key is configured. Withheld from every directory read."
+  })
   stsClaimProviderSecret?: string;
 }

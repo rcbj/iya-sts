@@ -104,6 +104,7 @@ import helpers = require('./helpers');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+import DomainMap = require('./domain_map');
 // The sentences `describe()` makes are filled from SENTENCES below, so the
 // server can translate them into a console reader's language (#543).
 import serverProse = require('./server_prose');
@@ -575,7 +576,9 @@ class PostLoginPolicy {
       inherited: found.from === 'default-realm',
       from: found.from,
       dn: entry ? entry.dn : '',
-      description: entry ? String(this.firstValue(at, 'description')) : '',
+      // The description is the concept's (#1579).
+      description: entry ? String((DomainMap.fieldOf('PostLoginPolicy',
+        'description', at) || [])[0] || '') : '',
       sources: sources,
       problems: problems,
       // It asks; in force in both modes.

@@ -76,6 +76,7 @@
 import helpers = require('../common/helpers');
 import model = require('../xacml/xacml_model');
 import rowsGrammar = require('../xacml/xacml_attribute_rows');
+import authzenModel = require('./authzen_model');
 
 const { log } = helpers;
 
@@ -127,15 +128,13 @@ const RESERVED_PREFIX = rowsGrammar.RESERVED_PREFIX;
 const MAX_DEPTH = rowsGrammar.MAX_DEPTH;
 const MAX_ID_LENGTH = rowsGrammar.MAX_ID_LENGTH;
 
-// The context members the adapter reads itself (the header):
-// `application`, and since #1177 the Obligations Profile's
-// `supported_obligations`, the PEP's declaration of what it can carry out.
-const RESERVED_CONTEXT = Object.freeze(['application',
-                                        'supported_obligations',
-                                        // The Access Request and Approval
-                                        // Profile's (#1180), verified by the
-                                        // adapter and never a property.
-                                        'approval']);
+// The context members the adapter reads itself (the header): the members
+// of `context` the evaluation request itself declares in the model
+// (`models/authzen/authzen.tsp`'s Context, #1579) — `application`, the
+// Obligations Profile's `supported_obligations` (#1177) and the Access
+// Request and Approval Profile's `approval` (#1180), each verified by the
+// adapter and never a property — in the order the request checks them.
+const RESERVED_CONTEXT = Object.freeze(authzenModel.reservedContext());
 
 // THE CONTEXT MEMBERS THE TOKEN-EXCHANGE BINDING'S FIXED RULES READ (#1181;
 // rcbj, 2026-10-30: the built-in conversion rules are fixed, "like the five

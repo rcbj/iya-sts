@@ -37,50 +37,62 @@ model ServiceAccount {
 })
 model ServiceAccountOnPerson {
   @attr(#{
+    kind: "single",
     what: "TRUE on a service account. Absent: an ordinary person. Asked through common/service_accounts.ts's isServiceAccount(), never read directly."
   })
   stsServiceAccount?: DirectoryBoolean;
   @attr(#{
+    kind: "multi",
     what: "The DN of a person or group answerable for the account; one value per owner."
   })
   stsServiceAccountOwner?: (DirectoryDn)[];
   @attr(#{
+    kind: "single",
     what: "The DN of the application entry (a push destination) a rotated password is written to."
   })
   stsSecretDestination?: string;
   @attr(#{
+    kind: "single",
     what: "The name or path of the secret at that destination. It must already exist: a push never creates one."
   })
   stsSecretName?: string;
   @attr(#{
+    kind: "single",
     what: "When the password was last rotated (GeneralizedTime)."
   })
   stsPasswordRotatedAt?: DirectoryTime;
   @attr(#{
+    kind: "single",
     what: "The previous password's scrypt hash, accepted until stsPreviousPasswordExpires. Withheld from every read."
   })
   stsPreviousPassword?: string;
   @attr(#{
+    kind: "single",
     what: "When the previous password stops being accepted (ms since the epoch)."
   })
   stsPreviousPasswordExpires?: DirectoryTime;
   @attr(#{
+    kind: "single",
     what: "Consecutive failed rotations, reset by a success."
   })
   stsRotationFailures?: DirectoryInteger;
   @attr(#{
+    kind: "single",
     what: "The error code of the last failed rotation."
   })
   stsRotationLastError?: string;
   @attr(#{
+    kind: "single",
     what: "When the rotation job last tried this account (ms)."
   })
   stsRotationLastAttempt?: DirectoryTime;
   @attr(#{
+    kind: "single",
     what: "TRUE: the account's owners may not administer it through /admin-api (#607) — an administrator's mark, read by the access-control policy's owner rule. Absent is FALSE."
   })
   stsOwnerProtected?: DirectoryBoolean;
   @attr(#{
+    kind: "single",
     what: "The named service-account policy that governs this account (#1240): `default` or a policy in ou=serviceAccountPolicies of this realm. Absent is `default`. Only a service account may hold it, and it is cleared with stsServiceAccount."
   })
   stsServiceAccountPolicy?: string;

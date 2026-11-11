@@ -167,6 +167,12 @@ import cellAttributes = require('../common/cell_attributes');
 // only `common/` modules at load and every Kerberos module lazily, so this
 // module (7) does not drag the KDC's routes (15) forward.
 import krb5Tokens = require('../kerberos/krb5_tokens');
+// THE MODEL (#1579): every namespace, request type, action, key type, token
+// type, status and fault code below, the RST's children as they are read,
+// and the order every RSTR and Fault part is written in are
+// `models/ws/*.tsp`'s; every envelope this endpoint sends is held to it. A
+// leaf: it requires only `common/xml_model`.
+import WsModel = require('./ws_model');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -227,7 +233,7 @@ interface RouteRegistrar {
   post(path: string, ...handlers: any[]): unknown;
 }
 
-const WST_NS = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
+const WST_NS = WsModel.term('wst.namespace', 'trust13');
 
 // THE MAY 2004 MEMBER SUBMISSION'S NAMESPACE (#188, 2026-09-24). The answer
 // echoes the request's trust namespace, and three of the elements this
@@ -241,53 +247,53 @@ const WST_NS = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
 // the version's own InvalidRequest fault rather than answered in elements
 // the version does not have. tests/protocol/sts_xml_schema_validation.js
 // validates each version's answers against its own published schema.
-const WST_2004_04_NS = 'http://schemas.xmlsoap.org/ws/2004/04/trust';
+const WST_2004_04_NS = WsModel.term('wst.namespace', 'trust2004');
 
-const SOAP12_NS = 'http://www.w3.org/2003/05/soap-envelope';
+const SOAP12_NS = WsModel.term('soap.namespace', 'soap12');
 
-const SOAP11_NS = 'http://schemas.xmlsoap.org/soap/envelope/';
+const SOAP11_NS = WsModel.term('soap.namespace', 'soap11');
 
-const SAML2_TOKEN_TYPE =
-    'http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0';
+const SAML2_TOKEN_TYPE = WsModel.term('wst.tokenType', 'saml2');
 
-const JWT_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:jwt';
+const JWT_TOKEN_TYPE = WsModel.term('wst.tokenType', 'jwt');
 
-// SAML 1.1 (#487): the WS-Security SAML Token Profile 1.1's URI, and the
-// assertion namespace an older client names the type by. Both ask for the
-// same token; the answer names the first.
-const SAML11_TOKEN_TYPE =
-    'http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV1.1';
-const SAML11_TOKEN_TYPE_ALIAS = 'urn:oasis:names:tc:SAML:1.0:assertion';
+// SAML 1.1 (#487): the WS-Security SAML Token Profile 1.1's URI. The
+// model's `saml11Namespace` term — the assertion namespace an older client
+// names the type by — is its `aliasOf`: it asks for the same token, and the
+// answer names this one (tokenTypeAsked()).
+const SAML11_TOKEN_TYPE = WsModel.term('wst.tokenType', 'saml11');
 // #522: the SAML 1.1 attribute that names the parties that acted, least to
 // most recent — SAML 1.1's stand-in for the SAML V2.0 Delegation
 // Restriction, which it cannot carry. See buildSaml11Token().
-const DELEGATES_ATTRIBUTE = 'delegates';
-const DELEGATES_NAMESPACE = 'urn:iya:sts:delegation';
+const DELEGATES_ATTRIBUTE = WsModel.term('wst.delegates', 'attributeName');
+const DELEGATES_NAMESPACE = WsModel.term('wst.delegates',
+                                         'attributeNamespace');
 // The SAML Token Profile's reference to a SAML 1.1 assertion by its
 // AssertionID (section 3.4.3).
-const SAML11_ASSERTION_ID_REF = 'http://docs.oasis-open.org/wss/' +
-    'oasis-wss-saml-token-profile-1.0#SAMLAssertionID';
+const SAML11_ASSERTION_ID_REF = WsModel.term('wsse.valueType',
+                                             'samlAssertionId');
 
-const STATUS_TOKEN_TYPE = WST_NS + '/RSTR/Status';
+// The WS-Security and WS-Addressing namespaces every RSTR part is written
+// in.
+const WSSE_NS = WsModel.term('wsse.namespace', 'secext');
+const WSU_NS = WsModel.term('wsse.namespace', 'utility');
+const WSA_NS = WsModel.term('wsa.namespace', 'addressing');
+const WSP_NS = WsModel.term('wsp.namespace', 'policy');
 
-const STATUS_VALID = WST_NS + '/status/valid';
+// The elements of a WS-Trust request that hold SOMEBODY ELSE'S token — the
+// model's `anotherPartys`. A UsernameToken or an Assertion inside one of
+// these is not the requester's credential and must never be read as one.
+const NOT_A_CREDENTIAL = WsModel.childNames('wst.RequestSecurityToken',
+                                            'anotherPartys');
 
-const STATUS_INVALID = WST_NS + '/status/invalid';
-
-// The elements of a WS-Trust request that hold SOMEBODY ELSE'S token. A
-// UsernameToken or an Assertion inside one of these is not the requester's
-// credential and must never be read as one.
-const NOT_A_CREDENTIAL = ['OnBehalfOf', 'ActAs', 'RenewTarget',
-                          'ValidateTarget', 'CancelTarget'];
-
-// #521: the elements handleRst() reads off the WHOLE document. A signed
+// #521: the elements handleRst() reads off the WHOLE document — the RST and
+// the children the model marks `inSignedBody`, in its order. A signed
 // request is answered only when every one of them is inside the Body the
 // signature covers — an unsigned RequestSecurityToken in a header would
 // otherwise be read first, in document order, beside a genuinely signed
 // Body: signature wrapping by another route (messageSignature()).
-const RST_PARTS = ['RequestSecurityToken', 'RequestType', 'KeyType',
-                   'TokenType', 'AppliesTo', 'Lifetime', 'OnBehalfOf',
-                   'ActAs', 'RenewTarget', 'ValidateTarget', 'CancelTarget'];
+const RST_PARTS = [WsModel.message('wst.RequestSecurityToken').element]
+  .concat(WsModel.childNames('wst.RequestSecurityToken', 'inSignedBody'));
 
 /**
  * WS-Trust 1.0 to 1.4: the SOAP RequestSecurityToken endpoint at `/sts`,
@@ -994,10 +1000,10 @@ class WsTrust {
       const built = this.buildJwt(subject, audience, lifetimeMin,
                                   delegates, requester, forApp, jwtIssuer,
                                   amr);
-      const token = { xml: '<wsse:BinarySecurityToken ' +
-        'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ' +
-        'ValueType="urn:ietf:params:oauth:token-type:jwt">' + built.token +
-        '</wsse:BinarySecurityToken>',
+      const token = { xml: '<wsse:BinarySecurityToken xmlns:wsse="' +
+        WSSE_NS + '"' + WsModel.attributes('wsse.BinarySecurityToken', {
+          valueType: WsModel.term('wsse.valueType', 'jwt') }) + '>' +
+        built.token + '</wsse:BinarySecurityToken>',
         ref: '', tokenType: JWT_TOKEN_TYPE, id: built.jti };
       log.debug("Leaving WsTrust.buildToken(). Issued a JWT.");
       return token;
@@ -1027,14 +1033,8 @@ class WsTrust {
         issuer: String(jwtIssuer || this.oauthIssuer('')) });
     const idm = assertion.match(/\bID="([^"]+)"/);
     const id = idm ? idm[1] : '';
-    const ref = '<wst:RequestedAttachedReference>' +
-      '<wsse:SecurityTokenReference ' +
-      'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
-      '<wsse:KeyIdentifier ' +
-      'ValueType="http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID">' +
-      xmlEscape(id) +
-      '</wsse:KeyIdentifier></wsse:SecurityTokenReference>' +
-      '</wst:RequestedAttachedReference>';
+    const ref = this.requestedReference('attached', this.tokenReference(
+      WsModel.term('wsse.valueType', 'samlId'), '', id));
     log.debug("Leaving WsTrust.buildToken(). Issued a SAML 2.0 assertion " +
               "with ID " + id +
               ".");
@@ -1105,31 +1105,99 @@ class WsTrust {
       issuer: String(issuer || this.oauthIssuer('')) });
     const idm = assertion.match(/\bAssertionID="([^"]+)"/);
     const id = idm ? idm[1] : '';
-    const ref = '<wst:RequestedAttachedReference>' +
-      '<wsse:SecurityTokenReference xmlns:wsse="' +
-      'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-' +
-      'secext-1.0.xsd"><wsse:KeyIdentifier ValueType="' +
-      SAML11_ASSERTION_ID_REF + '">' + xmlEscape(id) +
-      '</wsse:KeyIdentifier></wsse:SecurityTokenReference>' +
-      '</wst:RequestedAttachedReference>';
+    const ref = this.requestedReference('attached', this.tokenReference(
+      SAML11_ASSERTION_ID_REF, '', id));
     log.debug("Leaving WsTrust.buildSaml11Token(). AssertionID " + id + ".");
     return { xml: assertion, ref: ref, tokenType: SAML11_TOKEN_TYPE, id: id };
   }
 
+  // A reference to the issued token from outside it (WSS 1.0 section 7):
+  // a SecurityTokenReference holding one KeyIdentifier.
+  private tokenReference(valueType: string, encodingType: string,
+                         keyIdentifier: string): string {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering WsTrust.tokenReference().");
+    const out = '<wsse:SecurityTokenReference xmlns:wsse="' + WSSE_NS +
+      '">' + WsModel.children('wsse.SecurityTokenReference', {
+        keyIdentifier: '<wsse:KeyIdentifier' +
+          WsModel.attributes('wsse.KeyIdentifier', {
+            valueType: valueType, encodingType: encodingType }) + '>' +
+          xmlEscape(keyIdentifier) + '</wsse:KeyIdentifier>' }) +
+      '</wsse:SecurityTokenReference>';
+    log.debug("Leaving WsTrust.tokenReference().");
+    return out;
+  }
+
+  // The RSTR's RequestedAttachedReference or RequestedUnattachedReference
+  // around a SecurityTokenReference.
+  private requestedReference(which: string, reference: string): string {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.requestedReference(). " + which);
+    const id = which === 'attached' ? 'wst.RequestedAttachedReference'
+                                    : 'wst.RequestedUnattachedReference';
+    const element = WsModel.message(id).element;
+    log.debug("Leaving WsTrust.requestedReference().");
+    return '<wst:' + element + '>' + WsModel.children(id, {
+      securityTokenReference: reference }) + '</wst:' + element + '>';
+  }
+
+  // #487: THE TOKEN TYPE ISSUED FOR THE ONE ASKED FOR: a JWT, SAML 1.1 by
+  // either of its names (a term's `aliasOf` asks for the token another term
+  // names), and anything else — SAML 2.0, nothing, an unknown URI — SAML
+  // 2.0, as it always was. The Kerberos types are asked first, elsewhere.
+  private tokenTypeAsked(asked): string {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.tokenTypeAsked().");
+    const term = WsModel.termsOf('wst.tokenType').find(function (one) {
+      return one.value === asked;
+    });
+    const name = term ? String(term.aliasOf || term.name) : '';
+    const out = name === 'jwt' || name === 'saml11'
+      ? WsModel.term('wst.tokenType', name) : SAML2_TOKEN_TYPE;
+    log.debug("Leaving WsTrust.tokenTypeAsked(). " + out);
+    return out;
+  }
+
+  // One RSTR in the request's trust namespace, its children in the model's
+  // order.
+  private response(trustNs: string, parts: Record<string, string>): string {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.response().");
+    log.debug("Leaving WsTrust.response().");
+    return '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs + '">' +
+      WsModel.children('wst.RequestSecurityTokenResponse', parts) +
+      '</wst:RequestSecurityTokenResponse>';
+  }
+
+  // The SOAP version's ids in the model: `soap11` or `soap12`.
+  private soapIdFor(version): string {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.soapIdFor().");
+    log.debug("Leaving WsTrust.soapIdFor().");
+    return version === '1.1' ? 'soap11' : 'soap12';
+  }
+
+  // THE ONE WRITER OF AN ENVELOPE: the model's Header (its wsa:Action) and
+  // Body, in the request's SOAP version, held to the model as it goes out.
   private envelope(version, action, bodyInner) {
     const { log } = this.deps;
     log.debug("Entering WsTrust.envelope(). version=" + version +
               ", action=" + action);
     const soapNs = this.soapNsFor(version);
+    const soap = this.soapIdFor(version);
     const header = action
-      ? '<soap:Header><wsa:Action ' +
-        'xmlns:wsa="http://www.w3.org/2005/08/addressing">' + action +
-        '</wsa:Action></soap:Header>'
+      ? '<soap:Header>' + WsModel.children(soap + '.Header', {
+        action: '<wsa:Action xmlns:wsa="' + WSA_NS + '">' + action +
+          '</wsa:Action>' }) + '</soap:Header>'
       : '';
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<soap:Envelope xmlns:soap="' + soapNs + '">' +
+      WsModel.children(soap + '.Envelope', {
+        header: header,
+        body: '<soap:Body>' + bodyInner + '</soap:Body>' }) +
+      '</soap:Envelope>';
     log.debug("Leaving WsTrust.envelope().");
-    return '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<soap:Envelope xmlns:soap="' + soapNs + '">' + header +
-      '<soap:Body>' + bodyInner + '</soap:Body></soap:Envelope>';
+    return WsModel.hold(soap + '.Envelope', xml, 'WS-Trust answer');
   }
 
   // `trustFault` (#108, every refusal since #183): one of WS-Trust 1.4
@@ -1157,26 +1225,43 @@ class WsTrust {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.soapFault(). version=" + version + ", " +
         "reason=" + reason);
-    const soapNs = this.soapNsFor(version);
     const wstDecl = trustFault
       ? ' xmlns:wst="' + xmlEscape(trustNs || WST_NS) + '"' : '';
+    // Section 11's code, a term of the model's `wst.fault`.
+    const code = trustFault ? 'wst:' + WsModel.term('wst.fault', trustFault)
+                            : '';
     const body = version === '1.1'
-      ? '<soap:Fault><faultcode' + wstDecl + '>' +
-        (trustFault ? 'wst:' + trustFault : 'soap:Client') +
-        '</faultcode><faultstring>' +
-        xmlEscape(reason) + '</faultstring></soap:Fault>'
-      : '<soap:Fault><soap:Code><soap:Value>soap:Sender</soap:Value>' +
-        (trustFault
-          ? '<soap:Subcode><soap:Value' + wstDecl + '>wst:' + trustFault +
-            '</soap:Value></soap:Subcode>'
-          : '') +
-        '</soap:Code><soap:Reason><soap:Text ' +
-        'xml:lang="en">' + xmlEscape(reason) +
-        '</soap:Text></soap:Reason></soap:Fault>';
+      ? '<soap:Fault>' + WsModel.children('soap11.Fault', {
+        faultcode: '<faultcode' + wstDecl + '>' +
+          (code || WsModel.term('soap11.faultCode', 'client')) +
+          '</faultcode>',
+        faultstring: '<faultstring>' + xmlEscape(reason) +
+          '</faultstring>' }) + '</soap:Fault>'
+      : this.fault12(WsModel.term('soap12.faultCode', 'sender'),
+                     code
+                       ? '<soap:Subcode>' + WsModel.children('soap12.Subcode',
+                         { value: '<soap:Value' + wstDecl + '>' + code +
+                                  '</soap:Value>' }) + '</soap:Subcode>'
+                       : '', reason);
     log.debug("Leaving WsTrust.soapFault().");
-    return '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<soap:Envelope xmlns:soap="' + soapNs + '">' + '<soap:Body>' + body +
-      '</soap:Body></soap:Envelope>';
+    return this.envelope(version, '', body);
+  }
+
+  // SOAP 1.2's Fault: a Code (its Value, then the Subcode given) and a
+  // Reason in English.
+  private fault12(value: string, subcode: string, reason: string): string {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering WsTrust.fault12().");
+    const out = '<soap:Fault>' + WsModel.children('soap12.Fault', {
+      code: '<soap:Code>' + WsModel.children('soap12.Code', {
+        value: '<soap:Value>' + value + '</soap:Value>',
+        subcode: subcode }) + '</soap:Code>',
+      reason: '<soap:Reason>' + WsModel.children('soap12.Reason', {
+        text: '<soap:Text' + WsModel.attributes('soap12.Text', {}) + '>' +
+          xmlEscape(reason) + '</soap:Text>' }) + '</soap:Reason>' }) +
+      '</soap:Fault>';
+    log.debug("Leaving WsTrust.fault12().");
+    return out;
   }
 
   // THE ONE FAULT THAT IS NOT A REFUSAL (#183): this service failing, which
@@ -1198,15 +1283,15 @@ class WsTrust {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.receiverFault(). version=" + version);
     const body = version === '1.1'
-      ? '<soap:Fault><faultcode>soap:Server</faultcode><faultstring>' +
-        xmlEscape(reason) + '</faultstring></soap:Fault>'
-      : '<soap:Fault><soap:Code><soap:Value>soap:Receiver</soap:Value>' +
-        '</soap:Code><soap:Reason><soap:Text xml:lang="en">' +
-        xmlEscape(reason) + '</soap:Text></soap:Reason></soap:Fault>';
+      ? '<soap:Fault>' + WsModel.children('soap11.Fault', {
+        faultcode: '<faultcode>' + WsModel.term('soap11.faultCode', 'server') +
+          '</faultcode>',
+        faultstring: '<faultstring>' + xmlEscape(reason) +
+          '</faultstring>' }) + '</soap:Fault>'
+      : this.fault12(WsModel.term('soap12.faultCode', 'receiver'), '',
+                     reason);
     log.debug("Leaving WsTrust.receiverFault().");
-    return '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<soap:Envelope xmlns:soap="' + this.soapNsFor(version) + '">' +
-      '<soap:Body>' + body + '</soap:Body></soap:Envelope>';
+    return this.envelope(version, '', body);
   }
 
   // --- request handling ------------------------------------------------------
@@ -2989,10 +3074,18 @@ class WsTrust {
       return sp ? sp.spn + '@' + sp.realm
                 : String(app ? app.identifier : one.nameId);
     });
-    const forwardable = String(textByLocal(c.doc, 'Forwardable') || '')
-      .trim().toLowerCase() !== 'false';
-    const delegatable = String(textByLocal(c.doc, 'Delegatable') || '')
-      .trim().toLowerCase() === 'true';
+    // Both are xs:boolean (WS-Trust 1.3 sections 9.3 and 9.4), whose
+    // lexical space has `1` and `0` beside `true` and `false` (rcbj on
+    // #1579, 2026-11-11: until then `<wst:Delegatable>1` read as false and
+    // `<wst:Forwardable>0` as true). Forwardable defaults to true.
+    const forwardableText = String(textByLocal(c.doc, 'Forwardable') || '')
+      .trim().toLowerCase();
+    const forwardable = forwardableText !== 'false' &&
+      forwardableText !== '0';
+    const delegatableText = String(textByLocal(c.doc, 'Delegatable') || '')
+      .trim().toLowerCase();
+    const delegatable = delegatableText === 'true' ||
+      delegatableText === '1';
     if (delegatable) {
       const realm = subjectRealm || '';
       if (!krb5Tokens.trustedForDelegation(application) ||
@@ -3029,30 +3122,28 @@ class WsTrust {
       return fault('STS-WSTRUST-0066', 'RequestFailed', 'The Kerberos ticket ' +
                    'could not be issued: ' + minted.reason + '.');
     }
-    const wsse = 'http://docs.oasis-open.org/wss/2004/01/' +
-      'oasis-200401-wss-wssecurity-secext-1.0.xsd';
-    const wsu = 'http://docs.oasis-open.org/wss/2004/01/' +
-      'oasis-200401-wss-wssecurity-utility-1.0.xsd';
     const id = 'krb5-' + this.deps.randomId().replace(/[^A-Za-z0-9_-]/g, '');
-    const reference = '<wsse:SecurityTokenReference xmlns:wsse="' + wsse +
-      '"><wsse:KeyIdentifier ValueType="' + krb5Tokens.KEY_IDENTIFIER +
-      '" EncodingType="' + krb5Tokens.BASE64_ENCODING + '">' +
-      xmlEscape(minted.keyIdentifier) + '</wsse:KeyIdentifier>' +
-      '</wsse:SecurityTokenReference>';
+    const reference = this.tokenReference(krb5Tokens.KEY_IDENTIFIER,
+                                          krb5Tokens.BASE64_ENCODING,
+                                          minted.keyIdentifier);
     log.debug("Leaving WsTrust.issueKerberos(). " + minted.servicePrincipal);
     return {
-      xml: '<wsse:BinarySecurityToken xmlns:wsse="' + wsse + '" ' +
-           'xmlns:wsu="' + wsu + '" wsu:Id="' + id + '" ValueType="' +
-           c.tokenType + '" EncodingType="' + krb5Tokens.BASE64_ENCODING +
-           '">' + minted.token + '</wsse:BinarySecurityToken>',
-      ref: '<wst:RequestedAttachedReference>' + reference +
-           '</wst:RequestedAttachedReference>' +
-           '<wst:RequestedUnattachedReference>' + reference +
-           '</wst:RequestedUnattachedReference>',
-      proof: '<wst:RequestedProofToken><wst:BinarySecret Type="' + c.trustNs +
-             '/SymmetricKey">' +
-             Buffer.from(minted.sessionKey.key).toString('base64') +
-             '</wst:BinarySecret></wst:RequestedProofToken>',
+      xml: '<wsse:BinarySecurityToken xmlns:wsse="' + WSSE_NS + '" ' +
+           'xmlns:wsu="' + WSU_NS + '"' +
+           WsModel.attributes('wsse.BinarySecurityToken', {
+             id: id, valueType: c.tokenType,
+             encodingType: krb5Tokens.BASE64_ENCODING }) + '>' +
+           minted.token + '</wsse:BinarySecurityToken>',
+      ref: this.requestedReference('attached', reference),
+      unattached: this.requestedReference('unattached', reference),
+      proof: '<wst:RequestedProofToken>' +
+             WsModel.children('wst.RequestedProofToken', {
+               binarySecret: '<wst:BinarySecret' +
+                 WsModel.attributes('wst.BinarySecret', {
+                   type: WsModel.relative('wst.keyType', 'symmetricKey',
+                                          c.trustNs) }) + '>' +
+                 Buffer.from(minted.sessionKey.key).toString('base64') +
+                 '</wst:BinarySecret>' }) + '</wst:RequestedProofToken>',
       tokenType: c.tokenType,
       id: minted.keyIdentifier,
       created: minted.created.toISOString(),
@@ -3411,8 +3502,8 @@ class WsTrust {
         }
         const person = this.nameOfSubject(sub);
         return { nameId: person || sub,
-                 format: person ? 'urn:oasis:names:tc:SAML:1.1:nameid-' +
-                                  'format:unspecified' : '',
+                 format: person ? WsModel.term('saml2.nameIdFormat',
+                                               'unspecified') : '',
                  instant: '' };
       });
     log.debug("Leaving WsTrust.delegatesInAct(). " + out.length);
@@ -3429,7 +3520,7 @@ class WsTrust {
     const out = [];
     const all = element && element.getElementsByTagNameNS
       ? element.getElementsByTagNameNS(
-        'urn:oasis:names:tc:SAML:2.0:conditions:delegation', 'Delegate')
+        WsModel.term('saml2.condition', 'delegationNamespace'), 'Delegate')
       : [];
     for (let i = 0; i < all.length; i += 1) {
       const nameIds = all[i].getElementsByTagNameNS('*', 'NameID');
@@ -3715,7 +3806,7 @@ class WsTrust {
     }
     if (auth && auth.kind === 'assertion') {
       log.debug("Leaving WsTrust.authnContextOf().");
-      return 'urn:oasis:names:tc:SAML:2.0:ac:classes:PreviousSession';
+      return WsModel.term('saml2.authnContext', 'previousSession');
     }
     log.debug("Leaving WsTrust.authnContextOf().");
     return authnContext.AC_UNSPECIFIED;
@@ -3849,13 +3940,14 @@ class WsTrust {
     // client used); fall back to 200512.
     const rstEl = firstByLocal(doc, 'RequestSecurityToken');
     const trustNs = (rstEl && rstEl.namespaceURI) || WST_NS;
-    const statusTokenType = trustNs + '/RSTR/Status';
-    const statusValid = trustNs + '/status/valid';
-    const statusInvalid = trustNs + '/status/invalid';
+    const statusTokenType = WsModel.relative('wst.status', 'tokenType',
+                                             trustNs);
+    const statusValid = WsModel.relative('wst.status', 'valid', trustNs);
+    const statusInvalid = WsModel.relative('wst.status', 'invalid', trustNs);
     // THE RSTR STATES WHAT WAS ISSUED (#747), not what was asked: every token
     // here is a bearer token with no proof key, so echoing a requested
     // PublicKey or SymmetricKey told the client it held a key it did not.
-    const keyTypeIssued = trustNs + '/Bearer';
+    const keyTypeIssued = WsModel.relative('wst.keyType', 'bearer', trustNs);
 
     const tokenTypeReq = textByLocal(doc, 'TokenType');
     const appliesToEl = firstByLocal(doc, 'AppliesTo');
@@ -3994,17 +4086,17 @@ class WsTrust {
                      : 'The Kerberos token was not checked: ' +
                        'wstrust.acceptKerberos is off.'))
         : (hasToken ? 'The token is valid.' : 'No token to validate.');
-      const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
-                   '"><wst:TokenType>' + statusTokenType +
-                   '</wst:TokenType><wst:Status><wst:Code>' + code +
-                   '</wst:Code><wst:Reason>' + xmlEscape(reason) +
-                   '</wst:Reason></wst:Status>' +
-                   '</wst:RequestSecurityTokenResponse>';
+      const rstr = this.response(trustNs, {
+        tokenType: '<wst:TokenType>' + statusTokenType + '</wst:TokenType>',
+        status: '<wst:Status>' + WsModel.children('wst.Status', {
+          code: '<wst:Code>' + code + '</wst:Code>',
+          reason: '<wst:Reason>' + xmlEscape(reason) + '</wst:Reason>' }) +
+          '</wst:Status>' });
       log.debug("Leaving WsTrust.handleRst(). Validate answered with " +
                 "wst:Status.");
       return { status: 200, version: version, errorCode: invalidCode,
-               body: this.envelope(version, trustNs + '/RSTR/ValidateFinal',
-                                   rstr) };
+               body: this.envelope(version, WsModel.relative('wst.action',
+                 'validateFinal', trustNs), rstr) };
     }
 
     if (op === 'cancel' && trustNs === WST_2004_04_NS) {
@@ -4019,14 +4111,13 @@ class WsTrust {
     }
 
     if (op === 'cancel') {
-      const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
-                   '"><wst:RequestedTokenCancelled/>' +
-                   '</wst:RequestSecurityTokenResponse>';
+      const rstr = this.response(trustNs, {
+        requestedTokenCancelled: '<wst:RequestedTokenCancelled/>' });
       log.debug("Leaving WsTrust.handleRst(). Cancel answered with " +
                 "wst:RequestedTokenCancelled.");
       return { status: 200, version: version,
-               body: this.envelope(version, trustNs + '/RSTR/CancelFinal',
-                                   rstr) };
+               body: this.envelope(version, WsModel.relative('wst.action',
+                 'cancelFinal', trustNs), rstr) };
     }
 
     // -------------------------------------------------------------------------
@@ -4229,11 +4320,8 @@ class WsTrust {
     // #658: a Kerberos token by any of the profile's six ValueTypes, issued
     // in the form asked for.
     const kerberosOut = krb5Tokens.isType(tokenTypeReq);
-    const tokenType = kerberosOut ? String(tokenTypeReq).trim() :
-      (tokenTypeReq === JWT_TOKEN_TYPE) ? JWT_TOKEN_TYPE :
-      (tokenTypeReq === SAML11_TOKEN_TYPE ||
-       tokenTypeReq === SAML11_TOKEN_TYPE_ALIAS) ? SAML11_TOKEN_TYPE :
-        SAML2_TOKEN_TYPE;
+    const tokenType = kerberosOut ? String(tokenTypeReq).trim()
+                                  : this.tokenTypeAsked(tokenTypeReq);
     // A JWT'S `sub` IS A SUBJECT, AND THERE IS NONE WITHOUT AN ENTRY — the rule
     // the OAuth 2.0 grants follow (`STS-OAUTH-0510`). An `anonymous` Renew
     // names nobody by design and is left to the paragraph above.
@@ -4551,34 +4639,41 @@ class WsTrust {
     }
 
     const appliesToOut = audience
-      ? '<wsp:AppliesTo ' +
-        'xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy" ' +
-        'xmlns:wsa="http://www.w3.org/2005/08/addressing">' +
-        '<wsa:EndpointReference><wsa:Address>' +
-        xmlEscape(audience) +
-        '</wsa:Address></wsa:EndpointReference></wsp:AppliesTo>'
+      ? '<wsp:AppliesTo xmlns:wsp="' + WSP_NS + '" xmlns:wsa="' + WSA_NS +
+        '">' + WsModel.children('wsp.AppliesTo', {
+          endpointReference: '<wsa:EndpointReference>' +
+            WsModel.children('wsa.EndpointReference', {
+              address: '<wsa:Address>' + xmlEscape(audience) +
+                '</wsa:Address>' }) + '</wsa:EndpointReference>' }) +
+        '</wsp:AppliesTo>'
       : '';
-    const rstrInner =
-      '<wst:TokenType>' + tok.tokenType + '</wst:TokenType>' +
-      '<wst:RequestedSecurityToken>' + tok.xml +
-      '</wst:RequestedSecurityToken>' +
+    // The RSTR's children, in the order the model says `/sts` writes them.
+    const rstrParts = {
+      tokenType: '<wst:TokenType>' + tok.tokenType + '</wst:TokenType>',
+      requestedSecurityToken: '<wst:RequestedSecurityToken>' + tok.xml +
+        '</wst:RequestedSecurityToken>',
       // #658: a Kerberos token's session key, which the holder needs to use
       // it (WS-Trust 1.4 section 4.4.2), over TLS only.
-      (tok.proof || '') +
-      appliesToOut +
+      requestedProofToken: tok.proof || '',
+      appliesTo: appliesToOut,
       // A Kerberos token's Lifetime is its Authenticator's window: it is
       // good once, within the clock skew of when it was made.
-      '<wst:Lifetime ' +
-      'xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">' +
-      '<wsu:Created>' + (tok.created || iso(0)) +
-      '</wsu:Created><wsu:Expires>' + (tok.expires || iso(lifetimeMin)) +
-      '</wsu:Expires></wst:Lifetime><wst:KeyType>' +
-      keyTypeIssued + '</wst:KeyType>' +
-      // 2004/04 spells the reference RequestedTokenReference (#188).
-      (trustNs === WST_2004_04_NS
-        ? tok.ref.split('wst:RequestedAttachedReference')
-            .join('wst:RequestedTokenReference')
-        : tok.ref);
+      lifetime: '<wst:Lifetime xmlns:wsu="' + WSU_NS + '">' +
+        WsModel.children('wst.Lifetime', {
+          created: '<wsu:Created>' + (tok.created || iso(0)) +
+            '</wsu:Created>',
+          expires: '<wsu:Expires>' + (tok.expires || iso(lifetimeMin)) +
+            '</wsu:Expires>' }) + '</wst:Lifetime>',
+      keyType: '<wst:KeyType>' + keyTypeIssued + '</wst:KeyType>',
+      // 2004/04 spells the reference RequestedTokenReference (#188), the
+      // model's `or`.
+      requestedAttachedReference: trustNs === WST_2004_04_NS
+        ? tok.ref.split('wst:' + WsModel.message(
+          'wst.RequestedAttachedReference').element)
+          .join('wst:RequestedTokenReference')
+        : tok.ref,
+      requestedUnattachedReference: tok.unattached || ''
+    };
 
     // ---------------------------------------------------------------------
     // WHAT THIS EXCHANGE SIGNED IN, for the caller to act on (2026-09-05).
@@ -4631,35 +4726,37 @@ class WsTrust {
       : null;
 
     if (op === 'renew') {
-      const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
-                   '">' + rstrInner + '</wst:RequestSecurityTokenResponse>';
+      const rstr = this.response(trustNs, rstrParts);
       log.debug("Leaving WsTrust.finishIssue(). Renew answered with a fresh " +
                 "token.");
       return { status: 200, version: version, signIn: signIn,
-               body: this.envelope(version, trustNs + '/RSTR/RenewFinal',
-                                   rstr) };
+               body: this.envelope(version, WsModel.relative('wst.action',
+                 'renewFinal', trustNs), rstr) };
     }
 
     // Issue -> RSTR Collection (WS-Trust 1.3+; pre-OASIS clients tolerate it
     // too) — except in 2004/04, whose collection holds at least two
     // responses, so an Issue there is answered with the one RSTR (#188).
     if (trustNs === WST_2004_04_NS) {
-      const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
-                   '">' + rstrInner + '</wst:RequestSecurityTokenResponse>';
+      const rstr = this.response(trustNs, rstrParts);
       log.debug("Leaving WsTrust.finishIssue(). Issue answered with an RSTR " +
                 "(2004/04).");
       return { status: 200, version: version, signIn: signIn,
-               body: this.envelope(version, trustNs + '/RSTR/Issue', rstr) };
+               body: this.envelope(version, WsModel.relative('wst.action',
+                 'issue', trustNs), rstr) };
     }
     const rstrc = '<wst:RequestSecurityTokenResponseCollection xmlns:wst="' +
-                  trustNs + '"><wst:RequestSecurityTokenResponse>' + rstrInner +
-                  '</wst:RequestSecurityTokenResponse>' +
-                  '</wst:RequestSecurityTokenResponseCollection>';
+      trustNs + '">' + WsModel.children(
+      'wst.RequestSecurityTokenResponseCollection', {
+        response: '<wst:RequestSecurityTokenResponse>' +
+          WsModel.children('wst.RequestSecurityTokenResponse', rstrParts) +
+          '</wst:RequestSecurityTokenResponse>' }) +
+      '</wst:RequestSecurityTokenResponseCollection>';
     log.debug("Leaving WsTrust.finishIssue(). Issue answered with an RSTR " +
               "Collection.");
     return { status: 200, version: version, signIn: signIn,
-             body: this.envelope(version, trustNs + '/RSTRC/IssueFinal',
-                                 rstrc) };
+             body: this.envelope(version, WsModel.relative('wst.action',
+               'issueFinal', trustNs), rstrc) };
   }
 
   // **`no-store`, LIKE EVERY OTHER DOCUMENT HERE THAT DESCRIBES A KEY.** In

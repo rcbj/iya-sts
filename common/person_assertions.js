@@ -199,6 +199,7 @@ const config = require('./config');
 // A leaf. The refusal objects below carry `errorCode` for the caller that
 // sends the response; it is never part of anything serialised.
 const errorCodes = require('./error_codes');
+const DomainClasses = require('./domain_classes');
 // CAEP credential-change when this file changes a person's credential
 // (#145), through `ssf/account_signals.ts` — required LAZILY, when an event
 // is due. This file is loaded from `app.js`'s own chain, before the
@@ -700,8 +701,12 @@ function recordOf(name, raw, openKeys) {
     return one.state === 'valid';
   };
   const out = { username: name,
-                issuers: valuesOf(raw[ISSUER_ATTRIBUTE]),
-                samlIssuers: valuesOf(raw[SAML_ISSUER_ATTRIBUTE]),
+                // The Credential's (#1579); the key tables above read the
+                // attributes each kind names, and write them back.
+                issuers: valuesOf(DomainClasses.Credential.fromEntry(raw)
+                  .assertionIssuer),
+                samlIssuers: valuesOf(DomainClasses.Credential.fromEntry(raw)
+                  .samlAssertionIssuer),
                 keys: keys,
                 hasKeyPair: keys.jwt.some(valid),
                 hasSamlKeyPair: keys.saml.some(valid),

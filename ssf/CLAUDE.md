@@ -18,6 +18,7 @@ family here and the first one that TALKS BACK.
 | `ssf_dead_letter_report.ts` | What the dead-letter queues hold, counted, for Monitoring → Shared Signals → Dead letters and `/admin-api/ssf/dead-letters` (2026-09-14). A LIBRARY. |
 | `ssf_cluster.ts` | Several nodes (2026-09-14, #46): one report per stream health transition, one prober, and the GNAP key-proof spend as route middleware. A LIBRARY. |
 | `account_signals.ts` | What a credential change on the admin and portal doors says over CAEP and RISC (2026-09-13), read out of `require.cache`. A LIBRARY. |
+| `ssf_model.ts` | **The model, as the family reads it** (#1579): the tables `models/generated/ssf.json` holds, and the holding of what is answered and sent. A LEAF. |
 
 Twelve of the thirteen register nothing (rule 3), so their position in the
 route order is not a position. `ssf.ts` is required at **23b in
@@ -27,6 +28,63 @@ before `sts_metadata.ts`, which is last for everybody.
 
 ---
 
+
+## THE SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
+
+rcbj's decision on #1579 brings every protocol family into the model; this
+one is `models/ssf/ssf_events.tsp` (every event type: SSF's two, CAEP's
+eight, RISC's fourteen, this service's own six, each payload member's shape
+and prose) and `models/ssf/ssf.tsp` (the eleven subject formats with their
+closed member sets and the check each value is held to, the complex subject,
+the delivery methods, the statuses, the credential types, every document and
+the `err` values). The build writes `models/generated/ssf.json` and
+`ssf_model.ts` reads it. **The model describes and validates the wire; it does
+not reshape it**: `tests/ssf_model_wire.js` holds 201 answers and 185 verdicts
+recorded before the switch, byte for byte, in four realms.
+
+* **The rows are BUILT from the model.** `ssf_subjects.js`'s `FORMATS`,
+  `PERSON_FORMATS`, `COMPLEX_MEMBERS` and `MEMBER_NAME`, `ssf_events.js`'s
+  `EVENTS` (and its four family slices), `STATUSES`, `CREDENTIAL_TYPES` and the
+  two common-member lists, `ssf_streams.ts`'s `DELIVERY_METHODS` and the
+  Transmitter-Supplied members `transmitterSuppliedMismatch()` compares, and
+  `ssf_transmitters.ts`'s status list. The literals are gone, and the exports
+  keep their shapes.
+* **What stays in code is what a row DOES**, never what it is:
+  * each value CHECK and its sentence (`ssf_subjects.js`'s `CHECKS`, keyed by
+    the check `@subjectMember` names: `acct`, `addrSpec`, `e164`, `did`,
+    `absoluteUri`, `issuer`, `jwtIssuer`, `ipAddresses`, `identifiers`) — a
+    refusal's words are the wire, and a pattern with no sentence would be half
+    a check;
+  * each event's payload GENERATOR (`ssf_events.js`'s `GENERATORS`, by URI;
+    a row with no member makes `{}`; the key-rotation family's rows share one
+    generator read off the row's own members, so a sibling URN is a model and
+    nothing here). `tests/model_ssf.js` B holds every generated payload to its
+    row;
+  * everything that needs STATE, the mode or a setting: which delivery methods
+    a deployment offers, the stream limit and verification interval, an
+    owner's `ssfAllowedEvents`, the `aud` association, whether an endpoint URL
+    can be dialled, the opt-out gate. `assignAudience()`'s "a string or a
+    non-empty array" stays there with the association it is the first half
+    of;
+  * the two delivery URNs and the SET media type as constants the code
+    branches on.
+* **The answers are HELD, as OAuth holds its claim sets**: the metadata (both
+  forms), every stream configuration (`streamView()`, its `delivery` too),
+  both status answers and the poll answer to their documents (STS-SSF-0159);
+  every `err` through `fail()` to the declared list (STS-SSF-0160); every SET
+  `buildSet()` makes to RFC 8417's claims (STS-SSF-0161). A problem is logged
+  and the answer sent unchanged — a 500 here would change a specification's
+  endpoint, which #1579 forbids. The payload was already refused on its row
+  (`validateEvent()`, STS-SSF-0027), and the row is the model's now.
+* **The receiver half, at a federation partner** (`ssf_transmitters.ts`'s
+  `heldTo()`, STS-SSF-0162, a warning): what this realm SENDS — a stream
+  request, which may carry only Receiver-Supplied members and `stream_id`, a
+  status, a subject, a verification, a poll — and what the partner SENDS — its
+  configuration, a stream configuration, a poll's answer, a SET's claims, all
+  held OPEN, because a partner may extend them. Nothing is refused there: the
+  receiver's own checks (issuer, `jwks_uri`, `configuration_endpoint`, `typ`,
+  `iss`, `aud`, `jti`, `events`) still decide. This service's own receivers
+  poll this service's own transmitter, whose answer is held at the route.
 
 ## Internal delivery is not applied in every process (2026-10-21, #820)
 

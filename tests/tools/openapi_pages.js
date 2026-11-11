@@ -139,15 +139,24 @@ function typeWords(schema) {
   if (schema.format) {
     said += (said ? ', ' : '') + schema.format;
   }
+  // The empty string is said as `empty`: written as code it was two
+  // backticks with nothing between them, which a page renders as `` (#1579).
+  const literal = function (one) {
+    log.debug("Entering literal().");
+    log.debug("Leaving literal().");
+    return one === '' ? 'empty'
+      : '`' + JSON.stringify(one).replace(/^"|"$/g, '') + '`';
+  };
   if (schema.enum) {
-    said = 'one of ' + schema.enum.map(function (one) {
-      return '`' + JSON.stringify(one).replace(/^"|"$/g, '') + '`';
-    }).join(', ');
+    said = 'one of ' + schema.enum.map(literal).join(', ');
   }
   if (schema.const !== undefined) {
-    said = '`' + JSON.stringify(schema.const).replace(/^"|"$/g, '') + '`';
+    said = literal(schema.const);
   }
-  if (types.indexOf('null') >= 0) {
+  // A nullable enumeration lists null among its values (JSON Schema 2020-12
+  // asks `enum` apart from `type`), and the list already says it.
+  const listed = !!schema.enum && schema.enum.indexOf(null) >= 0;
+  if (types.indexOf('null') >= 0 && !listed) {
     said += (said ? ', or ' : '') + 'null';
   }
   log.debug("Leaving typeWords().");

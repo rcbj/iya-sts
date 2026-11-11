@@ -89,6 +89,9 @@ import audit = require('../common/audit');
 import mode = require('../common/mode');
 import stsCrypto = require('../common/crypto');
 import fedBlocks = require('../federation/federation_blocks');
+// The shapes of what this realm sends to and receives from a partner
+// (#1579): a leaf.
+import SsfModel = require('./ssf_model');
 
 type Json = any;
 type Req = import('express').Request;
@@ -322,6 +325,28 @@ class SsfTransmitters {
       String(c.tokenEndpoint || '') + '|' + String(c.clientId || '');
   }
 
+  // HELD TO THE MODEL (#1579). What this realm SENDS a partner — a stream
+  // request, a status, a subject, a verification, a poll — is the shape
+  // `models/ssf/ssf.tsp` gives it, and what the partner SENDS — its
+  // configuration, a stream configuration, a poll's answer, a SET's claims —
+  // is held to the same documents, OPEN, since a partner may extend them.
+  // Either way a problem is recorded under STS-SSF-0162 and nothing is
+  // changed or refused here: the receiver's own checks decide what it
+  // accepts. Returns the document.
+  private heldTo(id: string, value: Json, options: Json,
+                 direction: string): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering SsfTransmitters.heldTo(). " + id);
+    const problems = SsfModel.undeclared(id, value, options);
+    if (problems.length > 0) {
+      log.warn(errorCodes.tag('STS-SSF-0162') + 'the ' + id + ' ' +
+               direction + ' is not the shape models/ssf/ssf.tsp gives it: ' +
+               problems.join('; ') + '.');
+    }
+    log.debug("Leaving SsfTransmitters.heldTo().");
+    return value;
+  }
+
   // One outbound request to an endpoint the partner's document named, JSON
   // both ways. `{ ok, status, json, why }`; never rejects.
   private async call(record: Json, method: string, url: string,
@@ -507,6 +532,7 @@ class SsfTransmitters {
         discovery + ' could not be read: ' + String(fetched.why ||
                                                     fetched.status) + '.');
     }
+    this.heldTo('transmitter-metadata', doc, { open: true }, 'received');
     if (doc.issuer !== issuer || !doc.jwks_uri ||
         !doc.configuration_endpoint) {
       state.lastError = 'discovery: not the issuer\'s document';
@@ -624,7 +650,9 @@ class SsfTransmitters {
     const secret = supplied.secret;
     const answer = await this.call(record, 'POST',
                                    state.config.configuration_endpoint,
-                                   supplied.asked);
+                                   this.heldTo('stream-configuration',
+                                     supplied.asked, { partial: true,
+                                       supplier: 'receiver' }, 'sent'));
     if (!answer.ok || !answer.json || !answer.json.stream_id) {
       state.lastError = 'create stream: ' + answer.why;
       this.save(state);
@@ -685,6 +713,7 @@ class SsfTransmitters {
   private adoptStream(state: Json, stream: Json): void {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.adoptStream().");
+    this.heldTo('stream-configuration', stream, { open: true }, 'received');
     state.streamId = String(stream.stream_id || state.streamId);
     state.stream = { stream_id: stream.stream_id, aud: stream.aud,
       events_supported: stream.events_supported,
@@ -746,7 +775,9 @@ class SsfTransmitters {
       const events = [].concat(record.fedSignalsEvents || []).map(String);
       answer = await this.call(record, 'PATCH',
         state.config.configuration_endpoint,
-        { stream_id: state.streamId, events_requested: events });
+        this.heldTo('stream-configuration',
+          { stream_id: state.streamId, events_requested: events },
+          { partial: true, supplier: 'receiver' }, 'sent'));
       if (answer.ok && answer.json) {
         this.adoptStream(state, answer.json);
       }
@@ -765,7 +796,9 @@ class SsfTransmitters {
       }
       answer = await this.call(record, 'PUT',
         state.config.configuration_endpoint,
-        Object.assign({ stream_id: state.streamId }, supplied.asked));
+        this.heldTo('stream-configuration',
+          Object.assign({ stream_id: state.streamId }, supplied.asked),
+          { partial: true, supplier: 'receiver' }, 'sent'));
       if (answer.ok && answer.json) {
         this.adoptStream(state, answer.json);
       }
@@ -804,15 +837,20 @@ class SsfTransmitters {
       what = 'stream deleted';
     } else if (action === 'set-status') {
       const status = String(b.status || '');
-      if (['enabled', 'paused', 'disabled'].indexOf(status) < 0) {
+      // SSF 1.0 section 8.1.2's three, the model's list (#1579).
+      const statuses = SsfModel.list('stream-statuses');
+      if (statuses.indexOf(status) < 0) {
         log.debug("Leaving SsfTransmitters.streamAct(). Status.");
-        return this.refusal('STS-SSF-0113', 'status must be enabled, ' +
-                                            'paused or disabled.');
+        return this.refusal('STS-SSF-0113', 'status must be ' +
+          statuses.slice(0, -1).join(', ') + ' or ' +
+          statuses[statuses.length - 1] + '.');
       }
       answer = await this.call(record, 'POST',
         state.config.status_endpoint,
-        { stream_id: state.streamId, status: status,
-          reason: String(b.reason || 'set by an administrator') });
+        this.heldTo('stream-status', { stream_id: state.streamId,
+          status: status,
+          reason: String(b.reason || 'set by an administrator') }, {},
+          'sent'));
       if (answer.ok) {
         state.streamStatus = String((answer.json && answer.json.status) ||
                                     status);
@@ -838,15 +876,19 @@ class SsfTransmitters {
       answer = await this.call(record, 'POST', action === 'add-subject'
         ? state.config.add_subject_endpoint
         : state.config.remove_subject_endpoint,
-        Object.assign({ stream_id: state.streamId, subject: subject },
-                      action === 'add-subject' ? { verified: true } : {}));
+        this.heldTo('subject-request',
+          Object.assign({ stream_id: state.streamId, subject: subject },
+                        action === 'add-subject' ? { verified: true } : {}),
+          {}, 'sent'));
       what = (action === 'add-subject' ? 'subject added'
                                        : 'subject removed');
     } else if (action === 'verify') {
       state.verifyState = stsCrypto.randomBytes(16).toString('base64url');
       answer = await this.call(record, 'POST',
         state.config.verification_endpoint,
-        { stream_id: state.streamId, state: state.verifyState });
+        this.heldTo('verification-request',
+          { stream_id: state.streamId, state: state.verifyState }, {},
+          'sent'));
       what = 'verification asked';
     }
     if (!answer) {
@@ -923,12 +965,14 @@ class SsfTransmitters {
         asked.setErrs = setErrs;
       }
       const answer = await this.call(record, 'POST', state.pollEndpoint,
-                                     asked);
+                                     this.heldTo('poll-request', asked, {},
+                                                 'sent'));
       out.rounds++;
       if (!answer.ok || !answer.json) {
         out.why = answer.why;
         break;
       }
+      this.heldTo('poll-response', answer.json, { open: true }, 'received');
       ack = [];
       setErrs = {};
       const sets = answer.json.sets || {};
@@ -1146,6 +1190,7 @@ class SsfTransmitters {
       return this.refused(record, null, 'invalid_request',
         'This is not a Security Event Token.', 'STS-SSF-0118', via);
     }
+    this.heldTo('set-claims', claims, { open: true }, 'received');
     const key = record.fedId + '|' + String(claims.jti || '');
     if (claims.jti && inbox.get(key)) {
       // A SET seen before: acknowledged, never acted on twice.

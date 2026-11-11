@@ -67,6 +67,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -325,7 +327,8 @@ class AccountSigningKey {
    * @param body - the checked body
    * @returns nothing
    */
-  async act(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  async act(ctx: AccountContext, req: Json,
+            res: AccountAnswering<'changeSigningKeys'>, caller: AccountCaller,
             body: Json): Promise<unknown> {
     const { log, config, pki, personAssertions, tlsClient } = this.deps;
     const { audit, websecurity } = ctx;
@@ -608,14 +611,14 @@ class AccountSigningKey {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/signing-key',
         operationId: 'getSigningKeys', access: 'person', query: ModelZod.query('account', 'getSigningKeys'),
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req)));
         } },
       { method: 'POST', path: ctx.BASE + '/signing-key',
         operationId: 'changeSigningKeys', access: 'person', recentAuth: true, body: SIGNING_KEY_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } }
     ];

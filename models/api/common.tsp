@@ -410,7 +410,7 @@ namespace IyaSts.Api.Common;
 
 @js(#{`maxLength`:8192}) @hoisted scalar StringMax8192 extends string;
 
-@js(#{`nullable`:true}) @hoisted scalar String extends string;
+@js(#{`$types`:#["string","null"]}) @hoisted scalar String extends string;
 
 @hoisted union EmptyTextOrIntegerFrom1To100000 { EmptyText, IntegerFrom1To100000 }
 
@@ -504,7 +504,6 @@ namespace IyaSts.Api.Common;
 
 @js(#{ `description`:"A service deployed as cells (#553): the cells that push to the service provider, by id; empty is every cell. Ignored in a service that is one cell.", `$comb`:"oneOf" }) @hoisted union StringMax8192OrListOfStringMax20483 { StringMax8192, ListOfStringMax2048 }
 
-@js(#{ `description`:"A string, a number, a boolean, null, or a list of those." }) @hoisted union StringOrNumericOrBooleanEtc9 {String, numeric, boolean, (StringOrNumericOrBoolean2)[]}
 
 @js(#{`description`:"One group's settings."}) @hoisted model WithGroupSettings { `group`?: string; `settings`?: (WithDescriptionKeyDescriptionEtc)[] }
 
@@ -553,6 +552,10 @@ namespace IyaSts.Api.Common;
 @hoisted model WithUriLabel {`uri`?: string; `label`?: string}
 
 @hoisted model WithNameWhat {`name`?: string; `what`?: string}
+
+// A policy's attribute as its SCHEMA row draws it: with how many values it
+// holds, `single` or `multi`, where the model states it (#1579).
+@hoisted model WithNameWhatKind {`name`?: string; `what`?: string; `kind`?: "single" | "multi"}
 
 @hoisted model WithDnOrigin {`dn`?: string; `origin`?: string}
 
@@ -1476,7 +1479,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithIdTypeCanonicalEtc15 { `id`?: string; `type`?: string; `canonical`?: boolean; `name`?: string; `enabled`?: boolean; `refusedByMode`?: string; `setting`?: string; `primary`?: boolean; `scoped`?: boolean; `applicationScoped`?: boolean; `recorded`?: boolean; `challenged`?: boolean; `spec`?: string; `specUri`?: string; `description`?: string }
 
-@hoisted model WithDescriptionKindMaxLengthEtc8 { @js(#{`description`:"Whether the entry is a person or an application."}) `kind`: "person" | "application"; @js(#{ `maxLength`:256, `description`:"The username or the application identifier, in this realm." }) `identifier`: string; @js(#{`maxLength`:253,`description`:"A DNS name or an IP address."}) `hostName`: string }
+@hoisted model WithDescriptionKindMaxLengthEtc8 { @js(#{`description`:"Whether the entry is a person or an application."}) `kind`: "person" | "application"; @js(#{ `minLength`:1, `maxLength`:256, `description`:"The username or the application identifier, in this realm." }) `identifier`: string; @js(#{`minLength`:1,`maxLength`:253,`description`:"A DNS name or an IP address."}) `hostName`: string }
 
 @hoisted model WithAttributeTypeWhatEtc16 { `attribute`?: string; `type`?: string; `what`?: string; `example`?: string; `forText`?: string; `families`?: (string)[]; `everyFamily`?: boolean; `group`?: string; `simple`?: boolean; `required`?: boolean; `label`?: string; `schema`?: string; `claim`?: (string)[]; `multi`?: boolean; `custom`?: boolean; `takes`?: string }
 

@@ -143,6 +143,7 @@ import stats = require('../common/admin_stats');
 // so this cannot move a route or join a cycle.
 import realms = require('../common/realms');
 import spiffeId = require('./spiffe_id');
+import SpiffeModel = require('./spiffe_model');
 import ca = require('./spiffe_ca');
 import registry = require('./spiffe_registry');
 // The RFC 4514 form of a certificate subject. Required rather than
@@ -1224,16 +1225,22 @@ class SpiffeAuth {
     const { log, pki } = this.deps;
     log.debug('Entering SpiffeAuth.leafSvidProblem().');
     const facts = pki.pathFactsOf(entry);
-    let problem = '';
-    if (facts.ca) {
-      problem = 'basicConstraints cA is set';
-    } else if (!facts.keyUsage ||
-               facts.keyUsage.indexOf('digitalSignature') < 0) {
-      problem = 'its keyUsage does not name digitalSignature';
-    } else if (facts.keyUsage.indexOf('keyCertSign') >= 0 ||
-               facts.keyUsage.indexOf('cRLSign') >= 0) {
-      problem = 'its keyUsage names keyCertSign or cRLSign';
-    }
+    const usages = facts.keyUsage || [];
+    // The rules, their order and each clause are the model's
+    // (models/spiffe/spiffe.tsp, `@svidRules`); the first broken one is
+    // the refusal.
+    const broken = SpiffeModel.svidRules().find(function (rule) {
+      if (rule.fact === 'ca') {
+        return !!facts.ca !== rule.equals;
+      }
+      if (rule.includes !== undefined) {
+        return usages.indexOf(rule.includes) < 0;
+      }
+      return (rule.excludes || []).some(function (one) {
+        return usages.indexOf(one) >= 0;
+      });
+    });
+    const problem = broken ? broken.problem : '';
     log.debug('Leaving SpiffeAuth.leafSvidProblem().' +
               (problem ? ' ' + problem : ''));
     return problem;

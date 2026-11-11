@@ -50,6 +50,7 @@ import errorCodes = require('./error_codes');
 import audit = require('./audit');
 import authnPolicy = require('./authn_policy');
 import InstanceSlot = require('./instance_slot');
+import Classes = require('./domain_classes');
 
 const { log } = helpers;
 
@@ -180,23 +181,24 @@ class MailFactor {
     return out;
   }
 
-  // The four values this file reads off a person's attributes (lower-cased
-  // names, as the store keeps them). One place, so `entryOf()` and
-  // `heldOfAttributes()` read an entry the same way.
+  // The four values this file reads off a person's attributes, through the
+  // concepts that declare them (#1579): the address is the User's, the
+  // proof of it the PersonRecord's, and the opt-in and its failure count the
+  // authentication policy's, whose directory object keeps both on the
+  // person. One place, so `entryOf()` and `heldOfAttributes()` read an entry
+  // the same way.
   private valuesOf(attrs: Record<string, unknown[]>): Record<string, string> {
     const { log } = this.deps;
     log.debug("Entering MailFactor.valuesOf().");
-    const first = function (name: string): string {
-      log.debug("Entering first().");
-      const values = attrs[name.toLowerCase()] || [];
-      log.debug("Leaving first().");
-      return values.length ? String(values[0]) : '';
-    };
+    const user = Classes.User.fromEntry(attrs);
+    const record = Classes.PersonRecord.fromEntry(attrs);
+    const opted = Classes.AuthenticationPolicy.fromEntry(attrs);
+    const failures = opted.stsMailFactorFailures;
     const out = {
-      mail: first('mail').trim(),
-      verified: first('stsMailVerified').trim(),
-      factor: first(MailFactor.OPT_IN_ATTRIBUTE).trim().toLowerCase(),
-      failures: first('stsMailFactorFailures').trim()
+      mail: String(user.email || '').trim(),
+      verified: String(record.mailVerified || '').trim(),
+      factor: String(opted.stsMailFactor || '').trim().toLowerCase(),
+      failures: failures === undefined ? '' : String(failures)
     };
     log.debug("Leaving MailFactor.valuesOf().");
     return out;

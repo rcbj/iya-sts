@@ -35,10 +35,10 @@ namespace IyaSts.Directory;
 model AttributeSource {
   @attr(#{what: "The source id, the RDN."})
   cn?: (string)[];
-  @attr(#{jsonBlob: true, what: "The whole definition as one JSON value. No password."})
+  @attr(#{kind: "single", jsonBlob: true, what: "The whole definition as one JSON value. No password."})
   stsAttributeSourceData?: DirectoryJson;
-  @attr(#{what: "On a person: <source>:<attribute> a source wrote."})
+  @attr(#{kind: "multi", what: "On a person: <source>:<attribute> a source wrote."})
   stsAttributeSourced?: (string)[];
-  @attr(#{what: "On a person: <source>=<time> of the last read."})
+  @attr(#{kind: "multi", what: "On a person: <source>=<time> of the last read."})
   stsAttributeSourceSeen?: (string)[];
 }

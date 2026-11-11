@@ -36,6 +36,8 @@ const GENERALIZED_TIME =
 
 // Read once: a concept is made per entry, and a report walks every entry.
 let concepts: Map<string, any> | null = null;
+// Each record concept's fields, worked out once (`recordPlan()`).
+const plans = new Map<string, any[]>();
 
 interface FromOptions {
   // Asked for by name: `{ secrets: ['oauth.clientSecrets'] }`.
@@ -176,6 +178,104 @@ class DomainMap {
   }
 
   /**
+   * A record concept's fields, worked out once: the key split into its path
+   * and the JavaScript type a value must have. `fromRecord()` is asked for
+   * every session a page draws and every audit row a filter reads, so it
+   * does not split a key or look a type up per call.
+   *
+   * @param name - the concept
+   * @returns the plan, or undefined for no such concept
+   */
+  static recordPlan(name: string): any[] | undefined {
+    log.debug("Entering DomainMap.recordPlan().");
+    let plan = plans.get(name);
+    if (plan === undefined) {
+      const concept = DomainMap.catalogue().get(name);
+      if (!concept) {
+        log.debug("Leaving DomainMap.recordPlan(). No such concept.");
+        return undefined;
+      }
+      plan = concept.fields.map(function (field: any) {
+        return {
+          name: field.name,
+          derived: !!field.derived,
+          secret: !!(field.held && field.held.secret),
+          path: field.held ? String(field.held.key).split('.') : [],
+          type: field.type,
+          wanted: field.type === 'integer' ? 'number' : field.type,
+          array: !!field.array,
+          concept: field.concept
+        };
+      });
+      plans.set(name, plan);
+    }
+    log.debug("Leaving DomainMap.recordPlan().");
+    return plan;
+  }
+
+  // A HOT PATH: asked once per field of every record read through a concept,
+  // so no Entering/Leaving pair, which would drown the log.
+  /**
+   * Whether a held value is what a record field says it is.
+   *
+   * @param step - the field's plan
+   * @param value - the value
+   * @returns true when it fits
+   */
+  static fitsRecord(step: any, value: unknown): boolean {
+    if (step.type === 'map') {
+      return !!value && typeof value === 'object' && !Array.isArray(value);
+    }
+    if (step.type === 'concept') {
+      return !!value && typeof value === 'object';
+    }
+    return typeof value === step.wanted;
+  }
+
+  /**
+   * ONE FIELD of a concept from an entry (#1579), for a reader that needs a
+   * single fact: a filter over every entry of a walk, or one setting of an
+   * application. It reads that field's attribute exactly as `fromEntry()`
+   * would, without making the rest of the concept, so a walk costs what it
+   * cost when it read the attribute by name. Naming the field is asking for
+   * it: a secret field is answered here because the caller named it.
+   *
+   * @param name - the concept
+   * @param field - the field, by its name in the concept
+   * @param attributes - the entry's attributes
+   * @param options - what the entry alone cannot say
+   * @returns the field's value, or undefined when the entry holds none
+   */
+  static fieldOf<K extends keyof IyaDomain.Concepts,
+      F extends keyof IyaDomain.Concepts[K] & string>(name: K, field: F,
+      attributes: Record<string, unknown>,
+      options?: FromOptions): IyaDomain.Concepts[K][F] {
+    log.debug("Entering DomainMap.fieldOf().");
+    const concept = DomainMap.catalogue().get(name);
+    const found = concept && concept.fields.find(function (one: any) {
+      return one.name === field;
+    });
+    if (!found || !found.from) {
+      log.debug("Leaving DomainMap.fieldOf(). No such stored field.");
+      throw new TypeError('No stored field ' + field + ' in ' + name);
+    }
+    const source = found.from.on ?
+      (options && options.on && options.on[found.from.on]) || {} : attributes;
+    const values = DomainMap.valuesOf(source, found.from.attr)
+      .map(function (one) {
+        return DomainMap.typed(found.type, one);
+      }).filter(function (one) {
+        return one !== undefined;
+      });
+    let out: any;
+    if (values.length > 0) {
+      out = found.array ? values : values[0];
+    }
+    log.debug("Leaving DomainMap.fieldOf().");
+    return out;
+  }
+
+  /**
    * A concept from a record this service's own code keeps. Unlike an entry a
    * record already holds typed values, so a value of another type is left out
    * and nothing is converted.
@@ -189,50 +289,53 @@ class DomainMap {
   static fromRecord<K extends keyof IyaDomain.Concepts>(name: K, record: any,
       options?: FromOptions, path?: string): IyaDomain.Concepts[K] {
     log.debug("Entering DomainMap.fromRecord().");
-    const concept = DomainMap.catalogue().get(name);
-    if (!concept) {
+    const plan = DomainMap.recordPlan(name);
+    if (!plan) {
       log.debug("Leaving DomainMap.fromRecord(). No such concept.");
       throw new TypeError('No domain model is named ' + name);
     }
     const asked = (options && options.secrets) || [];
     const out: any = {};
-    const fits = function (field: any, value: unknown): boolean {
-      const wanted = field.type === 'integer' ? 'number' : field.type;
-      return field.type === 'concept' ?
-        !!value && typeof value === 'object' : typeof value === wanted;
-    };
-    concept.fields.forEach(function (field: any) {
-      const here = (path ? path + '.' : '') + field.name;
-      if (field.derived) {
+    for (let i = 0; i < plan.length; i++) {
+      const step = plan[i];
+      if (step.derived) {
         const given = options && options.derived &&
-          options.derived[field.name];
+          options.derived[step.name];
         if (given !== undefined) {
-          out[field.name] = given;
+          out[step.name] = given;
         }
-        return;
+        continue;
       }
-      if (field.held.secret && asked.indexOf(here) < 0) {
-        return;
+      // The field's path, for a secret asked by name and a nested concept.
+      const here = step.secret || step.type === 'concept'
+        ? (path ? path + '.' : '') + step.name : '';
+      if (step.secret && asked.indexOf(here) < 0) {
+        continue;
       }
-      const value = String(field.held.key).split('.')
-        .reduce(function (holder: any, key: string) {
-          return holder === undefined || holder === null ?
-            undefined : holder[key];
-        }, record);
-      const convert = function (one: unknown): unknown {
-        return field.type === 'concept' ?
-          DomainMap.fromRecord(field.concept, one, options, here) : one;
-      };
-      if (field.array) {
+      let value = record;
+      for (let k = 0; k < step.path.length; k++) {
+        if (value === undefined || value === null) {
+          value = undefined;
+          break;
+        }
+        value = value[step.path[k]];
+      }
+      if (step.array) {
         if (Array.isArray(value)) {
-          out[field.name] = value.filter(function (one) {
-            return fits(field, one);
-          }).map(convert);
+          const list = [];
+          for (let k = 0; k < value.length; k++) {
+            if (DomainMap.fitsRecord(step, value[k])) {
+              list.push(step.type === 'concept' ? DomainMap.fromRecord(
+                step.concept, value[k], options, here) : value[k]);
+            }
+          }
+          out[step.name] = list;
         }
-      } else if (fits(field, value)) {
-        out[field.name] = convert(value);
+      } else if (DomainMap.fitsRecord(step, value)) {
+        out[step.name] = step.type === 'concept' ? DomainMap.fromRecord(
+          step.concept, value, options, here) : value;
       }
-    });
+    }
     log.debug("Leaving DomainMap.fromRecord().");
     return out;
   }

@@ -102,6 +102,7 @@ import tokens = require('./gnap_tokens');
 import zcap = require('./token_zcap');
 import signals = require('./gnap_signals');
 import gnapCells = require('./gnap_cells');
+import GnapModel = require('./gnap_model');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -139,12 +140,11 @@ interface AsSelection {
   id?: string;
 }
 
-const vz = validation.z;
-const vt = validation.types;
-
-const AS_PARAMS = vz.object({ as: vt.opt(vt.identifier) });
-const GRANT_PARAMS = vz.object({ grant: vt.base64url });
-const HANDLE_PARAMS = vz.object({ handle: vt.base64url });
+// The paths' parameters are the model's (#1579): `models/gnap/gnap.tsp`'s
+// `@params`, each the shared type of `common/validation.js` it names.
+const AS_PARAMS = GnapModel.params('as');
+const GRANT_PARAMS = GnapModel.params('continue');
+const HANDLE_PARAMS = GnapModel.params('manage');
 
 const STATUS_FOR: Record<string, number> = {
   invalid_client: 401,
@@ -194,6 +194,9 @@ class GnapRoutes {
     const body = Object.assign({ error: { code: code,
                                           description: description } },
                                extra || {});
+    // THE HOLDING (#1579): recorded, never a change to what is sent.
+    GnapModel.holdError(code, 'GNAP');
+    GnapModel.hold('error-response', body, 'GNAP error');
     res.status(status).type('application/json')
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify(body));
@@ -201,7 +204,8 @@ class GnapRoutes {
     log.debug("Leaving GnapRoutes.gnapError().");
   }
 
-  private sendResult(res: Res, result: any): void {
+  // `setId` names the model's member set the answer is held to (#1579).
+  private sendResult(res: Res, result: any, setId: string): void {
     const { log } = this.deps;
     log.debug("Entering GnapRoutes.sendResult().");
     if (result.status === 204) {
@@ -209,6 +213,7 @@ class GnapRoutes {
       log.debug("Leaving GnapRoutes.sendResult().");
       return;
     }
+    GnapModel.hold(setId, result.body, setId);
     res.status(result.status || 200)
        .type('application/json')
        .set('Cache-Control', 'no-store')
@@ -338,7 +343,7 @@ class GnapRoutes {
         log.debug("Leaving the grant endpoint. Refused: " + result.why);
         return self.refuse(res, result, 'STS-GNAP-0163');
       }
-      self.sendResult(res, result);
+      self.sendResult(res, result, 'grant-response');
       log.debug("Leaving the grant endpoint.");
       return undefined;
     });
@@ -369,9 +374,11 @@ class GnapRoutes {
         log.debug("Leaving GNAP discovery. Off.");
         return undefined;
       }
+      const document = grants.capabilities(req, asId);
+      GnapModel.hold('discovery', document, 'discovery');
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(grants.capabilities(req, asId), null, 2));
+         .send(JSON.stringify(document, null, 2));
       log.debug("Leaving GNAP discovery.");
       return undefined;
     };
@@ -431,6 +438,7 @@ class GnapRoutes {
       document.status_list_aggregation_endpoint =
         self.deps.loadStatusList().aggregationUri(base);
       document.biscuit_revocation_endpoint = base + BISCUIT_REVOCATIONS_PATH;
+      GnapModel.hold('rs-discovery', document, 'RS-facing discovery');
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify(document, null, 2));
@@ -492,7 +500,7 @@ class GnapRoutes {
         self.refuse(res, result, 'STS-GNAP-0165');
         return;
       }
-      self.sendResult(res, result);
+      self.sendResult(res, result, 'grant-response');
       log.debug("Leaving the continuation endpoint.");
     });
 
@@ -529,7 +537,7 @@ class GnapRoutes {
         self.refuse(res, result, 'STS-GNAP-0167');
         return;
       }
-      self.sendResult(res, result);
+      self.sendResult(res, result, 'grant-response');
       log.debug("Leaving the token management endpoint.");
     });
 
@@ -560,7 +568,7 @@ class GnapRoutes {
         self.refuse(res, result, 'STS-GNAP-0168', true);
         return;
       }
-      self.sendResult(res, result);
+      self.sendResult(res, result, 'introspection-response');
       log.debug("Leaving the introspection endpoint.");
     }));
 
@@ -586,7 +594,7 @@ class GnapRoutes {
         self.refuse(res, result, 'STS-GNAP-0169', true);
         return;
       }
-      self.sendResult(res, result);
+      self.sendResult(res, result, 'registration-response');
       log.debug("Leaving the resource registration endpoint.");
     }));
 
@@ -602,10 +610,11 @@ class GnapRoutes {
         log.debug("Leaving GET /gnap/keys. Off.");
         return;
       }
+      const material = tokens.publicMaterial(grants.realmBase(req));
+      GnapModel.hold('keys', material, 'GET /gnap/keys');
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(tokens.publicMaterial(grants.realmBase(req)),
-                              null, 2));
+         .send(JSON.stringify(material, null, 2));
       log.debug("Leaving GET /gnap/keys.");
     });
 
@@ -619,6 +628,8 @@ class GnapRoutes {
       }
       const document = await zcap.controllerDocument(
           await tokens.zcapKeys(grants.realmBase(req)));
+      GnapModel.hold('zcap-controller', document,
+                     'GET /gnap/zcap/controller');
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify(document, null, 2));
@@ -660,9 +671,12 @@ class GnapRoutes {
       const ttl =
         Number(self.deps.config.value('oauth2.accessTokenStatusListTtlS')) ||
         60;
+      const list = { revocation_ids: ids, ttl: ttl };
+      GnapModel.hold('biscuit-revocations', list,
+                     'GET ' + BISCUIT_REVOCATIONS_PATH);
       res.status(200).type('application/json')
          .set('Cache-Control', 'max-age=' + ttl)
-         .send(JSON.stringify({ revocation_ids: ids, ttl: ttl }, null, 2));
+         .send(JSON.stringify(list, null, 2));
       log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". " +
                 ids.length + ".");
     });
