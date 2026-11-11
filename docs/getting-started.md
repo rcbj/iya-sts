@@ -530,12 +530,13 @@ docker compose up -d --wait
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
 * **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
-  build of `main`, the release's `M.N.O` (`1.0.0`) is the newest build of
-  `main` for that release, and the full `M.N.O.<build>` (`1.0.0.0`, or
-  `1.0.0.20261104151200`) names exactly one build. The repository's git
-  tags follow the same rule: `v1.0.0` is the newest build of `main` for the
-  release, and `v1.0.0.<build>` the commit of exactly one build. `STS_PORT`,
-  `PKI_PORT` and `KDC_PORT` move the published ports.
+  build of `main`, and each build of `main` is a release of its own, the
+  next patch (`1.0.1`, `1.0.2`, …), so the release's `M.N.O` names one
+  merge into `main`. The full `M.N.O.<build>` (`1.0.1.0`, or
+  `1.0.1.20261112090000`) names exactly one build. The repository's git
+  tags follow the same rule: `v1.0.1` is the commit of that release, and
+  `v1.0.1.<build>` the commit of exactly one build. `STS_PORT`, `PKI_PORT`
+  and `KDC_PORT` move the published ports.
 * **Kerberos works from the start.** The KDC is published on 88 (TCP and
   UDP), and the SPNEGO acceptor holds `HTTP/localhost`, the name a browser
   asks for at `https://localhost:8081`, under a random key the service makes
@@ -597,11 +598,18 @@ its own description of itself.
 ## Which build am I running?
 
 Every page says so, and so does the log. The version is **M.N.O.build**:
-the release, exactly as the repo-root `VERSION` file says it (`1.0.0`),
-followed by a **build number**. An ordinary build is numbered by the UTC
-instant the image was built, `YYYYMMDDHHMMSS`; a **release build** names its
-own number, so the 1.0.0 release is `1.0.0.0`. The commit it was built from
-and the build instant are reported beside it.
+the release, followed by a **build number**. An ordinary build is numbered
+by the UTC instant the image was built, `YYYYMMDDHHMMSS`; a **release build**
+names its own number, so the 1.0.0 release is `1.0.0.0`. The commit it was
+built from and the build instant are reported beside it.
+
+**Each merge into `main` is the next patch**: 1.0.0, then 1.0.1, 1.0.2 and
+so on. The build works it out from the repository's `vM.N.P` git tags, and
+nothing is written back to the repository, so the repo-root `VERSION` file
+still says the release a person last set (`1.0.0`). Editing `VERSION` is how
+a new minor or major release starts: set to `1.1.0`, the next build of
+`main` is `1.1.0` and the ones after it `1.1.1`, `1.1.2`. A build of any
+other branch, or from a checkout, carries `VERSION` as written.
 
 ```
 1.0.0.20261104120000      an ordinary build of release 1.0.0

@@ -1126,7 +1126,11 @@ instant, `YYYYMMDDHHMMSS`, unless the build is flagged as a RELEASE**
 `1.0.0.0`. A release flag with no valid number fails the image build
 (`STS-CORE-0164`); without the flag `BUILD_NUMBER` is ignored. The number, the
 commit and the build instant are stamped into `version.json` by the
-`Dockerfile`, so a restarted container reports the same build. Bump a release
+`Dockerfile`, so a restarted container reports the same build. **Every build
+of `main` is the next patch (rcbj, 2026-11-11)** — 1.0.0, 1.0.1, 1.0.2 —
+worked out at build from the `vM.N.P` git tags and committed nowhere
+(`STS_VERSION_RELEASE`, `STS-CORE-0175`); the override is editing `VERSION`,
+and that is also how a minor or major release is made. Bump a release
 by editing `VERSION` and running `node common/version.js --sync-manifests`.
 **There is one source**, `common/version.js`, and every surface that draws a
 version reads it — `tests/version.js` asserts the source each reads, not the

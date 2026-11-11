@@ -10852,9 +10852,47 @@ held M.N and the third component was the build instant or `BUILD_NUMBER`.
 `-f xacml-pep/Dockerfile`, so the PEP is the same release build);
 `STS_RELEASE=true BUILD_NUMBER=0 docker compose build` passes both through
 `docker-compose.yml`; and `.github/workflows/build-container.yml`'s manual
-run takes `release` and `build_number`, publishing `:<M.N.O.build>`,
-`:<M.N.O>` and `:latest` from main where an ordinary build publishes the full
-version and `:latest` only.
+run takes `release` and `build_number`. Every build of main publishes
+`:<M.N.O.build>`, `:<M.N.O>` and `:latest`, the release being the patch
+worked out below.
+
+**EVERY BUILD OF `main` IS THE NEXT PATCH (rcbj, 2026-11-11).** 1.0.0 is
+followed by 1.0.1, 1.0.2 and so on, one per merge, worked out WHEN THE IMAGES
+ARE BUILT from the repository's git tags, and **nothing is committed back**:
+`VERSION` goes on saying what a person wrote in it, and the patch a build of
+main carries is in its image, its Docker tags and its git tags.
+
+* **The rule** (`tests/tools/release-number.js`, held by
+  `tests/release_number.js`), with `VERSION`'s content `M.N.O`: only release
+  tags count, `vM.N.P` with exactly three numeric components (a build's own
+  `vM.N.O.<build>` and any other line's tags are ignored). If the commit being
+  built already carries one, that release is reused (a re-run). Otherwise, if
+  no `vM.N.*` tag exists, or `VERSION`'s `O` is above the highest `P`,
+  `VERSION` is used as written; otherwise it is `M.N.(highest P + 1)`.
+* **The override is editing `VERSION`**, and it is the only one (no labels,
+  no inputs): a change that sets it to `1.1.0` or `2.0.0` makes the first
+  build of it exactly that, and the builds after it `1.1.1`, `1.1.2`.
+* **`STS_VERSION_RELEASE`** carries it into the stamp. `--stamp` (here and
+  in `sts-core::version`, for the PEP) records it in place of `VERSION`'s
+  release, as `major`, `minor` and `patch` and in `version`; it must be
+  `M.N.O` exactly or the stamp is refused (`STS-CORE-0175`) and writes
+  nothing. **Unset or empty it changes nothing** — the release is `VERSION`'s,
+  exactly as before — and only `--stamp` reads it. It composes with a release
+  build: `STS_VERSION_RELEASE=1.0.1 STS_RELEASE=true BUILD_NUMBER=0` is
+  `1.0.1.0`.
+* **`.github/workflows/build-container.yml`** works the number out in *Work
+  out the release* before either image is built — from `git ls-remote`,
+  because its checkout is shallow and has no tags — and passes it to both
+  builds on `main` only (a run started by hand from `main` included); a
+  develop build passes nothing and stamps `VERSION`. Builds of `main` run one
+  at a time (its `concurrency` group), *Decide what to publish* works the
+  number out again and stops before any push if another build took it, and
+  *Tag the release in git* makes `v<M.N.P>` on the commit — never moving it,
+  since it is what the next build counts from — keeping it on a re-run of the
+  same commit and refusing one that names another, as for the full
+  `v<M.N.P>.<build>`. The published `:<M.N.P>` image tag therefore names one
+  merge. (From #1639 and #1647 until this, every build of main was `VERSION`'s
+  release, and `v1.0.0` and `:1.0.0` moved to the newest.)
 
 The `VERSION` file must be exactly three non-negative integers with no leading zero; a
 `v1.0.0`, a `-rc.1`, the old two-component `0.1` or a fourth component is

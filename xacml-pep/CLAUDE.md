@@ -519,7 +519,11 @@ that is the UTC build instant, `YYYYMMDDHHMMSS`, unless the image is built as
 a RELEASE (`--build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0`, the
 same two arguments the service's `Dockerfile` takes), when it is that number:
 `1.0.0.0`. A release flag with no valid number fails the image build
-(`STS-CORE-0164`) and without the flag `BUILD_NUMBER` is ignored. It is
+(`STS-CORE-0164`) and without the flag `BUILD_NUMBER` is ignored. A build of
+main also passes `STS_VERSION_RELEASE`, the next patch worked out from the git
+tags, as the release in place of `VERSION`'s (`M.N.O` exactly, or
+`STS-CORE-0175`; unset, nothing changes) — the rule is `common/CLAUDE.md`'s
+*The scheme*. It is
 stamped into `version.json` at image build time by the binary itself
 (`xacml-pep --stamp .`, `sts-core::version`'s `stamp()`, a port of
 `common/version.js` with `cargo test -p sts-core` holding the same cases as
