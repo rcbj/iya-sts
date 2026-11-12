@@ -623,6 +623,18 @@ async function childBody() {
           JSON.stringify(x.json).slice(0, 300));
   config.setOverride('oauth2.tokenExchangeKerberosOutput', true);
   proxy = await delegatedToSts(tgts.front);
+  // INTO THE NEXT SECOND before the exchange. X1's Token Request filed a
+  // development sighting under the bare client_id `kt-frontend`, so two
+  // entries register it, and `list()` orders them by their last activity at
+  // one-second resolution: the KDC's sighting of the front end just now, and
+  // the token endpoint's of `kt-frontend` in the exchange below. Across a
+  // second boundary the sighting is the newer, and `forClientId()` answered
+  // it — the PAC named `kt-frontend` rather than the front end's principal
+  // (run 19, single-node). Crossing the boundary every time makes that the
+  // case X2 always holds rather than one in however many runs.
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 1020 - (Date.now() % 1000));
+  });
   x = await exchange({ subject_token: b64u((await apFor(proxy)).token),
                        subject_token_type: GSS, requested_token_type: GSS });
   opened = x.json.access_token

@@ -16690,6 +16690,35 @@ function forClientId(clientId) {
   return found[0];
 }
 
+// EVERY APPLICATION THAT REGISTERS A client_id, in `forClientId()`'s order,
+// for a caller that has to choose among them by something the client_id does
+// not say. Development's token endpoint files a sighting under the bare
+// client_id (`seen()`), so a client_id an administrator put on an entry named
+// otherwise — a Kerberos service's `SPN@REALM`, say — is registered twice
+// once the client has asked for a token, and which of the two
+// `forClientId()` answers is decided by `list()`'s order: the newest
+// activity first, at one-second resolution. The token exchange's Kerberos
+// output asks this for the one that is a Kerberos service, and until it did
+// it named the sighting in the PAC on a second boundary (kerberos_tokens X2).
+/**
+ * Lists every application whose `oauthClientId` lists a value, matched
+ * exactly, in `forClientId()`'s order.
+ *
+ * @param clientId - the client id
+ * @returns the views, possibly none
+ */
+function everyForClientId(clientId) {
+  log.debug("Entering everyForClientId().");
+  const wanted = String(clientId == null ? '' : clientId).trim();
+  if (!wanted) {
+    log.debug("Leaving everyForClientId(). Nothing was asked for.");
+    return [];
+  }
+  const found = lookedUp('byClientId', wanted);
+  log.debug("Leaving everyForClientId(). " + found.length + ".");
+  return found;
+}
+
 // ---------------------------------------------------------------------------
 // WHICH APPLICATION ANSWERS TO THIS AppliesTo, or null.
 //
@@ -18528,6 +18557,9 @@ module.exports = {
   // The client_id lookup beside it, exported for oauth2.js's audienceScopes().
   // Two lookups rather than one that tries both — see forClientId()'s header.
   forClientId: forClientId,
+  // Every entry registering it, for a caller choosing among them (the token
+  // exchange's Kerberos output, which wants the Kerberos service).
+  everyForClientId: everyForClientId,
   isResourceServer: isResourceServer,
   API_PERMISSIONS: API_PERMISSIONS,
   // And the WS-Trust / SAML spelling of forAudience(), exported for

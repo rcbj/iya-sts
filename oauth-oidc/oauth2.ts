@@ -8677,12 +8677,28 @@ class OAuth2Server {
       const raw = String(sub || '');
       const clientId = /^urn:sts:client:/.test(raw)
         ? raw.slice('urn:sts:client:'.length) : raw;
-      const app = applications.forClientId(clientId) ||
-        applications.get(clientId);
-      if (app) {
-        const sp = krb5Tokens.servicePrincipalOf(app);
+      // EVERY APPLICATION THAT REGISTERS THE client_id, AND THE KERBEROS
+      // SERVICE AMONG THEM FIRST. S4U_DELEGATION_INFO's TransitedServices
+      // are principal names (MS-PAC section 2.9), so a party with
+      // an SPN is named by it whatever else registers its client_id. In
+      // development the token endpoint's sighting files the client under
+      // its bare client_id as well, and `forClientId()` answers whichever of
+      // the two saw activity in the later second — so this named the
+      // sighting, `kt-frontend`, in the PAC on a second boundary. The order
+      // otherwise is `forClientId()`'s, then the entry the id names.
+      const byId = applications.get(clientId);
+      const apps: Json[] = applications.everyForClientId(clientId)
+        .concat(byId ? [byId] : []);
+      for (const one of apps) {
+        const sp = krb5Tokens.servicePrincipalOf(one);
+        if (sp) {
+          log.debug("Leaving kerberosNameOf(). A Kerberos service.");
+          return sp.spn + '@' + sp.realm;
+        }
+      }
+      if (apps.length) {
         log.debug("Leaving kerberosNameOf(). An application.");
-        return sp ? sp.spn + '@' + sp.realm : String(app.identifier);
+        return String(apps[0].identifier);
       }
       const person = /^urn:uuid:/i.test(raw) ? nameForSubject(raw) : '';
       log.debug("Leaving kerberosNameOf().");
