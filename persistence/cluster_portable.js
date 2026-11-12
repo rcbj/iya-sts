@@ -281,6 +281,57 @@ function create(deps) {
     });
   }
 
+  /**
+   * One claim's fence lock, committed on its own. Every other reservation
+   * of the same claim is deleted with it, so the delete waits for a flush
+   * that still share-locks the previous name (#884).
+   *
+   * @param name - the lock row
+   * @param prefix - the claim's lock names, through the reservation's colon
+   * @returns a promise settled when the rows match
+   */
+  function installClaimLock(name, prefix) {
+    log.debug("Entering installClaimLock().");
+    log.debug("Leaving installClaimLock().");
+    return inTransaction(pool, function (client) {
+      return run(client, 'claimLock.insert',
+        kx('sts_cluster_locks').insert({ name: name })
+          .onConflict('name').ignore()
+      ).then(function () {
+        return run(client, 'claimLock.clear',
+          kx('sts_cluster_locks')
+            .whereRaw('left(??, char_length(?)) = ?',
+                      ['name', prefix, prefix])
+            .whereNot({ name: name }).del());
+      });
+    });
+  }
+
+  /**
+   * Deletes claim fence locks. One transaction, so the delete waits for a
+   * flush that still share-locks any of the names (#884).
+   *
+   * @param names - the lock rows
+   * @returns a promise of how many statements ran
+   */
+  function releaseClaimLocks(names) {
+    log.debug("Entering releaseClaimLocks().");
+    const list = (names || []).map(String).filter(function (name) {
+      return !!name;
+    }).sort();
+    if (!list.length) {
+      log.debug("Leaving releaseClaimLocks(). None.");
+      return Promise.resolve(0);
+    }
+    log.debug("Leaving releaseClaimLocks().");
+    return inTransaction(pool, function (client) {
+      return run(client, 'claimLock.release',
+        kx('sts_cluster_locks').whereIn('name', list).del());
+    }).then(function () {
+      return list.length;
+    });
+  }
+
   // ===================================================================
   // CLAIMS
   // ===================================================================
@@ -1124,6 +1175,8 @@ function create(deps) {
     claimOnce: claimOnce,
     claimMany: claimMany,
     releaseClaims: releaseClaims,
+    installClaimLock: installClaimLock,
+    releaseClaimLocks: releaseClaimLocks,
     takeOverFromGone: takeOverFromGone,
     originFence: originFence,
     nodeFence: nodeFence,

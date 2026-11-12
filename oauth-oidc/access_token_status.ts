@@ -188,15 +188,22 @@ const ALLOCATION_ATTEMPTS = 32;
 // another origin stays until it expires: that holder took no origin claim,
 // so its absence proves nothing.
 //
-// THE WINDOW THIS ACCEPTS. `freeLocally()` still skips an index whose entry
-// is live. An index whose row never committed can be reused once the claim
-// is released: `allocate()` returns before the minted flush, and the token
-// can be signed and sent before that row is durable. Origin adoption waits
-// out the previous holder (#617), and a membership counts as gone only once
-// it has left or its `cluster.nodeTtlMs` has passed, so the overlap is that
-// wait rather than the token's life. A process still inside `allocate()`
-// after its claim was released can hand out an index the new lessee also
-// hands out.
+// THE INDEX IS NOT HANDED OUT UNTIL ITS ROW HAS COMMITTED (#884). Releasing
+// a block while `allocate()` is still inside the minted flush would let the
+// next lessee take an index whose row never landed, and two live tokens
+// would share one bit. A block claim therefore installs a fence lock on the
+// database that writes the status row — the one database, or the global
+// tier when the store is two; the claim itself stays on the cell. The lock
+// is registered against the index before the entry is written, and
+// `allocate()` returns only once the minted flush has committed that row
+// while still holding the lock. A flush whose lock is already gone drops
+// the index and does not write it; `allocate()` undoes the local entry
+// without journalling a delete, marks the lease dead and takes another
+// block. A new lessee reads the store for that block's live indexes and
+// skips them, which the key-resident digests do not yet show. Releasing a
+// block deletes the lock first, so the delete waits for a flush that still
+// holds it, and only then deletes the claim. A process with no shared
+// committing store still returns the index at once.
 //
 // `allocateInProcess()`, a process with no shared claims table, is unchanged.
 // ---------------------------------------------------------------------------
@@ -216,6 +223,11 @@ interface StatusLease {
   useUntilMs: number;
   cursor: number;
   taken: Set<number>;
+  // The claim's fence lock, or '' when this process has no shared store.
+  // A dead lease lost that lock before its row committed and hands nothing
+  // else out.
+  lockName: string;
+  dead: boolean;
 }
 
 // idx -> { jti, kind, expiresAt (ms), allocatedAt (ms) }
@@ -361,6 +373,14 @@ interface AccessTokenStatusDeps {
   // process has joined, the origin alone before that, '' when it has
   // neither. Empty omits `origin`, and the claim keeps the process id.
   claimOrigin?: () => string;
+  // Indexes of one block whose rows are already in the store (#884). Empty
+  // when nothing is shared. A test supplies its own.
+  liveInBlock?: (realmId: string, block: number) => Promise<number[]>;
+  // Stands in for the minted commit (#884). Absent in the service: the
+  // publish waits on the store. A test resolves `{ committed: true }`,
+  // `{ lost: true }` or a failure.
+  settlePublished?: (row: { idx: number; lockName: string }) =>
+    Promise<{ committed?: boolean; lost?: boolean; error?: string }>;
   entries: any;
   invalid?: any;
   now: () => number;
@@ -478,6 +498,40 @@ class AccessTokenStatus {
         const holder = origin && node ? origin + '@' + node : origin;
         helpers.log.debug("Leaving claimOrigin().");
         return holder;
+      },
+      liveInBlock: function liveInBlock(realmId: string,
+                                        block: number): Promise<number[]> {
+        helpers.log.debug("Entering liveInBlock().");
+        let store: any = null;
+        try {
+          store = require('../persistence/persistence').clusterStore();
+        } catch (e) {
+          helpers.log.debug("Caught in liveInBlock(): " +
+                            ((e && e.message) || e));
+          // No store in this process. Nothing is shared, and the local
+          // entry is what freeLocally() already sees.
+          store = null;
+        }
+        if (!store || typeof store.mintedLiveKeys !== 'function') {
+          helpers.log.debug("Leaving liveInBlock(). No shared store.");
+          return Promise.resolve([]);
+        }
+        const keys: string[] = [];
+        const first = block * BLOCK_SIZE;
+        for (let i = 0; i < BLOCK_SIZE; i++) {
+          keys.push(String(first + i));
+        }
+        helpers.log.debug("Leaving liveInBlock().");
+        return Promise.resolve().then(function () {
+          return store.mintedLiveKeys('access_token_status.entries',
+                                      String(realmId || ''), keys);
+        }).then(function (found: any) {
+          return (found || []).map(function (key: any) {
+            return Number(key);
+          }).filter(function (idx: number) {
+            return Number.isInteger(idx);
+          });
+        });
       },
       entries: entries,
       invalid: invalid,
@@ -627,7 +681,8 @@ class AccessTokenStatus {
    *   `base` (any base URL in the ambient realm)
    * @returns the reference the token carries in `status.status_list`
    * @throws Error marked STS-OAUTH-0816 when the claim store cannot be asked,
-   *   STS-OAUTH-0817 when the list is full
+   *   STS-OAUTH-0817 when the list is full, STS-OAUTH-1009 when the block
+   *   claim's fence was lost before the status row committed
    */
   async allocate(opts: { jti: string; kind: string; expiresAt: number;
                          base: string }): Promise<StatusReference> {
@@ -635,24 +690,199 @@ class AccessTokenStatus {
     log.debug("Entering AccessTokenStatus.allocate(). kind=" + opts.kind);
     const { expiresAt } = this.wanted(opts);
     const realmId = String(realms.currentId());
-    // Two tries: the block held, then a fresh one when that one is full or
-    // ends too soon for this token.
+    // Two blocks, and up to three publishes on each. A lost fence drops the
+    // block. A store error tries another index of the same block. A block
+    // with no free index is given up, and the next round leases another.
+    let lost = 0;
+    let failed = 0;
     for (let round = 0; round < 2; round++) {
       let lease = this.leases.get(realmId) || null;
       if (!this.leaseServes(lease, expiresAt)) {
         lease = await this.leaseBlock(realmId, expiresAt);
       }
-      const idx = this.pickInLease(lease as StatusLease);
-      if (idx !== null) {
-        const ref = this.take(idx, opts, expiresAt);
-        log.debug("Leaving AccessTokenStatus.allocate(). idx=" + idx + ".");
-        return ref;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (!this.leaseServes(lease, expiresAt)) {
+          break;
+        }
+        const idx = this.pickInLease(lease as StatusLease);
+        if (idx === null) {
+          break;
+        }
+        const published = await this.publish(lease as StatusLease, idx, opts,
+                                             expiresAt, realmId);
+        if (published.ok && published.ref) {
+          log.debug("Leaving AccessTokenStatus.allocate(). idx=" +
+                    published.ref.idx + ".");
+          return published.ref;
+        }
+        if (published.lost) {
+          lost += 1;
+          (lease as StatusLease).dead = true;
+          this.leases.delete(realmId);
+          break;
+        }
+        failed += 1;
       }
-      // Full: let it go, and lease another.
-      this.leases.delete(realmId);
+      if (this.leases.get(realmId) === lease) {
+        this.leases.delete(realmId);
+      }
+    }
+    if (failed > 0) {
+      log.debug("Leaving AccessTokenStatus.allocate(). The store failed.");
+      throw this.storeFailure('the status row did not commit');
+    }
+    if (lost > 0) {
+      log.debug("Leaving AccessTokenStatus.allocate(). The fence was lost.");
+      throw this.fenceLost();
     }
     log.debug("Leaving AccessTokenStatus.allocate(). Full.");
     throw this.full();
+  }
+
+  // Writes the entry and, when the block is fenced, waits until that row
+  // has committed under the lock. A lost lock or a store error undoes the
+  // local entry. The undo does not journal a delete: a delete flushed after
+  // the next lessee had written the index would remove that token's row.
+  private async publish(lease: StatusLease, idx: number,
+                        opts: { jti: string; kind: string; base: string },
+                        expiresAt: number, realmId: string):
+      Promise<{ ok: boolean; lost: boolean; ref: StatusReference | null }> {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.publish(). idx=" + idx);
+    const lockName = lease.lockName || '';
+    if (lockName && typeof this.deps.settlePublished !== 'function') {
+      this.holdFence(lockName, realmId, idx);
+    }
+    const ref = this.take(idx, opts, expiresAt);
+    if (!lockName) {
+      log.debug("Leaving AccessTokenStatus.publish(). No shared store.");
+      return { ok: true, lost: false, ref: ref };
+    }
+    const settle = this.deps.settlePublished;
+    if (typeof settle === 'function') {
+      let answer: { committed?: boolean; lost?: boolean; error?: string }
+        | null = null;
+      try {
+        answer = await settle({ idx: idx, lockName: lockName });
+      } catch (e) {
+        log.debug("Caught in AccessTokenStatus.publish(): " +
+                  ((e && (e as Error).message) || e));
+        // The stand-in failed closed. The index is not returned.
+        answer = { error: (e && (e as Error).message) || String(e) };
+      }
+      if (answer && answer.committed && !answer.lost && !answer.error) {
+        log.debug("Leaving AccessTokenStatus.publish(). Committed.");
+        return { ok: true, lost: false, ref: ref };
+      }
+      this.undoEntry(realmId, idx);
+      const wasLost = !!(answer && answer.lost);
+      log.debug("Leaving AccessTokenStatus.publish(). " +
+                (wasLost ? "Lost." : "Not committed."));
+      return { ok: false, lost: wasLost, ref: null };
+    }
+    let answers: any[] = [];
+    let dropped = false;
+    try {
+      const persistence = require('../persistence/persistence');
+      answers = await persistence.commitThrough(
+        persistence.writeGeneration());
+      dropped = typeof persistence.claimFenceDropped === 'function' &&
+        !!persistence.claimFenceDropped('access_token_status.entries',
+                                        realmId, String(idx));
+      this.endFence(lockName, realmId, idx);
+    } catch (e) {
+      log.debug("Caught in AccessTokenStatus.publish(): " +
+                ((e && (e as Error).message) || e));
+      // The wait failed. The index is not returned, and the hold is
+      // dropped so a later flush of some other row does not wait on it.
+      this.endFence(lockName, realmId, idx);
+      this.undoEntry(realmId, idx);
+      log.debug("Leaving AccessTokenStatus.publish(). The wait failed.");
+      return { ok: false, lost: false, ref: null };
+    }
+    const erred = (answers || []).some(function (one: any) {
+      return one && one.error;
+    });
+    if (!dropped && !erred) {
+      log.debug("Leaving AccessTokenStatus.publish(). Committed.");
+      return { ok: true, lost: false, ref: ref };
+    }
+    this.undoEntry(realmId, idx);
+    log.debug("Leaving AccessTokenStatus.publish(). " +
+              (dropped ? "Lost." : "The store failed."));
+    return { ok: false, lost: !!dropped, ref: null };
+  }
+
+  // The in-memory hold the minted flush share-locks. Registered before the
+  // entry is written, so the flush that the write schedules already sees it.
+  private holdFence(lockName: string, realmId: string, idx: number): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.holdFence().");
+    const persistence = require('../persistence/persistence');
+    persistence.holdClaimFence(lockName, {
+      handle: 'access_token_status.entries', realm: realmId,
+      key: String(idx)
+    });
+    log.debug("Leaving AccessTokenStatus.holdFence().");
+  }
+
+  private endFence(lockName: string, realmId: string, idx: number): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.endFence().");
+    const persistence = require('../persistence/persistence');
+    if (typeof persistence.endClaimFence === 'function') {
+      persistence.endClaimFence(lockName, {
+        handle: 'access_token_status.entries', realm: realmId,
+        key: String(idx)
+      });
+    }
+    log.debug("Leaving AccessTokenStatus.endFence().");
+  }
+
+  // Drops the local entry of an index that was not published. The realms
+  // map's remove does not journal; a journalled delete could land after the
+  // next lessee's row and remove it. A test map has no such door, and its
+  // delete journals nothing.
+  private undoEntry(realmId: string, idx: number): void {
+    const { log, entries, realms } = this.deps;
+    log.debug("Entering AccessTokenStatus.undoEntry(). idx=" + idx);
+    if (typeof entries.onDemandLive === 'function') {
+      const handle = realms.handleFor('access_token_status.entries');
+      if (handle && typeof handle.remove === 'function') {
+        handle.remove(realmId, String(idx));
+        log.debug("Leaving AccessTokenStatus.undoEntry(). Removed.");
+        return;
+      }
+    }
+    if (typeof entries.delete === 'function') {
+      entries.delete(String(idx));
+    }
+    log.debug("Leaving AccessTokenStatus.undoEntry().");
+  }
+
+  private storeFailure(why: string): Error {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessTokenStatus.storeFailure().");
+    log.error(errorCodes.tag('STS-OAUTH-0816') + 'access_token_status: ' +
+              'the claim store could not be asked for a block of indexes (' +
+              (why || 'no reason given') + '), so the access token is not ' +
+              'minted.');
+    const e: any = new Error('no access-token status index could be ' +
+                             'allocated: the claim store could not be asked');
+    log.debug("Leaving AccessTokenStatus.storeFailure().");
+    return errorCodes.mark(e, 'STS-OAUTH-0816');
+  }
+
+  private fenceLost(): Error {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessTokenStatus.fenceLost().");
+    log.error(errorCodes.tag('STS-OAUTH-1009') + 'access_token_status: the ' +
+              'block claim\'s fence was lost before the status row ' +
+              'committed, so the access token is not minted on that index.');
+    const e: any = new Error('no access-token status index could be ' +
+                             'allocated: the block claim\'s fence was lost');
+    log.debug("Leaving AccessTokenStatus.fenceLost().");
+    return errorCodes.mark(e, 'STS-OAUTH-1009');
   }
 
   // The blocks this process holds, per realm, and the leases being taken.
@@ -664,7 +894,7 @@ class AccessTokenStatus {
   // Hot path (every access token): no Entering/Leaving pair.
   private leaseServes(lease: StatusLease | null, expiresAt: number): boolean {
     const t = this.deps.now();
-    return !!lease && t < lease.useUntilMs &&
+    return !!lease && !lease.dead && t < lease.useUntilMs &&
       expiresAt + CLAIM_SKEW_MS <= lease.untilMs;
   }
 
@@ -719,6 +949,24 @@ class AccessTokenStatus {
     return leasing;
   }
 
+  // Indexes of the block whose rows are already stored. Empty when the
+  // dependency does not answer, which is a process with nothing shared.
+  private async liveIndexes(realmId: string, block: number): Promise<number[]> {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.liveIndexes().");
+    const ask = this.deps.liveInBlock;
+    if (typeof ask !== 'function') {
+      log.debug("Leaving AccessTokenStatus.liveIndexes(). None.");
+      return [];
+    }
+    const found = await ask(realmId, block);
+    const indexes = (found || []).map((idx) => Number(idx)).filter((idx) => {
+      return Number.isInteger(idx);
+    });
+    log.debug("Leaving AccessTokenStatus.liveIndexes().");
+    return indexes;
+  }
+
   private async leaseBlockNow(realmId: string,
                               expiresAt: number): Promise<StatusLease> {
     const { log, clusterClaims, errorCodes, config, now } = this.deps;
@@ -736,8 +984,8 @@ class AccessTokenStatus {
     for (let attempt = 0; attempt < BLOCK_ATTEMPTS; attempt++) {
       const block = stsCrypto.randomInt(0, blocks);
       const spec: { scope: string; value: string; ttlMs: number;
-                    origin?: string } = {
-        scope: BLOCK_SCOPE, value: String(block), ttlMs: ttlMs
+                    origin?: string; fence?: boolean } = {
+        scope: BLOCK_SCOPE, value: String(block), ttlMs: ttlMs, fence: true
       };
       if (holder) {
         spec.origin = holder;
@@ -745,23 +993,36 @@ class AccessTokenStatus {
       const claimed = await clusterClaims.claim(spec);
       if (!claimed.ok) {
         if (claimed.reason !== 'used') {
-          log.error(errorCodes.tag('STS-OAUTH-0816') + 'access_token_status: ' +
-                    'the claim store could not be asked for a block of ' +
-                    'indexes (' + (claimed.why || 'no reason given') + '), ' +
-                    'so the access token is not minted.');
           log.debug("Leaving AccessTokenStatus.leaseBlockNow(). The store " +
                     "failed.");
-          const e: any = new Error('no access-token status index could be ' +
-                                   'allocated: the claim store could not be ' +
-                                   'asked');
-          throw errorCodes.mark(e, 'STS-OAUTH-0816');
+          throw this.storeFailure(claimed.why || 'no reason given');
         }
         continue;
       }
+      const lockName = claimed.fenced && claimed.lockName
+        ? String(claimed.lockName) : '';
       const lease: StatusLease = {
         block: block, untilMs: t + ttlMs, useUntilMs: t + BLOCK_USE_MS,
-        cursor: stsCrypto.randomInt(0, BLOCK_SIZE), taken: new Set<number>()
+        cursor: stsCrypto.randomInt(0, BLOCK_SIZE), taken: new Set<number>(),
+        lockName: lockName, dead: false
       };
+      if (lockName) {
+        try {
+          const live = await this.liveIndexes(realmId, block);
+          live.forEach((one) => {
+            lease.taken.add(one);
+          });
+        } catch (e) {
+          log.debug("Caught in AccessTokenStatus.leaseBlockNow(): " +
+                    ((e && (e as Error).message) || e));
+          // The block is leased and its live indexes could not be read.
+          // Handing one out would reuse a row this process has not seen.
+          // The claim stays until it expires, which wastes the block.
+          log.debug("Leaving AccessTokenStatus.leaseBlockNow(). The live " +
+                    "indexes could not be read.");
+          throw this.storeFailure((e && (e as Error).message) || String(e));
+        }
+      }
       this.leases.set(realmId, lease);
       log.debug("Leaving AccessTokenStatus.leaseBlockNow(). block=" + block +
                 ".");

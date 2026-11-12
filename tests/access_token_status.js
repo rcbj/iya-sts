@@ -506,6 +506,158 @@ function childMain() {
          'table, and releases nothing there',
          JSON.stringify({ kind: reap && reap.kind, off: off, ran: ran }));
 
+    // 3r–3t (#884): an index is not returned until its row has committed
+    // under the block claim's fence, a lost fence does not return that
+    // index, and a block whose rows are already in the store is skipped.
+    // settlePublished stands in for the minted commit, so this does not
+    // need a database.
+    const durableRows = new Map();
+    let durableOpened = false;
+    let finishDurable;
+    const durableGate = new Promise(function (resolve) {
+      finishDurable = resolve;
+    });
+    const durable = new Cls(Object.assign(Cls.defaultDeps(), {
+      entries: {
+        get: function (k) {
+          return durableRows.get(k);
+        },
+        set: function (k, v) {
+          durableRows.set(k, v);
+        },
+        delete: function (k) {
+          durableRows.delete(k);
+        }
+      },
+      clusterClaims: { claim: function () {
+        return Promise.resolve({
+          ok: true, fenced: true, lockName: 'lock-held',
+          handle: { key: 'kh' }
+        });
+      } },
+      liveInBlock: function () {
+        return Promise.resolve([]);
+      },
+      settlePublished: function () {
+        durableOpened = true;
+        return durableGate.then(function () {
+          return { committed: true };
+        });
+      }
+    }));
+    const durablePending = w.inRealm(function () {
+      return durable.allocate({
+        jti: 'dur-1', kind: 'oauth', expiresAt: Date.now() + 60000,
+        base: w.base
+      });
+    });
+    for (let wait = 0; wait < 20 && !durableOpened; wait++) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+    note(durableOpened === true && durableRows.size === 1,
+         '3r. allocate holds the index until the status row has committed',
+         String(durableOpened) + ' rows=' + durableRows.size);
+    finishDurable();
+    const durableRef = await durablePending;
+    note(durableRef && durableRows.has(String(durableRef.idx)),
+         '3r-ii. once the row has committed, that index is the one returned',
+         JSON.stringify(durableRef && durableRef.idx));
+
+    const lostRows = new Map();
+    const lostSeen = [];
+    const loser = new Cls(Object.assign(Cls.defaultDeps(), {
+      entries: {
+        get: function (k) {
+          return lostRows.get(k);
+        },
+        set: function (k, v) {
+          lostRows.set(k, v);
+        },
+        delete: function (k) {
+          lostRows.delete(k);
+        }
+      },
+      clusterClaims: { claim: function () {
+        return Promise.resolve({
+          ok: true, fenced: true, lockName: 'lock-lost',
+          handle: { key: 'kl' }
+        });
+      } },
+      liveInBlock: function () {
+        return Promise.resolve([]);
+      },
+      settlePublished: function (row) {
+        lostSeen.push(row.idx);
+        if (lostSeen.length === 1) {
+          return Promise.resolve({ lost: true });
+        }
+        return Promise.resolve({ committed: true });
+      }
+    }));
+    const lostRef = await w.inRealm(function () {
+      return loser.allocate({
+        jti: 'lost-1', kind: 'oauth', expiresAt: Date.now() + 60000,
+        base: w.base
+      });
+    });
+    note(lostSeen.length === 2 && lostSeen[0] !== lostSeen[1] &&
+         !lostRows.has(String(lostSeen[0])) &&
+         lostRows.has(String(lostRef.idx)) &&
+         lostRef.idx === lostSeen[1],
+         '3s. a fence lost before the row commits does not return that ' +
+         'index, and the next block\'s committed index is the one returned',
+         JSON.stringify({ seen: lostSeen, got: lostRef && lostRef.idx }));
+
+    let liveLeases = 0;
+    let liveWrote = false;
+    let liveCode = '';
+    const crowded = new Cls(Object.assign(Cls.defaultDeps(), {
+      entries: {
+        get: function () {
+          return null;
+        },
+        set: function () {
+          liveWrote = true;
+        }
+      },
+      clusterClaims: { claim: function () {
+        liveLeases += 1;
+        return Promise.resolve({
+          ok: true, fenced: true, lockName: 'lock-live',
+          handle: { key: 'kv' }
+        });
+      } },
+      liveInBlock: function (realmId, block) {
+        const out = [];
+        for (let i = 0; i < 1024; i++) {
+          out.push(block * 1024 + i);
+        }
+        return Promise.resolve(out);
+      }
+    }));
+    await w.inRealm(async function () {
+      try {
+        await crowded.allocate({
+          jti: 'live-1', kind: 'oauth', expiresAt: Date.now() + 60000,
+          base: w.base
+        });
+      } catch (e) {
+        liveCode = m.errorCodes.codeOf(e);
+      }
+    });
+    note(liveCode === 'STS-OAUTH-0817' && liveLeases === 2 &&
+         liveWrote === false,
+         '3t. a block whose indexes are already in the store is skipped, ' +
+         'and the list is full when every block tried is',
+         JSON.stringify({ code: liveCode, leases: liveLeases,
+                          wrote: liveWrote }));
+    note(clusterClaimsMod.claimFenceLockName(
+           'oauth2.access-token-status-block', '', 'abc', 'res') ===
+         'fence:claim:oauth2.access-token-status-block::abc:res',
+         '3u. a block claim\'s fence lock is named from the claim');
+
     // ==================================================================
     // 4. GNAP: BOTH JWT FORMATS, AND THE GRANT ENGINE'S REVOCATION
     // ==================================================================

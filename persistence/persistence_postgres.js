@@ -2462,6 +2462,12 @@ function checkChangeLogDense(client, log) {
 function create(options) {
   const url = options.url;
   const log = options.log;
+  // A block claim's fence (#884). Only the driver that writes the status
+  // row holds it: the one driver, or the global tier. The cell tier must
+  // not treat a lock it does not store as lost, or every publish fails.
+  const claimFenceOwner = !!options.claimFenceOwner;
+  const claimFences = claimFenceOwner &&
+    typeof options.claimFences === 'function' ? options.claimFences : null;
 
   // The four parameter arrays of RELEASE_CLAIMS_SQL (above, at module level),
   // for `[{ scope, realm, key, reservation }]` (#628). Here for the driver's
@@ -5187,6 +5193,100 @@ function create(options) {
     return flushMintedInTransaction(plan);
   }
 
+  // Share-locks the claim fences a flush still publishes under (#884).
+  // The names come back in order, which is the order two flushes lock
+  // them in. A name that is already gone is simply absent: that is a
+  // lost block, not an origin fence, and it does not stop the process.
+  function shareClaimFences(client, names) {
+    log.debug("Entering shareClaimFences().");
+    const ordered = names.slice().sort();
+    log.debug("Leaving shareClaimFences().");
+    if (portable) {
+      return dialect.run(client, 'claimFence.share',
+        kx('sts_cluster_locks').select('name').whereIn('name', ordered)
+          .orderBy('name').forShare()
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.name);
+        });
+      });
+    }
+    return client.query(
+      'SELECT name FROM sts_cluster_locks WHERE name = ANY($1::text[]) ' +
+      'ORDER BY name FOR SHARE', [ordered]
+    ).then(function (r) {
+      return (r.rows || []).map(function (row) {
+        return String(row.name);
+      });
+    });
+  }
+
+  // Rows whose journal key is not one a lost fence dropped. The stored
+  // key can differ from the journal key; the fence is registered on the
+  // journal key, which is what allocate() undoes.
+  function withoutLostFences(rows, drop) {
+    log.debug("Entering withoutLostFences().");
+    const kept = (rows || []).filter(function (row) {
+      const key = row.journalKey !== undefined && row.journalKey !== null
+        ? row.journalKey : row.key;
+      const id = String(row.handle) + '\n' + String(row.realm) + '\n' +
+        String(key);
+      return !drop[id];
+    });
+    log.debug("Leaving withoutLostFences().");
+    return kept;
+  }
+
+  // MINTED_FLUSH on a connection that already holds the claim-fence share
+  // locks. A fence that did not hold, or a compare-and-set that missed,
+  // throws: the outer transaction rolls back. Writing the batch again on
+  // another connection would publish a status row without those locks.
+  async function flushMintedOn(client, plan) {
+    log.debug("Entering flushMintedOn().");
+    if (mintedStatements) {
+      log.debug("Leaving flushMintedOn(). Portable.");
+      const out = await mintedStatements.flush(client, plan.touched,
+        function (stored) {
+          const resolved = resolveMerges(plan, stored);
+          return { resolved: resolved,
+                   named: mintedFlushWrites(plan, resolved, processId) };
+        });
+      return settleMintedFlush(client, plan, out.resolved,
+                               { unwritten: out.unwritten });
+    }
+    const expected = new Map();
+    plan.merging.forEach(function (row) {
+      const id = mintedIdOf(row);
+      if (mintedBodies.has(id)) {
+        expected.set(id, mintedBodies.get(id));
+      }
+    });
+    const resolved = resolveMerges(plan, expected);
+    const named = Object.assign(mintedFlushWrites(plan, resolved, processId),
+                                flushFence());
+    named.cas_h = plan.merging.map(function (row) {
+      return String(row.handle);
+    });
+    named.cas_r = plan.merging.map(function (row) {
+      return String(row.realm);
+    });
+    named.cas_k = plan.merging.map(function (row) {
+      return String(row.key);
+    });
+    named.cas_body = plan.merging.map(function (row) {
+      const body = expected.get(mintedIdOf(row));
+      return body === undefined ? null : body;
+    });
+    const answer = mintedFlushAnswer(await client.query(
+      mintedFlushQuery(named)));
+    if (!answer.known || !answer.fenceOk || !answer.go) {
+      log.debug("Leaving flushMintedOn(). The flush did not commit.");
+      throw new Error('a minted flush under a claim fence did not commit');
+    }
+    log.debug("Leaving flushMintedOn().");
+    return settleMintedFlush(client, plan, resolved, answer);
+  }
+
   function transactionOnce(fn) {
     log.debug('Entering transactionOnce().');
     log.debug("Leaving transactionOnce().");
@@ -6672,21 +6772,82 @@ function create(options) {
       log.debug('Entering the postgres driver saveMinted(). ' +
                 upserts.length + ' upsert(s), ' + deletes.length +
                 ' delete(s).');
-      const plan = planMintedFlush(upserts, deletes);
-      log.debug("Leaving saveMinted().");
-      return flushMinted(plan).then(function (settled) {
-        rememberFlush(plan, settled.resolved, settled.refused);
-        log.debug('Leaving the postgres driver saveMinted(). ' +
-                  settled.refused.length + ' refused by a tombstone, ' +
-                  settled.merged.length + ' merged.');
-        return { refused: settled.refused, merged: settled.merged };
-      }, function (err) {
-        // Nothing of it was committed, and what the rows hold now is not
-        // known here: the next flush of them asks the store again.
-        log.debug("Caught in saveMinted(): " + ((err && err.message) || err));
-        plan.touched.forEach(function (row) {
-          mintedBodies.delete(mintedIdOf(row));
+      const view = claimFences ? claimFences() : null;
+      const names = view && view.names && view.names.length
+        ? view.names : null;
+      if (!names) {
+        const plan = planMintedFlush(upserts, deletes);
+        log.debug("Leaving saveMinted().");
+        return flushMinted(plan).then(function (settled) {
+          rememberFlush(plan, settled.resolved, settled.refused);
+          log.debug('Leaving the postgres driver saveMinted(). ' +
+                    settled.refused.length + ' refused by a tombstone, ' +
+                    settled.merged.length + ' merged.');
+          return { refused: settled.refused, merged: settled.merged };
+        }, function (err) {
+          // Nothing of it was committed, and what the rows hold now is not
+          // known here: the next flush of them asks the store again.
+          log.debug("Caught in saveMinted(): " +
+                    ((err && err.message) || err));
+          plan.touched.forEach(function (row) {
+            mintedBodies.delete(mintedIdOf(row));
+          });
+          throw err;
         });
+      }
+      // The status row's block-claim lock is share-locked in THIS
+      // transaction, and the one-statement flush runs on the same
+      // connection. A lock that is already gone drops that index; the rest
+      // of the batch still commits. A fence that does not hold throws, and
+      // the transaction rolls back, rather than writing the batch on a
+      // second connection that does not hold these locks.
+      log.debug("Leaving saveMinted(). Under the claim fence.");
+      let lostIds = [];
+      let lastPlan = null;
+      return withTransaction(function (client) {
+        lastPlan = null;
+        return shareClaimFences(client, names).then(function (held) {
+          const have = {};
+          held.forEach(function (name) {
+            have[name] = true;
+          });
+          const missing = names.filter(function (name) {
+            return !have[name];
+          });
+          lostIds = view.lose(missing);
+          const drop = {};
+          lostIds.forEach(function (id) {
+            drop[id] = true;
+          });
+          const keptUp = withoutLostFences(upserts, drop);
+          const keptDown = withoutLostFences(deletes, drop);
+          if (!keptUp.length && !keptDown.length) {
+            return { refused: [], merged: [] };
+          }
+          const plan = planMintedFlush(keptUp, keptDown);
+          lastPlan = plan;
+          return flushMintedOn(client, plan).then(function (settled) {
+            return { refused: settled.refused, merged: settled.merged,
+                     remember: settled };
+          });
+        });
+      }).then(function (answer) {
+        if (lastPlan && answer.remember) {
+          rememberFlush(lastPlan, answer.remember.resolved, answer.refused);
+        }
+        view.commitLost(lostIds);
+        log.debug('Leaving the postgres driver saveMinted(). ' +
+                  answer.refused.length + ' refused by a tombstone, ' +
+                  answer.merged.length + ' merged.');
+        return { refused: answer.refused, merged: answer.merged };
+      }, function (err) {
+        log.debug("Caught in saveMinted(): " +
+                  ((err && err.message) || err));
+        if (lastPlan) {
+          lastPlan.touched.forEach(function (row) {
+            mintedBodies.delete(mintedIdOf(row));
+          });
+        }
         throw err;
       });
     },
@@ -8257,6 +8418,92 @@ function create(options) {
           return String(row.key || '');
         }).filter(function (key) {
           return !!key;
+        });
+      });
+    },
+
+    // THE BLOCK CLAIM'S FENCE LOCK (#884), on THIS database, which is the
+    // one that writes the status row. Inserted after the claim, and every
+    // other reservation of the same claim is deleted in the same
+    // transaction, so a new lessee waits for a flush that still holds the
+    // previous lock. The name is not logged: it carries the reservation.
+    installClaimFence: function (scope, realm, key, reservation) {
+      log.debug("Entering installClaimFence().");
+      const claims = require('../cluster/cluster_claims');
+      const name = claims.claimFenceLockName(scope, realm, key, reservation);
+      const prefix = name.slice(0, name.length -
+        String(reservation || '').length);
+      log.debug("Leaving installClaimFence().");
+      if (portable) {
+        return portable.installClaimLock(name, prefix);
+      }
+      return poolTransact(function (client) {
+        return client.query(
+          'INSERT INTO sts_cluster_locks (name) VALUES ($1) ' +
+          'ON CONFLICT (name) DO NOTHING', [name]
+        ).then(function () {
+          return client.query(
+            'DELETE FROM sts_cluster_locks WHERE left(name, ' +
+            'char_length($1)) = $1 AND name <> $2', [prefix, name]);
+        });
+      });
+    },
+
+    // Deletes the fence locks of the claims about to be released, in one
+    // transaction so the delete waits for an in-flight share lock. The
+    // claim rows are a different statement, on purpose: this database may
+    // not be the one that holds them.
+    releaseClaimFences: function (rows) {
+      log.debug("Entering releaseClaimFences().");
+      const claims = require('../cluster/cluster_claims');
+      const names = (rows || []).filter(function (row) {
+        return row && row.key && row.reservation;
+      }).map(function (row) {
+        return claims.claimFenceLockName(row.scope, row.realm, row.key,
+                                         row.reservation);
+      });
+      if (!names.length) {
+        log.debug("Leaving releaseClaimFences(). None.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving releaseClaimFences().");
+      if (portable) {
+        return portable.releaseClaimLocks(names);
+      }
+      return poolTransact(function (client) {
+        return client.query(
+          'DELETE FROM sts_cluster_locks WHERE name = ANY($1::text[])',
+          [names.slice().sort()]);
+      }).then(function () {
+        return names.length;
+      });
+    },
+
+    // Which of `keys` are live minted rows: not a tombstone, and not past
+    // their expiry. The writer, not the replica, so a row that just
+    // committed is visible. A text range would order '1000' before '999'.
+    mintedLiveKeys: function (handle, realmId, keys) {
+      log.debug("Entering mintedLiveKeys().");
+      const list = (keys || []).map(String).filter(function (key) {
+        return key !== '';
+      });
+      if (!list.length) {
+        log.debug("Leaving mintedLiveKeys(). None.");
+        return Promise.resolve([]);
+      }
+      log.debug("Leaving mintedLiveKeys().");
+      return dialect.run(pool, 'mintedLiveKeys',
+        kx('sts_minted').select('key')
+          .where({ handle: String(handle), realm: String(realmId || '') })
+          .whereIn('key', list)
+          .whereNot({ body: TOMBSTONE })
+          .where(function () {
+            this.whereNull('expires_at')
+              .orWhere('expires_at', '>', dialect.now());
+          })
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.key);
         });
       });
     },

@@ -17,6 +17,13 @@ export interface ClaimResult {
   handle?: any;
   // When the claim was taken, by the store's clock (ms) — a fencing token.
   claimedAt?: number;
+  // A block claim asked for a fence lock (#884). True once that lock is
+  // installed on the database that writes the guarded row; false when this
+  // process has no shared store. Absent on a claim that did not ask.
+  fenced?: boolean;
+  // The lock's name, set only when `fenced` is true. A flush share-locks it
+  // until the guarded row commits.
+  lockName?: string;
   reason?: 'used' | 'store' | string;
   why?: string;
   existing?: any;

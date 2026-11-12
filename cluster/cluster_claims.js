@@ -205,13 +205,17 @@ function ensurePurgeJob(schedulerInstance) {
 // ---------------------------------------------------------------------------
 // THE CLAIM.
 //
-//   claim({ scope, value, ttlMs, realm, origin })
+//   claim({ scope, value, ttlMs, realm, origin, fence })
 //
 // `scope` names the kind of value ('oauth.code', 'saml2.artifact'); `value` is
 // the value itself and never leaves this function; `ttlMs` is how long it could
 // still be valid; `realm` defaults to the ambient one. `origin`, when set, is
 // what the row's informational column says took it (the access-token status
 // list stamps `origin@node`, #884); otherwise the store names this process.
+// `fence`, when set, installs a lock row on the database that writes the
+// guarded row, after the claim and before this resolves. A claim that does
+// not ask is not fenced. The memory store has no lock and answers
+// `fenced: false`.
 //
 // Resolves to `{ ok: true, handle, claimedAt }`,
 // `{ ok: false, reason: 'used', existing }`
@@ -220,11 +224,13 @@ function ensurePurgeJob(schedulerInstance) {
 /**
  * Claims a single-use value once, for the whole cluster where the store is
  * shared and for this process otherwise. `opts` holds `scope`, `value`,
- * `ttlMs`, `realm` (the ambient realm by default) and `origin` (the holder
- * the row records, this process when omitted). Resolves
- * `{ ok: true, handle, claimedAt }`, `{ ok: false, reason: 'used', existing }`
- * or `{ ok: false, reason: 'store', why }`, on which the caller refuses; it
- * never rejects.
+ * `ttlMs`, `realm` (the ambient realm by default), `origin` (the holder
+ * the row records, this process when omitted) and `fence` (install the
+ * claim's lock before resolving). Resolves `{ ok: true, handle, claimedAt }`
+ * — with `fenced` and `lockName` when the lock is held, and `fenced: false`
+ * when a fence was asked of a memory store — `{ ok: false, reason: 'used',
+ * existing }` or `{ ok: false, reason: 'store', why }`, on which the caller
+ * refuses; it never rejects.
  *
  * @param {any} opts
  * @returns {Promise<import('../types/cluster').ClaimResult>}
@@ -266,7 +272,11 @@ function claim(opts) {
     memory.set(key, { reservation: reservation, claimedAt: now,
                       expiresAt: now + ttlMs });
     log.debug("Leaving claim(). Claimed, in memory.");
-    return Promise.resolve({ ok: true, handle: handle, claimedAt: now });
+    const taken = { ok: true, handle: handle, claimedAt: now };
+    if (o.fence) {
+      taken.fenced = false;
+    }
+    return Promise.resolve(taken);
   }
   ensurePurgeJob();
   log.debug("Leaving claim(). Asking the store.");
@@ -277,16 +287,47 @@ function claim(opts) {
   return Promise.resolve().then(function () {
     return theStore.claimOnce(scope, realmId, digest, once);
   }).then(function (answer) {
-    if (answer && answer.claimed) {
-      // WHEN, BY THE STORE'S CLOCK (2026-09-17): a claim re-taken after its
-      // lifetime lapsed is a LATER time than the one it replaced, which is
-      // what lets a caller use it as a fencing token — the back-channel
-      // logout deliveries do (`oauth-oidc/backchannel_logout.ts`).
-      return { ok: true, handle: handle,
-               claimedAt: Number(answer.claimedAt) || Date.now() };
+    if (!(answer && answer.claimed)) {
+      return { ok: false, reason: 'used',
+               existing: (answer && answer.existing) || null };
     }
-    return { ok: false, reason: 'used',
-             existing: (answer && answer.existing) || null };
+    // WHEN, BY THE STORE'S CLOCK (2026-09-17): a claim re-taken after its
+    // lifetime lapsed is a LATER time than the one it replaced, which is
+    // what lets a caller use it as a fencing token — the back-channel
+    // logout deliveries do (`oauth-oidc/backchannel_logout.ts`).
+    const won = { ok: true, handle: handle,
+                  claimedAt: Number(answer.claimedAt) || Date.now() };
+    if (!o.fence || typeof theStore.installClaimFence !== 'function') {
+      return won;
+    }
+    // The lock commits before this resolves, so a caller cannot publish
+    // against a claim whose flush would not be able to hold it. A failure
+    // releases the claim: a lock-less claim must not be handed out.
+    const lockName = claimFenceLockName(scope, realmId, digest, reservation);
+    return Promise.resolve().then(function () {
+      return theStore.installClaimFence(scope, realmId, digest, reservation);
+    }).then(function () {
+      won.fenced = true;
+      won.lockName = lockName;
+      return won;
+    }, function (e) {
+      const giveBack = typeof theStore.releaseClaimFences === 'function'
+        ? theStore.releaseClaimFences([handle]) : null;
+      return Promise.resolve(giveBack).then(function () {
+        return release(handle);
+      }, function (releaseFenceErr) {
+        log.debug("Caught in claim(): " + ((releaseFenceErr &&
+                  releaseFenceErr.message) || releaseFenceErr));
+        // The lock may still be there. Releasing the claim still leaves
+        // no token issued; the next lessee's install deletes a leftover
+        // lock of this claim.
+        return release(handle);
+      }).then(function () {
+        storeFailed(scope, e);
+        return { ok: false, reason: 'store',
+                 why: (e && e.message) || String(e) };
+      });
+    });
   }, function (e) {
     storeFailed(scope, e);
     return { ok: false, reason: 'store', why: (e && e.message) || String(e) };
@@ -549,7 +590,17 @@ function releaseMany(handles) {
     });
   }
   log.debug("Leaving releaseMany(). Asking the store.");
+  // The fence lock first, on the database that writes the guarded row.
+  // That delete waits for a flush still share-locking the name, and only
+  // then is the claim itself deleted. A crash between the two leaves the
+  // claim, which wastes the block and does not reuse it. A store with no
+  // fence door releases the claims as it always did.
   return Promise.resolve().then(function () {
+    if (typeof theStore.releaseClaimFences !== 'function') {
+      return 0;
+    }
+    return theStore.releaseClaimFences(list);
+  }).then(function () {
     return theStore.releaseClaims(list);
   }).then(function (count) {
     return Number(count) || 0;
@@ -691,6 +742,19 @@ function reset() {
 }
 
 capabilities.provide('cluster.claims');
+
+// The fence lock of one claim reservation (#884). The reservation is the
+// last component, as an origin lock's is: releasing the claim deletes this
+// row, and a flush that share-locked it then finds it gone. A stable name
+// would still be there, and READ COMMITTED would keep the stale holder.
+// The claim's key is the digest, so the name does not carry the block
+// number. No Entering/Leaving pair: a minted flush and a block claim both
+// call it, and the line would sit on every fenced publish.
+function claimFenceLockName(scope, realm, key, reservation) {
+  return 'fence:claim:' + String(scope || '') + ':' +
+    String(realm || '') + ':' + String(key || '') + ':' +
+    String(reservation || '');
+}
 
 // ---------------------------------------------------------------------------
 // A CLAIM WHOSE HOLDER HAS GONE (#884).
@@ -892,5 +956,6 @@ module.exports = {
   ensurePurgeJob: ensurePurgeJob,
   selectAbandoned: selectAbandoned,
   releaseAbandoned: releaseAbandoned,
+  claimFenceLockName: claimFenceLockName,
   reset: reset
 };

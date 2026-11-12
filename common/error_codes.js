@@ -11595,6 +11595,11 @@ const CODES = [
       'stopped process failed (#884). The leases stay until they expire, ' +
       'so a restarted process keeps wasting blocks until then.',
     spec: 'none (recorded only)' },
+  { code: 'STS-OAUTH-1009',
+    summary: 'An access-token status index was not published because the ' +
+      'block claim\'s fence was lost before its status row committed ' +
+      '(#884). The access token is not minted on that index.',
+    spec: 'none (recorded only)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

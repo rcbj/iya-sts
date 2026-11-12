@@ -822,6 +822,30 @@ function create(options) {
     });
   };
 
+  // The status row is global and the block claim is on the cell, so the
+  // fence lock lives on the global database: a share lock on the cell
+  // would not hold the flush that writes the row (#884). The cell driver
+  // is not the fence's owner and does not report those locks lost.
+  driver.installClaimFence = function (scope, realm, key, reservation) {
+    log.debug("Entering tiered installClaimFence().");
+    log.debug("Leaving tiered installClaimFence().");
+    return globalDriver.installClaimFence(scope, realm, key, reservation);
+  };
+  driver.releaseClaimFences = function (rows) {
+    log.debug("Entering tiered releaseClaimFences().");
+    log.debug("Leaving tiered releaseClaimFences().");
+    return globalDriver.releaseClaimFences(rows);
+  };
+  driver.mintedLiveKeys = function (handle, realmId, keys) {
+    log.debug("Entering tiered mintedLiveKeys().");
+    const target = tiers.mintedTierOf(handle) === 'global' ? globalDriver
+                                                           : cellDriver;
+    log.debug("Leaving tiered mintedLiveKeys().");
+    return typeof target.mintedLiveKeys === 'function'
+      ? target.mintedLiveKeys(handle, realmId, keys)
+      : Promise.resolve([]);
+  };
+
   driver.readMinted = function (handle, realmId, key) {
     log.debug("Entering tiered readMinted().");
     log.debug("Leaving tiered readMinted().");
