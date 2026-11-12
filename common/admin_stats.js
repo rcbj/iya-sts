@@ -53,7 +53,7 @@
 // ---------------------------------------------------------------------------
 
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
-        namesForSubjects, namesForSubjectsAsync, warmPeopleAsync,
+        namesForSubjects, namesForSubjectsAsync, subjectsForNamesAsync,
         LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and the error-code table and nothing else here, so it cannot join a
@@ -5649,10 +5649,12 @@ function recordsHeldBy(name) {
 // (`lookupEntriesAsync()`, which answers what `lookup()` and `get()`
 // would), resolves every subject the answers name in one asynchronous
 // question, and then builds the rows as `userRow()` builds one — the same
-// builder, handed the records (`preloadedHeld`). The person's own subject is
-// still `subjectForName()`'s, after the names were warmed into the window.
-// Held whole, there is no store to ask, and only the subjects are asked
-// asynchronously.
+// builder, handed the records (`preloadedHeld`). The person's OWN subject
+// is one `subjectsForNamesAsync()` of the rows' identity keys (#881), not
+// `subjectForName()` per row and not a warm of `uid=<name>`: a certificate
+// DN, a DID, a SPIFFE ID and a name that is not the uid all miss that warm
+// and were still one blocking read each. Held whole, there is no store to
+// ask, and only the subjects are asked asynchronously.
 // ---------------------------------------------------------------------------
 let preloadedHeld = null;
 // The users page's register entries per shown key (#1001), the same way.
@@ -5661,7 +5663,10 @@ let preloadedUserEntries = null;
 // The candidate records filed under one person by the register's index —
 // by each name and by the subject — read asynchronously. Unfiltered: the
 // holder test resolves subjects, so it is made where they are resolved.
-async function recordsHeldByAsync(name) {
+// `resolvedSubject` is that subject's answer when the caller already asked
+// for the page (#881). Undefined keeps today's `subjectForName()`; a
+// string, including '', is the answer and is not asked again.
+async function recordsHeldByAsync(name, resolvedSubject) {
   log.debug("Entering recordsHeldByAsync().");
   const wanted = String(name || '');
   const key = identityKeyOf(wanted);
@@ -5670,11 +5675,16 @@ async function recordsHeldByAsync(name) {
       return 'u:' + one;
     });
   let subject = '';
-  try {
-    subject = String(subjectForName(key) || '');
-  } catch (e) {
-    log.debug("Caught in recordsHeldByAsync(): " + ((e && e.message) || e));
-    subject = '';
+  if (resolvedSubject === undefined) {
+    try {
+      subject = String(subjectForName(key) || '');
+    } catch (e) {
+      log.debug("Caught in recordsHeldByAsync(): " +
+                ((e && e.message) || e));
+      subject = '';
+    }
+  } else {
+    subject = String(resolvedSubject || '');
   }
   if (subject) {
     indexKeys.push('s:' + subject);
@@ -5727,8 +5737,31 @@ async function userRowsOfAsync(keys) {
     });
   }
   if (tokens.onDemandLive() && list.length) {
-    await warmPeopleAsync(list);
-    const answers = await Promise.all(list.map(recordsHeldByAsync));
+    // THE ROW'S OWN SUBJECT, ASKED WITH THE OTHERS (#881). The key is the
+    // one `userRow()` would hand `subjectForName()` — folded here, because
+    // the batch itself tries the whole string first and a page of identity
+    // keys has already decided the fold. A failure is still a page: the
+    // u: tokens remain and the s: ones are absent for this draw.
+    const folded = list.map(function (key) {
+      return identityKeyOf(key);
+    });
+    let subjects = [];
+    try {
+      subjects = await subjectsForNamesAsync(folded);
+    } catch (e) {
+      log.debug("Caught in userRowsOfAsync(): " +
+                ((e && e.message) || e));
+      subjects = folded.map(function () {
+        return '';
+      });
+    }
+    if (!Array.isArray(subjects)) {
+      subjects = [];
+    }
+    const answers = await Promise.all(list.map(function (key, i) {
+      const one = subjects.length > i ? subjects[i] : '';
+      return recordsHeldByAsync(key, one);
+    }));
     held = new Map();
     list.forEach(function (key, i) {
       held.set(key, answers[i]);

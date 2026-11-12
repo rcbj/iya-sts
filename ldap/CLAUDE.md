@@ -853,7 +853,13 @@ ldif or multi-cell service is unchanged.
       `locateStoredAsync()` is `locateEntry()`'s entry for the four
       identifier shapes, sharing its halves (`firstRecording()`,
       `residentEntryByUuid()`, `uuidHolderOf()`) so the two cannot rank
-      differently. **`credentialCensusAsync()`** is the census on them —
+      differently. `subjectsForNamesAsync()` is `subjectForName()` for many
+      names — the whole string, then the fold — through `byKeys`, `byName`
+      eight at a time, `entriesByUuidsAsync()` and `byAttribute` eight at a
+      time, and a DN outside `ou=users` and `ou=devices` is a resident
+      lookup whose store question is `byAttribute`; `/admin/users`'
+      on-demand token rows ask it through `subjectsForAsync` (#881).
+      **`credentialCensusAsync()`** is the census on them —
       5,006 names were ten `byKeys`, six `byName` and four identifier
       questions, none synchronous, where the synchronous census asked
       5,015 — and `credentials.factorCensusAsync()`,
@@ -1483,11 +1489,13 @@ identity is here*, carries the design and rcbj's choices; this is the directory'
 | **Looked up through a validating index** — a hit is checked against the store, a miss rebuilds once per directory version, so a foreign subject cannot cost a walk per lookup | `entryByUuid()` |
 
 **THE SUBJECT RESOLVER IS A SLOT THIS FILE FILLS**, `helpers.setSubjectResolver({
-subjectFor, nameFor })`: `helpers.userFor()` asks for a person's `sub` and
-`admin_stats.js`'s `identityOf()` asks who a `sub` names. Rule 3e's test answers yes both
-ways round — `helpers.js` is a leaf this module requires, and a require the other way
-would register every `/admin/ldap/*` route at #3. Both answer in the ambient realm and
-only for PERSON entries. **A process with no directory has no subjects**: `userFor()`
+subjectFor, nameFor, namesFor, namesForAsync, warmNames, subjectsForAsync })`:
+`helpers.userFor()` asks for a person's `sub` and `admin_stats.js`'s
+`identityOf()` asks who a `sub` names. `subjectsForAsync` is
+`subjectsForNamesAsync()`, many names at once (#881). Rule 3e's test answers
+yes both ways round — `helpers.js` is a leaf this module requires, and a
+require the other way would register every `/admin/ldap/*` route at #3. Both
+answer in the ambient realm and only for PERSON entries. **A process with no directory has no subjects**: `userFor()`
 gives `sub: ''` there rather than the retired name-derived form.
 
 **A SUBJECT IS NOT A USERNAME, AND NOTHING IS CREATED NAMED AFTER ONE.** `createUser()`

@@ -328,9 +328,11 @@ function hasSubjectResolver() {
  * fills it.
  *
  * An object without both `subjectFor()` and `nameFor()` is ignored
- * (STS-CORE-0090). `namesFor(subs)`, many subjects at once, is optional.
+ * (STS-CORE-0090). `namesFor(subs)`, many subjects at once, is optional,
+ * and so is `subjectsForAsync(names)` (#881).
  *
- * @param resolver - `{ subjectFor(name), nameFor(sub), namesFor?(subs) }`
+ * @param resolver - `{ subjectFor(name), nameFor(sub), namesFor?(subs),
+ *   subjectsForAsync?(names) }`
  */
 function setSubjectResolver(resolver) {
   log.debug("Entering setSubjectResolver().");
@@ -643,6 +645,62 @@ async function namesForSubjectsAsync(subjects) {
               'synchronously: ' + ((e && e.message) || e));
     log.debug("Leaving namesForSubjectsAsync(). Asked synchronously.");
     return namesForSubjects(subjects);
+  }
+}
+
+// MANY NAMES AT ONCE (#881). `subjectForName()` per shown row of
+// `/admin/users` was one synchronous directory read per row while the token
+// register is on demand. The resolver's optional `subjectsForAsync` asks
+// them together, off the event loop. Never rejects, and a failure is NOT
+// asked again one name at a time: that fallback is the blocking read this
+// exists to retire (`namesForSubjectsAsync` still falls back, because a
+// name for a subject is a different question). No method at all is
+// `subjectForName()` per name, which is what a process with no window
+// already does inside the resolver.
+/**
+ * Returns each name's subject, as `subjectForName()` would, asking the
+ * directory once for them all where it can. Never rejects.
+ *
+ * @param names - the names, in order
+ * @returns a promise of one subject per name, or ''
+ */
+async function subjectsForNamesAsync(names) {
+  log.debug("Entering subjectsForNamesAsync().");
+  const list = (names || []).map(function (one) {
+    return String(one == null ? '' : one);
+  });
+  if (!subjectResolver ||
+      typeof subjectResolver.subjectsForAsync !== 'function') {
+    log.debug("Leaving subjectsForNamesAsync(). No asynchronous door.");
+    return list.map(subjectForName);
+  }
+  try {
+    const answered = await subjectResolver.subjectsForAsync(list);
+    const out = list.map(function (unused, i) {
+      return String((answered && answered[i]) || '');
+    });
+    log.debug("Leaving subjectsForNamesAsync(). " + list.length +
+              " name(s).");
+    return out;
+  } catch (e) {
+    // A spent budget would be spent again once per name, and any other
+    // throw retried that way would be the synchronous read this batch
+    // exists so a page does not do. Each name has no subject.
+    if (budgetSpent(e)) {
+      log.debug("Leaving subjectsForNamesAsync(). The request's " +
+                "directory budget is spent.");
+      return list.map(function () {
+        return '';
+      });
+    }
+    log.error(errorCodes.tag('STS-CORE-0091') +
+              'helpers: the subject resolver threw looking up ' +
+              list.length + ' names asynchronously, and each was given ' +
+              'no subject: ' + ((e && e.message) || e));
+    log.debug("Leaving subjectsForNamesAsync(). The resolver threw.");
+    return list.map(function () {
+      return '';
+    });
   }
 }
 
@@ -9500,6 +9558,7 @@ module.exports = {
   warmPeopleAsync: warmPeopleAsync,
   namesForSubjects: namesForSubjects,
   namesForSubjectsAsync: namesForSubjectsAsync,
+  subjectsForNamesAsync: subjectsForNamesAsync,
   LEGACY_SUBJECT_PREFIX: LEGACY_SUBJECT_PREFIX,
   hasScope: hasScope,
   escapeRdnValue: escapeRdnValue,
