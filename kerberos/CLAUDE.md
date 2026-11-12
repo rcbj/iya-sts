@@ -2739,8 +2739,11 @@ than moved.
   `SERVICE_PORT` and the `lastExchange` view (`acceptRaw` is now the same
   function as `accept`, kept for its in-process callers). `spnego.js` keeps
   the sign-in's `page()` and `checksTable()` and registers nothing.
-  `spnego_exchange.js` keeps the options only the page passed (`supported`,
-  `wantMic`, `mutualOff`) for the in-process tests.
+  `spnego_exchange.js` keeps `supported` and `wantMic` for the in-process
+  tests. `mutualOff` is one of those, and since #896
+  `GET /authn/spnego?mutual=off` passes it where the test controls are open:
+  the ticket is accepted, the AP-REP is withheld, and no session is started.
+  Product answers 403 (STS-KRB-0258) before the ticket is accepted.
 * **WHAT WENT.** `krb5.servicePort` (the row, the env files, `SETTING_HOMES`
   needed nothing), its listener row, the `tcp://` row on the Kerberos page,
   the `/krb5` and `/spnego` placements and hosted prefixes, `server.js`'s

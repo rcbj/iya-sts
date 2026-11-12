@@ -208,6 +208,13 @@ Every refusal draws a page linking back to the sign-in screen, because a bare
 `network.negotiate-auth.trusted-uris`, plus a credential cache in the realm).
 With `krb5.spnegoAuthentication` off the door answers 403 naming the setting.
 
+In development, `GET /authn/spnego?mutual=off` accepts a valid ticket and
+answers `accept-completed` with no AP-REP, and starts no session.
+[RFC 4120 section 3.2.5](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.5)
+says a client must not treat that as mutual authentication: nothing has
+proved which server answered. Any other value of `mutual` is a normal
+sign-in. In product the same query is 403 and the ticket is not accepted.
+
 ### A ticket as a WS-Trust or token-exchange token (#658)
 
 A Kerberos ticket is also a token in the two exchanges this service runs, in
@@ -1047,7 +1054,9 @@ appconfig file.
 * **`/authn/spnego` was one of two doors over one negotiation** until #595
   moved the other, `/spnego/protected`, to the development companion, where
   MIT Kerberos's acceptor plays it with a keytab of its own. The diagnostic
-  knobs were kept off the door that mints sessions, and left with the page.
+  knobs stayed off the door that mints sessions, except one: in development,
+  `?mutual=off` withholds the AP-REP and starts no session (#896). Product
+  refuses that query before the ticket is accepted.
 * **A sign-out is enforced at the TGS exchange.** Kerberos has no logout and no
   revocation; the TGS exchange is the one moment a KDC is back in the loop,
   which is also where disabling an Active Directory account bites.

@@ -208,14 +208,14 @@ function sessionCookieOf(res) {
 // once. `redirect: "manual"` because a pending record would send an accepted
 // sign-in onwards with a 303 — none is carried here, so none is expected, and
 // following one would hide it.
-async function door(authorization) {
+async function door(authorization, path) {
   log.debug("Entering door().");
   const headers = {};
   if (authorization) {
     headers.Authorization = authorization;
   }
-  const r = await fetch(base + SPNEGO_PATH, { headers: headers,
-                                              redirect: "manual" });
+  const r = await fetch(base + (path || SPNEGO_PATH), { headers: headers,
+                                                       redirect: "manual" });
   const body = await r.text();
   log.debug("Leaving door(). HTTP " + r.status);
   return { status: r.status, body: body, res: r,
@@ -243,10 +243,11 @@ function text(body) {
     .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
-// THE STATE A SPNEGO BODY CARRIES (#575): `/authn/spnego`'s first 401, its
-// 403 when off and its signed-in 200 are the sign-in surface's shell, and
-// what the page is drawn from is `data-sts-state` on its `<html>` — the
-// browser draws it with script; a client that runs none reads it here.
+// THE STATE A SPNEGO BODY CARRIES (#575, #896): `/authn/spnego`'s first 401,
+// its 403 when off, its 403 when `?mutual=off` is closed, its withheld 200
+// and its signed-in 200 are the sign-in surface's shell, and what the page
+// is drawn from is `data-sts-state` on its `<html>` — the browser draws it
+// with script; a client that runs none reads it here.
 function spnegoState(body) {
   log.debug("Entering spnegoState().");
   const m = /<html[^>]* data-sts-state="([^"]*)"/.exec(String(body || ""));
@@ -686,6 +687,51 @@ async function spnegoSignIn(tgt, ticket) {
           refusedWith(lateReply && lateReply.error, [37],
                       "the skewed Authenticator");
         });
+
+  // ?mutual=off (#896). A FRESH Authenticator, so the replay cache does not
+  // spend it before the knob is reached. Development accepts the ticket,
+  // withholds the AP-REP and starts no session. Product refuses before the
+  // ticket is accepted, so the same bytes are not an accept-completed token.
+  const withheldBuilt = await wire.apRequest(ticket);
+  const withheld = await door("Negotiate " + Buffer.from(
+    await wire.negTokenInit(withheldBuilt, {})).toString("base64"),
+    SPNEGO_PATH + "?mutual=off");
+  const withheldReply = await wire.readNegotiate(withheld.wwwAuthenticate,
+                                                 ticket, withheldBuilt);
+  if (K.product) {
+    check("?mutual=off in product is 403 and the ticket is not accepted",
+          function () {
+            assert.strictEqual(withheld.status, 403,
+                               "product answered " + withheld.status + ": " +
+                               text(withheld.body));
+            assert.ok(!withheld.cookie, "product set a session cookie");
+            assert.ok(!withheldReply ||
+                      withheldReply.negStateName !== "accept-completed",
+                      "product returned an accept-completed token");
+            const view = spnegoState(withheld.body);
+            assert.ok(view && view.kind === "mutual-closed",
+                      "the page must say the control is closed: " +
+                      JSON.stringify(view));
+          });
+  } else {
+    check("?mutual=off accepts the ticket, withholds the AP-REP and starts " +
+          "no session", function () {
+            assert.strictEqual(withheld.status, 200,
+                               "development answered " + withheld.status +
+                               ": " + text(withheld.body));
+            assert.ok(!withheld.cookie,
+                      "a withheld AP-REP set a session cookie");
+            assert.ok(withheldReply &&
+                      withheldReply.negStateName === "accept-completed",
+                      "the reply must be accept-completed");
+            assert.ok(!withheldReply.apRep,
+                      "an AP-REP came back when it was asked to be withheld");
+            const view = spnegoState(withheld.body);
+            assert.ok(view && view.kind === "withheld",
+                      "the page must say the AP-REP was withheld: " +
+                      JSON.stringify(view));
+          });
+  }
   log.debug("Leaving spnegoSignIn().");
 }
 

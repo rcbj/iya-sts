@@ -83,6 +83,13 @@
 // here is the ONLY kind in this service that rests on a credential the service
 // genuinely verified. (Product mode verifies passwords too; see the root
 // CLAUDE.md's *Things this service deliberately does not do*.)
+//
+// **ONE DEVELOPMENT EXCEPTION WITHHOLDS THAT PROOF AND STARTS NO SESSION**
+// (#896). `GET /authn/spnego?mutual=off`, and only where
+// `mode.opensTestControls()` is true, accepts the ticket and answers
+// accept-completed with no AP-REP, so a client can test the check RFC 4120
+// section 3.2.5 requires of it. Product answers 403 (STS-KRB-0258) before
+// the ticket is accepted. A request that does not ask is unchanged.
 // `krb5_principals.js` makes the KDC as permissive as the protocol allows (one
 // password shared by every user account, an account created for any name on
 // first sight), which keeps the mock a mock — but the verification is real, and
@@ -154,7 +161,7 @@ import exchange = require('./spnego_exchange.js');
 // sign-in door wears the debugger page's look rather than the sign-in screen's.
 import spnegoPage = require('./spnego.js');
 // ERROR CODES, a leaf. A negotiation's refusal is marked by
-// exchange.applyVerdict(); the three marked here are this door's own.
+// exchange.applyVerdict(); the ones marked here are this door's own.
 import errorCodes = require('../common/error_codes');
 // The reading of a ticket's flags into `amr` / `acr` (#658): a library
 // that requires only `common/` modules at load, so it moves no route.
@@ -164,8 +171,8 @@ import krb5Tokens = require('./krb5_tokens');
 import i18n = require('../common/i18n');
 import PageLocale = require('../common/page_locale');
 import realms = require('../common/realms');
-// THE SIGN-IN SURFACE'S SHELL (#575): the document three of this door's
-// bodies are now, with the state its page is drawn from. A library.
+// THE SIGN-IN SURFACE'S SHELL (#575, #896): the document five of this
+// door's bodies are now, with the state its page is drawn from. A library.
 import ShellDocument = require('../common/shell_document');
 // THE ONE ERROR PAGE (#1327), for this door's refusals: a library requiring
 // `audit`, `realms` and the page's language, none of which requires this
@@ -493,17 +500,19 @@ class SpnegoAuthn {
   }
 
   // ---------------------------------------------------------------------------
-  // THE SIGN-IN SURFACE'S SHELL, FOR THREE OF THIS DOOR'S BODIES (#575).
+  // THE SIGN-IN SURFACE'S SHELL, FOR FIVE OF THIS DOOR'S BODIES (#575, #896).
   //
   // The RFC 4559 exchange is not converted (#569's rule): the first 401 and
   // its `WWW-Authenticate: Negotiate`, the `Authorization` round trips, the
-  // final mutual-authentication token, the 403 when the door is off and the
-  // 303 to `returnTo` keep their statuses, their headers and the top-level
-  // navigation that carries them — the browser's Negotiate, never a
-  // `fetch()`. Only what a PERSON reads on three of those responses changes:
-  // the first 401's body, the 403's, and the signed-in 200's when nothing was
-  // interrupted. Each is the sign-in surface's shell (`authn.signInShell()`'s
-  // document and policy), and the page's state rides on it in
+  // final mutual-authentication token, the 403 when the door is off, the 403
+  // when `?mutual=off` is asked with the test controls closed, the 200 that
+  // withholds the AP-REP, and the 303 to `returnTo` keep their statuses,
+  // their headers and the top-level navigation that carries them — the
+  // browser's Negotiate, never a `fetch()`. Only what a PERSON reads on five
+  // of those responses changes: the first 401's body, the two 403s, the
+  // withheld 200, and the signed-in 200 when nothing was interrupted. Each
+  // is the sign-in surface's shell (`authn.signInShell()`'s document and
+  // policy), and the page's state rides on it in
   // `data-sts-state` — there is nothing to fetch it from, since the verdict
   // and the session it drew exist only on this one response.
   // `kerberos/web_authn_spnego.ts` draws it, in the browser's language
@@ -655,6 +664,24 @@ class SpnegoAuthn {
     return out;
   }
 
+  /**
+   * Whether this request asked to withhold the AP-REP (`?mutual=off`,
+   * #896). The exact value `off` only: any other value is a normal
+   * sign-in, and an array counts only when it holds that one value.
+   *
+   * @param req - the request
+   * @returns true when the query asked
+   */
+  mutualOffAsked(req): boolean {
+    const { log } = this.deps;
+    log.debug('Entering SpnegoAuthn.mutualOffAsked().');
+    const raw = (req.query || {}).mutual;
+    const asked = raw === 'off' ||
+      (Array.isArray(raw) && raw.length === 1 && raw[0] === 'off');
+    log.debug('Leaving SpnegoAuthn.mutualOffAsked(). ' + asked);
+    return asked;
+  }
+
   // ---------------------------------------------------------------------------
   // The endpoint.
   //
@@ -671,7 +698,8 @@ class SpnegoAuthn {
    * Handles `GET /authn/spnego`: the Negotiate handshake, and on an accepted
    * ticket a session and the return to the interrupted flow.
    *
-   * Answers 403 when the sign-in is off.
+   * Answers 403 when the sign-in is off, and 403 when `?mutual=off` is
+   * asked where the test controls are closed.
    *
    * @param req - the request
    * @param res - the response
@@ -708,8 +736,32 @@ class SpnegoAuthn {
       return;
     }
 
+    // ?mutual=off (#896) asks this door to accept the ticket and withhold
+    // the AP-REP, so a client can test the check RFC 4120 section 3.2.5
+    // requires: nothing has proved which server answered. It is a test
+    // control. Where those are closed the ticket is not accepted at all —
+    // ignoring the parameter would hand back a real AP-REP, and the client
+    // would report mutual authentication as performed. The first request
+    // is refused too, before any challenge, for the same reason.
+    const mutualOff = this.mutualOffAsked(req);
+    if (mutualOff && !require('../common/mode').opensTestControls()) {
+      log.info('krb5-spnego-authn: refused ?mutual=off because the test ' +
+        'controls are closed.');
+      errorCodes.mark(res, 'STS-KRB-0258');
+      res.status(403).set('Cache-Control', 'no-store');
+      this.sendShell(req, res, record, {
+        door: 'spnego', kind: 'mutual-closed',
+        pending: this.pendingView(record)
+      });
+      log.debug('Leaving SpnegoAuthn.handleSignIn(). ?mutual=off is closed.');
+      return;
+    }
+
     const verdict = await exchange.negotiate(req, {
       door: SPNEGO_PATH,
+      // Already refused above where the test controls are closed. False is
+      // the library's ordinary exchange.
+      mutualOff: mutualOff,
       // WHAT krb5_service.js CALLS THIS on /admin/users, and it is deliberately
       // not the protected page's phrasing: "SPNEGO over HTTP" is a transport,
       // and this is a sign-on.
@@ -782,6 +834,26 @@ class SpnegoAuthn {
         this.fallbackHtml(record, t),
         framed.framing));
       log.debug('Leaving SpnegoAuthn.handleSignIn(). ' + verdict.code + '.');
+      return;
+    }
+
+    // THE AP-REP WAS WITHHELD (#896). The ticket was accepted and nothing
+    // has proved which server answered, so this is not a sign-in: no
+    // session, and the interrupted request is left unspent. The gate is
+    // `mutualOff`, not `!mutual`. A request-mic completion has `mutual`
+    // false because its AP-REP went on the first message, and that sign-in
+    // is real. A continuation that dropped the query still carries
+    // `mutualOff` from the pending row.
+    if (verdict.mutualOff) {
+      log.info('krb5-spnego-authn: accepted ' + (verdict.client || '?') +
+        ' and withheld the AP-REP. No session was started.');
+      this.sendShell(req, res, record, {
+        door: 'spnego', kind: 'withheld',
+        principal: verdict.client || '',
+        pending: this.pendingView(record)
+      });
+      log.debug('Leaving SpnegoAuthn.handleSignIn(). The AP-REP was ' +
+                'withheld.');
       return;
     }
 

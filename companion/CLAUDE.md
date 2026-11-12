@@ -163,7 +163,9 @@ customer's**:
   sentence — what a real operator sees — and takes no knobs. A context is
   one request: a ticket's exchange completes in one round trip and nothing is
   kept between requests. The negotiation's own diagnostics stay in the
-  service, at `/authn/spnego`.
+  service, at `/authn/spnego`. In development that door honours
+  `?mutual=off`: it accepts the ticket, withholds the AP-REP and starts no
+  session (#896). This acceptor still takes no such knob.
 * **THE TCP SERVICE** speaks the framing the service's did: a 4-byte length,
   then a GSS InitialContextToken carrying an AP-REQ (RFC 4121 section 4.1).
   Accepted with mutual authentication, the GSS-wrapped AP-REP goes back;

@@ -259,7 +259,10 @@ function run(t) {
     ['/authn/wallet/wait', { wallet: 'refused',
                              heading: 'Nobody was signed in' },
      'Nobody was signed in'],
-    ['/authn/spnego', { kind: 'challenge' }, 'id="spnego-facts"']
+    ['/authn/spnego', { kind: 'challenge' }, 'id="spnego-facts"'],
+    ['/authn/spnego', { kind: 'withheld', principal: 'ada@EXAMPLE.COM' },
+     'id="spnego-withheld"'],
+    ['/authn/spnego', { kind: 'mutual-closed' }, 'id="spnego-mutual-closed"']
   ];
   dead.forEach(function (row) {
     const html = page(row[0], row[1]);
@@ -302,6 +305,10 @@ function run(t) {
       protocol: 'oidc' } }, 'spnego-password'],
     ['/authn/spnego', { kind: 'off', setting: 'kerberos.spnego' },
      'spnego-off'],
+    ['/authn/spnego', { kind: 'withheld', principal: 'ada@EXAMPLE.COM',
+      pending: { id: 'p1', protocol: 'oidc' } }, 'spnego-password'],
+    ['/authn/spnego', { kind: 'mutual-closed',
+      pending: { id: 'p1', protocol: 'oidc' } }, 'spnego-password'],
     ['/authn/spnego', { kind: 'signed-in', username: 'ada' },
      'spnego-signed-in']
   ];
