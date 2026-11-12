@@ -267,6 +267,188 @@ function validatorCases(t) {
   log.debug("Leaving validatorCases().");
 }
 
+// A COMPILE THAT FAILS IS CONTAINED TO ITS MODEL (2026-11-12). In the fuzz
+// stage of a full run one model would not compile, and from then on every
+// answer of every operation was refused. Here a model fails to compile once
+// (the first schema it hands out throws the RangeError the service saw, from
+// inside ajv), and: another operation's validator, compiled before, still passes a
+// good answer and refuses a bad one; one compiled after the failure does the
+// same; the failed model is answered from the memory of its failure inside
+// the window, without compiling again; and after the window one request
+// compiles it, and its answers pass.
+function compileFailureContained(t) {
+  log.debug("Entering compileFailureContained().");
+  const { ResponseModels, CODE, RETRY_MS } =
+    require('../common/response_models');
+  const logged = [];
+  const marked = [];
+  let clock = 1000000;
+  const models = new ResponseModels({
+    log: { debug: function () {},
+           error: function (line) {
+             logged.push(line);
+           } },
+    mark: function (res, code) {
+      marked.push(code);
+    },
+    tag: function (code) {
+      return '[' + code + '] ';
+    },
+    now: function () {
+      return clock;
+    }
+  });
+  const closed = function (properties) {
+    return { type: 'object', additionalProperties: false,
+             properties: properties };
+  };
+  // The first schema it hands out throws from INSIDE ajv's compile, a member
+  // deep in it failing as it is read, so whatever ajv had half-built when it
+  // threw is left behind exactly as a real overflow leaves it.
+  let reads = 0;
+  const trap = {};
+  Object.defineProperty(trap, 'type', { enumerable: true, get: function () {
+    throw new RangeError('Maximum call stack size exceeded');
+  } });
+  const flaky = {
+    get schema() {
+      reads += 1;
+      if (reads === 1) {
+        return { type: 'object', additionalProperties: false,
+                 properties: { ok: { $ref: '#/components/schemas/Ok' },
+                               deep: closed({ trap: trap }) } };
+      }
+      return { $ref: '#/components/schemas/Ok' };
+    }
+  };
+  const json = function (schema) {
+    return { description: 'd', content: {
+      'application/json': { schema: schema } } };
+  };
+  const doc = {
+    components: { schemas: {
+      Ok: closed({ ok: { type: 'boolean' }, message: { type: 'string' } }),
+      Thing: closed({ name: { type: 'string' } })
+    } },
+    paths: {
+      '/api/before': { get: { operationId: 'getBefore', responses: {
+        200: json({ $ref: '#/components/schemas/Thing' }) } } },
+      '/api/after': { get: { operationId: 'getAfter', responses: {
+        200: json({ $ref: '#/components/schemas/Thing' }) } } },
+      '/api/flaky': { post: { operationId: 'addFlaky', responses: {
+        200: { description: 'd', content: { 'application/json': flaky } }
+      } } }
+    }
+  };
+  const app = fakeApp();
+  models.install(app, '/api', function () {
+    return doc;
+  }, null);
+  const answer = function (method, url, body) {
+    const res = fakeResponse('application/json');
+    app.middleware({ method: method, baseUrl: '/api', path: url }, res,
+                   function () {});
+    res.status(200);
+    res.send(body);
+    return res.statusCode;
+  };
+  t.equal(answer('GET', '/before', { name: 'a' }), 200,
+          'an operation compiled before the failure passes a good answer');
+  t.equal(answer('POST', '/flaky', { ok: true }), 500,
+          'the answer whose model would not compile is not sent');
+  t.check(logged.some(function (line) {
+    return line.indexOf('addFlaky') >= 0 &&
+      line.indexOf('does not compile: Maximum call stack') >= 0;
+  }), 'and the operator is told which model and why');
+  t.equal(answer('GET', '/before', { name: 'b' }), 200,
+          'the operation compiled before still passes a good answer');
+  t.equal(answer('GET', '/before', { name: 'b', rules: [] }), 500,
+          'and still refuses a bad one');
+  t.equal(answer('GET', '/after', { name: 'c' }), 200,
+          'an operation first compiled after the failure passes a good answer');
+  t.equal(answer('GET', '/after', { name: 'c', stray: 1 }), 500,
+          'and refuses a bad one');
+  const linesBefore = logged.length;
+  t.equal(answer('POST', '/flaky', { ok: true }), 500,
+          'inside the window the failed model is still refused');
+  t.equal(reads, 1, 'from the memory of its failure, without compiling again');
+  t.equal(logged.length, linesBefore, 'and the failure is not logged again');
+  clock += RETRY_MS;
+  t.equal(answer('POST', '/flaky', { ok: true }), 200,
+          'after the window one request compiles it, and a good answer passes');
+  t.equal(answer('POST', '/flaky', { ok: true, stray: 1 }), 500,
+          'and its model refuses a bad one');
+  t.equal(reads, 2, 'it was compiled once more, and kept');
+  t.check(marked.every(function (code) {
+    return code === CODE;
+  }), 'every refusal carried ' + CODE);
+  log.debug("Leaving compileFailureContained().");
+}
+
+// A POLLUTED PROTOTYPE IS NAMED (2026-11-12). An enumerable member on
+// `Object.prototype` is a member of every answer as ajv reads one, so every
+// closed model refuses every answer; the first refusal says which member, once.
+// The prototype is restored before anything else runs.
+function pollutionNamed(t) {
+  log.debug("Entering pollutionNamed().");
+  const { ResponseModels, POLLUTED } = require('../common/response_models');
+  const logged = [];
+  const models = new ResponseModels({
+    log: { debug: function () {},
+           error: function (line) {
+             logged.push(line);
+           } },
+    mark: function () {},
+    tag: function (code) {
+      return '[' + code + '] ';
+    }
+  });
+  const doc = { components: { schemas: {} }, paths: { '/api/x': { get: {
+    operationId: 'getX', responses: { 200: { description: 'd', content: {
+      'application/json': { schema: { type: 'object',
+        additionalProperties: false,
+        properties: { name: { type: 'string' } } } } } } }
+  } } } };
+  const app = fakeApp();
+  models.install(app, '/api', function () {
+    return doc;
+  }, null);
+  const answer = function (body) {
+    const res = fakeResponse('application/json');
+    app.middleware({ method: 'GET', baseUrl: '/api', path: '/x' }, res,
+                   function () {});
+    res.status(200);
+    res.send(body);
+    return res.statusCode;
+  };
+  t.equal(answer({ name: 'a' }), 200, 'before: a good answer passes');
+  t.equal(ResponseModels.inheritedMembers().length, 0,
+          'and this process inherits nothing enumerable');
+  let during = 0;
+  let duringAgain = 0;
+  let named = [];
+  // eslint-disable-next-line no-extend-native
+  Object.prototype.rules = [{ id: 'urn:policy:rule:1' }];
+  try {
+    named = ResponseModels.inheritedMembers();
+    during = answer({ name: 'a' });
+    duringAgain = answer({ name: 'b' });
+  } finally {
+    delete Object.prototype.rules;
+  }
+  t.equal(during, 500, 'polluted: the same good answer is refused');
+  t.equal(duringAgain, 500, 'and so is the next');
+  t.equal(named.join(','), 'rules', 'the inherited member is found by name');
+  const said = logged.filter(function (line) {
+    return line.indexOf('[' + POLLUTED + ']') === 0;
+  });
+  t.check(said.length === 1 && said[0].indexOf('"rules"') >= 0,
+          'the operator is told, once, which member every object inherits');
+  t.equal(answer({ name: 'a' }), 200,
+          'restored: the validator compiled before passes it again');
+  log.debug("Leaving pollutionNamed().");
+}
+
 // THE LOG LINE SAYS THE MEMBER THAT WAS WRONG, whichever branch of a union it
 // is in (#1353: `getUsers` said dozens of the other branch's members), and an
 // exception no handler caught answers as the API answers, never an HTML page.
@@ -696,6 +878,8 @@ function nothingAnswersRoundTheDoor(t) {
 async function run(t) {
   log.debug("Entering run().");
   validatorCases(t);
+  compileFailureContained(t);
+  pollutionNamed(t);
   unionsAndExceptions(t);
   sharingKeepsWhatModelsSay(t);
   nothingAnswersRoundTheDoor(t);

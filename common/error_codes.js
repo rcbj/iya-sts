@@ -25738,6 +25738,14 @@ const CODES = [
   { code: 'STS-API-0145',
     summary: 'A change to how somebody signs in was refused because the administrator did not sign in recently enough.',
     spec: 'HTTP 401 (RFC 9470)' },
+  { code: 'STS-API-0146',
+    summary: 'An answer was refused by its response model (STS-API-0139) in ' +
+      'a process where every plain object or array inherits an enumerable ' +
+      'member: something wrote to Object.prototype or Array.prototype, so ' +
+      'every closed model refuses every answer. The log line names the ' +
+      'members, once per set of names; the process needs a restart and the ' +
+      'write that polluted it a fix.',
+    spec: '' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

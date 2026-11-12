@@ -626,6 +626,92 @@ function checkPapActions(t) {
 
 
 // ---------------------------------------------------------------------------
+// A PATH NAMES THE POLICY'S OWN MEMBERS, AND NOTHING THEY INHERIT (2026-11-12).
+//
+// The fuzz stage of a full run sent `add-rule` a path that walked to
+// `Object.prototype`. The edit "added" the rule there, answered "Rule added.",
+// and every object in the process inherited an enumerable `rules`: every
+// closed response model then refused every answer of every operation, and
+// compiling a new one overflowed the stack. Every such path is refused here,
+// by every kind of edit, directly and through the PAP action the API calls,
+// and nothing anywhere inherits a member afterwards.
+// ---------------------------------------------------------------------------
+function inheritedEnumerables() {
+  log.debug("Entering inheritedEnumerables().");
+  const found = [];
+  [{}, [], Object.create(Object.prototype)].forEach(function (probe) {
+    for (const name in probe) {
+      if (!Object.prototype.hasOwnProperty.call(probe, name)) {
+        found.push(name);
+      }
+    }
+  });
+  log.debug("Leaving inheritedEnumerables().");
+  return found;
+}
+
+function checkPathsStayOwn(t) {
+  log.debug("Entering checkPathsStayOwn().");
+  const hostile = ['__proto__', 'constructor', 'constructor.prototype',
+                   'rules.__proto__', 'rules.0.__proto__',
+                   'rules.0.constructor.prototype', 'rules.constructor',
+                   'rules.length', 'toString', 'hasOwnProperty',
+                   'target.__proto__', 'rules.-1', 'rules.1e0'];
+  const actions = [['add-rule', { effect: 'Deny' }],
+                   ['edit-rule', { id: 'urn:x', effect: 'Deny' }],
+                   ['edit-policy', { description: 'polluted' }],
+                   ['add-target-anyof', { value: 'x',
+                                          attributeId: 'employeeType' }],
+                   ['add-condition', {}],
+                   ['add-rule-obligation', { on: 'Permit' }],
+                   ['remove', {}]];
+  let refusedAll = true;
+  hostile.forEach(function (one) {
+    actions.forEach(function (action) {
+      const policy = templates.build('rbac', {}, { name: 'own' }).policy;
+      const result = editor.applyEdit(policy, one, action[0], action[1]);
+      if (result.ok) {
+        refusedAll = false;
+        t.check(false, action[0] + ' at "' + one + '" is refused',
+                result.what);
+      }
+    });
+  });
+  t.check(refusedAll, 'every edit at a path through an inherited member is ' +
+          'refused (' + hostile.length * actions.length + ' tried)');
+  t.equal(inheritedEnumerables().join(','), '',
+          'and no object in this process inherits a member afterwards');
+
+  const created = pap.combinedAction({
+    action: 'create-from-template', template: 'abac', name: 'pap-own',
+    p_subjectAttribute: 'employeeType', p_subjectValue: 'staff'
+  });
+  t.check(created.ok, 'a policy to edit through the PAP',
+          created.why || created.what);
+  ['__proto__', 'constructor.prototype'].forEach(function (one) {
+    const through = pap.combinedAction({ action: 'add-rule',
+                                         policy: 'pap-own', path: one });
+    t.check(!through.ok, 'the PAP action refuses add-rule at "' + one + '"',
+            through.why || through.what);
+  });
+  t.equal(inheritedEnumerables().join(','), '',
+          'and still nothing inherits a member');
+  t.equal(({}).rules, undefined, 'an empty object has no rules');
+
+  const policy = templates.build('rbac', {}, { name: 'own' }).policy;
+  const count = policy.rules.length;
+  t.check(editor.applyEdit(policy, '', 'add-rule', {}).ok &&
+          policy.rules.length === count + 1,
+          'the root path still takes a rule');
+  t.check(editor.applyEdit(policy, 'rules.0', 'edit-rule',
+                           { id: 'urn:test:own', effect: 'Deny' }).ok,
+          'and an index into its own rules still resolves');
+  pap.combinedAction({ action: 'delete', name: 'pap-own' });
+  log.debug("Leaving checkPathsStayOwn().");
+}
+
+
+// ---------------------------------------------------------------------------
 // A POLICY SET IS NOT A POLICY WITH DIFFERENT CHILDREN.
 //
 // This is the section that would have caught the defect the whole group of
@@ -1082,6 +1168,7 @@ function run(t) {
   checkOptionalSyntax(t);
   checkCombinerParameters(t);
   checkPapActions(t);
+  checkPathsStayOwn(t);
   log.debug("Leaving run().");
 }
 
