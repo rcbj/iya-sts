@@ -2556,6 +2556,30 @@ class CertificateTrust {
   }
 
   /**
+   * A markdown table cell. A backslash is escaped before a pipe, so a cell
+   * cannot open a column and a backslash cannot unescape the pipe after it.
+   *
+   * @param text - the cell's text
+   * @returns the escaped cell
+   */
+  static markdownCell(text: string): string {
+    helpers.log.debug("Entering CertificateTrust.markdownCell().");
+    const value = String(text || '');
+    let out = '';
+    let i = 0;
+    while (i < value.length) {
+      const ch = value.charAt(i);
+      if (ch === '\\' || ch === '|') {
+        out += '\\';
+      }
+      out += ch;
+      i += 1;
+    }
+    helpers.log.debug("Leaving CertificateTrust.markdownCell().");
+    return out;
+  }
+
+  /**
    * The published table of use cases, generated from the purpose table so the
    * documentation and the code cannot disagree.
    *
@@ -2563,9 +2587,7 @@ class CertificateTrust {
    */
   static docsPage(): string {
     helpers.log.debug("Entering CertificateTrust.docsPage().");
-    const cell = function (text: string): string {
-      return String(text || '').replace(/\|/g, '\\|');
-    };
+    const cell = CertificateTrust.markdownCell;
     const anchorWords: Json = {
       realm: 'this service\'s own Root',
       'signer-truststore': 'the signer truststore',

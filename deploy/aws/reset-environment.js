@@ -85,14 +85,18 @@
 // Through `/admin-api/realms` and `/admin-api/realms/remove` with the run's
 // admin token (admin:write), one realm at a time: a removal purges every store
 // the realm holds and replicates to every node, and a cluster asked for three
-// dozen at once answers slower than one asked in turn. TLS is not verified:
-// the cluster's Root is issued by the cluster, and this asks the service to
-// act, it trusts nothing the service says.
+// dozen at once answers slower than one asked in turn. TLS is verified. A
+// named environment presents a public certificate, so the default trust
+// store is enough. One whose leaf chains only to the cluster Root is not in
+// that store: set STS_TLS_CA_FILE to the root PEM. That file replaces the
+// default store for these requests, and a peer that does not verify fails
+// the reset.
 //
 // Its `log` is console-backed and bunyan-shaped, the arrangement the root
 // CLAUDE.md names for a tool outside the service. Required as a module it runs
 // nothing and exports the name tests `tests/reset_environment.js` holds.
 // ---------------------------------------------------------------------------
+const fs = require('fs');
 const https = require('https');
 const crypto = require('crypto');
 
@@ -338,19 +342,43 @@ function trustAnchorsToRemove(anchors, spareFingerprints) {
   return gone;
 }
 
+/**
+ * TLS options for one request to the environment.
+ *
+ * Verification stays on. `ca` replaces Node's default trust store, so it
+ * is set only when STS_TLS_CA_FILE names a cluster root.
+ * @returns {object} options for https.request, apart from method and headers
+ */
+function tlsRequestOptions() {
+  log.debug('Entering tlsRequestOptions().');
+  const file = String(process.env.STS_TLS_CA_FILE || '').trim();
+  if (!file) {
+    log.debug('Leaving tlsRequestOptions(). Default trust store.');
+    return {};
+  }
+  let ca;
+  try {
+    ca = fs.readFileSync(file);
+  } catch (e) {
+    log.debug('Leaving tlsRequestOptions(). ' + ((e && e.message) || e));
+    throw e;
+  }
+  log.debug('Leaving tlsRequestOptions(). CA file.');
+  return { ca: ca };
+}
+
 function request(method, url, token, body, contentType) {
   log.debug('Entering request(). ' + method + ' ' + url);
   const payload = body ? JSON.stringify(body) : null;
+  const options = tlsRequestOptions();
+  options.method = method;
+  options.timeout = 120000;
+  options.headers = Object.assign({ Authorization: 'Bearer ' + token },
+    payload ? { 'Content-Type': contentType || 'application/json',
+                'Content-Length': Buffer.byteLength(payload) } : {});
   log.debug('Leaving request().');
   return new Promise(function (resolve, reject) {
-    const req = https.request(url, {
-      method: method,
-      rejectUnauthorized: false,
-      timeout: 120000,
-      headers: Object.assign({ Authorization: 'Bearer ' + token },
-        payload ? { 'Content-Type': contentType || 'application/json',
-                    'Content-Length': Buffer.byteLength(payload) } : {})
-    }, function (res) {
+    const req = https.request(url, options, function (res) {
       let text = '';
       res.setEncoding('utf8');
       res.on('data', function (chunk) {
@@ -1092,6 +1120,7 @@ module.exports = {
   suiteVersionTest: suiteVersionTest,
   isSuiteTrustAnchor: isSuiteTrustAnchor,
   trustAnchorsToRemove: trustAnchorsToRemove,
+  tlsRequestOptions: tlsRequestOptions,
   BULK_DOORS: BULK_DOORS
 };
 

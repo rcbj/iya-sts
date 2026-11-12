@@ -32,6 +32,8 @@
 // Requiring the script runs nothing: it acts only as `require.main`.
 // ===========================================================================
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const log = require('bunyan').createLogger({ name: 'reset_environment',
@@ -266,6 +268,36 @@ function trustAnchors(t) {
   log.debug("Leaving trustAnchors().");
 }
 
+function tlsVerification(t) {
+  log.debug("Entering tlsVerification().");
+  const saved = process.env.STS_TLS_CA_FILE;
+  delete process.env.STS_TLS_CA_FILE;
+  const plain = reset.tlsRequestOptions();
+  t.check(!('ca' in plain) && plain.rejectUnauthorized !== false,
+          'with no CA file the request uses the default trust store');
+  const file = path.join(os.tmpdir(), 'reset-environment-ca-' +
+                         process.pid + '.pem');
+  const pem = '-----BEGIN CERTIFICATE-----\nMIIB\n' +
+              '-----END CERTIFICATE-----\n';
+  fs.writeFileSync(file, pem);
+  process.env.STS_TLS_CA_FILE = file;
+  const pinned = reset.tlsRequestOptions();
+  t.check(String(pinned.ca).indexOf('BEGIN CERTIFICATE') >= 0 &&
+          pinned.rejectUnauthorized !== false,
+          'STS_TLS_CA_FILE is the trust anchor, and verification stays on');
+  const src = fs.readFileSync(path.join(ROOT, 'deploy/aws',
+                                         'reset-environment.js'), 'utf8');
+  t.check(!/rejectUnauthorized\s*:\s*false/.test(src),
+          'the reset does not disable certificate verification');
+  if (saved === undefined) {
+    delete process.env.STS_TLS_CA_FILE;
+  } else {
+    process.env.STS_TLS_CA_FILE = saved;
+  }
+  fs.unlinkSync(file);
+  log.debug("Leaving tlsVerification().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   bulkNames(t);
@@ -273,6 +305,7 @@ function run(t) {
   applications(t);
   riskVersions(t);
   trustAnchors(t);
+  tlsVerification(t);
   log.debug("Leaving run().");
 }
 

@@ -232,6 +232,43 @@ function formOf(bytes) {
 }
 
 /**
+ * Drops trailing slashes, one character at a time.
+ *
+ * A trailing-slash regular expression is polynomial in the length of the
+ * string (`js/polynomial-redos`). These are configuration URLs.
+ *
+ * @param {*} value - the text
+ * @returns {string} the text without trailing slashes
+ */
+function stripTrailingSlashes(value) {
+  log.debug("Entering stripTrailingSlashes().");
+  const text = String(value || "");
+  let end = text.length;
+  while (end > 0 && text.charCodeAt(end - 1) === 47) {
+    end -= 1;
+  }
+  log.debug("Leaving stripTrailingSlashes().");
+  return end === text.length ? text : text.slice(0, end);
+}
+
+/**
+ * Drops a query string at the first `?`.
+ *
+ * `/\?.*$/` is polynomial (`js/polynomial-redos`). The value is a path or
+ * a request URL, both short, and the cut is the same one the expression made.
+ *
+ * @param {*} value - the text
+ * @returns {string} the text up to the first `?`
+ */
+function stripQuery(value) {
+  log.debug("Entering stripQuery().");
+  const text = String(value);
+  const at = text.indexOf("?");
+  log.debug("Leaving stripQuery().");
+  return at < 0 ? text : text.slice(0, at);
+}
+
+/**
  * The request's cookies.
  *
  * @param {object} req - the request
@@ -260,6 +297,8 @@ module.exports = {
   sendError: sendError,
   readBody: readBody,
   formOf: formOf,
+  stripTrailingSlashes: stripTrailingSlashes,
+  stripQuery: stripQuery,
   cookiesOf: cookiesOf,
   CSS: CSS,
   POLICY: POLICY

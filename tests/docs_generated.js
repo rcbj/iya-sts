@@ -30,5 +30,13 @@ module.exports = {
               page.indexOf('`' + one.setting + '`') !== -1,
               one.id + ' and its setting are on the page', '');
     });
+    t.check(trust.markdownCell('a|b') === 'a\\|b',
+            'a pipe in a cell is escaped', '');
+    t.check(trust.markdownCell('a\\b') === 'a\\\\b',
+            'a backslash in a cell is escaped', '');
+    t.check(trust.markdownCell('a\\|b') === 'a\\\\\\|b',
+            'a backslash before a pipe cannot unescape it', '');
+    t.check(trust.markdownCell('') === '',
+            'an empty cell stays empty', '');
   }
 };

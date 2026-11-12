@@ -79,15 +79,15 @@ class StsClient {
   constructor(opts) {
     log.debug("Entering StsClient.constructor().");
     const o = opts || {};
-    this.publicBase = String(o.stsPublicUrl || o.stsUrl || "")
-      .replace(/\/+$/, "");
+    this.publicBase = util.stripTrailingSlashes(o.stsPublicUrl ||
+      o.stsUrl || "");
     const dial = new URL(String(o.stsUrl || this.publicBase));
     const shown = new URL(this.publicBase);
     this.dial = { protocol: dial.protocol, hostname: dial.hostname,
                   port: dial.port ||
                         (dial.protocol === "https:" ? "443" : "80") };
     this.hostHeader = shown.host;
-    this.prefix = shown.pathname.replace(/\/+$/, "");
+    this.prefix = util.stripTrailingSlashes(shown.pathname);
     this.ca = o.caFile ? fs.readFileSync(String(o.caFile), "utf8") : null;
     this.insecure = !this.ca && !!o.insecure;
     this.clientId = String(o.clientId || CLIENT_ID_DEFAULT);
@@ -126,7 +126,7 @@ class StsClient {
    */
   request(method, path, opts) {
     log.debug("Entering StsClient.request(). " + method + " " +
-              String(path).replace(/\?.*$/, ""));
+              util.stripQuery(path));
     const self = this;
     const o = opts || {};
     const headers = { Host: this.hostHeader, Accept: "application/json" };
@@ -334,7 +334,7 @@ class StsClient {
    */
   async adminApi(method, path, json) {
     log.debug("Entering StsClient.adminApi(). " + method + " " +
-              String(path).replace(/\?.*$/, ""));
+              util.stripQuery(path));
     let r = await this.request(method, "/admin-api" + path,
                                { token: await this.token(), json: json });
     if (r.status === 401) {
