@@ -187,6 +187,15 @@ produces** — the object from `getPeerCertificate()` and the newline-separated
 string from `crypto.X509Certificate` — which is the whole reason it is one
 function and not two that agree today.
 
+**`subjectsForNamesAsync()` ASKS MANY NAMES AT ONCE (#881).** It is the
+resolver's optional `subjectsForAsync`, filled by `ldap/ldap_server.js`, and
+`admin_stats.js` calls it for the shown rows of `/admin/users` while the
+token register is on demand. It never rejects. A throw, or a spent directory
+budget, is `''` for each name under the existing `STS-CORE-0091` and the
+quiet-budget rule, and it does not fall back to `subjectForName()` per name
+the way `namesForSubjectsAsync()` does: that fallback is the blocking read
+the batch exists to retire. No method at all is `subjectForName()` per name,
+which is what a process with no window already does.
 
 ---
 

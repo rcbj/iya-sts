@@ -6350,6 +6350,7 @@ helpers.setSubjectResolver({ subjectFor: subjectForName,
                              nameFor: nameForSubject,
                              namesFor: namesForSubjects,
                              namesForAsync: namesForSubjectsAsync,
+                             subjectsForAsync: subjectsForNamesAsync,
                              warmNames: warmNamesAsync });
 
 // An RFC 4514 DN split into its RDNs, leaf first. The split is on commas that
@@ -9259,13 +9260,294 @@ function locateEntry(key) {
 }
 
 // ---------------------------------------------------------------------------
+// ONE RECORDED IDENTIFIER, ASKED ASYNCHRONOUSLY. The inner half
+// `locateStoredAsync()` and `subjectsForNamesAsync()` share, so a
+// certificate subject, a DID and a SPIFFE ID cannot come to rank the
+// store's rows and the resident entries differently from
+// `locateEntry()`'s `firstRecording()`.
+// ---------------------------------------------------------------------------
+/**
+ * The entry that records `wanted` in `attribute`, or null. No window
+ * answers null: the caller uses `locateEntry()`.
+ *
+ * @param attribute - the attribute name, lower-cased as stored
+ * @param wanted - the value, as written
+ * @returns a promise of the entry, or null
+ */
+async function entryRecordingAsync(attribute, wanted) {
+  log.debug('Entering entryRecordingAsync(). ' + attribute);
+  if (!directoryWindow) {
+    log.debug('Leaving entryRecordingAsync(). No window.');
+    return null;
+  }
+  const realmId = realms.currentId();
+  const asked = await directoryWindow.findWindowedAsync(realmId,
+    'byAttribute', [realmId, attribute, wanted, 2],
+    recordsValue(attribute, wanted));
+  const found = firstRecording(attribute, wanted, asked.map(function (hit) {
+    return hit.entry;
+  }));
+  log.debug('Leaving entryRecordingAsync().');
+  return found;
+}
+
+// `entryRecordingAsync()` for several values, `BY_NAME_AT_ONCE` at a time:
+// the same bound `existingUserEntriesAsync()` puts on a `byName` miss.
+async function recordingsInWaves(attribute, wanted) {
+  log.debug('Entering recordingsInWaves(). ' + attribute + ', ' +
+            wanted.length + ' value(s).');
+  const out = new Array(wanted.length);
+  for (let from = 0; from < wanted.length; from += BY_NAME_AT_ONCE) {
+    const batch = wanted.slice(from, from + BY_NAME_AT_ONCE);
+    const answers = await Promise.all(batch.map(function (one) {
+      return entryRecordingAsync(attribute, one);
+    }));
+    answers.forEach(function (entry, k) {
+      out[from + k] = entry || null;
+    });
+  }
+  log.debug('Leaving recordingsInWaves().');
+  return out;
+}
+
+// A stored person entry's subject, or '' — not a person, or no entryUUID,
+// is nobody, which is what `subjectForName()` answers.
+function subjectOfStored(stored) {
+  log.debug('Entering subjectOfStored().');
+  let subject = '';
+  if (stored && isPersonEntry(stored)) {
+    const uuid = entryUuidOf(stored);
+    if (uuid) {
+      subject = 'urn:uuid:' + uuid;
+    }
+  }
+  log.debug('Leaving subjectOfStored().');
+  return subject;
+}
+
+// Which of `subjectForName()`'s questions a whole string is. A `urn:uuid:`
+// is an identifier (`identifierShaped`) and is still its own question:
+// `entriesByUuidsAsync()`, not one `locateStoredAsync()` per value.
+function subjectTextKind(text) {
+  log.debug('Entering subjectTextKind().');
+  let kind = 'name';
+  if (!text) {
+    kind = 'empty';
+  } else if (/^urn:uuid:/i.test(text)) {
+    kind = 'uuid';
+  } else if (DN_SHAPED.test(text)) {
+    kind = 'dn';
+  } else if (DID_SHAPED.test(text)) {
+    kind = 'did';
+  } else if (SPIFFE_SHAPED.test(text)) {
+    kind = 'spiffe';
+  }
+  log.debug('Leaving subjectTextKind(). ' + kind);
+  return kind;
+}
+
+// The fold `subjectForName()` applies only after the whole string names
+// nobody. A `urn:sts:user:` whose remainder is itself a `urn:uuid:` is
+// looked up by that uuid and is NOT handed to `identityKeyOf()`: that
+// would resolve the uuid through the synchronous `byUuid`. Anything else
+// is `identityKeyOf()`, which for a remainder that is not a uuid is string
+// work (a Kerberos realm, a DN and a DID kept whole).
+function foldedSubjectKey(original, trimmed) {
+  log.debug('Entering foldedSubjectKey().');
+  let rest = trimmed;
+  const prefix = helpers.LEGACY_SUBJECT_PREFIX;
+  if (rest.indexOf(prefix) === 0) {
+    rest = rest.slice(prefix.length);
+  }
+  if (/^urn:uuid:/i.test(rest)) {
+    log.debug('Leaving foldedSubjectKey(). A subject.');
+    return rest;
+  }
+  const key = String(stats.identityKeyOf(original) || '');
+  log.debug('Leaving foldedSubjectKey().');
+  return key;
+}
+
+// One round of `subjectForName()`'s whole-string lookup, for many strings,
+// each distinct string asked once. `prior` is a previous round's subjects
+// (the exact string, including ''), reused so a fold that was already
+// asked is not asked again. Nothing is put in the window and no
+// `userNameAnswer` is written: a later `subjectForName()` stays a cold
+// read. A direct DN hit is kept even when it is not a person — a null miss
+// is what falls through to `x509subject`, and a DN outside `ou=users` and
+// `ou=devices` is that miss without a `byKeys`.
+async function locateWholeSubjectsAsync(texts, prior) {
+  log.debug('Entering locateWholeSubjectsAsync(). ' + texts.length +
+            ' text(s).');
+  const subjects = new Array(texts.length);
+  const byText = prior || new Map();
+  const pending = [];
+  texts.forEach(function (text, i) {
+    if (byText.has(text)) {
+      subjects[i] = byText.get(text);
+      return;
+    }
+    pending.push(i);
+  });
+  const buckets = { empty: [], uuid: [], dn: [], did: [], spiffe: [],
+                    name: [] };
+  const seen = new Set();
+  const distinct = [];
+  pending.forEach(function (i) {
+    const text = texts[i];
+    if (seen.has(text)) {
+      return;
+    }
+    seen.add(text);
+    distinct.push(text);
+    buckets[subjectTextKind(text)].push(text);
+  });
+  const found = new Map();
+  buckets.empty.forEach(function (text) {
+    found.set(text, null);
+  });
+  const realmId = realms.currentId();
+  await Promise.all([
+    (async function () {
+      if (!buckets.uuid.length) {
+        return;
+      }
+      const map = await entriesByUuidsAsync(buckets.uuid);
+      buckets.uuid.forEach(function (text) {
+        const bare = text.trim().toLowerCase().replace(/^urn:uuid:/, '');
+        found.set(text, map.get(bare) || null);
+      });
+    })(),
+    (async function () {
+      if (!buckets.dn.length) {
+        return;
+      }
+      const normalized = buckets.dn.map(function (text) {
+        return normalizeDn(text);
+      });
+      const at = await directoryWindow.entriesAtAsync(realmId, normalized);
+      const missed = [];
+      buckets.dn.forEach(function (text, i) {
+        const hit = at.get(normalized[i]);
+        if (hit) {
+          found.set(text, hit);
+        } else {
+          missed.push(text);
+        }
+      });
+      const recorded = await recordingsInWaves('x509subject', missed);
+      missed.forEach(function (text, i) {
+        found.set(text, recorded[i] || null);
+      });
+    })(),
+    (async function () {
+      if (!buckets.did.length) {
+        return;
+      }
+      const recorded = await recordingsInWaves('didsubject', buckets.did);
+      buckets.did.forEach(function (text, i) {
+        found.set(text, recorded[i] || null);
+      });
+    })(),
+    (async function () {
+      if (!buckets.spiffe.length) {
+        return;
+      }
+      const recorded = await recordingsInWaves('spiffesubject',
+                                              buckets.spiffe);
+      buckets.spiffe.forEach(function (text, i) {
+        found.set(text, recorded[i] || null);
+      });
+    })(),
+    (async function () {
+      if (!buckets.name.length) {
+        return;
+      }
+      const entriesFound = await existingUserEntriesAsync(buckets.name);
+      buckets.name.forEach(function (text, i) {
+        found.set(text, entriesFound[i] || null);
+      });
+    })()
+  ]);
+  distinct.forEach(function (text) {
+    byText.set(text, subjectOfStored(found.get(text)));
+  });
+  pending.forEach(function (i) {
+    if (subjects[i] === undefined) {
+      subjects[i] = byText.has(texts[i]) ? byText.get(texts[i]) : '';
+    }
+  });
+  log.debug('Leaving locateWholeSubjectsAsync().');
+  return { subjects: subjects, byText: byText };
+}
+
+// ---------------------------------------------------------------------------
+// `subjectForName()` FOR MANY NAMES (#881). The whole string first, then
+// the fold, which is what a live email pseudonym and a federated uid
+// (`<relationship>~<subject>`, the subject itself an email) depend on: a
+// batch that folded first would name the wrong person. The five shapes are
+// one `Promise.all` — `entriesByUuidsAsync()`, `entriesAtAsync()` then
+// `x509subject` eight at a time, `didsubject` and `spiffesubject` the same
+// way, and `existingUserEntriesAsync()` for a name (byKeys, then byName
+// eight at a time, never `withNames`). A direct `urn:uuid:` is decided in
+// that round and not folded. Outside a window each name is
+// `subjectForName()`. May reject; `helpers.subjectsForNamesAsync()` is the
+// policy that never does.
+// ---------------------------------------------------------------------------
+/**
+ * Each name's subject, as `subjectForName()` would answer it.
+ *
+ * @param names - the names, in order
+ * @returns a promise of one `urn:uuid:` subject per name, or ''
+ */
+async function subjectsForNamesAsync(names) {
+  log.debug('Entering subjectsForNamesAsync(). ' + (names || []).length +
+            ' name(s).');
+  const list = (names || []).map(function (one) {
+    return String(one == null ? '' : one);
+  });
+  if (!directoryWindow) {
+    log.debug('Leaving subjectsForNamesAsync(). No window.');
+    return list.map(subjectForName);
+  }
+  const trimmed = list.map(function (one) {
+    return one.trim();
+  });
+  const phase1 = await locateWholeSubjectsAsync(trimmed, null);
+  const subjects = phase1.subjects.slice();
+  const againAt = [];
+  const againKeys = [];
+  trimmed.forEach(function (text, i) {
+    if (subjects[i] || /^urn:uuid:/i.test(text)) {
+      return;
+    }
+    const folded = foldedSubjectKey(list[i], text);
+    if (!folded || folded === text) {
+      return;
+    }
+    againAt.push(i);
+    againKeys.push(folded);
+  });
+  if (againKeys.length) {
+    const phase2 = await locateWholeSubjectsAsync(againKeys,
+                                                  phase1.byText);
+    againAt.forEach(function (at, k) {
+      subjects[at] = phase2.subjects[k];
+    });
+  }
+  log.debug('Leaving subjectsForNamesAsync().');
+  return subjects;
+}
+
+// ---------------------------------------------------------------------------
 // `locateEntry()`'s ENTRY, ASKED ASYNCHRONOUSLY (#621), for a caller that
 // can wait and needs only the entry — the credential census. The four
 // identifier shapes in `locateEntry()`'s order, each resolved by the same
 // halves it uses (`residentEntryByUuid()` and `uuidHolderOf()`,
-// `firstRecording()`), with the store's half asked through
-// `findWindowedAsync()`; a NAME is `existingUserEntriesAsync()`. Outside a
-// window it is `locateEntry()` itself, which asks no store.
+// `firstRecording()` via `entryRecordingAsync()`), with the store's half
+// asked through `findWindowedAsync()`; a NAME is
+// `existingUserEntriesAsync()`. Outside a window it is `locateEntry()`
+// itself, which asks no store.
 // ---------------------------------------------------------------------------
 /**
  * The entry `locateEntry()` would find for a key, or null.
@@ -9281,16 +9563,6 @@ async function locateStoredAsync(key) {
     return locateEntry(text).stored;
   }
   const realmId = realms.currentId();
-  const recorded = async function (attribute, wanted) {
-    log.debug('Entering locateStoredAsync()\'s recorded(). ' + attribute);
-    const asked = await directoryWindow.findWindowedAsync(realmId,
-      'byAttribute', [realmId, attribute, wanted, 2],
-      recordsValue(attribute, wanted));
-    log.debug('Leaving locateStoredAsync()\'s recorded().');
-    return firstRecording(attribute, wanted, asked.map(function (hit) {
-      return hit.entry;
-    }));
-  };
   let found = null;
   if (/^urn:uuid:/i.test(text)) {
     const wanted = text.trim().toLowerCase().replace(/^urn:uuid:/, '');
@@ -9309,13 +9581,14 @@ async function locateStoredAsync(key) {
     found = (await directoryWindow.entriesAtAsync(realmId, [at])).get(at) ||
       null;
     if (!found) {
-      found = await recorded('x509subject', text);
+      found = await entryRecordingAsync('x509subject', text);
     }
   } else if (DID_SHAPED.test(text) || SPIFFE_SHAPED.test(text)) {
     const wanted = text.trim();
     if (wanted) {
-      found = await recorded(DID_SHAPED.test(text) ? 'didsubject'
-                                                  : 'spiffesubject', wanted);
+      found = await entryRecordingAsync(DID_SHAPED.test(text) ? 'didsubject'
+                                                              : 'spiffesubject',
+                                       wanted);
     }
   } else {
     found = (await existingUserEntriesAsync([text]))[0];
@@ -30835,6 +31108,8 @@ module.exports = {
   // tests/credential_census_async.js, which compares each with its
   // synchronous twin and counts what the store was asked.
   existingUserEntriesAsync: existingUserEntriesAsync,
+  // `subjectForName()` for many names, off the event loop (#881).
+  subjectsForNamesAsync: subjectsForNamesAsync,
   // The holders of one attribute, asynchronously (#615), on the module too
   // since #1002: the reports application's `credentialHolders` source
   // reads a mechanism's holders through it, bounded by the holders — and

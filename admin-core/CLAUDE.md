@@ -327,7 +327,10 @@ what it needs:**
   `credentials.factorHolderRowsAsync()` (the directory's
   `credentialRowsAsync()`, read as the census reads), `personDnsAsync()`
   and, while the token register is on demand, `stats.userRowsOfAsync()` for
-  every shown row at once, then decorates as `decoratePerson()` does. On
+  every shown row at once — the shown rows' own subjects one
+  `subjectsForNamesAsync()` of their identity keys, not `subjectForName()`
+  per row, and the name warm not on this path (#881) — then decorates as
+  `decoratePerson()` does. On
   8081 fifty rows of about nine synchronous reads each spent the request's
   store budget (STS-LDAP-0175) and the page could not be drawn. A store
   that refuses leaves each row's factors null (unknown) and its DN empty
