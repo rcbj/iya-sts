@@ -13648,8 +13648,15 @@ const SETTINGS = [
   { key: 'krb5.renewLifetimeSeconds', group: 'Kerberos',
     label: 'Renewable lifetime (s)', env: 'KRB5_RENEW_LIFETIME_S', type: 'int',
     dflt: 604800, min: 60, max: 31536000, runtime: true,
-    description: 'How far renew-till reaches for a ticket issued renewable. ' +
-                 'Seven days is Active Directory\'s default.' },
+    description: 'The maximum renew-till of a ticket issued renewable, ' +
+                 'measured from its start. A requested rtime shortens ' +
+                 'it, and with no rtime the ticket takes this maximum. ' +
+                 'An rtime at or before the ticket\'s endtime still ' +
+                 'marks it renewable, as MIT krb5 does. RENEWABLE-OK ' +
+                 'sets the flag only when the requested endtime was ' +
+                 'shortened and the resulting renew-till is later than ' +
+                 'the endtime issued. Seven days is Active Directory\'s ' +
+                 'default.' },
 
   { key: 'krb5.logonServer', group: 'Kerberos', label: 'PAC logon server',
     env: 'KRB5_LOGON_SERVER', type: 'string', dflt: 'DC01', runtime: true,

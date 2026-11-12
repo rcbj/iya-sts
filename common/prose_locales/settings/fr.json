@@ -6980,8 +6980,8 @@
     "text": "Durée de renouvellement (s)"
   },
   "krb5.renewLifetimeSeconds|description": {
-    "en": "c5e760b09dd1a975",
-    "text": "Jusqu’où s’étend renew-till pour un ticket émis renouvelable. Sept jours est la valeur par défaut d’Active Directory."
+    "en": "5e2fb0a8cf795055",
+    "text": "La durée maximale de renew-till d’un ticket émis renouvelable, mesurée depuis son début. Un rtime demandé la raccourcit, et sans rtime le ticket prend ce maximum. Un rtime antérieur ou égal à l’endtime du ticket le marque tout de même renouvelable, comme le fait MIT krb5. RENEWABLE-OK ne pose l’indicateur que lorsque l’endtime demandé a été raccourci et que le renew-till qui en résulte est postérieur à l’endtime émis. Sept jours est la valeur par défaut d’Active Directory."
   },
   "krb5.logonServer|label": {
     "en": "430185046b3ddca6",
