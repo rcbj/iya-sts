@@ -423,7 +423,29 @@ asynchronous commit, so skipping the generation is the whole win there.
 Everything else stays on `pool`, durable at commit: sessions, codes, tokens,
 every minted row, a directory batch that changed anything but those counts,
 and the risk engine's action claim (which stops an action being taken
-twice).
+twice), except the refresh spend below.
+
+**A REFRESH'S SPEND CLAIM WAITS FOR THE TOKEN'S COMMIT (#886).** A
+successful rotating refresh spent the presented token with `claimOnce()`
+and then committed the new refresh token in the minted flush. Those were
+two synchronous commits. Postgres flushes its WAL one fsync at a time, so
+the refresh rate ran into the disk the same way the sign-in counters did.
+`spendRefreshToken()` now passes `noFlushWait`. That one statement commits
+with `synchronous_commit` off: `set_config` in a CTE the INSERT reads, so
+PostgreSQL runs it. The claim is visible at once, and a replay still
+loses. The minted flush stays synchronous — a crash must not lose a
+refresh token that was already issued — and that commit flushes the log
+through its own position, the spend included. The response is not sent
+until the flush returns, so a crash before it loses a token that was not
+issued. A claim that is the only write of its request must not pass the
+flag: nothing later would flush it. Every other `claimOnce()`, and
+`releaseClaim()`, stay synchronous. An origin claim ignores the flag,
+because its lock commits with it. MariaDB has no asynchronous commit on
+this statement, so a refresh there is still two synchronous commits.
+`commit_delay` at 500 µs was slower on the soak machine, and the service
+does not set it. What remains is one fsync per successful rotating
+refresh, the disk's fdatasync rate. 8081 was not re-measured after the
+spend stopped waiting. `tests/postgres_tally_commit.js` (T5).
 
 ## The sentence this directory reverses
 

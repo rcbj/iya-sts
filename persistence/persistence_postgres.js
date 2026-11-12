@@ -379,10 +379,13 @@ const RELEASE_CLAIMS_SQL =
 //
 // **NOT THE RELEASE INSIDE THE FLUSH**: `saveDirectory()` sends
 // RELEASE_CLAIMS_SQL in the entry's own transaction, whose commit must stay
-// synchronous, and it costs no flush of its own. Only `claimMany()` and the
-// standalone `releaseClaims()` are asynchronous; `claimOnce()` and
-// `releaseClaim()`, which every other single-use value spends through, are
-// not changed.
+// synchronous, and it costs no flush of its own. `claimMany()` and the
+// standalone `releaseClaims()` are asynchronous. `claimOnce()` is too, only
+// when the caller passes `noFlushWait` (#886): the refresh spend, whose
+// later synchronous minted commit flushes this record before the response
+// is sent. Every other `claimOnce()`, and `releaseClaim()`, stay
+// synchronous. A claim that is the only write of its request must not pass
+// the flag — nothing later would flush it.
 // ---------------------------------------------------------------------------
 const NO_FLUSH_WAIT =
   'quiet AS (SELECT set_config(\'synchronous_commit\', \'off\', ' +
@@ -8270,14 +8273,26 @@ function create(options) {
       const claimant = o.origin ? String(o.origin) : processId;
       const realm = String(realmId || '');
       const claimKey = String(key);
-      const claimSql =
-        'INSERT INTO sts_cluster_claims (scope, realm, key, reservation, ' +
-        'origin, claimed_at, expires_at) VALUES ($1, $2, $3, $4, $5, ' +
-        DB_NOW + ', ' + DB_NOW + ' + $6) ON CONFLICT (scope, realm, key) DO ' +
-        'UPDATE SET reservation = EXCLUDED.reservation, origin = ' +
-        'EXCLUDED.origin, claimed_at = EXCLUDED.claimed_at, expires_at = ' +
-        'EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at <= ' +
-        'EXCLUDED.claimed_at RETURNING claimed_at, expires_at';
+      const claimColumns = 'scope, realm, key, reservation, origin, ' +
+        'claimed_at, expires_at';
+      const claimConflict =
+        'ON CONFLICT (scope, realm, key) DO UPDATE SET reservation = ' +
+        'EXCLUDED.reservation, origin = EXCLUDED.origin, claimed_at = ' +
+        'EXCLUDED.claimed_at, expires_at = EXCLUDED.expires_at WHERE ' +
+        'sts_cluster_claims.expires_at <= EXCLUDED.claimed_at RETURNING ' +
+        'claimed_at, expires_at';
+      const claimSql = 'INSERT INTO sts_cluster_claims (' + claimColumns +
+        ') VALUES ($1, $2, $3, $4, $5, ' + DB_NOW + ', ' + DB_NOW +
+        ' + $6) ' + claimConflict;
+      // THE REFRESH SPEND (#886). `quiet` is read, so the CTE runs. The
+      // commit is visible at once and does not wait for the log flush. The
+      // caller owes a later synchronous commit that flushes this record
+      // before anything is issued. The origin claim never takes this form:
+      // its lock commits with it, and that commit stays synchronous.
+      const claimSqlNoFlush = 'WITH ' + NO_FLUSH_WAIT +
+        ' INSERT INTO sts_cluster_claims (' + claimColumns +
+        ') SELECT $1, $2, $3, $4, $5, ' + DB_NOW + ', ' + DB_NOW +
+        ' + $6 FROM quiet ' + claimConflict;
       const claimParams = [String(scope), realm, claimKey, reservation,
                            claimant, ttlMs];
       const refused = function (runner) {
@@ -8295,8 +8310,21 @@ function create(options) {
         });
       };
       log.debug("Leaving claimOnce().");
+      const answerOf = function (r, runner) {
+        log.debug("Entering answerOf().");
+        if (r.rowCount) {
+          const row = r.rows[0];
+          log.debug("Leaving answerOf(). Claimed.");
+          return { claimed: true, claimedAt: Number(row.claimed_at),
+                   expiresAt: Number(row.expires_at) };
+        }
+        log.debug("Leaving answerOf(). Refused.");
+        return refused(runner);
+      };
       // An origin claim's fence lock commits with the claim. Any other
       // scope stays one statement: directory claims are not fenced this way.
+      // `noFlushWait` is ignored here. The lock and the claim are one
+      // synchronous commit.
       if (String(scope) === ORIGIN_SCOPE) {
         return poolTransact(function (client) {
           return client.query(claimSql, claimParams).then(function (r) {
@@ -8313,13 +8341,9 @@ function create(options) {
           });
         });
       }
-      return pool.query(claimSql, claimParams).then(function (r) {
-        if (r.rowCount) {
-          const row = r.rows[0];
-          return { claimed: true, claimedAt: Number(row.claimed_at),
-                   expiresAt: Number(row.expires_at) };
-        }
-        return refused(pool);
+      const sql = o.noFlushWait ? claimSqlNoFlush : claimSql;
+      return pool.query(sql, claimParams).then(function (r) {
+        return answerOf(r, pool);
       });
     },
 

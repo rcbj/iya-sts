@@ -134,6 +134,22 @@ request, and appear in the process that does the writing:
 | `FLUSH directory` | One write of directory changes: `rows`, `total` |
 | `COMMIT through` | One response's commit wait (stage 7), split into the `directory`, `minted` and `keys` writes it waited on. **The parts run at the same time**, so each is the time from the start of the wait until that part was done. The largest is the one that held the response, and they do not add up to `total`. A commit that failed is not counted. |
 
+## The refresh ceiling
+
+A successful rotating refresh waits for one synchronous commit: the minted
+flush of the new refresh token. The spend of the presented token commits
+without waiting for the log flush, and that later commit flushes the spend
+before the response is sent. The refresh token's own write stays
+synchronous. A crash before the flush returns loses a token that was not
+issued.
+
+Postgres flushes the log one fsync at a time, so that one flush is the
+ceiling. On the soak machine `pg_test_fsync` measured fdatasync at about
+453 a second (2.2 ms). Refreshes topped out at about 155 to 180 a second
+while the spend and the token were two synchronous commits. `commit_delay`
+at 500 µs was slower there, and the service does not set it. 8081 was not
+re-measured after the spend stopped waiting.
+
 ## What to look at first
 
 * **`queue` high at p50.** The workers' threads are busy. Look at `handler` and
@@ -151,7 +167,8 @@ request, and appear in the process that does the writing:
   described above.
 * **`commit` high.** The database is slow to commit. Compare `COMMIT through`'s
   parts with the `FLUSH` lines: a part much longer than its flush is waiting
-  for an earlier write to finish first.
+  for an earlier write to finish first. A rotating refresh's remaining wait
+  is that one flush (*The refresh ceiling*).
 * **Raising `workers.maxSockets` is rarely the answer.** It moves the wait from
   stage 4 to stage 6 without making the worker faster. Do not make it small
   either: the service makes requests to itself, and a worker whose connections

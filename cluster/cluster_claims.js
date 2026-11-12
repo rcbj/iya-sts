@@ -205,7 +205,7 @@ function ensurePurgeJob(schedulerInstance) {
 // ---------------------------------------------------------------------------
 // THE CLAIM.
 //
-//   claim({ scope, value, ttlMs, realm, origin, fence })
+//   claim({ scope, value, ttlMs, realm, origin, fence, noFlushWait })
 //
 // `scope` names the kind of value ('oauth.code', 'saml2.artifact'); `value` is
 // the value itself and never leaves this function; `ttlMs` is how long it could
@@ -215,7 +215,10 @@ function ensurePurgeJob(schedulerInstance) {
 // `fence`, when set, installs a lock row on the database that writes the
 // guarded row, after the claim and before this resolves. A claim that does
 // not ask is not fenced. The memory store has no lock and answers
-// `fenced: false`.
+// `fenced: false`. `noFlushWait` asks the postgres driver to commit this
+// statement without waiting for the log flush (#886). The memory store has
+// no flush. The caller owes a later synchronous commit that flushes the
+// record before anything is issued. The refresh spend is the caller.
 //
 // Resolves to `{ ok: true, handle, claimedAt }`,
 // `{ ok: false, reason: 'used', existing }`
@@ -225,8 +228,10 @@ function ensurePurgeJob(schedulerInstance) {
  * Claims a single-use value once, for the whole cluster where the store is
  * shared and for this process otherwise. `opts` holds `scope`, `value`,
  * `ttlMs`, `realm` (the ambient realm by default), `origin` (the holder
- * the row records, this process when omitted) and `fence` (install the
- * claim's lock before resolving). Resolves `{ ok: true, handle, claimedAt }`
+ * the row records, this process when omitted), `fence` (install the
+ * claim's lock before resolving) and `noFlushWait` (postgres commits the
+ * statement without waiting for the log flush, #886). Resolves
+ * `{ ok: true, handle, claimedAt }`
  * — with `fenced` and `lockName` when the lock is held, and `fenced: false`
  * when a fence was asked of a memory store — `{ ok: false, reason: 'used',
  * existing }` or `{ ok: false, reason: 'store', why }`, on which the caller
@@ -283,6 +288,11 @@ function claim(opts) {
   const once = { ttlMs: ttlMs, reservation: reservation };
   if (o.origin) {
     once.origin = String(o.origin);
+  }
+  // Passed through. The memory store never reaches this object. The
+  // postgres driver is the one that reads it (#886).
+  if (o.noFlushWait) {
+    once.noFlushWait = true;
   }
   return Promise.resolve().then(function () {
     return theStore.claimOnce(scope, realmId, digest, once);

@@ -342,13 +342,18 @@ function create(deps) {
    * @param scope - the claim's scope
    * @param realmId - its realm
    * @param key - its key
-   * @param opts - `{ ttlMs, reservation, origin }`
+   * @param opts - `{ ttlMs, reservation, origin, noFlushWait }`.
+   *   `noFlushWait` is ignored: MariaDB has no asynchronous commit here.
    * @returns `{ claimed, claimedAt, expiresAt }` or `{ claimed: false,
    *   existing }`
    */
   function claimOnce(scope, realmId, key, opts) {
     log.debug("Entering claimOnce(). scope=" + scope);
     const o = opts || {};
+    // `noFlushWait` is PostgreSQL's set_config('synchronous_commit','off')
+    // (#886). MariaDB has no equivalent on this statement, so a refresh
+    // spend here still commits synchronously. The refresh token's own
+    // write is unchanged on both engines.
     const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
     const reservation = String(o.reservation || '');
     const claimant = o.origin ? String(o.origin) : processId();
