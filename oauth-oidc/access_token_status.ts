@@ -172,11 +172,42 @@ const ALLOCATION_ATTEMPTS = 32;
 //   * EVERY allocation goes through a block: there is no index claimed on its
 //     own beside them for a block's owner not to know about.
 //
+// A RESTART LEAVES THE CLAIM (#884). Dropping the in-memory lease does not
+// release the cluster claim, so a process that exits keeps every block for
+// as long as a token from it can live. On 8081 that was 907 of 1,024 blocks,
+// across eight origins and about ten restarts. Each block claim is therefore
+// stamped with this process's origin and, once it has joined, its node
+// (`origin@nodeId`). At start — after the origin is adopted and the node has
+// joined, before anything listens — this process releases every live claim
+// of its own origin, bare or `@node`, including this same membership: a
+// worker restart keeps the node id and the stable origin. The cluster job
+// `oauth2.access-token-block-reap` then releases a claim whose stable origin
+// (`n:…`) no longer holds a live origin claim, and a claim whose `@node`
+// membership has left or expired and is not this process's node. It does not
+// release this process's own live claims, and a bare `pid-…` claim of
+// another origin stays until it expires: that holder took no origin claim,
+// so its absence proves nothing.
+//
+// THE WINDOW THIS ACCEPTS. `freeLocally()` still skips an index whose entry
+// is live. An index whose row never committed can be reused once the claim
+// is released: `allocate()` returns before the minted flush, and the token
+// can be signed and sent before that row is durable. Origin adoption waits
+// out the previous holder (#617), and a membership counts as gone only once
+// it has left or its `cluster.nodeTtlMs` has passed, so the overlap is that
+// wait rather than the token's life. A process still inside `allocate()`
+// after its claim was released can hand out an index the new lessee also
+// hands out.
+//
 // `allocateInProcess()`, a process with no shared claims table, is unchanged.
 // ---------------------------------------------------------------------------
 const BLOCK_SIZE = 1024;
 const BLOCK_USE_MS = 5 * 60 * 1000;
 const BLOCK_ATTEMPTS = 32;
+const BLOCK_SCOPE = 'oauth2.access-token-status-block';
+const REAP_JOB = 'oauth2.access-token-block-reap';
+// Not set until register() has succeeded. A half-built scheduler must not
+// latch the job as registered (`cluster_claims.js`'s ensurePurgeJob).
+let reapJobRegistered = false;
 
 // A block this process leased, per realm.
 interface StatusLease {
@@ -326,6 +357,10 @@ interface AccessTokenStatusDeps {
   baseUrlOf: typeof helpers.baseUrlOf;
   pinnedBaseUrl: () => string;
   clusterClaims: typeof clusterClaims;
+  // The holder stamped on a block claim (#884): `origin@node` once this
+  // process has joined, the origin alone before that, '' when it has
+  // neither. Empty omits `origin`, and the claim keeps the process id.
+  claimOrigin?: () => string;
   entries: any;
   invalid?: any;
   now: () => number;
@@ -417,6 +452,33 @@ class AccessTokenStatus {
       baseUrlOf: helpers.baseUrlOf,
       pinnedBaseUrl: helpers.pinnedBaseUrl,
       clusterClaims: clusterClaims,
+      claimOrigin: function claimOrigin(): string {
+        helpers.log.debug("Entering claimOrigin().");
+        let origin = '';
+        let node = '';
+        try {
+          origin = String(
+            require('../persistence/persistence').originId() || '');
+        } catch (e) {
+          helpers.log.debug("Caught in claimOrigin(): " +
+                            ((e && e.message) || e));
+          // A caller that built the list without the store: no origin to
+          // stamp, and the claim keeps the process id.
+          origin = '';
+        }
+        try {
+          node = String(require('../cluster/cluster').nodeId() || '');
+        } catch (e) {
+          helpers.log.debug("Caught in claimOrigin(): " +
+                            ((e && e.message) || e));
+          // The cluster module is not loaded. The origin alone still names
+          // the holder the startup release looks for.
+          node = '';
+        }
+        const holder = origin && node ? origin + '@' + node : origin;
+        helpers.log.debug("Leaving claimOrigin().");
+        return holder;
+      },
       entries: entries,
       invalid: invalid,
       now: function now(): number {
@@ -669,11 +731,18 @@ class AccessTokenStatus {
       Number(config.value('gnap.accessTokenLifetimeS')) * 1000 || 0);
     const ttlMs = BLOCK_USE_MS + lifeMs + CLAIM_SKEW_MS;
     const blocks = LIST_SIZE / BLOCK_SIZE;
+    const holder = typeof this.deps.claimOrigin === 'function'
+      ? String(this.deps.claimOrigin() || '') : '';
     for (let attempt = 0; attempt < BLOCK_ATTEMPTS; attempt++) {
       const block = stsCrypto.randomInt(0, blocks);
-      const claimed = await clusterClaims.claim({
-        scope: 'oauth2.access-token-status-block', value: String(block),
-        ttlMs: ttlMs });
+      const spec: { scope: string; value: string; ttlMs: number;
+                    origin?: string } = {
+        scope: BLOCK_SCOPE, value: String(block), ttlMs: ttlMs
+      };
+      if (holder) {
+        spec.origin = holder;
+      }
+      const claimed = await clusterClaims.claim(spec);
       if (!claimed.ok) {
         if (claimed.reason !== 'used') {
           log.error(errorCodes.tag('STS-OAUTH-0816') + 'access_token_status: ' +
@@ -1072,6 +1141,130 @@ class AccessTokenStatus {
   }
 
   // ---------------------------------------------------------------------------
+  // BLOCK LEASES A STOPPED PROCESS LEFT BEHIND (#884). The decision is
+  // `cluster_claims.selectAbandoned()`; this asks the store and logs the
+  // failure. Never rejects: the leases stay until they expire, and a start
+  // that called this still comes up.
+  // ---------------------------------------------------------------------------
+  /**
+   * Releases block leases a stopped process left behind.
+   *
+   * @param opts - `{ bareOwn }` releases this process's own origin too,
+   *   which a start does once and the periodic job never does
+   * @returns how many leases were released; 0 when there is no shared table
+   */
+  reclaimAbandoned(opts?: { bareOwn?: boolean }): Promise<number> {
+    const { log, errorCodes, clusterClaims } = this.deps;
+    log.debug("Entering AccessTokenStatus.reclaimAbandoned().");
+    if (!clusterClaims ||
+        typeof clusterClaims.releaseAbandoned !== 'function') {
+      log.debug("Leaving AccessTokenStatus.reclaimAbandoned(). No release.");
+      return Promise.resolve(0);
+    }
+    return Promise.resolve().then(function () {
+      return clusterClaims.releaseAbandoned(BLOCK_SCOPE, opts || {});
+    }).then(function (n: number) {
+      const count = Number(n) || 0;
+      log.debug("Leaving AccessTokenStatus.reclaimAbandoned(). " + count +
+                ".");
+      return count;
+    }, function (e: any) {
+      log.debug("Caught in AccessTokenStatus.reclaimAbandoned(): " +
+                ((e && e.message) || e));
+      // Recorded, never sent. The blocks stay until they expire.
+      log.warn(errorCodes.tag('STS-OAUTH-1008') + 'access-token status: ' +
+               'releasing block leases held by a stopped process failed: ' +
+               ((e && e.message) || e) + '. They stay until they expire.');
+      log.debug("Leaving AccessTokenStatus.reclaimAbandoned(). Failed.");
+      return 0;
+    });
+  }
+
+  /**
+   * Registers `oauth2.access-token-block-reap` once per process.
+   *
+   * Called from `service_state.start()`, before the scheduler starts, rather
+   * than at this module's load: requiring the scheduler there would pull it
+   * ahead of the console. Does nothing until a scheduler with `register()`
+   * is reachable, so a call through a half-loaded one can be repeated.
+   */
+  static ensureReapJob(): void {
+    helpers.log.debug("Entering AccessTokenStatus.ensureReapJob().");
+    if (reapJobRegistered) {
+      helpers.log.debug("Leaving AccessTokenStatus.ensureReapJob(). " +
+                        "Registered.");
+      return;
+    }
+    let scheduler: any = null;
+    try {
+      scheduler = require('../cluster/scheduler');
+    } catch (e) {
+      helpers.log.debug("Caught in AccessTokenStatus.ensureReapJob(): " +
+                        ((e && e.message) || e));
+      // Not built in this process yet. The next start retries, and the
+      // latch stays unset so it can.
+      scheduler = null;
+    }
+    if (!scheduler || typeof scheduler.register !== 'function') {
+      helpers.log.debug("Leaving AccessTokenStatus.ensureReapJob(). No " +
+                        "scheduler.");
+      return;
+    }
+    if (typeof scheduler.job === 'function' && scheduler.job(REAP_JOB)) {
+      reapJobRegistered = true;
+      helpers.log.debug("Leaving AccessTokenStatus.ensureReapJob(). " +
+                        "Already.");
+      return;
+    }
+    try {
+      scheduler.register({
+        id: REAP_JOB,
+        title: 'Access-token status block leases',
+        describe: 'Releases access-token status-list blocks whose holder ' +
+                  'has gone: a stable origin with no live origin claim, or ' +
+                  'a node membership that has left or expired (#884).',
+        owner: 'oauth-oidc/access_token_status.ts',
+        kind: 'cluster',
+        scope: 'service',
+        everyMs: function (): number {
+          return 60 * 1000;
+        },
+        manual: true,
+        off: function (): string {
+          let store: any = null;
+          try {
+            store = require('../persistence/persistence').clusterStore();
+          } catch (e) {
+            helpers.log.debug("Caught in " + REAP_JOB + " off(): " +
+                              ((e && e.message) || e));
+            // No store in this process. The job has nothing to ask.
+            store = null;
+          }
+          return store && typeof store.claimsOfScope === 'function' ? ''
+            : 'no shared claims table in this process';
+        },
+        run: function (): Promise<{ released: number }> {
+          const mod = require('../oauth-oidc/access_token_status');
+          return Promise.resolve(mod.reclaimAbandoned({ bareOwn: false }))
+            .then(function (n: unknown) {
+              return { released: Number(n) || 0 };
+            });
+        }
+      });
+      reapJobRegistered = true;
+    } catch (e) {
+      helpers.log.debug("Caught in AccessTokenStatus.ensureReapJob(): " +
+                        ((e && e.message) || e));
+      // Not latched: a later start can register it. The leases stay until
+      // they expire, which is the failure the code names.
+      helpers.log.warn(errorCodes.tag('STS-OAUTH-1008') + 'access-token ' +
+                       'status: the block-lease reap job was not ' +
+                       'registered: ' + ((e && e.message) || e) + '.');
+    }
+    helpers.log.debug("Leaving AccessTokenStatus.ensureReapJob().");
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ROUTES.
   // ---------------------------------------------------------------------------
   private failed(res: any, e: any): void {
@@ -1203,6 +1396,8 @@ export = {
   aggregationUri: slot.forward('aggregationUri'),
   allocate: slot.forward('allocate'),
   allocateInProcess: slot.forward('allocateInProcess'),
+  reclaimAbandoned: slot.forward('reclaimAbandoned'),
+  ensureReapJob: (): void => AccessTokenStatus.ensureReapJob(),
   statusOf: slot.forward('statusOf'),
   statusOfJti: slot.forward('statusOfJti'),
   counts: slot.forward('counts'),

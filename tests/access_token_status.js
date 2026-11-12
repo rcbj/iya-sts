@@ -342,6 +342,170 @@ function childMain() {
          '3j. past its use window a block is handed out from no more, and ' +
          'another is leased', JSON.stringify(blockClaims.length - beforeWindow));
 
+    // 3k–3n (#884): a restart releases the blocks its origin still holds,
+    // and a holder that has gone loses theirs. The decision is the
+    // product's selectAbandoned(); this does not reimplement it.
+    const clusterClaimsMod = require(ROOT + '/cluster/cluster_claims');
+    const BLOCK = 'oauth2.access-token-status-block';
+    const baseCtx = {
+      ownOrigin: 'n:self:front', selfNode: 'node-self',
+      goneNodes: ['node-old'],
+      liveOrigins: ['n:self:front', 'n:live:front']
+    };
+    function abandoned(origin, over) {
+      return clusterClaimsMod.selectAbandoned([{
+        origin: origin, key: 'k', reservation: 'r', scope: BLOCK, realm: ''
+      }], Object.assign({}, baseCtx, over)).length === 1;
+    }
+    const decisions = [
+      ['n:self:front', { bareOwn: true }, true, 'own bare origin at start'],
+      ['n:self:front@node-self', { bareOwn: true }, true,
+       'own origin on this same node at start (a worker restart)'],
+      ['n:self:front', { bareOwn: false }, false,
+       'own bare origin while its origin claim is live'],
+      ['n:self:front@node-self', { bareOwn: false }, false,
+       'own origin on this node while the claim is live'],
+      ['n:self:front@node-self',
+       { bareOwn: false, liveOrigins: ['n:live:front'] }, true,
+       'own origin claim has lapsed'],
+      ['n:dead:0@node-self', { bareOwn: false }, true,
+       'a sibling on this node whose origin claim has lapsed'],
+      ['n:other:0@node-self',
+       { bareOwn: false, liveOrigins: ['n:self:front', 'n:other:0'] }, false,
+       'a live sibling on this node'],
+      ['n:live:front@node-live', { bareOwn: false }, false, 'a live node'],
+      ['n:live:front@node-old', { bareOwn: false }, true,
+       'a node that has left, origin claim still live'],
+      ['n:dead:front', { bareOwn: false }, true,
+       'a bare stable origin with no origin claim'],
+      ['n:live:front', { bareOwn: false }, false,
+       'a bare stable origin that still holds its claim'],
+      ['pid-abc', { bareOwn: false }, false,
+       'a bare pid origin of another process'],
+      ['pid-abc@node-old', { bareOwn: false }, true,
+       'a pid origin on a node that has gone'],
+      ['pid-abc@node-live', { bareOwn: false }, false,
+       'a pid origin on a node that has not gone'],
+      ['pid-abc@node-unknown', { bareOwn: false }, false,
+       'an unknown node id proves nothing'],
+      ['n:live:front@node-unknown', { bareOwn: false }, false,
+       'an unknown node whose origin claim is live'],
+      ['', { bareOwn: true }, false, 'an empty holder is not this origin'],
+      ['n:self:front@node-self',
+       { bareOwn: false, goneNodes: ['node-self'] }, false,
+       'this node listed gone does not free a live own claim']
+    ];
+    const missed = decisions.filter(function (row) {
+      return abandoned(row[0], row[1]) !== row[2];
+    }).map(function (row) {
+      return row[3];
+    });
+    note(missed.length === 0,
+         '3k. a block lease is released when its holder has gone, and kept ' +
+         'while the holder is live (#884)', missed.join('; '));
+
+    const held = {
+      '7': 'n:dead:front@node-old',
+      '8': 'n:live:front@node-live'
+    };
+    const table = [
+      { origin: held['7'], value: '7', key: 'k7', reservation: 'r7',
+        scope: BLOCK, realm: '' },
+      { origin: held['8'], value: '8', key: 'k8', reservation: 'r8',
+        scope: BLOCK, realm: '' }
+    ];
+    clusterClaimsMod.selectAbandoned(table, Object.assign({}, baseCtx, {
+      bareOwn: false
+    })).forEach(function (row) {
+      delete held[row.value];
+    });
+    function take(value) {
+      if (held[value]) {
+        return { ok: false, reason: 'used' };
+      }
+      held[value] = 'n:self:front@node-self';
+      return { ok: true };
+    }
+    const tookDead = take('7');
+    const tookLive = take('8');
+    note(tookDead.ok === true && tookLive.ok === false,
+         '3l. after the release the gone holder\'s block can be claimed, ' +
+         'and the live holder\'s block still refuses',
+         JSON.stringify({ dead: tookDead, live: tookLive }));
+
+    const stamped = [];
+    const stamper = new Cls(Object.assign(Cls.defaultDeps(), {
+      clusterClaims: { claim: function (opts) {
+        stamped.push(opts);
+        return Promise.resolve({ ok: true, handle: 's' + stamped.length });
+      } },
+      claimOrigin: function () {
+        return 'n:a:front@node-1';
+      }
+    }));
+    await w.inRealm(function () {
+      return stamper.allocate({ jti: 'stamp-1', kind: 'oauth',
+                                expiresAt: Date.now() + 60000, base: w.base });
+    });
+    note(stamped.length === 1 && stamped[0].scope === BLOCK &&
+         stamped[0].origin === 'n:a:front@node-1',
+         '3m. a block claim is stamped origin@node',
+         JSON.stringify(stamped[0] && stamped[0].origin));
+    const unstamped = [];
+    const plain = new Cls(Object.assign(Cls.defaultDeps(), {
+      clusterClaims: { claim: function (opts) {
+        unstamped.push(opts);
+        return Promise.resolve({ ok: true, handle: 'u' });
+      } },
+      claimOrigin: function () {
+        return '';
+      }
+    }));
+    await w.inRealm(function () {
+      return plain.allocate({ jti: 'stamp-2', kind: 'oauth',
+                              expiresAt: Date.now() + 60000, base: w.base });
+    });
+    note(unstamped.length === 1 && !Object.prototype.hasOwnProperty.call(
+      unstamped[0], 'origin'),
+         '3n. with no origin and no node the claim omits origin',
+         JSON.stringify(Object.keys(unstamped[0] || {})));
+
+    let seen = null;
+    const wired = new Cls(Object.assign(Cls.defaultDeps(), {
+      clusterClaims: {
+        claim: function () {
+          return Promise.resolve({ ok: true, handle: 'w' });
+        },
+        releaseAbandoned: function (scope, opts) {
+          seen = { scope: scope, bareOwn: !!(opts && opts.bareOwn) };
+          return Promise.resolve(4);
+        }
+      }
+    }));
+    const released = await wired.reclaimAbandoned({ bareOwn: true });
+    note(released === 4 && seen && seen.scope === BLOCK &&
+         seen.bareOwn === true,
+         '3o. a start asks the claims table to release this origin\'s ' +
+         'blocks', JSON.stringify(seen));
+    const none = await clusterClaimsMod.releaseAbandoned(BLOCK, {
+      bareOwn: true
+    });
+    note(none === 0,
+         '3p. with no shared claims table a restart releases nothing: the ' +
+         'leases died with the process', String(none));
+
+    ats.ensureReapJob();
+    ats.ensureReapJob();
+    const reap = require(ROOT + '/cluster/scheduler').job(
+      'oauth2.access-token-block-reap');
+    const off = reap && typeof reap.off === 'function' ? reap.off() : '';
+    const ran = reap ? await reap.run() : null;
+    note(!!reap && reap.kind === 'cluster' && reap.scope === 'service' &&
+         /no shared claims table/.test(off) && ran && ran.released === 0,
+         '3q. the reap job is registered, off without a shared claims ' +
+         'table, and releases nothing there',
+         JSON.stringify({ kind: reap && reap.kind, off: off, ran: ran }));
+
     // ==================================================================
     // 4. GNAP: BOTH JWT FORMATS, AND THE GRANT ENGINE'S REVOCATION
     // ==================================================================

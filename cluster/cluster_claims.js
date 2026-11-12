@@ -205,11 +205,13 @@ function ensurePurgeJob(schedulerInstance) {
 // ---------------------------------------------------------------------------
 // THE CLAIM.
 //
-//   claim({ scope, value, ttlMs, realm })
+//   claim({ scope, value, ttlMs, realm, origin })
 //
 // `scope` names the kind of value ('oauth.code', 'saml2.artifact'); `value` is
 // the value itself and never leaves this function; `ttlMs` is how long it could
-// still be valid; `realm` defaults to the ambient one.
+// still be valid; `realm` defaults to the ambient one. `origin`, when set, is
+// what the row's informational column says took it (the access-token status
+// list stamps `origin@node`, #884); otherwise the store names this process.
 //
 // Resolves to `{ ok: true, handle, claimedAt }`,
 // `{ ok: false, reason: 'used', existing }`
@@ -218,7 +220,8 @@ function ensurePurgeJob(schedulerInstance) {
 /**
  * Claims a single-use value once, for the whole cluster where the store is
  * shared and for this process otherwise. `opts` holds `scope`, `value`,
- * `ttlMs` and `realm` (the ambient realm by default). Resolves
+ * `ttlMs`, `realm` (the ambient realm by default) and `origin` (the holder
+ * the row records, this process when omitted). Resolves
  * `{ ok: true, handle, claimedAt }`, `{ ok: false, reason: 'used', existing }`
  * or `{ ok: false, reason: 'store', why }`, on which the caller refuses; it
  * never rejects.
@@ -267,9 +270,12 @@ function claim(opts) {
   }
   ensurePurgeJob();
   log.debug("Leaving claim(). Asking the store.");
+  const once = { ttlMs: ttlMs, reservation: reservation };
+  if (o.origin) {
+    once.origin = String(o.origin);
+  }
   return Promise.resolve().then(function () {
-    return theStore.claimOnce(scope, realmId, digest,
-                              { ttlMs: ttlMs, reservation: reservation });
+    return theStore.claimOnce(scope, realmId, digest, once);
   }).then(function (answer) {
     if (answer && answer.claimed) {
       // WHEN, BY THE STORE'S CLOCK (2026-09-17): a claim re-taken after its
@@ -687,6 +693,124 @@ function reset() {
 capabilities.provide('cluster.claims');
 
 // ---------------------------------------------------------------------------
+// A CLAIM WHOSE HOLDER HAS GONE (#884).
+//
+// The access-token status list leases blocks for as long as a token from
+// the block can live, and a process that exits leaves those rows behind.
+// The holder text is `origin`, `origin@node`, or empty. This decides which
+// rows to give back. It does not read the store: both engines list the rows
+// and the gone memberships, and the decision stays one function.
+//
+//   * `bareOwn` — this process just started and now holds `ownOrigin`, so
+//     every claim of that origin is a previous life, including `@` this
+//     same node (a worker restart keeps the membership id). The periodic
+//     job never sets it: that would free blocks this process is handing out.
+//   * A stable origin (`n:…`) with no live origin claim is a process that
+//     has stopped renewing it, on this node or another. A `pid-…` origin
+//     took no such claim, so a missing one proves nothing.
+//   * An `@node` whose membership has left or expired, and is not this
+//     process's node, is gone even while its origin claim still has a few
+//     seconds to live. A node id that is in neither list is not gone:
+//     absence of a membership row proves nothing.
+// ---------------------------------------------------------------------------
+/**
+ * Selects the claims whose holder has gone.
+ *
+ * @param rows - `{ origin }` rows, the live claims of one scope
+ * @param ctx - `ownOrigin`, `selfNode`, `bareOwn`, `goneNodes` (the
+ *   memberships that have left or expired) and `liveOrigins` (the stable
+ *   origins that still hold an origin claim; omitted means unknown, and
+ *   then a missing claim releases nothing)
+ * @returns the rows to release
+ */
+function selectAbandoned(rows, ctx) {
+  log.debug("Entering selectAbandoned().");
+  const o = ctx || {};
+  const own = String(o.ownOrigin || '');
+  const selfNode = String(o.selfNode || '');
+  const gone = o.goneNodes instanceof Set ? o.goneNodes
+    : new Set(o.goneNodes || []);
+  const knowLive = o.liveOrigins !== undefined && o.liveOrigins !== null;
+  const live = o.liveOrigins instanceof Set ? o.liveOrigins
+    : new Set(o.liveOrigins || []);
+  const bareOwn = !!o.bareOwn;
+  const out = (rows || []).filter(function (row) {
+    const text = String((row && row.origin) || '');
+    const at = text.lastIndexOf('@');
+    const nodeId = at < 0 ? '' : text.slice(at + 1);
+    const bare = at < 0 ? text : text.slice(0, at);
+    if (bareOwn && own && bare === own) {
+      return true;
+    }
+    if (knowLive && bare.indexOf('n:') === 0 && !live.has(bare)) {
+      return true;
+    }
+    if (selfNode && nodeId === selfNode) {
+      return false;
+    }
+    if (!nodeId) {
+      return false;
+    }
+    return gone.has(nodeId);
+  });
+  log.debug("Leaving selectAbandoned(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Releases the live claims of one scope whose holder has gone. With no
+ * shared table there is nothing to release: this process's memory dies
+ * with it. Never rejects from a missing table; a store error rejects.
+ *
+ * @param scope - the claim scope
+ * @param opts - `bareOwn`, and `ownOrigin` / `selfNode` when the caller
+ *   already knows them (otherwise this process's origin and node)
+ * @returns a promise of how many were released
+ */
+function releaseAbandoned(scope, opts) {
+  log.debug("Entering releaseAbandoned().");
+  const theStore = store();
+  if (!theStore || typeof theStore.claimsOfScope !== 'function' ||
+      typeof theStore.goneNodeIds !== 'function' ||
+      typeof theStore.liveOriginKeys !== 'function') {
+    log.debug("Leaving releaseAbandoned(). No shared claims table.");
+    return Promise.resolve(0);
+  }
+  const o = opts || {};
+  let own = o.ownOrigin !== undefined && o.ownOrigin !== null
+    ? String(o.ownOrigin || '') : null;
+  let selfNode = o.selfNode !== undefined && o.selfNode !== null
+    ? String(o.selfNode || '') : null;
+  log.debug("Leaving releaseAbandoned(). Asking the store.");
+  return Promise.resolve().then(function () {
+    if (own === null || selfNode === null) {
+      const persistence = require('../persistence/persistence');
+      const cluster = require('./cluster');
+      if (own === null) {
+        own = String(persistence.originId() || '');
+      }
+      if (selfNode === null) {
+        selfNode = String(cluster.nodeId() || '');
+      }
+    }
+    return Promise.all([
+      theStore.claimsOfScope(String(scope || '')),
+      theStore.goneNodeIds(),
+      theStore.liveOriginKeys()
+    ]);
+  }).then(function (answers) {
+    const selected = selectAbandoned(answers[0] || [], {
+      ownOrigin: own, selfNode: selfNode, bareOwn: !!o.bareOwn,
+      goneNodes: answers[1] || [], liveOrigins: answers[2] || []
+    });
+    if (!selected.length) {
+      return 0;
+    }
+    return releaseMany(selected);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // THE SAME CLAIM, ANSWERED NOW WHEN IT CAN BE (#190).
 //
 // `claimInProcess(opts)` answers exactly what `claim()` would — synchronously
@@ -766,5 +890,7 @@ module.exports = {
   isClaimed: isClaimed,
   digestOf: digestOf,
   ensurePurgeJob: ensurePurgeJob,
+  selectAbandoned: selectAbandoned,
+  releaseAbandoned: releaseAbandoned,
   reset: reset
 };

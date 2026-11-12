@@ -5909,6 +5909,10 @@ of THIS directory needs:
   every token from it has expired; a token that would outlive the lease gets
   a block of its own; every allocation goes through a block. The header of
   `access_token_status.ts` argues it.
+* **A restart releases the blocks its own origin still holds (#884)**, at
+  `service_state.start()`, and `oauth2.access-token-block-reap` releases a
+  block whose holder has gone. The same header argues the window that
+  leaves.
 * **The row's expiry is the configured lifetime**, not the FAPI-capped one
   (#138 only shortens it): a row outliving its token costs an index for a few
   minutes, never a wrong bit.

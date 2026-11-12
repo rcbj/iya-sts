@@ -8198,6 +8198,69 @@ function create(options) {
       });
     },
 
+    // THE LIVE CLAIMS OF ONE SCOPE (#884). The block number is not in the
+    // row — the key is a digest — so a restart releases by the row, not by
+    // guessing blocks. Every realm: one origin serves all of them. Expired
+    // rows are already free. The same knex `claimHeld()` uses, so both
+    // engines. No reservation is logged by the caller.
+    claimsOfScope: function (scope) {
+      log.debug("Entering claimsOfScope(). scope=" + scope);
+      log.debug("Leaving claimsOfScope().");
+      return dialect.run(pool, 'claimsOfScope',
+        kx('sts_cluster_claims')
+          .select('scope', 'realm', 'key', 'reservation', 'origin')
+          .where({ scope: String(scope || '') })
+          .where('expires_at', '>', dialect.now())
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return { scope: String(row.scope), realm: String(row.realm),
+                   key: String(row.key),
+                   reservation: String(row.reservation),
+                   origin: String(row.origin || '') };
+        });
+      });
+    },
+
+    // MEMBERSHIPS THAT HAVE LEFT OR EXPIRED (#884). Not `clusterState()`:
+    // that list is the newest 200 rows, and a soak keeps more dead nodes
+    // than that. Dead rows are bounded by the node's retention. A node id
+    // that has no row at all is not here — absence proves nothing.
+    goneNodeIds: function () {
+      log.debug("Entering goneNodeIds().");
+      log.debug("Leaving goneNodeIds().");
+      return dialect.run(pool, 'goneNodeIds',
+        kx('sts_cluster_nodes').select('node_id').where(function () {
+          this.where('left_at', '>', 0)
+            .orWhere('expires_at', '<=', dialect.now());
+        })
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.node_id || '');
+        }).filter(function (id) {
+          return !!id;
+        });
+      });
+    },
+
+    // STABLE ORIGINS THAT STILL HOLD THEIR CLAIM (#884). The key is the
+    // origin (`n:…`); the row's origin column is the membership text and
+    // is not what a block claim is matched on.
+    liveOriginKeys: function () {
+      log.debug("Entering liveOriginKeys().");
+      log.debug("Leaving liveOriginKeys().");
+      return dialect.run(pool, 'liveOriginKeys',
+        kx('sts_cluster_claims').select('key')
+          .where({ scope: ORIGIN_SCOPE })
+          .where('expires_at', '>', dialect.now())
+      ).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          return String(row.key || '');
+        }).filter(function (key) {
+          return !!key;
+        });
+      });
+    },
+
     // -----------------------------------------------------------------------
     // SEVERAL CLAIMS IN ONE STATEMENT, ALL OR NONE (#628, 2026-10-14).
     //
