@@ -413,13 +413,33 @@ const TYPES = {
     // display name and its logo's alternative text, which a page draws).
     // Optional, as `int`'s bounds are: a row without it is any text, as
     // every string row was before.
-    check: function (raw, setting) {
+    //
+    // A ROW MAY ASK FOR AN ABSOLUTE URI with `absoluteUri: true` (a SAML
+    // NameID format, 2026-11-12): RFC 3986 section 4.3's scheme, a colon and
+    // at least one character after it, with no space or control character
+    // anywhere. A fuzzed `saml2.nameIdFormat` of `,]` was accepted as text and
+    // put in every assertion's NameID Format, which the SAML schema types as
+    // `anyURI`, so every Response the realm sent was schema-invalid. Only a
+    // caller's write is checked: a value already stored is still read, so a
+    // deployment holding one starts as it did (the console then refuses the
+    // same value on its next save, naming the rule). A value from the
+    // environment or an appconfig file is WARNED about at startup
+    // (`opts.startup`, STS-CORE-0176) and never refused there: a deployment
+    // that started on one before this rule must still start.
+    check: function (raw, setting, opts) {
       log.debug("Entering check().");
       const max = setting && setting.maxLength;
       const s = raw === undefined || raw === null ? '' : String(raw);
       if (typeof max === 'number' && s.length > max) {
         log.debug("Leaving check(). Too long.");
         return 'must be at most ' + max + ' characters, got ' + s.length;
+      }
+      if (setting && setting.absoluteUri && !(opts && opts.startup) &&
+          !/^[A-Za-z][A-Za-z0-9+.-]*:[^\s\u0000-\u001f\u007f]+$/.test(s)) {
+        log.debug("Leaving check(). Not an absolute URI.");
+        return 'must be an absolute URI (a scheme, a colon and the rest, ' +
+               'with no spaces), such as ' +
+               'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified';
       }
       log.debug("Leaving check().");
       return null;
@@ -10781,6 +10801,7 @@ const SETTINGS = [
   { key: 'saml2.nameIdFormat', group: 'SAML 2.0 assertions', label: 'Default ' +
       'NameID format',
     env: 'STS_SAML2_NAMEID_FORMAT', type: 'string',
+    absoluteUri: true,
     dflt: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
     runtime: true,
     description: 'The Format on the NameID when the AuthnRequest\'s ' +
@@ -11245,6 +11266,7 @@ const SETTINGS = [
     label: 'Default ' +
       'NameIdentifier format',
     env: 'STS_SAML11_NAMEID_FORMAT', type: 'string',
+    absoluteUri: true,
     dflt: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
     runtime: true,
     description: 'The Format on the <saml:NameIdentifier> when the request ' +
@@ -23076,9 +23098,17 @@ function refuseMalformedSettings() {
                     where: dotted + ' (in ' + DEFAULTS_FILE + ')' });
     }
     layers.forEach(function (layer) {
-      const problem = TYPES[setting.type].check(layer.raw, setting);
+      const problem = TYPES[setting.type].check(layer.raw, setting,
+                                                { startup: true });
       if (problem) {
         named.push('  ' + layer.where + ': "' + setting.key + '" ' + problem);
+      }
+      if (!problem && setting.absoluteUri &&
+          TYPES[setting.type].check(layer.raw, setting)) {
+        log.warn(errorCodes.tag('STS-CORE-0176') + 'config: ' +
+                 layer.where + ': "' + setting.key + '" is not an ' +
+                 'absolute URI. It is used as configured; /admin/config ' +
+                 'and the management API refuse it on the next save.');
       }
     });
   });
