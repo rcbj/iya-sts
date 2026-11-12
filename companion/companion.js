@@ -67,8 +67,8 @@ function settingsFrom(env) {
                               "https://localhost:8081");
   const out = {
     port: port,
-    publicUrl: String(env.COMPANION_PUBLIC_URL ||
-                      "http://localhost:" + port).replace(/\/+$/, ""),
+    publicUrl: util.stripTrailingSlashes(env.COMPANION_PUBLIC_URL ||
+      ("http://localhost:" + port)),
     stsUrl: String(env.COMPANION_STS_URL || stsPublicUrl),
     stsPublicUrl: stsPublicUrl,
     caFile: String(env.COMPANION_STS_CA_FILE || ""),
@@ -231,7 +231,7 @@ class Companion {
    */
   async handle(req, res) {
     log.debug("Entering Companion.handle(). " + req.method + " " +
-              String(req.url).replace(/\?.*$/, ""));
+              util.stripQuery(req.url));
     const url = new URL(req.url, "http://companion.invalid");
     const found = this.sessions.of(req);
     if (found.fresh) {

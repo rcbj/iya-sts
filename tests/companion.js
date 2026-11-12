@@ -422,8 +422,74 @@ function csrfOf(html) {
   return m ? m[1] : '';
 }
 
+async function urlAndKeytabFailure(t) {
+  log.debug("Entering urlAndKeytabFailure().");
+  const util = require(path.join(ROOT, 'companion', 'companion_util.js'));
+  const slash = '/' + '/'.repeat(20000);
+  t.check(util.stripTrailingSlashes('http://companion.test:9700' + slash) ===
+            'http://companion.test:9700' &&
+          util.stripTrailingSlashes('') === '' &&
+          util.stripTrailingSlashes(null) === '',
+          'trailing slashes are dropped without a regular expression');
+  const query = '/spnego' + '?'.repeat(20000) + 'x';
+  t.check(util.stripQuery('/spnego?format=json') === '/spnego' &&
+          util.stripQuery('/spnego') === '/spnego' &&
+          util.stripQuery(query) === '/spnego' &&
+          util.stripQuery(undefined) === 'undefined',
+          'a query string is cut at the first ?');
+  const { settingsFrom } = require(path.join(ROOT, 'companion',
+                                              'companion.js'));
+  const settings = settingsFrom({
+    COMPANION_PUBLIC_URL: 'http://companion.test:9700///',
+    COMPANION_PORT: '1'
+  });
+  t.check(settings.publicUrl === 'http://companion.test:9700',
+          'COMPANION_PUBLIC_URL loses its trailing slashes');
+  const { KerberosDemo } = require(path.join(ROOT, 'companion',
+                                              'demo_kerberos.js'));
+  const demo = new KerberosDemo({
+    sts: { publicBase: STS }, publicUrl: PUBLIC + '///',
+    servicePort: null, gss: {}
+  });
+  t.check(demo.publicUrl === PUBLIC,
+          'the Kerberos demonstration drops a trailing slash');
+  demo.ensureKeytab = async function () {
+    const err = new Error('secret detail from the keytab');
+    err.stack = 'Error: secret detail from the keytab\n    at hidden';
+    throw err;
+  };
+  const res = {
+    status: 0, body: '',
+    writeHead: function (status) {
+      this.status = status;
+    },
+    end: function (body) {
+      this.body = String(body || '');
+    }
+  };
+  await demo.advertPage(res, { query: { get: function () {
+    return 'json';
+  } } });
+  const json = JSON.parse(res.body);
+  t.check(res.status === 503 &&
+          json.problem === 'the keytab could not be prepared' &&
+          res.body.indexOf('secret detail') < 0 &&
+          res.body.indexOf('at hidden') < 0,
+          'a keytab failure is a fixed sentence; the exception stays in ' +
+          'the log', res.body);
+  res.body = '';
+  await demo.advertPage(res, { query: { get: function () {
+    return '';
+  } } });
+  t.check(res.status === 503 && res.body.indexOf('secret detail') < 0 &&
+          res.body.indexOf('the keytab could not be prepared') >= 0,
+          'the HTML page says the same fixed sentence', res.body.slice(0, 400));
+  log.debug("Leaving urlAndKeytabFailure().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
+  await urlAndKeytabFailure(t);
   const { Companion } = require(path.join(ROOT, 'companion', 'companion.js'));
   const sts = standIn();
   const companion = new Companion({ port: 0, publicUrl: PUBLIC,
