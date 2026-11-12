@@ -712,6 +712,14 @@ The browser row reads `session.authenticated !== false`, which is
 `authn.js`'s field. `!== false` because a session made before that field
 existed is one somebody signed into.
 
+**AN ARRIVAL IS NOT THAT ROW (#888).** `chosen === false` is left out of
+`liveSessions()` before `authenticated` is ever set on it: a browser that
+reached a front door and has not signed in is not somebody who continued
+without signing in, and it is not on the Unauthenticated tab as a row or a
+count. The tab says so. Listing the rows would be the cookie-less flood this
+function already refuses, and a count would scan `sts_sessions` with no index
+on `NOT chosen`.
+
 **What consumes it is a SECTION on `/admin/sessions` rather than a column**,
 and `admin-ui/CLAUDE.md` argues why. The reason it is computed here rather than
 there is this directory's whole reason to exist: this module is the one model

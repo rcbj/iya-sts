@@ -417,6 +417,16 @@ holding Admin Write has **End every session in this realm**
 that write needs, and — for a browser session — the `sessionId` that
 `GET /admin-api/tokens?session=` takes.
 
+The **Unauthenticated** tab is not every browser that has not signed in. It
+lists sessions somebody started with **Continue without signing in**
+(`authn.unauthenticatedSessions`, off by default). An arrival session — a
+browser that reached a front door and has not signed in — is not on this page.
+No protocol reads it as a sign-in, and this page draws no row for it and no
+button that would end it. Signing in moves it to **Live sessions**. Continuing
+without signing in, when that setting is on, is what puts a row on the
+Unauthenticated tab. An empty tab does not mean this service is holding no
+unsigned-in browser.
+
 ### `/admin/metrics` — the count, both ways
 
 That page counts sessions **twice**, and the two numbers disagree on purpose:
