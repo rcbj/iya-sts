@@ -1958,10 +1958,19 @@ function eachHolderOfAny(attributes, fn) {
 // does not hold, and `/admin/users` asked that while it built the list.
 // This asks `holdersAsync()`, which takes the store's row, and walks the
 // same residents. Outside a window it is the synchronous walk.
+//
+// THAT WALK IS `eachHolderOfAny()`'s OWN BRANCH, CALLED, NOT A COPY OF IT
+// (#798). Without a window the directory is a Map in this process and
+// `eachHolderOfAny()` walks it, reading memory and never the store; the
+// copy here named `eachEntryInRealm()` itself, so the request-walk guard
+// (`tests/no_full_directory_walk_in_requests.js`) saw `/admin-api/users`
+// reach a walk of every entry through `serviceAccountNamesAsync()` — which
+// never takes this branch, answering from `serviceAccountNames()` first.
+// One in-memory branch, behind the barrier the guard already argues.
 async function eachHolderOfAnyAsync(attributes, fn) {
   log.debug("Entering eachHolderOfAnyAsync(). " + attributes.join(','));
   if (!directoryWindow) {
-    eachEntryInRealm(fn);
+    eachHolderOfAny(attributes, fn);
     log.debug("Leaving eachHolderOfAnyAsync().");
     return;
   }
