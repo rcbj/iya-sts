@@ -558,9 +558,35 @@ async function pageEvidence(driver) {
                  status: e.responseStatus };
       });
     const reauth = document.getElementById('reauth-bar');
+    // EVERY FETCH THE PAGE STARTED, ANSWERED OR NOT (2026-11-12), from the
+    // recorder recordFetches() put in front of the console's own script.
+    // The list above could not answer the question it was added for, four
+    // failures running: Resource Timing lists a request only once it has
+    // ENDED, so one still in flight is never in it, and the announcement
+    // poll every five seconds pushed everything else out of the last eight
+    // before the 45 s wait was up. Here the polls are counted, not listed,
+    // and a request in flight says so (\`ms: -1\`).
+    const recorded = window.__stsFetches || null;
+    let fetches = null;
+    if (recorded) {
+      const polls = recorded.filter(function (one) {
+        return /\\/admin-api\\/announcements/.test(one.url);
+      });
+      fetches = {
+        announcementPolls: polls.length,
+        others: recorded.filter(function (one) {
+          return !/\\/admin-api\\/announcements/.test(one.url);
+        }).slice(-12).map(function (one) {
+          return { method: one.method, url: one.url,
+                   startedMsAgo: Math.round(now - one.at),
+                   ms: one.ms, status: one.status,
+                   error: one.error || '' };
+        })
+      };
+    }
     return { url: location.href, readyState: document.readyState,
              strip: strip ? strip.textContent.trim().slice(0, 300) : '',
-             requests: requests,
+             requests: requests, fetches: fetches,
              reauth: reauth ? reauth.textContent.trim().slice(0, 200) : '' };
   `).catch(function (e) {
     log.debug("Caught in pageEvidence(): " + ((e && e.message) || e));
@@ -577,6 +603,67 @@ async function pageEvidence(driver) {
     }));
   log.debug("Leaving pageEvidence().");
   return out;
+}
+
+// THE PAGE'S FETCHES, RECORDED FROM BEFORE ITS OWN SCRIPT RUNS (2026-11-12),
+// for pageEvidence(). `sts_xacml_editor` has failed five times since
+// 2026-11-02 at the same press — the first edit of the file, form 25,
+// "A condition, added once", nearly always in memory mode — with the page
+// never replaced, no line in the service log and no SEVERE browser message,
+// which leaves a request never sent and a request never answered. Resource
+// Timing cannot tell those apart, because it lists a request only once it
+// has ended. The console binds `window.fetch` when it boots
+// (`admin-ui/web_console.ts`), so a recorder installed after the page has
+// loaded would see nothing: it goes in through the DevTools protocol, which
+// runs it in every new document before the page's own script. It changes
+// nothing the page sees but who answers `fetch`, which still answers the
+// same promise. Best-effort: a browser that refuses the command leaves
+// pageEvidence() with the Resource Timing list alone, as before.
+const FETCH_RECORDER = `
+  (function () {
+    if (typeof window.fetch !== 'function' || window.__stsFetches) {
+      return;
+    }
+    const recorded = [];
+    window.__stsFetches = recorded;
+    const real = window.fetch;
+    window.fetch = function (input, init) {
+      const url = typeof input === 'string' ? input
+        : String((input && input.url) || '');
+      const one = { url: url.replace(location.origin, ''),
+                    method: String((init && init.method) ||
+                                   (input && input.method) || 'GET'),
+                    at: performance.now(), ms: -1, status: 0 };
+      recorded.push(one);
+      if (recorded.length > 200) {
+        recorded.shift();
+      }
+      return real.apply(this, arguments).then(function (res) {
+        one.ms = Math.round(performance.now() - one.at);
+        one.status = res.status;
+        return res;
+      }, function (e) {
+        one.ms = Math.round(performance.now() - one.at);
+        one.error = String((e && e.message) || e).slice(0, 200);
+        throw e;
+      });
+    };
+  })();
+`;
+
+async function recordFetches(driver) {
+  log.debug("Entering recordFetches().");
+  try {
+    await driver.sendDevToolsCommand("Page.addScriptToEvaluateOnNewDocument",
+                                     { source: FETCH_RECORDER });
+  } catch (e) {
+    log.debug("Caught in recordFetches(): " + ((e && e.message) || e));
+    log.info("Page.addScriptToEvaluateOnNewDocument was refused (" +
+             String((e && e.message) || e).slice(0, 120) + "). A press " +
+             "that is never answered will be described from Resource " +
+             "Timing alone.");
+  }
+  log.debug("Leaving recordFetches().");
 }
 
 async function replaced(driver, element, what) {
@@ -2014,6 +2101,7 @@ async function test() {
   browserFlags.addBrowserAccessFlags(options, base);
   const driver = await new Builder().forBrowser("chrome")
       .setChromeOptions(options).build();
+  await recordFetches(driver);
 
   try {
     // THE CREDENTIAL BEFORE THE REALM, because the truststore is process-wide

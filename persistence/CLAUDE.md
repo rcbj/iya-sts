@@ -1303,7 +1303,19 @@ flight, the journal is empty and no batch is waiting to be sent, the prefix
 catches up to the generation. `flushThrough(target)` returns the earliest
 in-flight covering save whose take is at or past the target, or the unsent
 batch when that one covers, and otherwise `flush()`. A response waits for the
-save that holds its keys. `stop()` still waits for every save already sent,
+save that holds its keys. **Whether a take covers is the TAKE's, not the
+batch's (2026-11-12)**: a request that rewrote a key the head still held and
+wrote one more key had the free key joined to an unsent batch whose `covers`
+came from that batch's own first take, and was handed the batch's promise —
+answered, its ticket announced, while the held key's newer value was in no
+save. Another worker then read the older row: `sts_gnap_core`'s single-node
+failure, a GNAP grant continued 22 ms after its approval without the
+interaction reference the approval wrote (STS-GNAP-0135). A non-covering take
+now chains until its held keys have gone out, and a chain that finds the
+journal empty with saves still out (another caller's save took its key)
+waits for them, as does `flush()` with nothing journalled beside an unsent
+batch. Those are the rare paths; a covering take still waits only for its
+own save. `tests/minted_flush_order.js` section 3a. `stop()` still waits for every save already sent,
 including an older disjoint one a covering second batch did not.
 **Two different processes writing one key is untouched** and is still
 last-writer-wins, as above.
