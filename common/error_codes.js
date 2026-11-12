@@ -15385,6 +15385,10 @@ const CODES = [
     summary: 'A person whose password must be changed asked for a ticket, ' +
       'in product (ASVS 5.0.0 6.4.1).',
     spec: 'KDC_ERR_KEY_EXPIRED' },
+  { code: 'STS-KRB-0258',
+    summary: 'GET /authn/spnego was asked to withhold the AP-REP ' +
+      '(?mutual=off) where the test controls are closed (#896).',
+    spec: 'none (RFC 4120 section 3.2.5; a development test control)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',

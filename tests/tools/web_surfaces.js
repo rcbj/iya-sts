@@ -34,7 +34,7 @@
 //
 // The sign-in screen (#571) draws three pages from views alone: the screen
 // in the states its view can name, the federation chooser and the forced
-// password change; the SPNEGO sign-in's three bodies (#575), from the
+// password change; the SPNEGO sign-in's five bodies (#575, #896), from the
 // state their shell carries; and the wallet's start and wait pages (#574),
 // the QR code and a refusal. The OAuth consent screen (#576) is a page of
 // the same surface, and its cases are drawn from views alone too.
@@ -265,8 +265,9 @@ function authnCases(root) {
                       'data breach.' },
       ctx: Object.assign({}, en, { error: 'The two passwords are not the ' +
                                           'same.' }) },
-    // THE SPNEGO SIGN-IN'S BODIES (#575), drawn from the state the shell
-    // carries: the first 401, the 403 when off, the signed-in page.
+    // THE SPNEGO SIGN-IN'S BODIES (#575, #896), drawn from the state the
+    // shell carries: the first 401, the 403 when off, the withheld 200, the
+    // 403 when ?mutual=off is closed, the signed-in page.
     { label: 'the SPNEGO challenge, for a waiting request, in French',
       path: '/authn/spnego',
       view: { door: 'spnego', kind: 'challenge',
@@ -285,6 +286,16 @@ function authnCases(root) {
       path: '/authn/spnego',
       view: { door: 'spnego', kind: 'off',
               setting: 'krb5.spnegoAuthentication',
+              pending: { id: 'abc', protocol: 'SAML 2.0', application: '' } },
+      ctx: spnegoEn },
+    { label: 'the SPNEGO AP-REP withheld',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'withheld',
+              principal: 'alice@EXAMPLE.COM', pending: null },
+      ctx: spnegoEn },
+    { label: 'the SPNEGO mutual-off control closed',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'mutual-closed',
               pending: { id: 'abc', protocol: 'SAML 2.0', application: '' } },
       ctx: spnegoEn },
     { label: 'signed in with a Kerberos ticket, two factors',

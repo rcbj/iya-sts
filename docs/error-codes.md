@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5432** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5435** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 217
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 166
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -3348,6 +3348,7 @@ Raised from: kerberos/.
 | `STS-KRB-0255` | Pre-authentication was refused without being checked: too many recent failures for that principal (#1448). | KDC_ERR_PREAUTH_FAILED |
 | `STS-KRB-0256` | An S4U2Self request was refused: its PA-FOR-USER checksum is HMAC-MD5 and crypto.allowLegacyHashes is off (#1469). | KDC_ERR_POLICY |
 | `STS-KRB-0257` | A person whose password must be changed asked for a ticket, in product (ASVS 5.0.0 6.4.1). | KDC_ERR_KEY_EXPIRED |
+| `STS-KRB-0258` | GET /authn/spnego was asked to withhold the AP-REP (?mutual=off) where the test controls are closed (#896). | none (RFC 4120 section 3.2.5; a development test control) |
 
 ## STS-LDAP
 

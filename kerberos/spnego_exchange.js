@@ -25,11 +25,13 @@
 // **ONE DOOR AGAIN SINCE #595.** `/spnego/protected` left the runtime for the
 // development companion (`companion/demo_kerberos.js`), where a Kerberos
 // service with its own keytab and MIT Kerberos's acceptor plays it; the
-// sign-in is the one caller here. The options that page alone passed
-// (`supported`, `wantMic`, `mutualOff`) stay, as the library's, for the
-// in-process tests that drive the negotiation's every outcome through them;
-// what this header and the comments below say of `/spnego/protected` is its
-// history.
+// sign-in is the one caller here. `supported` and `wantMic` stay as the
+// library's, for the in-process tests. `mutualOff` is one of those and,
+// since #896, what `GET /authn/spnego?mutual=off` passes in development:
+// the AP-REP is withheld, on the accept-completed reply and on a
+// request-mic first reply, and the pending row remembers it so the
+// continuation's verdict still says so. What this header and the comments
+// below say of `/spnego/protected` is its history.
 //
 // So the split is the same one `krb5_service.js` already made one layer down
 // and for the same reason, which that module's header stated as a promise when
@@ -546,6 +548,9 @@ function rejection(door, code, facts) {
 //   wantMic   force the request-mic round trip even where section 5 would let
 //             it be skipped. Also a knob.
 //   mutualOff withhold the AP-REP from an otherwise successful exchange.
+//             A request-mic first reply omits it too, and the pending row
+//             stores the flag so the continuation's verdict still says so
+//             (#896).
 //   via       what to call this transport when krb5_service.js records the
 //             authentication. See `record` below.
 //   record    FALSE stops krb5_service.js recording the authentication itself,
@@ -772,14 +777,19 @@ async function negotiate(req, opts) {
       ticketFlags: result.ticketFlags || null,
       // The RFC 8129 indicators the acceptor verified (#173), carried to the
       // continuation as the flags are.
-      authIndicators: result.authIndicators || []
+      authIndicators: result.authIndicators || [],
+      // So the continuation's verdict still says the AP-REP was withheld,
+      // when this request asked (#896). Absent on a row written before that.
+      mutualOff: mutualOff
     });
     log.debug('Leaving negotiate(). request-mic.');
     return tokenVerdict(door, 'request-mic',
       spnego.encodeNegTokenResp({
         negState: spnego.NEG_STATE.REQUEST_MIC,
         supportedMech: selected,
-        responseToken: result.reply || null
+        // The AP-REP would otherwise go here. mutualOff withholds it on
+        // this reply too (#896). The continuation does not put one back.
+        responseToken: (!mutualOff && result.reply) ? result.reply : null
       }),
       { reason: 'request-mic sent; awaiting the client MIC',
         errorCode: 'STS-KRB-0093',
@@ -906,7 +916,9 @@ async function continuation(req, door, parsed) {
                    reason: 'This acceptor asked for it with request-mic.' },
     rawKerberos: false,
     micVerified: true,
-    mutualOff: false,
+    // Remembered from the first reply (#896). A row written before that
+    // field existed did not withhold the AP-REP.
+    mutualOff: !!entry.mutualOff,
     continuation: true
   });
   accepted.pendingSpent = !!named;

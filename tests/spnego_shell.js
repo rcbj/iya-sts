@@ -26,6 +26,9 @@
 //      `WWW-Authenticate` token, `no-store`, the session cookie; the shell
 //      carrying who, the session, the flags, amr, acr and the checks.
 //   5. SIGNED IN for a waiting request: the 303 to `returnTo`, no shell.
+//   8. `?mutual=off` (#896): the door passes `mutualOff`, the 200 carries
+//      no session cookie and the withheld page; where the test controls
+//      are closed the same query is 403 and the negotiation is not called.
 //   6. The state draws: `kerberos/web_authn_spnego.ts` over each view.
 //   7. The sign-in runtime draws the challenge from the shell it came in,
 //      in the browser's language, fetching catalogs and no view.
@@ -283,6 +286,57 @@ function childMain() {
          JSON.stringify(snaps.returned));
     exchange.negotiate = realNegotiate;
 
+    // --- 8. ?mutual=off withholds the AP-REP and starts no session (#896) ---
+    // THE ACCEPTOR STOOD IN FOR AGAIN, as section 4 does: what is under test
+    // is that the door passes mutualOff and, when the verdict says the
+    // AP-REP was withheld, starts no session. A request that is not `off`
+    // is not driven to an accepted verdict here — that would mint a session
+    // the sections below would see.
+    let saw = null;
+    exchange.negotiate = async function (req, opts) {
+      saw = opts;
+      const off = !!(opts && opts.mutualOff);
+      return { ok: true, status: 200, code: 'accepted',
+               wwwAuthenticate: 'Negotiate oRQwEqADCgEAoQsGCSqGSIb3EgECAg==',
+               client: user + '@' + principals.REALM,
+               ticketFlags: ['forwardable', 'pre-authent'],
+               authIndicators: [], selected: gss.KRB5_MECH_OID,
+               micVerified: false, rawKerberos: false, mutualOff: off,
+               mutual: !off, checks: null };
+    };
+    r = await get('/authn/spnego?mutual=off');
+    state = stateOf(r.text);
+    note(r.status === 200 &&
+         r.headers['www-authenticate'] ===
+           'Negotiate oRQwEqADCgEAoQsGCSqGSIb3EgECAg==' &&
+         saw && saw.mutualOff === true &&
+         !(r.headers['set-cookie'] || []).some(function (c) {
+           return /^sts_session=/.test(c);
+         }) &&
+         state && state.view.kind === 'withheld' &&
+         state.view.principal === user + '@' + principals.REALM,
+         '8a. ?mutual=off accepts, withholds the AP-REP and starts no ' +
+         'session', JSON.stringify(state) + ' ' + JSON.stringify(saw));
+    const mode = require(ROOT_DIR + '/common/mode');
+    const realOpens = mode.opensTestControls;
+    mode.opensTestControls = function () {
+      return false;
+    };
+    saw = null;
+    r = await get('/authn/spnego?mutual=off',
+                  { authorization: 'Negotiate dGVzdA==' });
+    state = stateOf(r.text);
+    note(r.status === 403 && saw === null &&
+         r.headers['www-authenticate'] === undefined &&
+         !(r.headers['set-cookie'] || []).some(function (c) {
+           return /^sts_session=/.test(c);
+         }) &&
+         state && state.view.kind === 'mutual-closed',
+         '8b. where the test controls are closed the ticket is not accepted',
+         JSON.stringify(state));
+    mode.opensTestControls = realOpens;
+    exchange.negotiate = realNegotiate;
+
     // --- 6. the state draws --------------------------------------------------
     const draw = require(ROOT_DIR + '/kerberos/web_authn_spnego');
     const t = englishSpnego();
@@ -301,6 +355,22 @@ function childMain() {
          '6b. the off state names the setting and the way back, and no ' +
          'demonstration page (the companion\'s since #595)',
          off.slice(0, 300));
+    const withheldPage = draw.render({ door: 'spnego', kind: 'withheld',
+      principal: 'ada@EXAMPLE.COM', pending: null }, { t: t });
+    note(withheldPage.indexOf('id="spnego-withheld"') > 0 &&
+         withheldPage.indexOf('?mutual=off') > 0 &&
+         withheldPage.indexOf('id="spnego-facts"') < 0 &&
+         draw.title({ kind: 'withheld' }, { t: t }) ===
+           'Mutual authentication was not performed',
+         '6c. the withheld state says the AP-REP was withheld and is not ' +
+         'the challenge', withheldPage.slice(0, 300));
+    const closedPage = draw.render({ door: 'spnego', kind: 'mutual-closed',
+      pending: null }, { t: t });
+    note(closedPage.indexOf('id="spnego-mutual-closed"') > 0 &&
+         draw.title({ kind: 'mutual-closed' }, { t: t }) ===
+           'That test control is closed',
+         '6d. the closed state says the ticket was not accepted',
+         closedPage.slice(0, 300));
 
     // --- 7. the runtime draws the embedded page, fetching no view ------------
     at = begin();
