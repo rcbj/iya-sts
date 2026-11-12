@@ -236,7 +236,7 @@ class SchedulerAdmin {
     report.filters = { job: SchedulerPage.firstOf(q.job) || null,
                        outcome: SchedulerPage.firstOf(q.outcome) || null };
     if (runId) {
-      const run = scheduler.findRun(runId);
+      const run = await scheduler.findRun(runId);
       const visible = run && (!realm || run.realm === realm ||
                               run.realm === realms.DEFAULT_ID);
       log.debug("Leaving SchedulerAdmin.schedulerView(). One run.");

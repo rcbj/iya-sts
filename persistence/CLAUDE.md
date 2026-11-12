@@ -2314,14 +2314,17 @@ into this, the busiest table, pays for an index.
 (#338).** A run row has no lifetime of its own; what ends it is the history's
 BOUND — per job, its last `scheduler.runHistoryCount` runs or its last
 `scheduler.runHistoryHours`, whichever keeps more — and `scheduler.history`,
-not the expiry purge, deletes it, through the store (tombstoned, so every
-process drops it). The hook answers an instant past the first moment that
-purge could delete the row, so a start skips most of what it has not got to
-yet, and the purge PINS (`keepUntil`) a kept row whose instant is near — a job
-that stopped running, a bound raised later — so the hook's rule, never
-earlier than the store would drop the row, holds. `cluster/CLAUDE.md`, *The
-scheduler*, argues it. Rows written before #338 carry NULL and are read until
-the purge has deleted them.
+not the expiry purge, deletes a row the process holds (tombstoned, so every
+process drops it). Since #883 that job only walks resident rows, and the
+front's restore leaves an expiring `scheduler.runs` row in the table
+(`restoreExpiring: false`). The table's bound for a finished interval run is
+therefore the hook's instant, and the minted expiry purge is what deletes it.
+The hook answers an instant past the first moment the history job could
+delete the row, and the purge PINS (`keepUntil`) a kept row whose instant is
+near — a job that stopped running, a bound raised later — so the hook's rule,
+never earlier than the store would drop the row, holds. `cluster/CLAUDE.md`,
+*The scheduler*, argues it. Rows written before #338 carry NULL and are read
+until the history walk has deleted the ones it holds.
 
 **What is still read whole, and why.** The `merge: 'own'` accumulators —
 `audit.events` above all — carry no expiry: a row is a process's share of a
@@ -2468,7 +2471,9 @@ pool is ready. Four things on that path were not needed there, and each moved:
   nothing a worker answers reads it whole, and the run history is the one
   that is true of and worth it; `admin_stats.users` (8,177 rows) and
   `audit.events` (594 rows, 13.6 MB, the fan-in) are read by console pages a
-  worker answers, and stay.
+  worker answers, and stay. Since #883 the front also leaves an expiring
+  `scheduler.runs` row in the table; those two stores are still restored
+  whole, for the reason just given.
 * **The management API's request validators** (~1.3 s of every process's
   module load): compiled on first use (`mgmt-api/CLAUDE.md`).
 
@@ -2478,7 +2483,7 @@ pool is ready. Four things on that path were not needed there, and each moved:
 | front: open, origin, join | 0.1 s | 0.1 s | unchanged (its predecessor's `stop()` released the claim) |
 | front: keys | 2.0 s | 2.0 s | unchanged |
 | front: directory | 1.4 s | 1.4 s | unchanged |
-| front: minted restore (52,234 rows) | 3.0 s | 3.0 s | unchanged: the front restores every store |
+| front: minted restore (52,234 rows) | 3.0 s | 3.0 s | the #617 measurement: the front restored every store. Since #883 it leaves expiring `scheduler.runs` rows in the table. Not re-measured on 8081. `audit.events` and `admin_stats.users` stay fully restored |
 | front: PKI | 0.4 s | 0.4 s | unchanged |
 | front: CRLs into the directory | 4.2 s | 0 before the listener | after it, yielding (`tests/crl_directory_publication.js` F) |
 | **front: to the first fork** | **~18 s** | **~12.5 s** | sum |

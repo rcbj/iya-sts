@@ -2928,13 +2928,15 @@ function poolFor(url) {
 // can ask them. A worker drawing it would list itself alone.
 //
 // **AND THE SCHEDULER'S (#617, 2026-10-14).** `/admin/scheduler` and
-// `GET /admin-api/scheduler` (with its `/run` and `/step-down` acts) read
-// `scheduler.runs` whole — every run of every job — and a request worker no
-// longer reads that store back at its start: it was 42,740 of the 52,234 rows
-// each of 8081's processes restored, for a page only an administrator opens.
-// So the page is the front process's, which restores the store as before and
-// catches up (the barrier below) before it answers. `cluster/scheduler.ts`
-// and `common/realms.js` (`restoreInWorkers`) carry the rest.
+// `GET /admin-api/scheduler` (with its `/run` and `/step-down` acts) are
+// answered from the run store, and a request worker no longer reads that
+// store back at its start: it was 42,740 of the 52,234 rows each of 8081's
+// processes restored, for a page only an administrator opens. So the page is
+// the front process's, which catches up (the barrier below) before it
+// answers. Since #883 that front restores the rows with no expiry and asks
+// the store for a bounded newest window; it does not hold the finished
+// interval history. `cluster/scheduler.ts` and `common/realms.js`
+// (`restoreInWorkers`, `restoreExpiring`) carry the rest.
 //
 // **AND MONITORING → TLS CONNECTION'S (#597, 2026-10-12)**, `/tls`'s own
 // argument moved with the view `GET /tls` and `GET /tls/forwarded` drew:

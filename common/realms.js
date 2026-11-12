@@ -2814,6 +2814,17 @@ function declareHandle(options, shape, accessors) {
     // ---------------------------------------------------------------------
     restoreInWorkers: options.restoreInWorkers !== false,
     // ---------------------------------------------------------------------
+    // `restoreExpiring: false` (#883, 2026-11-11): a start reads this
+    // store's rows whose `expires_at` is NULL and leaves the rest. For a
+    // store whose bulk is short-lived history and whose live rows — a
+    // leader, a queued or running run — carry no expiry. The expiring rows
+    // stay in the table until the expiry purge; they are not decrypted into
+    // this process. `scheduler.runs` is the store that says so. A worker
+    // that also declares `restoreInWorkers: false` still skips the WHOLE
+    // store (`skipHandles`); this only narrows what the front reads.
+    // ---------------------------------------------------------------------
+    restoreExpiring: options.restoreExpiring !== false,
+    // ---------------------------------------------------------------------
     // `onDemand` (#820, 2026-10-21): the store is NOT read back whole at a
     // start. A process holds a bounded set of its rows and reads one it does
     // not hold from `sts_minted` by key when it is asked for (see map()
@@ -2833,8 +2844,11 @@ function declareHandle(options, shape, accessors) {
     // by `written_at`, which has only a BRIN: a btree on `written_at`
     // would make every update of `sts_minted` non-HOT
     // (`persistence/CLAUDE.md`, *The newest rows by an index*).
-    sortOf: options.onDemand && typeof options.sortBy === 'function'
-      ? options.sortBy : null,
+    // NOT GATED ON `onDemand` (#883): a store the front still holds, minus
+    // its expiring rows, has the same need — `/admin/scheduler` asks for a
+    // newest window of runs it does not keep. `owesMark` stays an index or
+    // an expiry backfill, so a sort alone does not start one.
+    sortOf: typeof options.sortBy === 'function' ? options.sortBy : null,
     // A store whose rows written before it declared an `expiresAt` have
     // none (#820 part 2): how long after its write such a row lives, in
     // ms. The store is read back whole until those rows are given one
@@ -3186,6 +3200,7 @@ class IndexedMap extends Map {
  *
  * @param {any} [options]
  * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
+ *   dropHeld: (realmId: string, key: string) => boolean,
  *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
  *   lookupEntries: (indexKey: string) =>
  *     { key: any, origin: string, own: boolean, value: any }[],
@@ -3549,6 +3564,24 @@ function map(options) {
   }
 
   const facade = {
+    // FORGET A HELD ROW WITHOUT JOURNALING A DELETE (#883). The flush reads
+    // a journalled key from this map and writes a delete when it is gone, so
+    // a key the journal still holds is left where it is. A store with no
+    // reader is not journalled. Returns whether the bare map lost the key.
+    dropHeld: function (realmId, key) {
+      log.debug("Entering dropHeld().");
+      const id = partitionId(realmId);
+      const k = key === undefined || key === null ? '' : String(key);
+      if (onDemandReader &&
+          typeof onDemandReader.journalled === 'function' &&
+          onDemandReader.journalled(handleName, id, k)) {
+        log.debug("Leaving dropHeld(). Still journalled.");
+        return false;
+      }
+      const gone = per.of(id).delete(k);
+      log.debug("Leaving dropHeld(). " + gone);
+      return gone;
+    },
     // The keys of the ambient realm's records filed under one index key
     // (`options.indexBy`, #766); empty for a store that has no index. On
     // demand, the index's rows as well (#820): each kept as it is read, a
