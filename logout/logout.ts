@@ -2469,6 +2469,10 @@ class Logout {
       //
       // The row appears the moment it becomes a sign-in: startSession()
       // upgrades it in place and `chosen` becomes true.
+      //
+      // The Unauthenticated tab says this exclusion (#888). It does not
+      // list these rows and it does not count them: a count is a scan of
+      // the session index, and there is no index on an arrival.
       // ---------------------------------------------------------------------
       if (session.chosen === false) {
         return;

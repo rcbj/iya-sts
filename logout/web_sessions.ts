@@ -219,6 +219,20 @@ class SessionsPage {
           'href="/admin/roles">' + t.html('consoleSessions.turnOn') +
           '</a>' + t.html('consoleSessions.offAfter'))) +
 
+      // AN ARRIVAL SESSION IS NOT THIS SECTION (#888).
+      //
+      // What is listed here is somebody who pressed Continue without
+      // signing in: a chosen session, authenticated false. An arrival
+      // is a browser that reached a front door and has not signed in
+      // (kind arrival, chosen false). liveSessions() leaves it out,
+      // and this tab says so rather than listing it. A row would be
+      // the cookie-less flood that filled the page, and opening every
+      // body is the cost #820 took off this page. A count would scan
+      // the session index. There is no index on an arrival, and
+      // session.count at a million rows was taken off the sign-in
+      // path for that cost.
+      kit.note(t.html('consoleSessions.arrivalExcluded')) +
+
       (json.unauthenticatedHeld
         ? anonNav.head + '<table>' + thead +
           json.unauthenticatedSessions.map(function (row) {

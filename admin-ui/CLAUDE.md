@@ -5411,6 +5411,25 @@ roles is visible: every session in the main table holds `EVERYBODY` **and**
 `ALL_UNAUTHENTICATED_USERS` instead. The section says that, and links to
 `/admin/roles` where it is configured.
 
+### An arrival session is named on that tab and not listed (#888)
+
+During the 1M soak the tab looked empty. It lists only *Continue without
+signing in* (`authenticated: false` on a chosen session), and
+`authn.unauthenticatedSessions` is off by default, so the empty line said every
+session this service was holding had had a credential accepted. An arrival
+(`kind` `arrival`, `chosen: false`) is a browser that reached a front door and
+has not signed in. `liveSessions()` already leaves those out — they are not
+somebody signed in, a cookie-less probe floods the list, and opening every body
+is the cost #820 removed — and the tab now says that, whether or not any
+Continue-without row is present.
+
+They are not drawn as rows, and the unauthenticated tile does not count them.
+A count would be another scan of the session index (`session.count` was about
+130 ms at a million rows and was taken off the sign-in path), and there is no
+index on `NOT chosen`. A new index would be a schema version and a lock on a
+soak store. The empty line no longer claims that every held session had a
+credential accepted.
+
 ## `/admin/roles`: THREE REASONS AN APPLICATION COULD NOT BE FOUND ON IT (2026-09-05)
 
 The capability was never missing. `ROLE_MEMBER_KINDS` has held `application`
