@@ -3461,7 +3461,13 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           // Which coordination statements it sends (#677): read here, for
           // the reason `verifyTls` is.
           sqlDialect: String(config.value('persistence.sqlDialect') ||
-                             'native')
+                             'native'),
+          // The block-claim fence (#884). This driver is the writer when
+          // the process has one database. A cell's own database is not:
+          // the status row is global, and a lock checked here would be
+          // reported lost after that row had already been written.
+          claimFences: claimFences,
+          claimFenceOwner: !globalUrls
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
     // A CELL'S STORE IS TWO DATABASES (#98): the one just made is the cell's
@@ -3480,7 +3486,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         tlsCa: tlsCa,
         poolMax: require('./persistence_postgres').poolMax(workerCount()),
         sqlDialect: String(config.value('persistence.sqlDialect') ||
-                           'native')
+                           'native'),
+        // The status row's database, so the fence lock lives here (#884).
+        claimFences: claimFences,
+        claimFenceOwner: true
       });
       driver = tiered.create({
         global: globalDriver, cell: driver, cellId: cells.id(),
@@ -5670,6 +5679,155 @@ function directoryWindowWanted() {
   return wanted;
 }
 
+// ---------------------------------------------------------------------------
+// CLAIM FENCES IN FLIGHT (#884).
+//
+// A block claim's lock is held across the minted flush that publishes the
+// index it guards. The driver share-locks every name still registered here,
+// drops the rows whose locks are already gone, and commits the rest.
+// `lose()` does not mark them lost: a transaction that then rolls back must
+// leave the holds in place for the retry. `commitLost()` marks them once
+// that transaction has committed, and `claimFenceDropped()` is how the
+// publisher learns that its own row was one of them. A missing lock is not
+// an origin fence and does not stop the process.
+// ---------------------------------------------------------------------------
+// lock name -> (handle \n realm \n key -> row)
+const claimFenceByName = new Map();
+const claimFenceDroppedSet = new Set();
+
+function claimFenceIdOf(row) {
+  return String(row.handle) + '\n' + String(row.realm) + '\n' +
+    String(row.key);
+}
+
+/**
+ * Registers one row as published under a claim's fence lock. The minted
+ * flush that writes the row share-locks the name.
+ *
+ * @param lockName - the lock `claim()` returned
+ * @param row - `{ handle, realm, key }`, `key` the journal key
+ */
+function holdClaimFence(lockName, row) {
+  log.debug("Entering holdClaimFence().");
+  const name = String(lockName || '');
+  if (!name || !row || row.key === undefined || row.key === null) {
+    log.debug("Leaving holdClaimFence(). Nothing to hold.");
+    return;
+  }
+  let rows = claimFenceByName.get(name);
+  if (!rows) {
+    rows = new Map();
+    claimFenceByName.set(name, rows);
+  }
+  rows.set(claimFenceIdOf({
+    handle: row.handle, realm: row.realm || '', key: row.key
+  }), {
+    handle: String(row.handle), realm: String(row.realm || ''),
+    key: String(row.key)
+  });
+  log.debug("Leaving holdClaimFence().");
+}
+
+/**
+ * Drops one row's hold. A second index still publishing under the same
+ * lock keeps the name registered.
+ *
+ * @param lockName - the lock
+ * @param row - `{ handle, realm, key }`
+ */
+function endClaimFence(lockName, row) {
+  log.debug("Entering endClaimFence().");
+  const rows = claimFenceByName.get(String(lockName || ''));
+  if (rows && row) {
+    rows.delete(claimFenceIdOf({
+      handle: row.handle, realm: row.realm || '', key: row.key
+    }));
+    if (!rows.size) {
+      claimFenceByName.delete(String(lockName || ''));
+    }
+  }
+  log.debug("Leaving endClaimFence().");
+}
+
+/**
+ * The fence locks a minted flush should share-lock, and the two ways a
+ * flush reports the ones that were already gone.
+ *
+ * @returns `{ names, lose(missingNames), commitLost(ids) }`
+ */
+function claimFences() {
+  log.debug("Entering claimFences().");
+  const names = Array.from(claimFenceByName.keys()).sort();
+  log.debug("Leaving claimFences().");
+  return {
+    names: names,
+    lose: function lose(missingNames) {
+      log.debug("Entering lose().");
+      const missing = {};
+      (missingNames || []).forEach(function (name) {
+        missing[String(name)] = true;
+      });
+      const dropped = [];
+      names.forEach(function (name) {
+        if (!missing[name]) {
+          return;
+        }
+        const rows = claimFenceByName.get(name);
+        if (!rows) {
+          return;
+        }
+        rows.forEach(function (_row, id) {
+          dropped.push(id);
+        });
+      });
+      log.debug("Leaving lose().");
+      return dropped;
+    },
+    commitLost: function commitLost(ids) {
+      log.debug("Entering commitLost().");
+      const gone = {};
+      (ids || []).forEach(function (id) {
+        claimFenceDroppedSet.add(id);
+        gone[id] = true;
+      });
+      names.forEach(function (name) {
+        const rows = claimFenceByName.get(name);
+        if (!rows) {
+          return;
+        }
+        Array.from(rows.keys()).forEach(function (id) {
+          if (gone[id]) {
+            rows.delete(id);
+          }
+        });
+        if (!rows.size) {
+          claimFenceByName.delete(name);
+        }
+      });
+      log.debug("Leaving commitLost().");
+    }
+  };
+}
+
+/**
+ * Whether a published row was dropped because its fence lock was gone.
+ * The answer is consumed, so a later publish of the same key starts clean.
+ *
+ * @param handle - the minted handle
+ * @param realm - the realm
+ * @param key - the journal key
+ * @returns true when that row was dropped
+ */
+function claimFenceDropped(handle, realm, key) {
+  log.debug("Entering claimFenceDropped().");
+  const id = claimFenceIdOf({
+    handle: handle, realm: realm || '', key: key
+  });
+  const dropped = claimFenceDroppedSet.delete(id);
+  log.debug("Leaving claimFenceDropped().");
+  return dropped;
+}
+
 module.exports = {
   // For tests/unstorable_text.js, which hands them a save that fails (#1463).
   saveRealmsIsolated: saveRealmsIsolated,
@@ -5908,6 +6066,12 @@ module.exports = {
   // `cluster/cluster_barrier.js` and its LDAP wrapper ask it.
   // ---------------------------------------------------------------------
   answersAfterCommit: answersAfterCommit,
+  // A block claim's fence across the minted flush that publishes under it
+  // (#884). See the block above holdClaimFence().
+  holdClaimFence: holdClaimFence,
+  endClaimFence: endClaimFence,
+  claimFences: claimFences,
+  claimFenceDropped: claimFenceDropped,
   // ---------------------------------------------------------------------
   // A WRITE THAT WAS TRIED AND REFUSED AND HAS NOT LANDED SINCE (#351): a
   // directory flush that failed and nothing after it committed, a minted
