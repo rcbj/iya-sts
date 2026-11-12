@@ -414,8 +414,48 @@ class XacmlEditor {
     });
   }
 
+  /**
+   * Whether one step of a path names a member the node itself holds: an
+   * array's index (digits, below its length) or an object's own member, never
+   * one it inherits. See `nodeAt()`.
+   *
+   * @param node - the node the step leaves
+   * @param key - the step
+   * @returns true where the step may be taken
+   */
+  static ownStep(node: ModelNode, key: string): boolean {
+    helpers.log.debug("Entering XacmlEditor.ownStep().");
+    if (node === null || typeof node !== 'object') {
+      helpers.log.debug("Leaving XacmlEditor.ownStep(). Not an object.");
+      return false;
+    }
+    if (Array.isArray(node)) {
+      const own = /^[0-9]+$/.test(key) && Number(key) < node.length;
+      helpers.log.debug("Leaving XacmlEditor.ownStep(). Index " + own);
+      return own;
+    }
+    const own = Object.prototype.hasOwnProperty.call(node, key);
+    helpers.log.debug("Leaving XacmlEditor.ownStep(). Member " + own);
+    return own;
+  }
+
   // Resolve a path to `{ node, parent, key }`, or null. `parent` and `key` are
   // what a REMOVE needs — you cannot delete a node from itself.
+  //
+  // **EVERY STEP IS AN OWN MEMBER OF THE NODE IT LEAVES, OR THE PATH DOES NOT
+  // RESOLVE (2026-11-12).** The path arrives from a caller — the console's
+  // form and `/admin-api/xacml/*`'s `path` — and the walk was `node[key]`,
+  // which follows the prototype chain. The fuzz stage of a full run sent
+  // `add-rule` a path that reached `Object.prototype` (`__proto__`, or
+  // `constructor.prototype`): `node.rules = node.rules || []` then gave EVERY
+  // object in that process an enumerable inherited `rules`, the edit wrote the
+  // unchanged policy and answered "Rule added.", and from that moment every
+  // closed response model refused every answer (additionalProperties
+  // "rules", because ajv reads members with `for…in`), and every compile of
+  // one recursed without end (each rule object inherits `rules` again):
+  // 1911 answers turned into 500s in seven minutes, and the change-log reader
+  // overflowed beside them. An index into an array is digits below its
+  // length; anything else must be the node's own member.
   /**
    * Resolves a path in a policy model.
    * @param policy - the policy model
@@ -438,6 +478,10 @@ class XacmlEditor {
       }
       parent = node;
       key = segments[i];
+      if (!XacmlEditor.ownStep(node, key)) {
+        log.debug('Leaving XacmlEditor.nodeAt(). Not an own member: ' + key);
+        return null;
+      }
       node = Array.isArray(node) ? node[Number(key)] : node[key];
     }
     if (node === null || node === undefined) {

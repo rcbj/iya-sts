@@ -15411,6 +15411,14 @@ response is validated against it, always.** There is no setting, in either mode.
 * **NO MEMBER IS `required` UNLESS EVERY BRANCH SENDS IT**: the management API
   removes members after a view built them (an owner's projection, the console's
   own members).
+* **A COMPILE THAT FAILS IS CONTAINED, AND A POLLUTED PROTOTYPE IS NAMED**
+  (2026-11-12). The ajv instance that threw is replaced, and the failed model
+  alone is refused from memory for a minute before one request tries again.
+  Every refusal asks whether plain objects inherit an enumerable member, and
+  says which, once (`STS-API-0146`): on that day an XACML editor path walked
+  to `Object.prototype` (`xacml/xacml_editor.ts`, `nodeAt()`), every object
+  inherited `rules`, and every answer of every operation was refused. Every
+  walk of a caller's path takes own members only.
 
 `tests/tools/openapi_inventory.js` prints the state of every operation and status.
 

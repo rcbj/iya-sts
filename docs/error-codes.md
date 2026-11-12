@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 269
-* [Management API (`STS-API`)](#sts-api) — 95
+* [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
@@ -5664,6 +5664,7 @@ Raised from: mgmt-api/.
 | `STS-API-0143` | A query parameter of a management API request held a value its declared type does not, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
 | `STS-API-0144` | A management API request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
 | `STS-API-0145` | A change to how somebody signs in was refused because the administrator did not sign in recently enough. | HTTP 401 (RFC 9470) |
+| `STS-API-0146` | An answer was refused by its response model (STS-API-0139) in a process where every plain object or array inherits an enumerable member: something wrote to Object.prototype or Array.prototype, so every closed model refuses every answer. The log line names the members, once per set of names; the process needs a restart and the write that polluted it a fix. | — |
 
 ## STS-PORTAL
 
