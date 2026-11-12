@@ -7073,18 +7073,20 @@ const WORKER_ANSWER_MAX_HEADER_BYTES = 1024 * 1024;
 // How many requests were sent again that way, for stats().
 let replayCount = 0;
 
-// One answered request's phases, to `request_phases.js` (#820): the front's
-// two waits, what the worker reported, and the rest of the round trip — the
-// socket and the worker's event loop busy with other requests — as `queue`.
-// Hot path: every dispatched request. No Entering/Leaving pair.
-function notePhases(req, timing, dispatchedAt, answeredAt, worker) {
-  const roundTrip = answeredAt - dispatchedAt;
-  const inWorker = worker ? worker.handler + worker.commit : 0;
+// One answered request's phases, to `request_phases.js` (#820, #887): the
+// front's ticket and barrier, how long it waited to be given a socket, and
+// from that socket until the worker's middleware — what one `queue` number
+// used to cover. The worker reports the rest. Hot path: every dispatched
+// request. No Entering/Leaving pair.
+function notePhases(req, timing, answeredAt, worker, socketAt, askedAt) {
+  const waits = requestPhases.connectionWaits(askedAt, socketAt,
+    worker && worker.arrived);
   requestPhases.record(requestPhases.routeOf(req.method,
                                              req.originalUrl || req.url), {
     ticket: timing.ticketDone - timing.arrived,
     barrier: timing.barrierDone - timing.ticketDone,
-    queue: worker ? Math.max(0, roundTrip - inWorker) : undefined,
+    connect: waits.connect,
+    loop: waits.loop,
     handler: worker ? worker.handler : undefined,
     commit: worker ? worker.commit : undefined,
     bridge: worker ? worker.bridge : undefined,
@@ -7172,6 +7174,12 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // When the worker's answer arrived, and the phases it reported (#820).
   let answeredAt = 0;
   let workerPhases = null;
+  // When the front asked the agent for a socket, and when the agent gave
+  // it one (#887). A request past `workers.maxSockets` waits in the agent
+  // between the two. The first ask stands; a retry's later socket replaces
+  // the first, so the wait runs until the connection that answered.
+  let askedAt = 0;
+  let socketAt = 0;
   const finish = function (lost) {
     log.debug("Entering finish().");
     if (!done) {
@@ -7181,7 +7189,7 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       if (!lost) {
         noteAnswered(entry.pool, Date.now() - dispatchedAt);
         if (timing && answeredAt) {
-          notePhases(req, timing, dispatchedAt, answeredAt, workerPhases);
+          notePhases(req, timing, answeredAt, workerPhases, socketAt, askedAt);
         }
       }
       // THE TICKET IS TAKEN AT DISPATCH NOW, NOT HERE — see dispatchTicket().
@@ -7680,6 +7688,9 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
 
   const open = function () {
     log.debug("Entering open().");
+    if (!askedAt) {
+      askedAt = Date.now();
+    }
     const one = http.request({
       socketPath: entry.socket,
       path: req.originalUrl || req.url,
@@ -7695,6 +7706,15 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       // (#1225); see WORKER_ANSWER_MAX_HEADER_BYTES.
       maxHeaderSize: WORKER_ANSWER_MAX_HEADER_BYTES
     }, onAnswer);
+    // The `socket` event is when the agent hands one over. Measured on
+    // node 22, it is not emitted inside `http.request()`, so the listener
+    // sees it; `one.socket` covers a node that emits it during construction.
+    if (one.socket) {
+      socketAt = Date.now();
+    }
+    one.on('socket', function () {
+      socketAt = Date.now();
+    });
     one.on('error', onUpstreamError);
     log.debug("Leaving open().");
     return one;

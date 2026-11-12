@@ -27,9 +27,10 @@ and explains the log line that measures each wait.
 | 7 | The worker: **commit** | The request's own writes to commit to the database before the answer is sent | The database |
 
 Stages 2 and 3 are the *read-your-write* wait; [Read-your-write](#read-your-write)
-below says when a request has to do them. Stages 4 to 6 are reported together as
-**queue**. Stage 7 happens after the handler has run; a request that wrote
-nothing skips it.
+below says when a request has to do them. Stage 4 is **connect**. Stages 5 and 6
+are **loop**: the front times from the socket it was given until the worker
+says its middleware started. Stage 7 happens after the handler has run; a
+request that wrote nothing skips it.
 
 Some paths never go to a worker. `GET /healthcheck` is answered by the front
 process at once, so a liveness probe waits for none of the above. A few console
@@ -107,19 +108,27 @@ last minute with the 50th and 95th percentile of each phase in milliseconds:
 
 ```
 request phases, last 60 s: POST /oauth2/token 32.8/s — p50/p95 ms:
-  ticket 0/1, barrier 70/308, queue 11/77, handler 93/256, commit 59/195,
-  bridge 6/35, total 267/653
+  ticket 0/1, barrier 70/308, connect 1/8, loop 9/64, handler 93/256,
+  commit 59/195, bridge 6/35, total 267/653
 ```
+
+The figures above show the shape of the line. They are not a measurement of
+8081, and 8081 was not re-measured when `queue` was split.
 
 | Phase | Measured by | What it is |
 |---|---|---|
 | `ticket` | The front process | Stage 2 |
 | `barrier` | The front process | Stage 3 |
-| `queue` | The front process | Stages 4 to 6: the round trip to the worker less the worker's `handler` and `commit`, so it also includes making the connection and carrying the answer back |
+| `connect` | The front process | Stage 4: from asking the per-worker agent for a socket until it gives one (`workers.maxSockets`) |
+| `loop` | The front process, from an instant the worker reports | Stages 5 and 6: from that socket until the worker's middleware started |
 | `handler` | The worker | The request's own work, from reaching the worker's middleware to its answer being ready |
 | `commit` | The worker | Stage 7 |
 | `bridge` | The worker | Time inside `handler` that the worker's thread was blocked in synchronous database reads. It is part of `handler`, not added to it. |
-| `total` | The front process | From the request reaching the front process to the answer coming back from the worker |
+| `total` | The front process | From the request reaching the front process to the answer's headers coming back from the worker |
+
+The phases do not add up to `total`. `bridge` is inside `handler`, and the
+short trip that carries the answer's headers back to the front is in `total`
+only.
 
 A route is the method and the first two path segments, without a realm prefix
 or a query. The route is not a request count: `GET /oauth2/authorize` appears
@@ -152,12 +161,15 @@ re-measured after the spend stopped waiting.
 
 ## What to look at first
 
-* **`queue` high at p50.** The workers' threads are busy. Look at `handler` and
-  `bridge` for the routes that dominate, and at whether there are cores to
-  spare for another worker (Monitoring → Worker Pools).
-* **`queue` low at p50 and high at p95.** Bursts are stacking behind slow
+* **`loop` high at p50.** The workers' threads are busy, or their listen
+  backlog is. Look at `handler` and `bridge` for the routes that dominate,
+  and at whether there are cores to spare for another worker (Monitoring →
+  Worker Pools).
+* **`loop` low at p50 and high at p95.** Bursts are stacking behind slow
   requests on one worker. Password hashing and bulk imports are the usual
   causes; `workers.batch` keeps a bulk load in its own lane.
+* **`connect` high.** Requests are waiting for a free connection
+  (`workers.maxSockets`) before a worker sees them.
 * **`barrier` or `ticket` high.** Requests are waiting for other workers'
   writes. Check that `workers.readYourWrite` is `session`. At the token
   endpoint, compare `stats().sessionBarrier.codeKeyed` and `refreshKeyed`
@@ -170,10 +182,11 @@ re-measured after the spend stopped waiting.
   for an earlier write to finish first. A rotating refresh's remaining wait
   is that one flush (*The refresh ceiling*).
 * **Raising `workers.maxSockets` is rarely the answer.** It moves the wait from
-  stage 4 to stage 6 without making the worker faster. Do not make it small
-  either: the service makes requests to itself, and a worker whose connections
-  are all held by requests waiting on such a call needs one more to make
-  progress.
+  `connect` (stage 4) to `loop` (stage 6) without making the worker faster.
+  Do it when `connect` is the high phase and `loop` is not. Do not make it
+  small either: the service makes requests to itself, and a worker whose
+  connections are all held by requests waiting on such a call needs one more
+  to make progress.
 
 ## Related
 

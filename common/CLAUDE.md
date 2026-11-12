@@ -2256,11 +2256,16 @@ each mode guarantees, exactly:
 
 **WHERE A DISPATCHED REQUEST'S TIME GOES (2026-10-22, #820)**:
 `common/request_phases.js`.
-- **The front** times three phases: the ticket wait, the read barrier, and
-  the round trip.
-- **The worker** times the rest: its commit barrier reports the handler, the
-  commit hold, and the time its loop was blocked in synchronous store reads.
-  It sends them in `x-sts-pool-phases`, which the front asks for and takes off.
+- **The front** times the ticket wait, the read barrier, and `connect`: how
+  long the per-worker agent took to give it a socket, from the moment it
+  asked (`workers.maxSockets`).
+- **The worker** times the rest. Its commit barrier reports the handler, the
+  commit hold, the time its loop was blocked in synchronous store reads, and
+  the instant its middleware started. The front subtracts the socket instant
+  from that and records `loop` — the listen backlog and the worker's event
+  loop (#887). Until then those two waits were one `queue` number. The trip
+  back to the front stays in `total` only. The worker sends its half in
+  `x-sts-pool-phases`, which the front asks for and takes off.
 - **Reporting:** once a minute, one `request phases` log line per busiest
   route, with p50/p95 for each phase. The last window is also kept in the
   pool's `stats().phases`.

@@ -419,8 +419,10 @@ function stampPhases(req, res) {
 }
 
 // Puts the worker's half of a dispatched request's phases on its answer,
-// when the front asked: the handler's time, the hold for its commit, and the
-// time the loop was blocked in synchronous store reads meanwhile.
+// when the front asked: the handler's time, the hold for its commit, the
+// time the loop was blocked in synchronous store reads meanwhile, and the
+// instant this middleware started (#887), so the front can tell a socket
+// wait from a loop wait.
 // Hot path: every dispatched response. No Entering/Leaving pair.
 function reportPhases(res, handledAt) {
   const stamp = res[PHASES_STAMP];
@@ -431,7 +433,7 @@ function reportPhases(res, handledAt) {
   res.setHeader(requestPhases.PHASES_HEADER,
                 requestPhases.encode(handledAt - stamp.at, now - handledAt,
                                      requestPhases.blockedTotal() -
-                                       stamp.blocked));
+                                       stamp.blocked, stamp.at));
 }
 
 /**

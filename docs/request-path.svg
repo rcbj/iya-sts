@@ -40,8 +40,10 @@
     <text x="335" y="80" stroke="none">ticket</text>
     <path d="M415,92 v-6 h120 v6" fill="none"/>
     <text x="475" y="80" stroke="none">barrier</text>
-    <path d="M555,92 v-6 h425 v6" fill="none"/>
-    <text x="767" y="80" stroke="none">queue</text>
+    <path d="M555,92 v-6 h130 v6" fill="none"/>
+    <text x="620" y="80" stroke="none">connect</text>
+    <path d="M745,92 v-6 h235 v6" fill="none"/>
+    <text x="862" y="80" stroke="none">loop</text>
     <path d="M995,92 v-6 h100 v6" fill="none"/>
     <text x="1045" y="80" stroke="none">handler</text>
     <path d="M1110,92 v-6 h95 v6" fill="none"/>
