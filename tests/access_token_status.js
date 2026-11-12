@@ -33,6 +33,10 @@
 //      gnap-token or gnap-grant session audienced to the resource server
 //      that owns the stream and refuses every other, and a revocation with
 //      no resource owner is emitted with the session alone.
+//   7. THE PACKED LIST (#885): the compressed bytes are reused until an
+//      invalid bit changes or the earliest one expires. Half the ttl
+//      re-signs from those bytes. A bit restored from another process is
+//      published on the next list.
 //
 // In a CHILD PROCESS, for `admin_credential_controls.js`'s reason: it loads
 // the whole protocol stack.
@@ -75,6 +79,8 @@ function childMain() {
     const gnapGrants = require(ROOT + '/gnap/gnap_grants');
     const gnapSignals = require(ROOT + '/gnap/gnap_signals');
     const PATH = '/status-lists/access-tokens';
+    const PACKED = 'oauth2.access-token-status-packed';
+    const SIGNED = 'oauth2.access-token-status-lists';
 
     const jwks = (await w.request('GET', '/oauth2/jwks')).json;
     // The list's JWS, verified with node's own crypto against the published
@@ -107,7 +113,15 @@ function childMain() {
     // ==================================================================
     // 1. THE LIST
     // ==================================================================
+    const packedBefore = m.cacheRegistry.detail(PACKED).summary;
+    const coldAt = Date.now();
     const r1 = await w.request('GET', PATH);
+    const coldMs = Date.now() - coldAt;
+    const packedCold = m.cacheRegistry.detail(PACKED).summary;
+    const hotAt = Date.now();
+    const r1Again = await w.request('GET', PATH);
+    const hotMs = Date.now() - hotAt;
+    const packedHot = m.cacheRegistry.detail(PACKED).summary;
     const v1 = r1.status === 200 ? verified(r1.text) : { ok: false };
     note(r1.status === 200 && v1.ok &&
          /^application\/statuslist\+jwt/
@@ -124,6 +138,14 @@ function childMain() {
          r1.status + ' ' + JSON.stringify(v1.header || {}) + ' ' +
          JSON.stringify(v1.claims && { sub: v1.claims.sub,
            ttl: v1.claims.ttl, bits: (v1.claims.status_list || {}).bits }));
+    note(packedCold.misses === packedBefore.misses + 1 &&
+         packedHot.misses === packedCold.misses &&
+         packedHot.hits === packedCold.hits + 1 &&
+         r1Again.status === 200 && r1Again.text === r1.text,
+         '1a-ii. the next fetch serves the same token without packing the ' +
+         'list again (#885)',
+         JSON.stringify({ coldMs: coldMs, hotMs: hotMs,
+           misses: packedHot.misses, hits: packedHot.hits }));
     note(String(r1.headers['cache-control']) === 'max-age=60' &&
          r1.headers.vary === 'Accept',
          '1b. with Cache-Control max-age equal to its ttl, and Vary: Accept',
@@ -183,9 +205,22 @@ function childMain() {
       form: Object.assign({ token: got.token }, w.client) });
     note(revoked.status === 200, '2c. /oauth2/revoke accepts it',
          revoked.status + ' ' + revoked.text.slice(0, 200));
-    note(await bitAt(ref.idx) === 1,
+    const packedRevokeBefore = m.cacheRegistry.detail(PACKED).summary;
+    const revokedBit = await bitAt(ref.idx);
+    const packedRevoked = m.cacheRegistry.detail(PACKED).summary;
+    note(revokedBit === 1,
          '2d. and the published bit is INVALID (1) after the revocation — ' +
          'computed from the register, never written by the revoking door');
+    note(packedRevoked.misses === packedRevokeBefore.misses + 1,
+         '2e. publishing that bit rebuilds the compressed list (#885)',
+         JSON.stringify({ misses: packedRevoked.misses }));
+    const revokedAgain = await bitAt(ref.idx);
+    const packedRevokeHit = m.cacheRegistry.detail(PACKED).summary;
+    note(revokedAgain === 1 &&
+         packedRevokeHit.misses === packedRevoked.misses &&
+         packedRevokeHit.hits === packedRevoked.hits + 1,
+         '2f. the fetch after it reuses that list and the bit stays INVALID',
+         JSON.stringify({ hits: packedRevokeHit.hits }));
 
     // ==================================================================
     // 3. ALLOCATION
@@ -833,6 +868,119 @@ function childMain() {
          '6d. a revoked token nobody approved is still emitted, its subject ' +
          'the session alone, so a resource server hears of it',
          JSON.stringify(captured && captured.subject));
+
+    // ==================================================================
+    // 7. THE PACKED LIST (#885). A clock and a private bit store, so the
+    // expiry is this test's and not a token section 2 revoked. The realm
+    // id is not the default: the module cache is keyed by realm, and the
+    // publications above already hold the default realm's list.
+    // ==================================================================
+    const T0 = Date.now();
+    const clock7 = { t: T0 };
+    const bits7 = new Map();
+    bits7.set('0', { jti: 'ats-packed', expiresAt: T0 + 60000 });
+    const isolated = new Cls(Object.assign(Cls.defaultDeps(), {
+      now: function () {
+        return clock7.t;
+      },
+      baseUrlOf: function () {
+        return 'https://sts.example';
+      },
+      realms: { currentId: function () {
+        return 'ats-packed-test';
+      } },
+      entries: { onDemandLive: function () {
+        return true;
+      } },
+      invalid: bits7
+    }));
+    function claimsOf(compact) {
+      return JSON.parse(Buffer.from(String(compact).split('.')[1],
+                                     'base64url').toString('utf8'));
+    }
+    function lstOf(compact) {
+      return claimsOf(compact).status_list.lst;
+    }
+    function bitOf(compact, idx) {
+      const parts = m.codec.tslFromJson(claimsOf(compact).status_list);
+      return m.codec.unpackTslValue(parts.bytes, parts.bits, idx);
+    }
+    const packedBefore7 = m.cacheRegistry.detail(PACKED).summary;
+    const signedBefore7 = m.cacheRegistry.detail(SIGNED).summary;
+    const first7 = await isolated.listJwt({});
+    const packedCold7 = m.cacheRegistry.detail(PACKED).summary;
+    const second7 = await isolated.listJwt({});
+    const packedHot7 = m.cacheRegistry.detail(PACKED).summary;
+    const signedHot7 = m.cacheRegistry.detail(SIGNED).summary;
+    note(packedCold7.misses === packedBefore7.misses + 1 &&
+         packedHot7.misses === packedCold7.misses &&
+         packedHot7.hits === packedCold7.hits + 1 &&
+         first7 === second7 && bitOf(first7, 0) === 1 &&
+         signedHot7.hits === signedBefore7.hits + 1,
+         '7a. the first publication packs the list and the next one reuses ' +
+         'the compressed bytes and the signature',
+         JSON.stringify({ misses: packedHot7.misses, hits: packedHot7.hits }));
+    const row7 = m.cacheRegistry.detail(PACKED).rows.filter(function (one) {
+      return one.realm === 'ats-packed-test';
+    })[0];
+    note(!!row7 && row7.validUntil === T0 + 60000 &&
+         !Object.prototype.hasOwnProperty.call(row7, 'compressed'),
+         '7b. the registry row is the realm and the earliest expiry, and ' +
+         'it does not carry the compressed bytes',
+         JSON.stringify(row7 && { realm: row7.realm,
+           validUntil: row7.validUntil }));
+    clock7.t = T0 + 31000;
+    const packedMidBefore = m.cacheRegistry.detail(PACKED).summary;
+    const signedMidBefore = m.cacheRegistry.detail(SIGNED).summary;
+    const mid7 = await isolated.listJwt({});
+    const packedMid = m.cacheRegistry.detail(PACKED).summary;
+    const signedMid = m.cacheRegistry.detail(SIGNED).summary;
+    note(packedMid.misses === packedMidBefore.misses &&
+         packedMid.hits === packedMidBefore.hits + 1 &&
+         signedMid.misses === signedMidBefore.misses + 1 &&
+         lstOf(mid7) === lstOf(first7) && mid7 !== first7,
+         '7c. half the ttl re-signs from the cached bytes: the list is the ' +
+         'same and the token is not',
+         JSON.stringify({ packedHits: packedMid.hits,
+           signedMisses: signedMid.misses }));
+    clock7.t = T0 + 60000;
+    const packedExpBefore = m.cacheRegistry.detail(PACKED).summary;
+    const expired7 = await isolated.listJwt({});
+    const packedExp = m.cacheRegistry.detail(PACKED).summary;
+    note(packedExp.misses === packedExpBefore.misses + 1 &&
+         bitOf(expired7, 0) === 0,
+         '7d. at the earliest invalid bit\'s expiry the list is rebuilt and ' +
+         'that index is published VALID',
+         JSON.stringify({ misses: packedExp.misses }));
+
+    // The other process's bit. On demand, so the list is the invalid store
+    // and not a walk of entries. The realm is the ambient one: a restore
+    // moves that realm's generation, which is the key the cache uses.
+    const restoredIdx = 1234567;
+    const publisher = new Cls(Object.assign(Cls.defaultDeps(), {
+      baseUrlOf: function () {
+        return 'https://sts.example';
+      },
+      entries: { onDemandLive: function () {
+        return true;
+      } }
+    }));
+    const beforeRestore = await publisher.listJwt({});
+    const packedRestoreBefore = m.cacheRegistry.detail(PACKED).summary;
+    m.realms.handleFor('access_token_status.invalid').restore(
+      'default', String(restoredIdx),
+      { jti: 'ats-restored', expiresAt: Date.now() + 3600000 });
+    const afterRestore = await publisher.listJwt({});
+    const packedRestore = m.cacheRegistry.detail(PACKED).summary;
+    note(bitOf(beforeRestore, restoredIdx) === 0 &&
+         bitOf(afterRestore, restoredIdx) === 1 &&
+         packedRestore.misses === packedRestoreBefore.misses + 1 &&
+         afterRestore !== beforeRestore,
+         '7e. a bit restored from another process is published on the next ' +
+         'list, which is packed again',
+         JSON.stringify({ misses: packedRestore.misses,
+           before: bitOf(beforeRestore, restoredIdx),
+           after: bitOf(afterRestore, restoredIdx) }));
   }
 }
 

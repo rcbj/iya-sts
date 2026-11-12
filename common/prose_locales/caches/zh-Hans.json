@@ -727,6 +727,26 @@
     "en": "48214c6b54f10691",
     "text": "提供了一个列表而无需重新签名"
   },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "已压缩的访问令牌状态列表"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "本进程为每个领域最近构建的压缩访问令牌状态列表，在无效位发生变化或最早的一个过期之前重复使用。"
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "结构性：每个领域一份压缩列表。已消失的领域，或最早的无效位已过期的列表，由缓存作业丢弃。"
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "直到某个无效位发生变化，或最早的一个过期。"
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "提供了一个列表而无需再次打包或压缩"
+  },
   "caches.store.oauth2.attestation-challenges.title": {
     "en": "f19e208930fddc5c",
     "text": "客户端证明质询"

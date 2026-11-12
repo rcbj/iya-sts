@@ -727,6 +727,26 @@
     "en": "48214c6b54f10691",
     "text": "une liste a été servie sans être signée à nouveau"
   },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "Listes de statut compressées des jetons d’accès"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "La liste de statut des jetons d’accès compressée que ce processus a construite en dernier pour chaque domaine, réutilisée jusqu’à ce qu’un bit invalide change ou que le plus précoce expire."
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "Structurelle : une liste compressée par domaine. Un domaine qui a disparu, ou une liste dont le bit invalide le plus précoce a expiré, est retiré par la tâche des caches."
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "jusqu’à ce qu’un bit invalide change, ou que le plus précoce expire."
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "une liste a été servie sans être empaquetée ni compressée à nouveau"
+  },
   "caches.store.oauth2.attestation-challenges.title": {
     "en": "f19e208930fddc5c",
     "text": "Défis d’attestation de client"

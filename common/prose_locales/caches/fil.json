@@ -727,6 +727,26 @@
     "en": "48214c6b54f10691",
     "text": "na-serve ang isang listahan nang hindi ito sina-sign muli"
   },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "Mga naka-pack na access-token status list"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "Ang naka-compress na access-token status list na huling binuo ng process na ito para sa bawat realm, ginagamit muli hanggang magbago ang isang invalid bit o mag-expire ang pinakamaaga."
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "Istruktural: isang naka-compress na listahan bawat realm. Ang realm na wala na, o ang listahan na nag-expire na ang pinakamaagang invalid bit, ay inaalis ng caches job."
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "hanggang magbago ang isang invalid bit, o mag-expire ang pinakamaaga."
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "na-serve ang isang listahan nang hindi ito pina-pack o kino-compress muli"
+  },
   "caches.store.oauth2.attestation-challenges.title": {
     "en": "f19e208930fddc5c",
     "text": "Mga client attestation challenge"

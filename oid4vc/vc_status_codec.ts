@@ -154,6 +154,9 @@ interface VcStatusCodecDeps {
 interface StatusListParts {
   bits: number;
   bytes: Buffer;
+  // ZLIB bytes the caller already holds (#885). When present and non-empty
+  // the builders publish them and do not deflate `bytes` again.
+  compressed?: Buffer;
   aggregationUri?: string;
 }
 
@@ -172,6 +175,8 @@ interface CwtInput {
   ttl?: number;
   bits: number;
   bytes: Buffer;
+  // See `StatusListParts.compressed`.
+  compressed?: Buffer;
   aggregationUri?: string;
   key: any;
   alg: string;
@@ -385,11 +390,28 @@ class VcStatusCodec {
     return out;
   }
 
+  // Already-compressed bytes skip a second deflate (#885). The
+  // access-token list caches the ZLIB stream. Credential lists still pass
+  // only `bytes`.
+  private listed(parts: StatusListParts): Buffer {
+    const { log } = this.deps;
+    log.debug("Entering VcStatusCodec.listed().");
+    if (Buffer.isBuffer(parts.compressed) && parts.compressed.length > 0) {
+      log.debug("Leaving VcStatusCodec.listed(). Cached, " +
+                parts.compressed.length + " byte(s).");
+      return parts.compressed;
+    }
+    const out = this.compress(parts.bytes);
+    log.debug("Leaving VcStatusCodec.listed(). Compressed.");
+    return out;
+  }
+
   // Section 4.2.
   /**
    * Returns a status list's JSON form (section 4.2).
    *
-   * @param parts - `{ bits, bytes, aggregationUri }`
+   * @param parts - `{ bits, bytes, aggregationUri }`, or `compressed` when
+   *   the caller already holds the ZLIB bytes (#885)
    * @returns `{ bits, lst, aggregation_uri }`
    */
   tslJson(parts: StatusListParts): any {
@@ -397,7 +419,7 @@ class VcStatusCodec {
     log.debug("Entering VcStatusCodec.tslJson().");
     const out: any = {
       bits: this.checkBits(parts.bits),
-      lst: this.compress(parts.bytes).toString('base64url')
+      lst: this.listed(parts).toString('base64url')
     };
     if (parts.aggregationUri) {
       out.aggregation_uri = String(parts.aggregationUri);
@@ -440,7 +462,8 @@ class VcStatusCodec {
   /**
    * Returns a status list's CBOR form as a Map (section 4.3).
    *
-   * @param parts - `{ bits, bytes, aggregationUri }`
+   * @param parts - `{ bits, bytes, aggregationUri }`, or `compressed` when
+   *   the caller already holds the ZLIB bytes (#885)
    * @returns the Map
    */
   tslCborMap(parts: StatusListParts): Map<string, unknown> {
@@ -448,7 +471,7 @@ class VcStatusCodec {
     log.debug("Entering VcStatusCodec.tslCborMap().");
     const map = new Map<string, unknown>();
     map.set('bits', this.checkBits(parts.bits));
-    map.set('lst', this.compress(parts.bytes));
+    map.set('lst', this.listed(parts));
     if (parts.aggregationUri) {
       map.set('aggregation_uri', String(parts.aggregationUri));
     }
@@ -1151,11 +1174,13 @@ class VcStatusCodec {
   /**
    * Builds a Status List Token's JWT claims (section 5.1); the caller signs.
    *
-   * @param input - `{ sub, iat, exp, ttl, bits, bytes, aggregationUri }`
+   * @param input - `{ sub, iat, exp, ttl, bits, bytes, aggregationUri }`,
+   *   or `compressed` when the caller already holds the ZLIB bytes (#885)
    * @returns the claims
    */
   statusListJwtPayload(input: { sub: string; iat: number; exp?: number;
                                 ttl?: number; bits: number; bytes: Buffer;
+                                compressed?: Buffer;
                                 aggregationUri?: string }): any {
     const { log } = this.deps;
     log.debug("Entering VcStatusCodec.statusListJwtPayload().");

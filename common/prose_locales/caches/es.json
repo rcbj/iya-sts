@@ -727,6 +727,26 @@
     "en": "48214c6b54f10691",
     "text": "se sirvió una lista sin volver a firmarla"
   },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "Listas de estado de tokens de acceso empaquetadas"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "La lista de estado de tokens de acceso comprimida que este proceso construyó por última vez para cada dominio, reutilizada hasta que un bit no válido cambia o expira el más temprano."
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "Estructural: una lista comprimida por dominio. Un dominio que ya no existe, o una lista cuyo bit no válido más temprano ha expirado, la retira la tarea de cachés."
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "hasta que un bit no válido cambia, o expira el más temprano."
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "se sirvió una lista sin volver a empaquetarla ni comprimirla"
+  },
   "caches.store.oauth2.attestation-challenges.title": {
     "en": "f19e208930fddc5c",
     "text": "Desafíos de atestación de cliente"

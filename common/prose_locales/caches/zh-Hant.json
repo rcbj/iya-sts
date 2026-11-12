@@ -727,6 +727,26 @@
     "en": "48214c6b54f10691",
     "text": "未重新簽署即提供清單"
   },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "已壓縮的存取權杖狀態清單"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "此程序為每個領域最近建立的壓縮存取權杖狀態清單，在無效位元變更或最早的一個過期之前重複使用。"
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "結構性：每個領域一份壓縮清單。已消失的領域，或最早的無效位元已過期的清單，由快取工作捨棄。"
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "直到某個無效位元變更，或最早的一個過期。"
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "未再次打包或壓縮即提供清單"
+  },
   "caches.store.oauth2.attestation-challenges.title": {
     "en": "f19e208930fddc5c",
     "text": "用戶端證明挑戰"

@@ -212,6 +212,7 @@ not use this cache: it decrypts the secret every time.
 | Signed status lists | the last Status List Token and Bitstring Status List credential this process signed for each realm | per process | until the list changes, or half of `oid4vci.statusListTtlS`; 1,024 documents, oldest first | `oid4vci.statusListTtlS` |
 | GNAP resource owners | the owner a resource server's `gnapOwnerLookupUri` named for an identifier (#432) | per realm | the setting; 1,024 entries per realm, the oldest dropped; a failed lookup is never held | `gnap.ownerLookupCacheS` (60) |
 | Signed access-token status lists | the last access-token Status List Token this process signed for each realm (#432) | per process | until the list changes, or half of `oauth2.accessTokenStatusListTtlS`; 1,024 lists, oldest first | `oauth2.accessTokenStatusListTtlS` |
+| Packed access-token status lists | the compressed access-token status list this process last built for each realm (#885) | per process | until an invalid bit changes, or the earliest one expires; one list per realm | — |
 
 **XACML policy parses are kept by content.** Each distinct policy text is a new
 entry, so an edited policy leaves its old parse behind until it becomes the
