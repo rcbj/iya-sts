@@ -603,6 +603,8 @@ function create(deps) {
       ? filter.ageHandles.map(String) : [];
     const skipped = Array.isArray(filter.skipHandles)
       ? filter.skipHandles.map(String) : [];
+    const nullExpiry = Array.isArray(filter.nullExpiryHandles)
+      ? filter.nullExpiryHandles.map(String) : [];
     const q = kx('sts_minted')
       .select('handle', 'realm', 'key', 'body',
               { written_ms: epochMs('written_at') }, 'expires_at',
@@ -621,6 +623,11 @@ function create(deps) {
     }
     if (skipped.length) {
       q.whereNotIn('handle', skipped);
+    }
+    if (nullExpiry.length) {
+      q.whereNot(function () {
+        this.whereIn('handle', nullExpiry).whereNotNull('expires_at');
+      });
     }
     log.debug("Leaving loadMinted().");
     return run(readPool, 'loadMinted', q);

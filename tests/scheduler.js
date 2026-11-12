@@ -52,7 +52,12 @@
 //   K. the real module: its own history job (a cluster job every ten
 //      minutes, whose rows carry the #333 expiry) and the two P1 jobs are
 //      registered by their owners, the realm-removal hook is wired, and the
-//      singleton leads nothing at load.
+//      singleton leads nothing at load. A finished interval run restored
+//      into scheduler.runs is not held (#883);
+//   P. a finished interval slot is learnt from one read per realm and is
+//      not held; a second tick of that slot does not read again; an empty
+//      answer runs the slot once; a failed read is STS-SCHED-0013 and is
+//      asked again (#883).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -1184,6 +1189,22 @@ async function run(t) {
             'a manual run restored or replicated into scheduler.runs is in ' +
             'the scheduler\'s index of the rows a tick reads, and stored as ' +
             'it came', JSON.stringify({ indexed: indexed }));
+    const doneId = 's-883-done';
+    handle.restore('default', doneId, {
+      runId: doneId, kind: 'run', jobId: 'scheduler.history',
+      realm: 'default', trigger: 'schedule', state: 'succeeded',
+      endedAt: Date.now(), startedAt: Date.now() - 1000,
+      queuedAt: Date.now() - 2000
+    });
+    t.check(!mod.runStore.realmMap('default').get(doneId) &&
+            handle.restoreExpiring === false &&
+            typeof handle.sortOf === 'function',
+            'a finished interval run is not held on restore (#883), and ' +
+            'the store declares restoreExpiring false and a sort',
+            JSON.stringify({
+              kept: !!mod.runStore.realmMap('default').get(doneId),
+              restoreExpiring: handle.restoreExpiring,
+              sortOf: typeof handle.sortOf }));
     require(ROOT + '/authn/authn');
     t.check(mod.jobIds().indexOf('authn.session-expiry') >= 0,
             'authn/authn registers authn.session-expiry at load',
@@ -1201,6 +1222,115 @@ async function run(t) {
             'pki.start() asks it to keep the directory current',
             mod.jobIds().join(','));
   }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== P. a finished interval slot is read, not held (#883) ===');
+  {
+    // One world per case: a slot marked finished in the first must not
+    // answer the second. The clock is not advanced, so both ticks are the
+    // same slot. `clustered: false` leads at start and arms no firing timer.
+    function recallWorld(answer) {
+      log.debug('Entering recallWorld().');
+      const calls = [];
+      const w = kit.world({
+        clustered: false,
+        readRuns: function (realmId, ids) {
+          calls.push({ realmId: realmId, ids: ids.slice() });
+          return answer(realmId, ids, w);
+        }
+      });
+      log.debug('Leaving recallWorld().');
+      return { w: w, calls: calls };
+    }
+    function finishedAnswer(realmId, ids) {
+      log.debug('Entering finishedAnswer().');
+      const map = new Map();
+      ids.forEach(function (id) {
+        map.set(id, {
+          runId: id, kind: 'run', jobId: 'test.recall', realm: realmId,
+          trigger: 'schedule', state: 'succeeded', endedAt: 1,
+          startedAt: 1, queuedAt: 1
+        });
+      });
+      log.debug('Leaving finishedAnswer().');
+      return Promise.resolve(map);
+    }
+    const held = recallWorld(finishedAnswer);
+    let ran = 0;
+    const node = held.w.node('a');
+    node.scheduler.register(baseJob({
+      id: 'test.recall',
+      run: function () {
+        ran++;
+      }
+    }));
+    node.scheduler.start('front');
+    await node.scheduler.tick();
+    await held.w.settle();
+    const asked = held.calls[0] || { realmId: '', ids: [] };
+    const kept = asked.ids.filter(function (id) {
+      return held.w.store.realmMap('default').has(id);
+    });
+    t.check(held.calls.length === 1 && asked.realmId === 'default' &&
+            asked.ids.length === 2 && ran === 0 && kept.length === 0,
+            'one read of the default realm\'s current and previous slot, ' +
+            'the slot does not run, and the finished body is not stored',
+            JSON.stringify({ calls: held.calls.length, realm: asked.realmId,
+                             ids: asked.ids.length, ran: ran, kept: kept }));
+    await node.scheduler.tick();
+    await held.w.settle();
+    t.equal(held.calls.length, 1,
+            'a second tick of the same slot does not read again');
+
+    const empty = recallWorld(function () {
+      return Promise.resolve(new Map());
+    });
+    let ranEmpty = 0;
+    const emptyNode = empty.w.node('a');
+    emptyNode.scheduler.register(baseJob({
+      id: 'test.recall',
+      run: function () {
+        ranEmpty++;
+      }
+    }));
+    emptyNode.scheduler.start('front');
+    await emptyNode.scheduler.tick();
+    await empty.w.settle();
+    t.equal(ranEmpty, 1, 'an empty answer runs the slot');
+    await emptyNode.scheduler.tick();
+    await empty.w.settle();
+    t.check(empty.calls.length === 1 && ranEmpty === 1,
+            'and the same slot is not read or run again',
+            JSON.stringify({ calls: empty.calls.length, ran: ranEmpty }));
+
+    const failed = recallWorld(function () {
+      return Promise.reject(new Error('the store did not answer'));
+    });
+    let ranFailed = 0;
+    const failedNode = failed.w.node('a');
+    failedNode.scheduler.register(baseJob({
+      id: 'test.recall',
+      run: function () {
+        ranFailed++;
+      }
+    }));
+    failedNode.scheduler.start('front');
+    await failedNode.scheduler.tick();
+    await failed.w.settle();
+    const logged = failed.w.logs.some(function (row) {
+      return row.level === 'error' &&
+        String(row.m).indexOf('STS-SCHED-0013') >= 0;
+    });
+    t.check(ranFailed === 0 && logged && failed.calls.length === 1,
+            'a failed read does not run the slot and is STS-SCHED-0013',
+            JSON.stringify({ ran: ranFailed, logged: logged,
+                             calls: failed.calls.length,
+                             logs: failed.w.logs }));
+    await failedNode.scheduler.tick();
+    await failed.w.settle();
+    t.equal(failed.calls.length, 2,
+            'the failed read is asked again at the next tick');
+  }
   log.debug('Leaving run().');
 }
 
@@ -1210,6 +1340,6 @@ module.exports = {
             'once per slot by the database clock, cron, the run lifecycle, ' +
             'off states, manual runs, the report, per-process jobs, the ' +
             'bounded run history, removed realms, a tick that reads no ' +
-            'history',
+            'history, a finished interval slot read once and not held (#883)',
   run: run
 };

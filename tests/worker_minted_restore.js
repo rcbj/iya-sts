@@ -17,17 +17,23 @@
 // the front process, which restores everything as before. This holds:
 //
 //   1. the FRONT process restores every store, the declared one included,
-//      and asks the store for no exclusion;
+//      and asks the store for no exclusion (this section runs before
+//      `scheduler.runs` is declared, so its null-expiry list is empty);
 //   2. a REQUEST WORKER asks the store to leave the declared store's rows out
 //      (`skipHandles`), restores every other store, and restores none of the
 //      declared one's rows even from a driver that ignored the exclusion;
 //   3. a worker that skipped the history still writes its own rows to it;
 //   4. `scheduler.runs` is the store that declares it, and /admin/scheduler
 //      and /admin-api/scheduler stay in the front process whatever
-//      `workers.dispatch` says — the page reads what a worker no longer has.
+//      `workers.dispatch` says — the page reads what a worker no longer has;
+//   5. the front still restores a null-expiry operational row of
+//      `scheduler.runs`, and does not restore a finished interval run
+//      (#883). Workers still skip the whole handle.
 //
-// In process, over a driver that keeps rows in a Map and applies the same
-// WHERE the postgres driver's query does.
+// In process, over a driver that keeps rows in a Map. It applies the
+// postgres `skipHandles` clause. It does not apply the null-expiry clause:
+// section 5 is the restore loop dropping an expiring `scheduler.runs` row
+// a driver returned anyway.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -79,7 +85,9 @@ function mapDriver(honour) {
         rows.set(row.handle + '\u0000' + row.realm + '\u0000' + row.key,
                  { handle: row.handle, realm: row.realm, key: row.key,
                    keySealed: row.keySealed || '', body: row.body,
-                   writtenAt: Date.now(), expiresAt: null });
+                   writtenAt: Date.now(),
+                   expiresAt: row.expiresAt == null ? null
+                     : Number(row.expiresAt) });
       });
       deletes.forEach(function (row) {
         rows.delete(row.handle + '\u0000' + row.realm + '\u0000' + row.key);
@@ -229,10 +237,14 @@ async function run(t) {
     t.log.info('=== 4. the scheduler\'s history, and its page ===');
     require('../cluster/scheduler');
     const runs = realms.handleFor('scheduler.runs');
-    t.check(!!runs && runs.restoreInWorkers === false,
-            'scheduler.runs is the store a request worker does not restore',
-            JSON.stringify(runs ? { restoreInWorkers: runs.restoreInWorkers }
-                                : null));
+    t.check(!!runs && runs.restoreInWorkers === false &&
+            runs.restoreExpiring === false &&
+            typeof runs.sortOf === 'function',
+            'scheduler.runs is the store a request worker does not restore, ' +
+            'and the front does not restore an expiring row of it (#883)',
+            JSON.stringify(runs ? { restoreInWorkers: runs.restoreInWorkers,
+                                    restoreExpiring: runs.restoreExpiring,
+                                    sortOf: typeof runs.sortOf } : null));
     const pool = require('../common/request_pool');
     const hadDispatch = process.env.STS_WORKERS_DISPATCH;
     process.env.STS_WORKERS_DISPATCH = '*';
@@ -254,6 +266,47 @@ async function run(t) {
         process.env.STS_WORKERS_DISPATCH = hadDispatch;
       }
     }
+
+    t.log.info('=== 5. the front restores no expiring run (#883) ===');
+    const mod = require('../cluster/scheduler');
+    const fresh = mapDriver(true);
+    minted.reset();
+    minted.setDriver(fresh, 'postgres');
+    const leader = { runId: 'leader', kind: 'leader', state: 'leading' };
+    const done = { runId: 's-883-done', kind: 'run',
+                   jobId: 'scheduler.history', realm: 'default',
+                   trigger: 'schedule', state: 'succeeded',
+                   endedAt: Date.now(), startedAt: Date.now() - 1000,
+                   queuedAt: Date.now() - 2000 };
+    mod.runStore.set('leader', leader);
+    mod.runStore.set('s-883-done', done);
+    await minted.flush();
+    const storedRows = Array.from(fresh.rows.values()).filter(
+      function (row) {
+        return row.handle === 'scheduler.runs';
+      });
+    t.check(storedRows.length === 2 &&
+            storedRows.some(function (row) {
+              return row.expiresAt == null;
+            }) &&
+            storedRows.some(function (row) {
+              return row.expiresAt != null;
+            }),
+            'the flush kept a null expiry and an expiry',
+            JSON.stringify(storedRows.map(function (row) {
+              return row.expiresAt;
+            })));
+    await restoreAs(false, minted, fresh, [mod.runStore]);
+    t.check(!!mod.runStore.get('leader') && !mod.runStore.get('s-883-done'),
+            'the front restores the leader and not a finished interval run',
+            JSON.stringify({
+              leader: !!mod.runStore.get('leader'),
+              done: !!mod.runStore.get('s-883-done') }));
+    t.check((fresh.lastFilter.nullExpiryHandles || [])
+              .indexOf('scheduler.runs') >= 0,
+            'and asks the store to leave expiring scheduler.runs rows out',
+            JSON.stringify(fresh.lastFilter &&
+                           fresh.lastFilter.nullExpiryHandles));
   } finally {
     minted.reset();
     config.clearOverride('global.mode');
@@ -273,7 +326,8 @@ async function run(t) {
 module.exports = {
   name: 'worker_minted_restore',
   describe: 'a request worker does not restore a store only the front ' +
-            'process answers from (scheduler.runs), and the scheduler\'s ' +
-            'page and API stay in the front process (#617)',
+            'process answers from (scheduler.runs), the scheduler\'s page ' +
+            'and API stay in the front process (#617), and the front does ' +
+            'not restore an expiring run (#883)',
   run: run
 };

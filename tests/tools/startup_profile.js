@@ -68,11 +68,20 @@ function mapDriver() {
     },
     loadMinted: function (filter) {
       log.debug("Entering loadMinted().");
-      // The postgres driver's `skipHandles` clause (#617).
+      // The postgres driver's `skipHandles` clause (#617) and its
+      // null-expiry clause (#883).
       const skip = (filter && filter.skipHandles) || [];
+      const nullExpiry = (filter && filter.nullExpiryHandles) || [];
       log.debug("Leaving loadMinted().");
       return Promise.resolve(Array.from(rows.values()).filter(function (row) {
-        return skip.indexOf(row.handle) < 0;
+        if (skip.indexOf(row.handle) >= 0) {
+          return false;
+        }
+        if (row.expiresAt != null &&
+            nullExpiry.indexOf(row.handle) >= 0) {
+          return false;
+        }
+        return true;
       }));
     },
     purgeExpiredMinted: function () {
@@ -87,7 +96,9 @@ function mapDriver() {
         rows.set(row.handle + '\u0000' + row.realm + '\u0000' + row.key,
                  { handle: row.handle, realm: row.realm, key: row.key,
                    keySealed: row.keySealed || '', body: row.body,
-                   writtenAt: Date.now(), expiresAt: null });
+                   writtenAt: Date.now(),
+                   expiresAt: row.expiresAt == null ? null
+                     : Number(row.expiresAt) });
       });
       deletes.forEach(function (row) {
         counts.deletes++;

@@ -6564,6 +6564,10 @@ function create(options) {
       // `persistence_minted.js`, notInWorkers()).
       const skipped = Array.isArray(filter.skipHandles)
         ? filter.skipHandles.map(String) : [];
+      // Stores whose expiring rows a start does not read (#883). A NULL
+      // expires_at — the operational row — is still read.
+      const nullExpiry = Array.isArray(filter.nullExpiryHandles)
+        ? filter.nullExpiryHandles.map(String) : [];
       const binds = [TOMBSTONE, filter.realms.map(String),
                      Number(filter.nowMs) || Date.now()];
       let where = 'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
@@ -6576,6 +6580,11 @@ function create(options) {
       if (skipped.length) {
         binds.push(skipped);
         where += ' AND NOT (handle = ANY($' + binds.length + '::text[]))';
+      }
+      if (nullExpiry.length) {
+        binds.push(nullExpiry);
+        where += ' AND NOT (handle = ANY($' + binds.length +
+          '::text[]) AND expires_at IS NOT NULL)';
       }
       log.debug("Leaving loadMinted().");
       return (mintedStatements ? mintedStatements.loadMinted(filter)

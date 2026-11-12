@@ -788,8 +788,9 @@ leader's row never. `scheduler.historyDays` and `scheduler.maxRuns` are gone.
   `expiresAt`, answered by `Scheduler.expiryOf()` — for a finished run, its
   end plus the longer of the window and `(count + 1)` of its job's
   intervals, plus two hours of slack; for a command, its end plus the window
-  and the slack; for a per-process row, the longer of the window and three
-  intervals, plus the slack; nothing for the leader's row, a queued or
+  and the slack; nothing for a per-process row (#883: a non-null expiry
+  would leave it out of the front's restore, and the history walk still
+  deletes a stale one by its end); nothing for the leader's row, a queued or
   running run, a run of an on-demand job or of a job not registered here.
   That is never earlier than the purge would first be free to delete the
   row — as long as the job runs on its slots. **A job that stopped running**
@@ -811,9 +812,10 @@ request worker nothing reads it whole. So `runStore` declares
 rows out of the query (`persistence_minted.js`, `notInWorkers()`), and
 `/admin/scheduler` and `/admin-api/scheduler` (with `/run` and `/step-down`)
 are pinned to the front process (`request_pool.js`'s `NEVER_DISPATCHED`),
-which restores the store as before and runs the front's read barrier before it
-answers. That also ends the arrangement above in which the page was a surface
-worker's and the API a protocol worker's. **What a worker still does:** it
+which restores the rows that carry no expiry (#883, below) and runs the
+front's read barrier before it answers. That also ends the arrangement above
+in which the page was a surface worker's and the API a protocol worker's.
+**What a worker still does:** it
 applies every run row the change log brings after its start, writes its own
 per-process rows and any manual run a request queues (merged with the stored
 row by `mergeRow`, as always), and runs its per-process jobs from
@@ -822,6 +824,33 @@ row by `mergeRow`, as always), and runs its per-process jobs from
 started and not yet picked up by the leader — a window of one tick, in which
 a second click on a worker that has just started queues a second manual run.
 `tests/worker_minted_restore.js` holds it.
+
+**THE FRONT DOES NOT RESTORE AN EXPIRING RUN (#883, 2026-11-11).** #617 left
+the history in the front process, and a soak still restored about 239,000
+`scheduler.runs` rows there at every start. `runStore` declares
+`restoreExpiring: false`: the restore's query leaves out a row of that store
+whose `expires_at` is not null, and the restore loop drops one a driver
+returned anyway. What a start still reads is a row with no expiry — the
+leader's, a queued or running run, a finished manual or cron run, a process
+row, and a run written before #338 that still has none. A finished interval
+run is not held after that either: the store's reconciler tells the watchers
+and then deletes it, and a tick drops a body this process wrote once the
+flush has it (`dropHeld`, which refuses a key still journalled, and only when
+minted persistence is on — in development the map is the only copy).
+`scheduler.history` walks only the rows the process holds, so the tighter
+count and hour trim does not reach interval history left in the table; that
+history lives until `expires_at`, which the minted expiry purge deletes. The
+page asks the sort index for a bounded newest window (twenty rows a realm,
+two hundred on the page) and does not cache those rows into the map;
+`lastRun` is the resident rows plus one remembered row per job and realm, and
+a job that has been off for many slots may show none until it runs again,
+because that one row is not restored. A tick learns the current interval slot
+and the one before it from one batch read per realm per slot generation
+(`readMany`); a failed read fails the tick (`STS-SCHED-0013`) rather than
+treating the slot as finished or as absent. Rows written before #338 still
+come back once — a keyed digest has no prefix a query can filter on — and the
+history walk deletes them from the rows it holds. Startup was not
+re-measured on 8081.
 
 **A REMOVED REALM'S JOBS GO WITH IT (#338).** A realm job is registered ONCE
 and runs in every realm `realms.list()` names (`realmIdsFor()`), so there is
@@ -965,8 +994,9 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   empty or non-string one is refused (`STS-SCHED-0009`), and
   `tests/scheduler_workers.js` F holds it. Five jobs carry one. The first
   two because they must:
-  `scheduler.history`, which reads the whole of `scheduler.runs`, which a
-  worker does not restore (#617); and
+  `scheduler.history`, which deletes the null-expiry rows only the front
+  restores (`scheduler.runs` is not restored by a worker, #617) and leaves
+  finished interval runs to the minted expiry purge (#883); and
   `spiffe.target-reconcile` (added in the review of #705), whose halt while
   stopping reads `SpiffeTargets.stopping`, a static only the front's
   `beginStop()` sets — in a worker a reconcile would register this task

@@ -4818,7 +4818,10 @@ function restoreFilter(nowMs) {
     staleBefore: retention ? nowMs - retention : 0,
     ageHandles: shortLivedHandles(),
     // What a request worker does not read back at all (#617).
-    skipHandles: process.env.STS_REQUEST_WORKER ? notInWorkers() : []
+    skipHandles: process.env.STS_REQUEST_WORKER ? notInWorkers() : [],
+    // Handles whose expiring rows a start does not read (#883). The front
+    // still reads their rows with a NULL expires_at.
+    nullExpiryHandles: nullExpiryOnly()
   };
 }
 
@@ -4835,7 +4838,10 @@ function restoreFilter(nowMs) {
 // log from the high-water mark it takes after its restore, exactly as before,
 // so every row written after its start reaches it; it writes its own rows,
 // and the flush merges them with the stored ones (`mergeRow`); and the front
-// process restores everything, as every process did.
+// process restores the rows that carry no expiry. Since #883 it does not
+// restore an expiring row of a store that declares `restoreExpiring: false`
+// (`nullExpiryOnly()`): `scheduler.runs`' finished interval history, which
+// was the bulk of what the front still read back.
 // ---------------------------------------------------------------------------
 function notInWorkers() {
   log.debug("Entering notInWorkers().");
@@ -4859,6 +4865,20 @@ function shortLivedHandles() {
   log.debug("Leaving shortLivedHandles().");
   return realms.handles().filter(function (one) {
     return one.retain === 'age';
+  }).map(function (one) {
+    return one.handle;
+  });
+}
+
+// THE STORES WHOSE EXPIRING ROWS A START DOES NOT READ (#883):
+// `restoreExpiring: false`. A NULL `expires_at` is still read — that is the
+// operational row, which has no other column to be found by. An expiring row
+// stays in the table until `persistence.minted-expiry-purge`.
+function nullExpiryOnly() {
+  log.debug("Entering nullExpiryOnly().");
+  log.debug("Leaving nullExpiryOnly().");
+  return realms.handles().filter(function (one) {
+    return one.restoreExpiring === false;
   }).map(function (one) {
     return one.handle;
   });
@@ -5052,12 +5072,19 @@ function restore() {
     const staleHandles = new Set();
 
     const skipped = new Set(filter.skipHandles || []);
+    // An expiring row of a store that asked not to restore one (#883),
+    // dropped here as well as in the query: a driver that does not know the
+    // clause still cannot admit it. A row with no expiresAt is kept.
+    const nullExpiry = new Set(filter.nullExpiryHandles || []);
     // Every handle the store holds a row of, readable or not: an indexed
     // on-demand store with none goes live now (`liveIfEmpty()`).
     const heldHandles = new Set();
     return restoreInSlices(rows || [], aside, function (row) {
       heldHandles.add(row.handle);
       if (skipped.has(row.handle)) {
+        return;
+      }
+      if (nullExpiry.has(row.handle) && row.expiresAt != null) {
         return;
       }
       const store = realms.handleFor(row.handle);
@@ -5567,6 +5594,10 @@ module.exports = {
     log.debug("Leaving setDemandBridge().");
   },
   journalled: journalled,
+  // A batch of rows by key, and the newest window by sort value (#883):
+  // the scheduler's tick and its page, which do not hold the run history.
+  readMany: onDemandReadMany,
+  newestAsync: onDemandNewestAsync,
   nameOfRow: nameOfRow,
   backfillSessionIndex: backfillSessionIndex,
   backfillMintedIndexes: backfillMintedIndexes,
