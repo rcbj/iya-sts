@@ -48,7 +48,7 @@ function theSettingDoor(t) {
     t.check(config.checkOverrideCode(KEY, value, true) === 'STS-CORE-0171',
              'the refusal is STS-CORE-0171');
   });
-  t.check(config.checkOverride(KEY, 'a😀b', true) === null,
+  t.check(config.checkOverride(KEY, 'urn:x:a😀b', true) === null,
            'a whole surrogate pair is still accepted');
   t.check(config.unstorableText({ a: ['x', { b: NUL }] }),
            'a NUL at depth is found');
