@@ -44,6 +44,14 @@ or column is renamed or dropped and no row is rewritten; a few indexes have
 been replaced by better ones (versions 18, 19, 27 and 28), which the script
 does for you. The version row in `sts_schema` records which shape is on disk.
 
+A release 1.0.0 database is already version 31. The statements added since
+that tag are `sts_sessions_subject_band`, `sts_sessions_started` and the
+version-32 row. `postgres/upgrade-1.0.0.sql` builds those on a running
+store. Running `schema.sql` again on that store also drops and rebuilds
+`sts_ldap_entries_asked_names`, which version 31 already has, and sets the
+application password again. MariaDB's counterpart is
+`mariadb/upgrade-1.0.0.sql` (the started index only).
+
 | Version | What it added |
 |---|---|
 | 1 | `sts_ldap_entries`, `sts_realms`, `sts_appconfig` |

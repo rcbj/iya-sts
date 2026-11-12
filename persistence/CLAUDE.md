@@ -3627,7 +3627,10 @@ schema version.** `session.overCapRows` groups one base64url first character
 of `subject_key` per sweep, in `COLLATE "C"`, which `sts_sessions_subject`
 cannot serve. The upgrade is still `schema.sql` run again as the owner;
 `sts_app` cannot build it and the driver refuses (`STS-STORE-0029`) until
-then. Why the sweep asks a band is in `authn/CLAUDE.md`.
+then. A store that is already release 1.0.0 is the exception in
+`postgres/CLAUDE.md`: `postgres/upgrade-1.0.0.sql` builds this index and
+`sts_sessions_started` and does not run `schema.sql`. Why the sweep asks
+a band is in `authn/CLAUDE.md`.
 
 **`sts_sessions_started` is the ninth index (#882, schema version 32).**
 `session.livePage` orders `started_at DESC, key`. The index is

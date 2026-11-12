@@ -526,6 +526,59 @@ function checkTheSessionIndex(t, sql) {
   log.debug("Leaving checkTheSessionIndex().");
 }
 
+// Release 1.0.0 is schema version 31. postgres/upgrade-1.0.0.sql is the
+// live-store step to version 32: the two session indexes schema.sql gained
+// after that tag, built with CREATE INDEX CONCURRENTLY, and the same
+// version insert. It must not open a transaction (CONCURRENTLY cannot) and
+// must not repeat schema.sql's asked-names rebuild. The text, apart from
+// the word CONCURRENTLY, is the script's, so the two cannot drift.
+function checkTheReleaseUpgrade(t, sql) {
+  log.debug("Entering checkTheReleaseUpgrade().");
+  const upgrade = fs.readFileSync(
+    path.join(ROOT, 'postgres', 'upgrade-1.0.0.sql'), 'utf8');
+  const fromSchema = statementsIn(sql).filter(function (statement) {
+    return /^CREATE INDEX/i.test(statement) &&
+           (statement.indexOf('sts_sessions_subject_band') >= 0 ||
+            statement.indexOf('sts_sessions_started') >= 0);
+  });
+  const fromUpgrade = statementsIn(upgrade).filter(function (statement) {
+    return /^CREATE INDEX/i.test(statement);
+  });
+  t.equal(fromSchema.length, 2,
+          'schema.sql has the two session indexes added since release 1.0.0');
+  t.equal(fromUpgrade.length, 2,
+          'upgrade-1.0.0.sql builds those two indexes and no others');
+  fromSchema.forEach(function (statement) {
+    const concurrent = statement.replace(/^CREATE INDEX IF NOT EXISTS/i,
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS');
+    t.check(fromUpgrade.some(function (one) {
+      return normalize(one) === normalize(concurrent);
+    }), 'upgrade-1.0.0.sql matches schema.sql, plus CONCURRENTLY',
+    statement);
+  });
+  const body = statementsIn(upgrade);
+  // A DO block's BEGIN is the start of a larger statement. A transaction
+  // boundary is the statement by itself (BEGIN, COMMIT, START TRANSACTION).
+  t.check(!body.some(function (statement) {
+    return /^BEGIN(\s+(WORK|TRANSACTION))?\s*$/i.test(statement) ||
+           /^COMMIT(\s+(WORK|TRANSACTION))?\s*$/i.test(statement) ||
+           /^START\s+TRANSACTION\b/i.test(statement);
+  }), 'upgrade-1.0.0.sql opens no transaction');
+  t.check(!body.some(function (statement) {
+    return /(?:DROP|CREATE)\s+INDEX[\s\S]*sts_ldap_entries_asked_names/i
+      .test(statement);
+  }), 'upgrade-1.0.0.sql does not rebuild asked_names');
+  const version = statementsIn(sql).filter(function (statement) {
+    return statement.indexOf('INSERT INTO sts_schema') >= 0;
+  });
+  t.equal(version.length, 1,
+          'schema.sql writes one sts_schema version row');
+  t.check(version.length === 1 && body.some(function (statement) {
+    return normalize(statement) === normalize(version[0]);
+  }), 'upgrade-1.0.0.sql records that same version row');
+  log.debug("Leaving checkTheReleaseUpgrade().");
+}
+
 // Schema 23 (2026-10-20, `/portal/delegate`): the uid trigram index, a GIN
 // with `pg_trgm`'s operator class over `rdn_value`, partial on the children
 // of a realm's `ou=users` — the predicate `uidContains` repeats, or the
@@ -750,6 +803,7 @@ function run(t) {
   checkTheReloptionsAgree(t, sql);
   checkTheVersionAgrees(t, sql);
   checkTheSessionIndex(t, sql);
+  checkTheReleaseUpgrade(t, sql);
   checkTheUidTrigramIndex(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);

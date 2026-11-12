@@ -11,6 +11,7 @@ against. Nothing in this directory is run by the service.
 | File | What it does |
 |---|---|
 | `schema.sql` | **builds the schema and the least-privileged account the service dials with.** Plain SQL for the `mariadb` client, idempotent, run by an owner in the database named on the command line |
+| `upgrade-1.0.0.sql` | brings a release 1.0.0 store (schema version 31) to version 32: an online `ADD INDEX` of `sts_sessions_started` and the version-32 row. No `sts_sessions_subject_band`. The container does not run it |
 | `../persistence/schema_mariadb.js` | **its second copy**: `SCHEMA_VERSION` (32), `SCHEMA_OBJECTS` (`{ name, statement }`, one per table and index, in the script's order) and `TABLES`. A leaf; requires nothing |
 
 ```bash
@@ -35,6 +36,13 @@ rebuilt from the column list.
 
 The schema version is PostgreSQL's (32), so there is one `SCHEMA_VERSION`. A
 change to `postgres/schema.sql` owes this directory the same change.
+
+**A release 1.0.0 store is `upgrade-1.0.0.sql`.** That tag is schema
+version 31 and has no `sts_sessions_started`. The script adds the index
+with `ALGORITHM=INPLACE, LOCK=NONE` and records version 32. It does not
+add `sts_sessions_subject_band` (this schema has none) and it does not run
+`schema.sql`, which sets the application password on every run.
+PostgreSQL's twin is `postgres/upgrade-1.0.0.sql`.
 
 ## What is in it
 
