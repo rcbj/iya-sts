@@ -58,6 +58,38 @@ function squash(text) {
     .replace(/ \)/g, ')').trim();
 }
 
+// Release 1.0.0's MariaDB delta is sts_sessions_started and the version
+// row. The upgrade script adds that index online and must not invent
+// sts_sessions_subject_band, which this engine does not have.
+function checkTheReleaseUpgrade(t, sql, schema) {
+  log.debug("Entering checkTheReleaseUpgrade().");
+  const upgrade = fs.readFileSync(
+    path.join(ROOT, 'mariadb', 'upgrade-1.0.0.sql'), 'utf8');
+  // Comments may name the PostgreSQL-only statement. The check is the SQL.
+  const code = upgrade.split('\n').filter(function (line) {
+    return !/^\s*--/.test(line);
+  }).join('\n');
+  const started = scriptStatements(sql).filter(function (one) {
+    return one.name === 'sts_sessions_started';
+  })[0];
+  const cols = started &&
+    /\((realm, started_at DESC, `key`)\)/.exec(started.statement);
+  t.check(!!cols && upgrade.indexOf(cols[1]) >= 0,
+          'F1. upgrade-1.0.0.sql uses schema.sql\'s started-index columns',
+          started && started.statement);
+  t.check(/ALGORITHM=INPLACE/.test(upgrade) && /LOCK=NONE/.test(upgrade),
+          'F2. the build is online (INPLACE, LOCK=NONE)');
+  t.check(!/INDEX\s+sts_sessions_subject_band/i.test(code),
+          'F3. no sts_sessions_subject_band: MariaDB has none');
+  t.check(!/CREATE INDEX CONCURRENTLY/i.test(code),
+          'F4. no CREATE INDEX CONCURRENTLY: MariaDB has none');
+  t.check(upgrade.indexOf(
+    'INSERT IGNORE INTO sts_schema (version) VALUES (' +
+    schema.SCHEMA_VERSION + ')') >= 0,
+          'F5. the script records the module\'s SCHEMA_VERSION');
+  log.debug("Leaving checkTheReleaseUpgrade().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const schema = require('../persistence/schema_mariadb');
@@ -134,6 +166,9 @@ async function run(t) {
   t.check(leaks.length === 0,
           'E1. no jsonb, GIN, trigger, function, cast or PostgreSQL type',
           leaks.join(', '));
+
+  t.log.info('=== F. the release 1.0.0 upgrade ===');
+  checkTheReleaseUpgrade(t, sql, schema);
   log.debug("Leaving run().");
 }
 

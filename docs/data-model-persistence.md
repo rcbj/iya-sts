@@ -19,7 +19,7 @@ The MariaDB script is the same schema version. The model emits
 it as `mariadb/schema.sql`, that file's own bytes. This page
 lists the PostgreSQL tables.
 
-Schema version **31**.
+Schema version **32**.
 
 A required column must be present. **Generated** is a column the
 database fills. A directory name on a column is one the schema

@@ -602,6 +602,16 @@ ALTER TABLE sts_minted SET (fillfactor=80);
 --@index sts_sessions_partner
 -- Schema version 22 (#754): a hosted surface's relying-party sessions.
 --@index sts_sessions_surface
+-- Schema version 32 (#882): the console's live session pages order
+-- `started_at DESC, key`. `WHERE chosen` is that page's predicate, so an
+-- arrival stays out. `key` is ASC, the query's tie-break. On a store that
+-- already holds sessions, build it as the owner before the image starts,
+-- outside a transaction; this statement then finds it:
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS sts_sessions_started
+--     ON sts_sessions (realm, started_at DESC, key) WHERE chosen;
+-- The procedure, including `pg_index.indisvalid`, is in
+-- `postgres/CLAUDE.md`. The query that walks it stays unnamed.
+--@index sts_sessions_started
 
 -- Schema version 24 (#820): an on-demand minted store's index. A store
 -- declared `onDemand` with `indexBy` is not held whole by a process, so what
@@ -817,7 +827,7 @@ ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback_at bigint NOT
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (31) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (32) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

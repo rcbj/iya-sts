@@ -11,7 +11,8 @@ against. Nothing in this directory is run by the service.
 | File | What it does |
 |---|---|
 | `schema.sql` | **builds the schema and the least-privileged account the service dials with.** Plain SQL for the `mariadb` client, idempotent, run by an owner in the database named on the command line |
-| `../persistence/schema_mariadb.js` | **its second copy**: `SCHEMA_VERSION` (30), `SCHEMA_OBJECTS` (`{ name, statement }`, one per table and index, in the script's order) and `TABLES`. A leaf; requires nothing |
+| `upgrade-1.0.0.sql` | brings a release 1.0.0 store (schema version 31) to version 32: an online `ADD INDEX` of `sts_sessions_started` and the version-32 row. No `sts_sessions_subject_band`. The container does not run it |
+| `../persistence/schema_mariadb.js` | **its second copy**: `SCHEMA_VERSION` (32), `SCHEMA_OBJECTS` (`{ name, statement }`, one per table and index, in the script's order) and `TABLES`. A leaf; requires nothing |
 
 ```bash
 mariadb -u root -p sts < mariadb/schema.sql
@@ -33,14 +34,21 @@ identical. `tests/mariadb_schema.js` holds the two copies together.
 two copies do not share, whitespace aside, is a gap. The file is not
 rebuilt from the column list.
 
-The schema version is PostgreSQL's (30), so there is one `SCHEMA_VERSION`. A
+The schema version is PostgreSQL's (32), so there is one `SCHEMA_VERSION`. A
 change to `postgres/schema.sql` owes this directory the same change.
+
+**A release 1.0.0 store is `upgrade-1.0.0.sql`.** That tag is schema
+version 31 and has no `sts_sessions_started`. The script adds the index
+with `ALGORITHM=INPLACE, LOCK=NONE` and records version 32. It does not
+add `sts_sessions_subject_band` (this schema has none) and it does not run
+`schema.sql`, which sets the application password on every run.
+PostgreSQL's twin is `postgres/upgrade-1.0.0.sql`.
 
 ## What is in it
 
-42 tables — PostgreSQL's 41 and `sts_ldap_entry_keys` — and 37 secondary
-indexes: 36 `CREATE INDEX` and `KEY sts_risk_failures_id`, inline in its
-table. PostgreSQL has 44; the difference is listed below.
+42 tables — PostgreSQL's 41 and `sts_ldap_entry_keys` — and 38 secondary
+indexes: 37 `CREATE INDEX` and `KEY sts_risk_failures_id`, inline in its
+table. PostgreSQL has 46; the difference is listed below.
 
 ## The translation, as applied
 
@@ -126,15 +134,15 @@ The txid of a delta table is 64.
 | `sts_ldap_entries_asked_names`: GIN over a `jsonb_path_query_array` expression, partial on `attr_names ?| ARRAY[…]` | kind `attr`. Writing rows for `ASKED_ATTRIBUTES` only keeps the index's property that most people write none; that is the driver's choice |
 | `sts_ldap_entries_group_classes`: GIN, partial on `class_keys <> '[]'` | kind `class`; an entry with no group class writes no row |
 | `sts_ldap_entries_dek_keys`: GIN | kind `dek` |
-| `sts_ldap_entries_dek_unknown (realm, dn_key) WHERE dek_keys IS NULL` | **dropped**: it exists only for its predicate, and the full form would duplicate the primary key. A NULL `dek_keys` is an entry written before the column existed, which a store built at version 31 never has; finding one is a scan |
+| `sts_ldap_entries_dek_unknown (realm, dn_key) WHERE dek_keys IS NULL` | **dropped**: it exists only for its predicate, and the full form would duplicate the primary key. A NULL `dek_keys` is an entry written before the column existed, which a store built at version 32 never has; finding one is a scan |
 | `sts_ldap_entries_uid_trgm`: `pg_trgm` trigram GIN over `rdn_value`, partial on `ou=users` | **nothing**: a search by part of a `uid` (`/portal/delegate`, and since #1310 the role chooser's needle count and page) scans the realm's `ou=users` children, through the `(realm, parent_key)` prefix of `sts_ldap_entries_rdn`, bounded by #1308's cap only when the needle is broad. **A STATED LIMIT, not an oversight (#1310)**: FULLTEXT is word-based, and the n-gram parser is MySQL's — on `mariadb:11.8` (11.8.9) `CREATE FULLTEXT INDEX … WITH PARSER ngram` answers `Function 'ngram' is not defined`, and the official image ships no Mroonga engine. A substring index here would be a side table of trigrams the driver writes, which nobody has asked for |
 | `fastupdate = off`, `gin_clean_pending_list()` | nothing: no GIN |
-| partial `sts_ldap_entries_created`, `_modified` (`ou=users` only); `sts_minted_expires` (`IS NOT NULL`); the seven `sts_sessions_*` (`<> ''`, `chosen`, `IS NOT NULL`); `sts_minted_index_sort` (`IS NOT NULL`) | **whole indexes on the same columns**; `sts_minted_index_sort` keeps `DESC` |
+| partial `sts_ldap_entries_created`, `_modified` (`ou=users` only); `sts_minted_expires` (`IS NOT NULL`); the eight `sts_sessions_*` (`<> ''`, `chosen`, `IS NOT NULL`); `sts_minted_index_sort` (`IS NOT NULL`) | **whole indexes on the same columns**; `sts_minted_index_sort` keeps `DESC`. MariaDB still has no `sts_sessions_subject_band` |
 | BRIN `sts_minted_written_brin` with `autosummarize` | a B-tree, under the name the BRIN replaced there, `sts_minted_written`. The BRIN was for PostgreSQL's HOT updates, which InnoDB has no counterpart of |
 | storage parameters: `fillfactor=80` on `sts_minted`, the autovacuum settings on `sts_ldap_entries` and `sts_changes`, `n_distinct=100000` on `parent_key` and its `ANALYZE` | nothing: InnoDB has no vacuum, and its statistics are its own |
 | the count and data-key triggers and their seven functions, `LOCK TABLE … SHARE ROW EXCLUSIVE`, the backfill INSERTs | nothing; the driver keeps the counts. A TRUNCATE of the directory resets nothing (the account cannot TRUNCATE: it needs DROP) |
 | `xid8 DEFAULT pg_current_xact_id()` | `VARCHAR(64) NOT NULL`, written by the driver |
-| the dropped retired indexes and triggers, the `ADD COLUMN IF NOT EXISTS` and shard-key `DO` upgrades | nothing: every MariaDB store is built at version 31 |
+| the dropped retired indexes and triggers, the `ADD COLUMN IF NOT EXISTS` and shard-key `DO` upgrades | nothing: every MariaDB store is built at version 32 |
 | `CREATE SCHEMA sts`, `ALTER DATABASE … SET search_path` | the database: in MariaDB a schema is a database, named on the command line |
 | `CREATE EXTENSION pg_stat_statements` | nothing; profiling is the server's configuration (`performance_schema`) |
 | `SET client_min_messages` | nothing: the batch client prints no notes |

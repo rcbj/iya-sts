@@ -5,11 +5,11 @@
 `models/persistence/schema.template.sql`. Edit those and run
 `tests/tools/regenerate-model-docs.sh`; `tests/model_typespec.js` fails otherwise.
 
-**Four files the database container runs, and nothing else. None of them is
-run by this service**, and nothing in this repository requires them —
-`docker-compose.yml` mounts them into the PostgreSQL image. It was two until
-2026-09-06, when the schema stopped being something this service builds for
-itself.
+**Four files the database container runs, and one upgrade script it does
+not.** None of them is run by this service, and nothing in this repository
+requires them — `docker-compose.yml` mounts the four into the PostgreSQL
+image. It was two until 2026-09-06, when the schema stopped being something
+this service builds for itself.
 
 | File | What it does |
 |---|---|
@@ -17,6 +17,7 @@ itself.
 | `require-tls.sh` | rewrites every `host` rule in `pg_hba.conf` to `hostssl` |
 | `schema.sql` | **builds the schema and the least-privileged role this service dials with.** Plain SQL, idempotent, takes psql variables, and runnable by hand against any database |
 | `apply-schema.sh` | runs `schema.sql` once, on the start that creates the cluster, with the role name and password the stack was given |
+| `upgrade-1.0.0.sql` | brings a release 1.0.0 store (schema version 31) to version 32 without running `schema.sql`. The container does not run it |
 
 ## How `docker-compose.yml` runs them
 
@@ -222,6 +223,66 @@ Use the search path the script sets (`sts, public`). A version-23 image
 started as `sts_app` against a store without the index is refused at open,
 as with every version's new index. The driver, as a role that may create,
 makes the extension first (`SCHEMA_OBJECTS`' `extension`).
+
+**VERSION 32 (#882) ADDS `sts_sessions_started`, AND A STORE THAT ALREADY
+HOLDS SESSIONS SHOULD BUILD IT CONCURRENTLY FIRST.** It is a partial btree
+on `(realm, started_at DESC, key) WHERE chosen`. The console's live session
+pages order `started_at DESC, key`, and nothing else in the catalog is
+ordered that way. `WHERE chosen` is the page's predicate, so an arrival
+stays out. `started_at` is set once, when the row is created.
+
+The script is one transaction (`BEGIN` through `COMMIT` in
+`postgres/schema.sql`; `apply-schema.sh` is `psql -f` and does not open a
+second one). `CREATE INDEX CONCURRENTLY` cannot run inside it, so the
+script's own `CREATE INDEX` takes `SHARE` and holds writers off
+`sts_sessions` for the build. An empty volume is fine. A soak store is
+not. **On such a store, run this as the owner BEFORE the version-32 image
+starts and before the script**, outside any transaction, search path
+`sts, public`:
+
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS sts_sessions_started
+      ON sts_sessions (realm, started_at DESC, key) WHERE chosen;
+    ANALYZE sts_sessions;
+
+The script's `IF NOT EXISTS` then finds it. `ANALYZE` is so the first
+plans see the index; it is not a start-blocking upgrade. A version-32
+image started as `sts_app` against a store without the index is refused
+at open with `STS-STORE-0029`.
+
+`CONCURRENTLY` can leave an invalid index if the session dies. `open()`
+probes `to_regclass` for the name and does not read `pg_index.indisvalid`,
+the same as versions 23 and 25, and this version does not teach it to.
+Before the image starts, `indisvalid` must be true:
+
+    SELECT i.indisvalid
+      FROM pg_index i
+      JOIN pg_class c ON c.oid = i.indexrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'sts'
+       AND c.relname = 'sts_sessions_started';
+
+An invalid row is `DROP INDEX sts.sts_sessions_started` and then the
+`CONCURRENTLY` statement again. An image rolled back to version 31
+ignores the extra index; leave it in place.
+
+**A RELEASE 1.0.0 STORE USES `upgrade-1.0.0.sql`, NOT A SECOND RUN OF
+`schema.sql`.** Tag `v1.0.0` is schema version 31. The statements added
+since that tag are `sts_sessions_subject_band` (#876, no version of its
+own), `sts_sessions_started` (this section), and the version-32 row.
+`upgrade-1.0.0.sql` builds each index with `CREATE INDEX CONCURRENTLY`
+outside a transaction, drops and rebuilds one that is present and not
+valid, refuses one that is present and valid with a different definition,
+records version 32, and refuses a store with no `sts_schema` version of
+31 or later. It does not run `schema.sql`. That file's version-31 block
+drops and recreates `sts_ldap_entries_asked_names` inside its transaction
+even when the expression on disk is already that one, which holds
+directory writes for the rebuild, and it sets the application role's
+password again. `sts_app` cannot run the upgrade. Do not pass
+`--single-transaction`, and do not wipe the volume. The 1.0.0 image can
+keep serving while the indexes build; start the version-32 image after
+the script exits 0. A rollback to a version-31 image leaves both indexes
+in place. MariaDB's twin is `mariadb/upgrade-1.0.0.sql`, and it adds only
+`sts_sessions_started`.
 
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that

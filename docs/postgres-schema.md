@@ -10,7 +10,7 @@ shaped that way. [Persistence](persistence.md) covers turning the store on, the
 compose stack and what survives a restart. This page covers only what is in
 the database.
 
-**Schema version 29**: 40 tables and 44 secondary indexes in a schema of their
+**Schema version 32**: 41 tables and 46 secondary indexes in a schema of their
 own, `sts`.
 
 ## Where the schema is written down
@@ -44,6 +44,14 @@ or column is renamed or dropped and no row is rewritten; a few indexes have
 been replaced by better ones (versions 18, 19, 27 and 28), which the script
 does for you. The version row in `sts_schema` records which shape is on disk.
 
+A release 1.0.0 database is already version 31. The statements added since
+that tag are `sts_sessions_subject_band`, `sts_sessions_started` and the
+version-32 row. `postgres/upgrade-1.0.0.sql` builds those on a running
+store. Running `schema.sql` again on that store also drops and rebuilds
+`sts_ldap_entries_asked_names`, which version 31 already has, and sets the
+application password again. MariaDB's counterpart is
+`mariadb/upgrade-1.0.0.sql` (the started index only).
+
 | Version | What it added |
 |---|---|
 | 1 | `sts_ldap_entries`, `sts_realms`, `sts_appconfig` |
@@ -75,6 +83,9 @@ does for you. The version row in `sts_schema` records which shape is on disk.
 | 27 | `sts_ldap_entries_asked_names` rebuilt with `stsbackupcodes` among the asked names, so the reports application finds recovery-code holders through the index (#1024) |
 | 28 | two B-trees, `sts_ldap_entries_created` and `sts_ldap_entries_modified`, for a report's date range; `pwdaccountlockedtime` among the asked names, so "status is locked" is an index read; the asked-names index rebuilt again (#1028) |
 | 29 | `sts_report_artifact_pieces`: a finished report in sealed pieces of 1 MiB, so no process holds a report whole (#1045). A row of `sts_report_artifacts` written before it still holds the whole report and is still read |
+| 30 | `sts_cluster_locks`: a row per named lock, locked `FOR UPDATE` by the portable cluster statements in place of `pg_advisory_xact_lock` (#677) |
+| 31 | `sts_ldap_entries_asked_names` rebuilt for `stsassertionkeypair` and `stssamlassertionkeypair` (#1290) |
+| 32 | the partial index `sts_sessions_started` on `(realm, started_at DESC, key) WHERE chosen`, so the console's live session pages walk newest first (#882). MariaDB has the same columns and no predicate |
 
 **Versions 27 and 28 rebuild an index on a large table.** The script drops
 `sts_ldap_entries_asked_names` and builds it again with the new list of
@@ -586,7 +597,7 @@ is not a column: `key` is the same keyed digest as the `sts_minted` row's.
 | `credential_key` | text | digest (SHA-256, truncated) | for an API client's session (SCIM, the SPIRE Server API, …), a fingerprint of the scheme and the client that authenticated, never the credential; `''` otherwise |
 | `partner_relationship` | text | clear | the federation relationship id, for a session that began at a federated partner; `''` otherwise |
 
-Primary key `(realm, key)`; eight partial indexes (see *Indexes*). A row is
+Primary key `(realm, key)`; nine partial indexes (see *Indexes*). A row is
 written only where the service holds a digest key.
 
 ### `sts_minted_index`: the index rows of on-demand stores
@@ -833,10 +844,9 @@ login name, which is in the clear.
 | `sts_minted_index_key` | `sts_minted_index` | `handle`, `realm`, `key` | B-tree | a row's own index rows, to replace or delete them with the row |
 | `sts_minted_index_sort` | `sts_minted_index` | `handle`, `realm`, `sort_at` descending, `key` descending | B-tree; partial: only sort rows (`sort_at` set) | the newest rows of a store, a page at a time (the console's token lists) |
 
-### `sts_sessions` (8)
+### `sts_sessions` (9)
 
-All eight are B-trees and partial: each holds only the sessions for which
-its question can be asked, which is a small share of all sessions.
+All nine are B-trees and partial.
 
 | Index | Over | Condition | What it answers |
 |---|---|---|---|
@@ -848,6 +858,7 @@ its question can be asked, which is a small share of all sessions.
 | `sts_sessions_credential` | `realm`, `credential_key` | an API client's session | the existing session of an API client presenting itself again |
 | `sts_sessions_partner` | `realm`, `partner_relationship` | the session began at a federated partner | the sessions to end when a partner signs a person out |
 | `sts_sessions_surface` | `realm`, `rp_surface` | a hosted surface's session | one surface's sessions, for a CAEP signal it receives |
+| `sts_sessions_started` | `realm`, `started_at` descending, `key` ascending | chosen sessions | the console's live session pages, newest first (#882) |
 
 ### The change log, assertions and the cluster (6)
 

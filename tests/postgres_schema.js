@@ -439,14 +439,16 @@ function checkTheVersionAgrees(t, sql) {
 // Schema 21 (#350): `sts_sessions` beside `sts_minted`, six partial indexes,
 // a nullable `expires_at`, and the primary key `(realm, key)`. Schema 22
 // (#754) adds the seventh, `sts_sessions_surface`. #876 adds the eighth,
-// `sts_sessions_subject_band`, without a new schema version.
+// `sts_sessions_subject_band`, without a new schema version. Schema 32
+// (#882) adds the ninth, `sts_sessions_started`.
 function checkTheSessionIndex(t, sql) {
   log.debug("Entering checkTheSessionIndex().");
-  t.equal(driver.SCHEMA_VERSION, 31,
-          'the driver\'s schema version is 31 (#350, #754, the uid ' +
+  t.equal(driver.SCHEMA_VERSION, 32,
+          'the driver\'s schema version is 32 (#350, #754, the uid ' +
           'trigram index, #820\'s on-demand index and its sort_at, #956, ' +
           '#1024\'s asked-names rebuild, #1028\'s date B-trees, #1045\'s ' +
-          'report pieces, #677\'s lock rows, #1290\'s key pair names)');
+          'report pieces, #677\'s lock rows, #1290\'s key pair names, ' +
+          '#882\'s newest-first session index)');
   // #820: the on-demand stores' index, in the driver and in the script,
   // and (version 25) the partial index `minted.newest` walks.
   ['sts_minted_index', 'sts_minted_index_key',
@@ -460,7 +462,8 @@ function checkTheSessionIndex(t, sql) {
   const names = ['sts_sessions_subject', 'sts_sessions_subject_band',
                  'sts_sessions_username', 'sts_sessions_expires',
                  'sts_sessions_parent', 'sts_sessions_credential',
-                 'sts_sessions_partner', 'sts_sessions_surface'];
+                 'sts_sessions_partner', 'sts_sessions_surface',
+                 'sts_sessions_started'];
   const predicates = [
     'WHERE chosen AND subject_key <> \'\'',
     'WHERE chosen AND subject_key <> \'\'',
@@ -469,7 +472,8 @@ function checkTheSessionIndex(t, sql) {
     'WHERE parent_key <> \'\'',
     'WHERE credential_key <> \'\'',
     'WHERE partner_relationship <> \'\'',
-    'WHERE rp_surface <> \'\''
+    'WHERE rp_surface <> \'\'',
+    'WHERE chosen'
   ];
   const script = statementsIn(sql);
   names.forEach(function (name, i) {
@@ -494,6 +498,23 @@ function checkTheSessionIndex(t, sql) {
                    statement.indexOf('COLLATE "C"') >= 0;
           }),
           'sts_sessions_subject_band orders subject_key with COLLATE "C"');
+  const started = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.name === 'sts_sessions_started';
+  })[0];
+  const startedText = started ? started.statement : '';
+  t.check(!!started &&
+          startedText.indexOf('(realm, started_at DESC, key)') >= 0 &&
+          startedText.indexOf('subject_key') < 0 &&
+          startedText.indexOf('key DESC') < 0 &&
+          startedText.indexOf('INCLUDE') < 0 &&
+          script.some(function (statement) {
+            return statement.indexOf('sts_sessions_started') >= 0 &&
+                   statement.indexOf('(realm, started_at DESC, key)') >= 0 &&
+                   statement.indexOf('key DESC') < 0 &&
+                   statement.indexOf('INCLUDE') < 0;
+          }),
+          'sts_sessions_started orders started_at DESC, key ASC, ' +
+          'WHERE chosen');
   const table = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
     return one.name === 'sts_sessions';
   })[0];
@@ -503,6 +524,59 @@ function checkTheSessionIndex(t, sql) {
           'sts_sessions.expires_at is nullable and the primary key is ' +
           '(realm, key)', table && table.statement);
   log.debug("Leaving checkTheSessionIndex().");
+}
+
+// Release 1.0.0 is schema version 31. postgres/upgrade-1.0.0.sql is the
+// live-store step to version 32: the two session indexes schema.sql gained
+// after that tag, built with CREATE INDEX CONCURRENTLY, and the same
+// version insert. It must not open a transaction (CONCURRENTLY cannot) and
+// must not repeat schema.sql's asked-names rebuild. The text, apart from
+// the word CONCURRENTLY, is the script's, so the two cannot drift.
+function checkTheReleaseUpgrade(t, sql) {
+  log.debug("Entering checkTheReleaseUpgrade().");
+  const upgrade = fs.readFileSync(
+    path.join(ROOT, 'postgres', 'upgrade-1.0.0.sql'), 'utf8');
+  const fromSchema = statementsIn(sql).filter(function (statement) {
+    return /^CREATE INDEX/i.test(statement) &&
+           (statement.indexOf('sts_sessions_subject_band') >= 0 ||
+            statement.indexOf('sts_sessions_started') >= 0);
+  });
+  const fromUpgrade = statementsIn(upgrade).filter(function (statement) {
+    return /^CREATE INDEX/i.test(statement);
+  });
+  t.equal(fromSchema.length, 2,
+          'schema.sql has the two session indexes added since release 1.0.0');
+  t.equal(fromUpgrade.length, 2,
+          'upgrade-1.0.0.sql builds those two indexes and no others');
+  fromSchema.forEach(function (statement) {
+    const concurrent = statement.replace(/^CREATE INDEX IF NOT EXISTS/i,
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS');
+    t.check(fromUpgrade.some(function (one) {
+      return normalize(one) === normalize(concurrent);
+    }), 'upgrade-1.0.0.sql matches schema.sql, plus CONCURRENTLY',
+    statement);
+  });
+  const body = statementsIn(upgrade);
+  // A DO block's BEGIN is the start of a larger statement. A transaction
+  // boundary is the statement by itself (BEGIN, COMMIT, START TRANSACTION).
+  t.check(!body.some(function (statement) {
+    return /^BEGIN(\s+(WORK|TRANSACTION))?\s*$/i.test(statement) ||
+           /^COMMIT(\s+(WORK|TRANSACTION))?\s*$/i.test(statement) ||
+           /^START\s+TRANSACTION\b/i.test(statement);
+  }), 'upgrade-1.0.0.sql opens no transaction');
+  t.check(!body.some(function (statement) {
+    return /(?:DROP|CREATE)\s+INDEX[\s\S]*sts_ldap_entries_asked_names/i
+      .test(statement);
+  }), 'upgrade-1.0.0.sql does not rebuild asked_names');
+  const version = statementsIn(sql).filter(function (statement) {
+    return statement.indexOf('INSERT INTO sts_schema') >= 0;
+  });
+  t.equal(version.length, 1,
+          'schema.sql writes one sts_schema version row');
+  t.check(version.length === 1 && body.some(function (statement) {
+    return normalize(statement) === normalize(version[0]);
+  }), 'upgrade-1.0.0.sql records that same version row');
+  log.debug("Leaving checkTheReleaseUpgrade().");
 }
 
 // Schema 23 (2026-10-20, `/portal/delegate`): the uid trigram index, a GIN
@@ -729,6 +803,7 @@ function run(t) {
   checkTheReloptionsAgree(t, sql);
   checkTheVersionAgrees(t, sql);
   checkTheSessionIndex(t, sql);
+  checkTheReleaseUpgrade(t, sql);
   checkTheUidTrigramIndex(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);

@@ -317,14 +317,14 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 31 ===');
-  t.equal(postgres.SCHEMA_VERSION, 31,
-          'C1. the driver writes schema version 31 (#222, #391 phase 6, ' +
+  t.log.info('=== C. schema version 32 ===');
+  t.equal(postgres.SCHEMA_VERSION, 32,
+          'C1. the driver writes schema version 32 (#222, #391 phase 6, ' +
           '#432 phase 5, #618, #623, #630, #639, #350, #754, the uid ' +
           'trigram index, #820\'s sts_minted_index and its sort_at, #956, ' +
           '#1024\'s and #1028\'s asked names, #1028\'s date indexes, ' +
           '#1045\'s report pieces, #677\'s lock rows, #1290\'s key pair ' +
-          'names)');
+          'names, #882\'s newest-first session index)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -427,8 +427,8 @@ async function schema(t) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 31;
-  }), 'C6. and records version 31');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 32;
+  }), 'C6. and records version 32');
   // THE TWO INDEXES VERSION 18 REPLACED (#618) are dropped where the
   // catalogue still lists them, after the indexes that replace them.
   const retired = [];

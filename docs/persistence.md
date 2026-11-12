@@ -183,7 +183,8 @@ settings, the sealed keys, the minted state, the change log, the cluster's
 coordination tables and risk scoring's datasets and history.
 [PostgreSQL schema](postgres-schema.md) describes every table and column. A
 schema change only ever adds; running `postgres/schema.sql` again upgrades an
-older database.
+older database. A release 1.0.0 database (schema version 31) is upgraded by
+`postgres/upgrade-1.0.0.sql` instead, so the asked-names index is not rebuilt.
 
 #### Building it, and the role that cannot rebuild it
 
