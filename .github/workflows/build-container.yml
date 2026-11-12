@@ -565,6 +565,8 @@ jobs:
             echo "|---|---|"
             printf '%s' "${rows}"
           } >> "$GITHUB_STEP_SUMMARY"
+          # The same table, kept for the GitHub release's notes (below).
+          printf '%s' "${rows}" > "${RUNNER_TEMP}/published-images.md"
 
       # ARTIFACT HUB'S VERIFIED PUBLISHER BADGE (2026-10-02), the parent
       # project's arrangement (its dockerimage.yml, d95d48f there). For a
@@ -665,6 +667,85 @@ jobs:
           {
             echo ""
             echo "Git tags: \`${full}\` and \`${release}\` on \`${SHA}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------------
+      # THE GITHUB RELEASE OF A PUBLISHED BUILD (rcbj, 2026-11-12): every
+      # build of main that published its images is also a release on the
+      # repository's Releases page, so each merge into main can be found
+      # there with the images and the version it produced. It is made
+      # after the git tags, on the release tag `v<M.N.O>` (`--verify-tag`:
+      # never a tag `gh` would invent), and is titled with the full version
+      # the service image reports, so the page, the image tags and
+      # `/admin-api` name one build alike. Its notes are:
+      #
+      #   * the two images' full versions, the release and `latest`, each
+      #     in both registries, with their digests (the publish step's
+      #     table);
+      #   * the commit, and whether it is a release build (#1317);
+      #   * GitHub's generated notes from the previous `vM.N.P` release tag,
+      #     which list the pull requests merged since it.
+      #
+      # It is marked the latest release, as `:latest` is the newest image.
+      # A re-run of the same commit finds the release there and leaves it:
+      # its tag cannot have moved (*Tag the release in git* refuses that),
+      # so it already describes this commit. The job's token creates it, so
+      # it starts no other workflow. Nothing here changes what is built,
+      # tagged or published; a failure here leaves the images and tags out
+      # and the run red, and a re-run makes the release.
+      # ---------------------------------------------------------------------
+      - name: Create the GitHub release
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.publish-plan.outputs.version }}
+          PEP_VERSION: ${{ steps.publish-plan.outputs.pep_version }}
+          RELEASE_TAG: ${{ steps.publish-plan.outputs.release_tag }}
+          IS_RELEASE_BUILD: ${{ inputs.release && 'true' || 'false' }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          release="v${RELEASE_TAG}"
+          if gh release view "${release}" --repo "${repo}" >/dev/null 2>&1; then
+            echo "Release ${release} already exists; it is left as it is."
+            exit 0
+          fi
+          # The previous release: the highest three-component vM.N.P tag
+          # below this one. Four-component build tags never count, as in
+          # tests/tools/release-number.js.
+          previous="$(git ls-remote --tags origin 'refs/tags/v*' |
+            sed -n 's#^[0-9a-f]*[[:space:]]*refs/tags/\(v[0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' |
+            { cat; echo "${release}"; } | sort -uV |
+            awk -v r="${release}" '$0 == r { print p; exit } { p = $0 }')"
+          notes="${RUNNER_TEMP}/release-notes.md"
+          {
+            echo "## Images"
+            echo ""
+            echo "Service \`${VERSION}\`, remote XACML PEP \`${PEP_VERSION}\`," \
+                 "also tagged \`${RELEASE_TAG}\` and \`latest\`."
+            echo ""
+            echo "| Image | Digest |"
+            echo "|---|---|"
+            cat "${RUNNER_TEMP}/published-images.md"
+            echo ""
+            echo "Commit \`${SHA}\`; git tags \`v${VERSION}\` and \`${release}\`."
+            if [ "${IS_RELEASE_BUILD}" = true ]; then
+              echo "A release build (build number named by hand)."
+            fi
+            echo ""
+          } > "${notes}"
+          args=(--repo "${repo}" --verify-tag --latest
+                --title "${release} (${VERSION})" --notes-file "${notes}"
+                --generate-notes)
+          if [ -n "${previous}" ]; then
+            args+=(--notes-start-tag "${previous}")
+          fi
+          gh release create "${release}" "${args[@]}"
+          echo "Created release ${release}${previous:+ (since ${previous})}."
+          {
+            echo ""
+            echo "GitHub release: \`${release}\`${previous:+, since \`${previous}\`}."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # if: always() — when a step above fails, the container's log is the only
