@@ -915,6 +915,41 @@ async function didWeb(wallet, state, sub, subjects) {
   log.debug("Entering didWeb().");
   log.info("=== 5. a did:web this realm publishes, its key in the wallet ===");
   await setting("did.personCustody", "wallet");
+  // THE WALLET HAS ONE KEY, and section 4 left it enrolled for sign-in as
+  // did:jwk and did:key. Since #775 a did:web this realm publishes may not
+  // name a key the person already signs in with — the document is public,
+  // so it would be a public copy of a sign-in key — and the publish is
+  // refused under STS-VC-0178. That refusal is asserted here first; then
+  // both enrolments are removed, the key is no longer a sign-in key, and the
+  // publish that the rest of this section checks goes through.
+  const refusedBefore = await codeCount("STS-VC-0178");
+  const refused = await enrol(wallet, state, "did:jwk",
+                              { did_act: "publish" });
+  const refusedAfter = await codeCount("STS-VC-0178");
+  check("a did:web naming a key enrolled for sign-in is refused, " +
+        "recorded under STS-VC-0178 (#775)", function () {
+    assert.notStrictEqual(refused.collected.status, 303,
+                          String(refused.collected.text).slice(0, 300));
+    assert.ok(refusedAfter > refusedBefore, refusedAfter + " / " +
+              refusedBefore);
+  });
+  for (const subject of [subjects["did:jwk"], subjects["did:key"]]) {
+    const gone = await state.portal.act("/portal/self-issued",
+      { action: "remove", subject: subject });
+    check("Remove takes " + subject.split(":").slice(0, 2).join(":") +
+          " off the list before the publish", function () {
+      assert.ok(gone.status === 200 && gone.json &&
+                gone.json.ok !== false, String(gone.text).slice(0, 300));
+    });
+  }
+  const unenrolled = await enrolled(state);
+  check("none of the wallet key's names is enrolled for sign-in any more",
+        function () {
+    [subjects.jwk, subjects["did:jwk"], subjects["did:key"]]
+      .forEach(function (one) {
+        assert.ok(unenrolled.indexOf(one) < 0, JSON.stringify(unenrolled));
+      });
+  });
   const made = await enrol(wallet, state, "did:jwk", { did_act: "publish" });
   const mine = (await publishedDids()).filter(function (one) {
     return one.custody === "wallet" && one.state === "active";
