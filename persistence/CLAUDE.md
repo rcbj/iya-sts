@@ -3629,6 +3629,17 @@ cannot serve. The upgrade is still `schema.sql` run again as the owner;
 `sts_app` cannot build it and the driver refuses (`STS-STORE-0029`) until
 then. Why the sweep asks a band is in `authn/CLAUDE.md`.
 
+**`sts_sessions_started` is the ninth index (#882, schema version 32).**
+`session.livePage` orders `started_at DESC, key`. The index is
+`(realm, started_at DESC, key) WHERE chosen`, so that page can walk one
+realm newest first and stop. `started_at` is set when the row is created
+and no later write assigns a new value, so the index does not newly make
+an update non-HOT: a chosen-row touch already changes `last_seen_at`,
+which `sts_sessions_subject` indexes. `session.liveTotals` is still a
+count of every matching row. The query stays unnamed, so `$3 = ''` folds
+and the empty search keeps the ordered walk. How a large store builds the
+index is in `postgres/CLAUDE.md`.
+
 **`sts_sessions_surface` is the seventh index (#754, schema version 22).**
 `session.surface` — a hosted surface's relying-party sessions, which
 `Authn.endRelyingPartySessions()` asks for every signal the surface

@@ -111,7 +111,7 @@ async function run(t) {
   const model = MariaDbImport.read(ROOT);
   sameText(t, MariaDbImport.emit(model), sql,
     'mariadb/schema.sql comes back as its own bytes');
-  t.equal(model.version, 31, 'the schema version is 31');
+  t.equal(model.version, 32, 'the schema version is 32');
   t.equal(model.tables.length, 42, 'forty-two tables');
   t.check(model.tables.some(function (table) {
     return table.name === 'sts_ldap_entry_keys';

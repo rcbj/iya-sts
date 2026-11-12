@@ -70,7 +70,7 @@
 //     backfills the counts or the key rows, where PostgreSQL's open() counts
 //     the table once under a lock.
 //   * `dek_keys` IS NEVER NULL HERE: every writer above writes it, and a
-//     MariaDB store is built at schema version 31. So nothing is left for
+//     MariaDB store is built at schema version 32. So nothing is left for
 //     `indexSealed()` to catch up and the data-key counts are never refused
 //     for it; asking "is any NULL" would be a scan (the partial index
 //     PostgreSQL asks is not in MariaDB's schema).

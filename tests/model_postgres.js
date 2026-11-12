@@ -113,8 +113,8 @@ function run(t) {
   const model = PostgresImport.read(ROOT);
   sameText(t, PostgresImport.emit(model), sql,
     'emit() is postgres/schema.sql byte for byte');
-  t.equal(model.version, 31, 'schema version 31');
-  t.equal(driver.SCHEMA_VERSION, 31, 'the driver reports 31');
+  t.equal(model.version, 32, 'schema version 32');
+  t.equal(driver.SCHEMA_VERSION, 32, 'the driver reports 32');
   const creates = PostgresImport.statements(sql).filter(
     function (statement) {
       return /^CREATE TABLE\b/i.test(statement);

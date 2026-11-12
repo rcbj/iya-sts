@@ -226,8 +226,10 @@ CREATE TABLE IF NOT EXISTS sts_sessions (
   PRIMARY KEY (realm, `key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_nopad_bin;
 
--- PostgreSQL's seven are partial (`WHERE … <> ''`, `chosen`, `IS NOT NULL`);
--- these are whole.
+-- PostgreSQL's eight are partial (`WHERE … <> ''`, `chosen`, `IS NOT NULL`);
+-- these are whole. `sts_sessions_subject_band` is still not among them.
+-- `sts_sessions_started` is the eighth. Its marker follows `sts_schema`:
+-- driver order 78 is the next free number, and this script's order is that.
 CREATE INDEX IF NOT EXISTS sts_sessions_subject ON sts_sessions (realm, subject_key, last_seen_at);
 CREATE INDEX IF NOT EXISTS sts_sessions_username ON sts_sessions (realm, username_key);
 CREATE INDEX IF NOT EXISTS sts_sessions_expires ON sts_sessions (realm, expires_at);
@@ -685,8 +687,11 @@ CREATE TABLE IF NOT EXISTS sts_schema (
   PRIMARY KEY (version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_nopad_bin;
 
+-- #882. Driver order 78 follows `sts_schema`, so the index is here.
+CREATE INDEX IF NOT EXISTS sts_sessions_started ON sts_sessions (realm, started_at DESC, `key`);
+
 -- The same number as PostgreSQL's, so there is one SCHEMA_VERSION.
-INSERT IGNORE INTO sts_schema (version) VALUES (31);
+INSERT IGNORE INTO sts_schema (version) VALUES (32);
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ACCOUNT: SELECT, INSERT, UPDATE AND DELETE ON THIS

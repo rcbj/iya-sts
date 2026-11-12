@@ -321,7 +321,12 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // person's RFC 7523 and RFC 7522 key pairs are several records per profile
 // now, and `person_assertions.js` asks for their holders by the new names.
 // The same advisory step as 27 and 28, looking for the newest name.
-const SCHEMA_VERSION = 31;
+// 32 SINCE 2026-11-12 (#882): `sts_sessions_started`, the partial index
+// the console's newest-first live session pages walk (`ORDER BY
+// started_at DESC, key`, `WHERE chosen`). `started_at` is set once, so
+// the index does not newly make an update non-HOT. How a large store
+// builds it is in `postgres/CLAUDE.md`.
+const SCHEMA_VERSION = 32;
 // How many times a directory flush re-reads the data-key rows and tries
 // again when a locked row is sealed under a key this process does not hold
 // yet, and the pause between tries (2026-10-27; saveDirectory()).

@@ -223,6 +223,47 @@ started as `sts_app` against a store without the index is refused at open,
 as with every version's new index. The driver, as a role that may create,
 makes the extension first (`SCHEMA_OBJECTS`' `extension`).
 
+**VERSION 32 (#882) ADDS `sts_sessions_started`, AND A STORE THAT ALREADY
+HOLDS SESSIONS SHOULD BUILD IT CONCURRENTLY FIRST.** It is a partial btree
+on `(realm, started_at DESC, key) WHERE chosen`. The console's live session
+pages order `started_at DESC, key`, and nothing else in the catalog is
+ordered that way. `WHERE chosen` is the page's predicate, so an arrival
+stays out. `started_at` is set once, when the row is created.
+
+The script is one transaction (`BEGIN` through `COMMIT` in
+`postgres/schema.sql`; `apply-schema.sh` is `psql -f` and does not open a
+second one). `CREATE INDEX CONCURRENTLY` cannot run inside it, so the
+script's own `CREATE INDEX` takes `SHARE` and holds writers off
+`sts_sessions` for the build. An empty volume is fine. A soak store is
+not. **On such a store, run this as the owner BEFORE the version-32 image
+starts and before the script**, outside any transaction, search path
+`sts, public`:
+
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS sts_sessions_started
+      ON sts_sessions (realm, started_at DESC, key) WHERE chosen;
+    ANALYZE sts_sessions;
+
+The script's `IF NOT EXISTS` then finds it. `ANALYZE` is so the first
+plans see the index; it is not a start-blocking upgrade. A version-32
+image started as `sts_app` against a store without the index is refused
+at open with `STS-STORE-0029`.
+
+`CONCURRENTLY` can leave an invalid index if the session dies. `open()`
+probes `to_regclass` for the name and does not read `pg_index.indisvalid`,
+the same as versions 23 and 25, and this version does not teach it to.
+Before the image starts, `indisvalid` must be true:
+
+    SELECT i.indisvalid
+      FROM pg_index i
+      JOIN pg_class c ON c.oid = i.indexrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'sts'
+       AND c.relname = 'sts_sessions_started';
+
+An invalid row is `DROP INDEX sts.sts_sessions_started` and then the
+`CONCURRENTLY` statement again. An image rolled back to version 31
+ignores the extra index; leave it in place.
+
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that
 is not there, so against a database this script has built it issues none. That

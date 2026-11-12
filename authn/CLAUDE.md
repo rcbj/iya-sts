@@ -2315,7 +2315,9 @@ one synchronous read each, on a request worker, and held it for two minutes.
 Through read-your-write every other worker waited behind it, and sign-ins and
 refreshes stopped.
 - **Monitoring → Sessions** pages with `liveSessionPageAsync()`, on the
-  driver's read pool, and opens only the page's bodies:
+  driver's read pool, and opens only the page's bodies. The view reaches
+  it through `Logout.liveSessionsPageAsync()`. The newest-first page is
+  the query `sts_sessions_started` matches (#882):
   - `session.liveTotals` and `session.livePage` count and page the live
     rows, newest first;
   - a search is an exact username, subject or session id, matched by digest;

@@ -133,8 +133,10 @@ SET @sts_app_require_ssl := COALESCE(@sts_app_require_ssl, 0);
 
 --@table sts_sessions
 
--- PostgreSQL's seven are partial (`WHERE … <> ''`, `chosen`, `IS NOT NULL`);
--- these are whole.
+-- PostgreSQL's eight are partial (`WHERE … <> ''`, `chosen`, `IS NOT NULL`);
+-- these are whole. `sts_sessions_subject_band` is still not among them.
+-- `sts_sessions_started` is the eighth. Its marker follows `sts_schema`:
+-- driver order 78 is the next free number, and this script's order is that.
 --@index sts_sessions_subject
 --@index sts_sessions_username
 --@index sts_sessions_expires
@@ -250,8 +252,11 @@ SET @sts_app_require_ssl := COALESCE(@sts_app_require_ssl, 0);
 
 --@table sts_schema
 
+-- #882. Driver order 78 follows `sts_schema`, so the index is here.
+--@index sts_sessions_started
+
 -- The same number as PostgreSQL's, so there is one SCHEMA_VERSION.
-INSERT IGNORE INTO sts_schema (version) VALUES (31);
+INSERT IGNORE INTO sts_schema (version) VALUES (32);
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ACCOUNT: SELECT, INSERT, UPDATE AND DELETE ON THIS
