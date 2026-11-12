@@ -2350,6 +2350,27 @@ function deferUntilSlot() {
   return deferredWait;
 }
 
+// Whether a save of this life is in flight or waiting to be sent.
+function savesOut() {
+  log.debug("Entering savesOut().");
+  const out = flights.some(function (flight) {
+    return flight.life === flightLife;
+  }) || !!(openBatch && openBatch.life === flightLife);
+  log.debug("Leaving savesOut().");
+  return out;
+}
+
+// The first answer that carries `error`, else the first answer: what a
+// caller waiting on several saves is told.
+function firstFailure(answers) {
+  log.debug("Entering firstFailure().");
+  const failed = (answers || []).filter(function (answer) {
+    return answer && answer.error;
+  })[0];
+  log.debug("Leaving firstFailure().");
+  return failed || (answers || [])[0] || { written: false };
+}
+
 /**
  * After a take that left keys on the journal, chains another flush so a
  * caller of `flush()` — stop, the scheduler — has attempted them. A covering
@@ -2363,8 +2384,14 @@ function deferUntilSlot() {
 function continueDeferred(promise, born) {
   log.debug("Entering continueDeferred().");
   const chained = promise.then(function (result) {
-    if (born !== flightLife || (result && result.error) ||
-        journal.size === 0) {
+    if (born !== flightLife || (result && result.error)) {
+      return result;
+    }
+    // A KEY THIS CHAIN LEFT ON THE JOURNAL MAY HAVE BEEN TAKEN BY ANOTHER
+    // CALLER'S SAVE while it waited (2026-11-12): the journal is empty and
+    // that save is still open. flush() with nothing journalled waits for
+    // the saves still out, so the caller is answered once its keys landed.
+    if (journal.size === 0 && !savesOut()) {
       return result;
     }
     return flush();
@@ -2729,11 +2756,28 @@ function flush() {
   const born = flightLife;
   if (journal.size === 0) {
     if (openBatch && openBatch.life === flightLife && !openBatch.sent) {
-      log.debug('Leaving flush(). Waiting for the unsent batch.');
-      if (openBatch.covers) {
-        return openBatch.promise;
+      log.debug('Leaving flush(). Waiting for the unsent batch and the ' +
+                'saves already sent.');
+      // AND FOR THE SAVES ALREADY SENT (2026-11-12). Nothing is left on the
+      // journal, so what the caller wrote is in one of them or in the batch,
+      // and the batch's own `covers` says nothing about which: a covering
+      // save at the caller's target would have been answered by
+      // flushThrough(). Waiting for the batch alone released a response
+      // whose key a save beside it held. This is the rare path; a covering
+      // take still waits only for its own save.
+      const batchWait = openBatch.covers ? openBatch.promise
+        : continueDeferred(openBatch.promise, born);
+      const sentBefore = flights.filter(function (flight) {
+        return flight.life === flightLife;
+      });
+      if (!sentBefore.length) {
+        return batchWait;
       }
-      return continueDeferred(openBatch.promise, born);
+      return Promise.all([batchWait].concat(sentBefore.map(function (flight) {
+        return flight.promise;
+      }))).then(function (answers) {
+        return firstFailure(answers);
+      });
     }
     const pending = flights.filter(function (flight) {
       return flight.life === flightLife;
@@ -2766,7 +2810,15 @@ function flush() {
     if (taken.entries.length) {
       sealInto(openBatch, taken.entries, taken);
       log.debug('Leaving flush(). Joined the unsent batch.');
-      if (openBatch.covers) {
+      // THIS TAKE'S COVER, NOT THE BATCH'S (2026-11-12). The batch says
+      // `covers` from its own first take, and a key this take left on the
+      // journal because an older save holds it is in no save at all: the
+      // batch committing is not this caller's commit — the response was
+      // released, and its ticket announced, while that key's newer value
+      // was in no save, so another worker read the older one
+      // (`sts_gnap_core`, single-node, 2026-11-12). The chain below waits
+      // until the held key has gone out.
+      if (taken.covers) {
         return openBatch.promise;
       }
       return continueDeferred(openBatch.promise, born);
