@@ -535,7 +535,10 @@ docker compose up -d --wait
   merge into `main`. The full `M.N.O.<build>` (`1.0.1.0`, or
   `1.0.1.20261112090000`) names exactly one build. The repository's git
   tags follow the same rule: `v1.0.1` is the commit of that release, and
-  `v1.0.1.<build>` the commit of exactly one build. `STS_PORT`, `PKI_PORT`
+  `v1.0.1.<build>` the commit of exactly one build. Each release also has
+  a page on the repository's GitHub Releases, naming its images, their
+  digests and the pull requests merged since the release before it.
+  `STS_PORT`, `PKI_PORT`
   and `KDC_PORT` move the published ports.
 * **Kerberos works from the start.** The KDC is published on 88 (TCP and
   UDP), and the SPNEGO acceptor holds `HTTP/localhost`, the name a browser
@@ -610,6 +613,12 @@ still says the release a person last set (`1.0.0`). Editing `VERSION` is how
 a new minor or major release starts: set to `1.1.0`, the next build of
 `main` is `1.1.0` and the ones after it `1.1.1`, `1.1.2`. A build of any
 other branch, or from a checkout, carries `VERSION` as written.
+
+Every build of `main` that publishes its images is also a **GitHub
+release**, `v1.0.1`, titled with the full version the image reports
+(`v1.0.1 (1.0.1.20261112090000)`). Its notes list both images under every
+tag they were published with, their digests, the commit, and the pull
+requests merged since the previous release.
 
 ```
 1.0.0.20261104120000      an ordinary build of release 1.0.0
