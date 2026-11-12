@@ -5925,6 +5925,12 @@ of THIS directory needs:
   row has committed under that block claim's fence lock, and a new lessee
   skips an index whose row is already in the store. The header of
   `access_token_status.ts` argues it.
+* **The packed list is cached per realm, for this process (#885).** A
+  publication reuses the compressed bytes until this process's invalid-bit
+  generation for the realm moves, or the earliest INVALID bit's expiry has
+  passed. The signed token is still made again at half the ttl, from those
+  bytes. A refresh token or an ID token does not move the generation. The
+  header of `access_token_status.ts` argues it.
 * **The row's expiry is the configured lifetime**, not the FAPI-capped one
   (#138 only shortens it): a row outliving its token costs an index for a few
   minutes, never a wrong bit.

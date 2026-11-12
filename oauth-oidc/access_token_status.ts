@@ -62,6 +62,19 @@
 // (STS-OAUTH-0817) rather than reuse a live position, which section 13.3
 // forbids.
 //
+// **THE PACKED LIST IS CACHED (#885).** Building that buffer and compressing
+// it is the cost a resource server pays once per change, not once per fetch.
+// A publication reuses the compressed bytes until this process's invalid-bit
+// generation for the realm moves, or the earliest INVALID bit's expiry has
+// passed — an expired index is packed VALID, and it may be handed out again.
+// The generation moves when this process revokes or un-revokes an access
+// token, when `fillInvalid()` writes a bit, and when another process's bit
+// is applied through the store. A refresh token or an ID token does not move
+// it: those revocations are the common case, and they do not change this
+// list. The signed token is still made again at half the ttl, from the
+// cached bytes, so a resource server's max-age and a fresh `iat` overlap
+// without another deflate.
+//
 // **INDEXES ARE RANDOM AND CLAIMED ACROSS THE CLUSTER** (section 13.2: an
 // index that counts up says how many tokens came before), through
 // `cluster/cluster_claims.js`, for as long as the token lives. `allocate()`
@@ -270,12 +283,80 @@ const entries = realms.map({ persist: 'access_token_status.entries',
 // marker `admin_stats.setStatusMarker()` calls, installed below — and
 // filled once from every entry before `entries` goes on demand
 // (`fillInvalid()`). Small: the revoked tokens that have not expired.
-const invalid = realms.map({ persist: 'access_token_status.invalid',
-                             expiresAt: realms.expiryField('expiresAt', 1) });
+//
+// realm id -> how many times this process has seen that realm's bits change
+// (#885). Process-local. A publication rebuilds when it has moved.
+const bitsGeneration = new Map<string, number>();
 
-// realm|form -> { digest, token, signedAt, ttlMs }: the last list this
-// process signed, re-signed when the bits change or it is half-way to its
-// ttl. PER PROCESS; a few rows per realm.
+/**
+ * The compressed list last built for one realm.
+ */
+interface PackedList {
+  generation: number;
+  // The earliest expiresAt among the bits that were set, or null when none
+  // of them expires. At or after it the next publication rebuilds, so an
+  // index handed out again is not still published INVALID.
+  validUntil: number | null;
+  compressed: Buffer;
+}
+
+// realm -> that list. PER PROCESS, one row per realm. The signed JWT and
+// the signed CWT share it. A generation move drops the row.
+const packedLists = new Map<string, PackedList>();
+
+// `bytes` is ignored when a caller already holds the compressed list.
+const EMPTY_BYTES = Buffer.alloc(0);
+
+/**
+ * Drops the realm's compressed list and moves its generation.
+ *
+ * One step for a local write and for a bit another process applied. A
+ * second step, when this process's own write is applied back, rebuilds
+ * once more and the bytes match.
+ *
+ * @param realmId - the realm whose bits changed
+ */
+function noteInvalidChange(realmId: string): void {
+  helpers.log.debug("Entering noteInvalidChange().");
+  const id = String(realmId || '');
+  const next = (bitsGeneration.get(id) || 0) + 1;
+  bitsGeneration.set(id, next);
+  packedLists.delete(id);
+  helpers.log.debug("Leaving noteInvalidChange(). " + id + " is " + next +
+                    ".");
+}
+
+const invalid = realms.map({
+  persist: 'access_token_status.invalid',
+  expiresAt: realms.expiryField('expiresAt', 1),
+  // THE TWO ACCESSORS A STORED ROW COMES IN THROUGH (a start's restore and
+  // another process's apply). A local `set` does not come here;
+  // `markRevoked()` moves the generation itself. Admits every row: a throw
+  // would drop it (STS-CORE-0042).
+  reconcile: {
+    restore: function restoreInvalid(k: string, v: any, held: any,
+                                     realmId: string): any {
+      helpers.log.debug("Entering restoreInvalid().");
+      noteInvalidChange(realmId);
+      helpers.log.debug("Leaving restoreInvalid(). " + k +
+                        (held ? " replaced." : " new."));
+      return v;
+    },
+    remove: function removeInvalid(k: string, held: any,
+                                   realmId: string): boolean {
+      helpers.log.debug("Entering removeInvalid().");
+      noteInvalidChange(realmId);
+      helpers.log.debug("Leaving removeInvalid(). " + k +
+                        (held ? " held." : " absent."));
+      return true;
+    }
+  }
+});
+
+// realm|form -> { compressed, token, signedAt, ttlMs }: the last list this
+// process signed. Re-signed when the compressed bytes are a new buffer, or
+// it is half-way to its ttl. PER PROCESS; a few rows per realm. The bytes
+// are the packed list's own buffer (#885), so a rebuild is a new signature.
 const signedLists = new Map<string, any>();
 const MAX_SIGNED = 1024;
 
@@ -347,6 +428,49 @@ const signedCount = cacheRegistry.register({
     signedLists.forEach(function (row, key) {
       out.push({ realm: String(key).split('|')[0], key: String(key),
                  validUntil: row.signedAt + row.ttlMs / 2 });
+    });
+    return out;
+  }
+});
+
+const packedCount = cacheRegistry.register({
+  name: 'oauth2.access-token-status-packed',
+  title: 'Packed access-token status lists',
+  description: 'The compressed access-token status list this process ' +
+    'last built for each realm, reused until an invalid bit changes or ' +
+    'the earliest one expires.',
+  owner: 'oauth-oidc/access_token_status.ts',
+  scope: 'process',
+  kind: 'cache',
+  persisted: false,
+  hitMeaning: 'a list was served without packing or compressing it again',
+  settings: ['oauth2.accessTokenStatusListTtlS'],
+  maxEntries: function (): number {
+    return Math.max(1, realms.list().length);
+  },
+  bound: 'Structural: one compressed list per realm. A realm that has ' +
+    'gone, or a list whose earliest invalid bit has expired, is dropped ' +
+    'by the caches job.',
+  lifetime: function (): string {
+    return 'until an invalid bit changes, or the earliest one expires.';
+  },
+  eject: cacheRegistry.mapEjector(packedLists,
+    function (row: any, key: unknown, now: number): boolean {
+      const id = String(key);
+      const known = realms.list().some(function (one: any): boolean {
+        return one.id === id;
+      });
+      if (!known) {
+        return true;
+      }
+      return !!(row && row.validUntil !== null &&
+                Number(row.validUntil) <= now);
+    }),
+  entries: function (): unknown[] {
+    const out: unknown[] = [];
+    packedLists.forEach(function (row, key) {
+      out.push({ realm: String(key), key: String(key),
+                 validUntil: row.validUntil });
     });
     return out;
   }
@@ -1159,11 +1283,20 @@ class AccessTokenStatus {
   // rows are set: an expired row is an index nobody holds, and section 13.3's
   // default for an index nobody holds is VALID (0x00) — a resource server
   // rejects the expired token on its own `exp`.
-  private listBytes(): Buffer {
+  private listBytes(): { bytes: Buffer; validUntil: number | null } {
     const { log, entries, now } = this.deps;
     log.debug("Entering AccessTokenStatus.listBytes().");
     const values: number[] = [];
     const t = now();
+    let validUntil: number | null = null;
+    // Hot path: one call per INVALID bit while the 2 MiB buffer is built.
+    // No Entering/Leaving pair.
+    const noteExpiry = function (expiresAt: unknown): void {
+      const exp = Number(expiresAt);
+      if (exp > t && (validUntil === null || exp < validUntil)) {
+        validUntil = exp;
+      }
+    };
     if (this.onDemand()) {
       // From the revoked bits (#820 part 3): every live entry whose token
       // is revoked has one, and an expired one is VALID here as it always
@@ -1171,6 +1304,7 @@ class AccessTokenStatus {
       this.deps.invalid.forEach((row: any, idx: string) => {
         if (row && (!row.expiresAt || row.expiresAt > t)) {
           values[Number(idx)] = INVALID;
+          noteExpiry(row.expiresAt);
         }
       });
     } else {
@@ -1180,12 +1314,13 @@ class AccessTokenStatus {
         }
         if (this.statusOf(idx) !== VALID) {
           values[Number(idx)] = INVALID;
+          noteExpiry(row && row.expiresAt);
         }
       });
     }
     const bytes = codec.packTsl(values, BITS, LIST_SIZE);
     log.debug("Leaving AccessTokenStatus.listBytes().");
-    return bytes;
+    return { bytes: bytes, validUntil: validUntil };
   }
 
   /**
@@ -1254,6 +1389,7 @@ class AccessTokenStatus {
                         "Not an access token.");
       return;
     }
+    let changed = false;
     entries.lookup('j:' + String(jti)).forEach(function (idx: string): void {
       const row = entries.get(idx);
       if (!row || row.jti !== String(jti)) {
@@ -1264,7 +1400,11 @@ class AccessTokenStatus {
       } else {
         invalid.delete(idx);
       }
+      changed = true;
     });
+    if (changed) {
+      noteInvalidChange(realms.currentId());
+    }
     helpers.log.debug("Leaving AccessTokenStatus.markRevoked().");
   }
 
@@ -1285,6 +1425,9 @@ class AccessTokenStatus {
         written += 1;
       }
     });
+    if (written > 0) {
+      noteInvalidChange(realms.currentId());
+    }
     helpers.log.debug("Leaving AccessTokenStatus.fillInvalid(). " + written);
   }
 
@@ -1307,14 +1450,42 @@ class AccessTokenStatus {
              headerKid: publishedKidFor(signer.kid) };
   }
 
-  // One cached signed list, or a slot to sign into.
-  private reuse(form: string, bytes: Buffer): any {
+  // The compressed list for the ambient realm, rebuilt when the bits
+  // change or the earliest invalid bit has expired (#885).
+  private packed(): PackedList {
+    const { log, realms, now } = this.deps;
+    log.debug("Entering AccessTokenStatus.packed().");
+    const realmId = String(realms.currentId());
+    const generation = bitsGeneration.get(realmId) || 0;
+    const held = packedLists.get(realmId);
+    const t = now();
+    if (held && held.generation === generation &&
+        (held.validUntil === null || t < held.validUntil)) {
+      packedCount.hit();
+      log.debug("Leaving AccessTokenStatus.packed(). Reused.");
+      return held;
+    }
+    packedCount.miss();
+    const built = this.listBytes();
+    const row: PackedList = {
+      generation: generation,
+      validUntil: built.validUntil,
+      compressed: codec.compress(built.bytes)
+    };
+    packedLists.set(realmId, row);
+    log.debug("Leaving AccessTokenStatus.packed(). Rebuilt, " +
+              row.compressed.length + " byte(s).");
+    return row;
+  }
+
+  // One cached signed list, or a slot to sign into. The compressed bytes
+  // are the identity of the list: a new buffer means the bits were rebuilt.
+  private reuse(form: string, packed: PackedList): any {
     const { log, realms, now } = this.deps;
     log.debug("Entering AccessTokenStatus.reuse(). " + form);
     const key = realms.currentId() + '|' + form;
-    const digest = stsCrypto.digest('sha256', bytes, 'hex');
     const held = signedLists.get(key);
-    if (held && held.digest === digest &&
+    if (held && held.compressed === packed.compressed &&
         now() - held.signedAt < held.ttlMs / 2) {
       signedCount.hit();
       log.debug("Leaving AccessTokenStatus.reuse(). Reused.");
@@ -1322,7 +1493,7 @@ class AccessTokenStatus {
     }
     signedCount.miss();
     log.debug("Leaving AccessTokenStatus.reuse(). Sign again.");
-    return { key: key, digest: digest, token: null };
+    return { key: key, compressed: packed.compressed, token: null };
   }
 
   private remember(slot: any, token: any): void {
@@ -1332,7 +1503,7 @@ class AccessTokenStatus {
       cacheRegistry.makeRoom(signedLists, MAX_SIGNED,
                              { counter: signedCount });
     }
-    signedLists.set(slot.key, { digest: slot.digest, token: token,
+    signedLists.set(slot.key, { compressed: slot.compressed, token: token,
                                 signedAt: now(),
                                 ttlMs: this.ttlSeconds() * 1000 });
     log.debug("Leaving AccessTokenStatus.remember().");
@@ -1348,8 +1519,8 @@ class AccessTokenStatus {
     const { log, stsCrypto, certificateHeaderFor, baseUrlOf, now } =
       this.deps;
     log.debug("Entering AccessTokenStatus.listJwt().");
-    const bytes = this.listBytes();
-    const slot = this.reuse('jwt', bytes);
+    const packed = this.packed();
+    const slot = this.reuse('jwt', packed);
     if (slot.token) {
       log.debug("Leaving AccessTokenStatus.listJwt(). Reused.");
       return slot.token;
@@ -1359,7 +1530,8 @@ class AccessTokenStatus {
     const base = baseUrlOf(req);
     const payload = codec.statusListJwtPayload({
       sub: this.listUri(base), iat: iat, exp: iat + this.lifetimeSeconds(),
-      ttl: this.ttlSeconds(), bits: BITS, bytes: bytes,
+      ttl: this.ttlSeconds(), bits: BITS, bytes: EMPTY_BYTES,
+      compressed: packed.compressed,
       aggregationUri: this.aggregationUri(base) });
     const token = await stsCrypto.signJwsAsync(payload, signer.key, {
       algorithm: signer.alg,
@@ -1382,8 +1554,8 @@ class AccessTokenStatus {
   async listCwt(req: any): Promise<Buffer> {
     const { log, baseUrlOf, now } = this.deps;
     log.debug("Entering AccessTokenStatus.listCwt().");
-    const bytes = this.listBytes();
-    const slot = this.reuse('cwt', bytes);
+    const packed = this.packed();
+    const slot = this.reuse('cwt', packed);
     if (slot.token) {
       log.debug("Leaving AccessTokenStatus.listCwt(). Reused.");
       return slot.token;
@@ -1393,7 +1565,8 @@ class AccessTokenStatus {
     const base = baseUrlOf(req);
     const token = await codec.statusListCwtAsync({
       sub: this.listUri(base), iat: iat, exp: iat + this.lifetimeSeconds(),
-      ttl: this.ttlSeconds(), bits: BITS, bytes: bytes,
+      ttl: this.ttlSeconds(), bits: BITS, bytes: EMPTY_BYTES,
+      compressed: packed.compressed,
       aggregationUri: this.aggregationUri(base),
       key: signer.key, alg: signer.alg, kid: signer.headerKid });
     this.remember(slot, token);

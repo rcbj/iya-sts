@@ -727,6 +727,26 @@
     "en": "48214c6b54f10691",
     "text": "en lista levererades utan att signeras igen"
   },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "Packade statuslistor för åtkomsttoken"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "Den komprimerade statuslistan för åtkomsttoken som den här processen senast byggde för varje sfär, återanvänd tills en ogiltig bit ändras eller den tidigaste löper ut."
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "Strukturell: en komprimerad lista per sfär. En sfär som är borta, eller en lista vars tidigaste ogiltiga bit har löpt ut, tas bort av cachejobbet."
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "tills en ogiltig bit ändras, eller den tidigaste löper ut."
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "en lista levererades utan att packas eller komprimeras igen"
+  },
   "caches.store.oauth2.attestation-challenges.title": {
     "en": "f19e208930fddc5c",
     "text": "Utmaningar för klientattestering"
