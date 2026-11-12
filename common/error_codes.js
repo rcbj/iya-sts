@@ -1262,6 +1262,16 @@ const CODES = [
       'exactly (three non-negative integers with no leading zero). Nothing ' +
       'is written and the image build fails.',
     spec: 'none — the image build exits non-zero' },
+  // A SETTING THAT HOLDS A URI, SET TO TEXT THAT IS NOT ONE (2026-11-12).
+  { code: 'STS-CORE-0176',
+    summary: 'A setting that holds an absolute URI (saml2.nameIdFormat, ' +
+      'saml11.nameIdFormat) is set to text that is not one in the ' +
+      'environment or an appconfig file. The service starts and uses it as ' +
+      'configured, so its SAML assertions carry a NameID Format the schema ' +
+      'refuses; /admin/config and the management API refuse the same value ' +
+      'on a save (STS-CORE-0006).',
+    spec: 'saml-schema-assertion-2.0 (Format is xs:anyURI) — a warning ' +
+      'logged at startup; nothing is refused' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -25738,6 +25748,14 @@ const CODES = [
   { code: 'STS-API-0145',
     summary: 'A change to how somebody signs in was refused because the administrator did not sign in recently enough.',
     spec: 'HTTP 401 (RFC 9470)' },
+  { code: 'STS-API-0146',
+    summary: 'An answer was refused by its response model (STS-API-0139) in ' +
+      'a process where every plain object or array inherits an enumerable ' +
+      'member: something wrote to Object.prototype or Array.prototype, so ' +
+      'every closed model refuses every answer. The log line names the ' +
+      'members, once per set of names; the process needs a restart and the ' +
+      'write that polluted it a fix.',
+    spec: '' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

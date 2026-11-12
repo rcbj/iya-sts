@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5430** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5431** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 107
+* [Service core (`STS-CORE`)](#sts-core) — 108
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 110
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 269
-* [Management API (`STS-API`)](#sts-api) — 95
+* [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
@@ -265,6 +265,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0173` | A SAML or WS-Federation request gave a parameter more than once. | HTTP 400 |
 | `STS-CORE-0174` | An XML document was refused because it carries a DOCTYPE or ENTITY declaration (ASVS 5.0.0 1.5.2). | SOAP 1.2 Part 1 section 5: no Document Type Declaration |
 | `STS-CORE-0175` | The build stamp (common/version.js --stamp, or xacml-pep --stamp) was refused: STS_VERSION_RELEASE names the release a build carries in place of the VERSION file's, and it was not M.N.O exactly (three non-negative integers with no leading zero). Nothing is written and the image build fails. | none — the image build exits non-zero |
+| `STS-CORE-0176` | A setting that holds an absolute URI (saml2.nameIdFormat, saml11.nameIdFormat) is set to text that is not one in the environment or an appconfig file. The service starts and uses it as configured, so its SAML assertions carry a NameID Format the schema refuses; /admin/config and the management API refuse the same value on a save (STS-CORE-0006). | saml-schema-assertion-2.0 (Format is xs:anyURI) — a warning logged at startup; nothing is refused |
 
 ## STS-WORKER
 
@@ -5663,6 +5664,7 @@ Raised from: mgmt-api/.
 | `STS-API-0143` | A query parameter of a management API request held a value its declared type does not, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
 | `STS-API-0144` | A management API request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
 | `STS-API-0145` | A change to how somebody signs in was refused because the administrator did not sign in recently enough. | HTTP 401 (RFC 9470) |
+| `STS-API-0146` | An answer was refused by its response model (STS-API-0139) in a process where every plain object or array inherits an enumerable member: something wrote to Object.prototype or Array.prototype, so every closed model refuses every answer. The log line names the members, once per set of names; the process needs a restart and the write that polluted it a fix. | — |
 
 ## STS-PORTAL
 

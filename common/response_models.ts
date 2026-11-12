@@ -42,6 +42,28 @@
 // start, or wrapping each in its own copy, costs every process for operations
 // it mostly never reaches.
 //
+// **A COMPILE THAT FAILS IS CONTAINED TO THE MODEL THAT FAILED (2026-11-12).**
+// The ajv instance that threw is discarded, so nothing half-built inside it —
+// its schema cache, the root it was compiling, the scope names it had
+// reserved — is reachable from any later compile; every validator already
+// compiled is a closure of its own and keeps working. The failure is
+// REMEMBERED for that one model for `RETRY_MS`, and its answers are refused
+// from the memory, because a compile that failed once usually fails again and
+// a fresh compile on every request would make each of them expensive; after
+// that, one request tries again, so a cause that has gone (a transient one, or
+// a process that was repaired) costs one window and not the process's life.
+// The check is the time at the read, not a timer (`cluster/CLAUDE.md`).
+//
+// **AND A REFUSAL ASKS WHETHER THE PROCESS IS POLLUTED** (`STS-API-0146`). On
+// 2026-11-12 one write gave `Object.prototype` an enumerable `rules`
+// (`xacml/xacml_editor.ts`, `nodeAt()`), and every answer of every operation
+// was then refused for a member nobody had sent, because ajv reads an
+// object's members with `for…in`; the compile of a new model recursed without
+// end through the same member. The cause was invisible from these lines. Now
+// the first refusal that sees an inherited enumerable member on a plain object
+// or an array says so, by name, once: it costs a `for…in` over an empty object
+// on the refusal path only.
+//
 // A LIBRARY (rule 3): it registers no route of its own, and requires `helpers`
 // and `error_codes`, both already loaded by anything that installs it.
 // ---------------------------------------------------------------------------
@@ -60,6 +82,12 @@ const addFormats: any = addFormatsModule;
 
 const CODE = 'STS-API-0139';
 
+const POLLUTED = 'STS-API-0146';
+
+// How long a model that would not compile is answered from the memory of
+// that failure before one request compiles it again.
+const RETRY_MS = 60 * 1000;
+
 // A distinct failure is logged once; the bound keeps a shape that varies by
 // request from growing this set without limit.
 const MAX_LOGGED = 2000;
@@ -73,6 +101,13 @@ interface Deps {
   log: Json;
   mark: (res: Json, code: string) => unknown;
   tag: (code: string) => string;
+  // The clock the retry window is read on; a test passes its own.
+  now?: () => number;
+}
+
+interface Unbuildable {
+  at: number;
+  message: string;
 }
 
 interface Installed {
@@ -87,9 +122,13 @@ interface Installed {
 class ResponseModels {
   private readonly deps: Deps;
 
-  private readonly ajv: Json;
+  private ajv: Json;
 
   private readonly validators = new Map<Json, Json>();
+
+  private readonly unbuildable = new Map<Json, Unbuildable>();
+
+  private pollutionSaid = '';
 
   private prefixes: string[] = [];
   private readonly logged = new Set<string>();
@@ -98,11 +137,18 @@ class ResponseModels {
 
   constructor(deps: Deps) {
     this.deps = deps;
+    this.ajv = this.freshAjv();
+  }
+
+  private freshAjv(): Json {
+    this.deps.log.debug("Entering ResponseModels.freshAjv().");
     // `coerceTypes` off and no defaults: a validator must not change what it
     // is reading. `strict: false` for `examples` and the `x-` members.
-    this.ajv = new Ajv({ strict: false, allErrors: true,
-                         coerceTypes: false, useDefaults: false });
-    addFormats(this.ajv);
+    const ajv = new Ajv({ strict: false, allErrors: true,
+                          coerceTypes: false, useDefaults: false });
+    addFormats(ajv);
+    this.deps.log.debug("Leaving ResponseModels.freshAjv().");
+    return ajv;
   }
 
   /**
@@ -421,16 +467,81 @@ class ResponseModels {
     const { log } = this.deps;
     log.debug("Entering ResponseModels.validatorFor().");
     let validate = this.validators.get(media);
-    if (!validate) {
+    if (validate) {
+      log.debug("Leaving ResponseModels.validatorFor(). Compiled.");
+      return validate;
+    }
+    const now = this.deps.now ? this.deps.now() : Date.now();
+    const failed = this.unbuildable.get(media);
+    if (failed && now - failed.at < RETRY_MS) {
+      log.debug("Leaving ResponseModels.validatorFor(). Failed lately.");
+      throw new Error(failed.message);
+    }
+    try {
       // `allOf` rather than a spread: a model that is only a `$ref` keeps its
       // target's meaning beside `components`, and this is one shared
       // `components` object behind every validator of the document.
       validate = this.ajv.compile({ allOf: [media.schema || {}],
                                     components: installed.components });
-      this.validators.set(media, validate);
+    } catch (e: Json) {
+      log.debug("Caught in ResponseModels.validatorFor(): " +
+                ((e && e.message) || e));
+      // Contained: see the header. The instance is replaced and the failure
+      // remembered for this model alone, then thrown on to `problemOf()`,
+      // which answers it as this answer's problem.
+      this.ajv = this.freshAjv();
+      this.unbuildable.set(media, { at: now,
+                                    message: String((e && e.message) || e) });
+      log.debug("Leaving ResponseModels.validatorFor(). Will not compile.");
+      throw e;
     }
+    this.unbuildable.delete(media);
+    this.validators.set(media, validate);
     log.debug("Leaving ResponseModels.validatorFor().");
     return validate;
+  }
+
+  /**
+   * The members every plain object and array of this process inherits and a
+   * `for…in` would list: none, unless something wrote to `Object.prototype`
+   * or `Array.prototype`.
+   *
+   * @returns their names, sorted
+   */
+  static inheritedMembers(): string[] {
+    helpers.log.debug("Entering ResponseModels.inheritedMembers().");
+    const found: string[] = [];
+    const probes: Json[] = [{}, []];
+    probes.forEach(function (probe: Json) {
+      for (const name in probe) {
+        if (!Object.prototype.hasOwnProperty.call(probe, name) &&
+            found.indexOf(name) < 0) {
+          found.push(name);
+        }
+      }
+    });
+    helpers.log.debug("Leaving ResponseModels.inheritedMembers().");
+    return found.sort();
+  }
+
+  // On a refusal only: a polluted prototype refuses EVERY answer, and the line
+  // that says so is the one an operator needs first. Said once per set of
+  // names, so a process that stays polluted does not repeat it per request.
+  private notePollution(): void {
+    const { log, tag } = this.deps;
+    log.debug("Entering ResponseModels.notePollution().");
+    const names = ResponseModels.inheritedMembers();
+    const said = names.join(',');
+    if (names.length > 0 && said !== this.pollutionSaid) {
+      this.pollutionSaid = said;
+      log.error(tag('STS-API-0146') + 'Every object in this process inherits ' +
+                'members a closed model does not declare, so every answer ' +
+                'is refused: ' + names.map(function (n: string) {
+                  return '"' + n + '"';
+                }).join(', ') + '. Something wrote to Object.prototype or ' +
+                'Array.prototype; restart the process.');
+    }
+    log.debug("Leaving ResponseModels.notePollution().");
   }
 
   // Names and keywords only: an error's `data` is off (not `verbose`), and a
@@ -463,6 +574,7 @@ class ResponseModels {
     log.debug("Entering ResponseModels.report().");
     this.failures += 1;
     mark(res, 'STS-API-0139');
+    this.notePollution();
     const line = problem.operation + ' answered ' + problem.status + ': ' +
       problem.where;
     if (!this.logged.has(line) && this.logged.size < MAX_LOGGED) {
@@ -483,6 +595,8 @@ const shared = new ResponseModels({
 export = {
   ResponseModels: ResponseModels,
   CODE: CODE,
+  POLLUTED: POLLUTED,
+  RETRY_MS: RETRY_MS,
   install: function (app: Json, prefix: string, documentOf: () => Json,
                      refusal: Json): void {
     shared.install(app, prefix, documentOf, refusal);
