@@ -22,6 +22,11 @@
 //   T4. a directory batch passed `{ tally: true }` does (#878); one that is
 //       not stays on the durable pool. The batch is an application's
 //       authentication counts, and nothing else.
+//   T5. a refresh spend's `claimOnce({ noFlushWait: true })` sets
+//       `synchronous_commit` off in that statement and reads the CTE (#886).
+//       The connection is the main pool, not the tally pool. A claim without
+//       the flag, and an origin claim that is handed the flag, stay
+//       synchronous. The minted flush is still T3.
 //
 // A `pg` double records the connection options each statement ran on
 // (`tests/tools/store_double.js`).
@@ -224,13 +229,78 @@ async function run(t) {
           JSON.stringify(durableDir.map(function (one) {
             return (one.options || 'sync') + ' ' + one.sql.slice(0, 60);
           })));
+
+  const claimInserts = function (list) {
+    log.debug("Entering claimInserts().");
+    const hits = list.filter(function (one) {
+      return /INSERT INTO sts_cluster_claims/.test(one.sql);
+    });
+    log.debug("Leaving claimInserts().");
+    return hits;
+  };
+  const claimOpts = { ttlMs: 60000, reservation: 'r1' };
+  statements.length = 0;
+  await settle(function () {
+    return driver.claimOnce('oauth.refresh', 'default', 'plain', claimOpts);
+  });
+  const plain = claimInserts(statements);
+  t.check(plain.length === 1 &&
+          plain[0].sql.indexOf('synchronous_commit') < 0 &&
+          plain[0].sql.indexOf('FROM quiet') < 0 &&
+          plain[0].sql.indexOf('INSERT INTO sts_cluster_claims') === 0 &&
+          plain[0].options !== ASYNC &&
+          plain[0].params[0] === 'oauth.refresh' &&
+          plain[0].params.length === 6,
+          'T5. a claim without noFlushWait waits for the log flush',
+          JSON.stringify(plain.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 80);
+          })));
+
+  statements.length = 0;
+  await settle(function () {
+    return driver.claimOnce('oauth.refresh', 'default', 'quiet',
+      Object.assign({ noFlushWait: true }, claimOpts));
+  });
+  const quiet = claimInserts(statements);
+  t.check(quiet.length === 1 &&
+          quiet[0].sql.indexOf(
+            'set_config(\'synchronous_commit\', \'off\'') >= 0 &&
+          quiet[0].sql.indexOf('FROM quiet') >= 0 &&
+          quiet[0].sql.indexOf('INSERT INTO sts_cluster_claims') > 0 &&
+          quiet[0].options !== ASYNC &&
+          quiet[0].params[0] === 'oauth.refresh' &&
+          quiet[0].params.length === 6,
+          'T5. a refresh spend claim commits without waiting, on the ' +
+          'main pool, and the CTE is read',
+          JSON.stringify(quiet.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 120);
+          })));
+
+  statements.length = 0;
+  await settle(function () {
+    return driver.claimOnce('persistence.origin', '', 'origin',
+      Object.assign({ noFlushWait: true }, claimOpts));
+  });
+  const origin = claimInserts(statements);
+  const began = statements.some(function (one) {
+    return one.sql === 'BEGIN';
+  });
+  t.check(origin.length === 1 && began &&
+          origin[0].sql.indexOf('synchronous_commit') < 0 &&
+          origin[0].sql.indexOf('INSERT INTO sts_cluster_claims') === 0 &&
+          origin[0].options !== ASYNC,
+          'T5. an origin claim ignores noFlushWait and stays one ' +
+          'synchronous commit',
+          JSON.stringify(statements.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 80);
+          })));
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'postgres_tally_commit',
   describe: 'rate-limit windows, risk tallies and application counts ' +
-            'commit with synchronous_commit off; records stay durable (#820, ' +
-            '#878)',
+            'commit with synchronous_commit off; a refresh spend claim ' +
+            'does too, and records stay durable (#820, #878, #886)',
   run: run
 };

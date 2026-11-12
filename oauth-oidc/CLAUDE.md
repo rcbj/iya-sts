@@ -2357,6 +2357,16 @@ so must `admin-ui/admin.ts`.
    token, so they are rewritten about once a day, not on every refresh.
    `tests/refresh_writes.js`.
 
+   **A REFRESH WAITS FOR ONE SYNCHRONOUS COMMIT (#886).** The rows above
+   are how many a refresh writes. What held the rate was how many of those
+   commits waited for the log flush. A successful rotating refresh waited
+   twice: the spend of the presented token, then the minted flush of the
+   new one. The spend now commits without waiting (`noFlushWait`,
+   `persistence/CLAUDE.md`). The minted flush stays synchronous and flushes
+   the spend before the response is sent. The refresh token's own row is
+   not written that way. The family-revocation claim stays synchronous: it
+   is the durable record of a replay, and it is rare.
+
    **THE FOUR REFUSALS REFUSE, AND REFUSING IS THE DESIGN.** Everywhere else
    this service prefers to answer with something weaker rather than not answer
    at all (`mode.sendsWeakerThanAsked()` is a predicate about exactly that).
@@ -4428,7 +4438,7 @@ otherwise. The capability rows `oauth.codes-once`, `oauth.refresh-rotation` and
 |---|---|---|---|
 | authorization code | `oauth.code` | `tokenGrant()`, below every check and above the mint; bound to the response | waits (≤5s, catching up through `cluster_barrier.syncShared()`) for the winner's `redeemedCodes` record, then goes down `replayOrRefuseRedemption()` — refusal and revocation (the same token set only with `oauth2.codeReplayIdempotent` on outside RFC 9700 mode, #187); no record in time is `STS-OAUTH-0512` |
 | PAR `request_uri` | `oauth.par` | `issueAuthorizationResponse()`, where `par.spend()` was; bound to the response | `invalid_request_uri` 400, `STS-OAUTH-0514` |
-| rotated refresh token (RFC 9700 / 2.1 mode) | `oauth.refresh` | `bcp.spendRefreshToken()`, just before the mint; bound to the response | a replay: family revoked by id and by the members known, `STS-OAUTH-0516` |
+| rotated refresh token (RFC 9700 / 2.1 mode) | `oauth.refresh` | `bcp.spendRefreshToken()`, just before the mint, without waiting for the log flush (#886); bound to the response | a replay: family revoked by id and by the members known, `STS-OAUTH-0516` |
 | a revoked family | `oauth.refresh-family-revoked` | `bcp.revokeFamily()`, on every replay (local or claimed) | any member presented later, including one no node listed, `STS-OAUTH-0517` |
 | DPoP proof `jti` | `oauth.dpop-jti` | reserved on arrival by `dpop.proofClaims()`; kept by `verifyProof()` on acceptance, released otherwise | `invalid_dpop_proof`, `STS-OAUTH-0519` |
 | hosted-surface renewal | `oidc_rp.renewal` | `common/oidc_rp.ts` `renewOnce()` | does not redeem; waits for the winner's tokens on the session |

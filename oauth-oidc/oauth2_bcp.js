@@ -3894,7 +3894,17 @@ async function spendRefreshToken(opts) {
     scope: 'oauth.refresh', value: jti,
     ttlMs: (isFinite(expiresMs) ? Math.max(0, expiresMs - Date.now())
                                 : refreshFamilyWindowMs()) +
-           (isFinite(skew) ? skew * 1000 : 0)
+           (isFinite(skew) ? skew * 1000 : 0),
+    // THE SPEND DOES NOT WAIT FOR ITS OWN WAL FLUSH (#886). It has to be
+    // visible before the mint, so another worker presenting the same token
+    // loses. It must not be its own fsync: postgres flushes the log one
+    // fsync at a time, and this claim plus the minted flush were two of
+    // them on every refresh. The minted flush of the new refresh token
+    // stays synchronous, and that commit flushes the log through its own
+    // position, this claim's record included. The response is not sent
+    // until that flush returns, so a crash before it loses a token that
+    // was not issued. The token's own row is not written this way.
+    noFlushWait: true
   });
   const settleUnused = function () {
     claiming.then(function (unused) {
