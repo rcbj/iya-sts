@@ -944,7 +944,7 @@ argued in its own file — `common/CLAUDE.md` (3cf), `common/CLAUDE.md` (3ce), `
 * **The nineteenth is a SIOPv2 `did:web` BEING ENROLLED (2026-10-20, #693)** — the twelfth's URL, before anybody enrolled it, at two doors only. (1) A person's OWN ENROLMENT TRANSACTION: started from a sign-on session they already hold (`/authn/wallet?siop=1&enrol=1`, refused with no session), answered with an ID Token whose nonce, `aud`, `exp`, `iat`, `iss === sub` and DID syntax have ALL passed before anything is dialled — so the token must answer that transaction, which an unauthenticated caller cannot start — and fetched at most ONCE per transaction (the mark written through the store before the fetch; a second is `STS-VC-0128`). (2) An administrator's by-value enrolment (Admin Write), which fetches the document to pin its `authentication` keys and refuses one it cannot fetch (`STS-ADMIN-0871`) — the checks that need no fetch run first. Both through `fetchPublished()`: the kill switch, https, internal addresses refused in product mode, no redirect, the body cap and timeout. What it buys is the PIN: the key the proof used is recorded, and the twelfth row's later fetches can no longer hand the sign-in to whoever holds the host next (`oid4vc/CLAUDE.md`, 3ba).
 * **The twentieth is an AuthZEN access request's CALLBACK (2026-10-30, #1180)** — the companion profile's `callback.endpoint`, which the request names, so the caller's kind of URL; what makes it an administrator's is that it must EQUAL one of the URLs registered for the requesting PEP (`appAuthzenCallbackUri` on an application, `stsAuthzenCallbackUri` on a person's or service account's entry, written only by the AuthZEN tab's `set-callbacks`, https, no credentials or fragment), checked at the submission, and never one taken from the request alone (rcbj's decision 4). It is SENT to, never fetched from: `federation_http.deliverJson()` under the SENDABLE attribute `authzenCallbackEndpoint` — the kill switch, https verified, no redirect, the internal-address refusal with the connection pinned, the cap — once per finished task, with a 300-second JWT the realm signs as the Bearer, carrying no `result`. A failure is recorded (`STS-AUTHZEN-0091`) and not retried, because the task status endpoint is the record (`authzen/CLAUDE.md`).
 * **The twenty-first is an AUDIT EXPORT DESTINATION an administrator names (2026-11-01, #641)** — a webhook URL, a Splunk HEC URL, or a syslog TLS host, SENT to, never a caller-supplied fetch. `https` by default (`common/outbound_tls.ts`); product mode refuses plain `http`; skip-TLS is development-only and ignored in product mode; a CA file sits beside node's store; no userinfo. Loopback, link-local and private addresses, including RFC 6598 `100.64.0.0/10`, are refused in product mode unless `auditExport.allowPrivateDestinations` is on. Cloud metadata addresses are refused in every mode, and while that setting is on. Development mode still allows a loopback host whose every resolved address is loopback. The name is resolved before connect, a private answer is refused, a lookup failure at send pauses the destination, and a redirect is left unfollowed (`common/audit_export.ts`, `common/CLAUDE.md` 3da).
-* **The twenty-second is a PERSON'S WEBFINGER (2026-11-03, #930, rcbj's decision)** — `/federation/webfinger/{id}`, where a person types an identifier and this service asks the host it names who their OpenID Provider is (OpenID Connect Discovery 1.0 section 2). The host is the caller's to choose, which is why it is an exception: OFF by default per relationship (`fedWebFinger`, with `fedDiscovery`), through `fetchPublished()` (https only, verified; internal addresses refused in product mode with the connection pinned; no redirect; the cap and timeout); the issuer it names must lie WITHIN `fedPeer` — parsed, never a string prefix: the same scheme, host and effective port, no userinfo, query or fragment, and `fedPeer`'s path or one below it at a `/` boundary (`FederationSp.issuerWithin()`) — so it selects only within the partner an administrator configured; its discovery document must name it exactly; and nothing continues until the person follows the link the answer shows. The registration endpoint and the discovery document after it are the administrator's kind (named by a document of an issuer bounded by `fedPeer`).
+* **The twenty-second is a PERSON'S WEBFINGER (2026-11-03, #930, rcbj's decision)** — `/federation/webfinger/{id}`, where a person types an identifier and this service asks the host it names who their OpenID Provider is (OpenID Connect Discovery 1.0 section 2). The host is the caller's to choose, which is why it is an exception: OFF by default per relationship (`fedWebFinger`, with `fedDiscovery`), through `fetchPublished()` (https only, verified; internal addresses refused in product mode with the connection pinned; no redirect; the cap and timeout); the issuer it names must lie WITHIN `fedPeer` — parsed, never a string prefix: the same scheme, host and effective port, no userinfo, query or fragment, and `fedPeer`'s path or one below it at a `/` boundary (`FederationSp.issuerWithin()`) — so it selects only within the partner an administrator configured; its discovery document must name it exactly; and nothing continues until the person follows the link the answer shows. The registration endpoint and the discovery document after it are the administrator's kind (named by a document of an issuer bounded by `fedPeer`). A FAPI 2 profile's pushed authorization request endpoint is the same kind (#931): that document names it, `fetchPublished()` dials it, and it is not a directory attribute and not in `DIALLABLE`.
 * **The twenty-third is a PARTNER'S PROFILE PHOTO (2026-11-05, #719, rcbj's ticket)** — the `pictureUrl` a configured partner's signed assertion or verified token mapped onto a person, so a URL an administrator's partner names and not a request. Dialled only after that sign-in has a session, never awaited (`federation_sp.ts` `copyPartnerPhoto()`, `common/profile_photo.ts` `noteFederated()`), through `fetchPublished()`: the kill switch, the transport policy, internal addresses refused in product mode with the connection pinned, no redirect, `profilePhoto.maxStoredBytes` as the cap, ten seconds. What comes back is an image or it is dropped, the bytes deciding (`STS-FED-0221`), and it is rewritten without its metadata before it is kept. Off with `profilePhoto.cacheFederated`; not asked again of the same address within a week. Failing leaves the partner's address on the claim, as before #719.
 * **The twenty-fourth is a BLUESKY ACCOUNT'S DATA SERVER (2026-11-05, #746)** — named by a DID's document, so the caller's kind of URL; what bounds it is that it is reached only with a DID the relationship's own issuer answered, a did:plc read from the operator's `federation.atprotoPlcDirectory`, through `fetchPublished()`, and only to ask whether that server names this issuer. `atproto_client.ts`. A did:web is refused rather than dialled.
 * **The twenty-fifth is an OpenID CONNECT CLAIMS PROVIDER (#147, 2026-09-24; named here #1358)** — OpenID Connect Claims Aggregation (`oauth-oidc/CLAUDE.md` 3bh). When an administrator registers or updates a provider on `/admin/claim-providers` (`POST /admin-api/claim-providers/add-provider`, `update-provider`), and when a claim is later aggregated, `oauth-oidc/claims_providers.ts` dials the PROVIDER'S own addresses — its `.well-known/openid-configuration`, `jwksUri`, `tokenEndpoint` and `claimsEndpoint`, all configured by the administrator, none named by a request — through `federation_http.requestConfigured()` (the outbound kill switch, https only in product, the outbound TLS policy). On the no-egress fuzz stack the dial fails closed at the network, so the refusal carries a `getaddrinfo`/`ENOTFOUND` the `no_outbound_fetch` check now allows for this route alone.
@@ -2768,3 +2768,78 @@ dynamic plan still runs as its classical twin too (rcbj), with
 **What the plans' harness had to do differently** is in `tests/CLAUDE.md`:
 the registration and the WebFinger modules end at the registration or the
 discovery document, so the person does not sign in for them.
+
+### THIS SERVICE AS A FAPI CLIENT (#931)
+
+An inbound OpenID Connect relationship can be held to a FAPI profile the
+partner enforces. The partner is a bank, or another financial OpenID
+Provider, that refuses an ordinary code-flow client and a client secret.
+The person still starts here. After the partner answers, this service's own
+applications see only this service: the partner's tokens are not handed on.
+`oauth2.fapi` is the other role, this service as the authorization server
+(`tests/protocol/sts_fapi_conformance.js`). Empty `fedFapi` is the relying
+party above, unchanged.
+
+`federation/fapi_client.ts` names the profile and signs. `federation_sp.ts`
+dials. A profile is ignored when the protocol is not OpenID Connect and when
+`fedTrustAnchor` is set, because that path is an OpenID Federation OP and
+signs its own request.
+
+* **`1-advanced`** — FAPI 1.0 Advanced. `code id_token`, PKCE S256, a PS256
+  request object by value on the browser URL (RFC 9101, the parameters stay
+  on the query as Core 6.1 requires), and `private_key_jwt`. Configured
+  endpoints are enough. The representative certification variant is that
+  plain hybrid response. The profile's normative sender constraint is mutual
+  TLS (RFC 8705). This service does not authenticate to a partner with a
+  client certificate, so that variant is not what `1-advanced` runs, and it
+  sends no DPoP: a proof to an authorization server that does not advertise
+  DPoP fails the plan.
+* **`2-security`** — FAPI 2.0 Security Profile. `fedDiscovery` is required
+  and is not turned on for it (`STS-FED-0243` when it is off, or when the
+  document names no `pushed_authorization_request_endpoint`). The
+  authorization request is pushed (RFC 9126) through `fetchPublished()` to
+  the endpoint the document names — not a directory attribute, not in
+  `DIALLABLE` — and the browser is sent only `client_id` and `request_uri`.
+  `code`, PKCE S256, `private_key_jwt`, and a DPoP-bound access token
+  (RFC 9449) on the push, the token request, the refresh and UserInfo.
+* **`2-message-signing`** — the same, plus a PS256 request object inside
+  the push (it does not ride on the browser URL) and `response_mode=jwt`.
+  The JARM response is verified, and `state` / `code` / `error` taken out of
+  it, before the code is redeemed (`STS-FED-0246`). `state` is read
+  unverified only to relay the request to the cell that holds the flow; the
+  signature is checked there, where the discovered keys are.
+
+`private_key_jwt` is this realm's RSA key as PS256. `iss` and `sub` are
+`fedClientId`. `aud` is `fedPeer`, the issuer, not the token endpoint, and
+the assertion lives 60 seconds. The same bound is on the request object.
+That is not `oidfed_rp.ts`'s `clientAssertion()`, whose audience is the OP's
+Entity Identifier and whose lifetime is five minutes. A profile forces
+`private_key_jwt` whatever `fedTokenAuth` says. Registration, where
+`fedRegister` is on, sends that method, the PS256 key alone, and PAR, DPoP
+or JARM where the profile uses them.
+
+The DPoP key is made for the sign-in (ES256, the public JWK in the proof's
+header) and kept on the flow context, as the PKCE verifier is. One retry
+when the partner answers `use_dpop_nonce` with a different nonce; the same
+nonce is not sent again. A success that omits `DPoP-Nonce` keeps the nonce
+that was sent. UserInfo presents `Authorization: DPoP` and hashes the access
+token as `ath`. A missing key is `STS-FED-0247`, not a bearer request. When
+`fedRefreshTokens` is on, the key is sealed with the refresh token
+(`sealPartnerToken`) and opened for the refresh; the same key is kept across
+a rotation. A signing failure is `STS-FED-0245`. A push the partner refuses
+is `STS-FED-0244`.
+
+There is no CIBA client. `POST /oauth2/bc-authorize` is this service as the
+authorization server, which `sts_fapi_conformance.js` already certifies.
+`fapi-ciba-id1-client-test-plan` is not a plan this service can run. How the
+three client plans would be wired, and why that job is not in the manifest,
+is `tests/CLAUDE.md` (*HOW THE FAPI CLIENT PLANS WOULD RUN*) and
+`docs/conformance.md`.
+
+`tests/federation_fapi_client.js` holds the profile, the proof and the
+retry. `tests/federation_oidc_rp.js` case 10 holds the three sign-ins, the
+two `STS-FED-0243` refusals, a refused push (`STS-FED-0244`), the JARM
+refusals (`STS-FED-0246`, and a partner error as `STS-FED-0025` that does
+not redeem the code), the DPoP nonce on the wire, the registration
+metadata, `beginConnect`'s refusal of a profile (`STS-FED-0184`) and the
+refresh of a DPoP profile and of 1-advanced.

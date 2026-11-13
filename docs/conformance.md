@@ -167,7 +167,7 @@ the realm's JWKS carries post-quantum keys the suite cannot parse. The OpenID Co
 fragments are random rather than hashes. The default stays the stricter
 check.
 
-**Not run, and why:**
+## Not run, and why
 
 * The Brazil, panva and superseded-draft plans, and AuthZEN.
 * FAPI 1.0 Baseline: the suite no longer publishes a plan for it, so the
@@ -175,6 +175,25 @@ check.
 * FAPI 2.0 Message Signing's `plain_response` variant: section 5.4.1 has the
   authorization server require JARM.
 * Push-mode FAPI-CIBA: the suite publishes no plan for it.
+* The FAPI **client** plans
+  (`fapi1-advanced-final-client-test-plan`,
+  `fapi2-security-profile-final-client-test-plan`,
+  `fapi2-message-signing-final-client-test-plan`). The client role is built
+  ([federation](federation.md#fapi-client-profiles), `fedFapi`). A job
+  modeled on `sts_oidcc_rp_conformance.js` would run them, the suite as the
+  authorization server and one throwaway realm per plan. It is not in the
+  manifest: it has not been run, and `./run-tests.sh` would schedule a job
+  that cannot yet pass. The wiring is `tests/CLAUDE.md`'s *HOW THE FAPI
+  CLIENT PLANS WOULD RUN*. The variants that job would create are
+  `private_key_jwt` with a
+  request object by value and a plain `code id_token` response
+  (`1-advanced`), `private_key_jwt` with DPoP (`2-security`), and
+  `private_key_jwt` with DPoP, a signed request inside the push and JARM
+  (`2-message-signing`). The suite's mutual-TLS variants, and FAPI 1.0
+  Advanced's `by_reference` and `pushed` variants, are not those.
+* `fapi-ciba-id1-client-test-plan`. This service has no CIBA client role.
+  `POST /oauth2/bc-authorize` is the authorization server, which
+  `sts_fapi_conformance` already runs (`fapi-ciba-id1-test-plan`).
 
 ## W3C Verifiable Credentials and DID suites
 
