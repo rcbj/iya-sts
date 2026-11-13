@@ -889,8 +889,10 @@ const PRESS_MARK = "__stsXacmlEditorPress";
 function pressToken() {
   log.debug("Entering pressToken().");
   log.debug("Leaving pressToken().");
+  // node's CSPRNG, not the Math one: tests/random_values.js holds every
+  // test to it: code scanning follows a test's value into the service.
   return Date.now().toString(36) + "-" +
-         Math.random().toString(36).slice(2);
+         require("crypto").randomBytes(8).toString("hex");
 }
 
 // The press. Returns `{ error }` — empty when the button was clicked — and
