@@ -368,12 +368,6 @@ import usedAssertions = require('../common/used_assertions');
 // exists rather than this file requiring the PEP. See
 // `common/issuance_gate.js`.
 import gate = require('../common/issuance_gate');
-// WHO MAY BE GRANTED THE EMBEDDED DEBUGGER'S PERMISSION (2026-09-13). A
-// library (rule 3) that registers nothing and requires only libraries —
-// `admin-ui/admin_rbac.ts`, `common/access_gate.ts`, `common/audit.js`,
-// `common/helpers.js`, `common/realms.js` — so it
-// cannot move a route or close a cycle. See `debugger/debugger_access.ts`.
-import debuggerAccess = require('../debugger/debugger_access');
 // A GATED PERMISSION IS ISSUED ONLY TO A SUBJECT HOLDING A ROLE THAT
 // AUTHORIZES IT (#302, #303 — parts A and B of #88): admin:read and
 // admin:write always, an application permission where its resource opts in.
@@ -552,7 +546,6 @@ interface OAuth2ServerDeps {
   federatedRegistration: () => Json;
   usedAssertions: typeof usedAssertions;
   gate: typeof gate;
-  debuggerAccess: typeof debuggerAccess;
   rolePermissions: typeof rolePermissions;
   scopeVerdicts: typeof scopeVerdicts;
   scopePolicy: typeof scopePolicy;
@@ -1635,7 +1628,6 @@ class OAuth2Server {
       },
       usedAssertions: usedAssertions,
       gate: gate,
-      debuggerAccess: debuggerAccess,
       rolePermissions: rolePermissions,
       scopeVerdicts: scopeVerdicts,
       scopePolicy: scopePolicy,
@@ -5462,7 +5454,7 @@ class OAuth2Server {
    *   constraint refuses the request
    */
   async tokenSet(base: Json, opts: Json): Promise<Json> {
-    const { log, randomId, hasScope, mtls, bcp, debuggerAccess,
+    const { log, randomId, hasScope, mtls, bcp,
             rolePermissions, scopePolicy, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.tokenSet(). scope=" +
@@ -5520,27 +5512,15 @@ class OAuth2Server {
         return one && one !== 'bound_key';
       }).join(' ');
     }
-    // THE EMBEDDED DEBUGGER'S PERMISSION IS A CONSOLE ADMINISTRATOR'S AND
-    // NOBODY ELSE'S (2026-09-13). Here, the one function every grant mints
-    // through, so no grant — a refresh after a role was revoked, a token
-    // exchange, a client_credentials request naming the scope — can carry it
-    // for somebody who may not hold it. The authorization endpoint narrows
-    // first; this is the backstop. A no-op for every scope that does not name
-    // it. See `debugger/debugger_access.ts`.
-    if (debuggerAccess.asksForPermission(opts.scope)) {
-      opts.scope = debuggerAccess.narrowScope(opts.scope,
-        self.issuanceSubjectOf(opts),
-        { clientId: opts.client_id, grant: opts.grant });
-    }
     // (The report scopes were narrowed here by `report/rights.ts`'s own
     // group check until #1030; `report:use` and `report:admin` are the
     // native roles REPORT_USE and REPORT_ADMIN's permissions now, and the
     // role narrowing below decides them with every other gated one.)
-    // A GATED PERMISSION GOES WITH THE SUBJECT'S ROLES (#302, #303), here for
-    // the debugger permission's reason: every grant mints through this
-    // function, so a refresh after a role was revoked, a token exchange, a
-    // password, assertion or client_credentials grant cannot carry one for a
-    // subject — person or application — no role authorizes. Narrowed, and
+    // A GATED PERMISSION GOES WITH THE SUBJECT'S ROLES (#302, #303), here
+    // because every grant mints through this function, so a refresh after a
+    // role was revoked, a token exchange, a password, assertion or
+    // client_credentials grant cannot carry one for a subject — person or
+    // application — no role authorizes. Narrowed, and
     // refused `invalid_scope` only when nothing is left (#88 decision 2) —
     // carried out as RFC 9068's refusal is, so the token endpoint's one
     // wrapper answers it. See `common/role_permissions.ts`.
@@ -9114,7 +9094,7 @@ class OAuth2Server {
                                    authInfo: Json,
                                    issuedAcr?: Json): Promise<any> {
     const { log, logArtifact, randomId, hasScope, bcp, oauth21, frontchannel,
-            applications, errorCodes, par, gate, debuggerAccess,
+            applications, errorCodes, par, gate,
             rolePermissions, clusterClaims, requestObject } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.issueAuthorizationResponse().");
@@ -9140,9 +9120,6 @@ class OAuth2Server {
     const redirectUri = String(query.redirect_uri);
     const types = String(query.response_type || '').split(/\s+/)
       .filter(Boolean);
-    // The debugger permission comes off here for anybody who may not hold it,
-    // before a code carries it — see `debugger/debugger_access.ts`, and the
-    // backstop in tokenSet().
     // NO SCOPE IS NO SCOPE (#118): a missing one used to be `openid`, which
     // made a plain OAuth request an OpenID Connect one it had not asked to be.
     // And `offline_access` is kept only where OIDC Core section 11 allows it —
@@ -9151,9 +9128,8 @@ class OAuth2Server {
     // the client's own refusals have seen it.
     const person = { kind: 'user', name: user.username,
                      authenticated: signedIn };
-    let scope = debuggerAccess.narrowScope(
-      self.offlineAccessScope(String(query.scope || ''), query, types, user),
-      person, { clientId: query.client_id, grant: 'authorization_code' });
+    let scope = self.offlineAccessScope(String(query.scope || ''), query,
+                                        types, user);
     const out: Json = {};
     const parsedDetails = self.parseAuthorizationDetails(
       query.authorization_details, { clientId: query.client_id, req: req });
@@ -19369,7 +19345,7 @@ class OAuth2Server {
 // senderConstraints frontchannel applications validation errorCodes
 // refreshTokenCrypto jwtAccessToken introspectionJwt stepUp requestObject
 // richAuthorization par oauthMonitor delegation consent consentScreen
-// claimAttributes gate debuggerAccess credentials websecurity clusterClaims
+// claimAttributes gate credentials websecurity clusterClaims
 // clusterBarrier capabilities
 
   // ---------------------------------------------------------------------------
@@ -22695,7 +22671,7 @@ class OAuth2Server {
             frontchannel, applications, validation, errorCodes,
             refreshTokenCrypto, jwtAccessToken, introspectionJwt, stepUp,
             requestObject, richAuthorization, par, oauthMonitor, delegation,
-            consent, consentScreen, claimAttributes, gate, debuggerAccess,
+            consent, consentScreen, claimAttributes, gate,
             credentials, websecurity, clusterClaims, clusterBarrier,
             capabilities } = this.deps;
     log.debug("Entering OAuth2Server.registerRoutes().");

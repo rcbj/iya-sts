@@ -2610,11 +2610,10 @@ const SECTIONS = [
                'origin it answers on, the api process it forwards /api to ' +
                'and what that process may dial, and its settings. It is ' +
                'signed in to through this service\'s own authorization ' +
-               'server as <code>sts-debugger-ui</code>, and its api needs an ' +
-               'access token carrying ' +
-               '<code>urn:sts:debugger-api:debugger</code> — issued to ' +
-               'console administrators and nobody else. There is no setting ' +
-               'that opens it.' },
+               'server as <code>sts-debugger-ui</code>, one confidential ' +
+               'client for the UI and its api, and the sign-in session ' +
+               'admits console administrators and nobody else. There is no ' +
+               'setting that opens it.' },
       { path: '/admin/sts-metadata', label: 'Service metadata',
         blurb: 'Every endpoint this process registered, read off the LIVE ' +
                'express router, with the specification each one claims and ' +

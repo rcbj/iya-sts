@@ -240,26 +240,18 @@ function childMain() {
     note(dbgAdmin.allowed === false && dbgAdmin.code === 'STS-DBG-0033',
          '6a. the debugger refuses the unclaimed bootstrap administrator ' +
          '(STS-DBG-0033)', JSON.stringify(dbgAdmin));
-    const dbgNarrowed = inRealm(realms.DEFAULT_ID, function () {
-      return debuggerAccess.narrowScope('openid ' +
-        debuggerAccess.PERMISSION_ID,
-        { kind: 'user', name: 'admin', authenticated: true },
-        { clientId: 'sts-debugger-ui', grant: 'authorization_code' });
-    });
-    note(dbgNarrowed === 'openid',
-         '6b. and takes the permission off its grant', dbgNarrowed);
     const dbgVisitor = inRealm(realms.DEFAULT_ID, function () {
       return debuggerAccess.isAdministrator({ kind: 'user',
                                               name: 'cb-visitor-' + tag,
                                               authenticated: true });
     });
     note(dbgVisitor.allowed === false && dbgVisitor.code === 'STS-DBG-0009',
-         '6c. and a person holding no role is refused for holding none, not ' +
+         '6b. and a person holding no role is refused for holding none, not ' +
          'for an open window', JSON.stringify(dbgVisitor));
     note(inRealm(P, function () {
       return enrollment.sessionIsAdmin('admin');
     }) === false,
-         '6d. a portal session as the unclaimed `admin` is not an enrollment ' +
+         '6c. a portal session as the unclaimed `admin` is not an enrollment ' +
          'administrator');
 
     // ---------------------------------------------------------------------
