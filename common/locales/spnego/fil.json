@@ -57,5 +57,12 @@
   "checks.result": "Resulta",
   "checks.detail": "Detalye",
   "checks.passed": "pumasa",
-  "checks.failed": "NABIGO"
+  "checks.failed": "NABIGO",
+  "withheld.title": "Hindi naisagawa ang mutual authentication",
+  "withheld.heading": "Hindi naisagawa ang mutual authentication",
+  "withheld.body": "Tinanggap ang ticket at hindi ibinigay ang AP-REP, dahil hiniling ang <code>?mutual=off</code>. Walang nagpatunay kung aling server ang sumagot, at walang sinimulang session.",
+  "withheld.principal": "Ang pinangalanan ng ticket ay <code>{principal}</code>.",
+  "mutualClosed.title": "Sarado ang test control na iyon",
+  "mutualClosed.heading": "Sarado ang test control na iyon",
+  "mutualClosed.body": "Ang pagpigil sa AP-REP (<code>?mutual=off</code>) ay bukas lamang sa development. Hindi tinanggap ang ticket at walang sinimulang session."
 }

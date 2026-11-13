@@ -2160,6 +2160,66 @@ function forgetConferrer(identifier) {
 }
 
 // ---------------------------------------------------------------------------
+// A DELETED APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of
+// 2026-11-13 on #1612).
+//
+// A role made for one application (#310) is `<role>@<application>` with
+// `roleApplication` naming it. forgetMember() and forgetConferrer() take the
+// identifier off every role that LISTS it, and left the roles it OWNS: an
+// application registered later under the same identifier — made again by an
+// administrator or, in development, by whoever presents the client_id —
+// found `reader@<id>` already there, members and permissions included. rcbj's
+// rule of 2026-11-10 is that a recreated application inherits nothing, so
+// each role it owns is deleted, through remove(), the call the console's
+// delete-role makes: the directory's deleteRole() tells the members' token
+// holders through noteRoleChange(). The caller writes the `roles.delete`
+// audit row the console writes.
+//
+// Compared without case, as forgetConferrer() compares an application. The
+// roles are read off the kept `ou=roles` listing (all()), never a walk of the
+// directory. A role remove() refuses (a native or built-in name, which no
+// application's role can be) is logged and kept.
+// ---------------------------------------------------------------------------
+/**
+ * Deletes every configured role in the ambient realm that a deleted
+ * application owns (its `roleApplication` names the application).
+ *
+ * @param identifier - the deleted application's identifier
+ * @returns the names of the roles deleted
+ */
+function forgetApplicationRoles(identifier) {
+  log.debug('Entering forgetApplicationRoles().');
+  const wanted = String(identifier || '').toLowerCase();
+  if (!wanted) {
+    log.debug('Leaving forgetApplicationRoles(). Nothing to forget.');
+    return [];
+  }
+  const owned = all().filter(function (row) {
+    return String(row.application || '').toLowerCase() === wanted;
+  });
+  const deleted = [];
+  owned.forEach(function (row) {
+    const result = remove(row.name);
+    if (result.ok) {
+      deleted.push(row.name);
+    } else {
+      // The role stays, owned by an application that is gone; the line names
+      // both, so an administrator can delete it by hand (delete-role).
+      log.error(errorCodes.tag('STS-ADMIN-0924') + 'roles: the role "' +
+                row.name + '" of the deleted application "' + identifier +
+                '" could not be deleted: ' + result.why);
+    }
+  });
+  if (deleted.length) {
+    log.info('roles: the deleted application "' + identifier + '" took ' +
+             'its roles with it: ' + deleted.join(', ') + '.');
+  }
+  log.debug('Leaving forgetApplicationRoles(). ' + deleted.length +
+            ' role(s).');
+  return deleted;
+}
+
+// ---------------------------------------------------------------------------
 // A DELETED OWNER OWNS NOTHING; A RENAMED ONE STILL OWNS IT (2026-11-13,
 // #1612's review). A role's `owner` values are DNs of people and groups
 // (#604), and under #607 an owner is issued owner:write. A person deleted and
@@ -2297,6 +2357,8 @@ module.exports = {
   // A deleted client confers nothing; a deleted owner owns nothing, and a
   // renamed one still does (2026-11-13).
   forgetConferrer: forgetConferrer,
+  // A deleted application's own roles are deleted (2026-11-13).
+  forgetApplicationRoles: forgetApplicationRoles,
   forgetOwner: forgetOwner,
   renameOwner: renameOwner,
   rolesOf: rolesOf,
