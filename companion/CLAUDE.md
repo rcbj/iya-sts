@@ -23,6 +23,7 @@ is why it is shaped the way it is.
 | `demo_oid4vc.js` | The OpenID4VC demonstration: `/issuer`, `/issuer/offer`, `/verifier`, `POST /verifier/start`, `/verifier/wait`, `/verifier/done` |
 | `demo_kerberos.js` | The Kerberos and SPNEGO demonstration (#595): `/spnego`, `/spnego/protected`, `/krb5/service`, and the protected TCP service on `COMPANION_KRB5_SERVICE_PORT` (8888) |
 | `krb5_error.js` | The one Kerberos message the companion writes itself: the KRB-ERROR its TCP service answers a refusal with |
+| `social_idps.js` | A dummy of each of the 39 named social providers (#1689), at `/social/{id}` |
 
 Node built-ins, `bunyan`, `qrcode` and `kerberos`, pinned and installed from
 the committed lockfile. Plain JavaScript and no build of its own: the
@@ -181,6 +182,31 @@ customer's**:
   `HTTP/localhost`. `docs/docker-compose.md` tells a user to give the
   companion a host of its own.
 
+## Dummy social identity providers (#1689)
+
+The catalogue names 39 social providers, plus two generic profiles that are
+not providers. A live sign-in needs an application and an account at each,
+and none is kept. `social_idps.js` serves a dummy of each named one at
+`/social/{id}`: one fixed person, and the client authentication and PKCE
+that profile asks for. Steam's OpenID 2.0 check, DiscourseConnect and
+Bluesky's DPoP push are the three that are not a code grant. The two
+generic profiles are not served.
+
+Each page lists the relationship fields that point a development
+relationship at that dummy. The addresses are this companion's public URL.
+A service in another container dials the companion by that address, not
+localhost. Enable the relationship last.
+
+**THE SERVICE POSTS HERE, AND THOSE POSTS ARE NOT CSRF-BOUND.** The token
+request, Steam's `check_authentication` and Bluesky's pushed authorization
+request are the service, not a browser, so they carry no session cookie.
+`Companion.handle()` dispatches `/social` before the CSRF check. Every
+other POST stays bound. The dummy reads its own body, because two of those
+requests can be in flight and the shell must not keep one body for both.
+
+No timer. The code, token, push and Steam-nonce maps are capped on insert
+and nothing is swept.
+
 ## The pages carry no script
 
 The service's static-surface rule (root `CLAUDE.md`, *Pages with a script*)
@@ -193,7 +219,8 @@ after a submission that Chrome would hold to `form-action`.
 
 Every POST is bound: the form's `csrf` must be the session's token
 (constant-time), a fresh session is refused, and an `Origin`, when sent, must
-be the companion's own. The session cookie is `HttpOnly; SameSite=Lax`, and
+be the companion's own. A POST under `/social` is the exception in the
+section above: the service posts there with no session cookie. The session cookie is `HttpOnly; SameSite=Lax`, and
 `Secure` when `COMPANION_PUBLIC_URL` is https. **`Referrer-Policy: same-origin`, not
 `no-referrer`**: under `no-referrer` Chrome posts a form with `Origin: null`,
 and the Origin check refused the companion's own start — found driving the
@@ -219,9 +246,12 @@ for #595, the Kerberos demonstration with a stand-in acceptor and
 `sts_client.js`'s own provisioning over a stubbed `/admin-api` (create, then
 rotate when held; the keytab's file and mode; the RFC 4559 exchange's
 headers; the TCP framing; the KRB-ERROR, read back by the service's vendored
-codec). No protocol job needs the companion — every job uses the service's
-own doors (`/admin-api`, `/account-api`, the protocol endpoints) — so it is
-not on the test stack. End to end the OpenID4VC half was driven over CDP
+codec). `tests/social_idp_signins.js` signs in through each dummy social
+provider as its own assertion, against this module on a loopback port, and
+`tests/companion.js` holds that a token POST under `/social` is that dummy
+and not the CSRF page. No protocol job needs the companion — every job uses
+the service's own doors (`/admin-api`, `/account-api`, the protocol
+endpoints) — so it is not on the test stack. End to end the OpenID4VC half was driven over CDP
 against a private stack, and the Kerberos half with MIT `kinit` and
 `curl --negotiate` from a throwaway container against the companion and the
 service's KDC.

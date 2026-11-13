@@ -41,6 +41,10 @@
 //      the AP-REP framed back, a clean close without mutual authentication,
 //      and a refusal as a KRB-ERROR the service's own vendored codec reads
 //      with the code MIT's message names; `/krb5/service`.
+//   7. `/healthz` lists the demonstrations, the OpenID4VC one first, and
+//      the social dummies among them (#1689).
+//   7b. a token POST under `/social` with no session cookie is the dummy's
+//      `invalid_grant`, not the CSRF page: the service posts there.
 //
 // In process: the companion requires nothing of the service, so nothing
 // here loads the protocol stack.
@@ -610,8 +614,26 @@ async function run(t) {
             '6. the completion page shows the verdict to the browser that ' +
             'started it, and to no other', r.status + ' ' + other.status);
     r = await hit(port, 'GET', '/healthz');
-    t.check(r.status === 200 && JSON.parse(r.text).demos[0] === 'oid4vc',
+    const demos = JSON.parse(r.text).demos;
+    t.check(r.status === 200 && demos[0] === 'oid4vc' &&
+            demos.indexOf('social') >= 0,
             '7. /healthz says the companion is up and what it plays', r.text);
+    // No jar: the request carries no session cookie. The dummy answers
+    // the missing code before it looks at the client, which is how a
+    // probe with no session is told apart from the CSRF page.
+    r = await hit(port, 'POST', '/social/discord/token', {
+      form: { grant_type: 'authorization_code', code: 'nope' } });
+    let tokenError = '';
+    try {
+      tokenError = JSON.parse(r.text).error;
+    } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+      tokenError = '';
+    }
+    t.check(r.status === 400 && tokenError === 'invalid_grant' &&
+            r.text.indexOf('<') < 0,
+            '7b. a token post under /social is the dummy, not the CSRF page',
+            r.status + ' ' + r.text.slice(0, 200));
   } finally {
     server.close();
   }

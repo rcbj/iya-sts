@@ -20,6 +20,7 @@
 //   GET  /                 the start page: every demonstration's links
 //   GET  /companion.css    the one stylesheet
 //   GET  /healthz          JSON: up, and whether the service answered
+//   /social, /social/*     a dummy of each named social provider (#1689)
 //   ...                    each demonstration's own routes (`DEMOS`)
 //
 // **A DEMONSTRATION IS A MODULE WITH `describe()` AND `mount(router)`.** The
@@ -37,7 +38,10 @@
 // where it is read, so nothing here runs on a timer.
 //
 // **EVERY POST IS BOUND**: its form's `csrf` must be the session's token,
-// and an `Origin` it carries must be the companion's own.
+// and an `Origin` it carries must be the companion's own. A POST under
+// `/social` is the exception, dispatched before that check: the service,
+// not a browser, posts the token request, Steam's check and Bluesky's
+// push, and it carries no session cookie. `companion/CLAUDE.md` argues it.
 // ===========================================================================
 
 const http = require("http");
@@ -46,6 +50,7 @@ const util = require("./companion_util.js");
 const { StsClient } = require("./sts_client.js");
 const { Oid4vcDemo } = require("./demo_oid4vc.js");
 const { KerberosDemo } = require("./demo_kerberos.js");
+const { SocialIdps } = require("./social_idps.js");
 
 const log = util.logger("iya-sts-companion");
 
@@ -159,8 +164,10 @@ class Companion {
       servicePort: settings.krb5ServicePort === undefined
         ? null : settings.krb5ServicePort,
       keytabDir: settings.krb5KeytabDir, gss: deps && deps.gss });
-    // THE DEMONSTRATIONS.
-    this.demos = [oid4vc, kerberos];
+    const social = new SocialIdps({ publicUrl: settings.publicUrl });
+    this.social = social;
+    // THE DEMONSTRATIONS. oid4vc stays first: /healthz's demos[0] is it.
+    this.demos = [oid4vc, kerberos, social];
     const router = {
       get: (path, handler) => {
         this.routes.GET.set(path, handler);
@@ -255,6 +262,10 @@ class Companion {
                                   demos: this.demos.map(function (d) {
                                     return d.describe().id;
                                   }) });
+      } else if (url.pathname === "/social" ||
+                 url.pathname.indexOf("/social/") === 0) {
+        // Before the CSRF check. The service posts here with no cookie.
+        await this.social.handle(req, res);
       } else if (this.routes[req.method] &&
                  this.routes[req.method].has(url.pathname)) {
         if (req.method === "POST") {

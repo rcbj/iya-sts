@@ -44,6 +44,15 @@ covers:
 catalogue. **None has yet been run against its live provider.** Doing so needs
 an application registered at each provider, with its credentials.
 
+A development companion serves a dummy of each named provider at
+`/social/{id}`, so a relationship can be pointed at it without an account
+at the provider. The addresses on that page are the companion's public URL;
+a service in another container dials the companion by that address, not
+localhost. The two generic profiles are not served.
+`tests/social_idp_signins.js` signs in through each dummy. That is a
+different server from the one the *Tested* column describes, and it is not
+a run against the live provider.
+
 The *Tested* column says how each profile is exercised by
 `tests/federation_consumer_providers.js` and
 `tests/protocol/sts_federation_consumer.js`:
