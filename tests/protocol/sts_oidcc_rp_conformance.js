@@ -379,6 +379,7 @@ async function prepare(plan) {
 function operatorFor(plan, prepared, person) {
   log.debug("Entering operatorFor(). " + plan.key);
   const started = {};
+  const nudged = {};
   log.debug("Leaving operatorFor().");
   return async function (id, info) {
     log.debug("Entering the relying party's person. " + id);
@@ -448,9 +449,43 @@ function operatorFor(plan, prepared, person) {
       started[id] = 2;
       await person.start(id, info, prepared.login);
     }
+    if (plan.refresh && started[id]) {
+      await nudgeRefresh(prepared, id, nudged);
+    }
     await person.visit(id, info);
     log.debug("Leaving the relying party's person.");
   };
+}
+
+// THE REFRESH PLAN'S JOB, ASKED FOR RATHER THAN WAITED ON (run 22,
+// 2026-11-13). federation.partner-refresh runs every fifteen seconds, but
+// at the end of a full run its scheduled run queues behind every realm's
+// other jobs: the refresh module's refresh came 3.5 minutes after its
+// sign-in, and the invalid-issuer module's never came in its five minutes,
+// so it timed out. A Run now is first in the scheduler's line, so while a
+// signed-in refresh module waits the operator queues one, at most every
+// NUDGE_MS. The job still refreshes only a token that is due
+// (fedRefreshEverySeconds), so what the module is sent is unchanged.
+const NUDGE_MS = 10000;
+async function nudgeRefresh(prepared, id, nudged) {
+  log.debug("Entering nudgeRefresh(). " + id);
+  const now = Date.now();
+  if (nudged[id] && now - nudged[id] < NUDGE_MS) {
+    log.debug("Leaving nudgeRefresh(). Asked lately.");
+    return;
+  }
+  nudged[id] = now;
+  const r = await oidf.send(prepared.realm.api + "/scheduler/run", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ job: "federation.partner-refresh",
+                           realm: prepared.realm.id }) });
+  if (!((r.status === 200 || r.status === 202) && r.body &&
+        r.body.ok !== false)) {
+    // Not fatal: the scheduled run still comes, only later.
+    log.warn("Queueing federation.partner-refresh in " + prepared.realm.id +
+             " answered " + r.status + " " + String(r.raw).slice(0, 200));
+  }
+  log.debug("Leaving nudgeRefresh().");
 }
 
 // ONE PLAN, prepared, run module by module and judged; answers the lines
@@ -507,6 +542,20 @@ async function runOnePlan(plan) {
       if (got.status === "TIMED OUT" && !argued) {
         log.info("  " + plan.key + " " + got.module + ": TIMED OUT; " +
                  "running it once more.");
+        // AND THE STOPPED RUN'S SESSION ENDS FIRST (run 22, 2026-11-13), for
+        // the reason given below: the invalid-issuer module timed out signed
+        // in, its rerun signed in again on the same alias, and the next
+        // partner-refresh run presented BOTH sessions' tokens — the stopped
+        // instance's first, which the rerun's ValidateRefreshToken refused
+        // ("Invalid refresh_token parameter"), then the rerun's own, to a
+        // module already INTERRUPTED ("Illegal test state change:
+        // INTERRUPTED -> RUNNING"). Two sessions holding a token each is
+        // right for this relying party; a module that knows only one token
+        // is why the first session has to go.
+        if (plan.refresh && got.id) {
+          await person.signOut(got.id, { testName: got.module },
+                               prepared.realm.base, { localOnly: true });
+        }
         got = await oidf.runModule(planId, module, operator);
       }
       log.info("  " + plan.key + " " + got.module + ": " +
