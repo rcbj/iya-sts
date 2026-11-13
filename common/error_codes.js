@@ -5059,6 +5059,20 @@ const CODES = [
       'not exist, one removed a moment ago included; refused rather than ' +
       'judged by the policy of whichever realm was ambient (#1147).',
     spec: 'the caller\'s own refusal' },
+  { code: 'STS-PKI-0272',
+    summary: 'The service Root or the process branch was asked for a ' +
+      'composite ML-DSA signing key. Both are on the TLS listeners\' chain, ' +
+      'and OpenSSL cannot read a composite key, so every listener would ' +
+      'have refused the new certificate (STS-TLS-0011) and kept serving ' +
+      'the old one. Refused before any key is made; nothing is stored.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0273',
+    summary: 'pki.keyAlgorithm names a composite ML-DSA key, which the TLS ' +
+      'listeners cannot load, so the service Root or the process branch ' +
+      'being built without a named algorithm used the classical default ' +
+      'instead. Realm branches still take the setting.',
+    spec: 'none: a log line; the build goes on' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -8042,6 +8056,15 @@ const CODES = [
       'or tracing family defines, and was refused before the handler ran ' +
       '(#1483).',
     spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-AUTHN-0556',
+    summary: 'An administrator\'s passkey enrolment was begun or finished ' +
+      'for a person named with a control character, a NUL or half of a ' +
+      'surrogate pair. No directory name holds one, the pending record is ' +
+      'keyed by the two names joined with a newline, and PostgreSQL cannot ' +
+      'store a NUL, so it was refused before the pending record was ' +
+      'touched (STS-STORE-0063).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

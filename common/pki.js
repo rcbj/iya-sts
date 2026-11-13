@@ -1247,7 +1247,14 @@ function scopeChainsToRoot(scopeId) {
 
 async function buildRootNow(opts) {
   log.debug('Entering buildRoot().');
-  const options = opts || {};
+  // The Root is on the listeners' chain too (#1064), so the same rule as the
+  // process branch — see listenerChainOptions().
+  const readable = listenerChainOptions(opts || {}, 'the service Root');
+  if (!readable.ok) {
+    log.debug('Leaving buildRoot(). A key the listeners cannot load.');
+    return readable;
+  }
+  const options = readable.options;
   const chosen = algorithmsFrom(options);
   if (!chosen.ok) {
     log.debug('Leaving buildRoot(). ' + chosen.errors.join(' '));
@@ -1984,11 +1991,110 @@ function processListenerAltSignatureProblem(altKeyAlg, keyAlg) {
                          'STS-PKI-0270');
 }
 
+// ---------------------------------------------------------------------------
+// A SIGNING KEY THE LISTENER'S OPENSSL CANNOT READ (the fuzz run on
+// 7fc43a1de, 2026-11-12).
+//
+// The service Root and the process branch are on the main port's chain and
+// LDAPS's: the Root is presented after the Intermediate (#1064) and the TLS
+// Issuing CA signs the listener certificate. OpenSSL reads every key on that
+// chain while it builds the context — the issuer's key, to check that it
+// fits the subject's signature — and it cannot read a composite ML-DSA key
+// at all (node's 3.5 has ML-DSA and SLH-DSA, not the LAMPS composites). So a
+// composite Root or process branch was built, stored and handed to every
+// listener, and every `setSecureContext()` threw `03000072 decode error`
+// (STS-TLS-0011, STS-LDAP-0030): the sockets went on serving the certificate
+// they had, now under a revoked Intermediate, while the pages and the
+// workers' pins named one no socket presented. Thirty-two times in eight
+// seconds of `POST /admin-api/pki/build-scope`. Pure ML-DSA and SLH-DSA load,
+// and a composite is still a realm's choice: its signing keys are verified
+// by relying parties, not loaded by this service's OpenSSL.
+//
+// A CALLER NAMING ONE IS REFUSED (STS-PKI-0272), before any key is made. The
+// SETTING naming one (`pki.keyAlgorithm`, which a composite is a legal value
+// of for a realm's branch) is not refused for these two builds, because the
+// startup build reads it and a refusal there would leave a deployment that
+// stored it without a Root: the classical default is used for them, said
+// (STS-PKI-0273).
+// ---------------------------------------------------------------------------
+/**
+ * Whether a key algorithm is one this service's OpenSSL cannot read, which
+ * is a composite ML-DSA key.
+ *
+ * @param keyAlg - a key-material id
+ * @returns true for a composite ML-DSA id
+ */
+function listenerUnreadableKeyAlg(keyAlg) {
+  log.debug('Entering listenerUnreadableKeyAlg().');
+  const unreadable = !!keyAlg &&
+    Object.prototype.hasOwnProperty.call(pqcX509.COMPOSITE_ALGS,
+                                         String(keyAlg));
+  log.debug('Leaving listenerUnreadableKeyAlg(). ' + unreadable);
+  return unreadable;
+}
+
+/**
+ * The build options for a CA on the listener chain (the Root, the process
+ * branch): a composite the caller named is refused, and a composite that
+ * only the `pki.keyAlgorithm` setting names is replaced by the classical
+ * default.
+ *
+ * @param options - the build options
+ * @param label - what is being built, for the sentence and the log
+ * @returns `{ ok: true, options }` or a refusal marked STS-PKI-0272
+ */
+function listenerChainOptions(options, label) {
+  log.debug('Entering listenerChainOptions(). ' + label);
+  if (options.keyAlg) {
+    if (listenerUnreadableKeyAlg(options.keyAlg)) {
+      log.warn(errorCodes.tag('STS-PKI-0272') + 'pki: ' + label + ' was ' +
+               'asked for a ' + String(options.keyAlg) + ' key, which the ' +
+               'TLS listeners cannot load. Nothing was built.');
+      log.debug('Leaving listenerChainOptions(). Refused.');
+      return errorCodes.mark({ ok: false,
+               errors: ['A composite ML-DSA key cannot sign ' + label +
+                        ': that certificate is on the TLS listeners\' ' +
+                        'chain, and the TLS library cannot read a ' +
+                        'composite key, so the listeners would keep the ' +
+                        'certificate they have. Choose ML-DSA, SLH-DSA or ' +
+                        'a classical key, or a hybrid branch with an ' +
+                        'alternative ML-DSA key. Nothing was built.'] },
+                             'STS-PKI-0272');
+    }
+    log.debug('Leaving listenerChainOptions(). Named, readable.');
+    return { ok: true, options: options };
+  }
+  const configured = String(config.value('pki.keyAlgorithm') || '');
+  if (!listenerUnreadableKeyAlg(configured)) {
+    log.debug('Leaving listenerChainOptions(). The setting is readable.');
+    return { ok: true, options: options };
+  }
+  const classical = 'rsa-' + mode.defaultRsaBits();
+  log.warn(errorCodes.tag('STS-PKI-0273') + 'pki: pki.keyAlgorithm is ' +
+           configured + ', which the TLS listeners cannot load, so ' + label +
+           ' is built with ' + classical + '. Realm branches still take ' +
+           'the setting.');
+  log.debug('Leaving listenerChainOptions(). The classical default.');
+  return { ok: true,
+           options: Object.assign({}, options, { keyAlg: classical }) };
+}
+
 async function buildScopeNow(scopeId, opts) {
   log.debug('Entering buildScope(). scope=' + scopeId);
   const id = String(scopeId);
   const kind = scopeKindOf(id);
-  const options = opts || {};
+  let options = opts || {};
+  // The process branch is on the listeners' chain: a composite key named for
+  // it is refused, and one only the setting names is not used for it — see
+  // listenerChainOptions().
+  if (kind === 'process') {
+    const readable = listenerChainOptions(options, 'the process branch');
+    if (!readable.ok) {
+      log.debug('Leaving buildScope(). A key the listeners cannot load.');
+      return readable;
+    }
+    options = readable.options;
+  }
   // The algorithms are decided BEFORE the Root is made, so that a build
   // refused for its algorithm (a SHA-1 one in product, #181, or an
   // impossible pair) creates nothing on its way to the refusal.
@@ -14599,6 +14705,7 @@ module.exports = {
   // certificate list (#1421). Null when they do. Exported so a test can
   // ask without building a branch.
   processListenerAltSignatureProblem: processListenerAltSignatureProblem,
+  listenerUnreadableKeyAlg: listenerUnreadableKeyAlg,
   certifySignerGroups: certifySignerGroups,
   alternativeProblem: alternativeProblem,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,
