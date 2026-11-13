@@ -6845,6 +6845,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'deletes the stored entry and puts the built-in defaults back. ' +
           'Either applies to the NEXT password set in the realm and to ' +
           'nothing already stored.' },
+  { path: '/admin-api/policies/transfer/:action', group: 'Management API',
+    name: 'Export and import policies',
+    specs: ['openapi', 'rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. export, inspect and import (#1713): every profile a ' +
+          'realm STORES on Directory \u2192 Policies as one JSON document, ' +
+          'a JWS in the flattened JSON serialization signed by a fresh key ' +
+          'under the realm\'s Policy Export Signing CA, the whole chain in ' +
+          'its x5c. inspect verifies the signature and holds the chain to ' +
+          'the validation door (purpose policy-signer, the full paranoid ' +
+          'checks while pki.paranoidPolicySigner is on); import writes each ' +
+          'profile through its kind\'s own save. This realm\'s own signer ' +
+          'is trusted; another realm\'s only on an administrator\'s yes ' +
+          'naming its Issuing CA, which adds that chain to the signer ' +
+          'truststore for policy-signer alone.' },
   { path: '/admin-api/consent', group: 'Management API', name: 'Consent',
     specs: ['openapi', 'rfc6749', 'oidc'],
     what: 'NON-SPEC. The consent register, both halves, and the third in ' +

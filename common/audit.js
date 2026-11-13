@@ -857,6 +857,16 @@ const ACTIONS = [
   { action: 'admin.password-policy.change', category: 'admin',
     label: 'A password policy profile was changed' },
 
+  // A REALM'S POLICIES LEFT IT, OR ARRIVED (#1713): exported as a signed
+  // document, imported from one, and the yes that trusted another realm's
+  // signer. The import's detail names each profile written and each refused.
+  { action: 'admin.policies.export', category: 'admin',
+    label: 'A realm\'s policies were exported, signed' },
+  { action: 'admin.policies.import', category: 'admin',
+    label: 'A signed policy export was imported' },
+  { action: 'admin.policies.trust-signer', category: 'admin',
+    label: 'Another realm\'s policy export signer was trusted' },
+
   // AN AUTHENTICATION POLICY PROFILE WAS SAVED OR PUT BACK (#64), for the row
   // above's reason: which ways in a realm accepts, before and after.
   { action: 'admin.authn-policy.change', category: 'admin',

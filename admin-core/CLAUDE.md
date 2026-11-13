@@ -10,6 +10,7 @@ neither of them owns.** Two files arrived on 2026-09-12 out of
 | `admin_views.ts` | **what ANSWERS a question** | 38 functions that compute a JSON answer and build no markup |
 | `certificate_views.ts` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
 | `protocol_endpoints.ts` | **which endpoints each Protocols page lists** | the page-to-route table and `forPage()`, read by `admin.respond()` and `admin_api.js`'s `sendJson()` — see the section at the foot |
+| `policy_transfer.ts` | **a realm's policies, out and back in, signed** (#1713) | `exportPolicies()`, `inspect()`, `importPolicies()`, answered by `admin_actions.ts`'s `policyTransferAction()` — see the section at the foot |
 
 **Read each file's own header first.** They carry the argument at length: what
 may be in them, what may not, why they are not in `common/`, and why the
@@ -609,3 +610,46 @@ named policies without touching the console, the API or each other:
 * **The ranking and the recipe** are `common/policy_selection.ts`'s,
   `common/CLAUDE.md` 3cx; the group and person halves are
   `ldap/CLAUDE.md`'s.
+
+## `policy_transfer.ts`: A REALM'S POLICIES, OUT AND BACK IN, SIGNED (#1713, 2026-11-13)
+
+rcbj's issue, in his words: export and import "within a realm or between
+realms", JSON, digitally signed, the signer's whole trust chain in the
+document, a realm's own signer trusted automatically, another realm's
+(**even on the same instance**) only after a person is asked, the accepted
+chain added to the signer truststore, **full paranoid validation**, a new
+Issuing CA per realm for it, and a configurable algorithm defaulting to the
+realm's JOSE default. The file's header is the argument; what a maintainer
+must not undo:
+
+* **WHAT IS EXPORTED IS WHAT THE REALM STORES.** Every kind in
+  `policy_kinds.ts`, filtered on `stored`, as the BODY its save takes — so
+  an import goes through each kind's own `save()` (and the authentication
+  policy's `saveNamed()`), with every refusal those make. Nothing here writes
+  the directory. A kind added to `policy_kinds.ts` is exported the same day.
+* **THE DOCUMENT IS A FLATTENED JWS** (RFC 7515 section 7.2.2), `typ`
+  `policy-export+json`, the whole chain — leaf, `policy-signing` Issuing CA,
+  Intermediate, service Root — in the protected `x5c`. Verified with
+  `crypto.verifyCompactJwsWithCertificate()`, which reads the SPKI with
+  asn1js so an ML-DSA leaf verifies too.
+* **A FRESH KEY PER EXPORT, CERTIFIED INTO ONE SLOT AND NEVER SUPERSEDED.**
+  Superseding revokes, and yesterday's export must still import: `certify()`
+  keeps a displaced serial in the register, which answers `good` until it
+  expires. The private key is dropped after the one signature.
+* **THE BOUNDARY IS THE ISSUING CA, NOT THE ROOT.** Every realm of a service
+  shares the Root, so `own` is "this realm's own Policy Export Signing CA
+  issued it", and an administrator's yes is pinned to the Issuing CA they
+  were shown (`issuerFingerprint`): trusted means the signer truststore
+  holds that Issuing CA AND its Root for `policy-signer`. Reading the store
+  with `list()` for that pin is deliberate and is the only read outside the
+  door; the PATH is always the door's.
+* **PARANOID IS FORCED WHILE ITS ROW IS ON.** The site passes `force` from
+  `CertificateTrust.rowOn('policy-signer')`, so development validates what
+  product does; off, the row is an ordinary one the master decides. Forced
+  verdicts are not counted by the door, so the acts are audited here
+  (`admin.policies.export`, `.trust-signer`, `.import`).
+
+`tests/policy_transfer.js` holds it in process (the export's shape, own and
+foreign realms, the pin across a third and a fourth realm, refusals,
+revocation, every algorithm, the action layer and the console's question);
+`tests/protocol/sts_policy_transfer.js` over HTTP.

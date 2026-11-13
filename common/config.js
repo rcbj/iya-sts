@@ -8667,6 +8667,43 @@ const SETTINGS = [
                  'before #1360, while every other row and the master are ' +
                  'untouched; off in product mode it is logged once ' +
                  '(STS-PKI-0239) and drawn red on /admin/pki/trust.' },
+  // #1713: the one row a site FORCES while it is on. rcbj asked for full
+  // paranoid validation of a policy export's signer, so on (the default) the
+  // checks run in development too; off, the master decides as for any row.
+  { key: 'pki.paranoidPolicySigner', group: 'PKI',
+    label: 'Paranoid: the signer of a policy export',
+    env: 'STS_PKI_PARANOID_POLICY_SIGNER', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Use case `policy-signer`: the certificate a policy ' +
+                 'export from Directory → Policies is signed with, and ' +
+                 'the chain in its x5c, when it is inspected or imported ' +
+                 '(#1713). On, the full checks apply in EVERY mode, the ' +
+                 'master pki.paranoid included: validity, keyUsage, the ' +
+                 'path and revocation of every link. Anchors: the ' +
+                 'service Root for this realm\'s own exports, the signer ' +
+                 'truststore for another realm\'s. Off, the master ' +
+                 'decides, as for every other row; off in product mode it ' +
+                 'is logged once (STS-PKI-0239) and drawn red on ' +
+                 '/admin/pki/trust.' },
+  // #1713: what a policy export is signed with. rcbj: "Make it configurable
+  // what algorithm is used. But, use the default signing cert for JOSE for
+  // the realm", so the default is RS256, the algorithm of the realm's own
+  // JOSE signing key, the one every relying party verifies.
+  { key: 'pki.policyExportAlgorithm', group: 'PKI',
+    label: 'Policy export signing algorithm',
+    env: 'STS_PKI_POLICY_EXPORT_ALGORITHM', type: 'enum',
+    enumValues: ['RS256', 'PS256', 'ES256', 'ES384', 'ES512', 'EdDSA',
+                 'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87'],
+    dflt: 'RS256', runtime: true,
+    description: 'The JWS algorithm a policy export from Directory → ' +
+                 'Policies is signed with (#1713). Each export is signed ' +
+                 'by a fresh key of this algorithm, certified by this ' +
+                 'realm\'s Policy Export Signing CA, and the document ' +
+                 'carries that certificate and its whole chain in the x5c. ' +
+                 'RS256 by default: the algorithm of the realm\'s own JOSE ' +
+                 'signing key. An RSA key is 3072 bits. A change applies ' +
+                 'to the next export; an export already made keeps the ' +
+                 'algorithm it was signed with.' },
   // The signer truststore's file layer (#1360): a PEM bundle read at start
   // into the DEFAULT realm's signer truststore, as `tls.trustAnchorsFile` is
   // read into the client truststore. Per process and restart-only for the

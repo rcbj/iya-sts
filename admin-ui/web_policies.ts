@@ -79,6 +79,11 @@ class PoliciesPage {
       }
       return { id: 'tab-' + kind.id, label: kind.label, html: html };
     });
+    // EXPORT AND IMPORT (#1713): a tab of its own, beside the profile list,
+    // since both act on every kind at once.
+    panels.push({ id: 'tab-transfer',
+      label: t.text('consolePolicies.transfer.tab'),
+      html: PoliciesPage.transferSection(view, t) });
     panels.push({ id: 'tab-profiles',
       label: t.text('consolePolicies.profiles.tab'),
       html: '<h2 id="profiles">' + t.html('consolePolicies.profiles.heading') +
@@ -136,6 +141,104 @@ class PoliciesPage {
         label: t.text('consoleProtocolSettings.metadataHeading'),
         html: metadata }
     ].concat(panels));
+  }
+
+  /**
+   * Draws the Export and import tab (#1713): the Export button, the box an
+   * export is pasted into, and — once one was checked — who signed it, its
+   * chain and the verdict, with the question to trust another realm's
+   * signer before anything is written.
+   *
+   * @param view - the policies view; `view.state.transfer` holds the last
+   *   inspection and the document it was about (`WebAnswers.redraw()`)
+   * @param t - the page's translator (#539)
+   * @returns the tab as HTML
+   */
+  static transferSection(view, t) {
+    const state = (view.state && view.state.transfer) || null;
+    const seen = state ? (state.inspection || {}) : null;
+    const pasted = state ? String(state.document || '') : '';
+    const hidden = function (name, value) {
+      return '<input type="hidden" name="' + kit.esc(name) + '" value="' +
+        kit.esc(value) + '">';
+    };
+    const exportForm = '<form method="post" action="/admin/policies">' +
+      hidden('action', 'export') +
+      '<p><button>' + t.html('consolePolicies.transfer.export') +
+      '</button></p></form>';
+    const importForm = '<h3 id="transfer-import">' +
+      t.html('consolePolicies.transfer.importHeading') + '</h3>' +
+      kit.note(t.html('consolePolicies.transfer.importNote')) +
+      '<form method="post" action="/admin/policies">' +
+      hidden('action', 'inspect') +
+      '<p><label for="transfer-document">' +
+      t.html('consolePolicies.transfer.documentLabel') + '</label><br>' +
+      '<textarea id="transfer-document" name="document" rows="8" ' +
+      'cols="80" spellcheck="false">' + kit.esc(pasted) + '</textarea></p>' +
+      '<p><button>' + t.html('consolePolicies.transfer.inspect') +
+      '</button> <button name="action" value="import" class="secondary">' +
+      t.html('consolePolicies.transfer.import') + '</button></p></form>';
+    let result = '';
+    if (seen && seen.chain) {
+      const origin = String(seen.origin || '');
+      const verdict = seen.verdict || {};
+      const lead = origin === 'own'
+        ? t.html('consolePolicies.transfer.origin.own')
+        : origin === 'trusted'
+          ? t.html('consolePolicies.transfer.origin.trusted')
+          : t.html('consolePolicies.transfer.origin.foreign',
+                   { realm: String(seen.realm || '') });
+      const facts = '<table>' +
+        '<tr><th>' + t.html('consolePolicies.transfer.realm') +
+        '</th><td><code>' + kit.esc(seen.realm) + '</code> ' +
+        kit.esc(seen.realmDomain || '') + '</td></tr>' +
+        '<tr><th>' + t.html('consolePolicies.transfer.exportedAt') +
+        '</th><td>' + kit.esc(seen.exportedAt) + '</td></tr>' +
+        '<tr><th>' + t.html('consolePolicies.transfer.exportedBy') +
+        '</th><td>' + kit.esc(seen.exportedBy || '') + '</td></tr>' +
+        '<tr><th>' + t.html('consolePolicies.transfer.kinds') +
+        '</th><td>' + (seen.kinds || []).map(function (kind) {
+          return '<code>' + kit.esc(kind.id) + '</code>: ' +
+            kit.esc((kind.profiles || []).concat(kind.named || [])
+              .join(', ') || '—');
+        }).join('<br>') + '</td></tr></table>';
+      const chain = '<table><tr><th>' +
+        t.html('consolePolicies.transfer.subject') + '</th><th>' +
+        t.html('consolePolicies.transfer.fingerprint') + '</th></tr>' +
+        seen.chain.map(function (one) {
+          return '<tr><td>' + kit.esc(one.subject) + '</td><td><code>' +
+            kit.esc(one.fingerprint256) + '</code></td></tr>';
+        }).join('') + '</table>';
+      const judged = verdict.ok
+        ? kit.note(t.html('consolePolicies.transfer.verdictOk'))
+        : kit.warn(t.html('consolePolicies.transfer.verdictRefused') +
+                   (verdict.why ? ' ' + kit.esc(verdict.why) : ''));
+      // THE QUESTION (rcbj: "present a user with a question of whether to
+      // trust dsig certs from other realms"). The yes names the Issuing CA
+      // it was shown, so it cannot be replayed onto another chain.
+      const answer = !verdict.ok ? ''
+        : origin === 'foreign'
+          ? '<form method="post" action="/admin/policies">' +
+            hidden('action', 'import') + hidden('document', pasted) +
+            hidden('trustSigner', 'true') +
+            hidden('issuerFingerprint', String(seen.issuerFingerprint)) +
+            kit.warn(t.html('consolePolicies.transfer.question',
+                            { fingerprint: String(seen.issuerFingerprint) })) +
+            '<p><button>' + t.html('consolePolicies.transfer.trustAndImport') +
+            '</button></p></form>'
+          : '<form method="post" action="/admin/policies">' +
+            hidden('action', 'import') + hidden('document', pasted) +
+            '<p><button>' + t.html('consolePolicies.transfer.importTrusted') +
+            '</button></p></form>';
+      result = '<h3 id="transfer-signer">' +
+        t.html('consolePolicies.transfer.resultHeading') + '</h3>' +
+        '<p>' + lead + '</p>' + facts +
+        '<h4>' + t.html('consolePolicies.transfer.chain') + '</h4>' + chain +
+        judged + answer;
+    }
+    return '<h2 id="transfer">' + t.html('consolePolicies.transfer.heading') +
+      '</h2>' + kit.note(t.html('consolePolicies.transfer.lead')) +
+      exportForm + importForm + result;
   }
 
   /**

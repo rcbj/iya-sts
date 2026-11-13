@@ -260,6 +260,7 @@ const EXACT: Record<string, string> = {
   'tab-attributes':
     'configure-scim.html#the-attribute-policy-in-product-mode',
   'tab-profiles': 'policies.html#all-profiles',
+  'tab-transfer': 'policies.html#export-and-import',
   'cfg-families': 'applications.html#the-console-page-and-the-api',
   'cfg-every': 'applications.html#the-console-page-and-the-api',
   'cfg-oauth': 'oauth-oidc.html',

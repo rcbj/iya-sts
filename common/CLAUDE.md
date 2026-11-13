@@ -9197,6 +9197,14 @@ reads as a root. `tests/certificate_pins.js` fails on a setting of that shape th
 list omits, and `tests/certificate_trust_callers.js` on a row whose named site
 does not ask for it, which is what found five stale `sites` entries in the table.
 
+**THE ONE ROW A SITE FORCES (#1713).** `policy-signer`, the signer of a
+policy export (`admin-core/policy_transfer.ts`): rcbj asked for full paranoid
+validation of it, so while `pki.paranoidPolicySigner` is on the site passes
+`force` and development checks what product does; off, it is an ordinary row.
+`force` is the door's existing option, so nothing about the door changed, and
+the use case's own `policy-signing` Issuing CA is `pki.js`'s thirteenth realm
+use case. `admin-core/CLAUDE.md` argues the rest.
+
 ## 3ad. `revocation_status.js`: REVOCATION, CONSULTED (2026-09-12)
 
 `pki_revocation.js` PUBLISHES; this CONSULTS. Until it existed a client

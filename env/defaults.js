@@ -714,6 +714,8 @@ var config = {
     paranoidAnchorAdmission: true,              // Paranoid: admission to a truststore
     paranoidRevocationSigner: true,             // Paranoid: an OCSP responder or CRL signer
     paranoidFidoMds: true,                      // Paranoid: the FIDO Metadata Service BLOB signer
+    paranoidPolicySigner: true,                 // Paranoid: the signer of a policy export
+    policyExportAlgorithm: "RS256",             // Policy export signing algorithm
     signerTrustAnchorsFile: "",                 // Signer truststore: a PEM file of anchors and intermediates; restart to apply
     pinnedCertificateWarningDays: 30            // Pinned certificate expiry warning (days)
   },
