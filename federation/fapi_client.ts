@@ -46,6 +46,14 @@
 // refresh token, the key is sealed with that token and opened again for the
 // refresh. There is no outbound mutual TLS.
 //
+// WHAT THE ANSWER IS HELD TO, beside a plain relationship's checks (#931's
+// review). 1-advanced requires `s_hash` over the `state` on the front
+// ID Token (STS-FED-0248). A 2.x answer must name its issuer, RFC 9207
+// (STS-FED-0249), and its token response must say `token_type` DPoP, at
+// sign-in and at every refresh (STS-FED-0251). A JARM response JWT must
+// carry `exp` (STS-FED-0250). A relationship with no profile is asked
+// none of these.
+//
 // There is no CIBA client. `POST /oauth2/bc-authorize` is this service as
 // the authorization server. A profile is ignored on a relationship that is
 // not OpenID Connect, and on one that is an OpenID Federation OP
@@ -323,6 +331,85 @@ class FapiClient {
       why = 'it carries neither a code nor an error';
     }
     log.debug("Leaving FapiClient.jarmProblem(). " + (why || 'usable'));
+    return why;
+  }
+
+  /**
+   * Says why a verified JARM payload has no usable lifetime, or '' when it
+   * has one. JARM section 4.4 has the client check `exp`, and `jwt.verify`
+   * checks it only when it is there: a response JWT with no `exp` would
+   * otherwise be good for ever, so a captured one could be replayed at any
+   * later sign-in that reused its state (#931's review).
+   *
+   * @param payload - the verified response JWT's claims
+   * @returns the problem, or ''
+   */
+  static jarmExpiryProblem(payload: Json): string {
+    log.debug("Entering FapiClient.jarmExpiryProblem().");
+    const exp = (payload || {}).exp;
+    const why = typeof exp === 'number' && isFinite(exp)
+      ? '' : 'it carries no exp (as a number)';
+    log.debug("Leaving FapiClient.jarmExpiryProblem(). " +
+              (why || 'usable'));
+    return why;
+  }
+
+  /**
+   * Whether the authorization response must name its issuer (RFC 9207).
+   * FAPI 2.0 Security Profile section 5.3.2.2 has the client verify `iss`,
+   * so a 2.x response without one is refused rather than accepted as a
+   * plain relationship accepts it. Under JARM the `iss` is the response
+   * JWT's own, verified against `fedPeer` before it is read. 1-advanced is
+   * left as it was: its front-channel ID Token is the detached signature
+   * that names the issuer.
+   *
+   * @param profile - `profileOf()`
+   * @returns whether it must
+   */
+  static requiresIssuerParameter(profile: string): boolean {
+    log.debug("Entering FapiClient.requiresIssuerParameter().");
+    log.debug("Leaving FapiClient.requiresIssuerParameter().");
+    return FapiClient.usesPar(profile);
+  }
+
+  /**
+   * Whether a front-channel ID Token must carry `s_hash` over the `state`.
+   * FAPI 1.0 Advanced (Part 2, section 5.1.1 and 5.2.2.1) uses the ID Token
+   * from the authorization endpoint as a detached signature over the
+   * response, and `state` is one of the values it signs: without `s_hash`
+   * a state swapped on the way back is accepted.
+   *
+   * @param profile - `profileOf()`
+   * @returns whether it must
+   */
+  static requiresStateHash(profile: string): boolean {
+    log.debug("Entering FapiClient.requiresStateHash().");
+    log.debug("Leaving FapiClient.requiresStateHash().");
+    return profile === '1-advanced';
+  }
+
+  /**
+   * Says why a token response cannot be used by a profile that binds its
+   * access token with DPoP, or '' when it can. RFC 9449 section 5: an
+   * access token bound to the proof key comes back as `token_type` `DPoP`
+   * (compared without case). A `Bearer` answer is a token the partner did
+   * not bind, and FAPI 2.0 requires a sender-constrained one, so it is not
+   * presented anywhere.
+   *
+   * @param profile - `profileOf()`
+   * @param tokens - the token endpoint's JSON
+   * @returns the problem, or ''
+   */
+  static tokenTypeProblem(profile: string, tokens: Json): string {
+    log.debug("Entering FapiClient.tokenTypeProblem().");
+    let why = '';
+    if (FapiClient.usesDpop(profile)) {
+      const type = String((tokens || {}).token_type || '');
+      if (type.toLowerCase() !== 'dpop') {
+        why = 'its token_type is "' + type.slice(0, 40) + '", not DPoP';
+      }
+    }
+    log.debug("Leaving FapiClient.tokenTypeProblem(). " + (why || 'usable'));
     return why;
   }
 
