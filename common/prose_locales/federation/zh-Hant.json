@@ -319,6 +319,10 @@
     "en": "bec8778c7adc894f",
     "text": "僅限 OPENID CONNECT。TRUE 會在每次登入開始時（OpenID Connect Discovery 1.0 第 4 節）從夥伴的探索文件 {fedPeer}/.well-known/openid-configuration 讀取其端點與 jwks_uri，該文件的 issuer 必須與 fedPeer 完全相同；此時不讀取 fedSsoUrl、fedTokenUrl、fedUserinfoUrl 與 fedJwksUri。此位址由管理員設定的 fedPeer 推導而來，絕不來自請求。FALSE 為預設值：端點以人工設定。"
   },
+  "fed.schema.attributes.fedFapi.what": {
+    "en": "7e9a016e6c9185c9",
+    "text": "僅適用於 OPENID CONNECT。本服務在合作夥伴處為使用者登入時使用的 FAPI 用戶端設定檔（#931）。留空（預設值）即為目前的 OpenID Connect 信賴方。1-advanced（FAPI 1.0 Advanced）強制使用回應類型 code id_token、PKCE S256、以值傳遞的 PS256 請求物件和 private_key_jwt，且不使用 DPoP 或雙向 TLS。2-security（FAPI 2.0 Security Profile）強制使用探索、推送授權請求、回應類型 code、PKCE S256、private_key_jwt 和 DPoP。2-message-signing 在該推送請求中加入 PS256 請求物件，並使用簽章的授權回應（JARM）。無論 fedTokenAuth 如何設定，設定檔都會強制使用 private_key_jwt。本服務不作為 CIBA 用戶端，也不使用用戶端憑證向合作夥伴進行驗證。"
+  },
   "fed.schema.attributes.fedInitiateLogin.what": {
     "en": "f4c27cf4c2c9aa2c",
     "text": "僅限 OPENID CONNECT。TRUE 會回應此關係的登入發起端點 /federation/initiate-login/{id}，夥伴將其註冊為 initiate_login_uri（OpenID Connect Core 1.0 第 4 節）：由夥伴發起的登入，在 iss 中標明自身，且 iss 必須是 fedPeer。login_hint 會被轉交，target_link_uri 僅在指向本服務上的路徑時才會被跟隨。FALSE 為預設值，會拒絕它：否則任何頁面都能在某人的瀏覽器中發起登入。"
