@@ -25,6 +25,22 @@
 //     key material in git) and registers the suite's Relying Party
 //     automatically (OpenID Federation 1.1 section 12.1) when it arrives
 //     with a request object whose chain ends at that anchor.
+//   * `openid-federation-entity-joined-to-test-federation-rp-test-plan`
+//     (#933): this realm is the Relying Party. The suite plays the OpenID
+//     Provider and the Trust Anchor, at addresses under its own test
+//     alias, with no trailing slash on the provider. The relationship is
+//     an inbound OpenID Connect one. Registration is automatic (OpenID
+//     Federation 1.1 section 12.1), under the realm's Entity Identifier,
+//     with a request object and `private_key_jwt` signed by the realm's
+//     ES256 protocol key. Explicit registration is not run: the suite
+//     marks that variant not applicable, and an OpenID Provider that
+//     offers only explicit registration is refused (STS-FED-0149). The
+//     realm's only authority hint is the suite's Trust Anchor
+//     (`oidfed.realmsAreSubordinates` off): a subordinate's first hint is
+//     otherwise the default realm, and the suite stops at the first hint
+//     it cannot validate. No ledger row was added for this plan. The
+//     suite has not been run against it, and a guessed module key would
+//     hide a real failure in that module.
 //
 // The ledger is `conformance_suite.js`'s: a FAILED module, or a WARNING
 // from a condition KNOWN_WARNINGS does not name, fails the job.
@@ -84,7 +100,11 @@ const PLANS = oidf.withClassicalTwins([
   { key: "joined-op",
     name: "openid-federation-entity-joined-to-test-federation-op-test-plan",
     variant: { server_metadata: "discovery",
-               client_registration: "automatic" }, joined: true }
+               client_registration: "automatic" }, joined: true },
+  { key: "joined-rp",
+    name: "openid-federation-entity-joined-to-test-federation-rp-test-plan",
+    variant: { server_metadata: "discovery",
+               client_registration: "automatic" }, rp: true }
 ]);
 
 const EXPECTED = {};
@@ -160,6 +180,134 @@ function ecJwks(kid) {
   return { privateJwks: { keys: [priv] }, publicJwks: { keys: [pub] } };
 }
 
+// An RSA-2048 private JWK the suite encrypts with. `oidf.keyPair()` always
+// sets `use` to `sig`, and the suite's configure step reads encryption
+// algorithms from the keys whose `use` is `enc` (or unset). With none,
+// `JWKUtil.getAlgsFromJwks` is handed a null set. The published RP
+// configuration carries one RSA-OAEP key beside the RS256 signing key.
+function rsaEncryptionJwk(kid) {
+  log.debug("Entering rsaEncryptionJwk().");
+  const pair = nodeCrypto.generateKeyPairSync("rsa",
+                                               { modulusLength: 2048 });
+  const priv = pair.privateKey.export({ format: "jwk" });
+  priv.kid = kid;
+  priv.use = "enc";
+  priv.alg = "RSA-OAEP";
+  log.debug("Leaving rsaEncryptionJwk().");
+  return priv;
+}
+
+// The person who starts one module at this realm's federated sign-in. The
+// suite's relying-party plan lists no address. One start per module, and
+// only while the module is WAITING: a later poll would open the
+// authorization endpoint of a module the suite has already finished
+// ("Illegal test state change: FINISHED -> RUNNING"). A negative
+// entity-configuration module answers 502 and the browser stops there, so
+// the suite's five-second idle can pass it. The two ID-token modules
+// finish when the suite issues the token; the person is not started again.
+function relyingPartyPerson(realm, rel) {
+  log.debug("Entering relyingPartyPerson().");
+  const someone = conformanceBrowser.person({
+    suite: oidf.suite, suiteBase: oidf.SUITE, serviceBase: realm.base,
+    username: "", password: "", actions: {} });
+  const started = {};
+  const login = realm.base + "/federation/login/" +
+                encodeURIComponent(rel);
+  log.debug("Leaving relyingPartyPerson().");
+  return {
+    visit: async function (id, info) {
+      log.debug("Entering the federation relying party's person. " + id);
+      if (!info || info.status !== "WAITING" || started[id]) {
+        log.debug("Leaving the federation relying party's person. " +
+                  "Already started, or not waiting.");
+        return;
+      }
+      // Before the await: a thrown start must not be tried again.
+      started[id] = 1;
+      try {
+        await someone.start(id, info, login);
+      } catch (e) {
+        // runModule reports the same failure and leaves the module to
+        // time out. Logged here so the catch is not empty, then rethrown.
+        log.debug("Caught in the federation relying party's person: " +
+                  ((e && e.message) || e));
+        log.debug("Leaving the federation relying party's person.");
+        throw e;
+      }
+      log.debug("Leaving the federation relying party's person.");
+    }
+  };
+}
+
+// This realm as the suite's federated relying party. The provider's
+// Entity Identifier is the alias with no trailing slash, and the Trust
+// Anchor is that identifier plus `/trust-anchor`. The ordinary OpenID
+// Connect relying-party job's issuer ends in a slash; this plan's must
+// not. `fedSsoUrl` and the rest of a bilateral client's fields are not
+// set: with `fedTrustAnchor` set, the relationship reads the provider
+// from the chain.
+async function prepareRelyingParty(plan, alias, configuration) {
+  log.debug("Entering prepareRelyingParty(). " + plan.key);
+  const id = ("fed-" + plan.key + "-" + TAG).slice(0, 31)
+    .replace(/-+$/, "");
+  const peer = oidf.SUITE + "test/a/" + alias;
+  const anchor = peer + "/trust-anchor";
+  const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name,
+    [["federation.outboundCaFile", oidf.suiteCaFile()],
+     ["oidfed.realmsAreSubordinates", false],
+     ["oidfed.authorityHints", anchor]]
+      .concat(plan.settings || []));
+  const anchorKeys = oidf.keyPair("conf-rp-anchor-" + TAG, "RS256");
+  await oidf.ok(realm.api + "/oidfed/add-trust-anchor", {
+    entityId: anchor, jwks: JSON.stringify(anchorKeys.publicJwks) },
+    "trusted the suite's Trust Anchor");
+  const rel = "suite-" + plan.key;
+  await oidf.ok(realm.api + "/federation/create",
+                { id: rel, role: "service-provider", protocol: "oidc",
+                  peer: peer },
+                "created the relationship " + rel);
+  const fields = {
+    fedName: "The conformance suite (" + plan.key + ")",
+    fedTrustAnchor: anchor,
+    // The suite's one subject is a person this realm has never seen.
+    fedAutocreateUsers: "TRUE"
+  };
+  const namesOf = Object.keys(fields);
+  for (let i = 0; i < namesOf.length; i++) {
+    await oidf.ok(realm.api + "/federation/set",
+                  { id: rel, field: namesOf[i],
+                    value: String(fields[namesOf[i]]) },
+                  "set " + namesOf[i] + " on " + rel);
+  }
+  await oidf.ok(realm.api + "/federation/enable", { id: rel },
+                "enabled " + rel);
+  const opEc = oidf.keyPair("conf-op-ec-" + TAG, "RS256");
+  const serverSig = oidf.keyPair("conf-op-sig-" + TAG, "RS256");
+  configuration.federation = {
+    entity_identifier: realm.base,
+    op_ec_jwks: opEc.privateJwks,
+    op_server_jwks: {
+      keys: [serverSig.privateJwks.keys[0],
+             rsaEncryptionJwk("conf-op-enc-" + TAG)]
+    }
+  };
+  configuration.federation_trust_anchor = {
+    trust_anchor_jwks: anchorKeys.privateJwks };
+  // The published configuration's two strings. `op_to_rp_mode` is compared
+  // with `"true".equals(...)`, so a boolean would leave the request-object
+  // checks as continue-on-failure. `ignore_exp_iat` is set as published;
+  // no reader of it was found in the released sources.
+  configuration.internal = {
+    op_to_rp_mode: "true",
+    ignore_exp_iat: "false"
+  };
+  // Taken off before the plan is created (`test()`). The suite must not
+  // be given the operator.
+  configuration.person = relyingPartyPerson(realm, rel);
+  log.debug("Leaving prepareRelyingParty().");
+  return configuration;
+}
+
 async function prepare(plan) {
   log.debug("Entering prepare(). " + plan.key);
   const alias = "iya-" + plan.key + "-" + TAG;
@@ -169,6 +317,11 @@ async function prepare(plan) {
     server: { allow_unexpected_metadata_fields: oidf.EXTENSION_METADATA },
     federation: {}
   };
+  if (plan.rp) {
+    const made = await prepareRelyingParty(plan, alias, configuration);
+    log.debug("Leaving prepare(). Relying party.");
+    return made;
+  }
   if (!plan.joined) {
     let entity = root;
     let anchor = root;
@@ -256,8 +409,9 @@ async function test() {
     // The Leaf's classical twin stays under the default realm (the header),
     // so the suite still reads that realm's Entity Configuration —
     // post-quantum algorithms and AKP keys — while it checks the Leaf.
-    // Those conditions stay argued here. The Trust Anchor's twin and the
-    // joined twin are the classical proof, and they drop the entries.
+    // Those conditions stay argued here. The Trust Anchor's twin, the
+    // joined OpenID Provider's twin and the relying party's twin are the
+    // classical proof, and they drop the entries.
     const pqOnly = (plan.classical && plan.leaf) ? [] : PQ_ONLY;
     const judged = oidf.judge(plan.key, ran,
                               oidf.ledgerFor(plan, EXPECTED, pqOnly),
@@ -284,8 +438,8 @@ async function test() {
 
 new Command()
   .description("The OpenID Foundation conformance suite's OpenID " +
-    "Federation plans (#187), against this service — each also as its " +
-    "classical twin, post-quantum signing off.")
+    "Federation plans (#187, #933), against this service — each also " +
+    "as its classical twin, post-quantum signing off.")
   .addOption(new Option("-u, --url <url>", "base url (unused: the " +
                                            "service's is the realm's)"))
   .parse(process.argv);

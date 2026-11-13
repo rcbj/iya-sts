@@ -1480,13 +1480,16 @@ const JOBS = [
   { file: 'sts_ssf_receiver_conformance.js', browser: false,
     conformance: true, timeoutMs: 3600000,
     lane: 'conformance-b' },
-  // OpenID Federation 1.1 (#187): the deployed-entity plan for a Leaf realm
-  // and for the Trust Anchor, and the plan in which the suite plays a whole
-  // federation and a realm is the OpenID Provider that joined it. This job
-  // and the two below run each plan twice since 2026-10-23 (the classical
-  // twins), so their watchdogs went from one hour to two.
+  // OpenID Federation 1.1 (#187, #933): the deployed-entity plan for a
+  // Leaf realm and for the Trust Anchor, the plan in which the suite plays
+  // a whole federation and a realm is the OpenID Provider that joined it,
+  // and the plan in which this service is that federation's relying party.
+  // This job and the two below run each plan twice since 2026-10-23 (the
+  // classical twins); those two stay at two hours. The fourth plan takes
+  // this job's watchdog from two hours to three: four plans and their
+  // twins are eight sixths of the job the two-hour ceiling covered.
   { file: 'sts_oidfed_conformance.js',   browser: true,
-    conformance: true, timeoutMs: 7200000,
+    conformance: true, timeoutMs: 10800000,
     lane: 'conformance-b' },
   // OpenID4VCI 1.0 (#187): the issuer plan wallet-initiated, offered and
   // pre-authorized, and the HAIP issuer plan; the job plays the issuer's

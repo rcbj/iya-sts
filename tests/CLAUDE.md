@@ -1767,7 +1767,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/protocol/sts_oidcc_rp_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID CONNECT RELYING-PARTY PLANS** (#930, 2026-11-02): basic, implicit, hybrid, config, dynamic, the three form_post plans, third-party-initiated login, logout and refresh tokens, with the suite as the OpenID Provider and an inbound OpenID Connect federation relationship as the relying party. See *THE OPENID CONNECT RELYING PARTY PLANS* below. `conformance: true`, `browser: true`, lane `conformance-rp` |
 | `tests/protocol/sts_ssf_oidf_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S SHARED SIGNALS PLANS** (#187): the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll; the job emits the CAEP events the interop module waits for. Not `sts_ssf_conformance.js` (#144, this repository's own SSF checks). `conformance: true` |
 | `tests/protocol/sts_ssf_receiver_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S SHARED SIGNALS RECEIVER PLANS** (#932): the SSF receiver plan and the CAEP interop receiver plan, each by push and by poll, the suite the transmitter. Per plan a realm receiving through a signals-only relationship; the job presses the stream buttons each module waits for, deletes the stream once a module ends, and asserts the suite's CAEP `session-revoked` ended the person's sessions (`signalsOnlyEndSessionEvents` turned on through the signal-response template). No classical twin: the suite verifies nothing the realm signs. `conformance: true`, lane `conformance-b` |
-| `tests/protocol/sts_oidfed_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID FEDERATION PLANS** (#187): the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor, and the plan in which the suite plays a federation (Trust Anchor and RP, keys made by the job) that a realm's OP has joined, registering the RP automatically. `conformance: true` |
+| `tests/protocol/sts_oidfed_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID FEDERATION PLANS** (#187, #933): the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor; the plan in which the suite plays a federation (Trust Anchor and RP, keys made by the job) that a realm's OP has joined, registering the RP automatically; and the plan in which this service is that federation's relying party (`openid-federation-entity-joined-to-test-federation-rp-test-plan`), registering automatically. A suite run of the relying-party plan is outstanding. See *THE OPENID FEDERATION RELYING-PARTY PLAN* below. `conformance: true`, `browser: true`, lane `conformance-b` |
 | `tests/protocol/sts_oid4vci_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID4VCI ISSUER PLANS** (#187): the issuer plan (`vci` profile, SD-JWT VC) wallet-initiated, offered by this issuer and pre-authorized with a transaction code, and the HAIP issuer plan; the job plays the issuer's operator, delivering the offer and the code. `conformance: true` |
 | `tests/protocol/sts_oid4vp_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID4VP VERIFIER PLANS** (#187, #230, #935): `oid4vp-1final-verifier-test-plan` for SD-JWT VC under the `redirect_uri`, `x509_san_dns` and `x509_hash` prefixes, each by `direct_post` and `direct_post.jwt`; and since #935 `oid4vp-1final-verifier-haip-test-plan` (`x509_hash`, a signed request by reference, `direct_post.jwt`) for SD-JWT VC and for an ISO mdoc (`iso_mdl`), in realms with `oid4vp.walletInvocation` `haip-vp`, a start naming a `redirect_uri` (HAIP 5.1), and for the mdoc the suite's IACA root fetched at run time as `oid4vp.mdocTrustAnchors`. Every plan also as its classical twin. The suite's SD-JWT issuer key is made at run time and trusted by the realm, and the job plays the End-User the Verifier sends to the wallet. `conformance: true` |
 | `tests/protocol/sts_scim_conformance.js` **(ours)**, with `tests/scim_conformance_fixes.js` in process | **TWO SCIM 2.0 CONFORMANCE HARNESSES AGAINST `/scim/v2`** (#206, 2026-09-26) — python-scim's **scim2-tester** (discovery, then create / read / list / `.search` / `attributes` / replace / PATCH add-remove-replace of every published attribute / delete per resource type, and a random URL) and **scim2/test-suite** (one result per RFC 7643 / 7644 requirement: filters, sort, pagination, Bulk, If-Match and the rest scim2-tester has no check for), both in a throwaway realm with a `scim:read scim:write` client_credentials token and `scim.inventOnCreate` off. Any scim2-tester ERROR, CRITICAL or DEVIATION and any test-suite FAIL or WARN fails the job unless `EXCEPTIONS` names it with its reason (each also on #206); an exception that did not occur is reported. See *The SCIM conformance harnesses*, below |
@@ -2395,10 +2395,13 @@ Management under Message Signing, CIBA ping).
   watchdogs, `STS_CONFORMANCE_TIMEOUT` and the `openid-conformance` job's
   timeout were raised for it.
 * **Not run**: the Brazil and panva plans, the superseded drafts and
-  AuthZEN. The relying-party plans run since #930 (2026-11-02), in
-  `sts_oidcc_rp_conformance.js`; the SSF receiver plans (#153) since #932
-  (2026-11-02), in `sts_ssf_receiver_conformance.js`. The suite publishes no
-  push-mode FAPI-CIBA plan.
+  AuthZEN. The OpenID Connect relying-party plans run since #930
+  (2026-11-02), in `sts_oidcc_rp_conformance.js`. The OpenID Federation
+  relying-party plan is a different plan, in `sts_oidfed_conformance.js`
+  since #933; a suite run against it is outstanding. The SSF receiver
+  plans (#153) since #932 (2026-11-02), in
+  `sts_ssf_receiver_conformance.js`. The suite publishes no push-mode
+  FAPI-CIBA plan.
   The HAIP issuer plan (`attest_jwt_client_auth`, #229) and the OpenID4VP
   verifier plan's `x509_san_dns` and `x509_hash` variants (#230) waited on
   those tickets and run since 2026-09-26.
@@ -2478,6 +2481,46 @@ CONNECT RELYING PARTY PLANS*.
   four-and-a-half-hour lane, so the conformance bound does not grow:
   about two hundred modules, most a sign-in of a few seconds or a negative
   module's five-second wait. A two-hour watchdog.
+
+### THE OPENID FEDERATION RELYING-PARTY PLAN (#933)
+
+`openid-federation-entity-joined-to-test-federation-rp-test-plan`, in
+`tests/protocol/sts_oidfed_conformance.js` beside the three plans #187
+already runs, and as its classical twin (`joined-rp` and `joined-rp-cl`).
+The suite is the OpenID Provider and the Trust Anchor; this service is the
+relying party. A suite run against the plan is outstanding: the job is
+wired, and `./run-tests.sh` has not executed it. No product behaviour
+changed. Explicit registration was not built.
+
+* **One throwaway realm, one relationship.** `oidfed.realmsAreSubordinates`
+  is off and `oidfed.authorityHints` names only the suite's Trust Anchor.
+  A subordinate's first hint is otherwise the default realm, and the suite
+  stops at the first hint it cannot validate. The relationship is
+  service-provider `oidc`. `fedPeer` is the suite's OpenID Provider, with
+  no trailing slash. `fedTrustAnchor` is that provider's `/trust-anchor`.
+  `fedAutocreateUsers` is on. The client id is the realm's Entity
+  Identifier, and registration is automatic (OpenID Federation 1.1
+  section 12.1). The suite marks explicit registration not applicable, and
+  an OpenID Provider that offers only explicit registration is refused
+  (STS-FED-0149).
+* **The suite's keys are made here.** `op_ec_jwks` and the Trust Anchor
+  are RS256. `op_server_jwks` is an RS256 signing key and an RSA-OAEP
+  encryption key, the shape the suite's configure step requires. The
+  public half of the Trust Anchor is what the realm pins. Nothing is
+  committed. `internal.op_to_rp_mode` is the string `true` and
+  `internal.ignore_exp_iat` the string `false`, as the published
+  configuration has them.
+* **The person starts once, at `/federation/login/{id}`**, while the module
+  is WAITING, in the one Chrome. A negative entity-configuration module
+  stops on the refusal page, and the suite's five-second idle passes it
+  when the walk has finished and the module is still WAITING. The two
+  ID-token modules finish when the suite issues the token, so the person
+  is not started again. No ledger row was added for a module that has not
+  been seen: an expected failure keyed to a whole module would hide every
+  other failure in it.
+* **The watchdog is three hours** (`timeoutMs` 10800000). Four plans and
+  their twins are eight sixths of the job the two-hour watchdog covered.
+  `STS_CONFORMANCE_TIMEOUT` and the workflow job's minutes are unchanged.
 
 ### HOW THE FAPI CLIENT PLANS WOULD RUN (#931)
 

@@ -52,7 +52,7 @@ Every suite below passed in the full runs of 2026-09-26 and 2026-09-27.
 | OpenID Connect, relying party | the same suite | OpenID Foundation | the relying-party plans (Basic, Implicit, Hybrid, Config, Dynamic, the three form_post plans, third-party-initiated login, logout, refresh tokens) against a [federation relationship](federation.md), added 2026-11-02 |
 | FAPI | the same suite | OpenID Foundation | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced, FAPI-CIBA, with their variants |
 | Shared Signals, CAEP | the same suite | OpenID Foundation | SSF transmitter and CAEP interop transmitter, by push and by poll |
-| OpenID Federation | the same suite | OpenID Foundation | Leaf and Trust Anchor entity plans, and automatic registration into a federation the suite plays |
+| OpenID Federation | the same suite | OpenID Foundation | Leaf and Trust Anchor entity plans, automatic registration into a federation the suite plays, and this service as the relying party of a federation the suite plays (#933; a suite run is outstanding) |
 | OpenID4VCI, OpenID4VP | the same suite | OpenID Foundation | issuer (wallet- and issuer-initiated, pre-authorized, HAIP) and verifier (`direct_post`, `direct_post.jwt`, x509 client identifiers, HAIP with SD-JWT VC and ISO mdoc) |
 | Verifiable Credentials | [W3C VC test suites](#w3c-verifiable-credentials-and-did-suites) | W3C VC Working Group | VC Data Model 2.0, Data Integrity EdDSA, Data Integrity ECDSA (incl. `ecdsa-sd-2023`), Bitstring Status List, VC-JOSE-COSE |
 | DIDs | [did-test-suite](#w3c-verifiable-credentials-and-did-suites) | W3C DID Working Group | DID Core: did:web, did:key, did:jwk, resolution and dereferencing |
@@ -92,9 +92,19 @@ the End-User for the OpenID4VP verifier.
 | `sts_fapi_conformance` | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing (with Grant Management), FAPI 1.0 Advanced (with PAR and JARM), FAPI-CIBA (poll and ping), with mutual TLS as both client authentication and sender constraint |
 | `sts_ssf_oidf_conformance` | the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll |
 | `sts_ssf_receiver_conformance` | the SSF receiver plan and the CAEP interop receiver plan, each by push and by poll, against a realm receiving through a signals-only federation relationship; the job also checks that the suite's CAEP `session-revoked` ended the person's sessions |
-| `sts_oidfed_conformance` | the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor; the plan in which the suite runs a federation that a realm's OP joins, registering the RP automatically |
+| `sts_oidfed_conformance` | the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor; the plan in which the suite runs a federation that a realm's OP joins, registering the RP automatically; the plan in which this service is the relying party of a federation the suite plays (the OpenID Provider and the Trust Anchor), registering automatically |
 | `sts_oid4vci_conformance` | the issuer plan (SD-JWT VC) wallet-initiated, issuer-initiated and pre-authorized with a transaction code; the HAIP issuer plan (`attest_jwt_client_auth`) |
 | `sts_oid4vp_conformance` | the verifier plan for SD-JWT VC by `direct_post` and `direct_post.jwt`, with the `redirect_uri`, `x509_san_dns` and `x509_hash` client identifier prefixes; the HAIP verifier plan (`oid4vp-1final-verifier-haip-test-plan`: `x509_hash`, a signed request by reference, encrypted `direct_post.jwt`) for SD-JWT VC and for an ISO mdoc, the realm trusting the suite's mdoc IACA root |
+
+**The OpenID Federation relying-party plan is scheduled, and a suite run
+against it is outstanding.** `sts_oidfed_conformance` creates
+`openid-federation-entity-joined-to-test-federation-rp-test-plan` and its
+classical twin. The suite is the OpenID Provider and the Trust Anchor; a
+throwaway realm is the relying party, resolving that provider through the
+anchor and registering automatically. The full runs of 2026-09-26 and
+2026-09-27 did not include it. Explicit registration is not a variant of
+the plan: the suite marks it not applicable, and this service refuses an
+OpenID Provider that offers only explicit registration (STS-FED-0149).
 
 **What it found**, each now fixed in every mode:
 
@@ -158,8 +168,11 @@ realm with [`keys.postQuantumSigning`](oauth-oidc.md#post-quantum-signing-switch
 off, where none of those exemptions applies: a twin that passes is a clean
 result with nothing post-quantum excused. The FAPI plans already pass with
 no such exemption, and so do the SSF receiver plans, in which the suite
-verifies nothing the realm signs, and the relying-party plans: iya-sts signs
-with a classical key there and registers only that key.
+verifies nothing the realm signs, and the OpenID Connect relying-party
+plans: iya-sts signs with a classical key there and registers only that
+key. The OpenID Federation relying-party plan publishes the realm's Entity
+Configuration, which can carry post-quantum keys, so that plan keeps its
+classical twin.
 
 **Warnings that stay.** In the post-quantum realms, every module warns that
 the realm's JWKS carries post-quantum keys the suite cannot parse. The OpenID Connect realms turn off

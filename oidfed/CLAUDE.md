@@ -256,5 +256,8 @@ revoked still answers for it.
 **Still untested:**
 
 - a resolution through a real foreign entity over HTTP. The fetcher is covered
-  by a stub, and `fetchPublished()` by the federation tests;
+  by a stub, and `fetchPublished()` by the federation tests. The relying-party
+  direction is the `joined-rp` plan of
+  `tests/protocol/sts_oidfed_conformance.js` (#933); a suite run against it
+  is outstanding;
 - a post-quantum Federation Entity Key end to end.
