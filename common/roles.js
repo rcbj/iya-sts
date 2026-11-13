@@ -2098,6 +2098,218 @@ function renameMember(field, from, to) {
   return changed;
 }
 
+// ---------------------------------------------------------------------------
+// A DELETED CLIENT CONFERS NOTHING (2026-11-13, #1612's review).
+//
+// forgetMember('applications', …) takes a deleted application's identifier
+// out of `applications`, and wrote the role back without naming
+// `conferredBy` — which write() reads as "keep what the entry holds" (the
+// four callers that predate #454 rely on that). So the identifier stayed in
+// `roleConferredBy`, and whatever was next registered under it — in
+// development an unknown client_id registers itself — conferred the role on
+// everybody who signed in through it. This takes it out of every role that
+// names it, as the role page's remove-conferring-client writes it.
+//
+// Compared without case, as forgetMember() compares an application: two
+// clients one letter-case apart cannot both be registered (the entry's DN is
+// built from the identifier, and a DN ignores case), so nothing live is lost.
+// ---------------------------------------------------------------------------
+/**
+ * Takes a deleted application's identifier off every configured role in the
+ * ambient realm that it conferred.
+ *
+ * @param identifier - the deleted application's identifier
+ * @returns the names of the roles it no longer confers
+ */
+function forgetConferrer(identifier) {
+  log.debug('Entering forgetConferrer().');
+  const wanted = String(identifier || '').toLowerCase();
+  if (!wanted) {
+    log.debug('Leaving forgetConferrer(). Nothing to forget.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    const held = row.conferredBy || [];
+    const kept = held.filter(function (one) {
+      return String(one).toLowerCase() !== wanted;
+    });
+    if (kept.length === held.length) {
+      return;
+    }
+    const record = recordWithOwners(row, row.owners || []);
+    record.conferredBy = kept;
+    const result = write(row.name, record);
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      // The client still confers the role; the line names both, so an
+      // administrator can take it off by hand (remove-conferring-client).
+      log.error(errorCodes.tag('STS-ADMIN-0921') + 'roles: the deleted ' +
+                'application "' + identifier + '" could not be taken off ' +
+                'the clients conferring the role "' + row.name + '": ' +
+                result.why);
+    }
+  });
+  if (changed.length) {
+    log.info('roles: the deleted application "' + identifier + '" no ' +
+             'longer confers ' + changed.join(', ') + '.');
+  }
+  log.debug('Leaving forgetConferrer(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
+// A DELETED APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of
+// 2026-11-13 on #1612).
+//
+// A role made for one application (#310) is `<role>@<application>` with
+// `roleApplication` naming it. forgetMember() and forgetConferrer() take the
+// identifier off every role that LISTS it, and left the roles it OWNS: an
+// application registered later under the same identifier — made again by an
+// administrator or, in development, by whoever presents the client_id —
+// found `reader@<id>` already there, members and permissions included. rcbj's
+// rule of 2026-11-10 is that a recreated application inherits nothing, so
+// each role it owns is deleted, through remove(), the call the console's
+// delete-role makes: the directory's deleteRole() tells the members' token
+// holders through noteRoleChange(). The caller writes the `roles.delete`
+// audit row the console writes.
+//
+// Compared without case, as forgetConferrer() compares an application. The
+// roles are read off the kept `ou=roles` listing (all()), never a walk of the
+// directory. A role remove() refuses (a native or built-in name, which no
+// application's role can be) is logged and kept.
+// ---------------------------------------------------------------------------
+/**
+ * Deletes every configured role in the ambient realm that a deleted
+ * application owns (its `roleApplication` names the application).
+ *
+ * @param identifier - the deleted application's identifier
+ * @returns the names of the roles deleted
+ */
+function forgetApplicationRoles(identifier) {
+  log.debug('Entering forgetApplicationRoles().');
+  const wanted = String(identifier || '').toLowerCase();
+  if (!wanted) {
+    log.debug('Leaving forgetApplicationRoles(). Nothing to forget.');
+    return [];
+  }
+  const owned = all().filter(function (row) {
+    return String(row.application || '').toLowerCase() === wanted;
+  });
+  const deleted = [];
+  owned.forEach(function (row) {
+    const result = remove(row.name);
+    if (result.ok) {
+      deleted.push(row.name);
+    } else {
+      // The role stays, owned by an application that is gone; the line names
+      // both, so an administrator can delete it by hand (delete-role).
+      log.error(errorCodes.tag('STS-ADMIN-0924') + 'roles: the role "' +
+                row.name + '" of the deleted application "' + identifier +
+                '" could not be deleted: ' + result.why);
+    }
+  });
+  if (deleted.length) {
+    log.info('roles: the deleted application "' + identifier + '" took ' +
+             'its roles with it: ' + deleted.join(', ') + '.');
+  }
+  log.debug('Leaving forgetApplicationRoles(). ' + deleted.length +
+            ' role(s).');
+  return deleted;
+}
+
+// ---------------------------------------------------------------------------
+// A DELETED OWNER OWNS NOTHING; A RENAMED ONE STILL OWNS IT (2026-11-13,
+// #1612's review). A role's `owner` values are DNs of people and groups
+// (#604), and under #607 an owner is issued owner:write. A person deleted and
+// made again at the same DN — the same username — was an owner again, so
+// every delete of a person or a group takes its DN off every role's owners,
+// and a rename moves it, as forgetMember() and renameMember() do for members.
+// The DNs are compared as removeOwner() compares them.
+// ---------------------------------------------------------------------------
+function ownerKey(dn) {
+  log.debug('Entering ownerKey().');
+  log.debug('Leaving ownerKey().');
+  return String(dn || '').trim().toLowerCase().replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * Replaces, or takes off, an owner DN on every configured role in the ambient
+ * realm that names it.
+ *
+ * @param from - the DN the owner had (deleted, or renamed from)
+ * @param to - the DN it has now, or '' when it was deleted
+ * @returns the names of the roles changed
+ */
+function replaceOwner(from, to) {
+  log.debug('Entering replaceOwner().');
+  const was = ownerKey(from);
+  const now = String(to || '').trim();
+  if (!was || was === ownerKey(now)) {
+    log.debug('Leaving replaceOwner(). Nothing to change.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    const held = row.owners || [];
+    if (!held.some(function (one) {
+      return ownerKey(one) === was;
+    })) {
+      return;
+    }
+    const owners = [];
+    held.forEach(function (one) {
+      const value = ownerKey(one) === was ? now : String(one);
+      if (value && !owners.some(function (kept) {
+        return ownerKey(kept) === ownerKey(value);
+      })) {
+        owners.push(value);
+      }
+    });
+    const result = write(row.name, recordWithOwners(row, owners));
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      log.error(errorCodes.tag('STS-ADMIN-0922') + 'roles: could not ' +
+                (now ? 'move the owner ' + from + ' to ' + now + ' on'
+                     : 'take the deleted owner ' + from + ' off') +
+                ' the role "' + row.name + '": ' + result.why);
+    }
+  });
+  log.debug('Leaving replaceOwner(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+/**
+ * Takes a deleted person's or group's DN off every configured role's owners
+ * in the ambient realm.
+ *
+ * @param dn - the deleted entry's DN
+ * @returns the names of the roles it was taken off
+ */
+function forgetOwner(dn) {
+  log.debug('Entering forgetOwner().');
+  const changed = replaceOwner(dn, '');
+  log.debug('Leaving forgetOwner(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+/**
+ * Moves a renamed person's or group's DN on every configured role's owners
+ * in the ambient realm.
+ *
+ * @param from - the DN it had
+ * @param to - the DN it has now
+ * @returns the names of the roles changed
+ */
+function renameOwner(from, to) {
+  log.debug('Entering renameOwner().');
+  const changed = String(to || '').trim() ? replaceOwner(from, to) : [];
+  log.debug('Leaving renameOwner(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
 // The three member lists a role row carries.
 const MEMBER_FIELDS = ['users', 'groups', 'applications'];
 
@@ -2142,6 +2354,13 @@ module.exports = {
   forgetMember: forgetMember,
   // A renamed member keeps its roles (2026-11-10).
   renameMember: renameMember,
+  // A deleted client confers nothing; a deleted owner owns nothing, and a
+  // renamed one still does (2026-11-13).
+  forgetConferrer: forgetConferrer,
+  // A deleted application's own roles are deleted (2026-11-13).
+  forgetApplicationRoles: forgetApplicationRoles,
+  forgetOwner: forgetOwner,
+  renameOwner: renameOwner,
   rolesOf: rolesOf,
   claimFor: claimFor,
   rolesInClaims: rolesInClaims,

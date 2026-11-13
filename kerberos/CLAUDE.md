@@ -708,6 +708,16 @@ longer or shorter. Anonymous tickets (`answerAnonymousAsReq()`) and
 `mintTicket()` stay non-renewable. The sign-out horizon stays the setting
 plus the skew, not the ticket's own renew-till.
 
+**A PKINIT TGT's renew-till is capped at the client certificate's notAfter
+too** (the review of #897, 2026-11-13; `spec.notAfter`). RFC 4556 section
+3.2.3's "MUST NOT exceed" the key pair's lifetime was applied to endtime
+alone, so a renewal could carry the ticket up to seven days past the
+certificate. Where that cap brings renew-till to endtime or before, the
+ticket is issued NOT renewable whatever was asked — the one departure from
+"an explicit RENEWABLE keeps the flag", which is about an rtime the CLIENT
+chose. A service ticket inherits the cap through the TGT's renew-till.
+`tests/kerberos_pkinit.js` section 4b holds it.
+
 The in-process guard is `tests/kerberos_renew_till.js`. The wire half is an
 interop client (`kinit -r`); the protocol jobs that already send
 `rtime` of now plus 24 hours take a 24-hour renew-till instead of seven
@@ -2015,7 +2025,8 @@ decisions a reader needs here:
   * RSA key transport (section 3.2.3.2) is not implemented at all,
     KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED: no forward secrecy.
   * DH keys are never reused.
-  * The ticket ends no later than the certificate.
+  * The ticket ends no later than the certificate, and renews no later
+    than it either (the review of #897).
   * The AuthPack is spent once across the cluster
     (`krb5.pkinit-authpack`).
 * **AD-INITIAL-VERIFIED-CAS** goes into the TGT inside AD-IF-RELEVANT, after

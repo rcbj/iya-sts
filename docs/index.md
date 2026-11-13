@@ -165,6 +165,7 @@ macOS apps.
 [Caches](caches.md) ·
 [How the cluster works](cluster-concepts.md) ·
 [A cluster in AWS](aws-cluster.md) ·
+[A CDN in front of a cloud deployment](cdn.md) ·
 [Several regions (cells)](cells.md) ·
 [How cells work](cells-concepts.md)
 

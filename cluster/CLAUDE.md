@@ -279,6 +279,43 @@ long as it waits on other row locks. That wait no longer blocks the renewal.
 A single-node deployment has nothing else to fence against, and its own
 writes no longer cost it the process.
 
+**AND A TAKEOVER WAITS IN BOUNDED ATTEMPTS, BESIDE THE BEAT (#770's review,
+2026-11-13).** #770 left `acquireLease()` unbounded on purpose — a takeover
+deletes the old token's lock row, so it waits for the old holder's fences —
+and a standby asks for the service lease every heartbeat
+(`waitForServiceLease()`), as every node asks for its roles in `contend()`.
+Two ways that brought the hang back, in the node that was TAKING OVER:
+the liveness connection serialises its callers (`liveExclusive()`), so the
+standby's own heartbeat queued in JavaScript behind an acquire waiting on a
+thirty-second write, where the heartbeat's two-second bound had not started;
+and `beat()` returned `contend()`, so a role's acquire that waited held the
+beat in flight and every later beat was skipped. Either way the renewal
+never settled and the node exited (`STS-CLUSTER-0004`). Now:
+
+* **The acquire has the heartbeat's bound** (`renewalBoundMs()`), on both
+  engines — the native statement as a bounded autocommit, the portable one
+  as a bounded liveness transaction (`liveTransact(fn, boundMs)`). A timeout
+  rolls the whole takeover back (token and lock rows) and the driver answers
+  `{ held: false, pending: true }`; the next beat asks again. **The takeover
+  still waits for the fences** — it cannot commit until they have — and
+  meanwhile the old holder's fences find their lease expired and start no
+  new write. `cluster.acquire()` logs `STS-CLUSTER-0165` at info once per
+  wait. `releaseLease()` (a step-down) is bounded the same way and its
+  timeout is `STS-CLUSTER-0041`.
+* **The contention is not part of the beat.** The heartbeat timer runs
+  `renew()`, the renewal alone, and `heartbeatInFlight` clears when it
+  settles; the contention it asks for runs beside the next beats through
+  `contendOnce()`, one at a time, so beats do not stack asks. `beat()`, the
+  exported form, still waits for both.
+
+So the heartbeat now waits behind at most a few bounded statements on the
+liveness connection, never an unbounded one. **What is still unbounded
+there**: `leaveCluster()` (a clean stop, after which the heartbeat is
+moot), and a statement that falls back to the pool when the liveness
+connection cannot be opened on MariaDB (STS-STORE-0070), whose limits are
+the session's and a pooled connection is somebody else's next.
+`tests/cluster_heartbeat_lock.js` sections C, D and E hold it.
+
 The error carries `reason: 'node' | 'lease'`:
 a lost membership, or the service lease in active-passive mode, is fatal
 (`STS-CLUSTER-0011`); a lost role lease under active-active fails that one
@@ -855,8 +892,20 @@ two hundred on the page) and does not cache those rows into the map;
 a job that has been off for many slots may show none until it runs again,
 because that one row is not restored. A tick learns the current interval slot
 and the one before it from one batch read per realm per slot generation
-(`readMany`); a failed read fails the tick (`STS-SCHED-0013`) rather than
-treating the slot as finished or as absent. Rows written before #338 still
+(`readMany`). **An absence is remembered for the slot whoever said it**
+(#883's review, 2026-11-13): an id the store has no row for, and since then
+an id a reader with no store answered null for, which until then was asked
+again every tick in every realm; both are forgotten with the slot, as a
+finished one is. **A read that fails holds back only the jobs it could not
+answer**: until #883's review a rejection failed the whole tick
+(`STS-SCHED-0013`), so one row the store could not open stopped every job
+in every realm, manual runs included. Now the realm's batch is asked again
+one job at a time; a job whose read still fails is held back for that tick
+(`unknownSlots`, neither run nor taken as finished) and asked about at the
+next, and the rest run. Two job reads failing in a row is an outage, so the
+tick asks nothing more and holds back every job it has not heard about. One
+`STS-SCHED-0023` line a tick names what was held back. `tests/scheduler.js`
+section P. Rows written before #338 still
 come back once — a keyed digest has no prefix a query can filter on — and the
 history walk deletes them from the rows it holds. Startup was not
 re-measured on 8081.
@@ -1109,7 +1158,7 @@ row's body runs on a request worker except those marked **front**:
 | `cluster.node-snapshot` | per-process, quiet; every 15 s, joined front processes of a cluster whose store is shared — writes the node's Worker Pools and Node Health views to `sts_node_snapshots` (#332) | `cluster/node_snapshots.ts` |
 | `cluster.node-snapshot-purge` | cluster, service; hourly, off with no cluster store — deletes the row of a node that is not a live member once its snapshot is older than `cluster.nodeSnapshotRetentionHours` (24); never a live member's, nothing while membership cannot be read (#332) | `cluster/node_snapshots.ts` |
 | `cluster.claims-purge` | cluster, service; a minute, registered at the first claim against a database | `cluster/cluster_claims.js` (P5) |
-| `oauth2.access-token-block-reap` | cluster, service; a minute, registered from `service_state.start()` in every process (before the scheduler starts), off with no shared claims table — releases access-token status-list blocks whose stable origin no longer holds a live origin claim, or whose node membership has left or expired (#884). A start also releases that process's own origin once, which this job never does | `oauth-oidc/access_token_status.ts` |
+| `oauth2.access-token-block-reap` | cluster, service; a minute, registered from `service_state.start()` in every process (before the scheduler starts), off with no shared claims table — releases access-token status-list blocks whose stable origin no longer holds a live origin claim — one lapsed for more than `ORIGIN_LAPSE_GRACE_MS` (90 s, #884's review), so a late renewal keeps its block — or whose node membership has left or expired (#884). A start also releases that process's own origin once, which this job never does | `oauth-oidc/access_token_status.ts` |
 | `cluster.rate-window-purge` | cluster, service; a minute, registered at the first shared count | `cluster/cluster_counters.js` (P5) |
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
 | `ldap.connection-mirror-maintenance` | per-process, quiet; registered in every process when wired, off in one holding no mirrored connections | `ldap/ldap_cluster_connections.ts` (P5) |

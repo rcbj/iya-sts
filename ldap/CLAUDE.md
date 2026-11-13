@@ -1955,6 +1955,64 @@ handle a group that names a person and a person who names a group as two
 separate edits. It was not attempted on 2026-09-07; the three fixes above were,
 and this is the measurement that says where the next one would go.
 
+## THE CONSOLE GATE'S REMEMBERED USERNAMES (#880; its review, 2026-11-13)
+
+In a windowed process `existingUserEntry()` asks the store `byName` after the
+`uid=` DN misses, and the `/admin-api` gate does that for the bootstrap
+administrator on every request. #880 had the gate ask it off the event loop
+first (`warmUserNamesAsync()`) and remember the answer, nobody included, in
+`userNameAnswers` (`mgmt-api/CLAUDE.md`, *THE GATE READS THOSE ROWS OFF THE
+EVENT LOOP*). The first version had three faults, which a review found:
+
+* **It remembered every lookup, not only the gate's.** `existingUserEntry()`
+  wrote down every answer it asked the store for, and `admin_stats.js`'s
+  `identityOf()` asks that for every name anybody presents at a sign-in,
+  before authentication. That was an unbounded Map, nonexistent names
+  included, on no cache page.
+* **Every caller read it, and a remembered "nobody" defeats
+  one-entry-per-person.** `createUser()`, the LDAP add, `autoCreateUser()`
+  and the other doors ask `existingUserEntry()` precisely to refuse a second
+  person.
+* **A replicated create did not always drop it.** The drop ran only inside
+  `noteHeldNamesTouched()`, which returns at once when no add is in flight,
+  and `forgetEntry()`'s busy-key branch calls no `touchDirectory()`, so the
+  subtree clock does not move either.
+
+What holds now:
+
+* **Only `warmUserNamesAsync()` writes an answer** (`noteUserNameAnswer()`),
+  and only when neither the `ou=users` subtree clock nor the drop
+  `generation` moved while its question was out.
+* **Only two reads use one.** `existingUserEntry()` consults the memo only
+  while `rememberedNameReads` is above zero, which
+  `withRememberedUserNames(fn)` raises around `fn` and lowers in a `finally`.
+  The gate runs `admit()` inside it and calls `next()` after it returns, so a
+  handler it admits, which may create a person, asks the store. The other is
+  `admin_rbac.ts`'s `bootstrapState()`, which reads the bootstrap
+  administrator's FLAGS through it (the roster's member
+  `withRememberedUserNames`): `GET /admin-api/me` and the roster read those
+  on every console request, after `next()`, and a flags read creates
+  nothing. `ensureBootstrap()`, which may create that entry, reads directly.
+* **Any write at, under or above the realm's `ou=users` drops it**
+  (`dropUserNameAnswersFor()`): from `touchDirectory()`, which covers every
+  local write and every replicated row applied with a touch, and from
+  `forgetEntry()`'s busy branch. It bumps `generation` even when nothing is
+  held. Outside a window it returns at once, because nothing is remembered
+  there.
+* **Bounded**: `USER_NAME_ANSWERS_MAX` (64) a realm, least recently asked
+  dropped first, registered as `ldap.gate-usernames` (rule 3ap) with hits and
+  misses counted at the gate's read.
+
+`tests/admin_api_gate_warm.js` section 4 holds each rule: the registration and
+the bound, a lookup outside the gate remembering nothing, `createUser()`
+refusing a person the remembered "nobody" would hide, a replicated create on
+a key busy here and on one not busy, and a write during the warm's question.
+
+**`directoryWindowed`** is a hook this file also hands
+`credentials.addDirectoryHooks()` (#786's review): a credential census that
+fails in a windowed process is answered unknown rather than asked again one
+name at a time (`common/credentials.ts`, `censusFailureRefuses()`).
+
 ## DELETING PEOPLE IN BULK, AND THE INDEXES A DELETE USED TO THROW AWAY (#351, 2026-09-29)
 
 One SCIM Bulk of a hundred `DELETE /Users` held a request worker on testidp
@@ -2364,6 +2422,54 @@ mode.
   username or group name on every role. So no group or role can be left naming
   something that is not there. Until then a rename left the old DN in the groups
   that listed it.
+
+  **AND NO OWNER LIST OR CONFERRING CLIENT EITHER (2026-11-13, the review of
+  #1613).** Two kinds of reference were left behind by the first pass.
+  `roles.forgetMember()` writes a role back without naming `conferredBy`,
+  which `roles.write()` reads as "keep it", so a deleted application's
+  identifier stayed in `roleConferredBy` and the next application registered
+  under it (in development, whoever presents the client_id) conferred the role
+  on everybody signing in through it: `noteApplicationRemoved()` now calls
+  `roles.forgetConferrer()` too, with a `roles.unconfer` row per role
+  (`STS-ADMIN-0921` when one cannot be rewritten). And the OWNERS — a role's
+  and a group's `owner`, an application's `appOwner`, a service account's
+  `stsServiceAccountOwner`, each a person's or group's DN, and under #607 an
+  owner is issued owner:write — were never touched, so a person made again at
+  the same DN owned it all again. `forgetOwnerReferences()` runs on every
+  delete of a person (`removePersonEntry()`) and of a group (`deleteGroupEntry()`
+  and the LDAP delete), and `moveOwnerReferences()` on a person's or group's
+  modifyDN, each through the register's own door — `roles.forgetOwner()` /
+  `renameOwner()`, `applications.forgetOwner()` / `renameOwner()` (both off
+  their kept listings), `writeGroupOwners()` and `writeServiceAccount()` — and a
+  removal is audited under that register's remove-owner action; a rename is
+  not, as a moved membership is not (`STS-ADMIN-0922` for a write refused).
+  **Who names the DN is asked, not walked**: the resident entries (the groups;
+  `groupsOwnedBy()`'s reach) and, in a windowed process, ONE `byAttribute` on
+  the store's `grantinggroup` value key, which holds every value of the three
+  owner attributes by its DN (#1306) — that is how a service account under
+  `ou=users` is found without paging the people. Past 1,000 answers it says so
+  (`STS-ADMIN-0923`). A device's `owner` is its holder, not an authority, and
+  is left to the device register. `tests/deleted_references.js` holds both.
+
+  **AND AN APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of 2026-11-13
+  on #1612).** A role made for one application (#310: `<role>@<app>`,
+  `roleApplication` naming it) outlived the application, so one registered
+  again under that identifier found `reader@<id>` waiting, members and
+  permissions included. `noteApplicationRemoved()` — which every door that
+  deletes an application reaches: the console's Forget and `/admin-api`
+  (`applicationsAction()`), the registry's delete (the outbound SCIM client
+  calls it) and the LDAP delete handler — now calls
+  `roles.forgetApplicationRoles()` FIRST, so `forgetMember()` and
+  `forgetConferrer()` do not rewrite a role about to go. It deletes each
+  through `roles.remove()`, the call the console's delete-role makes (the
+  directory's `deleteRole()`, whose `noteRoleChange()` tells the members'
+  token holders), off the kept `ou=roles` listing and compared without case;
+  this file writes the `roles.delete` row the console writes, actor empty,
+  channel `internal`. A role remove() refuses is logged `STS-ADMIN-0924` and
+  kept. Unlike the console it does not report applications that still
+  REQUIRE the role (`appRequiredRole`), because finding them would read every
+  application's view. Only `roleApplication` decides: a realm-wide role whose
+  NAME merely ends in `@<id>` (writable only over the socket) is kept.
 
 ---
 

@@ -17,8 +17,8 @@ output "direct_hostname" {
 }
 
 output "cloudfront_distribution_id" {
-  description = "The CloudFront distribution in front of the load balancer; empty without one."
-  value       = local.cloudfront ? aws_cloudfront_distribution.main[0].id : ""
+  description = "The CloudFront distribution in front of the load balancer; empty without one, and in every cell but the primary, which holds the environment's one (#1341)."
+  value       = local.cloudfront_here ? aws_cloudfront_distribution.main[0].id : ""
 }
 
 output "public_certificate_arn" {

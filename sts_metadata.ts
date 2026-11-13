@@ -1751,7 +1751,7 @@ const SPECS: Spec[] = [
               'only for an application that has the type enabled (#1295, ' +
               '#1296), and rotates refresh tokens. Section 3.3: a scope is ' +
               'tied to the client (#110) — this service\'s own protected scopes (admin:*, the ' +
-              'SCIM and Shared Signals scopes, the debugger permission) are ' +
+              'SCIM and Shared Signals scopes) are ' +
               'issued only to a client whose oauthAllowedScope declares ' +
               'them, in every mode, and in product mode every scope is held ' +
               'to that list or to a documented default set; a request ' +

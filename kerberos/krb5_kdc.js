@@ -333,6 +333,16 @@ function kdcTime(offsetSeconds) {
 // `spec.start` is the ticket's starttime, `spec.endtime` the endtime about
 // to be issued. `spec.presented` is null on an AS exchange and
 // `{ renewable, renewTill }` on a TGS exchange.
+//
+// `spec.notAfter` (a Date, or absent) is the client certificate's notAfter
+// on a PKINIT AS exchange. RFC 4556 section 3.2.3 says the ticket "MUST NOT
+// exceed" the lifetime of the client's key pair, and a renewal extends a
+// ticket up to renew-till, so renew-till is capped there too (the review of
+// #897, 2026-11-13; endtime alone was capped, so a PKINIT TGT stayed
+// renewable for up to krb5.renewLifetimeSeconds past the certificate). A
+// renew-till the certificate brings down to endtime or before is no
+// renewable ticket at all, so the flag is dropped whatever was asked: an
+// explicit RENEWABLE keeps the flag only when the CLIENT chose that rtime.
 function decideRenewTill(spec) {
   log.debug("Entering decideRenewTill().");
   const options = spec.options || [];
@@ -363,6 +373,13 @@ function decideRenewTill(spec) {
   if (presented && presented.renewTill instanceof Date &&
       cap > presented.renewTill.getTime()) {
     cap = presented.renewTill.getTime();
+  }
+  if (spec.notAfter instanceof Date && cap > spec.notAfter.getTime()) {
+    cap = spec.notAfter.getTime();
+    if (cap <= spec.endtime.getTime()) {
+      log.debug("Leaving decideRenewTill(). The certificate ends it.");
+      return { renewable: false, renewTill: null };
+    }
   }
   // RENEWABLE-OK only. An explicit request keeps the flag, so a renewal is
   // refused at once (STS-KRB-0045) rather than the ticket pretending it can
@@ -3719,11 +3736,14 @@ async function answerAsReq(request, fast) {
     preauth && preauth.pkinit && preauth.pkinit.notAfter
       ? preauth.pkinit.notAfter.getTime() : Infinity));
   // #897. renew-till follows the requested rtime, capped by the realm
-  // maximum. RENEWABLE-OK can add the flag; an explicit RENEWABLE keeps it
-  // even when rtime does not pass endtime.
+  // maximum and, for PKINIT, by the certificate's notAfter (RFC 4556
+  // section 3.2.3, as endtime is). RENEWABLE-OK can add the flag; an
+  // explicit RENEWABLE keeps it even when rtime does not pass endtime.
   const renewal = decideRenewTill({
     options: body.kdcOptions, rtime: body.rtime, till: body.till,
-    start: authtime, endtime: endtime, inherited: false, presented: null
+    start: authtime, endtime: endtime, inherited: false, presented: null,
+    notAfter: preauth && preauth.pkinit && preauth.pkinit.notAfter
+      ? preauth.pkinit.notAfter : null
   });
 
   const wantsForwardable = (body.kdcOptions || []).indexOf(

@@ -1117,8 +1117,14 @@ and fails until the row is there.
 
 ## Versioning: M.N.O.<build>, fixed when an artifact is BUILT
 
-**`VERSION` at the repo root holds the release, `M.N.O` — `1.0.0` since
-2026-11-04 (rcbj, #1298)** — and `package.json` carries the same string. Every
+**`VERSION` at the repo root holds the release, `M.N.O` — `1.1.0` since
+2026-11-13 (rcbj; it was `1.0.0` from 2026-11-04, #1298)** — and
+`package.json` carries the same string. **A release that needs an upgrade
+script is never a patch release** (rcbj, 2026-11-13: a user must not have to
+run a script to go from 1.0.0 to 1.0.1). So the change that first adds a
+`postgres/upgrade-*.sql` or `mariadb/upgrade-*.sql` step since the last
+release also sets `VERSION` to the next minor (or major) release; develop
+moved to 1.1.0 for #876/#882's two `sts_sessions` indexes. Every
 surface reports `M.N.O.<build>` (#1317): **the build number is the UTC build
 instant, `YYYYMMDDHHMMSS`, unless the build is flagged as a RELEASE**
 (`STS_RELEASE=true`), when it is the `BUILD_NUMBER` the build names —

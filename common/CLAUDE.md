@@ -1451,7 +1451,14 @@ not measured again for #872. `passwordHashSpec()` with no spec, and the
 policy's `hashAlgorithm` default, are scrypt at N=2^15, r=8, p=3, and
 `PASSWORD_HASH_ALGORITHMS` lists scrypt first. Decision 3 stands in both
 modes: `passwordHashSpec()` raises scrypt's p to OWASP's table, and the
-policy refuses a save below it. Product also applies
+policy refuses a save that NAMES scrypt below it. **Only when scrypt is the
+algorithm (the review of #872, 2026-11-13)**: asked whatever the algorithm,
+every profile stored at #820's p=1 — argon2id ones included — refused every
+unrelated edit, since a save sends the whole profile. And `read()` answers a
+stored p below the table AT the table (`raisedToTable()`), the value
+`passwordHashSpec()` hashes with anyway, so such a profile reports no
+problem and the console's next save of it writes the raised value; a read
+writes nothing. Product also applies
 `mode.minScryptParallelism()` (at least 3) before that clamp, so a profile
 saved at 2^17 with p=1 is written at p=3 there and stays p=1 in development.
 The rehash rule is a strictly lower cost within one algorithm, or a change
@@ -2214,9 +2221,11 @@ each mode guarantees, exactly:
   `POST /oauth2/token` 43 → 70 ms p50 waiting once the barrier went per
   session.
 * **`session`, a refresh grant** (2026-11-11, #879): the same small form,
-  naming one `refresh_token` of at most 12 KiB, waits for `rt:<token>`
-  whether or not this process has seen that token, and for keyless writes,
-  and not for another browser or another token. A 200 JSON token response
+  naming one `refresh_token` of at most 12 KiB, waits for its key
+  (`rt:` and the token's SHA-256 through `crypto.credentialDigest()`, never
+  the token — the review of #879) whether or not this process has seen that
+  token, for keyless writes and for REVOKE_KEY (below), and not for another
+  browser or another token. A 200 JSON token response
   of a declared length of at most 64 KiB files its ticket under the
   `refresh_token` it names, before those bytes are sent. A response this
   process could not read is filed under the keyless key, so the next
@@ -2228,6 +2237,28 @@ each mode guarantees, exactly:
   browser and the next refresh of a different token do not wait for it.
   `stats().sessionBarrier.refreshKeyed` counts them. 8081 was not
   re-measured.
+* **`session`, the writes a refresh must not answer ahead of** (2026-11-13,
+  the review of #879, which found the gap #879 opened): #879's module
+  comment said a sign-out reached the refresh grant "when the workers
+  converge", so in product a refresh routed to a lagging worker was issued
+  new tokens from a session just signed out. Now one key, `REVOKE_KEY`,
+  holds every write that ends what a refresh token rests on, and every
+  token request keyed by its token, its code or a browser's cookie waits
+  for it; an ordinary browser request does not, so #879's and #820's gains
+  for unrelated browser writes stand. A ticket is filed there by its PATH
+  at dispatch (`revokingRequest()`: any sign-out door, writes to
+  `/oauth2/revoke`, `/oauth2/grants`, `/admin-api`, `/account-api`,
+  `/scim`, `/ssf`, any DELETE — the backstop) and by its ANSWER: the
+  funnels — `admin_stats.revoke()` (not a token superseded on rotation),
+  `oauth2_bcp.revokeFamily()`, `authn.dropSession()`,
+  `account_state.setDisabled()`, `grant_management.revoke()` — call
+  `revoking_writes.ts`'s `note()`, which in a worker sets
+  `x-sts-pool-revoking` on the answer in flight
+  (`RequestWorker.markRevokingAnswer()`), and the pool files the ticket
+  before forwarding a byte and strips the header. A revocation after the
+  headers went is `STS-WORKER-0052`; a cluster job's revocation has no
+  answer to ride (an expiry is read as ended anyway).
+  `tests/request_ryw_session.js` R16 and `tests/revoking_writes.js`.
 * **`session`, a request with no key, or whose pool pin the route did not
   honour** — today's global wait, unchanged. That is every other back
   channel, apart from a refresh grant this process could read. A pin not
@@ -6579,8 +6610,25 @@ owner (`0173`), a value not listed (`0176`) and more than `MAX_OWNERS`
 (`0175`), and write through `write()`. **`write()` keeps the owners when a
 caller does not name them** (`given.owners === undefined`), for
 `conferredBy`'s reason: every older caller writes the whole record. An owner
-grants nothing; `ownersOf()` reports one deleted since with `kind: ''`, and
+grants nothing; `ownersOf()` reports one naming nobody with `kind: ''` (since
+2026-11-13 a delete takes the DN off, so only a value written before that or
+by hand), and
 `entryOf()` answers the role's directory entry for its page.
+
+**A DELETED OWNER OWNS NOTHING, AND A DELETED CLIENT CONFERS NOTHING
+(2026-11-13, #1612's review).** "Keeps what the entry holds" is also why the
+first pass of #1612 left both behind: `forgetMember()` writes the role back
+without naming `conferredBy` or `owners`, so both survived the delete of what
+they named. `forgetConferrer(identifier)` takes a deleted application off every
+role it conferred (`STS-ADMIN-0921`), and `forgetOwner(dn)` /
+`renameOwner(from, to)` take a deleted person's or group's DN off every role's
+owners or move a renamed one's (`STS-ADMIN-0922`); `applications.forgetOwner()`
+/ `renameOwner()` do the same for `appOwner`, off the kept listing. The
+directory calls all of them where it deletes and renames
+(`ldap/CLAUDE.md`, *the four structural rules*), and writes the audit rows:
+`roles.unconfer` (registered in `audit.ACTIONS` with `roles.confer` that day —
+`admin_actions.ts` had written both through a ternary the vocabulary test could
+not read) and each register's remove-owner action.
 
 **An application has owners too (#604)**: `appOwner` on its entry, written by
 `applications.addOwner()` and `removeOwner()` alone (in no EDITABLE row, so the
@@ -14520,7 +14568,13 @@ service account's `stsServiceAccountOwner` (#600), an application's
 every door resolving a username or a cn first. A person owns an object when a
 value names them or a group they are in (direct or through `memberOf`,
 `groupsOfUser()`); DNs are compared through `dnKey()` (case, and the spaces
-around a comma, do not matter).
+around a comma, do not matter). **Because the DN is the name, a value naming
+a deleted person or group is taken off when it is deleted, and moved when it
+is renamed (2026-11-13, #1612's rule)**: a person made again at the same DN
+would otherwise own everything the first one did, owner:write included. The
+directory does it (`forgetOwnerReferences()`, `moveOwnerReferences()`,
+`ldap/CLAUDE.md`); a value written by hand that names nobody is still reported
+here with `kind: ''`.
 
 **`ownership.ts` ANSWERS, AND NEVER DECIDES.** `identityOf()` (the person's
 DN and their groups' — the policy's `owner-identity`), `objectOf()` (an

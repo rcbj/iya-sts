@@ -322,6 +322,13 @@ const RELEASE_WAIT_MS = 2000;
  */
 const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
 
+// The header a worker marks a revoking answer with (the review of #879).
+// `common/revoking_writes.ts` names it and `request_pool.js` spells it too;
+// `tests/revoking_writes.js` compares the three.
+const REVOKING_HEADER = 'x-sts-pool-revoking';
+// How many revocations came after their answer's headers had gone.
+let lateRevocations = 0;
+
 // An operation handler: a value or a promise, both answered the same way.
 // Its second argument, `emit`, sends a PART of the answer ahead of the rest
 // (#616: an LDAP search streaming the entries it finds while it reads the
@@ -535,6 +542,71 @@ class RequestWorker {
         return require('./service_state');
       }
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A REVOCATION, SAID ON THE ANSWER IT RIDES OUT ON (the review of #879).
+  //
+  // `common/revoking_writes.ts` is told by the funnels that end a session, a
+  // token, a refresh family, a grant or an account. In a worker that becomes
+  // `x-sts-pool-revoking` on the response in flight, which the front process
+  // reads before it forwards a byte and files the request's ticket under the
+  // key every refresh grant waits for (`request_pool.js`, THE WRITES A
+  // REFRESH MUST NOT ANSWER AHEAD OF). The header and not the channel, for
+  // `LDAP_DROP_HEADER`'s reason: the answer is what the client sees, so the
+  // filing must come before it, and the header is read before it goes out.
+  //
+  // No response: a cluster job's body run here (#408) — the session sweep,
+  // a rotation. Nobody is waiting on an answer, and a refresh reads an
+  // expired session as ended whatever any worker has applied. Headers
+  // already sent: the front process can no longer be told in time, and that
+  // is logged under STS-WORKER-0052, sparingly, so a door that revokes after
+  // it has begun to answer is found rather than guessed at.
+  // ---------------------------------------------------------------------------
+  /**
+   * Marks the answer in flight as a revoking write, for the front process.
+   *
+   * @param res - the response this request is answering, or undefined
+   * @param what - what was ended, for the log
+   * @returns whether the answer was marked
+   */
+  static markRevokingAnswer(res: http.ServerResponse | undefined,
+                            what: string): boolean {
+    log.debug('Entering RequestWorker.markRevokingAnswer(). ' + what);
+    if (!res) {
+      log.debug('Leaving RequestWorker.markRevokingAnswer(). No answer in ' +
+                'flight.');
+      return false;
+    }
+    if (res.headersSent) {
+      lateRevocations++;
+      if (lateRevocations === 1 || lateRevocations % 100 === 0) {
+        log.warn(errorCodes.tag('STS-WORKER-0052') + 'request_worker: ' +
+                 what + ' after this answer\'s headers had gone, so the ' +
+                 'front process could not file it for the refresh grant ' +
+                 'in time (' + lateRevocations + ' so far).');
+      }
+      log.debug('Leaving RequestWorker.markRevokingAnswer(). Too late.');
+      return false;
+    }
+    res.setHeader(REVOKING_HEADER, '1');
+    log.debug('Leaving RequestWorker.markRevokingAnswer(). Marked.');
+    return true;
+  }
+
+  /**
+   * Installs the marker `common/revoking_writes.ts` answers with in this
+   * worker. Called once, after the protocol stack is loaded, which is when
+   * the funnels that call it exist.
+   */
+  installRevokingMarker(): void {
+    const { log } = this.deps;
+    log.debug('Entering RequestWorker.installRevokingMarker().');
+    const RevokingWrites = require('./revoking_writes');
+    RevokingWrites.install(function (what: string): void {
+      RequestWorker.markRevokingAnswer(currentResponse.getStore(), what);
+    });
+    log.debug('Leaving RequestWorker.installRevokingMarker().');
   }
 
   // ---------------------------------------------------------------------------
@@ -1790,6 +1862,9 @@ class RequestWorker {
       // front process took when it forked this worker; every later change
       // arrives on the listener above.
       this.installDirectoryMirror(message.ldapConnections || []);
+      // And the marker a revocation is said with (the review of #879), for
+      // the same reason: the funnels that call it are loaded now.
+      this.installRevokingMarker();
       // And the SPIFFE listeners as they were at fork (#337); every later
       // reconcile arrives on the listener above.
       if (message.spiffeBindings) {
@@ -1832,6 +1907,10 @@ export = {
   LDAP_DROP_HEADER: LDAP_DROP_HEADER,
   // And the back-channel hint's, for the same comparison.
   PROTOCOL_WORKER_HEADER: PROTOCOL_WORKER_HEADER,
+  // And the revoking answer's (the review of #879).
+  REVOKING_HEADER: REVOKING_HEADER,
+  // The marker's one decision, for a test with a response of its own.
+  markRevokingAnswer: RequestWorker.markRevokingAnswer,
   // Installing the directory mirror, exported so that a test can put this
   // process in the state a worker is in without forking one.
   installDirectoryMirror:

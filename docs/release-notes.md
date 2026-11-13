@@ -4,11 +4,11 @@ title: Release notes
 
 # Release notes
 
-## 1.0.1
+## 1.1.0
 
-1.0.1 upgrades a deployment that is already running 1.0.0. Keep the
+1.1.0 upgrades a deployment that is already running 1.0.0. Keep the
 database volume. The 1.0.0 service can keep answering while the database
-is upgraded. Start the 1.0.1 image after the upgrade script exits 0.
+is upgraded. Start the 1.1.0 image after the upgrade script exits 0.
 
 A store that is only in memory has nothing to upgrade. A database whose
 schema version is below 31 is a pre-release build, and the script refuses
@@ -17,14 +17,14 @@ it. Those builds are covered under
 
 ### PostgreSQL
 
-Release 1.0.0's database is schema version 31. 1.0.1 adds two indexes on
+Release 1.0.0's database is schema version 31. 1.1.0 adds two indexes on
 `sts_sessions` and records schema version 32 beside it:
 
 * `sts_sessions_started`, so the console's session pages can list sessions
   newest first without sorting the whole table.
 * `sts_sessions_subject_band`, used by the per-subject session sweep.
 
-Run the script as the table owner, from a checkout of 1.0.1. On the
+Run the script as the table owner, from a checkout of 1.1.0. On the
 compose stack the owner is `sts`. The application role `sts_app` cannot
 create an index.
 
@@ -48,10 +48,19 @@ transaction. For a large `sts_sessions` table,
 build and does not change the server. `-v sts_schema=sts` selects the
 schema and is the default.
 
-Then start the 1.0.1 image. Until both indexes exist, that image refuses
-to open the store and records `STS-STORE-0029`. Run the script and start
-it again. Replacing the image before the script does not damage the
-volume.
+Then start the 1.1.0 image. If it starts before the script has run, it
+still starts and answers every request; the session pages and the
+per-person session sweep are slower until the indexes exist:
+
+* As the application role (`sts_app`, the normal case), which cannot
+  create an index, it logs `STS-STORE-0172` once, naming the two indexes
+  and this script. Run the script; nothing needs restarting afterwards.
+* As a role that owns `sts_sessions`, it builds the missing indexes
+  itself, in the background, with `CREATE INDEX CONCURRENTLY`, without
+  holding up writes or its own start. A build that fails logs
+  `STS-STORE-0173` and is tried again at the next start.
+
+Replacing the image before the script does not damage the volume.
 
 **Leave the volume in place.** `docker compose down -v` deletes the
 directory, the realm registry and the setting overrides, and in product
@@ -89,7 +98,45 @@ when it differs (`sts_store` in the MariaDB example). The same cautions
 apply: leave the database in place, and do not run `mariadb/schema.sql`
 again, which sets the application account's password on every run. A
 second run inserts nothing. A valid index of the wrong shape is left as
-it is; drop it and run the script again, then start the 1.0.1 image.
+it is; drop it and run the script again, then start the 1.1.0 image.
+A 1.1.0 image started first still starts: an account that may not alter
+the table logs `STS-STORE-0172`, and one that may builds the index in
+place in the background (`STS-STORE-0173` if that fails).
+
+### Behaviour changes: a deleted object leaves nothing behind
+
+1.1.0 makes a delete complete. An application, person or group created
+again under a deleted one's identifier, username or DN inherits nothing
+from it. Each of these changes what 1.0.0 did:
+
+* **Over LDAP, a group may not list a member that does not exist.** An
+  add or modify that names a `member`, `uniqueMember` or `memberUid` with
+  no entry behind it is refused with result code 19
+  (`constraintViolation`). 1.0.0 accepted it. A script that adds a group's
+  members before their entries must create the entries first. A dangling
+  member that a 1.0.0 directory already holds is kept, and the console
+  still reports it.
+* **A delete takes the deleted entry's references with it.** A deleted
+  person, group or application is taken out of every group that listed
+  it and every role it was a member of. A deleted application no longer
+  confers any role, and a deleted person or group is no longer an owner
+  of any role, group, application or service account. 1.0.0 left these
+  references in place, so whatever was next created under the same name
+  or DN got them. Each removal is written to the audit log.
+* **Deleting an application deletes the roles it owns.** A role made for
+  one application (`<role>@<application>`, its `roleApplication` naming
+  that application) is deleted with it, as the console's Delete role
+  deletes one, with a `roles.delete` audit row for each. Its members and
+  permissions go with it. A role owned by another application, and a
+  realm-wide role, are not touched. In 1.0.0 these roles stayed, and an
+  application registered again under the same identifier found them
+  waiting, members included. If you still need such a role, create it
+  again once the new application exists.
+
+None of these changes the stored data or needs a migration step. They
+apply to deletes made after the 1.1.0 image starts. References a 1.0.0
+service left behind before the upgrade stay until you remove them on the
+console or through `/admin-api`.
 
 ## 1.0.0
 
@@ -116,8 +163,8 @@ which build you are moving from and what did not carry over.
 
 **Our goal is backwards compatibility going forward.** Releases after 1.0.0
 are intended to upgrade cleanly from 1.0.0 and from each other. The steps
-from a running 1.0.0 deployment to 1.0.1 are in
-[1.0.1](#101) above. Where a later release cannot upgrade cleanly, its
+from a running 1.0.0 deployment to 1.1.0 are in
+[1.1.0](#110) above. Where a later release cannot upgrade cleanly, its
 notes on this page will say so and describe the path.
 
 ### Version numbers
@@ -127,5 +174,8 @@ for 1.0.0 the release build is `1.0.0.0`. Other builds of the same code carry
 the UTC time they were built as their build number. After 1.0.0, each change
 published from `main` is the next patch release (1.0.1, 1.0.2, …), and a new
 minor or major release starts when the repository's `VERSION` file is set to
-it. The running service shows its version on the admin console and in its
+it. **A release that needs an upgrade script is a minor (or major) release,
+never a patch**: going from one patch release to the next never asks you to
+run anything against your database. That is why the release after 1.0.0 is
+1.1.0. The running service shows its version on the admin console and in its
 metadata.

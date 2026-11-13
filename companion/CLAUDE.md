@@ -207,6 +207,15 @@ request are the service, not a browser, so they carry no session cookie.
 other POST stays bound. The dummy reads its own body, because two of those
 requests can be in flight and the shell must not keep one body for both.
 
+**A NEGATIVE FIXTURE REFUSES WHAT A PROVIDER WOULD (#1689's review,
+2026-11-13).** A token request whose `redirect_uri` is not the one the code
+was issued to, or names none, is `invalid_grant` and spends the code (RFC
+6749 section 4.1.3), on every code-grant dummy and on Bluesky's pushed one.
+Steam's `check_authentication` confirms a nonce once: a nonce that checked is
+deleted, so a replayed assertion is `is_valid:false`; a check that failed
+keeps it, so the right check after it still confirms.
+`tests/social_idp_refusals.js` holds both.
+
 No timer. The code, token, push and Steam-nonce maps are capped on insert
 and nothing is swept.
 

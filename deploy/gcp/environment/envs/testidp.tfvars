@@ -16,6 +16,13 @@
 # ---------------------------------------------------------------------------
 public_hostname = "test-idp.gcp.iyasec.io"
 
+# CLOUD CDN IN FRONT OF THE LOAD BALANCER (rcbj, 2026-11-13, #1341): a browser
+# reaches test-idp.gcp.iyasec.io through a global external Application Load
+# Balancer; a client certificate, Kerberos, LDAP, SPIFFE and the revocation
+# listener use direct_hostname, the passthrough load balancer (cdn.tf).
+cdn_enabled     = true
+direct_hostname = "direct.test-idp.gcp.iyasec.io"
+
 # The ACME account's contact (expiry notices): an address at iyasec.io, the
 # one mail is delivered to for this project.
 acme_email = "tester1@iyasec.io"

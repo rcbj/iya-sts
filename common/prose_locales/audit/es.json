@@ -631,6 +631,10 @@
     "en": "cfd6adfa05969133",
     "text": "Se envió un formulario de la consola"
   },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "Se exportó la configuración"
+  },
   "audit.actions.claims.change.label": {
     "en": "34e69552072a4ab5",
     "text": "Se modificó un conjunto de claims de un token o una aserción"
@@ -1187,6 +1191,10 @@
     "en": "38e9f05ac95fd655",
     "text": "Se borró el registro de cuentas RISC"
   },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "Se descartó una fila acuñada que nunca podía confirmarse"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "Un administrador modificó la configuración aud_sub de una persona"
@@ -1715,6 +1723,14 @@
     "en": "904fa8504a89cb35",
     "text": "Se quitó un propietario de un rol"
   },
+  "audit.actions.roles.confer.label": {
+    "en": "5a52f4105ae28f80",
+    "text": "Se configuró un cliente para conferir un rol a todas las personas que inician sesión a través de él"
+  },
+  "audit.actions.roles.unconfer.label": {
+    "en": "f4487269d3051eb8",
+    "text": "Un cliente ya no confiere un rol a todas las personas que inician sesión a través de él"
+  },
   "audit.actions.roles.create.label": {
     "en": "a510e6ae7b1a9adb",
     "text": "Se creó un rol"
@@ -1890,13 +1906,5 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "Un evento de prueba enviado a un destino de exportación de auditoría"
-  },
-  "audit.actions.persistence.minted-drop.label": {
-    "en": "065f403ac7419f76",
-    "text": "Se descartó una fila acuñada que nunca podía confirmarse"
-  },
-  "audit.actions.admin.config-dump.label": {
-    "en": "2da852eeb075a014",
-    "text": "Se exportó la configuración"
   }
 }

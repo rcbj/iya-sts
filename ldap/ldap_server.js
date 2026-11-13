@@ -1626,6 +1626,9 @@ function touchDirectory(dn, after, how) {
   // And any add holding names it asked first is told what this write
   // touched (#625).
   noteHeldNamesTouched(dn, after);
+  // And the console gate's remembered usernames (#880), whether or not an
+  // add is in flight: this is every write here and every replicated row.
+  dropUserNameAnswersFor(dn);
   // WHERE IT LANDED, when the caller said so. See subtreeClocks() below: a
   // caller that names the DN it wrote lets a listing of some OTHER container
   // survive this write, and a caller that says nothing invalidates every
@@ -2723,18 +2726,44 @@ const usernameIndexes = realms.keyed(function () {
   return { index: null, version: -1, usersDn: '', builds: 0, collisions: 0 };
 });
 
-// A windowed worker's answer to one username, including nobody (#880).
-// `existingUserEntry()` asks the store by name after the `uid` DN misses,
-// and the console gate does that for the bootstrap administrator on every
-// request. Kept until `ou=users`'s subtree clock moves — a create, a
-// modify or a delete there, and not a forget of a clean slot. An absence
+// THE CONSOLE GATE'S ANSWER TO ONE USERNAME, INCLUDING NOBODY (#880; its
+// review, 2026-11-13). `existingUserEntry()` asks the store by name after the
+// `uid` DN misses, and the console gate does that for the bootstrap
+// administrator on every request. Three rules, each the answer to something
+// the first version got wrong:
+//
+//   * ONLY THE GATE'S WARM WRITES IT (`warmUserNamesAsync()`). The first
+//     version also noted every answer `existingUserEntry()` asked the store
+//     for, and `admin_stats.js`'s `identityOf()` asks that for every name
+//     anybody presents, before authentication: an unbounded Map of names,
+//     nonexistent ones included.
+//   * ONLY TWO READS USE IT, inside `withRememberedUserNames()`: the gate's
+//     synchronous checks, and `admin_rbac.ts`'s `bootstrapState()`, a read
+//     of the bootstrap administrator's flags that creates nothing (it is
+//     asked by `GET /admin-api/me` after the gate). Every other caller of
+//     `existingUserEntry()` (`createUser()`, the LDAP add, `autoCreateUser()`
+//     and the rest of the one-entry-per-person doors) asks the store, so a
+//     remembered "nobody" can never let a second person be made.
+//   * ANY WRITE UNDER `ou=users`, FROM ANY PROCESS, DROPS IT
+//     (`dropUserNameAnswersFor()`): `touchDirectory()` for every write here
+//     and every replicated row it is told about, and `forgetEntry()`'s busy
+//     branch, which touches nothing. The first version dropped only inside
+//     `noteHeldNamesTouched()`, which returns at once when no add is in
+//     flight, so a create applied on a busy key left "nobody" standing.
+//     `generation` moves with every drop, so a warm whose question was out
+//     while one happened does not write its older answer.
+//
+// Bounded at `USER_NAME_ANSWERS_MAX` per realm, the least recently used
+// dropped first, and on `/admin/caches` as `ldap.gate-usernames`. An absence
 // at `uid=<name>` is not this answer: a person filed under another RDN is
-// found only by name. A write an add in flight was told about drops the
-// names it could have changed (`dropUserNameAnswers()`), because that
-// apply does not always move the clock.
+// found only by name.
 const userNameAnswers = realms.keyed(function () {
-  return { version: -1, usersDn: '', answers: null };
+  return { version: -1, usersDn: '', generation: 0, answers: null };
 });
+const USER_NAME_ANSWERS_MAX = 64;
+// How deep the gate's synchronous checks are (`withRememberedUserNames()`).
+// Zero everywhere else, so no other read sees a remembered answer.
+let rememberedNameReads = 0;
 
 // The registry counters of this file's four caches (#74, rule 3ap) — the
 // username index above, and the group index, the entryUUID index and the
@@ -2746,6 +2775,7 @@ const groupIndexCount = cacheRegistry.counter('ldap.group-index');
 const uuidIndexCount = cacheRegistry.counter('ldap.entryuuid-index');
 const windowedUuidCount = cacheRegistry.counter('ldap.windowed-entryuuids');
 const listingCount = cacheRegistry.counter('ldap.subtree-listings');
+const userNameAnswerCount = cacheRegistry.counter('ldap.gate-usernames');
 
 // Every name this entry answers to, lower-cased and without repeats: its `uid`
 // values, each live `stsPseudonym` (#644), and the value of its own RDN. A
@@ -3370,35 +3400,31 @@ function noteHeldNamesTouched(dn, after) {
       watch.names.add(name);
     });
   });
-  // The same news for a username the console gate remembered (#880). An
-  // add whose watch was touched falls through to existingUserEntry(), and
-  // a remembered "nobody" would hide the person this write just made.
-  dropUserNameAnswers(key, names);
 }
 
-// Hot path (every write that an add in flight is told about): no
-// Entering/Leaving pair, the exception the code style allows, stated as
-// it requires. `names` null drops every remembered answer.
-function dropUserNameAnswers(dnKey, names) {
+// Hot path (every write): no Entering/Leaving pair, the exception the code
+// style allows, stated as it requires. The console gate's remembered
+// usernames (#880) are dropped by any write that could change who holds a
+// name: one naming no DN, one at or under the realm's `ou=users`, and one
+// above it (a realm's base). The generation moves even when nothing is
+// held, because a warm may have a question out. Outside a window nothing is
+// ever remembered (`warmUserNamesAsync()` returns first), so nothing is done.
+function dropUserNameAnswersFor(dn) {
+  if (!directoryWindow) {
+    return;
+  }
   const held = userNameAnswers();
-  if (!held.answers || !held.answers.size) {
-    return;
-  }
-  if (names === null) {
-    held.answers = null;
-    held.version = -1;
-    return;
-  }
-  const drop = [];
-  held.answers.forEach(function (entry, name) {
-    if (names.indexOf(name) >= 0 ||
-        (dnKey && entry && normalizeDn(entry.dn) === dnKey)) {
-      drop.push(name);
+  if (dn !== undefined && dn !== null && dn !== '') {
+    const key = normalizeDn(String(dn));
+    const users = normalizeDn(usersDn());
+    if (key !== users && !key.endsWith(',' + users) &&
+        !users.endsWith(',' + key)) {
+      return;
     }
-  });
-  drop.forEach(function (name) {
-    held.answers.delete(name);
-  });
+  }
+  held.generation++;
+  held.answers = null;
+  held.version = -1;
 }
 
 // THE NAMING CONTEXTS THIS SOCKET SERVES: the root, and one per defined realm.
@@ -5970,6 +5996,10 @@ const directoryHooks = {
         // And an add holding names it asked first (#625): a row naming one
         // of them is news to it whether or not this key is busy here.
         noteHeldNamesTouched(key, after);
+        // And the console gate's remembered usernames (#880): a person
+        // another process made on a key busy here would otherwise stay
+        // "nobody" until this process next wrote under ou=users.
+        dropUserNameAnswersFor(key);
       }
     });
     // No identity-register note for a person another process made: see
@@ -6301,6 +6331,7 @@ async function warmUserNamesAsync(names) {
   const realmId = realms.currentId();
   const users = normalizeDn(usersDn());
   const seenAt = subtreeVersion(users);
+  const generation = userNameAnswers().generation;
   const coldKeys = [];
   const askName = [];
   list.forEach(function (one) {
@@ -6328,7 +6359,8 @@ async function warmUserNamesAsync(names) {
     if (subtreeVersion(users) === seenAt) {
       answers.forEach(function (hits, i) {
         const entry = hits[0] ? hits[0].entry : null;
-        noteUserNameAnswer(askName[i].wanted, entry, seenAt);
+        noteUserNameAnswer(askName[i].wanted, entry, seenAt,
+                           generation);
         if (entry && entry.dn) {
           const key = normalizeDn(entry.dn);
           if (window.isWindowed(realmId, key) &&
@@ -6632,17 +6664,10 @@ function entryBySpiffeSubject(id) {
   return found;
 }
 
-/**
- * Finds a person's entry by the name they authenticate under: the `uid` DN
- * directly under `ou=users` first, then any entry there whose RDN value matches
- * case-insensitively.
- *
- * @param name - the username
- * @returns the entry, or null
- */
-// Hot path (every username lookup that missed its uid DN): no
-// Entering/Leaving pair, the exception the code style allows, stated as
-// it requires. A Map lookup; the pair would be two lines per sign-in.
+// Hot path (the gate's username read, inside `withRememberedUserNames()`):
+// no Entering/Leaving pair, the exception the code style allows, stated as
+// it requires. A Map lookup. A hit is moved to the young end, so the bound
+// drops the name the gate asked least recently.
 function userNameAnswerOf(wanted) {
   const held = userNameAnswers();
   const users = normalizeDn(usersDn());
@@ -6650,17 +6675,21 @@ function userNameAnswerOf(wanted) {
       held.usersDn !== users || !held.answers.has(wanted)) {
     return { known: false, entry: null };
   }
-  return { known: true, entry: held.answers.get(wanted) || null };
+  const entry = held.answers.get(wanted) || null;
+  held.answers.delete(wanted);
+  held.answers.set(wanted, entry);
+  return { known: true, entry: entry };
 }
 
-// Hot path, as `userNameAnswerOf()`: no Entering/Leaving pair. `seenAt`
-// is the subtree clock the answer was read under. A write since then is
-// not stored, so the next lookup asks again.
-function noteUserNameAnswer(wanted, entry, seenAt) {
+// Hot path, as `userNameAnswerOf()`: no Entering/Leaving pair. `seenAt` and
+// `generation` are the subtree clock and the drop count the answer was asked
+// under; a write or a drop since then means the answer is not stored, and
+// the gate's next read asks again. Called by `warmUserNamesAsync()` alone.
+function noteUserNameAnswer(wanted, entry, seenAt, generation) {
   const held = userNameAnswers();
   const users = normalizeDn(usersDn());
   const version = subtreeVersion(users);
-  if (seenAt !== version) {
+  if (seenAt !== version || generation !== held.generation) {
     return;
   }
   if (!held.answers || held.version !== version ||
@@ -6669,12 +6698,46 @@ function noteUserNameAnswer(wanted, entry, seenAt) {
     held.version = version;
     held.usersDn = users;
   }
-  if (subtreeVersion(users) !== version) {
-    return;
-  }
+  held.answers.delete(wanted);
   held.answers.set(wanted, entry || null);
+  while (held.answers.size > USER_NAME_ANSWERS_MAX) {
+    held.answers.delete(held.answers.keys().next().value);
+  }
 }
 
+// THE CONSOLE GATE'S SYNCHRONOUS CHECKS, AND NOTHING ELSE, READ THE
+// REMEMBERED USERNAMES (#880's review). `fn` runs synchronously with the
+// depth raised and is lowered in a `finally`, so no await and no other
+// request can run inside it. The gate calls this around its checks only,
+// never around `next()`: a handler it admits may create a person, and a
+// create must ask the store.
+/**
+ * Runs `fn` with the gate's remembered usernames readable by
+ * `existingUserEntry()`.
+ *
+ * @param {Function} fn - synchronous
+ * @returns {*} what `fn` returned
+ */
+function withRememberedUserNames(fn) {
+  log.debug("Entering withRememberedUserNames().");
+  rememberedNameReads++;
+  try {
+    const out = fn();
+    log.debug("Leaving withRememberedUserNames().");
+    return out;
+  } finally {
+    rememberedNameReads--;
+  }
+}
+
+/**
+ * Finds a person's entry by the name they authenticate under: the `uid` DN
+ * directly under `ou=users` first, then any entry there whose RDN value matches
+ * case-insensitively.
+ *
+ * @param name - the username
+ * @returns the entry, or null
+ */
 function existingUserEntry(name) {
   log.debug('Entering existingUserEntry().');
   const wanted = String(name == null ? '' : name).trim().toLowerCase();
@@ -6690,12 +6753,18 @@ function existingUserEntry(name) {
     log.debug('Leaving existingUserEntry().');
     return direct;
   }
-  // Remembered byName, including nobody (#880). The uid DN was already
-  // missed above, so this is not treating that absence as "nobody".
-  const remembered = userNameAnswerOf(wanted);
-  if (remembered.known) {
-    log.debug('Leaving existingUserEntry(). Remembered.');
-    return remembered.entry;
+  // Remembered byName, including nobody (#880) — read only inside the
+  // console gate's checks (`withRememberedUserNames()`), never by a create.
+  // The uid DN was already missed above, so this is not treating that
+  // absence as "nobody".
+  if (rememberedNameReads > 0 && directoryWindow) {
+    const remembered = userNameAnswerOf(wanted);
+    if (remembered.known) {
+      userNameAnswerCount.hit();
+      log.debug('Leaving existingUserEntry(). Remembered.');
+      return remembered.entry;
+    }
+    userNameAnswerCount.miss();
   }
   // AND THE FALL-THROUGH IS A LOOKUP RATHER THAN A WALK, which is the whole of
   // the username index beside the store: this branch is reached by EVERY
@@ -6706,17 +6775,16 @@ function existingUserEntry(name) {
   // A WINDOWED WORKER ASKS THE STORE (#349): its index would be a walk of
   // every person, rebuilt after every write. Same pair of names, same
   // first-by-key rule a restored process's index has.
+  // Nothing is remembered here (#880's review): only the gate's warm
+  // writes an answer down.
   const users = normalizeDn(usersDn());
-  const seenAt = subtreeVersion(users);
   const asked = windowedFind('byName', [users, wanted], function (entry) {
     return normalizeDn(parentDn(entry.dn)) === users &&
       usernameKeysOf(entry).indexOf(wanted) >= 0;
   });
   if (asked) {
-    const found = asked[0] || null;
-    noteUserNameAnswer(wanted, found, seenAt);
     log.debug('Leaving existingUserEntry(). Asked the store.');
-    return found;
+    return asked[0] || null;
   }
   const key = usernameIndexNow().get(wanted);
   const found = key ? (entries.get(key) || null) : null;
@@ -16635,6 +16703,13 @@ if (typeof credentials.addDirectoryHooks === 'function') {
   credentials.addDirectoryHooks({
     credentialCensus: credentialCensus,
     credentialCensusAsync: credentialCensusAsync,
+    // Whether the directory is a window onto the store (#786's review): a
+    // census that failed there is not asked again one name at a time.
+    directoryWindowed: function () {
+      log.debug("Entering directoryWindowed().");
+      log.debug("Leaving directoryWindowed().");
+      return !!directoryWindow;
+    },
     // The shown rows' full credential values and their DNs, asked
     // together and asynchronously (#820).
     credentialRowsAsync: credentialRowsAsync,
@@ -17487,6 +17562,11 @@ function rosterViewFor(realm) {
     }),
     readPersonFlags: inRealm(readPersonFlags),
     writePersonFlag: inRealm(writePersonFlag),
+    // The bootstrap administrator's flags are read on every console request
+    // (#880): `bootstrapState()` reads them inside this, the one door to
+    // the usernames the `/admin-api` gate warmed. Optional, as above. Not
+    // realm-bound: what it runs is.
+    withRememberedUserNames: withRememberedUserNames,
     // STRINGS, and THIS realm's — evaluated once, when the view is built,
     // rather than read per call. A realm's base DN cannot change while the
     // process runs, so there is nothing to re-read, and a function would only
@@ -21408,6 +21488,8 @@ server.del('', function (req, res, next) {
     // Out of every role that named it, as deleteGroupEntry() does (its groups
     // are below, with every other kind's).
     roles.forgetMember('groups', String((deletedAttributes.cn || [])[0] || ''));
+    // And off every owner list, as deleteGroupEntry() does (2026-11-13).
+    forgetOwnerReferences(stored.dn, 'an LDAP delete');
   } else if (!deletedPerson && isRoleEntry(stored)) {
     noteRoleChange(stored.dn, deletedAttributes, {});
   } else if (!deletedPerson && isUnder(stored.dn, applicationsDn()) &&
@@ -21913,6 +21995,11 @@ server.modifyDN('', function (req, res, next) {
   } else if (groupRuleFor(stored) && groupCnBefore) {
     roles.renameMember('groups', groupCnBefore,
                        String((stored.attributes.cn || [])[0] || ''));
+  }
+  // AND WHAT IT OWNED (2026-11-13): every owner list naming the old DN names
+  // the new one (moveOwnerReferences()).
+  if (isPersonEntry(stored) || groupRuleFor(stored)) {
+    moveOwnerReferences(dn, target);
   }
   // A RENAME OF A PERSON IS AN ACCOUNT CHANGE and says so, where it used to
   // tell nobody: the SSF and RISC registers key on the name that just moved.
@@ -27725,7 +27812,30 @@ function noteApplicationRemoved(stored, via) {
   // otherwise hold every role this one did. Here, because both doors reach
   // here.
   forgetGroupMemberships(String(stored.dn), via);
+  // AND THE ROLES IT OWNS GO WITH IT (rcbj, 2026-11-13, #1612): a role made
+  // for this application (`<role>@<identifier>`, `roleApplication`) is
+  // deleted as the console's delete-role deletes one — roles.remove(), then
+  // a `roles.delete` row — so an application registered later under the
+  // same identifier finds no role name waiting for it. First, so the two
+  // calls below do not rewrite a role that is about to go.
+  roles.forgetApplicationRoles(identifier).forEach(function (role) {
+    audit.audit({ action: 'roles.delete', actor: '', target: role,
+                  protocol: 'XACML', channel: 'internal',
+                  detail: 'deleted the role "' + role + '": the ' +
+                          'application "' + identifier + '" it belonged ' +
+                          'to was deleted by ' + via });
+  });
   roles.forgetMember('applications', identifier);
+  // AND IT CONFERS NOTHING (2026-11-13, #1612's review): forgetMember() keeps
+  // `roleConferredBy`, so the identifier stayed there and the next
+  // application registered under it — in development, whoever presents the
+  // client_id — conferred the role on everybody signing in through it.
+  roles.forgetConferrer(identifier).forEach(function (role) {
+    audit.audit({ action: 'roles.unconfer', actor: '', target: identifier,
+                  protocol: 'XACML', channel: 'internal',
+                  detail: '"' + identifier + '" no longer confers the role "' +
+                          role + '": the application was deleted by ' + via });
+  });
   try {
     require('../ssf/account_signals').applicationPurged({
       application: identifier, dn: String(stored.dn), via: via,
@@ -28372,6 +28482,220 @@ function moveGroupMemberships(oldDn, newDn, oldName, newName) {
   return changed;
 }
 
+// ---------------------------------------------------------------------------
+// A DELETED OWNER OWNS NOTHING, AND A RENAMED ONE STILL OWNS IT (2026-11-13,
+// #1612's review). forgetGroupMemberships()'s rule, for the four attributes
+// that name an OWNER: a role's and a group's `owner` (#604, #603), an
+// application's `appOwner` (#604) and a service account's
+// `stsServiceAccountOwner` (#600), each the DN of a person or a group. Under
+// #607 an owner is issued owner:write, so a person deleted and made again at
+// the same DN — the same username — owned everything the first one owned.
+// So a delete of a person or a group takes its DN off every owner list in the
+// realm, and a rename moves it, through each register's own door: the role
+// register (`roles.forgetOwner()`), the application registry
+// (`applications.forgetOwner()`), writeGroupOwners() and
+// writeServiceAccount(). A removal is audited under the action the
+// remove-owner door records; a rename is not, as a membership moved by a
+// rename is not.
+//
+// WHO NAMES THE DN is asked, not walked: the roles and the applications off
+// their kept listings; the groups and service accounts from the resident
+// entries (groupsOwnedBy()'s reach) and, in a windowed process, the store's
+// `grantinggroup` value key — every value of the three owner attributes,
+// keyed by its DN (`directory_codec.js`, #1306) — one indexed `byAttribute`,
+// which is how a service account under `ou=users` is found without paging
+// the people. A device's `owner` is its holder, not an authority, and is the
+// device register's (`common/devices.ts`); it is left alone.
+// ---------------------------------------------------------------------------
+const OWNER_REFERENCE_ATTRIBUTES = ['owner', 'stsserviceaccountowner'];
+// The most entries one store question may answer; past it the line says some
+// may still name the DN (STS-ADMIN-0923). An owner is named on few objects.
+const OWNER_REFERENCE_LIMIT = 1000;
+
+// Whether owner values name `key` (a normalised DN). Called for every
+// resident entry's owner attributes from entriesNamingOwner(): no
+// Entering/Leaving pair, the hot-path exception the code style allows.
+function ownerValuesName(values, key) {
+  return (values || []).some(function (value) {
+    return normalizeDn(value) === key;
+  });
+}
+
+// Owner values with `key` replaced by `to`, or taken out when `to` is '',
+// each DN once.
+function ownerValuesReplaced(values, key, to) {
+  log.debug('Entering ownerValuesReplaced().');
+  const out = [];
+  (values || []).forEach(function (value) {
+    const one = normalizeDn(value) === key ? to : String(value);
+    if (one && !out.some(function (kept) {
+      return normalizeDn(kept) === normalizeDn(one);
+    })) {
+      out.push(one);
+    }
+  });
+  log.debug('Leaving ownerValuesReplaced(). ' + out.length + '.');
+  return out;
+}
+
+// The groups and service accounts of the ambient realm naming `key` (a
+// normalised DN) in an owner attribute, each once.
+function entriesNamingOwner(key) {
+  log.debug('Entering entriesNamingOwner().');
+  const out = [];
+  const seen = new Set();
+  // Called once per resident entry: no Entering/Leaving pair, the hot-path
+  // exception the code style allows, stated as it requires.
+  const consider = function (stored) {
+    if (!stored || !stored.dn || seen.has(normalizeDn(stored.dn))) {
+      return;
+    }
+    const at = stored.attributes || {};
+    const names = OWNER_REFERENCE_ATTRIBUTES.some(function (attribute) {
+      return ownerValuesName(at[attribute], key);
+    });
+    if (names) {
+      seen.add(normalizeDn(stored.dn));
+      out.push(stored);
+    }
+  };
+  eachResidentEntry(consider);
+  const info = {};
+  const asked = windowedFind('byAttribute',
+    ['grantinggroup', key, OWNER_REFERENCE_LIMIT], function (stored) {
+      return !!stored;
+    }, info);
+  if (asked) {
+    asked.forEach(consider);
+    if (Number(info.rows) >= OWNER_REFERENCE_LIMIT) {
+      log.error(errorCodes.tag('STS-ADMIN-0923') + 'ldap: the store named ' +
+                'at least ' + OWNER_REFERENCE_LIMIT + ' entries for ' + key +
+                ', the most one question answers, so some may still name ' +
+                'it as an owner.');
+    }
+  }
+  log.debug('Leaving entriesNamingOwner(). ' + out.length + '.');
+  return out;
+}
+
+// The one pass both doors below make: `newDn` '' takes `oldDn` off, anything
+// else puts `newDn` in its place. Returns how many objects were rewritten.
+function rewriteOwnerReferences(oldDn, newDn, origin) {
+  log.debug('Entering rewriteOwnerReferences().');
+  const key = normalizeDn(oldDn);
+  const to = String(newDn || '').trim();
+  if (!key || key === normalizeDn(to)) {
+    log.debug('Leaving rewriteOwnerReferences(). Nothing to do.');
+    return 0;
+  }
+  const via = String(origin || (to ? 'a rename' : 'a delete'));
+  const why = to ? ' (renamed to ' + to + ' by ' + via + ')'
+                 : ' (deleted by ' + via + ')';
+  let changed = 0;
+  const rolesChanged = to ? roles.renameOwner(oldDn, to)
+                          : roles.forgetOwner(oldDn);
+  const appsChanged = to ? applications.renameOwner(oldDn, to)
+                         : applications.forgetOwner(oldDn);
+  if (!to) {
+    rolesChanged.forEach(function (role) {
+      audit.audit({ action: 'roles.remove-owner', actor: '', target: role,
+                    protocol: 'XACML', channel: 'internal',
+                    detail: 'took ' + oldDn + ' off the owners of the role "' +
+                            role + '"' + why });
+    });
+    appsChanged.forEach(function (identifier) {
+      audit.audit({ action: 'application.remove-owner', actor: '',
+                    target: identifier, channel: 'internal',
+                    detail: 'took ' + oldDn + ' off the owners of ' +
+                            identifier + why });
+    });
+  }
+  changed += rolesChanged.length + appsChanged.length;
+  entriesNamingOwner(key).forEach(function (stored) {
+    if (isRoleEntry(stored) || isUnder(stored.dn, applicationsDn()) ||
+        isUnder(stored.dn, devicesDn())) {
+      return;
+    }
+    const at = stored.attributes || {};
+    if (groupRuleFor(stored) && ownerValuesName(at.owner, key)) {
+      const done = writeGroupOwners(stored,
+        ownerValuesReplaced(at.owner, key, to),
+        { origin: via, channel: 'internal', actor: '' },
+        to ? '' : 'group.remove-owner',
+        oldDn + ' is no longer an owner of ' + stored.dn + why,
+        { owner: oldDn, gone: true });
+      if (done.ok) {
+        changed += 1;
+      } else {
+        log.error(errorCodes.tag('STS-ADMIN-0922') + 'ldap: could not ' +
+                  (to ? 'move the owner ' + oldDn + ' to ' + to + ' on'
+                      : 'take the deleted owner ' + oldDn + ' off') +
+                  ' the group ' + stored.dn + ' (' + done.reason + ').');
+      }
+    }
+    if (isPersonEntry(stored) &&
+        ownerValuesName(at.stsserviceaccountowner, key)) {
+      const owners = ownerValuesReplaced(at.stsserviceaccountowner, key, to);
+      if (writeServiceAccount(stored.dn,
+                              { stsServiceAccountOwner: owners })) {
+        changed += 1;
+        if (!to) {
+          audit.audit({ action: 'admin.service-account.owner-removed',
+                        actor: '', target: stored.dn, channel: 'internal',
+                        detail: 'took ' + oldDn + ' off the owners of ' +
+                                'the service account ' + stored.dn + why +
+                                (owners.length ? ''
+                                  : '; it names no owner now') });
+        }
+      } else {
+        log.error(errorCodes.tag('STS-ADMIN-0922') + 'ldap: could not ' +
+                  (to ? 'move the owner ' + oldDn + ' to ' + to + ' on'
+                      : 'take the deleted owner ' + oldDn + ' off') +
+                  ' the service account ' + stored.dn + '.');
+      }
+    }
+  });
+  if (changed) {
+    log.info('ldap: ' + oldDn + (to ? ' was moved to ' + to + ' on '
+                                    : ' was taken off ') +
+             changed + ' owner list(s)' + why + '.');
+  }
+  log.debug('Leaving rewriteOwnerReferences(). ' + changed + '.');
+  return changed;
+}
+
+/**
+ * Takes a deleted person's or group's DN off every owner list in the ambient
+ * realm: the roles', the groups', the applications' and the service
+ * accounts'.
+ *
+ * @param dn - the deleted entry's DN
+ * @param origin - who deleted it, for the writes and the audit rows
+ * @returns how many objects were rewritten
+ */
+function forgetOwnerReferences(dn, origin) {
+  log.debug('Entering forgetOwnerReferences().');
+  const changed = rewriteOwnerReferences(dn, '', origin);
+  log.debug('Leaving forgetOwnerReferences(). ' + changed + '.');
+  return changed;
+}
+
+/**
+ * Moves a renamed person's or group's DN on every owner list in the ambient
+ * realm, so it owns what it owned and nothing names the old DN.
+ *
+ * @param oldDn - the DN it had
+ * @param newDn - the DN it has now
+ * @returns how many objects were rewritten
+ */
+function moveOwnerReferences(oldDn, newDn) {
+  log.debug('Entering moveOwnerReferences().');
+  const changed = String(newDn || '').trim()
+    ? rewriteOwnerReferences(oldDn, newDn, 'an LDAP rename') : 0;
+  log.debug('Leaving moveOwnerReferences(). ' + changed + '.');
+  return changed;
+}
+
 // THE ONE PLACE A PERSON'S ENTRY LEAVES THE DIRECTORY BY A DELETE — SCIM's,
 // the LDAP delete handler's, a re-homing's. The entry goes, the write is
 // marked BY ITS DN (a DN-less touch invalidates every cached listing and makes
@@ -28409,6 +28733,10 @@ function removePersonEntry(stored, door) {
   // `roles.forgetMember()`). Every door's person delete comes here (#351).
   forgetGroupMemberships(stored.dn, door);
   roles.forgetMember('users', goneName);
+  // AND OFF EVERY OWNER LIST (2026-11-13): an owner is issued owner:write
+  // (#607), and somebody made again at this DN would own it all again
+  // (forgetOwnerReferences()).
+  forgetOwnerReferences(stored.dn, door);
   log.debug('Leaving removePersonEntry().');
 }
 
@@ -28762,6 +29090,9 @@ function deleteGroupEntry(dn) {
   // role names a group by name. The LDAP delete does the same.
   forgetGroupMemberships(stored.dn, 'a group delete');
   roles.forgetMember('groups', String((stored.attributes.cn || [])[0] || ''));
+  // AND OFF EVERY OWNER LIST (2026-11-13): an owner group administers what
+  // it owns (#607), and a group made again under this cn would.
+  forgetOwnerReferences(stored.dn, 'a group delete');
   log.debug('Leaving deleteGroupEntry(). ' + entries.size + ' entry/entries ' +
       'left.');
   return { ok: true, dn: stored.dn };
@@ -29397,6 +29728,12 @@ function writeGroupOwners(stored, owners, opts, action, summary, detail) {
       reason: written.reason,
       errors: ['The owners could not be written onto ' + stored.dn + ' (' +
                written.reason + ').'] });
+  }
+  // No action is a rename carried (moveOwnerReferences()), which records
+  // nothing, as a membership moved by a rename records nothing.
+  if (!action) {
+    log.debug('Leaving writeGroupOwners(). Moved; not audited.');
+    return { ok: true, entry: written.entry };
   }
   audit.recordDirectory({
     action: action,
@@ -30816,6 +31153,47 @@ function describeDirectoryCaches() {
       return out;
     }
   });
+  // The console gate's remembered usernames (#880's review).
+  cacheRegistry.register({
+    name: 'ldap.gate-usernames',
+    title: 'Console gate usernames',
+    description: 'In a process holding a directory window, the answer to ' +
+      'who holds a username (nobody included) that the /admin-api gate ' +
+      'asked off the event loop, so its synchronous checks do not ask the ' +
+      'store. Read by those checks only; a create always asks the store.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: function () {
+      return USER_NAME_ANSWERS_MAX;
+    },
+    bound: 'Enforced: ' + USER_NAME_ANSWERS_MAX + ' usernames per realm, ' +
+      'the least recently asked dropped first.',
+    lifetime: function () {
+      log.debug("Entering the gate usernames' lifetime().");
+      log.debug("Leaving the gate usernames' lifetime().");
+      return 'Until anything at, under or above the realm\'s ou=users is ' +
+        'written here or replicated from another process; the gate\'s next ' +
+        'warm asks again.';
+    },
+    entries: function () {
+      log.debug("Entering the gate usernames' entries().");
+      const out = [];
+      userNameAnswers.existing().forEach(function (held, id) {
+        if (!held.answers || !held.answers.size) {
+          return;
+        }
+        out.push({ realm: id, key: held.answers.size + ' username(s)',
+                   validUntil: null,
+                   valid: inRealmById(id, function () {
+                     return held.version ===
+                       subtreeVersion(normalizeDn(usersDn()));
+                   }),
+                   basis: 'ou=users subtree version' });
+      });
+      log.debug("Leaving the gate usernames' entries().");
+      return out;
+    }
+  });
   cacheRegistry.register({
     name: 'ldap.device-index',
     title: 'Directory device index',
@@ -31111,6 +31489,9 @@ module.exports = {
   // The console gate's username warm (#880): the uid key, absence
   // included, and the byName answer existingUserEntry() would ask.
   warmUserNamesAsync: warmUserNamesAsync,
+  // The gate's synchronous checks, the one reader of what that warm
+  // remembered (#880's review).
+  withRememberedUserNames: withRememberedUserNames,
   serviceAccountNamesAsync: serviceAccountNamesAsync,
   entriesByUuids: entriesByUuids,
   entryUuidOf: entryUuidOf,

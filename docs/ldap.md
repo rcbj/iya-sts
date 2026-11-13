@@ -468,10 +468,15 @@ changes one, and a runtime setting can be set per trust realm. See
 * **A delete takes the entry out of every group and role.** Deleting a person,
   a group or an application removes its DN from every group that listed it and
   its name from every role. Something created again under the same name starts
-  with no memberships and no roles, and has to be added back.
-* **A rename keeps the entry's memberships.** A modifyDN updates every group
-  that listed the old DN, and every role that listed the old username or group
-  name, to the new one.
+  with no memberships and no roles, and has to be added back. A deleted
+  application also stops conferring every role it conferred on the people
+  signing in through it, and a deleted person or group is taken off the
+  owners of every role, group, application and service account that named
+  it. Something created again at the same DN owns nothing.
+* **A rename keeps the entry's memberships and what it owns.** A modifyDN
+  updates every group that listed the old DN, every role that listed the old
+  username or group name, and every owner list that named the old DN, to the
+  new one.
 * **Two ports rather than StartTLS.** StartTLS is an extended operation
   (RFC 4511 section 4.14) that upgrades a connection already in progress,
   ldapjs implements none, and LDAPS on 636 is what most clients speak. Which of

@@ -23,7 +23,12 @@
 //   R4. a row none of whose names the census answered has no factors
 //       (unknown), not "no credential";
 //   R5. where the directory offers no census, each name is still asked on
-//       its own and no recovery codes are read.
+//       its own and no recovery codes are read;
+//   R6. a census that failed on the store under a code `storeRefused()`
+//       does not list (a pool timeout, STS-STORE-0066) is refused as well;
+//   R7. in a windowed process, a census that threw for any reason is
+//       refused, with no one-name read (#786's review). R2 is the same
+//       throw in a process holding the directory in memory.
 //
 // In a child process: it replaces the directory's census hooks.
 // ===========================================================================
@@ -121,6 +126,55 @@ function child() {
          'R3. and that one-at-a-time path reads no recovery codes, including ' +
          'for a person who holds an authenticator app',
          JSON.stringify(counts));
+
+    // R6, R7 (#786's review): a store failure the three listed codes do not
+    // name, and any failure where the directory is a window onto the store,
+    // are refused too — no `mechanismsFor()` per name.
+    const r6 = { mechanisms: counts.mechanisms, recovery: counts.recovery,
+                 codesOf: counts.codesOf };
+    const poolTimeout = function () {
+      return errorCodes.mark(new Error('timed out waiting for a connection ' +
+        'from the pool'), 'STS-STORE-0066');
+    };
+    credentials.addDirectoryHooks({
+      credentialCensus: function () {
+        throw poolTimeout();
+      },
+      credentialCensusAsync: function () {
+        return Promise.reject(poolTimeout());
+      }
+    });
+    const storeSync = credentials.factorCensus(names);
+    const storeAsync = await credentials.factorCensusAsync(names);
+    note(storeSync.size === 0 && storeAsync.size === 0 &&
+         counts.mechanisms === r6.mechanisms &&
+         counts.recovery === r6.recovery && counts.codesOf === r6.codesOf,
+         'R6. a census that failed on the store under a code storeRefused() ' +
+         'does not list (a pool timeout) answers every name unknown and asks ' +
+         'nobody on their own, synchronously and not',
+         JSON.stringify({ sync: storeSync.size, async: storeAsync.size,
+                          before: r6, counts: counts }));
+
+    credentials.addDirectoryHooks({
+      directoryWindowed: function () {
+        return true;
+      },
+      credentialCensus: function () {
+        throw new Error('a page of the window could not be read');
+      },
+      credentialCensusAsync: function () {
+        return Promise.reject(new Error('a page of the window could not ' +
+                                        'be read'));
+      }
+    });
+    const winSync = credentials.factorCensus(names);
+    const winAsync = await credentials.factorCensusAsync(names);
+    note(winSync.size === 0 && winAsync.size === 0 &&
+         counts.mechanisms === r6.mechanisms,
+         'R7. in a windowed process a census that threw for any reason is ' +
+         'answered unknown, with no one-name read',
+         JSON.stringify({ sync: winSync.size, async: winAsync.size,
+                          before: r6, counts: counts }));
 
     // R4: the view's merge, over a census that answered nobody.
     const instance = new views.AdminViews(views.AdminViews.defaultDeps());

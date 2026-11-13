@@ -5231,6 +5231,17 @@ class FederationSp {
         return this.refuse(res, record, 401, 'The signed response cannot ' +
                            'be used', problem);
       }
+      // JARM section 4.4: the client checks `exp`. jwt.verify() checks it
+      // only when it is there, so a response JWT without one is refused
+      // here rather than taken as good for ever. A code of its own, so a
+      // partner that leaves it out is told apart from a bad signature.
+      const lifetime = FapiClient.jarmExpiryProblem(verified.payload);
+      if (lifetime) {
+        errorCodes.mark(res, 'STS-FED-0250');
+        log.debug("Leaving FederationSp.openJarm(). " + lifetime);
+        return this.refuse(res, record, 401, 'The signed response cannot ' +
+                           'be used', lifetime);
+      }
       const claims = verified.payload || {};
       const merged: any = Object.assign({}, params);
       ['code', 'state', 'error', 'error_description', 'iss'].forEach(
@@ -6532,6 +6543,15 @@ class FederationSp {
       return 'retried';
     }
     const tokens = answer.json;
+    // The sign-in's rule again (#931's review): a 2.x profile's refreshed
+    // access token must come back DPoP-bound, or the session ends rather
+    // than carry on with a bearer token.
+    const unbound = FapiClient.tokenTypeProblem(profile, tokens);
+    if (unbound) {
+      log.debug("Leaving FederationSp.refreshOne(). Not DPoP-bound.");
+      return this.endForRefresh(session, record, entry, 'STS-FED-0251',
+        'the refreshed token response cannot be used: ' + unbound);
+    }
     if (tokens.id_token) {
       const keySet = await this.keysFor(record);
       const verified: any = keySet.ok
@@ -8525,6 +8545,21 @@ class FederationSp {
       // spent.
       record = FapiClient.shapedRecord(record);
     }
+    // RFC 9207 IS REQUIRED OF A FAPI 2 PARTNER (#931's review). FAPI 2.0
+    // Security Profile section 5.3.2.2 has the client verify `iss`, so a
+    // 2.x answer without one is refused, before any code is spent. Under
+    // JARM `iss` came out of the response JWT, which was verified against
+    // `fedPeer` before openJarm() merged it here. Every other relationship
+    // keeps checking `iss` only when it is sent, as before.
+    if (FapiClient.requiresIssuerParameter(FapiClient.profileOf(record)) &&
+        !String(params.iss || '')) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). No iss.");
+      errorCodes.mark(res, 'STS-FED-0249');
+      return this.refuse(res, record, 401, 'The sign-in was refused',
+                         'The answer names no issuer, and this ' +
+                         'relationship\'s FAPI 2 profile requires it to ' +
+                         '(RFC 9207).');
+    }
     // A tenant-templated issuer is only known from the token, checked there.
     if (params.iss !== undefined &&
         String(record.fedPeer || '').indexOf('{tenantid}') < 0 &&
@@ -8580,7 +8615,11 @@ class FederationSp {
       const checked: Promise<any> = parts.idToken
         ? this.verifyIdToken(res, record, context, frontToken, {
             front: true, code: parts.code ? frontCode : '',
-            accessToken: parts.token ? frontAccess : '' })
+            accessToken: parts.token ? frontAccess : '',
+            // FAPI 1.0 Advanced's detached signature covers the state too
+            // (#931's review); no other relationship asks for s_hash.
+            state: FapiClient.requiresStateHash(FapiClient.profileOf(record))
+              ? String(params.state || '') : '' })
         : Promise.resolve({ ok: true, payload: null });
       log.debug("Leaving FederationSp.consumeOauthResponse(). The front " +
                 "channel.");
@@ -8739,6 +8778,21 @@ class FederationSp {
                        ? String(answer.json.error_description) : '' }] });
       }
       const tokens = answer.json;
+      // A FAPI 2 PROFILE'S ACCESS TOKEN IS DPoP-BOUND OR NOT USED (#931's
+      // review). RFC 9449 section 5 answers a bound token as token_type
+      // DPoP; a Bearer answer is one the partner did not bind, so nothing
+      // is presented with it, UserInfo included. Other profiles and plain
+      // relationships are not asked.
+      const unbound = FapiClient.tokenTypeProblem(profile, tokens);
+      if (unbound) {
+        errorCodes.mark(res, 'STS-FED-0251');
+        log.debug("Leaving FederationSp.redeemCode(). Not DPoP-bound.");
+        return this.refuse(res, record, 502, 'The code could not be ' +
+                                             'redeemed',
+          'The partner\'s token response cannot be used: ' + unbound +
+          ', and this relationship\'s FAPI 2 profile asks for a ' +
+          'DPoP-bound access token (RFC 9449 section 5).');
+      }
       if (record.fedProtocol === 'oidc') {
         if (!tokens.id_token) {
           errorCodes.mark(res, 'STS-FED-0028');
@@ -9029,7 +9083,16 @@ class FederationSp {
         { claim: 'c_hash', value: String(checks.code || ''),
           required: !!checks.front, what: 'code' },
         { claim: 'at_hash', value: String(checks.accessToken || ''),
-          required: !!checks.front, what: 'access token' }];
+          required: !!checks.front, what: 'access token' },
+        // FAPI 1.0 Advanced (Part 2, sections 5.1.1 and 5.2.2.1): the
+        // front-channel ID Token is a detached signature over the
+        // response, `state` included, so `s_hash` is REQUIRED and is the
+        // same left half of the hash under the token's algorithm. It is
+        // asked only when the caller passed a state, which only a
+        // 1-advanced front channel does: every other relationship ignores
+        // s_hash exactly as before (#931's review).
+        { claim: 's_hash', value: String(checks.state || ''),
+          required: !!checks.front, what: 'state' }];
       for (let i = 0; i < hashes.length; i++) {
         const one = hashes[i];
         if (!one.value) {
@@ -9041,14 +9104,18 @@ class FederationSp {
         }
         const wanted = stsCrypto.idTokenHalfHash(one.value, alg);
         if (String(sent || '') !== wanted) {
-          return refused(401, one.claim === 'c_hash' ? 'STS-FED-0199'
-                                                     : 'STS-FED-0200',
+          const hashCode = one.claim === 'c_hash' ? 'STS-FED-0199'
+            : one.claim === 's_hash' ? 'STS-FED-0248' : 'STS-FED-0200';
+          return refused(401, hashCode,
             'The ID Token does not vouch for the ' + one.what,
             (sent === undefined
-              ? 'It carries no ' + one.claim + ', which OpenID Connect ' +
-                'Core 1.0 requires of an ID Token the authorization ' +
-                'endpoint sends beside a ' + one.what + ' (sections ' +
-                '3.2.2.10 and 3.3.2.11)'
+              ? 'It carries no ' + one.claim + (one.claim === 's_hash'
+                ? ', which FAPI 1.0 Advanced (Part 2, section 5.1.1) ' +
+                  'requires of the ID Token it uses as a detached signature'
+                : ', which OpenID Connect ' +
+                  'Core 1.0 requires of an ID Token the authorization ' +
+                  'endpoint sends beside a ' + one.what + ' (sections ' +
+                  '3.2.2.10 and 3.3.2.11)')
               : 'Its ' + one.claim + ' is not the left half of the ' +
                 one.what + '\'s hash under ' + (alg || 'its algorithm')) +
             ': without it a ' + one.what + ' substituted on the way here ' +

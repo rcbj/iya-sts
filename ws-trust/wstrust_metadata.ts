@@ -75,7 +75,12 @@ const SOAP_NS = 'http://schemas.xmlsoap.org/wsdl/soap/';
 const SOAP12_NS = 'http://schemas.xmlsoap.org/wsdl/soap12/';
 const XSD_NS = 'http://www.w3.org/2001/XMLSchema';
 const TNS = 'urn:iya-sts:ws-trust:metadata';
-const SP_NS = 'http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200802';
+// WS-SecurityPolicy 1.2's namespace. 1.3's 200802 namespace declares only the
+// five assertions 1.3 added (XPath2, Created, Nonce, ScopePolicy15,
+// MustSupportInteractiveChallenge) and imports this one for every other: a
+// UsernameToken or X509Token named in 200802 is an assertion no policy
+// processor knows (tests/wstrust_metadata.js W, against the published XSDs).
+const SP_NS = 'http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702';
 const INCLUDE = SP_NS + '/IncludeToken/AlwaysToRecipient';
 const TRANSPORT = 'http://schemas.xmlsoap.org/soap/http';
 // WS-Addressing 1.0 Metadata: the wsam:Action on a WSDL input or output.
@@ -627,7 +632,7 @@ class WsTrustMetadata {
         operations: ['Issue', 'Renew', 'Validate'], collection: false },
       { name: 'TrustFeb2005', prefix: 'wst2005', ns: terms.trust2005,
         title: 'WS-Trust February 2005', operations: all,
-        collection: true },
+        collection: false },
       { name: 'Trust13', prefix: 'wst', ns: terms.trust13,
         title: 'WS-Trust 1.3 (OASIS Standard)', operations: all,
         collection: true },
@@ -667,9 +672,13 @@ class WsTrustMetadata {
   private static outputAction(version: TrustVersion,
                               operation: string): string {
     log.debug("Entering WsTrustMetadata.outputAction().");
-    let term = operation.toLowerCase() + 'Final';
-    if (operation === 'Issue') {
-      term = version.collection ? 'issueFinal' : 'issue';
+    // The same rule the endpoint answers by: the pre-OASIS versions name the
+    // operation (RSTR/Issue …), 1.3 and 1.4 the "Final" actions.
+    const preOasis = !version.collection;
+    let term = preOasis ? operation.toLowerCase()
+      : operation.toLowerCase() + 'Final';
+    if (operation === 'Issue' && !preOasis) {
+      term = 'issueFinal';
     }
     const out = WsModel.relative('wst.action', term, version.ns);
     log.debug("Leaving WsTrustMetadata.outputAction().");

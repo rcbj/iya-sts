@@ -15035,7 +15035,7 @@ op `getSecrets`(`responses/200/content/application~1json/schema`: {
   #{
     `operationId`:"getDebugger",
     `summary`:"Whether the identity protocol debugger is embedded, where it answers, and what its api process is doing",
-    `description`:"The embedded identity protocol debugger: `embedded` and the setting and mode that decided it, the listener's `port` and whether it is `listening`, the client (`clientId`), the resource server (`resource`), the permission its api requires (`permission`) and the audience a token for it carries (`audience`), and under `api` the child process: its `state` (`starting`, `running`, `restarting`, `given-up`, `not-installed`, `stopped`), process id, socket, starts, consecutive failures, last exit and last error, and — in product mode — the `allowedRanges` it may dial. `settings` is the `Protocol debugger` group as `/admin/debugger` draws it.\n\nNothing here opens the debugger: its gate is the permission, which the authorization server issues to console administrators only.\n\n**Mirrors** `GET /admin/debugger` on the admin console.",
+    `description`:"The embedded identity protocol debugger: `embedded` and the setting and mode that decided it, the listener's `port` and whether it is `listening`, the client the debugger and its api sign in as (`clientId`), and under `api` the child process: its `state` (`starting`, `running`, `restarting`, `given-up`, `not-installed`, `stopped`), process id, socket, starts, consecutive failures, last exit and last error, and — in product mode — the `allowedRanges` it may dial. `settings` is the `Protocol debugger` group as `/admin/debugger` draws it.\n\nNothing here opens the debugger: its gate is a console administrator's sign-in session, and it accepts no access token.\n\n**Mirrors** `GET /admin/debugger` on the admin console.",
     `tags`:#["Service"],
     `responses`:#{
       `200`:#{
@@ -15062,9 +15062,6 @@ op `getDebugger`(`responses/200/content/application~1json/schema`: {
     `publicBaseUrl`?: NullableString;
     `uiDirectory`?: NullableString;
     `clientId`?: string;
-    `resource`?: string;
-    `permission`?: string;
-    `audience`?: string;
     `api`?: {
       `state`?: string;
       `pid`?: NullableInteger;

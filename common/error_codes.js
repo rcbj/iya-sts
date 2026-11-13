@@ -1530,6 +1530,15 @@ const CODES = [
       'four times the limit is it reported as failed (STS-WORKER-0017) and ' +
       'replaced.',
     spec: '' },
+  { code: 'STS-WORKER-0052',
+    summary: 'A request worker revoked something a refresh token rests on ' +
+      '(a session, a token, a refresh family, a grant or an account) after ' +
+      'the answer\'s headers had gone, so the front process could not file ' +
+      'it for the refresh grant\'s wait before the client saw the answer ' +
+      '(the review of #879). The revocation stands; a refresh routed to a ' +
+      'worker that has not applied it may be answered until the workers ' +
+      'converge. Logged at the first and every hundredth.',
+    spec: 'Nothing: the request is answered as it was' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
@@ -2084,6 +2093,23 @@ const CODES = [
       'database password was in a file or in the connection string rather ' +
       'than in a secret store.',
     spec: 'ASVS 5.0.0 13.3.1' },
+  { code: 'STS-STORE-0172',
+    summary: 'The store is owed an index added after release 1.0.0 ' +
+      '(sts_sessions_subject_band, #876, or sts_sessions_started, #882): ' +
+      'it is missing, or left invalid by an interrupted concurrent build, ' +
+      'and the role this service dials with does not own the table to ' +
+      'build it. The service starts and every question is answered, by a ' +
+      'slower plan. Run postgres/upgrade-1.0.0.sql (or ' +
+      'mariadb/upgrade-1.0.0.sql) as the table\'s owner; it builds the ' +
+      'index without blocking writers.',
+    spec: 'none — the store opens without it' },
+  { code: 'STS-STORE-0173',
+    summary: 'A background build of an index the store was owed (#876, ' +
+      '#882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER ' +
+      'on MariaDB — failed. The service goes on without the index, by a ' +
+      'slower plan; the next start tries again, or the owner runs the ' +
+      'upgrade script.',
+    spec: 'none — the store opens without it' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2229,6 +2255,22 @@ const CODES = [
       'back with it (#628). A create of one of those names before then ' +
       'waits and is refused as in progress (STS-LDAP-0092).',
     spec: '' },
+  { code: 'STS-CLUSTER-0165',
+    summary: 'Taking over a lease is waiting for writes the previous ' +
+      'holder still has in flight under it: the ask is bounded by the ' +
+      'heartbeat\'s own bound, rolls back when the bound runs out, and is ' +
+      'made again on the next heartbeat, so this node\'s own renewal never ' +
+      'waits behind it (#770). Logged once per wait; one that repeats for a ' +
+      'node lifetime names a write that does not finish.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0166',
+    summary: 'A response\'s writes committed, and a check deferred onto ' +
+      'that commit refused it, so it was answered 503 with Retry-After ' +
+      'instead of its success (#884\'s review). The one check today is an ' +
+      'access-token status index published without its own commit wait, ' +
+      'whose row the flush dropped because the block claim\'s fence was ' +
+      'gone: the token in the discarded body is not delivered.',
+    spec: 'RFC 9110 section 15.6.4' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -2764,6 +2806,12 @@ const CODES = [
   // ===== KEYS ==============================================================
   { code: 'STS-SCHED-0022',
     summary: 'The clock of this node differs from the database clock.' },
+  { code: 'STS-SCHED-0023',
+    summary: 'The store could not say whether some runs of the current ' +
+      'slot had already run (#883\'s review): those runs were held back ' +
+      'for this tick, neither run nor taken as finished, and are asked ' +
+      'about again at the next; every other run in the tick went on.',
+    spec: '' },
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
       'ignored.',
@@ -11654,6 +11702,15 @@ const CODES = [
       'block claim\'s fence was lost before its status row committed ' +
       '(#884). The access token is not minted on that index.',
     spec: 'none (recorded only)' },
+  { code: 'STS-OAUTH-1010',
+    summary: 'An access-token status index handed out without waiting for ' +
+      'its own commit (#884\'s review: a block already proven durable, ' +
+      'this process\'s origin claim fresh) was found, at the response\'s ' +
+      'commit, not to have been written: its block claim\'s fence was ' +
+      'gone, or the write failed. The response carrying the token is ' +
+      'refused (STS-CLUSTER-0166), and the block is handed out from no ' +
+      'more.',
+    spec: 'none (recorded; the response is the 503 STS-CLUSTER-0166 names)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -13967,6 +14024,25 @@ const CODES = [
   { code: 'STS-FED-0247',
     summary: 'A DPoP proof for a FAPI partner could not be made.',
     spec: 'HTTP 500' },
+  { code: 'STS-FED-0248',
+    summary: 'A FAPI 1.0 Advanced partner\'s front-channel ID Token ' +
+      'carries no s_hash, or one that is not the left half of the ' +
+      'state\'s hash: the detached signature does not cover the state.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0249',
+    summary: 'A FAPI 2 partner\'s authorization response names no ' +
+      'issuer (RFC 9207), which FAPI 2.0 Security Profile section ' +
+      '5.3.2.2 has the client verify.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0250',
+    summary: 'A FAPI partner\'s JARM response JWT carries no exp, which ' +
+      'JARM section 4.4 has the client check.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0251',
+    summary: 'A FAPI 2 partner\'s token response is not DPoP-bound: its ' +
+      'token_type is not DPoP (RFC 9449 section 5). At sign-in the ' +
+      'sign-in is refused; at a refresh the session is ended.',
+    spec: 'HTTP 502' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -18862,6 +18938,14 @@ const CODES = [
       'of a sign-in key. A published DID takes a key that is not ' +
       'enrolled for sign-in.',
     spec: 'HTTP 400 refusal at /authn-api/wallet' },
+  { code: 'STS-VC-0179',
+    summary: 'A key was refused as a person\'s self-issued sign-in ' +
+      'subject (did:jwk, did:key or JWK thumbprint) because a version of ' +
+      'a DID this realm publishes for that person names it (#775, the ' +
+      'reverse of STS-VC-0178). The public document and the sign-in key ' +
+      'would have been one key.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet, or at ' +
+      '/admin-api/users/enrol-self-issued-subject' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -25373,6 +25457,30 @@ const CODES = [
       'realm\'s directory; a role is granted only to a person who exists ' +
       '(admin_rbac.ts grant(), reason noSuchPerson).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0921',
+    summary: 'A deleted application\'s identifier could not be taken off ' +
+      'the clients conferring a role, so whatever is next registered under ' +
+      'that identifier still confers it (roles.forgetConferrer()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0922',
+    summary: 'A deleted or renamed person or group could not be taken off, ' +
+      'or moved on, the owners of a role, group, application or service ' +
+      'account that named its DN, so that object still names the old DN ' +
+      '(roles.forgetOwner(), applications.forgetOwner(), the directory\'s ' +
+      'forgetOwnerReferences() and moveOwnerReferences()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0923',
+    summary: 'The store named as many entries as one question answers for a ' +
+      'deleted or renamed DN held in an owner attribute, so some groups or ' +
+      'service accounts may still name it as an owner ' +
+      '(entriesNamingOwner()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0924',
+    summary: 'A role a deleted application owned (its roleApplication named ' +
+      'the application) could not be deleted with it, so an application ' +
+      'registered later under that identifier finds the role already there ' +
+      '(roles.forgetApplicationRoles()).',
+    spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -27537,44 +27645,41 @@ const CODES = [
       '(#825).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
-    summary: 'The debugger permission was asked for by somebody who may ' +
-      'not hold it — not a person, not signed in, not in the ' +
-      'default realm, or not a console administrator — and was left ' +
-      'off the token.',
-    spec: 'none — the token is issued without that scope (RFC 6749 ' +
-      'section 3.3)' },
+    summary: 'The debugger was refused to a subject that is not a person, ' +
+      'is not named, or did not authenticate.',
+    spec: 'HTTP 403 page or JSON' },
   { code: 'STS-DBG-0002',
-    summary: 'A request to the debugger carried no debugger session and no ' +
-      'bearer token, and was not a page a browser could be sent to ' +
-      'sign in from.',
-    spec: 'HTTP 401 with WWW-Authenticate: Bearer' },
+    summary: 'A request to the debugger carried no debugger session, and ' +
+      'was not a page a browser could be sent to sign in from. The ' +
+      'debugger accepts no access token (#1717).',
+    spec: 'HTTP 401' },
   { code: 'STS-DBG-0003',
     summary: 'A debugger access token did not verify against the default ' +
       'realm\'s signing key, or could not be read.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0004',
     summary: 'A debugger access token had expired.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0005',
     summary: 'A token presented to the debugger was not a JWT access token ' +
       '(typ at+jwt).',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0006',
     summary: 'A debugger access token was issued by somebody other than ' +
       'this service\'s default authorization server.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0007',
     summary: 'A debugger access token was addressed to a different ' +
       'audience.',
-    spec: 'HTTP 403 insufficient_scope' },
+    spec: 'HTTP 403 insufficient_scope', retired: true },
   { code: 'STS-DBG-0008',
     summary: 'A debugger access token did not carry the debugger ' +
       'permission.',
-    spec: 'HTTP 403 insufficient_scope' },
+    spec: 'HTTP 403 insufficient_scope', retired: true },
   { code: 'STS-DBG-0009',
-    summary: 'The access policy refused the debugger to the token\'s ' +
-      'subject — ordinarily because they no longer hold a console ' +
-      'role.',
+    summary: 'The debugger was refused to the signed-in person — they hold ' +
+      'no console role (perhaps no longer), or the access policy ' +
+      'refused them.',
     spec: 'HTTP 403 page or JSON' },
   { code: 'STS-DBG-0010',
     summary: 'The debugger\'s api process is not running, so an /api call ' +
@@ -27634,31 +27739,29 @@ const CODES = [
       'build its report.',
     spec: 'HTTP 500 page or JSON' },
   { code: 'STS-DBG-0024',
-    summary: 'The debugger permission was refused because neither console ' +
-      'role group has a member: the empty-roster rule that opens the ' +
-      'console to everybody does not open the debugger.',
-    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
-      'debugger' },
+    summary: 'The debugger was refused because neither console role group ' +
+      'has a member: the empty-roster rule that opens the console to ' +
+      'everybody does not open the debugger.',
+    spec: 'HTTP 403 at the debugger' },
   { code: 'STS-DBG-0030',
     summary: 'A certificate-bound access token (RFC 8705 cnf x5t#S256) was ' +
       'presented to the debugger on a connection without that certificate.',
-    spec: 'invalid_token (HTTP 401)' },
+    spec: 'invalid_token (HTTP 401)', retired: true },
   // #34 (2026-09-15), the DPoP half of the row above.
   { code: 'STS-DBG-0031',
     summary: 'A DPoP-bound access token (cnf.jkt) was presented to the ' +
       'debugger as a Bearer token.',
-    spec: 'invalid_token (HTTP 401)' },
+    spec: 'invalid_token (HTTP 401)', retired: true },
   { code: 'STS-DBG-0032',
     summary: 'A DPoP proof presented to the debugger did not verify, and the ' +
       'proof check reported no code of its own.',
-    spec: 'invalid_dpop_proof (HTTP 401)' },
+    spec: 'invalid_dpop_proof (HTTP 401)', retired: true },
   { code: 'STS-DBG-0033',
-    summary: 'Product mode: the debugger permission was refused to the ' +
-      'bootstrap administrator because it has not yet claimed the console ' +
-      'with its password; until it has, its roles are honoured at the ' +
-      'console alone, from a password sign-in (#103).',
-    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
-      'debugger' },
+    summary: 'Product mode: the debugger was refused to the bootstrap ' +
+      'administrator because it has not yet claimed the console with its ' +
+      'password; until it has, its roles are honoured at the console ' +
+      'alone, from a password sign-in (#103).',
+    spec: 'HTTP 403 at the debugger' },
   // #956. Recorded, never sent. The public token is named in `spec`.
   { code: 'STS-REPORT-0001',
     summary: 'A report query named a source the catalog does not publish.',

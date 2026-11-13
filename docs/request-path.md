@@ -93,6 +93,18 @@ here — and for keyless writes. A token response this process could not read
 is one of those keyless writes. The refresh's own write is not a keyless one,
 so another refresh and a browser do not wait for it. 8081 was not re-measured.
 
+A refresh grant, and any other token request keyed by its code or by a
+browser's cookie, also waits for every write that ended what a refresh token
+rests on: a sign-out, a global logout, a token or grant revoked, a refresh
+family revoked, a disabled account. Such a write is recognised by its path
+(a sign-out door, a write to `/oauth2/revoke`, `/admin-api`, `/account-api`,
+`/scim` or `/ssf`, any `DELETE`) or because the worker that answered it says
+so on its answer. So a refresh sent just after a sign-out is never answered by
+a worker that has not applied it. A browser's ordinary request does not wait
+for these writes. `stats().sessionBarrier.revokingDispatched`,
+`revokingAnswered` and `revokeWaits` count them. The pool keys a refresh token
+by its SHA-256, never by the token itself.
+
 Everything else at the token endpoint waits as in `global`: a code the pool
 did not learn (one delivered by `form_post` or in a fragment, or minted on
 another node), a refresh grant this process cannot read (more than one token,
@@ -174,8 +186,9 @@ re-measured after the spend stopped waiting.
   writes. Check that `workers.readYourWrite` is `session`. At the token
   endpoint, compare `stats().sessionBarrier.codeKeyed` and `refreshKeyed`
   with `global`: a code exchange keyed by its code waits only for its code, a
-  refresh grant keyed by its token waits for that token and for keyless
-  writes, and an unknown code or a large body still waits as in `global`, as
+  refresh grant keyed by its token waits for that token, for keyless
+  writes and for writes that ended a session, token, family or account,
+  and an unknown code or a large body still waits as in `global`, as
   described above.
 * **`commit` high.** The database is slow to commit. Compare `COMMIT through`'s
   parts with the `FLUSH` lines: a part much longer than its flush is waiting

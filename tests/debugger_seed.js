@@ -6,19 +6,20 @@
 // File: debugger_seed.js
 //
 // ===========================================================================
-// THE DEBUGGER'S TWO APPLICATION ENTRIES ARE SEEDED IN EVERY INSTALL (#541,
-// 2026-10-09).
+// THE DEBUGGER'S APPLICATION ENTRY IS SEEDED IN EVERY INSTALL (#541,
+// 2026-10-09; ONE entry since #1717).
 //
 // rcbj: "Add a debugger application object by default to new installs. Model
 // it after the admin console application object." Until #541
 // `sts-debugger-ui` and `sts-debugger-api` were seeded only where the process
 // embedded the debugger, so a product install — `debugger.enabled` `auto` is
 // off there — had neither. The claim: in product mode, the debugger OFF, a
-// seed of the default realm still writes both, beside the console's entry,
-// and the client carries a redirect URI.
+// seed of the default realm still writes the client, beside the console's
+// entry, and the client carries a redirect URI. Since #1717 the UI and its api
+// are that one client, and no `sts-debugger-api` is seeded.
 //
-// It removes the two entries, seeds, and puts back nothing else: the entries
-// it re-creates are the ones that were there, as a start would write them.
+// It removes the entry, seeds, and puts back nothing else: the entry it
+// re-creates is the one that was there, as a start would write it.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -33,7 +34,7 @@ require('../ldap/ldap_server');
 const log = require('bunyan').createLogger({ name: 'debugger_seed',
   level: process.env.LOG_LEVEL || 'info' });
 
-const DEBUGGER_ENTRIES = ['sts-debugger-api', 'sts-debugger-ui'];
+const DEBUGGER_ENTRIES = ['sts-debugger-ui'];
 
 function inDefault(fn) {
   log.debug("Entering inDefault().");
@@ -58,7 +59,7 @@ async function run(t) {
       });
       t.check(DEBUGGER_ENTRIES.every(function (id) {
         return !applications.get(id);
-      }), 'the two entries are gone before the seed');
+      }), 'the entry is gone before the seed');
       applications.seedInternalApplications({ scope: 'default' });
       DEBUGGER_ENTRIES.concat(['sts-admin-console']).forEach(function (id) {
         t.check(!!applications.get(id), id + ' is seeded in the default ' +
@@ -68,6 +69,8 @@ async function run(t) {
       t.check(!!ui && (ui.redirect_uris || []).length > 0,
               'and the client carries its redirect URI',
               JSON.stringify(ui && ui.redirect_uris));
+      t.check(!applications.get('sts-debugger-api'),
+              'and no separate debugger api entry is seeded (#1717)');
       log.debug("Leaving run() default-realm seed.");
     });
     // A START WHOSE STORE PREDATES THE ENTRIES (2026-10-10): the require-time
@@ -100,9 +103,8 @@ async function run(t) {
 
 module.exports = {
   name: 'debugger_seed',
-  describe: 'the embedded debugger\'s two application entries are seeded in ' +
+  describe: 'the embedded debugger\'s application entry is seeded in ' +
             'every install, as the console\'s is, in product mode with the ' +
-            'debugger off ' +
-            '(#541)',
+            'debugger off (#541), and no separate api entry (#1717)',
   run: run
 };

@@ -15807,6 +15807,96 @@ function removeOwner(identifier, owner) {
                     record.identifier + '.' };
 }
 
+// ---------------------------------------------------------------------------
+// A DELETED OWNER OWNS NOTHING; A RENAMED ONE STILL OWNS IT (2026-11-13,
+// #1612's review). `appOwner` holds the DNs of people and groups, and under
+// #607 an owner is issued owner:write. A person deleted and made again at
+// the same DN was an owner of every application the first one owned, so the
+// directory's delete of a person or a group calls forgetOwner(), and its
+// rename renameOwner(). The applications are found off the kept listing
+// (`ownerValues()`'s source), not by a view of each, and each one named is
+// written as removeOwner() writes it. Returns the identifiers changed, for
+// the caller's audit row.
+// ---------------------------------------------------------------------------
+function replaceOwner(from, to) {
+  log.debug("Entering replaceOwner().");
+  const was = ownerLower(String(from || '').trim());
+  const now = String(to || '').trim();
+  const kept = listing();
+  if (!was || was === ownerLower(now) || !kept) {
+    log.debug("Leaving replaceOwner(). Nothing to change.");
+    return [];
+  }
+  const named = [];
+  kept.items.forEach(function (item) {
+    if (valuesOf(item.record.fields.appOwner).some(function (one) {
+      return ownerLower(String(one).trim()) === was;
+    })) {
+      named.push(item.record.identifier);
+    }
+  });
+  const changed = [];
+  named.forEach(function (identifier) {
+    const loaded = load(identifier);
+    if (!loaded.known) {
+      return;
+    }
+    const record = loaded.record;
+    const owners = [];
+    valuesOf(record.fields.appOwner).forEach(function (one) {
+      const value = ownerLower(String(one).trim()) === was ? now : String(one);
+      if (value && !owners.some(function (other) {
+        return ownerLower(other) === ownerLower(value);
+      })) {
+        owners.push(value);
+      }
+    });
+    record.fields.appOwner = owners;
+    if (save(record, { quiet: true })) {
+      changed.push(identifier);
+    } else {
+      // The old DN stays on the application; the line names both, so an
+      // administrator can take it off by hand (remove-owner).
+      log.error(errorCodes.tag('STS-ADMIN-0922') + 'applications: could ' +
+                'not ' + (now ? 'move the owner ' + from + ' to ' + now +
+                                ' on'
+                              : 'take the deleted owner ' + from + ' off') +
+                ' ' + identifier + '.');
+    }
+  });
+  log.debug("Leaving replaceOwner(). " + changed.length + " application(s).");
+  return changed;
+}
+
+/**
+ * Takes a deleted person's or group's DN off the owners of every application
+ * in the ambient realm.
+ *
+ * @param dn - the deleted entry's DN
+ * @returns the identifiers of the applications it was taken off
+ */
+function forgetOwner(dn) {
+  log.debug("Entering forgetOwner().");
+  const changed = replaceOwner(dn, '');
+  log.debug("Leaving forgetOwner(). " + changed.length);
+  return changed;
+}
+
+/**
+ * Moves a renamed person's or group's DN on the owners of every application
+ * in the ambient realm.
+ *
+ * @param from - the DN it had
+ * @param to - the DN it has now
+ * @returns the identifiers of the applications changed
+ */
+function renameOwner(from, to) {
+  log.debug("Entering renameOwner().");
+  const changed = String(to || '').trim() ? replaceOwner(from, to) : [];
+  log.debug("Leaving renameOwner(). " + changed.length);
+  return changed;
+}
+
 /**
  * Tells whether an application is closed to its owners (#607).
  *
@@ -17087,39 +17177,32 @@ function internalBaseUrl() {
 }
 
 // ---------------------------------------------------------------------------
-// THE EMBEDDED PROTOCOL DEBUGGER'S TWO ENTRIES (2026-09-13), in the default
-// realm only — its listener has no realm prefix, and the console roster that
+// THE EMBEDDED PROTOCOL DEBUGGER'S ENTRY (2026-09-13), in the default realm
+// only — its listener has no realm prefix, and the console roster that
 // decides who may use it is the default realm's.
 //
 // **SEEDED IN EVERY INSTALL SINCE #541 (2026-10-09)**, whether or not this
 // process embeds the debugger — rcbj: "Add a debugger application object by
 // default to new installs. Model it after the admin console application
-// object." Until then they were seeded only where
-// `mode.embedsProtocolDebugger()` answered yes, so a product install (where
-// `debugger.enabled` `auto` is off) that turned the debugger on later had no
-// client to sign in through until the next start re-seeded. The console's
-// entry has never depended on anything; neither do these now. They grant
-// nothing by existing: the permission is still narrowed to a console
-// administrator at issuance (`debugger/debugger_access.ts`), and with the
-// debugger off nothing listens at their redirect URI.
+// object." It grants nothing by existing: the debugger's gate lets in a
+// console administrator and nobody else (`debugger/debugger_access.ts`), and
+// with the debugger off nothing listens at its redirect URI.
 //
-// **TWO ENTRIES AND NOT ONE, BECAUSE THEY ARE TWO PARTIES.** `sts-debugger-api`
-// is a RESOURCE SERVER: it exposes one delegated permission and signs nobody
-// in. `sts-debugger-ui` is the CLIENT a person signs in through, and it holds
-// a grant of that permission — the mapping from an application to a
-// permission another application exposes, in Microsoft Entra ID's shape
-// (`common/app_permissions.ts`). The api row comes first because a permission
-// is defined before it is granted.
+// **ONE ENTRY SINCE #1717 (2026-11-13), AND IT WAS TWO.** `sts-debugger-api`
+// was a RESOURCE SERVER exposing one delegated permission,
+// `urn:sts:debugger-api:debugger`, and `sts-debugger-ui` the client holding a
+// grant of it; the gate checked an access token for it, on the session or on
+// the request's own `Authorization` header. That header is the debugger's to
+// send to its api — a UserInfo Bearer token, introspection's Basic credentials
+// — so the gate is the relying-party session alone now, the UI and its api are
+// one confidential client signing in by `private_key_jwt`, and there is no
+// separate api to register. The id stays `sts-debugger-ui`, so what an install
+// already holds under it survives. `retireDebuggerApiApplication()` below
+// removes a SEEDED copy of the old resource row from an existing install.
 //
-// The identifiers and the permission are `debugger/debugger_access.ts`'s and
-// are written out here rather than required: this file is a registry every
-// module reads, and a require from it into a feature directory would make the
-// registry depend on the feature. `tests/debugger_access.js` compares them.
-//
-// **THE PERMISSION CARRIES GLOBAL CONSENT** beside the three OpenID Connect
-// scopes, for the reason the console's entry carries them: the person signing
-// in to their own debugger would otherwise be asked whether they consent to
-// it, which has one sensible answer.
+// **THE SCOPES CARRY GLOBAL CONSENT**, for the reason the console's entry
+// carries them: the person signing in to their own debugger would otherwise
+// be asked whether they consent to it, which has one sensible answer.
 // ---------------------------------------------------------------------------
 function debuggerBaseUrl() {
   log.debug("Entering debuggerBaseUrl().");
@@ -17139,54 +17222,18 @@ function debuggerApplications() {
   log.debug("Entering debuggerApplications().");
   const base = debuggerBaseUrl();
   const issued = nowSec();
-  const permission = 'urn:sts:debugger-api:debugger';
   log.debug("Leaving debuggerApplications().");
   return [
-    { identifier: 'sts-debugger-api',
-      name: 'Protocol debugger api',
-      kinds: ['oauth2-client'],
-      protocols: ['OAuth 2.0'],
-      realmScope: 'default',
-      description: 'seeded at startup: the embedded protocol debugger\'s ' +
-                   'api, the resource server behind ' + base + '/api ' +
-                   '(debugger.enabled)',
-      attributes: {
-        oauthPermissionBaseUri: 'urn:sts:debugger-api:',
-        oauthPermission: ['debugger|Use the identity protocol debugger and ' +
-                          'its api']
-      },
-      // A resource server authenticates at no endpoint here, so the
-      // registration names no grant and no redirect: the row exists to
-      // DEFINE the permission, which is what makes the UI's grant of it a
-      // grant of something.
-      registration: {
-        client_id: 'sts-debugger-api',
-        client_name: 'Protocol debugger api',
-        client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
-        registration_access_token: randomId(24),
-        registration_client_uri: internalBaseUrl() +
-                                 '/oauth2/register/sts-debugger-api',
-        client_uri: base + '/api',
-        application_type: 'web',
-        redirect_uris: [],
-        grant_types: [],
-        response_types: [],
-        scope: '',
-        token_endpoint_auth_method: 'client_secret_basic'
-      } },
     { identifier: 'sts-debugger-ui',
       name: 'Protocol debugger',
       kinds: ['oauth2-client', 'oidc-relying-party'],
       protocols: ['OAuth 2.0 / OIDC'],
       realmScope: 'default',
       description: 'seeded at startup: the embedded identity protocol ' +
-                   'debugger at ' + base + ' (debugger.enabled)',
+                   'debugger at ' + base + ', its UI and its api ' +
+                   '(debugger.enabled)',
       attributes: {
-        oauthDelegatedPermission: [permission],
-        oauthGlobalConsent: ['openid', 'profile', 'email', 'offline_access',
-                             permission]
+        oauthGlobalConsent: ['openid', 'profile', 'email', 'offline_access']
       },
       registration: {
         client_id: 'sts-debugger-ui',
@@ -17201,10 +17248,77 @@ function debuggerApplications() {
         post_logout_redirect_uris: [base + '/'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email offline_access ' + permission,
+        scope: 'openid profile email offline_access',
         token_endpoint_auth_method: 'private_key_jwt'
       } }
   ];
+}
+
+// THE RETIRED DEBUGGER API ROW (#1717). An install seeded before #1717 holds
+// `sts-debugger-api`, a resource server whose one permission nothing asks for
+// any more, and a `sts-debugger-ui` holding a grant of that permission. The
+// first is DELETED and the grant, the consent and the declaration are taken
+// off the second — but only where the start wrote them (`appRegisteredBy:
+// startup`): an entry an operator made or edited by hand under either name is
+// theirs and is left exactly as it is, which is the seed's own rule.
+// Idempotent: on a second start there is nothing to find.
+/**
+ * Removes the seeded pre-#1717 debugger api resource row and the seeded
+ * client's grant of its permission, from an install that has them.
+ *
+ * @returns how many entries were changed or removed
+ */
+function retireDebuggerApiApplication() {
+  log.debug("Entering retireDebuggerApiApplication().");
+  const permission = 'urn:sts:debugger-api:debugger';
+  let changed = 0;
+  const api = load('sts-debugger-api');
+  if (api.known &&
+      valuesOf(api.record.fields.appRegisteredBy)[0] === 'startup' &&
+      valuesOf(api.record.fields.oauthPermissionBaseUri)[0] ===
+        'urn:sts:debugger-api:') {
+    const gone = deleteApplication('sts-debugger-api', { actor: '' });
+    if (gone.ok) {
+      log.info('applications: the seeded "sts-debugger-api" resource row ' +
+               'was removed — the debugger\'s UI and api are one client, ' +
+               '"sts-debugger-ui", since #1717.');
+      changed++;
+    }
+  }
+  const ui = load('sts-debugger-ui');
+  if (ui.known &&
+      valuesOf(ui.record.fields.appRegisteredBy)[0] === 'startup') {
+    const record = ui.record;
+    let touched = false;
+    ['oauthDelegatedPermission', 'oauthGlobalConsent',
+     'oauthAllowedScope'].forEach(function (name) {
+      const held = valuesOf(record.fields[name]);
+      const kept = held.filter(function (one) {
+        return String(one) !== permission;
+      });
+      if (kept.length === held.length) {
+        return;
+      }
+      delete record.fields[name];
+      if (kept.length) {
+        setField(record, name, kept);
+      }
+      touched = true;
+    });
+    if (touched && save(record, { quiet: true })) {
+      audit.audit({
+        action: 'application.update', actor: '', protocol: 'internal',
+        channel: 'internal', target: 'sts-debugger-ui',
+        summary: 'Application "sts-debugger-ui" no longer holds the ' +
+                 'retired debugger api permission (#1717)',
+        detail: { identifier: 'sts-debugger-ui', attribute: permission,
+                  seeded: true }
+      });
+      changed++;
+    }
+  }
+  log.debug("Leaving retireDebuggerApiApplication(). " + changed + ".");
+  return changed;
 }
 
 // ---------------------------------------------------------------------------
@@ -17267,7 +17381,7 @@ function debuggerApplications() {
 // `oauthDelegatedPermission`. The API's audience is a URL under whatever name
 // this service is reached by (#1140), so a URL base would make every
 // delegated permission grant depend on a host name; the debugger's
-// `urn:sts:debugger-api:` is the precedent. A client still asks for the BARE
+// `urn:sts:debugger-api:` was the precedent (retired by #1717). A client still asks for the BARE
 // word with `resource` naming the API — what the console, the portal and the
 // reports application send — and `scope_policy.ts` reads the delegated
 // permission grant for it.
@@ -17909,7 +18023,7 @@ function seedInternalApplications(options) {
   // built, and each row says which realms it belongs in — see the rows
   // themselves, where the answers are argued separately rather than
   // together. A realm gets the console, the portal, the reports client
-  // and the management API. The debugger's two stay in the default realm.
+  // and the management API. The debugger's stays in the default realm.
   const wanted = String((options || {}).scope || 'default');
   const rows = internalApplications().filter(function (one) {
     return wanted === 'default' || one.realmScope === 'every';
@@ -17918,6 +18032,10 @@ function seedInternalApplications(options) {
   rows.forEach(function (one) {
     if (seedInternalApplication(one)) made++;
   });
+  // #1717: the debugger's api is no longer an application of its own.
+  if (wanted === 'default') {
+    retireDebuggerApiApplication();
+  }
   // #825: an entry that already existed is left alone by the seed above.
   // Fill only the bound attributes that are absent, and never a number
   // already stored.
@@ -18461,6 +18579,9 @@ module.exports = {
   ownersOf: ownersOf,
   addOwner: addOwner,
   removeOwner: removeOwner,
+  // A deleted owner owns nothing; a renamed one still does (2026-11-13).
+  forgetOwner: forgetOwner,
+  renameOwner: renameOwner,
   // Closed to its owners (#607).
   ownerProtected: ownerProtected,
   setOwnerProtected: setOwnerProtected,
@@ -18489,6 +18610,10 @@ module.exports = {
   familyRefusal: familyRefusal,
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,
+  // One row by its spec; for tests/debugger_access.js, which seeds the
+  // pre-#1717 debugger rows to retire them.
+  seedInternalApplication: seedInternalApplication,
+  retireDebuggerApiApplication: retireDebuggerApiApplication,
   roleGatingFor: roleGatingFor,
   updateApplication: updateApplication,
   noteGlobalConsentWithdrawn: noteGlobalConsentWithdrawn,

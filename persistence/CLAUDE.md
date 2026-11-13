@@ -358,7 +358,18 @@ connection comes from. What carried over, rule by rule:
   "timeout exceeded when trying to connect". `min` is 0: nothing is dialled
   until something asks.
 * **TLS decided in one place.** `dialOptions()` still decides it, and its
-  `{ connectionString, ssl }` is what the pool's Knex instance is built from;
+  `{ connectionString, ssl }` is what the pool's Knex instance is built from.
+  **The hooks it installs are `knex_store.js`'s** (`hostCheck()`,
+  `chainOnlyCheck()`, #951's review, 2026-11-13), and so is the data the
+  directory bridge's thread is posted (`postableSsl()`, from
+  `bridgeConnection()`) and the inverse the thread dials with
+  (`restoredSsl()`): until then the thread built its own copy of both
+  hooks, a second place a change to how the database's name is checked
+  could miss. Each hook calls `tls.checkServerIdentity` at the handshake,
+  which is `common/outbound_tls.ts`'s RFC 9525 and path-rules check in the
+  front process and in the thread alike (the thread installs it before it
+  dials); `tests/database_tls_ca.js` section F dials a stand-in by address
+  from the real thread;
   the password is still injected into the URL by `persistence.js` from
   `secrets.js` before the driver sees it.
 * **The dedicated connections.** LISTEN (a pooled connection cannot hold a
@@ -818,6 +829,21 @@ through the pool once rather than failing (STS-STORE-0070). A write's own
 fence checks stay inside its transaction; what they share-lock is a row of
 `sts_cluster_locks` (#770, `cluster/CLAUDE.md`). Each process now holds up to
 `poolMax() + 2` connections; `POOL_FLOOR` stays 4, argued above it.
+
+**Nothing on it waits without a bound but `leaveCluster()` (#770's review,
+2026-11-13).** The connection runs one caller at a time (`liveExclusive()`),
+so a statement that waits holds every caller queued behind it, and a queued
+heartbeat's own bound has not started. The heartbeat and the origin renewal
+were bounded by #770; a lease taken over or given up is now too — the native
+acquire as a bounded autocommit, the portable acquire and `releaseLease()`
+as `liveTransact(fn, boundMs)`: `SET LOCAL lock_timeout` and
+`statement_timeout` after BEGIN on PostgreSQL, the session's limits set
+before BEGIN and put back after on MariaDB. `isBoundTimeout()` (55P03,
+57014, 1205, 1969) is how the acquire tells "not yet" from a failure.
+`cluster/CLAUDE.md`, *Leases and the fence*, argues it. **And MariaDB's
+bound puts back the SESSION's limits** (`mariadbWithBound()`): it read
+`@@GLOBAL` and wrote those into the session, which is the same number only
+while nothing set the session's own.
 
 **Key-row writes never hold the whole pool (#1590, 2026-11-10).**
 `mergeKeys()` holds its `sts_keys` row FOR UPDATE while the caller's merge
@@ -3771,6 +3797,53 @@ nothing to build.
 build the schema with `postgres/schema.sql`, and if the objects ARE there check
 the search path. It stays fatal, because a failed open has been fatal since
 2026-08-28 and this changes what is SAID rather than what happens.
+
+### An index marked `online` is never built in `open()`'s transaction (#876, #882, 2026-11-13)
+
+**The one exception to "a missing object is created or the open fails", and
+it is backwards compatibility from 1.0.0 on.** `sts_sessions_subject_band`
+(#876) and `sts_sessions_started` (#882, version 32) came after release
+1.0.0, on a table a live store already fills. The open created a missing one
+with a plain `CREATE INDEX` inside its one transaction — a `SHARE` lock that
+held every session write for the build, minutes at a million sessions,
+while the start waited — and `sts_app`, which does not own the table, was
+refused `STS-STORE-0029`: the 1.1.0 image did not start on a 1.0.0 store
+until the owner had run `postgres/upgrade-1.0.0.sql`.
+
+Each is a COST and never a wrong answer — every statement that reads it asks
+the same question without it, by a slower plan — so the model marks both
+`online` (`driver: #{…, online: true}` in `models/persistence/*.tsp`) and
+`persistence/online_indexes.js` settles them AFTER the open commits:
+
+* `open()` leaves a missing online index out of its CREATEs, and asks inside
+  its transaction which are missing or INVALID (`pg_index.indisvalid` — a
+  dead `CREATE INDEX CONCURRENTLY`) and whether this role owns the table.
+* **Not the owner** (the product split): start, and log `STS-STORE-0172`
+  once, naming the indexes and the upgrade script.
+* **The owner**: build in the background, not awaited, on a
+  `pool.dedicated()` connection outside every transaction —
+  `pg_try_advisory_lock(876, hashtext('sts-online-index-build'))`, the
+  validity asked again under it, an invalid one `DROP INDEX CONCURRENTLY`,
+  then `CREATE INDEX CONCURRENTLY IF NOT EXISTS` (the upgrade script's text,
+  `tests/postgres_schema.js` holds the two lists equal). A process that does
+  not get the lock leaves it to the one that did — an index still being
+  built reads as invalid, and only the lock holder may drop one. A failure
+  is `STS-STORE-0173`; `close()` ends the connection, and the next start
+  rebuilds what that left invalid.
+* **MariaDB**: `open_mariadb.open(pool, log, online)` leaves the online index
+  to the driver, which sends `ALTER TABLE … WAIT 5 ADD INDEX IF NOT EXISTS …,
+  ALGORITHM=INPLACE, LOCK=NONE` in the background: InnoDB builds it without
+  blocking writers, and `WAIT 5` bounds the metadata lock so a long
+  transaction cannot queue every write behind it. An account that may not
+  alter is `STS-STORE-0172` naming `mariadb/upgrade-1.0.0.sql`.
+
+**Not a schema version.** Every open still records version 32, as it does
+while an advisory step (`STS-STORE-0083`) is owed: the version is the shape
+the tables answer to, and these indexes change no answer. A version 33 would
+cost a MariaDB twin and leave the owner's script, which records 32, a
+version short. **A future index on a table a live store fills is `online`
+too**, and owes its line in the next release's upgrade script.
+`tests/online_session_indexes.js` holds all of it against a `pg` double.
 
 ### A schema of its own, and the search path that goes with it
 

@@ -57,6 +57,13 @@
 //      DPoP or JARM where the profile uses them. beginConnect will not
 //      start a FAPI sign-in (0184). A 2.x refresh proves DPoP with the
 //      sign-in's key; 1-advanced refreshes with the assertion alone.
+//      What the answer is held to (#931's review): 1-advanced's front ID
+//      Token without s_hash, or with another state's, is refused (0248);
+//      a 2.x answer naming no issuer is refused (0249) and one naming
+//      another still is (0238); a JARM response with no exp is refused
+//      (0250); a 2.x token response, or refresh, whose token_type is not
+//      DPoP is refused or ends the session (0251), and `dpop` in lower
+//      case is accepted. None of these redeems a code.
 // The conformance suite's relying-party plans drive the same code over the
 // wire (`tests/protocol/sts_oidcc_rp_conformance.js`); this pins each
 // refusal's code and that nothing is dialled after it.
@@ -186,6 +193,9 @@ function childMain() {
                              expires_in: 90 });
         }
         if (/\/token$/.test(url.pathname)) {
+          // A token request carrying a DPoP proof is answered as a bound
+          // token (RFC 9449 section 5) unless a case chooses the type.
+          const boundType = req.headers.dpop ? 'DPoP' : 'Bearer';
           // A refresh answers by the token it was sent, so each held
           // session keeps its own case whatever order they are refreshed in.
           if (/grant_type=refresh_token/.test(body)) {
@@ -194,10 +204,12 @@ function childMain() {
             return how.refuse
               ? send(400, { error: 'invalid_grant' })
               : send(200, { access_token: 'at-' + rt,
-                            token_type: 'Bearer', refresh_token: rt,
+                            token_type: how.tokenType || boundType,
+                            refresh_token: rt,
                             id_token: sign(how.claims()) });
           }
-          return send(200, { access_token: 'at-back', token_type: 'Bearer',
+          return send(200, { access_token: 'at-back',
+                             token_type: s.tokenType || boundType,
                              refresh_token: s.rt || 'rt-none',
                              id_token: sign(s.backClaims()) });
         }
@@ -876,8 +888,8 @@ function childMain() {
            .slice(0, 400));
     op.calls = [];
     r = await call('GET', '/federation/acs/' + SEC + '?state=' +
-      encodeURIComponent(secPar.get('state')) + '&code=c-fapi2', null,
-      secJar);
+      encodeURIComponent(secPar.get('state')) + '&code=c-fapi2&iss=' +
+      encodeURIComponent(opBase), null, secJar);
     const secToken = op.calls.filter(function (c) {
       return /\/token$/.test(c.path);
     })[0] || { body: '', dpop: '', auth: '' };
@@ -915,6 +927,64 @@ function childMain() {
          '10e. a discovery document with no PAR endpoint is refused ' +
          '(STS-FED-0243)', started.status);
 
+    // --- 10x-10ab. what a 2.x answer is held to (#931's review) -----------
+    // The accepted path is 10c: an answer naming the partner's issuer, and
+    // a token response the partner answered as DPoP-bound.
+    const secStart = async function (extra) {
+      const jar = {};
+      op.calls = [];
+      op.par = null;
+      op.scenario = Object.assign({ issuer: opBase, base: opBase,
+        discovery: { pushed_authorization_request_endpoint: opBase + 'par' },
+        backClaims: parClaims }, extra || {});
+      await begin(SEC, jar);
+      return { jar: jar,
+               state: (op.par || new URLSearchParams()).get('state') };
+    };
+    const secAnswer = function (flow, query) {
+      op.calls = [];
+      return call('GET', '/federation/acs/' + SEC + '?state=' +
+        encodeURIComponent(flow.state) + '&code=c-sec' + query, null,
+        flow.jar);
+    };
+    const dialled = function (pattern) {
+      return op.calls.some(function (c) {
+        return pattern.test(c.path);
+      });
+    };
+    let flow = await secStart();
+    before = coded('STS-FED-0249');
+    r = await secAnswer(flow, '');
+    note(flow.state && r.status === 401 &&
+         coded('STS-FED-0249') === before + 1 && !dialled(/\/token$/),
+         '10x. a 2-security answer naming no issuer is refused ' +
+         '(STS-FED-0249) and the code is not redeemed',
+         r.status + ' ' + r.text.slice(0, 200));
+    flow = await secStart();
+    before = coded('STS-FED-0238');
+    r = await secAnswer(flow, '&iss=' +
+                        encodeURIComponent(opBase + 'someone-else/'));
+    note(r.status === 401 && coded('STS-FED-0238') === before + 1 &&
+         !dialled(/\/token$/),
+         '10y. a 2-security answer naming another issuer is still ' +
+         'refused (STS-FED-0238)', r.status);
+    flow = await secStart({ tokenType: 'Bearer' });
+    before = coded('STS-FED-0251');
+    r = await secAnswer(flow, '&iss=' + encodeURIComponent(opBase));
+    note(r.status === 502 && coded('STS-FED-0251') === before + 1 &&
+         dialled(/\/token$/) && !dialled(/\/userinfo$/),
+         '10aa. a 2-security token response answered Bearer is refused ' +
+         '(STS-FED-0251) and UserInfo is never asked with it',
+         r.status + ' ' + r.text.slice(0, 200));
+    flow = await secStart({ tokenType: 'dpop' });
+    r = await secAnswer(flow, '&iss=' + encodeURIComponent(opBase));
+    const lowerUser = op.calls.filter(function (c) {
+      return /\/userinfo$/.test(c.path);
+    })[0] || { auth: '' };
+    note(r.status < 400 && lowerUser.auth.indexOf('DPoP ') === 0,
+         '10ab. token_type is compared without case: dpop signs in and ' +
+         'UserInfo is asked as DPoP', r.status + ' ' + lowerUser.auth);
+
     const ADV = make('frp-fapi1-' + stamp, { fedFapi: '1-advanced' });
     op.calls = [];
     op.par = null;
@@ -940,7 +1010,8 @@ function childMain() {
     } };
     r = await call('POST', '/federation/acs/' + ADV, {
       state: started.params.get('state'), code: 'c-adv',
-      id_token: sign(claims(started, { c_hash: halfHash('c-adv') }))
+      id_token: sign(claims(started, { c_hash: halfHash('c-adv'),
+        s_hash: halfHash(started.params.get('state')) }))
     }, advJar);
     const advToken = op.calls.filter(function (c) {
       return /\/token$/.test(c.path);
@@ -951,9 +1022,39 @@ function childMain() {
     })[0] || { auth: '' };
     note(r.status < 400 && advForm.get('client_assertion') &&
          !advToken.dpop && advUser.auth.indexOf('Bearer ') === 0,
-         '10g. 1-advanced redeems with private_key_jwt and no DPoP, and ' +
-         'UserInfo stays bearer',
+         '10g. 1-advanced with the right s_hash redeems with ' +
+         'private_key_jwt and no DPoP, and UserInfo stays bearer',
          r.status + ' ' + advUser.auth + ' dpop=' + advToken.dpop);
+
+    // --- 10v, 10w. 1-advanced's s_hash (#931's review) --------------------
+    // The accepted path is 10g. Case 2a is the control: a plain hybrid
+    // relationship sends no s_hash and still signs in.
+    const advHash = async function (extra) {
+      const jar = {};
+      const begun = await begin(ADV, jar);
+      op.calls = [];
+      op.scenario = { backClaims: function () {
+        return claims(begun);
+      } };
+      const was = coded('STS-FED-0248');
+      const resp = await call('POST', '/federation/acs/' + ADV, {
+        state: begun.params.get('state'), code: 'c-adv-h',
+        id_token: sign(claims(begun, Object.assign(
+          { c_hash: halfHash('c-adv-h') }, extra))) }, jar);
+      return { r: resp, coded: coded('STS-FED-0248') - was,
+               redeemed: op.calls.some(function (c) {
+                 return /\/token$/.test(c.path);
+               }) };
+    };
+    got = await advHash({});
+    note(got.r.status === 401 && got.coded === 1 && !got.redeemed,
+         '10v. 1-advanced: a front ID Token with no s_hash is refused ' +
+         '(STS-FED-0248) and the code is not redeemed',
+         got.r.status + ' ' + got.coded + ' ' + got.r.text.slice(0, 200));
+    got = await advHash({ s_hash: halfHash('another state') });
+    note(got.r.status === 401 && got.coded === 1 && !got.redeemed,
+         '10w. 1-advanced: an s_hash of another state is refused ' +
+         '(STS-FED-0248)', got.r.status + ' ' + got.coded);
 
     const MS = make('frp-fapi2ms-' + stamp, {
       fedFapi: '2-message-signing', fedDiscovery: 'TRUE', fedSsoUrl: null,
@@ -1210,6 +1311,13 @@ function childMain() {
          '10r. a JARM response carrying the partner\'s error is that ' +
          'error (STS-FED-0025) and does not redeem a code',
          r.status + ' ' + r.text.slice(0, 300));
+    before = coded('STS-FED-0250');
+    r = await jarmGet(sign({ iss: opBase, aud: 'frp-client', state: jState,
+      code: 'c-noexp' }));
+    note(r.status === 401 && coded('STS-FED-0250') === before + 1 &&
+         noToken() && r.text.indexOf('no exp') >= 0,
+         '10z. a JARM response with no exp is refused (STS-FED-0250) and ' +
+         'the code is not redeemed', r.status + ' ' + r.text.slice(0, 300));
     r = await jarmGet(sign({ iss: opBase, aud: 'frp-client', state: jState,
       code: 'c-jarm-kept', exp: jarmExp() }));
     const keptToken = op.calls.filter(function (c) {
@@ -1245,7 +1353,7 @@ function childMain() {
     started = await begin(FREF, frefJar);
     await call('GET', '/federation/acs/' + FREF + '?state=' +
       encodeURIComponent((op.par || new URLSearchParams()).get('state')) +
-      '&code=c-fref', null, frefJar);
+      '&code=c-fref&iss=' + encodeURIComponent(opBase), null, frefJar);
     const signInX = proofX((op.calls.filter(function (c) {
       return /\/token$/.test(c.path);
     })[0] || {}).dpop);
@@ -1286,7 +1394,8 @@ function childMain() {
     };
     await call('POST', '/federation/acs/' + AREF, {
       state: started.params.get('state'), code: 'c-aref',
-      id_token: sign(claims(started, { c_hash: halfHash('c-aref') }))
+      id_token: sign(claims(started, { c_hash: halfHash('c-aref'),
+        s_hash: halfHash(started.params.get('state')) }))
     }, arefJar);
     op.byToken['rt-fapi1'] = { claims: function () {
       const now = Math.floor(Date.now() / 1000);
@@ -1308,6 +1417,24 @@ function childMain() {
          '10u. a 1-advanced refresh sends the assertion and no DPoP ' +
          'proof, and UserInfo stays bearer',
          'dpop=' + arefCall.dpop + ' ' + arefCall.body.slice(0, 180));
+
+    // --- 10ac. a 2.x refresh answered Bearer ends the session ------------
+    op.byToken['rt-fapi2'].tokenType = 'Bearer';
+    before = coded('STS-FED-0251');
+    op.calls = [];
+    await fedSp.refreshDue(Date.now() + 120000);
+    const bearerRefresh = op.calls.some(function (c) {
+      return /\/token$/.test(c.path) &&
+             /refresh_token=rt-fapi2/.test(c.body);
+    });
+    note(bearerRefresh && coded('STS-FED-0251') === before + 1 &&
+         !op.calls.some(function (c) {
+           return /\/userinfo$/.test(c.path) &&
+                  /at-rt-fapi2/.test(c.auth);
+         }),
+         '10ac. a 2-security refresh answered Bearer ends the session ' +
+         '(STS-FED-0251) and UserInfo is not asked',
+         bearerRefresh + ' ' + (coded('STS-FED-0251') - before));
 
     fs.writeFileSync(OUT, JSON.stringify(findings));
     server.close();

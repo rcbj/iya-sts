@@ -29,7 +29,8 @@
 //   8. `?mutual=off` (#896): the door passes `mutualOff`, the 200 carries
 //      no session cookie and the withheld page; where the test controls
 //      are closed the same query is 403 and the negotiation is not called.
-//   6. The state draws: `kerberos/web_authn_spnego.ts` over each view.
+//   6. The state draws: `kerberos/web_authn_spnego.ts` over each view;
+//      the withheld and closed pages in every base locale (#896's review).
 //   7. The sign-in runtime draws the challenge from the shell it came in,
 //      in the browser's language, fetching catalogs and no view.
 //
@@ -100,15 +101,22 @@ function childMain() {
   }
 
   function englishSpnego() {
+    return spnegoIn('en');
+  }
+
+  // The `spnego` catalog of one base locale, as the page's translator.
+  function spnegoIn(lang) {
     const messages = require(ROOT_DIR + '/common/web_messages');
     const flat = {};
     const own = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'common',
-      'locales', 'spnego', 'en.json'), 'utf8'));
+      'locales', 'spnego', lang + '.json'), 'utf8'));
     Object.keys(own).forEach(function (key) {
       flat['spnego.' + key] = own[key];
     });
-    return messages.WebTranslator.fromData({ catalogs: { en: flat },
-      negotiated: { locale: 'en', chain: ['en'], catalog: 'en',
+    const catalogs = {};
+    catalogs[lang] = flat;
+    return messages.WebTranslator.fromData({ catalogs: catalogs,
+      negotiated: { locale: lang, chain: [lang], catalog: lang,
                     direction: 'ltr', matched: true } });
   }
 
@@ -371,6 +379,43 @@ function childMain() {
            'That test control is closed',
          '6d. the closed state says the ticket was not accepted',
          closedPage.slice(0, 300));
+    // 6e (#896's review): both pages are in the page's language. Every
+    // base catalog: the heading, the sentence and the title are its own,
+    // no English sentence is left, and the principal is escaped.
+    ['es', 'fil', 'fr', 'sv', 'zh-Hans', 'zh-Hant'].forEach(function (lang) {
+      const own = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'common',
+        'locales', 'spnego', lang + '.json'), 'utf8'));
+      const tl = spnegoIn(lang);
+      const held = draw.render({ door: 'spnego', kind: 'withheld',
+        principal: 'ada<b>@EXAMPLE.COM', pending: null }, { t: tl });
+      const shut = draw.render({ door: 'spnego', kind: 'mutual-closed',
+        pending: null }, { t: tl });
+      const english =
+        /was withheld|not performed|control is closed|only in development/;
+      const en = englishSpnego();
+      const keys = ['withheld.heading', 'withheld.body',
+                    'mutualClosed.heading', 'mutualClosed.body'];
+      const translated = keys.every(function (key) {
+        return own[key] &&
+          tl.html('spnego.' + key) !== en.html('spnego.' + key);
+      });
+      note(translated &&
+           held.indexOf(tl.html('spnego.withheld.heading')) > 0 &&
+           held.indexOf(tl.html('spnego.withheld.body')) > 0 &&
+           held.indexOf('ada&lt;b&gt;@EXAMPLE.COM') > 0 &&
+           held.indexOf('ada<b>') < 0 &&
+           shut.indexOf(tl.html('spnego.mutualClosed.heading')) > 0 &&
+           shut.indexOf(tl.html('spnego.mutualClosed.body')) > 0 &&
+           !english.test(held) && !english.test(shut) &&
+           draw.title({ kind: 'withheld' }, { t: tl }) ===
+             tl.text('spnego.withheld.title') &&
+           draw.title({ kind: 'mutual-closed' }, { t: tl }) ===
+             tl.text('spnego.mutualClosed.title') &&
+           own['withheld.title'] && own['mutualClosed.title'],
+           '6e. ' + lang + ': the withheld and closed pages and their ' +
+           'titles are in the page\'s language, the principal escaped',
+           held.slice(0, 300) + ' | ' + shut.slice(0, 300));
+    });
 
     // --- 7. the runtime draws the embedded page, fetching no view ------------
     at = begin();

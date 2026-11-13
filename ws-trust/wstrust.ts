@@ -255,6 +255,7 @@ const WST_NS = WsModel.term('wst.namespace', 'trust13');
 // the version does not have. tests/protocol/sts_xml_schema_validation.js
 // validates each version's answers against its own published schema.
 const WST_2004_04_NS = WsModel.term('wst.namespace', 'trust2004');
+const WST_2005_02_NS = WsModel.term('wst.namespace', 'trust2005');
 
 const SOAP12_NS = WsModel.term('soap.namespace', 'soap12');
 
@@ -372,6 +373,40 @@ class WsTrust {
    *
    * @param instance - the instance being installed
    */
+  /**
+   * Whether a trust namespace is one of the two pre-OASIS versions, May 2004
+   * or February 2005, whose answers carry the operation's own action and
+   * one RSTR rather than 1.3's "Final" actions and collection.
+   *
+   * @param trustNs - the request's trust namespace
+   * @returns whether it is
+   */
+  static preOasis(trustNs: string): boolean {
+    helpers.log.debug("Entering WsTrust.preOasis().");
+    helpers.log.debug("Leaving WsTrust.preOasis().");
+    return trustNs === WST_2004_04_NS || trustNs === WST_2005_02_NS;
+  }
+
+  /**
+   * The wsa:Action of an answer, as the request's version names it: the
+   * pre-OASIS versions RSTR/Issue, RSTR/Renew, RSTR/Validate and
+   * RSTR/Cancel; 1.3 and 1.4 RSTRC/IssueFinal and RSTR/<Op>Final. Until the
+   * WSDL was held to the published specifications (2026-11-13) every
+   * version but May 2004's Issue was answered with 1.3's names.
+   * `WsTrustMetadata.outputAction()` asks this, so the WSDL says what is sent.
+   *
+   * @param op - issue, renew, validate or cancel
+   * @param trustNs - the request's trust namespace
+   * @returns the action
+   */
+  static answerAction(op: string, trustNs: string): string {
+    helpers.log.debug("Entering WsTrust.answerAction(). " + op);
+    const term = WsTrust.preOasis(trustNs) ? op
+      : (op === 'issue' ? 'issueFinal' : op + 'Final');
+    helpers.log.debug("Leaving WsTrust.answerAction().");
+    return WsModel.relative('wst.action', term, trustNs);
+  }
+
   static wire(instance: WsTrust): void {
     helpers.log.debug("Entering WsTrust.wire(). " + typeof instance);
     helpers.log.debug("Leaving WsTrust.wire().");
@@ -4120,8 +4155,8 @@ class WsTrust {
       log.debug("Leaving WsTrust.handleRst(). Validate answered with " +
                 "wst:Status.");
       return { status: 200, version: version, errorCode: invalidCode,
-               body: this.envelope(version, WsModel.relative('wst.action',
-                 'validateFinal', trustNs), rstr) };
+               body: this.envelope(version,
+                 WsTrust.answerAction('validate', trustNs), rstr) };
     }
 
     if (op === 'cancel' && trustNs === WST_2004_04_NS) {
@@ -4141,8 +4176,8 @@ class WsTrust {
       log.debug("Leaving WsTrust.handleRst(). Cancel answered with " +
                 "wst:RequestedTokenCancelled.");
       return { status: 200, version: version,
-               body: this.envelope(version, WsModel.relative('wst.action',
-                 'cancelFinal', trustNs), rstr) };
+               body: this.envelope(version,
+                 WsTrust.answerAction('cancel', trustNs), rstr) };
     }
 
     // -------------------------------------------------------------------------
@@ -4755,20 +4790,23 @@ class WsTrust {
       log.debug("Leaving WsTrust.finishIssue(). Renew answered with a fresh " +
                 "token.");
       return { status: 200, version: version, signIn: signIn,
-               body: this.envelope(version, WsModel.relative('wst.action',
-                 'renewFinal', trustNs), rstr) };
+               body: this.envelope(version,
+                 WsTrust.answerAction('renew', trustNs), rstr) };
     }
 
     // Issue -> RSTR Collection (WS-Trust 1.3+; pre-OASIS clients tolerate it
     // too) — except in 2004/04, whose collection holds at least two
     // responses, so an Issue there is answered with the one RSTR (#188).
-    if (trustNs === WST_2004_04_NS) {
+    // February 2005 too (the review of #958's WSDL against the published
+    // specifications): it defines Issue's answer as one RSTR with the action
+    // RSTR/Issue, and its collection only for several tokens at once.
+    if (WsTrust.preOasis(trustNs)) {
       const rstr = this.response(trustNs, rstrParts);
       log.debug("Leaving WsTrust.finishIssue(). Issue answered with an RSTR " +
-                "(2004/04).");
+                "(a pre-OASIS version).");
       return { status: 200, version: version, signIn: signIn,
-               body: this.envelope(version, WsModel.relative('wst.action',
-                 'issue', trustNs), rstr) };
+               body: this.envelope(version, WsTrust.answerAction('issue',
+                 trustNs), rstr) };
     }
     const rstrc = '<wst:RequestSecurityTokenResponseCollection xmlns:wst="' +
       trustNs + '">' + WsModel.children(
@@ -4780,8 +4818,8 @@ class WsTrust {
     log.debug("Leaving WsTrust.finishIssue(). Issue answered with an RSTR " +
               "Collection.");
     return { status: 200, version: version, signIn: signIn,
-             body: this.envelope(version, WsModel.relative('wst.action',
-               'issueFinal', trustNs), rstrc) };
+             body: this.envelope(version,
+               WsTrust.answerAction('issue', trustNs), rstrc) };
   }
 
   // **`no-store`, LIKE EVERY OTHER DOCUMENT HERE THAT DESCRIBES A KEY.** In
