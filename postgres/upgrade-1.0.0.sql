@@ -35,6 +35,8 @@
 -- inside a transaction, and psql -f commits each statement on its own.
 -- Do not wipe the volume. The 1.0.0 image can keep serving while the
 -- indexes build. Start the version-32 image after this script exits 0.
+-- A version-32 image started first still starts (#876, #882): as sts_app
+-- it logs STS-STORE-0172 and answers without the indexes until this runs.
 -- A rollback to a version-31 image ignores both indexes; leave them.
 --
 -- -v sts_schema=sts is the default. -v sts_maintenance_work_mem=1GB raises
