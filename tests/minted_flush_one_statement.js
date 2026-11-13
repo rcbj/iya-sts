@@ -31,7 +31,15 @@
 //   E. a fence that does not hold: the flush becomes a transaction, whose
 //      fence refuses it with nothing written;
 //   F. a compare-and-set that misses twice: the read-then-write transaction,
-//      merging with the body it locked.
+//      merging with the body it locked;
+//   G. the same two misses UNDER A CLAIM FENCE (2026-11-12): a flush that
+//      publishes an access-token status index runs in a transaction holding
+//      the block claim's lock, and a merging row another process wrote
+//      since (`admin_stats.tokenHolders`, written blindly by each request
+//      worker at its first token for a holder) made it throw, the request
+//      answered 503 (STS-STORE-0021, STS-STORE-0066) on a single node. It
+//      is sent again with the stored body, and after two misses locked and
+//      read, all on the connection that holds the fence.
 //
 // What a double cannot show — the plan, the lock order between two
 // processes, the deadlocks — was measured against a real postgres and is in
@@ -82,6 +90,13 @@ function fakePg(sent, ctl) {
       return Promise.resolve(flushDouble.play(db, sql, null,
                                               { fenceOk: fenceOk }));
     }
+    if (/^SELECT name FROM sts_cluster_locks/.test(text)) {
+      // Every claim fence asked for is still held.
+      const rows = ((params || [])[0] || []).map(function (name) {
+        return { name: name };
+      });
+      return Promise.resolve({ rows: rows, rowCount: rows.length });
+    }
     if (/^SELECT 1 FROM sts_cluster_nodes/.test(text)) {
       const ok = ctl.fenceOk !== false;
       return Promise.resolve({ rows: ok ? [{}] : [], rowCount: ok ? 1 : 0 });
@@ -119,16 +134,16 @@ function fakePg(sent, ctl) {
   return { Pool: FakePool, Client: FakeClient };
 }
 
-function driverWith(sent, ctl) {
+function driverWith(sent, ctl, extra) {
   log.debug("Entering driverWith().");
   const restore = storeDouble.install(fakePg(sent, ctl));
   try {
     log.debug("Leaving driverWith().");
-    return postgres.create({
+    return postgres.create(Object.assign({
       url: 'postgres://sts_app@localhost:5432/sts',
       log: { debug: function () {}, info: function () {},
              warn: function () {}, error: function () {} }
-    });
+    }, extra || {}));
   } finally {
     restore();
   }
@@ -377,6 +392,92 @@ async function sectionF(t) {
   log.debug("Leaving sectionF().");
 }
 
+// The view `persistence.claimFences()` hands the driver: one block claim's
+// lock, none of it lost.
+function oneClaimFence() {
+  log.debug("Entering oneClaimFence().");
+  log.debug("Leaving oneClaimFence().");
+  return {
+    claimFenceOwner: true,
+    claimFences: function () {
+      return { names: ['fence:claim:at-status-block'],
+               lose: function () {
+                 return [];
+               },
+               commitLost: function () {} };
+    }
+  };
+}
+
+async function sectionG(t) {
+  log.debug("Entering sectionG().");
+  t.log.info('=== G. a compare-and-set miss under a claim fence ===');
+  const sent = [];
+  const ctl = { db: flushDouble.state() };
+  const driver = driverWith(sent, ctl, oneClaimFence());
+  const seen = [];
+  await driver.saveMinted([sessionRow('s4', 'first', seen)], []);
+  t.check(/^BEGIN \| SELECT name FROM sts_cluster_locks .* FOR SHARE \| MINTED_FLUSH \| COMMIT$/
+            .test(round(sent)),
+          'a flush under a claim fence: the fence share-locked, then the ' +
+          'statement, in one transaction', round(sent));
+
+  // Another process (a sibling request worker) writes the row once.
+  sent.length = 0;
+  seen.length = 0;
+  ctl.db.minted.get('authn.sessions\ndefault\ns4').body = 'theirs';
+  let thrown = null;
+  let out = null;
+  try {
+    out = await driver.saveMinted([sessionRow('s4', 'second', seen)], []);
+  } catch (e) {
+    log.debug("Caught in sectionG(): " + ((e && e.message) || e));
+    thrown = e;
+  }
+  t.check(thrown === null,
+          'a miss under the fence is not a failure: nothing thrown, so ' +
+          'no 503', thrown && thrown.message);
+  t.check(/FOR SHARE \| MINTED_FLUSH \| MINTED_FLUSH \| COMMIT$/
+            .test(round(sent)) &&
+          (round(sent).match(/BEGIN/g) || []).length === 1,
+          'the statement is sent again in the SAME transaction',
+          round(sent));
+  t.equal(seen.join(','), 'first,theirs',
+          'the second merge is made with the body the miss answered');
+  t.equal(ctl.db.minted.get('authn.sessions\ndefault\ns4').body,
+          'merged(theirs+second)', 'and that merge is what is written');
+  t.equal(out && out.merged.length, 1, 'one merge reported');
+
+  // Another process writes the row before every statement.
+  sent.length = 0;
+  seen.length = 0;
+  let n = 0;
+  ctl.meddle = function (db) {
+    n++;
+    db.minted.set('authn.sessions\ndefault\ns4', { body: 'busy' + n });
+  };
+  thrown = null;
+  try {
+    out = await driver.saveMinted([sessionRow('s4', 'third', seen)], []);
+  } catch (e) {
+    log.debug("Caught in sectionG(): " + ((e && e.message) || e));
+    thrown = e;
+  }
+  ctl.meddle = null;
+  t.check(thrown === null, 'two misses under the fence: still no failure',
+          thrown && thrown.message);
+  t.check(/FOR SHARE \| MINTED_FLUSH \| MINTED_FLUSH \| SELECT handle, realm, key, body FROM sts_minted .* FOR UPDATE \| MINTED_FLUSH \| COMMIT$/
+            .test(round(sent)) &&
+          (round(sent).match(/BEGIN/g) || []).length === 1,
+          'then the rows are locked and read on the fenced connection',
+          round(sent));
+  t.equal(seen[seen.length - 1], 'busy3',
+          'and merged with the body it locked');
+  t.equal(ctl.db.minted.get('authn.sessions\ndefault\ns4').body,
+          'merged(busy3+third)', 'which is what is written');
+  log.debug("Leaving sectionG().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await sectionA(t);
@@ -385,6 +486,7 @@ async function run(t) {
   await sectionD(t);
   await sectionE(t);
   await sectionF(t);
+  await sectionG(t);
   log.debug("Leaving run().");
 }
 
