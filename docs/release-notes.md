@@ -48,10 +48,19 @@ transaction. For a large `sts_sessions` table,
 build and does not change the server. `-v sts_schema=sts` selects the
 schema and is the default.
 
-Then start the 1.1.0 image. Until both indexes exist, that image refuses
-to open the store and records `STS-STORE-0029`. Run the script and start
-it again. Replacing the image before the script does not damage the
-volume.
+Then start the 1.1.0 image. If it starts before the script has run, it
+still starts and answers every request; the session pages and the
+per-person session sweep are slower until the indexes exist:
+
+* As the application role (`sts_app`, the normal case), which cannot
+  create an index, it logs `STS-STORE-0172` once, naming the two indexes
+  and this script. Run the script; nothing needs restarting afterwards.
+* As a role that owns `sts_sessions`, it builds the missing indexes
+  itself, in the background, with `CREATE INDEX CONCURRENTLY`, without
+  holding up writes or its own start. A build that fails logs
+  `STS-STORE-0173` and is tried again at the next start.
+
+Replacing the image before the script does not damage the volume.
 
 **Leave the volume in place.** `docker compose down -v` deletes the
 directory, the realm registry and the setting overrides, and in product
@@ -90,6 +99,9 @@ apply: leave the database in place, and do not run `mariadb/schema.sql`
 again, which sets the application account's password on every run. A
 second run inserts nothing. A valid index of the wrong shape is left as
 it is; drop it and run the script again, then start the 1.1.0 image.
+A 1.1.0 image started first still starts: an account that may not alter
+the table logs `STS-STORE-0172`, and one that may builds the index in
+place in the background (`STS-STORE-0173` if that fails).
 
 ## 1.0.0
 

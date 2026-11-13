@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5457** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5459** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 108
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 52
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 110
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 33
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 22
@@ -446,6 +446,8 @@ Raised from: persistence/.
 | `STS-STORE-0169` | A realm or settings save dropped one value the database can never store (a NUL, half of a surrogate pair, or another permanent data error) and committed everything else in the flush (#1463). The value stays in this process's memory and is absent from the store until the process restarts; the next flush does not send it again. | none — logged; the request that wrote it was already answered |
 | `STS-STORE-0170` | The service did not start because the database password is a well-known default. | — |
 | `STS-STORE-0171` | The service did not start because, in product mode, a database password was in a file or in the connection string rather than in a secret store. | ASVS 5.0.0 13.3.1 |
+| `STS-STORE-0172` | The store is owed an index added after release 1.0.0 (sts_sessions_subject_band, #876, or sts_sessions_started, #882): it is missing, or left invalid by an interrupted concurrent build, and the role this service dials with does not own the table to build it. The service starts and every question is answered, by a slower plan. Run postgres/upgrade-1.0.0.sql (or mariadb/upgrade-1.0.0.sql) as the table's owner; it builds the index without blocking writers. | none — the store opens without it |
+| `STS-STORE-0173` | A background build of an index the store was owed (#876, #882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER on MariaDB — failed. The service goes on without the index, by a slower plan; the next start tries again, or the owner runs the upgrade script. | none — the store opens without it |
 
 ## STS-CLUSTER
 

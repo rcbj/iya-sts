@@ -245,14 +245,32 @@ starts and before the script**, outside any transaction, search path
     ANALYZE sts_sessions;
 
 The script's `IF NOT EXISTS` then finds it. `ANALYZE` is so the first
-plans see the index; it is not a start-blocking upgrade. A version-32
-image started as `sts_app` against a store without the index is refused
-at open with `STS-STORE-0029`.
+plans see the index; it is not a start-blocking upgrade.
+
+**A VERSION-32 IMAGE STARTED BEFORE THE SCRIPT STILL STARTS (#876, #882
+follow-up, 2026-11-13).** Until then it was refused at open with
+`STS-STORE-0029` as `sts_app`, and as the owner it built the index with a
+plain `CREATE INDEX` inside `open()`'s transaction — a `SHARE` lock on
+`sts_sessions` for the build, on a table every sign-in writes. Both
+indexes are now marked `online` in the model, and `open()` leaves them
+out of its transaction (`persistence/online_indexes.js`):
+`sts_app`, which does not own the table, starts and logs `STS-STORE-0172`
+once, naming this script; the questions the indexes serve answer by a
+slower plan meanwhile. A role that owns the table builds them in the
+background, after the open commits, with `CREATE INDEX CONCURRENTLY` on a
+connection of its own, under a session advisory lock so two starting
+processes do not both build (`STS-STORE-0173` when it fails; the next
+start tries again). Running the script is still the right step: it is
+the owner's, it can run while the old image serves, and it ANALYZEs.
 
 `CONCURRENTLY` can leave an invalid index if the session dies. `open()`
-probes `to_regclass` for the name and does not read `pg_index.indisvalid`,
-the same as versions 23 and 25, and this version does not teach it to.
-Before the image starts, `indisvalid` must be true:
+reads `pg_index.indisvalid` for these two indexes (and only these): an
+invalid one is told to `sts_app` like a missing one, and an owning role
+drops it concurrently and builds it again under the advisory lock — an
+index another starting process is still building reads as invalid too,
+which is why only the lock holder ever drops one. The script does the
+same check by hand. Before relying on the index, `indisvalid` must be
+true:
 
     SELECT i.indisvalid
       FROM pg_index i
@@ -273,7 +291,13 @@ own), `sts_sessions_started` (this section), and the version-32 row.
 outside a transaction, drops and rebuilds one that is present and not
 valid, refuses one that is present and valid with a different definition,
 records version 32, and refuses a store with no `sts_schema` version of
-31 or later. It does not run `schema.sql`. That file's version-31 block
+31 or later. (A version-32 image already running against the store has
+recorded 32 itself and is answering without the indexes; the script
+finds the row and builds them.) **Do not run it while a version-32 image
+running as the table's OWNER is building the same index in the
+background** — the script reads that build as invalid, waits for it, and
+then drops and builds it again: no harm, twice the work. `sts_app`, the
+normal case, never builds. It does not run `schema.sql`. That file's version-31 block
 drops and recreates `sts_ldap_entries_asked_names` inside its transaction
 even when the expression on disk is already that one, which holds
 directory writes for the rebuild, and it sets the application role's

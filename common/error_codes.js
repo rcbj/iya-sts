@@ -2093,6 +2093,23 @@ const CODES = [
       'database password was in a file or in the connection string rather ' +
       'than in a secret store.',
     spec: 'ASVS 5.0.0 13.3.1' },
+  { code: 'STS-STORE-0172',
+    summary: 'The store is owed an index added after release 1.0.0 ' +
+      '(sts_sessions_subject_band, #876, or sts_sessions_started, #882): ' +
+      'it is missing, or left invalid by an interrupted concurrent build, ' +
+      'and the role this service dials with does not own the table to ' +
+      'build it. The service starts and every question is answered, by a ' +
+      'slower plan. Run postgres/upgrade-1.0.0.sql (or ' +
+      'mariadb/upgrade-1.0.0.sql) as the table\'s owner; it builds the ' +
+      'index without blocking writers.',
+    spec: 'none — the store opens without it' },
+  { code: 'STS-STORE-0173',
+    summary: 'A background build of an index the store was owed (#876, ' +
+      '#882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER ' +
+      'on MariaDB — failed. The service goes on without the index, by a ' +
+      'slower plan; the next start tries again, or the owner runs the ' +
+      'upgrade script.',
+    spec: 'none — the store opens without it' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +

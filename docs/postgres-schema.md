@@ -52,6 +52,14 @@ store. Running `schema.sql` again on that store also drops and rebuilds
 application password again. MariaDB's counterpart is
 `mariadb/upgrade-1.0.0.sql` (the started index only).
 
+A version-32 service started on a 1.0.0 database before the script still
+starts. The two session indexes speed questions up and change no answer, so
+the service never builds them while it opens the store. Connected as the
+application role, which cannot create an index, it logs `STS-STORE-0172`
+and answers more slowly until the owner runs the script. Connected as the
+table's owner, it builds them itself in the background with `CREATE INDEX
+CONCURRENTLY` (`STS-STORE-0173` if that fails).
+
 | Version | What it added |
 |---|---|
 | 1 | `sts_ldap_entries`, `sts_realms`, `sts_appconfig` |
