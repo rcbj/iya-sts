@@ -108,6 +108,10 @@
 #                                             # skip the install-time risk
 #                                             # loader step in the postgres
 #                                             # modes (#213; riskInstallCheck)
+#   STS_TEST_MODEL_GAP_CHECK=0 ./run-tests.sh
+#                                             # do not fail a mode on a model
+#                                             # gap in a service log (#1579;
+#                                             # modelGapCheck)
 #   STS_TEST_CONFORMANCE_MODES=memory,single-node ./run-tests.sh
 #                                             # the modes that run the OpenID
 #                                             # conformance suite's FAPI plans
@@ -394,6 +398,10 @@ STACK_UP=0
 # teardown() takes them if it has not, which is what an interrupted mode
 # needs — a cancelled CI job used to lose every service log with the stack.
 LOGS_TAKEN=0
+# The service logs captureContainerLogs() took for the mode, and the last one
+# captureOneContainerLog() wrote: modelGapCheck() reads them (#1579's review).
+CAPTURED_SERVICE_LOGS=()
+LAST_CAPTURED_LOG=""
 
 # The header of this file IS the usage, printed by reading it back rather than
 # by keeping a second copy of it in a here-document — which is the only way the
@@ -1080,17 +1088,20 @@ serviceUrl()
 captureContainerLogs()
 {
   local mode="$1"
+  CAPTURED_SERVICE_LOGS=()
   if [ "${STACK_UP}" != "1" ];
   then
     return 0
   fi
   captureOneContainerLog "${mode}" sts   "00-iya-sts-service.log" "Service log"
+  CAPTURED_SERVICE_LOGS+=("${LAST_CAPTURED_LOG}")
   # The `cluster` mode's node B and balancer, whose logs go with their
   # containers too (2026-09-14). Node A keeps the name every mode uses.
   if stsModeIsCluster "${mode}";
   then
     captureOneContainerLog "${mode}" sts2   "00-iya-sts-service-node-b.log" \
       "Node B log"
+    CAPTURED_SERVICE_LOGS+=("${LAST_CAPTURED_LOG}")
     captureOneContainerLog "${mode}" sts-lb "00-load-balancer.log" \
       "Balancer log"
   fi
@@ -1099,6 +1110,7 @@ captureContainerLogs()
   then
     captureOneContainerLog "${mode}" sts2   "00-iya-sts-service-cell-b.log" \
       "Cell B log"
+    CAPTURED_SERVICE_LOGS+=("${LAST_CAPTURED_LOG}")
   fi
   # The test peer's (#586): one line per message any role received, and
   # why it refused one — what a job's failure against it is read beside.
@@ -1155,6 +1167,66 @@ captureOneContainerLog()
     "${COMPOSE_FILE_ARGS[@]}" logs --no-color "${service}" \
     > "${dest}" 2>&1 || true
   printf '%-12s %s\n' "${label}:" "${dest}"
+  # Where it went, for modelGapCheck(): the fallback name is as likely as
+  # the report's own, and recomputing it here would be a second copy.
+  LAST_CAPTURED_LOG="${dest}"
+}
+
+# ---------------------------------------------------------------------------
+# A MODEL GAP IN A SERVICE LOG FAILS THE MODE (#1579's review, 2026-11-13).
+#
+# The model HOLDS what the service answers rather than refusing it (rcbj's
+# decision on #1579): a member the model does not name, a wrong type, an
+# undeclared error code is logged under the family's code — STS-OAUTH-1005,
+# STS-SAML-0121, STS-GNAP-0910 and the rest — and the answer is sent as it
+# was built. So nothing failed on one: #1655 shipped a GNAP model that logged
+# STS-GNAP-0910 on every approval view, and every mode stayed green until
+# #1686 read a log. The service stays advisory; THIS is where a gap fails.
+#
+# tests/tools/model-gap-scan.js reads every node's captured log (node A, and
+# node B or cell B where the mode has one) for the bracketed tag of any code
+# in its MODEL_GAP_CODES — a list tests/model_gap_scan.js holds to the error
+# table and to every hold() site, so a family added later cannot be missed —
+# and names each code with its count and its first line. Run on the HOST
+# after the logs are taken, which is why it is a leaf needing only node: the
+# host already runs node for tests/tools/compose.sh's subnet choice. Its
+# report is tests/report/<mode>-97-model-gaps.log. A log that could not be
+# read fails the check too: a check that could not run has not passed.
+# STS_TEST_MODEL_GAP_CHECK=0 skips it, and says so.
+# ---------------------------------------------------------------------------
+modelGapCheck()
+{
+  local mode="$1" dest rc one
+  local paths=()
+  dest="${CURRENT_DIR}/tests/report/${mode}-97-model-gaps.log"
+  if [ "${STS_TEST_MODEL_GAP_CHECK:-1}" != "1" ];
+  then
+    echo "Mode ${mode}: the model-gap check is off" \
+         "(STS_TEST_MODEL_GAP_CHECK=${STS_TEST_MODEL_GAP_CHECK})."
+    return 0
+  fi
+  if [ "${#CAPTURED_SERVICE_LOGS[@]}" -eq 0 ];
+  then
+    # No stack came up, so no log was taken; the mode's own verdict says why.
+    return 0
+  fi
+  for one in "${CAPTURED_SERVICE_LOGS[@]}"; do
+    paths+=("$(hostPath "${one}")")
+  done
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  node "$(hostPath "${CURRENT_DIR}/tests/tools/model-gap-scan.js")" \
+    "${paths[@]}" > "${dest}" 2>&1
+  rc=$?
+  echo ""
+  echo "Mode ${mode}: model gaps in the service log(s) (#1579):"
+  sed 's/^/  /' "${dest}"
+  if [ "${rc}" -ne 0 ];
+  then
+    echo "Mode ${mode}: FAILED — a service answer is not its model's, or" \
+         "a log could not be read; see ${dest}." >&2
+    return 1
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -2214,6 +2286,20 @@ do
 
   captureContainerLogs "${MODE}"
   LOGS_TAKEN=1
+  # After the logs, because they are what it reads: a gap fails the mode
+  # whatever the runner said (modelGapCheck(), above).
+  if ! modelGapCheck "${MODE}";
+  then
+    if [ "${MODE_RC}" -eq 0 ];
+    then
+      MODES_FAILED+=("${MODE}")
+      MODE_RC=1
+    fi
+    if [ "${RC}" -eq 0 ];
+    then
+      RC=1
+    fi
+  fi
 
   # KEPT: the last mode under --keep-stack stays up for the teardown trap to
   # describe, and is the one stack this launcher leaves behind.

@@ -207,6 +207,15 @@ function fieldProblems(concept, field, objects, withheld) {
     log.debug("Leaving fieldProblems(). Embedded, not a concept.");
     return [where + ' is @embedded and is not a domain model'];
   }
+  // A record's `first` upgrades a list an older build stored where the field
+  // is ONE value; on a list, a map or a concept it would mean nothing.
+  if (field.held && field.held.transform === 'first' &&
+      (field.array || ['string', 'integer', 'number', 'boolean']
+        .indexOf(field.type) < 0)) {
+    log.debug("Leaving fieldProblems(). first on a field not one value.");
+    return [where + ' says transform: "first" and is not one string, ' +
+      'number or boolean'];
+  }
   if (!field.from) {
     log.debug("Leaving fieldProblems(). Nothing stored to check.");
     return [];

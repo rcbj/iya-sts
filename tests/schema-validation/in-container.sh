@@ -14,7 +14,9 @@
 #   1. no `STS-API-0139` and no `STS-API-0140` in any node's log, whichever job
 #      caused it: every answer every job drew was held to its model;
 #   2. `tests/openapi_response_models.js` passes, and
-#      `tests/protocol/sts_outside_values.js` passes in every stage it ran in.
+#      `tests/protocol/sts_outside_values.js` passes in every stage it ran in;
+#   3. no protocol family's model gap in any node's log
+#      (`tests/tools/model-gap-scan.js`, #1579's review).
 # Any other job's failure is REPORTED and does not fail the mode, because this
 # container has no test peer, remote PEP, mail relay, conformance suite or SAML
 # peers, and a job that needs one fails or skips for that. `./run-tests.sh`'s
@@ -324,6 +326,15 @@ verdict() {
   local count
   count="$(wc -l < "${dir}/violations.log")"
   [ "${count}" -eq 0 ] || ok=0
+  # The protocol families' model gaps (#1579's review): an answer the model
+  # held and the service sent anyway, as ./run-tests.sh's modelGapCheck().
+  local gaps=pass
+  if ! node tests/tools/model-gap-scan.js "${dir}"/service-*.log \
+       > "${dir}/model-gaps.log" 2>&1; then
+    ok=0
+    gaps=FAIL
+    echo "model gaps: see model-gaps.log" >> "${dir}/violations.log"
+  fi
   local key
   for key in sts_outside_values openapi_response_models; do
     # The runner's own line for the job: a passing test may say "failed".
@@ -336,6 +347,7 @@ verdict() {
   {
     echo "stage: ${mode}"
     echo "answers refused or thrown (STS-API-0139/0140 lines): ${count}"
+    echo "protocol model gaps (tests/tools/model-gap-scan.js): ${gaps}"
     echo "run-report exit: ${reportRc} (other jobs may need what this container lacks)"
     echo "verdict: $([ "${ok}" = 1 ] && echo pass || echo FAIL)"
   } | tee "${dir}/verdict.txt"

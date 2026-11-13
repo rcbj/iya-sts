@@ -145,7 +145,12 @@ model IssuedToken {
   @fromRecord(#{key: "iss"})
   issuer: string;
 
-  @fromRecord(#{key: "client_id"})
+  /**
+   * The client it was issued to. A row a v1.0.0 build wrote may hold a list
+   * here (an array `aud` with no client_id or azp); it is read as its first
+   * member, which is what the writer has filed since #1579.
+   */
+  @fromRecord(#{key: "client_id", transform: "first"})
   clientId?: string;
 
   @fromRecord(#{key: "audience"})
