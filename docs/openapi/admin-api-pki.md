@@ -397,6 +397,7 @@ Scope: `admin:read`.
 | `keyAlgorithms[].label` | string |  |  |
 | `keyAlgorithms[].signs` | boolean |  |  |
 | `keyAlgorithms[].slow` | boolean |  |  |
+| `keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `pageDefaults` | object |  |  |
 | `pageDefaults.alternativeKeyAlgorithm` | string, or null |  |  |
 | `pageDefaults.keyAlgorithm` | string |  |  |
@@ -895,6 +896,7 @@ Scope: `admin:read`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -919,6 +921,7 @@ Scope: `admin:read`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -1095,6 +1098,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -1119,6 +1123,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -1245,6 +1250,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -1269,6 +1275,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -1417,6 +1424,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -1441,6 +1449,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -1557,6 +1566,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -1581,6 +1591,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -1705,6 +1716,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -1729,6 +1741,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -1821,6 +1834,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -1845,6 +1859,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -1960,6 +1975,7 @@ An empty object.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -1984,6 +2000,7 @@ An empty object.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -2076,6 +2093,7 @@ An empty object.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -2100,6 +2118,7 @@ An empty object.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -2215,6 +2234,7 @@ An empty object.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -2239,6 +2259,7 @@ An empty object.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -2331,6 +2352,7 @@ An empty object.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -2355,6 +2377,7 @@ An empty object.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -2480,6 +2503,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -2504,6 +2528,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -2600,6 +2625,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -2624,6 +2650,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -2748,6 +2775,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -2772,6 +2800,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -2864,6 +2893,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -2888,6 +2918,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -3072,6 +3103,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -3096,6 +3128,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -3226,6 +3259,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -3250,6 +3284,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -3404,6 +3439,7 @@ An empty object.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -3428,6 +3464,7 @@ An empty object.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -3555,6 +3592,7 @@ An empty object.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -3579,6 +3617,7 @@ An empty object.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -3707,6 +3746,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -3731,6 +3771,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -3825,6 +3866,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -3849,6 +3891,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -3969,6 +4012,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -3993,6 +4037,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -4085,6 +4130,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -4109,6 +4155,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -4229,6 +4276,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -4253,6 +4301,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -4345,6 +4394,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -4369,6 +4419,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -4492,6 +4543,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -4516,6 +4568,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -4608,6 +4661,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -4632,6 +4686,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -4749,6 +4804,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -4773,6 +4829,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -4865,6 +4922,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -4889,6 +4947,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -5025,6 +5084,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -5049,6 +5109,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -5152,6 +5213,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -5176,6 +5238,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -5313,6 +5376,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -5337,6 +5401,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -5438,6 +5503,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -5462,6 +5528,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -5903,6 +5970,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -5927,6 +5995,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -6021,6 +6090,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -6045,6 +6115,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -6196,6 +6267,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -6220,6 +6292,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |
@@ -6332,6 +6405,7 @@ Scope: `admin:write`.
 | `workbench.alternativeKeyAlgorithms[].label` | string |  |  |
 | `workbench.alternativeKeyAlgorithms[].signs` | boolean |  |  |
 | `workbench.alternativeKeyAlgorithms[].slow` | boolean |  |  |
+| `workbench.alternativeKeyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.dnFields` | list |  |  |
 | `workbench.dnFields[].attr` | string |  |  |
 | `workbench.dnFields[].field` | string |  |  |
@@ -6356,6 +6430,7 @@ Scope: `admin:write`.
 | `workbench.keyAlgorithms[].label` | string |  |  |
 | `workbench.keyAlgorithms[].signs` | boolean |  |  |
 | `workbench.keyAlgorithms[].slow` | boolean |  |  |
+| `workbench.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `workbench.keyUsageBits` | list |  |  |
 | `workbench.keyUsageBits[].name` | string |  |  |
 | `workbench.keyUsageBits[].what` | string |  |  |

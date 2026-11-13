@@ -114,6 +114,7 @@
   "notAfterPlaceholder": "(Not Before + validity)",
   "slowToGenerate": " — slow to generate",
   "cannotSign": " — subject key only, cannot sign",
+  "notForTls": " — not usable by TLS clients",
   "keyPair": "Key Pair",
   "keyPairNote": "The key pair the next certificate certifies &mdash; and, for a self-signed profile, the key that signs it. It is generated <strong>here, in this service</strong>, which is the one place this page differs in kind from the debugger's: that page generates in the browser because its whole claim is that the key never leaves it, and this one holds the certificate authority, so the key belongs in the process that signs. It is the same module either way (<code>common/crypto_impl/key_material.js</code>), so the algorithms, the PEM/JWK conversion and the keystore formats are identical rather than similar.",
   "keyPairNoteTitle": "Where this pair comes from",

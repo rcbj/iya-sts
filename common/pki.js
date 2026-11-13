@@ -853,7 +853,13 @@ function keyAlgorithms() {
   log.debug('Entering keyAlgorithms().');
   const out = keyMaterial.keyAlgIds().map(function (id) {
     const desc = keyMaterial.keyAlg(id);
-    return { id: id, label: desc.label, kind: desc.kind };
+    // `tlsUsable` (2026-11-12): false for a composite ML-DSA key, which this
+    // service's OpenSSL cannot read, so a TLS peer can never be shown one.
+    // The console leaves those out of every build form (a CA is on the
+    // listener chains) and marks them on a leaf's, and an /admin-api caller
+    // learns the same from here rather than from STS-PKI-0272 or 0274.
+    return { id: id, label: desc.label, kind: desc.kind,
+             tlsUsable: !listenerUnreadableKeyAlg(id) };
   });
   log.debug('Leaving keyAlgorithms(). ' + out.length + ' algorithm(s).');
   return out;
@@ -2050,6 +2056,23 @@ function listenerUnreadableKeyAlg(keyAlg) {
                                          String(keyAlg));
   log.debug('Leaving listenerUnreadableKeyAlg(). ' + unreadable);
   return unreadable;
+}
+
+/**
+ * The key algorithm a CA on a listener chain is built with when the form
+ * names none: `pki.keyAlgorithm`, or the classical default where that is a
+ * composite (listenerChainOptions()'s fallback). The console's build forms
+ * preselect it, so the menu shows what the build would do.
+ *
+ * @returns a key-material id
+ */
+function listenerDefaultKeyAlg() {
+  log.debug('Entering listenerDefaultKeyAlg().');
+  const configured = String(config.value('pki.keyAlgorithm') || '');
+  const out = listenerUnreadableKeyAlg(configured)
+    ? 'rsa-' + mode.defaultRsaBits() : configured;
+  log.debug('Leaving listenerDefaultKeyAlg(). ' + out);
+  return out;
 }
 
 /**
@@ -14731,6 +14754,7 @@ module.exports = {
   // ask without building a branch.
   processListenerAltSignatureProblem: processListenerAltSignatureProblem,
   listenerUnreadableKeyAlg: listenerUnreadableKeyAlg,
+  listenerDefaultKeyAlg: listenerDefaultKeyAlg,
   certifySignerGroups: certifySignerGroups,
   alternativeProblem: alternativeProblem,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,

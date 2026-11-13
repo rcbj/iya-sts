@@ -226,8 +226,12 @@ is stored (`STS-PKI-0272` for the Root and the process branch, `STS-PKI-0274`
 for a realm). When only `pki.keyAlgorithm` names one, the build uses the
 classical default instead and logs `STS-PKI-0273` or `STS-PKI-0275`. Pure
 ML-DSA and SLH-DSA authorities, and a hybrid branch with an alternative
-ML-DSA key, are the post-quantum choices. Composite keys elsewhere, such as
-a realm's JOSE signing keys or the Certificate Workbench, are not affected.
+ML-DSA key, are the post-quantum choices. The console's build forms do not
+offer a composite key. The menus that issue a key pair to an application or
+a person, and the Certificate Workbench, still offer one and mark it *not
+usable by TLS clients*: such a key signs what this service verifies itself,
+such as a client assertion, and no TLS peer can be shown it.
+`GET /admin-api/pki` marks each key algorithm with `tlsUsable`.
 
 **CRLs and OCSP responses are signed classically only, on purpose.** No
 published profile defines an alternative signature on either, so no client
@@ -1355,7 +1359,7 @@ encoder cannot produce would be a third entry that is a 500.
 
 | | |
 |---|---|
-| Key algorithms, for the **hierarchy** | `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521`, `ed25519`, and the post-quantum ones that sign — ML-DSA, SLH-DSA and composite ML-DSA |
+| Key algorithms, for the **hierarchy** | `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521`, `ed25519`, and the post-quantum ones that sign — ML-DSA and SLH-DSA (composite ML-DSA is refused for an authority) |
 | Key algorithms, on the **[Certificate Workbench](#the-certificate-workbench)** | those seven plus thirty-four post-quantum ones — ML-DSA, SLH-DSA, composite ML-DSA and ML-KEM — narrowed by the cryptographic approach |
 | Signature algorithms | RSASSA-PKCS1-v1_5 and RSASSA-PSS with SHA-256/384/512, ECDSA with SHA-256/384/512, Ed25519 — **and the two SHA-1 ones, marked weak**, because *does my stack refuse a SHA-1 certificate?* is a question a debugger should be able to ask. Nothing defaults to them. Plus the post-quantum ones, where the key is one. |
 

@@ -1036,7 +1036,9 @@ class PkiAdmin {
     // and the tiers' names, which it read from the settings and the
     // authority as it drew.
     json.pageDefaults = {
-      keyAlgorithm: config.value('pki.keyAlgorithm'),
+      // What a build naming no key uses: the setting, or the classical
+      // default where it is a composite no listener chain may hold.
+      keyAlgorithm: pki.listenerDefaultKeyAlg(),
       organisation: config.value('pki.organisation'),
       leafLifetimeDays: config.value('pki.leafLifetimeDays'),
       alternativeKeyAlgorithm: config.value('pki.alternativeKeyAlgorithm')

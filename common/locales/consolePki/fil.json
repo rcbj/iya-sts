@@ -114,6 +114,7 @@
   "notAfterPlaceholder": "(Hindi bago + bisa)",
   "slowToGenerate": " — mabagal gawin",
   "cannotSign": " — subject key lang, hindi makakapirma",
+  "notForTls": " — hindi magagamit ng mga TLS client",
   "keyPair": "Key Pair",
   "keyPairNote": "Ang key pair na sine-certify ng susunod na certificate &mdash; at, para sa self-signed na profile, ang key na pumipirma rito. Ginagawa ito <strong>dito, sa serbisyong ito</strong>, na siyang tanging bagay kung saan likas na naiiba ang pahinang ito sa pahina ng debugger: gumagawa ang pahinang iyon sa browser dahil ang buong pangako nito ay hindi kailanman umaalis doon ang key, at hawak naman ng pahinang ito ang certificate authority, kaya ang key ay nararapat sa prosesong pumipirma. Pareho ang module sa dalawa (<code>common/crypto_impl/key_material.js</code>), kaya magkapareho talaga — hindi lang magkahawig — ang mga algorithm, ang PEM/JWK conversion at ang mga keystore format.",
   "keyPairNoteTitle": "Kung saan nanggagaling ang pair na ito",

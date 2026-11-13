@@ -114,6 +114,7 @@
   "notAfterPlaceholder": "（生效時間 + 有效期）",
   "slowToGenerate": " — 產生較慢",
   "cannotSign": " — 僅主體金鑰，不能簽章",
+  "notForTls": " — TLS 用戶端無法使用",
   "keyPair": "金鑰對",
   "keyPairNote": "下一個憑證所認證的金鑰對 &mdash; 對於自我簽署設定檔，也是為它簽章的金鑰。它<strong>在這裡、在本服務中</strong>產生，這是本頁面與偵錯工具頁面唯一的本質差異：那個頁面在瀏覽器中產生，因為它的全部承諾就是金鑰永不離開瀏覽器；而本頁面持有憑證授權單位，所以金鑰屬於負責簽章的程序。兩者使用同一個模組（<code>common/crypto_impl/key_material.js</code>），因此演算法、PEM/JWK 轉換與金鑰儲存區格式是完全相同的，而不只是相似。",
   "keyPairNoteTitle": "此金鑰對從何而來",
