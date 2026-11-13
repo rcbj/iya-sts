@@ -819,6 +819,21 @@ fence checks stay inside its transaction; what they share-lock is a row of
 `sts_cluster_locks` (#770, `cluster/CLAUDE.md`). Each process now holds up to
 `poolMax() + 2` connections; `POOL_FLOOR` stays 4, argued above it.
 
+**Nothing on it waits without a bound but `leaveCluster()` (#770's review,
+2026-11-13).** The connection runs one caller at a time (`liveExclusive()`),
+so a statement that waits holds every caller queued behind it, and a queued
+heartbeat's own bound has not started. The heartbeat and the origin renewal
+were bounded by #770; a lease taken over or given up is now too — the native
+acquire as a bounded autocommit, the portable acquire and `releaseLease()`
+as `liveTransact(fn, boundMs)`: `SET LOCAL lock_timeout` and
+`statement_timeout` after BEGIN on PostgreSQL, the session's limits set
+before BEGIN and put back after on MariaDB. `isBoundTimeout()` (55P03,
+57014, 1205, 1969) is how the acquire tells "not yet" from a failure.
+`cluster/CLAUDE.md`, *Leases and the fence*, argues it. **And MariaDB's
+bound puts back the SESSION's limits** (`mariadbWithBound()`): it read
+`@@GLOBAL` and wrote those into the session, which is the same number only
+while nothing set the session's own.
+
 **Key-row writes never hold the whole pool (#1590, 2026-11-10).**
 `mergeKeys()` holds its `sts_keys` row FOR UPDATE while the caller's merge
 runs, and in a certificate-authority rebuild storm several queued on one hot

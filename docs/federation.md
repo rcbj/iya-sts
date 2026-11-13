@@ -289,6 +289,15 @@ Empty, the default, is the relying party above. The three values:
   object inside the push and a signed authorization response (JARM), checked
   before the code is redeemed (`STS-FED-0246`).
 
+A profile also holds the partner's answer to more than a plain relationship
+does. `1-advanced` requires `s_hash` over the `state` in the front-channel
+ID Token (`STS-FED-0248`). A `2-security` or `2-message-signing` answer must
+name its issuer, RFC 9207 (`STS-FED-0249`; with JARM, the `iss` inside the
+signed response), and its token response must say `token_type` `DPoP`
+(`STS-FED-0251`, at the sign-in and at every refresh). A JARM response must
+carry `exp` (`STS-FED-0250`). A relationship with no profile is not asked
+any of these.
+
 A profile forces `private_key_jwt` whatever `fedTokenAuth` says. The DPoP
 key for a `2-security` or `2-message-signing` sign-in is kept for that
 sign-in, and sealed with the partner's refresh token when

@@ -430,6 +430,154 @@ function childMain() {
          '3b. and the refusal carries no error code on the wire',
          String(r.text || '').slice(0, 200));
 
+    // ---------------------------------------------------------------------
+    // 4. THE REMEMBERED USERNAMES (#880's review, 2026-11-13): bounded and on
+    // /admin/caches, written only by the gate's warm, read only inside the
+    // gate's checks, and dropped by any write under ou=users, a replicated
+    // one on a busy key included.
+    // ---------------------------------------------------------------------
+    const cacheRegistry = require(ROOT_DIR + '/common/cache_registry');
+    const users = inDefault(function () {
+      return ldap.normalizeDn(ldap.usersDn());
+    });
+    const rememberedCount = function () {
+      const d = cacheRegistry.detail('ldap.gate-usernames');
+      let n = 0;
+      ((d && d.rows) || []).forEach(function (row) {
+        if (row.realm === realmId) {
+          n += parseInt(String(row.key), 10) || 0;
+        }
+      });
+      return n;
+    };
+    const byNameAsked = function (mark, who) {
+      return bridge.syncWhere.slice(mark).filter(function (line) {
+        return line === 'byName ' + who;
+      }).length;
+    };
+    const fileByCn = function (who) {
+      const dn = 'cn=' + who + ' Example,' + users;
+      const key = ldap.normalizeDn(dn);
+      const attrs = { objectclass: ['top', 'person', 'organizationalPerson',
+                                    'inetOrgPerson'],
+                      uid: [who], cn: [who + ' Example'], sn: ['Example'] };
+      rows.set(realmId + '\n' + key, {
+        realm: realmId, dn_key: key, dn: dn, attrs: attrs, origin: 'test',
+        created_at: '1', modified_at: '1' });
+      return { dn: dn, key: key, entry: { dn: dn, attributes: attrs } };
+    };
+    const gateRead = function (who) {
+      return inDefault(function () {
+        return ldap.withRememberedUserNames(function () {
+          return ldap.existingUserEntry(who);
+        });
+      });
+    };
+    const d0 = cacheRegistry.detail('ldap.gate-usernames');
+    note(cacheRegistry.has('ldap.gate-usernames') && d0 &&
+         d0.summary && d0.summary.maxEntries === 64,
+         '4a. the remembered usernames are registered on /admin/caches, ' +
+         'bounded at 64 a realm',
+         JSON.stringify(d0 && d0.summary));
+
+    const many = [];
+    for (let i = 0; i < 100; i++) {
+      many.push('agw-many-' + stamp + '-' + i);
+    }
+    await inDefault(function () {
+      return ldap.warmUserNamesAsync(many);
+    });
+    const held = rememberedCount();
+    note(held > 0 && held <= 64,
+         '4b. a warm of 100 names keeps at most 64 of them',
+         'held ' + held);
+
+    const PRESENTED = 'agw-presented-' + stamp;
+    let mark = bridge.syncWhere.length;
+    inDefault(function () {
+      return ldap.existingUserEntry(PRESENTED);
+    });
+    const firstAsk = byNameAsked(mark, PRESENTED);
+    mark = bridge.syncWhere.length;
+    const again = gateRead(PRESENTED);
+    note(firstAsk === 1 && byNameAsked(mark, PRESENTED) === 1 &&
+         again === null,
+         '4c. a lookup outside the gate remembers nothing: the gate\'s own ' +
+         'read of the same name still asks the store',
+         'first ' + firstAsk + ' then ' + byNameAsked(mark, PRESENTED));
+
+    const GHOST = 'agw-ghost-' + stamp;
+    await inDefault(function () {
+      return ldap.warmUserNamesAsync([GHOST]);
+    });
+    mark = bridge.syncWhere.length;
+    const remembered = gateRead(GHOST);
+    const gateAsked = byNameAsked(mark, GHOST);
+    // Another process creates GHOST, filed under cn= so the uid DN the warm
+    // held absent stays absent: only the name lookup can find her.
+    fileByCn(GHOST);
+    mark = bridge.syncWhere.length;
+    const plain = inDefault(function () {
+      return ldap.existingUserEntry(GHOST);
+    });
+    const create = inDefault(function () {
+      return ldap.createUser(GHOST, { invent: false });
+    });
+    note(remembered === null && gateAsked === 0,
+         '4d-i. precondition: the gate read the warm\'s "nobody" for a name ' +
+         'without asking the store',
+         'entry ' + JSON.stringify(remembered) + ' asked ' + gateAsked);
+    note(!!plain && /^cn=/i.test(String(plain.dn)) &&
+         byNameAsked(mark, GHOST) >= 1,
+         '4d-ii. existingUserEntry() outside the gate asks the store and ' +
+         'finds the person the remembered "nobody" would hide',
+         String(plain && plain.dn));
+    note(!!create && create.ok === false,
+         '4d-iii. createUser() does not trust the remembered "nobody": the ' +
+         'create is refused as a duplicate',
+         JSON.stringify(create && (create.errors || create.ok)));
+
+    const replicate = async function (who, keep) {
+      await inDefault(function () {
+        return ldap.warmUserNamesAsync([who]);
+      });
+      const precondition = gateRead(who) === null;
+      const filed = fileByCn(who);
+      ldap.directoryHooks.forgetEntry(realmId, filed.key, filed.entry, keep);
+      const m = bridge.syncWhere.length;
+      const found = gateRead(who);
+      return { precondition: precondition, found: found,
+               asked: byNameAsked(m, who) };
+    };
+    const plainRow = await replicate('agw-repl-' + stamp, false);
+    note(plainRow.precondition && !!plainRow.found && plainRow.asked >= 1,
+         '4e. a create another process made, applied on a key not busy here, ' +
+         'drops the remembered "nobody"',
+         JSON.stringify({ pre: plainRow.precondition, asked: plainRow.asked,
+                          dn: plainRow.found && plainRow.found.dn }));
+    const busyRow = await replicate('agw-busy-' + stamp, true);
+    note(busyRow.precondition && !!busyRow.found && busyRow.asked >= 1,
+         '4f. and one applied on a key busy here, which touches nothing, ' +
+         'drops it too',
+         JSON.stringify({ pre: busyRow.precondition, asked: busyRow.asked,
+                          dn: busyRow.found && busyRow.found.dn }));
+
+    // A drop while the warm's question is out: the older answer is not
+    // written down when it comes back.
+    const RACE = 'agw-race-' + stamp;
+    const racing = inDefault(function () {
+      return ldap.warmUserNamesAsync([RACE]);
+    });
+    const raced = fileByCn('agw-racer-' + stamp);
+    ldap.directoryHooks.forgetEntry(realmId, raced.key, raced.entry, true);
+    await racing;
+    mark = bridge.syncWhere.length;
+    gateRead(RACE);
+    note(byNameAsked(mark, RACE) === 1,
+         '4g. a write under ou=users while the warm was asking keeps the ' +
+         'warm\'s answer from being written down',
+         'asked ' + byNameAsked(mark, RACE));
+
     server.close();
     fsLocal.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

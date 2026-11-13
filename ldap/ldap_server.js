@@ -1626,6 +1626,9 @@ function touchDirectory(dn, after, how) {
   // And any add holding names it asked first is told what this write
   // touched (#625).
   noteHeldNamesTouched(dn, after);
+  // And the console gate's remembered usernames (#880), whether or not an
+  // add is in flight: this is every write here and every replicated row.
+  dropUserNameAnswersFor(dn);
   // WHERE IT LANDED, when the caller said so. See subtreeClocks() below: a
   // caller that names the DN it wrote lets a listing of some OTHER container
   // survive this write, and a caller that says nothing invalidates every
@@ -2723,18 +2726,44 @@ const usernameIndexes = realms.keyed(function () {
   return { index: null, version: -1, usersDn: '', builds: 0, collisions: 0 };
 });
 
-// A windowed worker's answer to one username, including nobody (#880).
-// `existingUserEntry()` asks the store by name after the `uid` DN misses,
-// and the console gate does that for the bootstrap administrator on every
-// request. Kept until `ou=users`'s subtree clock moves — a create, a
-// modify or a delete there, and not a forget of a clean slot. An absence
+// THE CONSOLE GATE'S ANSWER TO ONE USERNAME, INCLUDING NOBODY (#880; its
+// review, 2026-11-13). `existingUserEntry()` asks the store by name after the
+// `uid` DN misses, and the console gate does that for the bootstrap
+// administrator on every request. Three rules, each the answer to something
+// the first version got wrong:
+//
+//   * ONLY THE GATE'S WARM WRITES IT (`warmUserNamesAsync()`). The first
+//     version also noted every answer `existingUserEntry()` asked the store
+//     for, and `admin_stats.js`'s `identityOf()` asks that for every name
+//     anybody presents, before authentication: an unbounded Map of names,
+//     nonexistent ones included.
+//   * ONLY TWO READS USE IT, inside `withRememberedUserNames()`: the gate's
+//     synchronous checks, and `admin_rbac.ts`'s `bootstrapState()`, a read
+//     of the bootstrap administrator's flags that creates nothing (it is
+//     asked by `GET /admin-api/me` after the gate). Every other caller of
+//     `existingUserEntry()` (`createUser()`, the LDAP add, `autoCreateUser()`
+//     and the rest of the one-entry-per-person doors) asks the store, so a
+//     remembered "nobody" can never let a second person be made.
+//   * ANY WRITE UNDER `ou=users`, FROM ANY PROCESS, DROPS IT
+//     (`dropUserNameAnswersFor()`): `touchDirectory()` for every write here
+//     and every replicated row it is told about, and `forgetEntry()`'s busy
+//     branch, which touches nothing. The first version dropped only inside
+//     `noteHeldNamesTouched()`, which returns at once when no add is in
+//     flight, so a create applied on a busy key left "nobody" standing.
+//     `generation` moves with every drop, so a warm whose question was out
+//     while one happened does not write its older answer.
+//
+// Bounded at `USER_NAME_ANSWERS_MAX` per realm, the least recently used
+// dropped first, and on `/admin/caches` as `ldap.gate-usernames`. An absence
 // at `uid=<name>` is not this answer: a person filed under another RDN is
-// found only by name. A write an add in flight was told about drops the
-// names it could have changed (`dropUserNameAnswers()`), because that
-// apply does not always move the clock.
+// found only by name.
 const userNameAnswers = realms.keyed(function () {
-  return { version: -1, usersDn: '', answers: null };
+  return { version: -1, usersDn: '', generation: 0, answers: null };
 });
+const USER_NAME_ANSWERS_MAX = 64;
+// How deep the gate's synchronous checks are (`withRememberedUserNames()`).
+// Zero everywhere else, so no other read sees a remembered answer.
+let rememberedNameReads = 0;
 
 // The registry counters of this file's four caches (#74, rule 3ap) — the
 // username index above, and the group index, the entryUUID index and the
@@ -2746,6 +2775,7 @@ const groupIndexCount = cacheRegistry.counter('ldap.group-index');
 const uuidIndexCount = cacheRegistry.counter('ldap.entryuuid-index');
 const windowedUuidCount = cacheRegistry.counter('ldap.windowed-entryuuids');
 const listingCount = cacheRegistry.counter('ldap.subtree-listings');
+const userNameAnswerCount = cacheRegistry.counter('ldap.gate-usernames');
 
 // Every name this entry answers to, lower-cased and without repeats: its `uid`
 // values, each live `stsPseudonym` (#644), and the value of its own RDN. A
@@ -3370,35 +3400,31 @@ function noteHeldNamesTouched(dn, after) {
       watch.names.add(name);
     });
   });
-  // The same news for a username the console gate remembered (#880). An
-  // add whose watch was touched falls through to existingUserEntry(), and
-  // a remembered "nobody" would hide the person this write just made.
-  dropUserNameAnswers(key, names);
 }
 
-// Hot path (every write that an add in flight is told about): no
-// Entering/Leaving pair, the exception the code style allows, stated as
-// it requires. `names` null drops every remembered answer.
-function dropUserNameAnswers(dnKey, names) {
+// Hot path (every write): no Entering/Leaving pair, the exception the code
+// style allows, stated as it requires. The console gate's remembered
+// usernames (#880) are dropped by any write that could change who holds a
+// name: one naming no DN, one at or under the realm's `ou=users`, and one
+// above it (a realm's base). The generation moves even when nothing is
+// held, because a warm may have a question out. Outside a window nothing is
+// ever remembered (`warmUserNamesAsync()` returns first), so nothing is done.
+function dropUserNameAnswersFor(dn) {
+  if (!directoryWindow) {
+    return;
+  }
   const held = userNameAnswers();
-  if (!held.answers || !held.answers.size) {
-    return;
-  }
-  if (names === null) {
-    held.answers = null;
-    held.version = -1;
-    return;
-  }
-  const drop = [];
-  held.answers.forEach(function (entry, name) {
-    if (names.indexOf(name) >= 0 ||
-        (dnKey && entry && normalizeDn(entry.dn) === dnKey)) {
-      drop.push(name);
+  if (dn !== undefined && dn !== null && dn !== '') {
+    const key = normalizeDn(String(dn));
+    const users = normalizeDn(usersDn());
+    if (key !== users && !key.endsWith(',' + users) &&
+        !users.endsWith(',' + key)) {
+      return;
     }
-  });
-  drop.forEach(function (name) {
-    held.answers.delete(name);
-  });
+  }
+  held.generation++;
+  held.answers = null;
+  held.version = -1;
 }
 
 // THE NAMING CONTEXTS THIS SOCKET SERVES: the root, and one per defined realm.
@@ -5970,6 +5996,10 @@ const directoryHooks = {
         // And an add holding names it asked first (#625): a row naming one
         // of them is news to it whether or not this key is busy here.
         noteHeldNamesTouched(key, after);
+        // And the console gate's remembered usernames (#880): a person
+        // another process made on a key busy here would otherwise stay
+        // "nobody" until this process next wrote under ou=users.
+        dropUserNameAnswersFor(key);
       }
     });
     // No identity-register note for a person another process made: see
@@ -6301,6 +6331,7 @@ async function warmUserNamesAsync(names) {
   const realmId = realms.currentId();
   const users = normalizeDn(usersDn());
   const seenAt = subtreeVersion(users);
+  const generation = userNameAnswers().generation;
   const coldKeys = [];
   const askName = [];
   list.forEach(function (one) {
@@ -6328,7 +6359,8 @@ async function warmUserNamesAsync(names) {
     if (subtreeVersion(users) === seenAt) {
       answers.forEach(function (hits, i) {
         const entry = hits[0] ? hits[0].entry : null;
-        noteUserNameAnswer(askName[i].wanted, entry, seenAt);
+        noteUserNameAnswer(askName[i].wanted, entry, seenAt,
+                           generation);
         if (entry && entry.dn) {
           const key = normalizeDn(entry.dn);
           if (window.isWindowed(realmId, key) &&
@@ -6632,17 +6664,10 @@ function entryBySpiffeSubject(id) {
   return found;
 }
 
-/**
- * Finds a person's entry by the name they authenticate under: the `uid` DN
- * directly under `ou=users` first, then any entry there whose RDN value matches
- * case-insensitively.
- *
- * @param name - the username
- * @returns the entry, or null
- */
-// Hot path (every username lookup that missed its uid DN): no
-// Entering/Leaving pair, the exception the code style allows, stated as
-// it requires. A Map lookup; the pair would be two lines per sign-in.
+// Hot path (the gate's username read, inside `withRememberedUserNames()`):
+// no Entering/Leaving pair, the exception the code style allows, stated as
+// it requires. A Map lookup. A hit is moved to the young end, so the bound
+// drops the name the gate asked least recently.
 function userNameAnswerOf(wanted) {
   const held = userNameAnswers();
   const users = normalizeDn(usersDn());
@@ -6650,17 +6675,21 @@ function userNameAnswerOf(wanted) {
       held.usersDn !== users || !held.answers.has(wanted)) {
     return { known: false, entry: null };
   }
-  return { known: true, entry: held.answers.get(wanted) || null };
+  const entry = held.answers.get(wanted) || null;
+  held.answers.delete(wanted);
+  held.answers.set(wanted, entry);
+  return { known: true, entry: entry };
 }
 
-// Hot path, as `userNameAnswerOf()`: no Entering/Leaving pair. `seenAt`
-// is the subtree clock the answer was read under. A write since then is
-// not stored, so the next lookup asks again.
-function noteUserNameAnswer(wanted, entry, seenAt) {
+// Hot path, as `userNameAnswerOf()`: no Entering/Leaving pair. `seenAt` and
+// `generation` are the subtree clock and the drop count the answer was asked
+// under; a write or a drop since then means the answer is not stored, and
+// the gate's next read asks again. Called by `warmUserNamesAsync()` alone.
+function noteUserNameAnswer(wanted, entry, seenAt, generation) {
   const held = userNameAnswers();
   const users = normalizeDn(usersDn());
   const version = subtreeVersion(users);
-  if (seenAt !== version) {
+  if (seenAt !== version || generation !== held.generation) {
     return;
   }
   if (!held.answers || held.version !== version ||
@@ -6669,12 +6698,46 @@ function noteUserNameAnswer(wanted, entry, seenAt) {
     held.version = version;
     held.usersDn = users;
   }
-  if (subtreeVersion(users) !== version) {
-    return;
-  }
+  held.answers.delete(wanted);
   held.answers.set(wanted, entry || null);
+  while (held.answers.size > USER_NAME_ANSWERS_MAX) {
+    held.answers.delete(held.answers.keys().next().value);
+  }
 }
 
+// THE CONSOLE GATE'S SYNCHRONOUS CHECKS, AND NOTHING ELSE, READ THE
+// REMEMBERED USERNAMES (#880's review). `fn` runs synchronously with the
+// depth raised and is lowered in a `finally`, so no await and no other
+// request can run inside it. The gate calls this around its checks only,
+// never around `next()`: a handler it admits may create a person, and a
+// create must ask the store.
+/**
+ * Runs `fn` with the gate's remembered usernames readable by
+ * `existingUserEntry()`.
+ *
+ * @param {Function} fn - synchronous
+ * @returns {*} what `fn` returned
+ */
+function withRememberedUserNames(fn) {
+  log.debug("Entering withRememberedUserNames().");
+  rememberedNameReads++;
+  try {
+    const out = fn();
+    log.debug("Leaving withRememberedUserNames().");
+    return out;
+  } finally {
+    rememberedNameReads--;
+  }
+}
+
+/**
+ * Finds a person's entry by the name they authenticate under: the `uid` DN
+ * directly under `ou=users` first, then any entry there whose RDN value matches
+ * case-insensitively.
+ *
+ * @param name - the username
+ * @returns the entry, or null
+ */
 function existingUserEntry(name) {
   log.debug('Entering existingUserEntry().');
   const wanted = String(name == null ? '' : name).trim().toLowerCase();
@@ -6690,12 +6753,18 @@ function existingUserEntry(name) {
     log.debug('Leaving existingUserEntry().');
     return direct;
   }
-  // Remembered byName, including nobody (#880). The uid DN was already
-  // missed above, so this is not treating that absence as "nobody".
-  const remembered = userNameAnswerOf(wanted);
-  if (remembered.known) {
-    log.debug('Leaving existingUserEntry(). Remembered.');
-    return remembered.entry;
+  // Remembered byName, including nobody (#880) — read only inside the
+  // console gate's checks (`withRememberedUserNames()`), never by a create.
+  // The uid DN was already missed above, so this is not treating that
+  // absence as "nobody".
+  if (rememberedNameReads > 0 && directoryWindow) {
+    const remembered = userNameAnswerOf(wanted);
+    if (remembered.known) {
+      userNameAnswerCount.hit();
+      log.debug('Leaving existingUserEntry(). Remembered.');
+      return remembered.entry;
+    }
+    userNameAnswerCount.miss();
   }
   // AND THE FALL-THROUGH IS A LOOKUP RATHER THAN A WALK, which is the whole of
   // the username index beside the store: this branch is reached by EVERY
@@ -6706,17 +6775,16 @@ function existingUserEntry(name) {
   // A WINDOWED WORKER ASKS THE STORE (#349): its index would be a walk of
   // every person, rebuilt after every write. Same pair of names, same
   // first-by-key rule a restored process's index has.
+  // Nothing is remembered here (#880's review): only the gate's warm
+  // writes an answer down.
   const users = normalizeDn(usersDn());
-  const seenAt = subtreeVersion(users);
   const asked = windowedFind('byName', [users, wanted], function (entry) {
     return normalizeDn(parentDn(entry.dn)) === users &&
       usernameKeysOf(entry).indexOf(wanted) >= 0;
   });
   if (asked) {
-    const found = asked[0] || null;
-    noteUserNameAnswer(wanted, found, seenAt);
     log.debug('Leaving existingUserEntry(). Asked the store.');
-    return found;
+    return asked[0] || null;
   }
   const key = usernameIndexNow().get(wanted);
   const found = key ? (entries.get(key) || null) : null;
@@ -16635,6 +16703,13 @@ if (typeof credentials.addDirectoryHooks === 'function') {
   credentials.addDirectoryHooks({
     credentialCensus: credentialCensus,
     credentialCensusAsync: credentialCensusAsync,
+    // Whether the directory is a window onto the store (#786's review): a
+    // census that failed there is not asked again one name at a time.
+    directoryWindowed: function () {
+      log.debug("Entering directoryWindowed().");
+      log.debug("Leaving directoryWindowed().");
+      return !!directoryWindow;
+    },
     // The shown rows' full credential values and their DNs, asked
     // together and asynchronously (#820).
     credentialRowsAsync: credentialRowsAsync,
@@ -17487,6 +17562,11 @@ function rosterViewFor(realm) {
     }),
     readPersonFlags: inRealm(readPersonFlags),
     writePersonFlag: inRealm(writePersonFlag),
+    // The bootstrap administrator's flags are read on every console request
+    // (#880): `bootstrapState()` reads them inside this, the one door to
+    // the usernames the `/admin-api` gate warmed. Optional, as above. Not
+    // realm-bound: what it runs is.
+    withRememberedUserNames: withRememberedUserNames,
     // STRINGS, and THIS realm's — evaluated once, when the view is built,
     // rather than read per call. A realm's base DN cannot change while the
     // process runs, so there is nothing to re-read, and a function would only
@@ -31060,6 +31140,47 @@ function describeDirectoryCaches() {
       return out;
     }
   });
+  // The console gate's remembered usernames (#880's review).
+  cacheRegistry.register({
+    name: 'ldap.gate-usernames',
+    title: 'Console gate usernames',
+    description: 'In a process holding a directory window, the answer to ' +
+      'who holds a username (nobody included) that the /admin-api gate ' +
+      'asked off the event loop, so its synchronous checks do not ask the ' +
+      'store. Read by those checks only; a create always asks the store.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: function () {
+      return USER_NAME_ANSWERS_MAX;
+    },
+    bound: 'Enforced: ' + USER_NAME_ANSWERS_MAX + ' usernames per realm, ' +
+      'the least recently asked dropped first.',
+    lifetime: function () {
+      log.debug("Entering the gate usernames' lifetime().");
+      log.debug("Leaving the gate usernames' lifetime().");
+      return 'Until anything at, under or above the realm\'s ou=users is ' +
+        'written here or replicated from another process; the gate\'s next ' +
+        'warm asks again.';
+    },
+    entries: function () {
+      log.debug("Entering the gate usernames' entries().");
+      const out = [];
+      userNameAnswers.existing().forEach(function (held, id) {
+        if (!held.answers || !held.answers.size) {
+          return;
+        }
+        out.push({ realm: id, key: held.answers.size + ' username(s)',
+                   validUntil: null,
+                   valid: inRealmById(id, function () {
+                     return held.version ===
+                       subtreeVersion(normalizeDn(usersDn()));
+                   }),
+                   basis: 'ou=users subtree version' });
+      });
+      log.debug("Leaving the gate usernames' entries().");
+      return out;
+    }
+  });
   cacheRegistry.register({
     name: 'ldap.device-index',
     title: 'Directory device index',
@@ -31355,6 +31476,9 @@ module.exports = {
   // The console gate's username warm (#880): the uid key, absence
   // included, and the byName answer existingUserEntry() would ask.
   warmUserNamesAsync: warmUserNamesAsync,
+  // The gate's synchronous checks, the one reader of what that warm
+  // remembered (#880's review).
+  withRememberedUserNames: withRememberedUserNames,
   serviceAccountNamesAsync: serviceAccountNamesAsync,
   entriesByUuids: entriesByUuids,
   entryUuidOf: entryUuidOf,

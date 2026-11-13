@@ -1955,6 +1955,64 @@ handle a group that names a person and a person who names a group as two
 separate edits. It was not attempted on 2026-09-07; the three fixes above were,
 and this is the measurement that says where the next one would go.
 
+## THE CONSOLE GATE'S REMEMBERED USERNAMES (#880; its review, 2026-11-13)
+
+In a windowed process `existingUserEntry()` asks the store `byName` after the
+`uid=` DN misses, and the `/admin-api` gate does that for the bootstrap
+administrator on every request. #880 had the gate ask it off the event loop
+first (`warmUserNamesAsync()`) and remember the answer, nobody included, in
+`userNameAnswers` (`mgmt-api/CLAUDE.md`, *THE GATE READS THOSE ROWS OFF THE
+EVENT LOOP*). The first version had three faults, which a review found:
+
+* **It remembered every lookup, not only the gate's.** `existingUserEntry()`
+  wrote down every answer it asked the store for, and `admin_stats.js`'s
+  `identityOf()` asks that for every name anybody presents at a sign-in,
+  before authentication. That was an unbounded Map, nonexistent names
+  included, on no cache page.
+* **Every caller read it, and a remembered "nobody" defeats
+  one-entry-per-person.** `createUser()`, the LDAP add, `autoCreateUser()`
+  and the other doors ask `existingUserEntry()` precisely to refuse a second
+  person.
+* **A replicated create did not always drop it.** The drop ran only inside
+  `noteHeldNamesTouched()`, which returns at once when no add is in flight,
+  and `forgetEntry()`'s busy-key branch calls no `touchDirectory()`, so the
+  subtree clock does not move either.
+
+What holds now:
+
+* **Only `warmUserNamesAsync()` writes an answer** (`noteUserNameAnswer()`),
+  and only when neither the `ou=users` subtree clock nor the drop
+  `generation` moved while its question was out.
+* **Only two reads use one.** `existingUserEntry()` consults the memo only
+  while `rememberedNameReads` is above zero, which
+  `withRememberedUserNames(fn)` raises around `fn` and lowers in a `finally`.
+  The gate runs `admit()` inside it and calls `next()` after it returns, so a
+  handler it admits, which may create a person, asks the store. The other is
+  `admin_rbac.ts`'s `bootstrapState()`, which reads the bootstrap
+  administrator's FLAGS through it (the roster's member
+  `withRememberedUserNames`): `GET /admin-api/me` and the roster read those
+  on every console request, after `next()`, and a flags read creates
+  nothing. `ensureBootstrap()`, which may create that entry, reads directly.
+* **Any write at, under or above the realm's `ou=users` drops it**
+  (`dropUserNameAnswersFor()`): from `touchDirectory()`, which covers every
+  local write and every replicated row applied with a touch, and from
+  `forgetEntry()`'s busy branch. It bumps `generation` even when nothing is
+  held. Outside a window it returns at once, because nothing is remembered
+  there.
+* **Bounded**: `USER_NAME_ANSWERS_MAX` (64) a realm, least recently asked
+  dropped first, registered as `ldap.gate-usernames` (rule 3ap) with hits and
+  misses counted at the gate's read.
+
+`tests/admin_api_gate_warm.js` section 4 holds each rule: the registration and
+the bound, a lookup outside the gate remembering nothing, `createUser()`
+refusing a person the remembered "nobody" would hide, a replicated create on
+a key busy here and on one not busy, and a write during the warm's question.
+
+**`directoryWindowed`** is a hook this file also hands
+`credentials.addDirectoryHooks()` (#786's review): a credential census that
+fails in a windowed process is answered unknown rather than asked again one
+name at a time (`common/credentials.ts`, `censusFailureRefuses()`).
+
 ## DELETING PEOPLE IN BULK, AND THE INDEXES A DELETE USED TO THROW AWAY (#351, 2026-09-29)
 
 One SCIM Bulk of a hundred `DELETE /Users` held a request worker on testidp

@@ -279,6 +279,43 @@ long as it waits on other row locks. That wait no longer blocks the renewal.
 A single-node deployment has nothing else to fence against, and its own
 writes no longer cost it the process.
 
+**AND A TAKEOVER WAITS IN BOUNDED ATTEMPTS, BESIDE THE BEAT (#770's review,
+2026-11-13).** #770 left `acquireLease()` unbounded on purpose — a takeover
+deletes the old token's lock row, so it waits for the old holder's fences —
+and a standby asks for the service lease every heartbeat
+(`waitForServiceLease()`), as every node asks for its roles in `contend()`.
+Two ways that brought the hang back, in the node that was TAKING OVER:
+the liveness connection serialises its callers (`liveExclusive()`), so the
+standby's own heartbeat queued in JavaScript behind an acquire waiting on a
+thirty-second write, where the heartbeat's two-second bound had not started;
+and `beat()` returned `contend()`, so a role's acquire that waited held the
+beat in flight and every later beat was skipped. Either way the renewal
+never settled and the node exited (`STS-CLUSTER-0004`). Now:
+
+* **The acquire has the heartbeat's bound** (`renewalBoundMs()`), on both
+  engines — the native statement as a bounded autocommit, the portable one
+  as a bounded liveness transaction (`liveTransact(fn, boundMs)`). A timeout
+  rolls the whole takeover back (token and lock rows) and the driver answers
+  `{ held: false, pending: true }`; the next beat asks again. **The takeover
+  still waits for the fences** — it cannot commit until they have — and
+  meanwhile the old holder's fences find their lease expired and start no
+  new write. `cluster.acquire()` logs `STS-CLUSTER-0165` at info once per
+  wait. `releaseLease()` (a step-down) is bounded the same way and its
+  timeout is `STS-CLUSTER-0041`.
+* **The contention is not part of the beat.** The heartbeat timer runs
+  `renew()`, the renewal alone, and `heartbeatInFlight` clears when it
+  settles; the contention it asks for runs beside the next beats through
+  `contendOnce()`, one at a time, so beats do not stack asks. `beat()`, the
+  exported form, still waits for both.
+
+So the heartbeat now waits behind at most a few bounded statements on the
+liveness connection, never an unbounded one. **What is still unbounded
+there**: `leaveCluster()` (a clean stop, after which the heartbeat is
+moot), and a statement that falls back to the pool when the liveness
+connection cannot be opened on MariaDB (STS-STORE-0070), whose limits are
+the session's and a pooled connection is somebody else's next.
+`tests/cluster_heartbeat_lock.js` sections C, D and E hold it.
+
 The error carries `reason: 'node' | 'lease'`:
 a lost membership, or the service lease in active-passive mode, is fatal
 (`STS-CLUSTER-0011`); a lost role lease under active-active fails that one
