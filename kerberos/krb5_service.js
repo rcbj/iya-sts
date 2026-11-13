@@ -886,11 +886,16 @@ async function acceptInRealm(tokenBytes, opts) {
   // decrypted the ticket to learn that session key.
   const acceptorSubkey = { etype: ticketPart.key.etype,
                            key: kcrypto.randomBytes(ticketProfile.keyBytes) };
+  // Same draw as the initiator's Authenticator in krb5_tokens.ts: four bytes
+  // from the Kerberos CSPRNG, top bit clear so a peer that reads the field
+  // as signed does not treat the number as negative.
+  const seq = kcrypto.randomBytes(4);
   const encApRepPart = msgs.encEncApRepPart({
     ctime: authenticator.ctime,
     cusec: authenticator.cusec,
     subkey: acceptorSubkey,
-    seqNumber: ((kcrypto.randomBytes(4)[0] & 0x7f) << 24) | 0x010203
+    seqNumber: ((seq[0] & 0x7f) << 24) | (seq[1] << 16) |
+               (seq[2] << 8) | seq[3]
   });
   const apRep = msgs.encApRep({
     encPart: {
