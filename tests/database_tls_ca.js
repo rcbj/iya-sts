@@ -39,6 +39,11 @@
 //      SSLRequest/'S' exchange refuses `127.0.0.1` when the certificate
 //      names `localhost` alone, accepts it when the certificate names the
 //      address, and `verify-ca` accepts the first certificate.
+//   F. THE BRIDGE'S THREAD DIALS WITH THE SAME CHECK (#951's review). The
+//      real `common/sync_query_thread.js`, handed what `bridgeConnection()`
+//      posts, refuses that certificate by address in `outbound_tls`'s
+//      RFC 9525 sentence, accepts the one that names the address, checks
+//      no name under `verify-ca`, and builds no hook of its own.
 //
 // WHY IN PROCESS (tests/CLAUDE.md's first question): every case chooses how
 // the process was started — which file, which setting — and none needs a
@@ -61,6 +66,7 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const tls = require('tls');
+const workerThreads = require('worker_threads');
 
 const persistence = require('../persistence/persistence');
 const postgres = require('../persistence/persistence_postgres');
@@ -170,7 +176,14 @@ function forwardedHost(dial, presented, expect) {
 // the stand-in drops, so the client reports a terminated connection. pg's
 // own connection timeout is unref'd: without the timer here a dropped
 // handshake empties the event loop while connect() is still pending.
-async function dialOutcome(host, sslmode, pem, certPem, keyPem) {
+//
+// With `viaThread` the dialler is the DIRECTORY BRIDGE'S THREAD itself
+// (#951's review): the compiled `common/sync_query_thread.js` in a Worker,
+// handed what the driver's `bridgeConnection()` posts — after structured
+// cloning, as a Worker's data is — and asked one question over its port,
+// asynchronously, so this thread keeps serving the stand-in. What it
+// answers is what `pg` said in the thread.
+async function dialOutcome(host, sslmode, pem, certPem, keyPem, viaThread) {
   log.debug("Entering dialOutcome().");
   const server = net.createServer();
   let port = 0;
@@ -196,6 +209,7 @@ async function dialOutcome(host, sslmode, pem, certPem, keyPem) {
   });
   const sockets = [];
   let client = null;
+  let thread = null;
   const message = await new Promise(function (resolve) {
     let done = false;
     let sawHandshake = false;
@@ -244,9 +258,14 @@ async function dialOutcome(host, sslmode, pem, certPem, keyPem) {
         socket.write('S');
       });
     });
-    const dial = postgres.dialOptions(
-      'postgres://sts@' + host + ':' + port + '/sts?sslmode=' + sslmode,
-      true, pem);
+    const target = 'postgres://sts@' + host + ':' + port + '/sts?sslmode=' +
+      sslmode;
+    if (viaThread) {
+      thread = bridgeThread(driverWith(target, pem).bridgeConnection(),
+                            finish);
+      return;
+    }
+    const dial = postgres.dialOptions(target, true, pem);
     client = new (require('pg').Client)({
       connectionString: dial.connectionString,
       ssl: dial.ssl,
@@ -262,6 +281,11 @@ async function dialOutcome(host, sslmode, pem, certPem, keyPem) {
       finish(String((e && e.message) || e));
     });
   });
+  if (thread) {
+    await thread.terminate().catch(function (e) {
+      log.debug("Caught in dialOutcome(): " + ((e && e.message) || e));
+    });
+  }
   if (client) {
     try {
       client.end(function (e) {
@@ -285,6 +309,35 @@ async function dialOutcome(host, sslmode, pem, certPem, keyPem) {
   });
   log.debug("Leaving dialOutcome().");
   return message;
+}
+
+// Starts the bridge's thread over `connection` (what `bridgeConnection()`
+// posts) and asks it one question; `finish` gets '' when it was answered and
+// the thread's error message otherwise. The statement is never run: the
+// stand-in drops the connection after the handshake.
+function bridgeThread(connection, finish) {
+  log.debug("Entering bridgeThread().");
+  const channel = new workerThreads.MessageChannel();
+  const worker = new workerThreads.Worker(
+    path.join(__dirname, '..', 'common', 'sync_query_thread.js'), {
+      workerData: { counter: new SharedArrayBuffer(4), port: channel.port2,
+                    connection: structuredClone(connection),
+                    backend: null },
+      transferList: [channel.port2]
+    });
+  worker.on('error', function (e) {
+    log.debug("Caught in bridgeThread(): " + ((e && e.message) || e));
+    finish('the thread failed: ' + String((e && e.message) || e));
+  });
+  channel.port1.on('message', function (answer) {
+    channel.port1.close();
+    finish(answer && answer.ok ? ''
+      : String((answer && answer.error && answer.error.message) || answer));
+  });
+  channel.port1.postMessage({ id: 1, name: 'byKeys',
+                             args: ['', ['cn=nobody']] });
+  log.debug("Leaving bridgeThread().");
+  return worker;
 }
 
 async function run(t) {
@@ -532,6 +585,44 @@ async function run(t) {
             !/altname|self-signed|unable to verify/i.test(chainOnly),
             'verify-ca still accepts that certificate for the address: ' +
             'the chain, and no host name', chainOnly);
+
+    // -------------------------------------------------------------------
+    // F. THE BRIDGE'S THREAD DIALS WITH THE SAME CHECK (#951's review).
+    // The real thread, handed what the driver posts. The refusal's
+    // sentence is `outbound_tls`'s (RFC 9525: no common name), not
+    // node's own, so the check that ran is the one that goes on to hold
+    // the chain to the path rules.
+    // -------------------------------------------------------------------
+    const threadByIp = await dialOutcome('127.0.0.1', 'require',
+      localhostOnly.certPem, localhostOnly.certPem,
+      localhostOnly.privateKeyPem, true);
+    t.check(/127\.0\.0\.1 is not in the certificate's subjectAltName/
+              .test(threadByIp) && /RFC 9525/.test(threadByIp),
+            'F. the bridge\'s thread, dialling 127.0.0.1, refuses a ' +
+            'certificate that names only localhost, through outbound_tls\'s ' +
+            'check (RFC 9525 and the path rules) against the address',
+            threadByIp);
+    const threadAccepted = await dialOutcome('127.0.0.1', 'require',
+      withAddress.certPem, withAddress.certPem, withAddress.privateKeyPem,
+      true);
+    t.check(!/altname|subjectAltName|self-signed|unable to verify|path|timed out|the thread failed/i
+              .test(threadAccepted),
+            'and accepts the certificate that names the address (the ' +
+            'stand-in then drops the socket)', threadAccepted);
+    const threadChainOnly = await dialOutcome('127.0.0.1', 'verify-ca',
+      localhostOnly.certPem, localhostOnly.certPem,
+      localhostOnly.privateKeyPem, true);
+    t.check(!/altname|subjectAltName|self-signed|unable to verify|timed out|the thread failed/i
+              .test(threadChainOnly),
+            'and under verify-ca checks the chain and no name, as the ' +
+            'pools do', threadChainOnly);
+    const threadSource = fs.readFileSync(path.join(__dirname, '..',
+      'common', 'sync_query_thread.ts'), 'utf8');
+    t.check(/knexStore\.restoredSsl\(/.test(threadSource) &&
+            !/checkServerIdentity\s*=/.test(threadSource) &&
+            !/tls\.checkServerIdentity\(/.test(threadSource),
+            'and builds no hook of its own: knex_store.restoredSsl() is ' +
+            'the inverse of what bridgeConnection() posts');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
