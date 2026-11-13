@@ -87,6 +87,13 @@ function checkTheReleaseUpgrade(t, sql, schema) {
     'INSERT IGNORE INTO sts_schema (version) VALUES (' +
     schema.SCHEMA_VERSION + ')') >= 0,
           'F5. the script records the module\'s SCHEMA_VERSION');
+  // The driver builds this index in place, after open(), and never refuses a
+  // start over it (#882): it is the one the model marks `online`.
+  const online = (schema.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.online === true;
+  }).map(function (one) { return one.name; });
+  t.equal(JSON.stringify(online), JSON.stringify(['sts_sessions_started']),
+          'F6. the driver\'s online index is the one this script adds');
   log.debug("Leaving checkTheReleaseUpgrade().");
 }
 

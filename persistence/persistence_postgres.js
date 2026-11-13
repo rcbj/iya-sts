@@ -118,6 +118,7 @@
 // reaches for nothing.
 const tls = require('tls');
 const ModelTables = require('../common/model_tables');
+const OnlineIndexes = require('./online_indexes');
 const errorCodes = require('../common/error_codes');
 // The process origin's UUID, a jitter and a reservation are drawn from
 // `common/crypto.js` (#453), required where each is drawn rather than here,
@@ -3703,6 +3704,10 @@ function create(options) {
   let liveClient = null;
   let liveConnecting = null;
   let liveClosed = false;
+  // THE ONLINE INDEXES (#876, #882): the background build's connection, so
+  // close() can end it, and the promise its settlement is.
+  const onlineBuild = { client: null };
+  let onlineSettled = Promise.resolve({ built: [], told: [] });
   const liveStats = { queries: 0, connects: 0, drops: 0, viaPool: 0 };
 
   function liveConnection() {
@@ -5512,12 +5517,20 @@ function create(options) {
       // older to bring forward. `persistence/open_mariadb.js` argues each.
       if (engine === 'mariadb') {
         log.debug('Leaving the postgres driver open(). MariaDB.');
-        return require('./open_mariadb').open(pool, log).then(function () {
-          return null;
-        });
+        const owedOnline = [];
+        return require('./open_mariadb').open(pool, log, owedOnline)
+          .then(function () {
+            // The online index it found missing, built in place in the
+            // background and not waited for (#882).
+            onlineSettled = OnlineIndexes.settleMariadb(pool, log,
+                                                        owedOnline);
+            return null;
+          });
       }
       const created = [];
       let late = [];
+      let onlineMissing = [];
+      let onlinePlan = null;
       log.debug("Leaving open().");
       return withTransaction(function (client) {
         // -------------------------------------------------------------
@@ -5538,8 +5551,20 @@ function create(options) {
         });
         return client.query('SELECT ' + probes, names).then(function (result) {
           const row = result.rows[0] || {};
-          const missing = SCHEMA_OBJECTS.filter(function (object, index) {
+          // AN INDEX THE MODEL MARKS `online` (#876, #882) is never built
+          // here: a plain CREATE INDEX in this transaction held every write
+          // to its table for the build and refused a role that does not own
+          // it. It is settled after the commit (`online_indexes.js`).
+          const absent = SCHEMA_OBJECTS.filter(function (object, index) {
             return !row['o' + index];
+          });
+          onlineMissing = absent.filter(function (object) {
+            return object.online === true;
+          }).map(function (object) {
+            return object.name;
+          });
+          const missing = absent.filter(function (object) {
+            return object.online !== true;
           });
           // AN OBJECT BUILT ON A COLUMN THAT SCHEMA_COLUMNS MAY STILL HAVE TO
           // ADD (#333, #349) waits for the column step below.
@@ -5709,6 +5734,14 @@ function create(options) {
           // storage parameters — before the routines below.
           return upgradeSchema(client, created);
         }).then(function () {
+          // WHAT THE ONLINE INDEXES ARE OWED: missing, or left invalid by a
+          // dead concurrent build, and whether this role owns the table.
+          return OnlineIndexes.probePostgres(client,
+            OnlineIndexes.onlineObjects(SCHEMA_OBJECTS), onlineMissing)
+            .then(function (plan) {
+              onlinePlan = plan;
+            });
+        }).then(function () {
           return checkChangeLogDense(client, log);
         }).then(function () {
           // THE COUNTS' FUNCTIONS AND TRIGGERS (#618), probed by name — a
@@ -5835,8 +5868,21 @@ function create(options) {
                  'PERSISTENCE and not COORDINATION — a second process ' +
                  'pointed at this database will not see this one\'s writes ' +
                  'until it restarts.');
+        // AFTER THE COMMIT, AND NOT WAITED FOR: an owed online index is
+        // told (STS-STORE-0172) or built concurrently in the background.
+        onlineSettled = OnlineIndexes.settlePostgres(pool, log, onlinePlan,
+                                                     onlineBuild);
         log.debug('Leaving the postgres driver open().');
       });
+    },
+
+    // The online indexes' settlement (#876, #882), for a caller that wants
+    // to know it is over: `{ built, told }` (MariaDB's adds `failed`).
+    // Never rejects.
+    onlineIndexes: function () {
+      log.debug('Entering the postgres driver onlineIndexes().');
+      log.debug('Leaving the postgres driver onlineIndexes().');
+      return onlineSettled;
     },
 
     // =====================================================================
@@ -6014,6 +6060,16 @@ function create(options) {
       log.debug('Entering the postgres driver close().');
       log.debug("Leaving close().");
       liveClosed = true;
+      // A CONCURRENT INDEX BUILD STILL RUNNING is cancelled with its
+      // connection (#876, #882); the next start finds the index invalid
+      // and builds it again.
+      if (onlineBuild.client) {
+        const building = onlineBuild.client;
+        onlineBuild.client = null;
+        Promise.resolve(building.end()).catch(function (e) {
+          log.debug("Caught in close(): " + ((e && e.message) || e));
+        });
+      }
       const live = liveClient;
       liveClient = null;
       // A NUDGE STILL DUE goes before the pool closes (#630): its commits
