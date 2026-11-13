@@ -631,6 +631,10 @@
     "en": "cfd6adfa05969133",
     "text": "Un formulaire de la console a été soumis"
   },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "La configuration a été exportée"
+  },
   "audit.actions.claims.change.label": {
     "en": "34e69552072a4ab5",
     "text": "Un ensemble de revendications de jeton ou d’assertion a été modifié"
@@ -1187,6 +1191,10 @@
     "en": "38e9f05ac95fd655",
     "text": "Le registre des comptes RISC a été vidé"
   },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "Une ligne frappée qui ne pouvait jamais être validée a été abandonnée"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "Le paramètre aud_sub d’une personne a été modifié par un administrateur"
@@ -1715,6 +1723,14 @@
     "en": "904fa8504a89cb35",
     "text": "Un propriétaire a été retiré d'un rôle"
   },
+  "audit.actions.roles.confer.label": {
+    "en": "5a52f4105ae28f80",
+    "text": "Un client a été configuré pour conférer un rôle à toute personne qui se connecte par son intermédiaire"
+  },
+  "audit.actions.roles.unconfer.label": {
+    "en": "f4487269d3051eb8",
+    "text": "Un client ne confère plus un rôle à toute personne qui se connecte par son intermédiaire"
+  },
   "audit.actions.roles.create.label": {
     "en": "a510e6ae7b1a9adb",
     "text": "Un rôle a été créé"
@@ -1890,13 +1906,5 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "Un événement de test envoyé à une destination d’export d’audit"
-  },
-  "audit.actions.persistence.minted-drop.label": {
-    "en": "065f403ac7419f76",
-    "text": "Une ligne frappée qui ne pouvait jamais être validée a été abandonnée"
-  },
-  "audit.actions.admin.config-dump.label": {
-    "en": "2da852eeb075a014",
-    "text": "La configuration a été exportée"
   }
 }

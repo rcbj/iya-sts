@@ -430,6 +430,8 @@
   "audit.actions.secret-destination.test-push.label": "A canary version was pushed to a secret destination's test secret",
   "audit.actions.roles.add-owner.label": "An owner was added to a role",
   "audit.actions.roles.remove-owner.label": "An owner was taken off a role",
+  "audit.actions.roles.confer.label": "A client was made to confer a role on everybody who signs in through it",
+  "audit.actions.roles.unconfer.label": "A client no longer confers a role on everybody who signs in through it",
   "audit.actions.roles.create.label": "A role was created",
   "audit.actions.roles.delete.label": "A role was deleted",
   "audit.actions.roles.describe.label": "A role's description, display name or member types were set",

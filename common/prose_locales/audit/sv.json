@@ -631,6 +631,10 @@
     "en": "cfd6adfa05969133",
     "text": "Ett konsolformulär skickades"
   },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "Konfigurationen exporterades"
+  },
   "audit.actions.claims.change.label": {
     "en": "34e69552072a4ab5",
     "text": "En anspråksuppsättning för en token eller ett intygande ändrades"
@@ -1187,6 +1191,10 @@
     "en": "38e9f05ac95fd655",
     "text": "RISC-kontoregistret rensades"
   },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "En präglad rad som aldrig kunde bekräftas kastades"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "En persons aud_sub-inställning ändrades av en administratör"
@@ -1715,6 +1723,14 @@
     "en": "904fa8504a89cb35",
     "text": "En ägare togs bort från en roll"
   },
+  "audit.actions.roles.confer.label": {
+    "en": "5a52f4105ae28f80",
+    "text": "En klient ställdes in att tilldela en roll till alla som loggar in via den"
+  },
+  "audit.actions.roles.unconfer.label": {
+    "en": "f4487269d3051eb8",
+    "text": "En klient tilldelar inte längre en roll till alla som loggar in via den"
+  },
   "audit.actions.roles.create.label": {
     "en": "a510e6ae7b1a9adb",
     "text": "En roll skapades"
@@ -1890,13 +1906,5 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "En testhändelse som skickats till ett granskningsexportmål"
-  },
-  "audit.actions.persistence.minted-drop.label": {
-    "en": "065f403ac7419f76",
-    "text": "En präglad rad som aldrig kunde bekräftas kastades"
-  },
-  "audit.actions.admin.config-dump.label": {
-    "en": "2da852eeb075a014",
-    "text": "Konfigurationen exporterades"
   }
 }

@@ -22,8 +22,8 @@
 //      owner and one past the most are refused with their codes; a remove
 //      of a value not listed is refused, and the last owner may go; every
 //      other attribute (the members) is kept; the group's view answers
-//      `owners` and the list `ownerCount`; an owner deleted since is
-//      reported, never dropped.
+//      `owners` and the list `ownerCount`; an owner deleted is taken off
+//      (#1612's rule, 2026-11-13).
 //   B. THE ACTS: `add-owner` and `remove-owner` through `groupsAction()`
 //      answer the owners as they now stand, a refusal carries its codes,
 //      and the unknown-action sentence names all six actions.
@@ -180,9 +180,11 @@ async function theDirectory(t) {
 
     ldap.deletePerson(dnOf('go-bo'));
     const after = ldap.groupsFor(team).group.owners;
-    t.check(after.length === 1 && after[0].kind === '' &&
-            after[0].present === false,
-            'A6. an owner deleted since is reported, never dropped',
+    // #1612's rule (2026-11-13): a deleted owner is taken off, so a person
+    // made again at the DN does not own the group. Until then it was
+    // reported with no kind and kept.
+    t.check(after.length === 0,
+            'A6. an owner deleted is taken off the group',
             JSON.stringify(after));
 
     const many = [];

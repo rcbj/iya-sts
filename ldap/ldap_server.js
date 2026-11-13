@@ -21408,6 +21408,8 @@ server.del('', function (req, res, next) {
     // Out of every role that named it, as deleteGroupEntry() does (its groups
     // are below, with every other kind's).
     roles.forgetMember('groups', String((deletedAttributes.cn || [])[0] || ''));
+    // And off every owner list, as deleteGroupEntry() does (2026-11-13).
+    forgetOwnerReferences(stored.dn, 'an LDAP delete');
   } else if (!deletedPerson && isRoleEntry(stored)) {
     noteRoleChange(stored.dn, deletedAttributes, {});
   } else if (!deletedPerson && isUnder(stored.dn, applicationsDn()) &&
@@ -21913,6 +21915,11 @@ server.modifyDN('', function (req, res, next) {
   } else if (groupRuleFor(stored) && groupCnBefore) {
     roles.renameMember('groups', groupCnBefore,
                        String((stored.attributes.cn || [])[0] || ''));
+  }
+  // AND WHAT IT OWNED (2026-11-13): every owner list naming the old DN names
+  // the new one (moveOwnerReferences()).
+  if (isPersonEntry(stored) || groupRuleFor(stored)) {
+    moveOwnerReferences(dn, target);
   }
   // A RENAME OF A PERSON IS AN ACCOUNT CHANGE and says so, where it used to
   // tell nobody: the SSF and RISC registers key on the name that just moved.
@@ -27726,6 +27733,16 @@ function noteApplicationRemoved(stored, via) {
   // here.
   forgetGroupMemberships(String(stored.dn), via);
   roles.forgetMember('applications', identifier);
+  // AND IT CONFERS NOTHING (2026-11-13, #1612's review): forgetMember() keeps
+  // `roleConferredBy`, so the identifier stayed there and the next
+  // application registered under it — in development, whoever presents the
+  // client_id — conferred the role on everybody signing in through it.
+  roles.forgetConferrer(identifier).forEach(function (role) {
+    audit.audit({ action: 'roles.unconfer', actor: '', target: identifier,
+                  protocol: 'XACML', channel: 'internal',
+                  detail: '"' + identifier + '" no longer confers the role "' +
+                          role + '": the application was deleted by ' + via });
+  });
   try {
     require('../ssf/account_signals').applicationPurged({
       application: identifier, dn: String(stored.dn), via: via,
@@ -28372,6 +28389,220 @@ function moveGroupMemberships(oldDn, newDn, oldName, newName) {
   return changed;
 }
 
+// ---------------------------------------------------------------------------
+// A DELETED OWNER OWNS NOTHING, AND A RENAMED ONE STILL OWNS IT (2026-11-13,
+// #1612's review). forgetGroupMemberships()'s rule, for the four attributes
+// that name an OWNER: a role's and a group's `owner` (#604, #603), an
+// application's `appOwner` (#604) and a service account's
+// `stsServiceAccountOwner` (#600), each the DN of a person or a group. Under
+// #607 an owner is issued owner:write, so a person deleted and made again at
+// the same DN — the same username — owned everything the first one owned.
+// So a delete of a person or a group takes its DN off every owner list in the
+// realm, and a rename moves it, through each register's own door: the role
+// register (`roles.forgetOwner()`), the application registry
+// (`applications.forgetOwner()`), writeGroupOwners() and
+// writeServiceAccount(). A removal is audited under the action the
+// remove-owner door records; a rename is not, as a membership moved by a
+// rename is not.
+//
+// WHO NAMES THE DN is asked, not walked: the roles and the applications off
+// their kept listings; the groups and service accounts from the resident
+// entries (groupsOwnedBy()'s reach) and, in a windowed process, the store's
+// `grantinggroup` value key — every value of the three owner attributes,
+// keyed by its DN (`directory_codec.js`, #1306) — one indexed `byAttribute`,
+// which is how a service account under `ou=users` is found without paging
+// the people. A device's `owner` is its holder, not an authority, and is the
+// device register's (`common/devices.ts`); it is left alone.
+// ---------------------------------------------------------------------------
+const OWNER_REFERENCE_ATTRIBUTES = ['owner', 'stsserviceaccountowner'];
+// The most entries one store question may answer; past it the line says some
+// may still name the DN (STS-ADMIN-0923). An owner is named on few objects.
+const OWNER_REFERENCE_LIMIT = 1000;
+
+// Whether owner values name `key` (a normalised DN). Called for every
+// resident entry's owner attributes from entriesNamingOwner(): no
+// Entering/Leaving pair, the hot-path exception the code style allows.
+function ownerValuesName(values, key) {
+  return (values || []).some(function (value) {
+    return normalizeDn(value) === key;
+  });
+}
+
+// Owner values with `key` replaced by `to`, or taken out when `to` is '',
+// each DN once.
+function ownerValuesReplaced(values, key, to) {
+  log.debug('Entering ownerValuesReplaced().');
+  const out = [];
+  (values || []).forEach(function (value) {
+    const one = normalizeDn(value) === key ? to : String(value);
+    if (one && !out.some(function (kept) {
+      return normalizeDn(kept) === normalizeDn(one);
+    })) {
+      out.push(one);
+    }
+  });
+  log.debug('Leaving ownerValuesReplaced(). ' + out.length + '.');
+  return out;
+}
+
+// The groups and service accounts of the ambient realm naming `key` (a
+// normalised DN) in an owner attribute, each once.
+function entriesNamingOwner(key) {
+  log.debug('Entering entriesNamingOwner().');
+  const out = [];
+  const seen = new Set();
+  // Called once per resident entry: no Entering/Leaving pair, the hot-path
+  // exception the code style allows, stated as it requires.
+  const consider = function (stored) {
+    if (!stored || !stored.dn || seen.has(normalizeDn(stored.dn))) {
+      return;
+    }
+    const at = stored.attributes || {};
+    const names = OWNER_REFERENCE_ATTRIBUTES.some(function (attribute) {
+      return ownerValuesName(at[attribute], key);
+    });
+    if (names) {
+      seen.add(normalizeDn(stored.dn));
+      out.push(stored);
+    }
+  };
+  eachResidentEntry(consider);
+  const info = {};
+  const asked = windowedFind('byAttribute',
+    ['grantinggroup', key, OWNER_REFERENCE_LIMIT], function (stored) {
+      return !!stored;
+    }, info);
+  if (asked) {
+    asked.forEach(consider);
+    if (Number(info.rows) >= OWNER_REFERENCE_LIMIT) {
+      log.error(errorCodes.tag('STS-ADMIN-0923') + 'ldap: the store named ' +
+                'at least ' + OWNER_REFERENCE_LIMIT + ' entries for ' + key +
+                ', the most one question answers, so some may still name ' +
+                'it as an owner.');
+    }
+  }
+  log.debug('Leaving entriesNamingOwner(). ' + out.length + '.');
+  return out;
+}
+
+// The one pass both doors below make: `newDn` '' takes `oldDn` off, anything
+// else puts `newDn` in its place. Returns how many objects were rewritten.
+function rewriteOwnerReferences(oldDn, newDn, origin) {
+  log.debug('Entering rewriteOwnerReferences().');
+  const key = normalizeDn(oldDn);
+  const to = String(newDn || '').trim();
+  if (!key || key === normalizeDn(to)) {
+    log.debug('Leaving rewriteOwnerReferences(). Nothing to do.');
+    return 0;
+  }
+  const via = String(origin || (to ? 'a rename' : 'a delete'));
+  const why = to ? ' (renamed to ' + to + ' by ' + via + ')'
+                 : ' (deleted by ' + via + ')';
+  let changed = 0;
+  const rolesChanged = to ? roles.renameOwner(oldDn, to)
+                          : roles.forgetOwner(oldDn);
+  const appsChanged = to ? applications.renameOwner(oldDn, to)
+                         : applications.forgetOwner(oldDn);
+  if (!to) {
+    rolesChanged.forEach(function (role) {
+      audit.audit({ action: 'roles.remove-owner', actor: '', target: role,
+                    protocol: 'XACML', channel: 'internal',
+                    detail: 'took ' + oldDn + ' off the owners of the role "' +
+                            role + '"' + why });
+    });
+    appsChanged.forEach(function (identifier) {
+      audit.audit({ action: 'application.remove-owner', actor: '',
+                    target: identifier, channel: 'internal',
+                    detail: 'took ' + oldDn + ' off the owners of ' +
+                            identifier + why });
+    });
+  }
+  changed += rolesChanged.length + appsChanged.length;
+  entriesNamingOwner(key).forEach(function (stored) {
+    if (isRoleEntry(stored) || isUnder(stored.dn, applicationsDn()) ||
+        isUnder(stored.dn, devicesDn())) {
+      return;
+    }
+    const at = stored.attributes || {};
+    if (groupRuleFor(stored) && ownerValuesName(at.owner, key)) {
+      const done = writeGroupOwners(stored,
+        ownerValuesReplaced(at.owner, key, to),
+        { origin: via, channel: 'internal', actor: '' },
+        to ? '' : 'group.remove-owner',
+        oldDn + ' is no longer an owner of ' + stored.dn + why,
+        { owner: oldDn, gone: true });
+      if (done.ok) {
+        changed += 1;
+      } else {
+        log.error(errorCodes.tag('STS-ADMIN-0922') + 'ldap: could not ' +
+                  (to ? 'move the owner ' + oldDn + ' to ' + to + ' on'
+                      : 'take the deleted owner ' + oldDn + ' off') +
+                  ' the group ' + stored.dn + ' (' + done.reason + ').');
+      }
+    }
+    if (isPersonEntry(stored) &&
+        ownerValuesName(at.stsserviceaccountowner, key)) {
+      const owners = ownerValuesReplaced(at.stsserviceaccountowner, key, to);
+      if (writeServiceAccount(stored.dn,
+                              { stsServiceAccountOwner: owners })) {
+        changed += 1;
+        if (!to) {
+          audit.audit({ action: 'admin.service-account.owner-removed',
+                        actor: '', target: stored.dn, channel: 'internal',
+                        detail: 'took ' + oldDn + ' off the owners of ' +
+                                'the service account ' + stored.dn + why +
+                                (owners.length ? ''
+                                  : '; it names no owner now') });
+        }
+      } else {
+        log.error(errorCodes.tag('STS-ADMIN-0922') + 'ldap: could not ' +
+                  (to ? 'move the owner ' + oldDn + ' to ' + to + ' on'
+                      : 'take the deleted owner ' + oldDn + ' off') +
+                  ' the service account ' + stored.dn + '.');
+      }
+    }
+  });
+  if (changed) {
+    log.info('ldap: ' + oldDn + (to ? ' was moved to ' + to + ' on '
+                                    : ' was taken off ') +
+             changed + ' owner list(s)' + why + '.');
+  }
+  log.debug('Leaving rewriteOwnerReferences(). ' + changed + '.');
+  return changed;
+}
+
+/**
+ * Takes a deleted person's or group's DN off every owner list in the ambient
+ * realm: the roles', the groups', the applications' and the service
+ * accounts'.
+ *
+ * @param dn - the deleted entry's DN
+ * @param origin - who deleted it, for the writes and the audit rows
+ * @returns how many objects were rewritten
+ */
+function forgetOwnerReferences(dn, origin) {
+  log.debug('Entering forgetOwnerReferences().');
+  const changed = rewriteOwnerReferences(dn, '', origin);
+  log.debug('Leaving forgetOwnerReferences(). ' + changed + '.');
+  return changed;
+}
+
+/**
+ * Moves a renamed person's or group's DN on every owner list in the ambient
+ * realm, so it owns what it owned and nothing names the old DN.
+ *
+ * @param oldDn - the DN it had
+ * @param newDn - the DN it has now
+ * @returns how many objects were rewritten
+ */
+function moveOwnerReferences(oldDn, newDn) {
+  log.debug('Entering moveOwnerReferences().');
+  const changed = String(newDn || '').trim()
+    ? rewriteOwnerReferences(oldDn, newDn, 'an LDAP rename') : 0;
+  log.debug('Leaving moveOwnerReferences(). ' + changed + '.');
+  return changed;
+}
+
 // THE ONE PLACE A PERSON'S ENTRY LEAVES THE DIRECTORY BY A DELETE — SCIM's,
 // the LDAP delete handler's, a re-homing's. The entry goes, the write is
 // marked BY ITS DN (a DN-less touch invalidates every cached listing and makes
@@ -28409,6 +28640,10 @@ function removePersonEntry(stored, door) {
   // `roles.forgetMember()`). Every door's person delete comes here (#351).
   forgetGroupMemberships(stored.dn, door);
   roles.forgetMember('users', goneName);
+  // AND OFF EVERY OWNER LIST (2026-11-13): an owner is issued owner:write
+  // (#607), and somebody made again at this DN would own it all again
+  // (forgetOwnerReferences()).
+  forgetOwnerReferences(stored.dn, door);
   log.debug('Leaving removePersonEntry().');
 }
 
@@ -28762,6 +28997,9 @@ function deleteGroupEntry(dn) {
   // role names a group by name. The LDAP delete does the same.
   forgetGroupMemberships(stored.dn, 'a group delete');
   roles.forgetMember('groups', String((stored.attributes.cn || [])[0] || ''));
+  // AND OFF EVERY OWNER LIST (2026-11-13): an owner group administers what
+  // it owns (#607), and a group made again under this cn would.
+  forgetOwnerReferences(stored.dn, 'a group delete');
   log.debug('Leaving deleteGroupEntry(). ' + entries.size + ' entry/entries ' +
       'left.');
   return { ok: true, dn: stored.dn };
@@ -29397,6 +29635,12 @@ function writeGroupOwners(stored, owners, opts, action, summary, detail) {
       reason: written.reason,
       errors: ['The owners could not be written onto ' + stored.dn + ' (' +
                written.reason + ').'] });
+  }
+  // No action is a rename carried (moveOwnerReferences()), which records
+  // nothing, as a membership moved by a rename records nothing.
+  if (!action) {
+    log.debug('Leaving writeGroupOwners(). Moved; not audited.');
+    return { ok: true, entry: written.entry };
   }
   audit.recordDirectory({
     action: action,

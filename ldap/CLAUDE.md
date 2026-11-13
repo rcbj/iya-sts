@@ -2365,6 +2365,34 @@ mode.
   something that is not there. Until then a rename left the old DN in the groups
   that listed it.
 
+  **AND NO OWNER LIST OR CONFERRING CLIENT EITHER (2026-11-13, the review of
+  #1613).** Two kinds of reference were left behind by the first pass.
+  `roles.forgetMember()` writes a role back without naming `conferredBy`,
+  which `roles.write()` reads as "keep it", so a deleted application's
+  identifier stayed in `roleConferredBy` and the next application registered
+  under it (in development, whoever presents the client_id) conferred the role
+  on everybody signing in through it: `noteApplicationRemoved()` now calls
+  `roles.forgetConferrer()` too, with a `roles.unconfer` row per role
+  (`STS-ADMIN-0921` when one cannot be rewritten). And the OWNERS — a role's
+  and a group's `owner`, an application's `appOwner`, a service account's
+  `stsServiceAccountOwner`, each a person's or group's DN, and under #607 an
+  owner is issued owner:write — were never touched, so a person made again at
+  the same DN owned it all again. `forgetOwnerReferences()` runs on every
+  delete of a person (`removePersonEntry()`) and of a group (`deleteGroupEntry()`
+  and the LDAP delete), and `moveOwnerReferences()` on a person's or group's
+  modifyDN, each through the register's own door — `roles.forgetOwner()` /
+  `renameOwner()`, `applications.forgetOwner()` / `renameOwner()` (both off
+  their kept listings), `writeGroupOwners()` and `writeServiceAccount()` — and a
+  removal is audited under that register's remove-owner action; a rename is
+  not, as a moved membership is not (`STS-ADMIN-0922` for a write refused).
+  **Who names the DN is asked, not walked**: the resident entries (the groups;
+  `groupsOwnedBy()`'s reach) and, in a windowed process, ONE `byAttribute` on
+  the store's `grantinggroup` value key, which holds every value of the three
+  owner attributes by its DN (#1306) — that is how a service account under
+  `ou=users` is found without paging the people. Past 1,000 answers it says so
+  (`STS-ADMIN-0923`). A device's `owner` is its holder, not an authority, and
+  is left to the device register. `tests/deleted_references.js` holds both.
+
 ---
 
 ## The connection IS the session, so a logout closes it

@@ -631,6 +631,10 @@
     "en": "cfd6adfa05969133",
     "text": "May console form na na-post"
   },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "Na-export ang configuration"
+  },
   "audit.actions.claims.change.label": {
     "en": "34e69552072a4ab5",
     "text": "May claim set ng token o assertion na binago"
@@ -1187,6 +1191,10 @@
     "en": "38e9f05ac95fd655",
     "text": "Na-clear ang RISC account register"
   },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "Itinapon ang isang minted na row na hindi kailanman maaaring ma-commit"
+  },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
     "text": "Binago ng isang administrator ang aud_sub setting ng isang tao"
@@ -1715,6 +1723,14 @@
     "en": "904fa8504a89cb35",
     "text": "May inalis na may-ari sa isang role"
   },
+  "audit.actions.roles.confer.label": {
+    "en": "5a52f4105ae28f80",
+    "text": "Itinakda ang isang client na magbigay ng isang role sa lahat ng nagsa-sign in sa pamamagitan nito"
+  },
+  "audit.actions.roles.unconfer.label": {
+    "en": "f4487269d3051eb8",
+    "text": "Hindi na nagbibigay ang isang client ng isang role sa lahat ng nagsa-sign in sa pamamagitan nito"
+  },
   "audit.actions.roles.create.label": {
     "en": "a510e6ae7b1a9adb",
     "text": "May role na ginawa"
@@ -1890,13 +1906,5 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "Isang test event na ipinadala sa isang destinasyon ng audit export"
-  },
-  "audit.actions.persistence.minted-drop.label": {
-    "en": "065f403ac7419f76",
-    "text": "Itinapon ang isang minted na row na hindi kailanman maaaring ma-commit"
-  },
-  "audit.actions.admin.config-dump.label": {
-    "en": "2da852eeb075a014",
-    "text": "Na-export ang configuration"
   }
 }

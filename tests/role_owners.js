@@ -162,13 +162,12 @@ async function theRegister(t) {
     ldap.deletePerson(dnOf('ro-bo'));
     const after = roles.ownersOf(roles.read('ro-staff'));
     const entry = roles.entryOf('ro-staff');
-    t.check(after.length === 1 && after[0].kind === '' &&
-            after[0].present === false && entry && entry.dn &&
-            Object.keys(entry.attributes).some(function (name) {
-              return name.toLowerCase() === 'owner';
-            }),
-            'A5. an owner deleted since is reported, never dropped; the ' +
-            'entry carries `owner`', JSON.stringify(after));
+    // #1612's rule (2026-11-13): a deleted owner is taken off, so a person
+    // made again at the DN does not own the role. Until then it was
+    // reported with no kind and kept.
+    t.check(after.length === 0 && entry && entry.dn,
+            'A5. an owner deleted is taken off the role, which is kept',
+            JSON.stringify(after));
   });
   log.debug('Leaving theRegister().');
 }
