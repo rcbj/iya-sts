@@ -2473,7 +2473,16 @@ CONNECT RELYING PARTY PLANS*.
 * **The refresh-token plan** runs against a relationship with
   `fedRefreshTokens` on and `fedRefreshEverySeconds` 5, so the
   `federation.partner-refresh` job (every fifteen seconds) refreshes inside
-  the module's time (rcbj's decision, 2026-11-03).
+  the module's time (rcbj's decision, 2026-11-03). **Each module's session
+  is signed out when it ends, and a module that timed out is signed out
+  before its rerun** (run 22, 2026-11-13): the suite knows one refresh
+  token per module, the rerun shares the alias, and the stopped run's
+  session went on refreshing into it — "Invalid refresh_token parameter",
+  then "Illegal test state change: INTERRUPTED -> RUNNING". **While a
+  signed-in module waits, the job queues a Run now of that job every ten
+  seconds**, because at the end of a full run its scheduled run waited
+  behind every realm's other jobs (3.5 minutes in run 22, and over five
+  for the module that timed out).
 * **The dynamic plan** (rcbj's decision, 2026-11-03) runs against a
   relationship with `fedDiscovery`, `fedRegister`, `fedWebFinger` and
   `fedRequestObject` `request_uri`; before each module the relationship
