@@ -2363,10 +2363,10 @@ Management under Message Signing, CIBA ping).
   Verifier to send the End-User to the wallet (the job follows the realm's
   start page).
 * **Realm settings that differ from the default, each argued in its
-  driver**: `oauth2.codeReplayIdempotent` off (the test stack's appconfig
-  turns it on for the parent's `oauth2_sts_endpoints.js`),
-  `oauth2.requestUriFragmentCheck` off (the suite's request_uri fragments are
-  hashes of random bytes), `oauth2.sessionManagement` on for its plan.
+  driver**: `oauth2.requestUriFragmentCheck` off (the suite's request_uri
+  fragments are hashes of random bytes), `oauth2.sessionManagement` on
+  for its plan. The driver also pins `oauth2.codeReplayIdempotent` off,
+  which is already the default.
 * **THE CLASSICAL TWINS (rcbj, 2026-10-23).** The OpenID Connect,
   OpenID Federation, OpenID4VCI and OpenID4VP drivers run every plan
   TWICE: as it always ran, and as `<key>-cl` in a realm with

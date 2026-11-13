@@ -470,13 +470,14 @@ so must `admin-ui/admin.ts`.
    oidcc-codereuse called that what it is — RFC 6749 section 4.1.2's MUST
    broken — so `checkCodeReplay()` now refuses in every mode unless
    `oauth2.codeReplayIdempotent` is on (off by default, a documented weaker
-   option, on in `env/test.js` and `env/docker-tests.js` only for the
-   parent's vendored `oauth2_sts_endpoints.js`), and RFC 9700 mode refuses
-   whatever it says. **Since #614 the record keeps the issued `jti`s and NOT
-   the token response, except under that setting**: a refusal revokes by
-   `jti`, and only an identical repeat answered with the same bytes needs the
-   bytes. A row written with the setting off has nothing to replay, so a
-   repeat of it after the setting is turned on is refused (`STS-OAUTH-0958`)
+   option), and RFC 9700 mode refuses whatever it says. The test stacks
+   leave the option off, and `tests/protocol/oauth2_sts_endpoints.js`
+   asserts the refusal. **Since #614 the record keeps the issued `jti`s
+   and NOT the token response, except under that setting**: a refusal
+   revokes by `jti`, and only an identical repeat answered with the same
+   bytes needs the bytes. A row written with the setting off has nothing
+   to replay, so a repeat of it after the setting is turned on is refused
+   (`STS-OAUTH-0958`)
    and what it bought revoked.
    It revokes the access, refresh and ID Tokens that
    code bought (RFC 6749 section 10.5), through `stats.revoke()` called by
@@ -4787,8 +4788,8 @@ request to the Token Endpoint failed."*
   That, and the identical-repeat replay, are now
   `bcp.codeRedemptionRelaxed()`: `oauth2.codeReplayIdempotent` (off by
   default), ignored in RFC 9700 mode and therefore in OAuth 2.1, FAPI and
-  product. The test stacks still turn it on, for the parent project's
-  `oauth2_sts_endpoints.js`, which asserts the leniency.
+  product. The test stacks leave it off.
+  `tests/protocol/oauth2_sts_endpoints.js` asserts the refusal.
 * **At most five minutes.** `oauth2.authorizationCodeTtlS` has `max: 300` (the
   default, as before); FAPI 2.0 still caps it at 60.
 * **Tests.** `tests/authorization_code_once.js` covers each kind of failed first
@@ -5356,12 +5357,8 @@ otherwise; each carries its regression check.
   answered with the same tokens outside the mode (the courtesy argued at 3a
   above). It is refused and what the code bought revoked in every mode
   (STS-OAUTH-0143); the courtesy survives as `oauth2.codeReplayIdempotent`,
-  off by default, a documented weaker option, on in `env/test.js` and
-  `env/docker-tests.js` ONLY because the parent's vendored
-  `oauth2_sts_endpoints.js` still asserts it in development — the parent
-  owes that job's update
-  (rcbj/id-proto-debugger#306, with `vc_did.js`'s for OpenID4VCI's
-  `credential_metadata`), after which the appconfig line goes.
+  off by default, a documented weaker option. The test stacks leave it off.
+  `tests/protocol/oauth2_sts_endpoints.js` asserts the refusal.
 * **The hybrid flow's nonce.** OIDC Core 3.3.2.1 makes `nonce` REQUIRED for
   `code id_token` and `code id_token token` — this file said the hybrid flow
   kept it optional. STS-OAUTH-0562 now covers every response type that

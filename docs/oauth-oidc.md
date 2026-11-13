@@ -269,9 +269,11 @@ SHOULD invalidate what the first issued. A bare *already-used* refusal is
 equally true of a stolen code, a reloaded page, a double-submitted form and a
 client retrying after a bad `code_verifier`, and names none of them. So:
 
-* **Nothing before redemption consumes the code.** A wrong `redirect_uri`, PKCE
-  verifier or `dpop_jkt` binding is refused and the code stays redeemable, so
-  the corrected request gets tokens rather than a complaint about reuse.
+* **With `oauth2.codeReplayIdempotent` on, a refused presentation leaves
+  the code redeemable.** A wrong `redirect_uri`, PKCE verifier or `dpop_jkt`
+  binding is refused and the corrected request gets tokens. Off (the
+  default, and always in RFC 9700 mode), that first presentation spends the
+  code (#424).
 * **With `oauth2.codeReplayIdempotent` on, a redeemed code is idempotent for
   the rest of its own lifetime** (`oauth2.authorizationCodeTtlS`, five
   minutes). An identical repeat — same client, `redirect_uri`, PKCE verifier
