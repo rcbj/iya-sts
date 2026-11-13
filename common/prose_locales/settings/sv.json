@@ -6980,8 +6980,8 @@
     "text": "Förnybar livslängd (s)"
   },
   "krb5.renewLifetimeSeconds|description": {
-    "en": "c5e760b09dd1a975",
-    "text": "Hur långt renew-till sträcker sig för en biljett som utfärdats som förnybar. Sju dagar är Active Directorys standard."
+    "en": "5e2fb0a8cf795055",
+    "text": "Den längsta renew-till för en biljett som utfärdas som förnybar, mätt från dess start. En begärd rtime förkortar den, och utan rtime tar biljetten detta maximum. En rtime vid eller före biljettens endtime markerar den ändå som förnybar, så som MIT krb5 gör. RENEWABLE-OK sätter flaggan bara när den begärda endtime förkortades och den resulterande renew-till är senare än den utfärdade endtime. Sju dagar är Active Directorys standard."
   },
   "krb5.logonServer|label": {
     "en": "430185046b3ddca6",

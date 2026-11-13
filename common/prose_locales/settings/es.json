@@ -6980,8 +6980,8 @@
     "text": "Vigencia renovable (s)"
   },
   "krb5.renewLifetimeSeconds|description": {
-    "en": "c5e760b09dd1a975",
-    "text": "Hasta dónde llega renew-till para un ticket emitido como renovable. Siete días es el valor predeterminado de Active Directory."
+    "en": "5e2fb0a8cf795055",
+    "text": "El máximo de renew-till de un ticket emitido como renovable, medido desde su inicio. Un rtime solicitado lo acorta, y sin rtime el ticket toma este máximo. Un rtime anterior o igual al endtime del ticket lo marca igualmente como renovable, como hace MIT krb5. RENEWABLE-OK activa el indicador solo cuando la endtime solicitada se acortó y el renew-till resultante es posterior a la endtime emitida. Siete días es el valor predeterminado de Active Directory."
   },
   "krb5.logonServer|label": {
     "en": "430185046b3ddca6",

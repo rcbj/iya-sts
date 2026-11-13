@@ -886,13 +886,15 @@ function childMain() {
       baseUrlOf: function () {
         return 'https://sts.example';
       },
-      // `listJwt()` asks `realmBaseOf()`, which reads the prefix too.
+      // Both members the list's URI reads: realmBaseOf() appends the
+      // ambient realm's path prefix, and this stand-in's realm is the
+      // default one, whose prefix is empty.
       realms: {
         currentId: function () {
           return 'ats-packed-test';
         },
         currentPrefix: function () {
-          return '/realm/ats-packed-test';
+          return '';
         }
       },
       entries: { onDemandLive: function () {
