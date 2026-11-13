@@ -2831,6 +2831,36 @@ token as `ath`. A missing key is `STS-FED-0247`, not a bearer request. When
 a rotation. A signing failure is `STS-FED-0245`. A push the partner refuses
 is `STS-FED-0244`.
 
+**WHAT A PROFILE HOLDS THE ANSWER TO, BESIDE A PLAIN RELATIONSHIP'S
+CHECKS (#931's review, 2026-11-13).** An independent review found four
+client-side checks the profiles owed and did not make. Each is a refusal of
+its own, asked only when `FapiClient.profileOf()` names a profile, so a
+relationship with no profile behaves exactly as before:
+
+* **`s_hash`, for `1-advanced`** (FAPI 1.0 Advanced Part 2, 5.1.1 and
+  5.2.2.1). The front-channel ID Token is a detached signature over the
+  response, `state` included, so it must carry `s_hash`, the left half of
+  the state's hash under the token's own algorithm — the `c_hash` rule
+  (`STS-FED-0248`, before the code is redeemed). A plain hybrid
+  relationship still ignores `s_hash`, as Core does not require it.
+* **`iss`, for a 2.x profile** (FAPI 2.0 Security Profile 5.3.2.2, RFC
+  9207). An authorization response with no `iss` is refused
+  (`STS-FED-0249`) before anything is spent; a plain relationship still
+  checks `iss` only when it is sent. Under JARM the `iss` is the response
+  JWT's, verified against `fedPeer` by `openJarm()` before it is merged, so
+  `2-message-signing` passes on that and a bare query `iss` is not needed.
+  A partner's ERROR response is not asked: it is refused as the partner's
+  error (`STS-FED-0025`) whatever it names, and nothing is redeemed.
+* **JARM's `exp`** (JARM 4.4). `jwt.verify()` checks `exp` only when it is
+  present, so a response JWT without one is refused (`STS-FED-0250`)
+  rather than good for ever. `FapiClient.jarmExpiryProblem()`.
+* **`token_type` DPoP, for a 2.x profile** (RFC 9449 section 5). A token
+  response whose `token_type` is not `DPoP` (case-insensitive) is a token
+  the partner did not bind: at the sign-in it is refused 502
+  (`STS-FED-0251`) and UserInfo is never asked with it, and at a refresh
+  the session is ended under the same code. Bluesky's path makes the same
+  check for its own profile (`STS-FED-0231`).
+
 There is no CIBA client. `POST /oauth2/bc-authorize` is this service as the
 authorization server, which `sts_fapi_conformance.js` already certifies.
 `fapi-ciba-id1-client-test-plan` is not a plan this service can run. How the
@@ -2843,5 +2873,6 @@ retry. `tests/federation_oidc_rp.js` case 10 holds the three sign-ins, the
 two `STS-FED-0243` refusals, a refused push (`STS-FED-0244`), the JARM
 refusals (`STS-FED-0246`, and a partner error as `STS-FED-0025` that does
 not redeem the code), the DPoP nonce on the wire, the registration
-metadata, `beginConnect`'s refusal of a profile (`STS-FED-0184`) and the
-refresh of a DPoP profile and of 1-advanced.
+metadata, `beginConnect`'s refusal of a profile (`STS-FED-0184`), the
+refresh of a DPoP profile and of 1-advanced, and the four refusals above
+with the accepted path beside each (10v–10ab).
