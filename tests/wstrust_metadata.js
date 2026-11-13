@@ -32,6 +32,9 @@
 //    SOAP version and either addressing namespace, the three sections, a
 //    Dialect narrowing, an unknown dialect answered empty, RelatesTo, and
 //    the two faults with their codes.
+// F. ALWAYS FORMATTED (rcbj, 2026-11-13): the WSDL is one element a line,
+//    each two spaces deeper than its parent, and the text is the same
+//    document with the indentation taken out; so is the WSDL in WS-MEX.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -161,6 +164,7 @@ function run(t) {
   versions(t, dev);
   capabilities(t);
   mex(t);
+  formatted(t, dev);
   t.check(contains(dev, '2004/04 has no Cancel') &&
           contains(dev, 'wst:' + WsModel.term('wst.fault', 'InvalidRequest')),
           '2004/04 Cancel is refused as InvalidRequest');
@@ -576,8 +580,73 @@ function answered(t) {
           'send names the WSDL media type');
   t.equal(headers['Cache-Control'], 'no-store',
           'send does not store the document');
-  t.equal(body, want, 'send is the document for the request base');
+  // A boolean, not t.equal(): the detail would be the whole document, and
+  // a line that long was cut off in the run's output with what followed it.
+  t.check(body === want, 'send is the document for the request base',
+          String(body).length + ' characters, want ' + String(want).length);
   log.debug("Leaving answered().");
+}
+
+// F. The WSDL is indented, one element a line, and only whitespace between
+// elements was added: the lines trimmed and joined, indented again, give the
+// same text back, and that joined text parses to the same element tree.
+function formatted(t, xml) {
+  log.debug("Entering formatted().");
+  const XmlFormat = require('../common/xml_format');
+  const lines = xml.replace(/\n$/, '').split('\n');
+  t.check(lines.length > 200,
+          'F1. the WSDL is returned on many lines', lines.length + ' lines');
+  const twoStarts = lines.filter(function (line) {
+    return (line.match(/<[A-Za-z]/g) || []).length > 1;
+  });
+  t.check(twoStarts.length === 0,
+          'F2. no line opens more than one element', twoStarts[0] || '');
+  let depth = 0;
+  const misplaced = [];
+  lines.forEach(function (line) {
+    const body = line.trim();
+    if (/^<\//.test(body)) {
+      depth--;
+    }
+    if (!/^<\?/.test(body) && line.length - body.length !== 2 * depth) {
+      misplaced.push(line.slice(0, 80));
+    }
+    if (/^<[A-Za-z]/.test(body) && !/\/>$/.test(body) &&
+        !/<\/[^>]+>$/.test(body)) {
+      depth++;
+    }
+  });
+  t.check(misplaced.length === 0 && depth === 0,
+          'F3. each element is two spaces deeper than its parent',
+          misplaced[0] || ('ended at depth ' + depth));
+  const joined = lines.map(function (line) {
+    return line.trim();
+  }).join('');
+  // A boolean, not t.equal(): the detail would be the whole document.
+  t.check(XmlFormat.indent(joined, log) === xml,
+          'F4. indenting the joined text again gives the same document');
+  const tree = function (node) {
+    const kids = [];
+    for (let c = node.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType === 1) {
+        kids.push(tree(c));
+      } else if (c.nodeType === 3 && c.nodeValue.trim() !== '') {
+        kids.push(c.nodeValue);
+      }
+    }
+    return [node.namespaceURI, node.localName, kids];
+  };
+  t.check(JSON.stringify(tree(parse(xml).documentElement)) ===
+          JSON.stringify(tree(parse(joined).documentElement)),
+          'F5. and the indented document has the same elements and text');
+  const answer = WsTrustMex.answer(envelope(
+    WsModel.term('soap.namespace', 'soap11'),
+    WsModel.term('wsa.namespace', 'addressing'),
+    'http://schemas.xmlsoap.org/ws/2004/09/transfer/Get', '',
+    'urn:uuid:f'), BASE, ISSUER, flags());
+  t.check(contains(answer.body, '\n  <wsdl:types>'),
+          'F6. the WSDL in a WS-MEX answer is indented too');
+  log.debug("Leaving formatted().");
 }
 
 module.exports = {
