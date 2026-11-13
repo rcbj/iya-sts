@@ -390,12 +390,112 @@ function checkImport(t) {
   log.debug("Leaving checkImport().");
 }
 
+// ---------------------------------------------------------------------------
+// EVERY COMPARISON OPERATOR, AND A DESIGNATOR'S MUSTBEPRESENT AND ISSUER.
+//
+// Two round trips that used to change the policy with no error anywhere.
+// `-equal` is also the tail of `-greater-than-or-equal` and
+// `-less-than-or-equal`, and an emitter that took the first suffix in its
+// table wrote both as `==`, which reads back as `-equal`. And the emitter
+// wrote a designator as its bare short name, so MustBePresent came back false
+// and Issuer came back absent: a missing attribute's Indeterminate became
+// NotApplicable, and an attribute from any issuer matched.
+// ---------------------------------------------------------------------------
+function comparisonPolicy(functionId) {
+  log.debug("Entering comparisonPolicy().");
+  const document = '<Policy xmlns="' + model.NS_XACML + '" ' +
+    'PolicyId="urn:test:cmp" Version="1.0" RuleCombiningAlgId="' +
+    model.RULE_ALG.DENY_UNLESS_PERMIT + '"><Target/>' +
+    '<Rule RuleId="r" Effect="Permit"><Condition>' +
+    '<Apply FunctionId="' + functionId + '">' +
+    '<Apply FunctionId="urn:oasis:names:tc:xacml:1.0:function:' +
+    'integer-one-and-only"><AttributeDesignator AttributeId="age" ' +
+    'Category="' + model.CATEGORY.ACCESS_SUBJECT + '" DataType="' +
+    model.TYPE.INTEGER + '" MustBePresent="false"/></Apply>' +
+    '<AttributeValue DataType="' + model.TYPE.INTEGER + '">5' +
+    '</AttributeValue></Apply></Condition></Rule></Policy>';
+  log.debug("Leaving comparisonPolicy().");
+  return xml.parsePolicy(document);
+}
+
+function checkOperatorsAndQualifiers(t) {
+  log.debug("Entering checkOperatorsAndQualifiers().");
+  ['equal', 'greater-than', 'greater-than-or-equal', 'less-than',
+   'less-than-or-equal'].forEach(function (name) {
+    const functionId = 'urn:oasis:names:tc:xacml:1.0:function:integer-' +
+      name;
+    const back = alfa.parse(alfa.write(comparisonPolicy(functionId)));
+    t.equal(back.rules[0].condition.functionId, functionId,
+            'integer-' + name + ' is the same function after ALFA');
+  });
+
+  const designator = function (id, mustBePresent, issuer) {
+    log.debug("Entering designator().");
+    log.debug("Leaving designator().");
+    return '<AttributeDesignator AttributeId="' + id + '" Category="' +
+      model.CATEGORY.ACCESS_SUBJECT + '" DataType="' + model.TYPE.STRING +
+      '" MustBePresent="' + mustBePresent + '"' +
+      (issuer ? ' Issuer="' + issuer + '"' : '') + '/>';
+  };
+  const value = '<AttributeValue DataType="' + model.TYPE.STRING +
+    '">x</AttributeValue>';
+  const policy = xml.parsePolicy(
+    '<Policy xmlns="' + model.NS_XACML + '" PolicyId="urn:test:q" ' +
+    'Version="1.0" RuleCombiningAlgId="' + model.RULE_ALG.DENY_OVERRIDES +
+    '"><Target/><Rule RuleId="r" Effect="Permit"><Target><AnyOf><AllOf>' +
+    '<Match MatchId="urn:oasis:names:tc:xacml:1.0:function:string-equal">' +
+    value + designator('a', 'true', 'https://issuer.example/&quot;q\\') +
+    '</Match></AllOf></AnyOf></Target><Condition><Apply FunctionId="' +
+    'urn:oasis:names:tc:xacml:1.0:function:string-is-in">' + value +
+    designator('b', 'false', 'iss') + '</Apply></Condition></Rule>' +
+    '</Policy>');
+  const text = alfa.write(policy);
+  t.check(text.indexOf('[mustbepresent issuer=') >= 0,
+          'a MustBePresent designator with an Issuer is written with both');
+  t.check(text.indexOf('[issuer="iss"]') >= 0,
+          'an optional one with an Issuer is written with the issuer alone');
+  let back = null;
+  try {
+    back = alfa.parse(text);
+  } catch (error) {
+    t.check(false, 'and the qualifiers parse back', error.message);
+    log.debug("Leaving checkOperatorsAndQualifiers().");
+    return;
+  }
+  const match = back.rules[0].target.anyOf[0].allOf[0].matches[0].reference;
+  t.equal(match.mustBePresent, true, 'MustBePresent survives the round trip');
+  t.equal(match.issuer, 'https://issuer.example/"q\\',
+          'and so does the Issuer, quotes and backslashes included');
+  const used = back.rules[0].condition.args[1];
+  t.equal(used.mustBePresent, false, 'an optional designator stays optional');
+  t.equal(used.issuer, 'iss', 'and keeps its Issuer');
+  t.equal(alfa.write(back), text, 'and the ALFA is stable');
+  const missing = requestFor({}, 'GET');
+  t.equal(pdp.evaluate(back, missing, {}).decision,
+          pdp.evaluate(policy, missing, {}).decision,
+          'a request missing the required attribute decides the same');
+
+  refusal(t, 'an unknown qualifier is refused',
+          'namespace x { attribute role { category = subjectCat ' +
+          'id = "role" type = string } policy p { apply denyOverrides ' +
+          'rule r { permit target clause role[mandatory] == "x" } } }',
+          /Unknown qualifier "mandatory"/);
+  refusal(t, 'a repeated qualifier is refused',
+          'namespace x { attribute role { category = subjectCat ' +
+          'id = "role" type = string } policy p { apply denyOverrides ' +
+          'rule r { permit target clause role[mustbepresent mustbepresent] ' +
+          '== "x" } } }',
+          /given twice/);
+  log.debug("Leaving checkOperatorsAndQualifiers().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   checkEveryPolicy(t);
   checkHandWritten(t);
   checkRefusals(t);
   checkTypedLiterals(t);
+  checkOperatorsAndQualifiers(t);
   checkImport(t);
   log.debug("Leaving run().");
 }
