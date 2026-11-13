@@ -5652,6 +5652,16 @@ class Credentials {
       return coded('STS-AUTHN-0058', { ok: false, errors: ['There is no name ' +
                                    'to enrol an authenticator for.'] });
     }
+    // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD (run
+    // 21's fuzz stage): it is the record's key, and PostgreSQL cannot store
+    // a NUL (STS-STORE-0063). The passkey door's rule, STS-AUTHN-0556.
+    if (/[\u0000-\u001f\u007f]/.test(name)) {
+      log.debug("Leaving Credentials.beginTotpEnrolment(). A name no " +
+                "person holds.");
+      return coded('STS-AUTHN-0557', { ok: false, errors: ['The name ' +
+                                   'holds a control character, so no ' +
+                                   'person has it. Nothing was started.'] });
+    }
     // `entryExists()` AND NOT `hasEntry()` (2026-09-18). That one answers
     // false always — it is the bootstrap's, so the bootstrap always attempts
     // its create — and here it refused EVERY enrolment in product mode, for
@@ -5719,7 +5729,15 @@ class Credentials {
   abandonTotpEnrolment(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.abandonTotpEnrolment().");
-    pendingTotp.delete(this.pendingKeyOf(username));
+    // Only what is HELD is deleted (run 21's fuzz stage, STS-STORE-0063). A
+    // delete of a key the map never held still journals a row, so
+    // `/admin-api/mfa/clear-totp` sent a name holding a NUL character wrote
+    // a key PostgreSQL cannot store, for an enrolment that never existed. A
+    // name that was never pending can now reach the journal through nothing.
+    const key = this.pendingKeyOf(username);
+    if (pendingTotp.has(key)) {
+      pendingTotp.delete(key);
+    }
     log.debug("Leaving Credentials.abandonTotpEnrolment().");
   }
 

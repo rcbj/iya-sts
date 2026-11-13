@@ -8079,6 +8079,13 @@ const CODES = [
       'touched (STS-STORE-0063).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-AUTHN-0557',
+    summary: 'An authenticator app enrolment was begun for a name holding ' +
+      'a control character or a NUL. No directory name holds one, and the ' +
+      'pending enrolment is keyed by the name, which PostgreSQL cannot ' +
+      'store with a NUL in it (STS-STORE-0063), so it was refused before ' +
+      'the pending record was touched.',
+    spec: 'action result with the reason' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -16319,6 +16326,12 @@ const CODES = [
       'application that is not there (2026-11-10).',
     spec: 'HTTP 400 (console, /admin-api), SCIM 400 invalidValue, LDAP ' +
       'constraintViolation (19). Nothing is stored' },
+  { code: 'STS-LDAP-0213',
+    summary: 'The node-ldapjs in use does not support the errorCloseDelay ' +
+      'server option, so a connection that fails is destroyed at once and a ' +
+      'TLS alert about why it failed can be lost to the TCP reset that ' +
+      'closing it with unread data sends (run 21, 2026-11-13).',
+    spec: 'none — logged at startup' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +

@@ -662,7 +662,13 @@ const JOBS = [
   // for refused as a real form; each runtime enum setting refused through
   // both doors. Discovered from the document, never listed. `local: true`:
   // this repository's own /admin and /admin-api.
-  { file: 'sts_admin_closed_sets.js',    browser: false },
+  // ITS OWN WATCHDOG (run 21): about 1,300 refusals sent one at a time, so
+  // its time is the stack's latency times that count. In cluster mode it
+  // took 142-175s in runs 17-20 and every section took twice as long in
+  // run 21, which reached the 300s default during section 4 and was killed.
+  // 900s is the bound the other whole-document walks carry.
+  { file: 'sts_admin_closed_sets.js',    browser: false,
+    timeoutMs: 900000 },
   // SIGNING KEY ROTATION OVER HTTP (#42/#48, 2026-09-22): the refusals, a
   // rotation keeping the retired key verifying, the /admin/keys Rotate form,
   // and an emergency after which an earlier token is refused — in a
