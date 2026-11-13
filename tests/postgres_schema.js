@@ -556,6 +556,21 @@ function checkTheReleaseUpgrade(t, sql) {
     }), 'upgrade-1.0.0.sql matches schema.sql, plus CONCURRENTLY',
     statement);
   });
+  // THE DRIVER NEVER BUILDS THESE IN open()'s TRANSACTION (#876, #882):
+  // the objects it marks `online` — told to a role that does not own the
+  // table, built CONCURRENTLY by one that does — are exactly the indexes
+  // this script builds, so a release that adds another owes both.
+  const online = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.online === true;
+  }).map(function (one) { return one.name; }).sort();
+  const upgraded = fromUpgrade.map(function (statement) {
+    const m = /^CREATE INDEX CONCURRENTLY IF NOT EXISTS\s+(\w+)/i
+      .exec(statement);
+    return m ? m[1] : statement;
+  }).sort();
+  t.equal(JSON.stringify(online), JSON.stringify(upgraded),
+          'the driver\'s online indexes are the ones upgrade-1.0.0.sql ' +
+          'builds concurrently');
   const body = statementsIn(upgrade);
   // A DO block's BEGIN is the start of a larger statement. A transaction
   // boundary is the statement by itself (BEGIN, COMMIT, START TRANSACTION).

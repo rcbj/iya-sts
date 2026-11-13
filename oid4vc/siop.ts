@@ -187,6 +187,10 @@ interface SiopDeps {
   // `{ jwk }`, `{ error }` where it names none now, or null for any DID
   // this realm does not host.
   hostedKey: (didUrl: string) => Json;
+  // The RFC 7638 thumbprints of every key any version of the person's
+  // published DIDs ever named (#775's reverse rule), or [] (optional: a
+  // caller building its own deps may leave it out).
+  publishedKeys?: (username: string) => string[];
   audit: (event: Json) => void;
   nowSec: () => number;
 }
@@ -384,6 +388,13 @@ class Siop {
         const personDid = require('./person_did');
         helpers.log.debug("Leaving hostedKey().");
         return personDid.keyOfDidUrl(didUrl, { current: true });
+      },
+      // `oid4vc/person_did.ts` LAZILY, for hostedKey()'s reason.
+      publishedKeys: function (username: string): string[] {
+        helpers.log.debug("Entering publishedKeys().");
+        const personDid = require('./person_did');
+        helpers.log.debug("Leaving publishedKeys().");
+        return personDid.publishedThumbprints(username);
       },
       nowSec: helpers.nowSec
     };
@@ -710,8 +721,52 @@ class Siop {
       return { error: name + ' already has ' + MAX_SUBJECTS +
                ' self-issued subjects enrolled; remove one first.' };
     }
+    if (!owner && this.publishedKeyOf(name, wanted)) {
+      log.debug("Leaving Siop.enrolProblem(). A published DID's key.");
+      return { code: 'STS-VC-0179',
+               error: 'that key is named by a DID this realm publishes ' +
+                      'for ' + name + '. A sign-in key is not a key a ' +
+                      'public document names; enrol another key.' };
+    }
     log.debug("Leaving Siop.enrolProblem(). None.");
     return { error: '', held: held, again: !!owner };
+  }
+
+  // #775, THE REVERSE OF `person_did.ts`'s STS-VC-0178 (the review of
+  // #775, 2026-11-13): a key any version of a DID this realm publishes for
+  // the person named is not enrolled as their did:jwk, did:key or
+  // thumbprint sign-in subject, or the public document and the sign-in key
+  // are one key again. Every version, not only the current one: a version
+  // is never rewritten and stays resolvable by its versionId. A did:web is
+  // not asked — the published DID itself is enrolled as a did:web, and one
+  // hosted elsewhere is the person's own public document. A subject the
+  // person already holds is not asked either (`again`): re-proving it
+  // changes no key, and one held from before the rule is reported, not
+  // removed.
+  private publishedKeyOf(name: string, wanted: string): boolean {
+    const { log, stsCrypto, vcDataIntegrity, publishedKeys } = this.deps;
+    log.debug("Entering Siop.publishedKeyOf().");
+    if (/^did:web:/.test(wanted) || typeof publishedKeys !== 'function') {
+      log.debug("Leaving Siop.publishedKeyOf(). Not asked.");
+      return false;
+    }
+    let print = '';
+    if (wanted.indexOf(THUMBPRINT_URI_PREFIX) === 0) {
+      print = wanted.slice(THUMBPRINT_URI_PREFIX.length);
+    } else {
+      try {
+        print = stsCrypto.jwkThumbprint(
+          vcDataIntegrity.resolveVerificationMethod(wanted).jwk);
+      } catch (e) {
+        // A subject whose key cannot be read names no published key. It is
+        // refused elsewhere, or signs nobody in.
+        log.debug("Caught in Siop.publishedKeyOf(): " +
+                  ((e && e.message) || e));
+      }
+    }
+    const named = !!print && (publishedKeys(name) || []).indexOf(print) >= 0;
+    log.debug("Leaving Siop.publishedKeyOf(). " + named);
+    return named;
   }
 
   // Enrols a subject on a person. Returns { ok, enrolled } or { ok: false,
@@ -753,7 +808,9 @@ class Siop {
     const problem = this.enrolProblem(name, wanted, proof);
     if (problem.error) {
       log.debug("Leaving Siop.enrol(). " + problem.error);
-      return { ok: false, error: problem.error };
+      return problem.code
+        ? { ok: false, code: problem.code, error: problem.error }
+        : { ok: false, error: problem.error };
     }
     const web = /^did:web:/.test(wanted);
     const pins = (Array.isArray(opts.pinnedKeys) ? opts.pinnedKeys : [])

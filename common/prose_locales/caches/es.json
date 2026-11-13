@@ -563,6 +563,22 @@
     "en": "b0f0da21ac461ad3",
     "text": "Hasta que el directorio cambia y una búsqueda falla; un acierto sobre una entrada vigente no espera a una reconstrucción. Un índice por dominio."
   },
+  "caches.store.ldap.gate-usernames.title": {
+    "en": "689e1e6184e6baf0",
+    "text": "Nombres de usuario de la barrera de la consola"
+  },
+  "caches.store.ldap.gate-usernames.description": {
+    "en": "06f13f021c4a27e4",
+    "text": "En un proceso que mantiene una ventana al directorio, la respuesta a quién tiene un nombre de usuario (nadie incluido) que la barrera de /admin-api preguntó fuera del bucle de eventos, para que sus comprobaciones síncronas no consulten el almacén. Solo la leen esas comprobaciones; una creación siempre consulta el almacén."
+  },
+  "caches.store.ldap.gate-usernames.bound": {
+    "en": "953882a7c140627a",
+    "text": "Aplicado: 64 nombres de usuario por dominio; se descarta primero el consultado hace más tiempo."
+  },
+  "caches.store.ldap.gate-usernames.lifetime": {
+    "en": "43a85e1731c71231",
+    "text": "Hasta que se escriba aquí, o se replique desde otro proceso, cualquier cosa en, bajo o por encima de ou=users del dominio; el siguiente precalentamiento de la barrera vuelve a preguntar."
+  },
   "caches.store.ldap.group-index.title": {
     "en": "ed4018229dabe2c1",
     "text": "Índice de grupos del directorio"

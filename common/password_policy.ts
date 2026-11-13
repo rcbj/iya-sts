@@ -635,17 +635,47 @@ class PasswordPolicy {
                'instead.');
     }
     // OWASP's scrypt table (#847, restored by #872): the parallelism a cost
-    // needs. Asked whichever algorithm is chosen, because the values are
-    // stored either way and switching to scrypt must not switch to a pair
-    // below it.
+    // needs. ASKED ONLY WHEN scrypt IS THE ALGORITHM CHOSEN (the review of
+    // #872, 2026-11-13). It was asked whatever the algorithm, and a save
+    // sends the whole profile, so every profile stored at p=1 (#820's
+    // default) — an argon2id one included, whose scrypt rows hash nothing —
+    // refused every unrelated edit until somebody raised p. Switching to
+    // scrypt still cannot switch to a pair below the table: a save naming
+    // scrypt is asked this, a row left out takes `read()`'s value, which is
+    // raised to the table (`raisedToTable()`), and `crypto.js`'s
+    // `passwordHashSpec()` raises it again at the hash (decision 3).
     const need = stsCrypto.scryptOwaspMinP(values.scryptLogN);
-    if (Number(values.scryptParallelism) < need) {
+    if (values.hashAlgorithm === 'scrypt' &&
+        Number(values.scryptParallelism) < need) {
       out.push('scrypt at 2^' + values.scryptLogN + ' needs a parallelism ' +
                'of at least ' + need + ', which is what OWASP\'s table lists ' +
                'at r=8; ' + values.scryptParallelism + ' is below it.');
     }
     log.debug("Leaving PasswordPolicy.crossFieldProblems().");
     return out;
+  }
+
+  // A STORED scrypt PARALLELISM BELOW OWASP'S TABLE IS READ AT THE TABLE
+  // (the review of #872, 2026-11-13). Every profile saved while #820's
+  // default stood holds p=1 at 2^15, and `passwordHashSpec()` has hashed at
+  // the table's p for it since #872 whatever the entry says, so the value
+  // in force IS the table's. Reading it so — rather than reporting a
+  // problem on every such profile — means the console's form, which sends
+  // what it read, saves the raised value with the next unrelated edit, and
+  // the stored entry is migrated then. Nothing is written by a read.
+  private raisedToTable(values: Record<string, unknown>): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PasswordPolicy.raisedToTable().");
+    const need = stsCrypto.scryptOwaspMinP(values.scryptLogN);
+    if (Number(values.scryptParallelism) >= need) {
+      log.debug("Leaving PasswordPolicy.raisedToTable(). On the table.");
+      return false;
+    }
+    values.scryptParallelism = Math.min(
+      stsCrypto.SCRYPT_PASSWORD_LIMITS.p.max, need);
+    log.debug("Leaving PasswordPolicy.raisedToTable(). Raised to " +
+              values.scryptParallelism + '.');
+    return true;
   }
 
   private entryFor(name: unknown) {
@@ -707,6 +737,7 @@ class PasswordPolicy {
         values[field.key] = parsed.value;
         sources[field.key] = 'directory';
       });
+      this.raisedToTable(values);
       this.crossFieldProblems(values).forEach(function (problem) {
         problems.push(problem);
       });
