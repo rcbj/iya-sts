@@ -17,6 +17,23 @@
 //      origin renewal. A share lock on the lease row itself does, and the
 //      heartbeat rejects inside its bound instead of answering that the
 //      membership is dead.
+//   C. ALWAYS. A TAKEOVER THAT WAITS IS NOT PART OF THE BEAT (#770's
+//      review). A lease asked for that never answers — a takeover waiting
+//      on the old holder's writes — does not hold the beat in flight: the
+//      heartbeats go on landing, the role is asked once at a time, and the
+//      node does not exit.
+//   D. ALWAYS, against a `pg` double whose fence rows are share-locked. A
+//      standby's acquire is blocked behind the old holder's fences while
+//      its own heartbeat is asked on the same liveness connection: the
+//      acquire is bounded (BEGIN, the two SET LOCALs) and answers "not
+//      yet" (`pending`) when the bound runs out, the heartbeat settles
+//      inside its bound measured from when it was asked, a takeover never
+//      answers `held` while the fences are held, and once they are gone
+//      the next ask takes the lease. A release is bounded the same way.
+//   E. ALWAYS, the same against MariaDB's double: the portable takeover is
+//      a bounded transaction (the session's limits set before BEGIN) that
+//      answers `pending` on a lock wait timeout (1205), and every bound
+//      puts back the SESSION's own limits, not the server's globals.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -380,10 +397,350 @@ async function againstPostgres(t) {
   log.debug("Leaving againstPostgres().");
 }
 
+async function takeoverBesideBeats(t) {
+  log.debug("Entering takeoverBesideBeats().");
+  t.log.info('=== C. a takeover that waits is not part of the beat ===');
+  setEnv(productEnv());
+  const exits = [];
+  cluster.reset({ exit: function (code) { exits.push(String(code)); } });
+  let beats = 0;
+  let roleAsks = 0;
+  const hung = [];
+  const driver = clusterDriver({
+    heartbeat: function () {
+      beats += 1;
+      return Promise.resolve({
+        alive: true, leases: [{ name: 'service', token: 7 }] });
+    }
+  });
+  driver.acquireLease = function (name) {
+    log.debug("Entering acquireLease().");
+    if (name === 'service') {
+      log.debug("Leaving acquireLease(). Service.");
+      return Promise.resolve({ held: true, token: 7 });
+    }
+    roleAsks += 1;
+    log.debug("Leaving acquireLease(). Waiting.");
+    return new Promise(function (resolve) {
+      hung.push(resolve);
+    });
+  };
+  try {
+    await cluster.gate(driver);
+    cluster.lead('hb770.role', {});
+    await sleep(1500);
+    const status = cluster.status() || {};
+    t.equal(exits.length, 0,
+            'C1. a takeover that never answers does not cost the node its ' +
+            'membership');
+    t.check(beats >= 4,
+            'C2. the heartbeats go on landing while the takeover waits — a ' +
+            'beat that waited with it was in flight for good',
+            String(beats));
+    t.check(!/not finished/.test(String(status.lastHeartbeatError || '')),
+            'C3. no beat is reported as not having landed',
+            String(status.lastHeartbeatError || ''));
+    t.equal(roleAsks, 1,
+            'C4. the role is asked one contention at a time, not once per ' +
+            'beat on top of the ask still waiting');
+    hung.splice(0).forEach(function (resolve) {
+      resolve({ held: false, pending: true, holder: 'old-node' });
+    });
+    await sleep(700);
+    t.check(roleAsks >= 2,
+            'C5. once the ask answers "not yet", a later beat asks again',
+            String(roleAsks));
+  } finally {
+    hung.splice(0).forEach(function (resolve) {
+      resolve({ held: false, holder: '' });
+    });
+    await sleep(30);
+    cluster.reset({ exit: function () {} });
+    restoreEnv();
+  }
+  log.debug("Leaving takeoverBesideBeats().");
+}
+
+// A liveness connection whose lease fence rows are share-locked by the old
+// holder's writes. A statement that deletes them waits: until the bound
+// its transaction set, and then rejects as PostgreSQL does (55P03) or
+// MariaDB does (1205); with no bound, until the fences are released. The
+// double keeps the bound per connection, as the server does: SET LOCAL
+// until the transaction ends, SET SESSION until set again.
+function fencedDouble(db) {
+  log.debug("Entering fencedDouble().");
+  const mariadb = db.engine === 'mariadb';
+  function blocks(text) {
+    if (mariadb) {
+      return /sts:(portable\.)?leaseLock\.clear/.test(text) ||
+        /sts:(portable\.)?releaseLease\.lock/.test(text);
+    }
+    return /^WITH up AS \(INSERT INTO sts_cluster_leases/.test(text) ||
+      /sts:(portable\.)?releaseLease\.lock/.test(text);
+  }
+  function FakeClient() {
+    this.local = 0;
+    this.session = { stmt: '7', lockwait: '13' };
+  }
+  FakeClient.prototype.query = function (sql, params) {
+    const text = String(sql);
+    const self = this;
+    db.statements.push(text);
+    let m = /^SET LOCAL lock_timeout = (\d+)/.exec(text);
+    if (m) {
+      self.local = Number(m[1]);
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    }
+    m = /^SET SESSION innodb_lock_wait_timeout = (\d+)/.exec(text);
+    if (m) {
+      self.session.lockwait = m[1];
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    }
+    m = /^SET SESSION max_statement_time = (\d+)/.exec(text);
+    if (m) {
+      self.session.stmt = m[1];
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    }
+    if (/^(COMMIT|ROLLBACK)/.test(text)) {
+      self.local = 0;
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    }
+    if (/@@SESSION\./.test(text)) {
+      return Promise.resolve({ rowCount: 1, rows: [
+        { stmt: self.session.stmt, lockwait: self.session.lockwait }] });
+    }
+    if (/@@GLOBAL\./.test(text)) {
+      return Promise.resolve({ rowCount: 1, rows: [
+        { stmt: '0', lockwait: '50' }] });
+    }
+    if (db.fenced && blocks(text)) {
+      const waitMs = mariadb
+        ? (self.session.lockwait === '13' ? 0
+          : Number(self.session.lockwait) * 1000)
+        : self.local;
+      return new Promise(function (resolve, reject) {
+        db.waiting.push(resolve);
+        if (waitMs > 0) {
+          setTimeout(function () {
+            const err = new Error(mariadb ? 'Lock wait timeout exceeded'
+              : 'canceling statement due to lock timeout');
+            Object.assign(err, mariadb
+              ? { code: 'ER_LOCK_WAIT_TIMEOUT', errno: 1205 }
+              : { code: '55P03' });
+            reject(err);
+          }, waitMs);
+        }
+      });
+    }
+    if (/^WITH up AS \(INSERT INTO sts_cluster_leases/.test(text)) {
+      return Promise.resolve({ rowCount: 1, rows: [{
+        holder: params[1], token: 2, expires_at: 99999, locked: 1,
+        cleared: 1 }] });
+    }
+    if (/sts:(portable\.)?acquireLease\.renew/.test(text)) {
+      return Promise.resolve({ rowCount: 1, rows: [], affectedRows: 1 });
+    }
+    if (/sts:(portable\.)?acquireLease\.holder/.test(text)) {
+      // Read inside the portable takeover, after its UPDATE took the row.
+      return Promise.resolve({ rowCount: 1, rows: [{
+        holder: db.standby, token: 2, expires_at: 99999 }] });
+    }
+    if (/sts:(portable\.)?releaseLease /.test(text)) {
+      return Promise.resolve({ rowCount: 1, rows: [], affectedRows: 1 });
+    }
+    if (/^WITH n AS \(UPDATE sts_cluster_nodes/.test(text)) {
+      return Promise.resolve({ rowCount: 1, rows: [{
+        alive: 1, leases: [] }] });
+    }
+    if (/sts:(portable\.)?heartbeat\.node/.test(text)) {
+      return Promise.resolve({ rowCount: 1, rows: [], affectedRows: 1 });
+    }
+    return Promise.resolve({ rowCount: 0, rows: [] });
+  };
+  FakeClient.prototype.on = function () {};
+  FakeClient.prototype.release = function () {};
+  FakeClient.prototype.removeListener = function () {};
+  FakeClient.prototype.connect = function () {
+    return Promise.resolve();
+  };
+  FakeClient.prototype.end = function () {
+    return Promise.resolve();
+  };
+  function FakePool() {}
+  FakePool.prototype.on = function () {};
+  FakePool.prototype.connect = function () {
+    return Promise.resolve(new FakeClient());
+  };
+  FakePool.prototype.query = function (sql, params) {
+    return new FakeClient().query(sql, params);
+  };
+  FakePool.prototype.end = function () {
+    return Promise.resolve();
+  };
+  log.debug("Leaving fencedDouble().");
+  return { Pool: FakePool, Client: FakeClient };
+}
+
+function settleWithin(promise, ms) {
+  log.debug("Entering settleWithin().");
+  const started = Date.now();
+  let timer = null;
+  const late = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      resolve({ late: true });
+    }, ms);
+  });
+  log.debug("Leaving settleWithin().");
+  return Promise.race([promise.then(function (value) {
+    return { value: value };
+  }, function (err) {
+    return { error: err };
+  }), late]).then(function (out) {
+    clearTimeout(timer);
+    out.ms = Date.now() - started;
+    return out;
+  });
+}
+
+function driverOver(db, engine) {
+  log.debug("Entering driverOver().");
+  const storeDouble = require('./tools/store_double');
+  const postgres = require('../persistence/persistence_postgres');
+  const restore = storeDouble.install(fencedDouble(db));
+  try {
+    log.debug("Leaving driverOver().");
+    return postgres.create(Object.assign({
+      url: engine === 'mariadb' ? 'mysql://sts_app@localhost:3306/sts'
+        : 'postgres://sts_app@localhost:5432/sts',
+      log: { debug: function () {}, info: function () {},
+             warn: function () {}, error: function () {} }
+    }, engine === 'mariadb' ? { engine: 'mariadb', verifyTls: false,
+                                tlsCa: '' } : {}));
+  } finally {
+    restore();
+  }
+}
+
+async function takeoverAgainstDouble(t, engine) {
+  log.debug("Entering takeoverAgainstDouble(). " + engine);
+  const tag = engine === 'mariadb' ? 'E' : 'D';
+  t.log.info('=== ' + tag + '. a standby\'s heartbeat beside a takeover ' +
+             'blocked by fences (' + engine + ') ===');
+  // A lifetime of 1500 ms: the renewal bound is a third, 500 ms (MariaDB
+  // rounds it up to its one-second resolution).
+  const ttl = 1500;
+  const bound = engine === 'mariadb' ? 1000 : 500;
+  const db = { engine: engine, statements: [], waiting: [], fenced: true,
+               standby: 'standby-node' };
+  const driver = driverOver(db, engine);
+  try {
+    const acquiring = settleWithin(
+      driver.acquireLease('service', db.standby, ttl), 6000);
+    // Asked after the acquire, so it is queued behind it on the one
+    // liveness connection.
+    const beating = settleWithin(driver.heartbeat(db.standby, ttl, null),
+                                 6000);
+    const beat = await beating;
+    const acquired = await acquiring;
+    t.check(!beat.late && !beat.error && beat.value &&
+            beat.value.alive === true && beat.ms < 2 * bound + 1000,
+            tag + '1. THE STANDBY\'S HEARTBEAT SETTLES INSIDE ITS BOUND ' +
+            'while its takeover is blocked behind the old holder\'s fences ' +
+            '— unbounded, the acquire held the connection and the beat ' +
+            'never ran',
+            JSON.stringify({ ms: beat.ms, late: !!beat.late,
+                             error: beat.error && beat.error.message }));
+    t.check(!acquired.late && acquired.value &&
+            acquired.value.held === false && acquired.value.pending === true,
+            tag + '2. the takeover answers "not yet" (pending) when its ' +
+            'bound runs out, and never "held" while the fences are held',
+            JSON.stringify({ ms: acquired.ms, late: !!acquired.late,
+                             value: acquired.value,
+                             error: acquired.error &&
+                               acquired.error.message }));
+    const boundSet = engine === 'mariadb'
+      ? db.statements.some(function (s) {
+        return /^SET SESSION innodb_lock_wait_timeout = 1$/.test(s);
+      })
+      : db.statements.some(function (s) {
+        return s === 'SET LOCAL lock_timeout = ' + bound;
+      });
+    t.check(boundSet && db.statements.some(function (s) {
+      return /^ROLLBACK/.test(s);
+    }), tag + '3. the takeover ran under the bound and was rolled back ' +
+            'whole, so no token moved', JSON.stringify(
+              db.statements.filter(function (s) {
+                return /^(SET|BEGIN|COMMIT|ROLLBACK)/.test(s);
+              }).slice(0, 12)));
+    if (engine === 'mariadb') {
+      const restores = db.statements.filter(function (s) {
+        return /^SET SESSION/.test(s);
+      });
+      t.check(restores.indexOf('SET SESSION max_statement_time = 7') >= 0 &&
+              restores.indexOf('SET SESSION innodb_lock_wait_timeout = 13') >=
+                0 &&
+              !restores.some(function (s) {
+                return /= (0|50)$/.test(s);
+              }) && !db.statements.some(function (s) {
+                return /@@GLOBAL\./.test(s);
+              }),
+              'E4. every bound puts back the SESSION\'s own limits (7 s and ' +
+              '13 s here), never the server\'s globals (0 and 50)',
+              JSON.stringify(restores));
+    }
+    // The old holder's writes finish: the next ask takes the lease.
+    db.fenced = false;
+    db.waiting.splice(0).forEach(function (resolve) {
+      resolve({ rowCount: 0, rows: [] });
+    });
+    const after = await settleWithin(
+      driver.acquireLease('service', db.standby, ttl), 4000);
+    t.check(!after.late && after.value && after.value.held === true &&
+            !after.value.pending,
+            tag + '5. once the fences are gone the next ask takes the lease',
+            JSON.stringify(after));
+    // A release waits for this node's own fenced writes: bounded too.
+    db.fenced = true;
+    const releasing = settleWithin(
+      driver.releaseLease('service', db.standby, 2), 6000);
+    const beatAgain = settleWithin(
+      driver.heartbeat(db.standby, ttl, null), 6000);
+    const released = await releasing;
+    const again = await beatAgain;
+    t.check(!released.late && released.error &&
+            !again.late && again.value && again.value.alive === true,
+            tag + '6. a release blocked by fences rejects inside its bound ' +
+            '(stepDown reports STS-CLUSTER-0041) and the heartbeat behind ' +
+            'it still lands',
+            JSON.stringify({ released: { ms: released.ms,
+                                         late: !!released.late,
+                                         value: released.value,
+                                         error: released.error &&
+                                           released.error.message },
+                             beat: { ms: again.ms, late: !!again.late,
+                                     value: again.value } }));
+  } finally {
+    db.fenced = false;
+    db.waiting.splice(0).forEach(function (resolve) {
+      resolve({ rowCount: 0, rows: [] });
+    });
+    try {
+      await driver.close();
+    } catch (e) {
+      log.debug("Caught in takeoverAgainstDouble(): " +
+                ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving takeoverAgainstDouble().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await scheduling(t);
   await againstPostgres(t);
+  await takeoverBesideBeats(t);
+  await takeoverAgainstDouble(t, 'postgres');
+  await takeoverAgainstDouble(t, 'mariadb');
   log.debug("Leaving run().");
 }
 

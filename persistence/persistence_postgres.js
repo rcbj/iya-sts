@@ -3813,15 +3813,19 @@ function create(options) {
   }
 
   // MariaDB's statement and lock-wait limits are SESSION, so they outlive
-  // the statement. Read the globals, set, run, restore; a restore that
-  // fails drops the connection so the next renewal dials a clean one.
-  function mariadbBounded(client, sql, params, ms) {
-    log.debug("Entering mariadbBounded().");
+  // the statement. Read the SESSION's values, set, run `work`, put them
+  // back; a restore that fails drops the connection so the next renewal
+  // dials a clean one. It read @@GLOBAL until 2026-11-13 and wrote those
+  // back into the session, which is the same number only while nothing
+  // set the session's own (#770's review): a restore leaves the session
+  // as it found it.
+  function mariadbWithBound(client, ms, work) {
+    log.debug("Entering mariadbWithBound().");
     const seconds = String(Math.max(1, Math.ceil(Number(ms) / 1000)));
-    log.debug("Leaving mariadbBounded().");
+    log.debug("Leaving mariadbWithBound().");
     return client.query(
-      'SELECT @@GLOBAL.max_statement_time AS stmt, ' +
-      '@@GLOBAL.innodb_lock_wait_timeout AS lockwait'
+      'SELECT @@SESSION.max_statement_time AS stmt, ' +
+      '@@SESSION.innodb_lock_wait_timeout AS lockwait'
     ).then(function (read) {
       const row = (read.rows && read.rows[0]) || {};
       const stmt = numericSetting(row.stmt, '0');
@@ -3838,12 +3842,12 @@ function create(options) {
           return client.query(
             'SET SESSION innodb_lock_wait_timeout = ' + seconds);
         }).then(function () {
-          return client.query(sql, params);
+          return work();
         }).then(function (result) {
           return restore().then(function () {
             return result;
           }, function (err) {
-            log.debug("Caught in mariadbBounded(): " +
+            log.debug("Caught in mariadbWithBound(): " +
                       ((err && err.message) || err));
             dropLive(client);
             return result;
@@ -3852,13 +3856,35 @@ function create(options) {
           return restore().then(function () {
             throw err;
           }, function (restoreErr) {
-            log.debug("Caught in mariadbBounded(): " +
+            log.debug("Caught in mariadbWithBound(): " +
                       ((restoreErr && restoreErr.message) || restoreErr));
             dropLive(client);
             throw err;
           });
         });
     });
+  }
+
+  // One statement under mariadbWithBound().
+  function mariadbBounded(client, sql, params, ms) {
+    log.debug("Entering mariadbBounded().");
+    log.debug("Leaving mariadbBounded().");
+    return mariadbWithBound(client, ms, function () {
+      return client.query(sql, params);
+    });
+  }
+
+  // A lock or statement wait that ran out on the liveness connection: a
+  // bounded statement's own timeout, on either engine. PostgreSQL answers
+  // 55P03 (lock_timeout) or 57014 (statement_timeout); MariaDB 1205
+  // (innodb_lock_wait_timeout) or 1969 (max_statement_time).
+  function isBoundTimeout(err) {
+    log.debug("Entering isBoundTimeout().");
+    const code = err && err.code;
+    log.debug("Leaving isBoundTimeout().");
+    return code === '55P03' || code === '57014' ||
+      code === 'ER_LOCK_WAIT_TIMEOUT' || code === 'ER_STATEMENT_TIMEOUT' ||
+      (!!err && (err.errno === 1205 || err.errno === 1969));
   }
 
   // One autocommit statement with lock_timeout and statement_timeout.
@@ -3928,8 +3954,21 @@ function create(options) {
 
   // BEGIN…COMMIT on the liveness connection, holding the mutex for the
   // whole of it. `fn` queries the runner, never `liveQuery()`.
-  function liveTransact(fn) {
+  //
+  // `boundMs` caps every lock and statement wait inside it (#770's review,
+  // 2026-11-13): a lease taken over or given up deletes fence lock rows,
+  // and that DELETE waits for every write still share-locking them — a
+  // write that can last thirty seconds. Unbounded, the wait held this
+  // connection, and every heartbeat queued behind it in `liveExclusive()`
+  // where its own bound had not started; the beat never settled and the
+  // node fenced itself (STS-CLUSTER-0004) in the middle of a takeover. A
+  // timeout rolls the whole transaction back and rejects (`isBoundTimeout()`),
+  // and the caller asks again on its next beat. PostgreSQL's SET LOCAL dies
+  // with the transaction; MariaDB's limits are the session's and are put
+  // back after it (`mariadbWithBound()`).
+  function liveTransact(fn, boundMs) {
     log.debug("Entering liveTransact().");
+    const ms = boundMs > 0 ? boundDigits(boundMs) : '';
     log.debug("Leaving liveTransact().");
     return liveExclusive(function () {
       return Promise.resolve().then(liveConnection).then(function (client) {
@@ -3938,33 +3977,59 @@ function create(options) {
             return client.query(text, values);
           }
         };
-        return client.query('BEGIN').then(function () {
-          return fn(runner);
-        }).then(function (result) {
-          return client.query('COMMIT').then(function () {
-            return result;
+        const transact = function () {
+          return client.query('BEGIN').then(function () {
+            if (!ms || engine === 'mariadb') {
+              return null;
+            }
+            return client.query('SET LOCAL lock_timeout = ' + ms)
+              .then(function () {
+                return client.query('SET LOCAL statement_timeout = ' + ms);
+              });
+          }).then(function () {
+            return fn(runner);
+          }).then(function (result) {
+            return client.query('COMMIT').then(function () {
+              return result;
+            });
+          }, function (err) {
+            return rollbackLive(client, err);
           });
-        }, function (err) {
-          return rollbackLive(client, err);
-        });
+        };
+        if (ms && engine === 'mariadb') {
+          return mariadbWithBound(client, ms, transact);
+        }
+        return transact();
       }, function (err) {
         liveStats.viaPool += 1;
         log.warn(errorCodes.tag('STS-STORE-0070') + 'persistence: the ' +
                  'liveness connection could not be opened (' +
                  err.message + '); this transaction goes through the pool.');
-        return poolTransact(fn);
+        return poolTransact(fn, ms);
       });
     });
   }
 
   // A short transaction on the pool that is NOT a fenced write: an origin
   // claim's lock row has to commit with the claim, and `withTransaction()`
-  // would re-enter the fence.
-  function poolTransact(fn) {
+  // would re-enter the fence. `ms`, digits or empty, is the liveness
+  // transaction's bound carried here when that connection could not be
+  // opened; PostgreSQL's SET LOCAL ends with the transaction. On MariaDB the
+  // limits are the SESSION's and a pooled connection is somebody else's
+  // next, so the fallback there is unbounded, as `liveBounded()`'s is.
+  function poolTransact(fn, ms) {
     log.debug("Entering poolTransact().");
     log.debug("Leaving poolTransact().");
     return pool.connect().then(function (client) {
       return client.query('BEGIN').then(function () {
+        if (!ms || engine === 'mariadb') {
+          return null;
+        }
+        return client.query('SET LOCAL lock_timeout = ' + ms)
+          .then(function () {
+            return client.query('SET LOCAL statement_timeout = ' + ms);
+          });
+      }).then(function () {
         return fn(client);
       }).then(function (result) {
         return client.query('COMMIT').then(function () {
@@ -4062,6 +4127,12 @@ function create(options) {
         boundQuery: function (text, values, ttl) {
           return liveQuery(text, values, renewalBoundMs(ttl));
         },
+        // A lease taken or given up is a bounded liveness transaction
+        // (#770's review), and its timeout is told apart from a failure.
+        boundTransact: function (fn, ttl) {
+          return liveTransact(fn, renewalBoundMs(ttl));
+        },
+        isBoundTimeout: isBoundTimeout,
         originScope: ORIGIN_SCOPE,
         processId: function () {
           return processId;
@@ -8141,8 +8212,33 @@ function create(options) {
       // The fence lock is written in the same statement, and only when this
       // node holds the lease afterwards. Other tokens' rows of this lease
       // are deleted with it, so an in-flight fence of the old token waits
-      // and then finds its name gone. Unbounded on purpose: a takeover
-      // SHOULD wait for those fences. The heartbeat does not.
+      // and then finds its name gone. A takeover still waits for those
+      // fences: it cannot commit until they have. But it waits in bounded
+      // ATTEMPTS (#770's review, 2026-11-13), the heartbeat's bound, not in
+      // one statement that holds the liveness connection for as long as the
+      // old holder's slowest write. That statement queued this node's own
+      // heartbeat behind it in `liveExclusive()`, where the heartbeat's
+      // bound had not started, and a standby fenced itself
+      // (STS-CLUSTER-0004) in the middle of taking over. A timeout rolls
+      // the whole statement back (the token and the lock rows with it) and
+      // answers `{ held: false, pending: true }`; the caller asks again on
+      // its next beat, and the old holder's fences, which find their lease
+      // expired, cannot start new writes meanwhile.
+      const holderOf = function (pending) {
+        return dialect.run(liveRunner, 'acquireLease.holder',
+          kx('sts_cluster_leases').select('holder', 'token', 'expires_at')
+            .where({ name: name })
+        ).then(function (found) {
+          const other = (found.rows || [])[0] || null;
+          const answer = { held: false, holder: other ? other.holder : '',
+                           token: other ? Number(other.token) : 0,
+                           expiresAt: other ? Number(other.expires_at) : 0 };
+          if (pending) {
+            answer.pending = true;
+          }
+          return answer;
+        });
+      };
       return liveQuery(
         'WITH up AS (INSERT INTO sts_cluster_leases (name, holder, token, ' +
         'acquired_at, expires_at) SELECT $1, $2, 1, ' + DB_NOW + ', ' +
@@ -8169,22 +8265,21 @@ function create(options) {
         'name) SELECT up.holder, up.token, up.expires_at, (SELECT ' +
         'count(*) FROM lk) AS locked, (SELECT count(*) FROM gone) AS ' +
         'cleared FROM up',
-        [name, nodeId, Number(ttlMs)]
+        [name, nodeId, Number(ttlMs)],
+        renewalBoundMs(ttlMs)
       ).then(function (r) {
         const row = (r.rows || [])[0];
         if (row && row.holder === nodeId) {
           return { held: true, token: Number(row.token),
                    expiresAt: Number(row.expires_at) };
         }
-        return dialect.run(liveRunner, 'acquireLease.holder',
-          kx('sts_cluster_leases').select('holder', 'token', 'expires_at')
-            .where({ name: name })
-        ).then(function (found) {
-          const other = (found.rows || [])[0] || null;
-          return { held: false, holder: other ? other.holder : '',
-                   token: other ? Number(other.token) : 0,
-                   expiresAt: other ? Number(other.expires_at) : 0 };
-        });
+        return holderOf(false);
+      }, function (err) {
+        if (!isBoundTimeout(err)) {
+          throw err;
+        }
+        log.debug("Caught in acquireLease(): " + err.message);
+        return holderOf(true);
       });
     },
 
@@ -8194,7 +8289,11 @@ function create(options) {
       log.debug("Leaving releaseLease().");
       // The lock goes only when the lease did. One transaction, so a
       // rollback puts both back; deleting the lock of a lease we did not
-      // release would drop a fence another holder still needs.
+      // release would drop a fence another holder still needs. Bounded as
+      // a takeover is (#770's review): deleting the lock waits for this
+      // node's own writes still fenced by it, and the heartbeat queues
+      // behind that wait. A timeout rejects, and `stepDown()` reports it
+      // (STS-CLUSTER-0041).
       return liveTransact(function (runner) {
         return dialect.run(runner, 'releaseLease',
           kx('sts_cluster_leases').update({ expires_at: 0 })
@@ -8211,7 +8310,7 @@ function create(options) {
             return true;
           });
         });
-      });
+      }, renewalBoundMs());
     },
 
     // Every node row still retained and every lease, with the database clock

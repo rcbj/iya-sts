@@ -2229,6 +2229,14 @@ const CODES = [
       'back with it (#628). A create of one of those names before then ' +
       'waits and is refused as in progress (STS-LDAP-0092).',
     spec: '' },
+  { code: 'STS-CLUSTER-0165',
+    summary: 'Taking over a lease is waiting for writes the previous ' +
+      'holder still has in flight under it: the ask is bounded by the ' +
+      'heartbeat\'s own bound, rolls back when the bound runs out, and is ' +
+      'made again on the next heartbeat, so this node\'s own renewal never ' +
+      'waits behind it (#770). Logged once per wait; one that repeats for a ' +
+      'node lifetime names a write that does not finish.',
+    spec: '' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
