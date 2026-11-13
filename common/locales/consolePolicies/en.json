@@ -208,5 +208,16 @@
   "transfer.verdictRefused": "The chain was refused by PKI validation, so nothing can be imported.",
   "transfer.question": "Trust this signer for policy imports in this realm? Yes adds the three certificate authorities above to this realm's signer truststore, for policy imports and nothing else, and imports the document. The Issuing CA's fingerprint is {fingerprint}.",
   "transfer.trustAndImport": "Yes: trust this chain and import",
-  "transfer.importTrusted": "Import it"
+  "transfer.importTrusted": "Import it",
+  "transfer.view.signerHeading": "This realm's export signer",
+  "transfer.view.algorithm": "Signing algorithm (pki.policyExportAlgorithm)",
+  "transfer.view.paranoid": "Full paranoid validation of an export's signer (pki.paranoidPolicySigner)",
+  "transfer.view.issuingCa": "Policy Export Signing CA",
+  "transfer.view.noIssuingCa": "This realm has no Policy Export Signing CA yet. The first export builds it.",
+  "transfer.view.validity": "Valid",
+  "transfer.view.fingerprintNote": "An administrator in another realm names this fingerprint to trust this realm's exports.",
+  "transfer.view.trustedHeading": "Other realms this realm trusts",
+  "transfer.view.noneTrusted": "This realm trusts no other realm's policy exports.",
+  "transfer.view.kind": "Kind",
+  "transfer.view.addedBy": "Added by"
 }

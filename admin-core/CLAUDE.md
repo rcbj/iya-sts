@@ -648,8 +648,18 @@ must not undo:
   product does; off, the row is an ordinary one the master decides. Forced
   verdicts are not counted by the door, so the acts are audited here
   (`admin.policies.export`, `.trust-signer`, `.import`).
+* **THE READ BESIDE THE THREE ACTS IS `view()`** (`GET
+  /admin-api/policies/transfer`, through `admin_views.ts`'s
+  `policyTransferJson()`; the Export and import tab composes it as
+  `transfer`). It was missing when #1713 merged, and
+  `sts_admin_api_operations`' read-back found it: every write's resource
+  owes a read. It READS: `pki.describeIssuer()`, never `ensureScope()`, so
+  a realm with no Policy Export Signing CA answers `issuingCa: null` rather
+  than having one built by a GET. Certificates only, and its model is
+  closed, so a member added here owes `models/api/management.tsp`.
 
 `tests/policy_transfer.js` holds it in process (the export's shape, own and
 foreign realms, the pin across a third and a fourth realm, refusals,
-revocation, every algorithm, the action layer and the console's question);
+revocation, every algorithm, the action layer, the console's question and
+the view);
 `tests/protocol/sts_policy_transfer.js` over HTTP.

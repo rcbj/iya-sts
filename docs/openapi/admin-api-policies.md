@@ -3455,6 +3455,64 @@ Scope: `admin:write`.
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |
 
+## GET /admin-api/policies/transfer
+
+`getPolicyTransfer`
+
+**How this realm's policy exports are signed, and whose it trusts**
+
+The policy transfer view (#1713): the JWS algorithm the next export is signed with (`pki.policyExportAlgorithm`), whether `pki.paranoidPolicySigner` is on, this realm's Policy Export Signing Issuing CA with its SHA-256 fingerprint (the `issuerFingerprint` another realm's import names to trust this realm's exports), its validity and its chain up to but not including the service Root, and the signer truststore's entries in this realm for policy-signer — the chains of the other realms it has trusted. `issuingCa` is null until this realm's first export builds the CA; a read builds nothing. Certificates only: no private key is in the answer. A view that cannot be built is STS-ADMIN-0936.
+
+**Mirrors** `GET /admin/policies` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The algorithm, the paranoid row, the Issuing CA and the trusted signers.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `algorithm` | string | yes | `pki.policyExportAlgorithm` in force here: the JWS algorithm the next export is signed with. |
+| `algorithms` | list | yes | Every value that setting may take. |
+| `algorithms[]` | string |  |  |
+| `issuingCa` | object, or null | yes |  |
+| `issuingCa.certificatePem` | string | yes | The Issuing CA's certificate, PEM. The second certificate of every export's `x5c`. |
+| `issuingCa.chainPem` | list | yes | The chain up to but not including the service Root, PEM, the Issuing CA first and then this realm's Intermediate. |
+| `issuingCa.chainPem[]` | string |  |  |
+| `issuingCa.fingerprint256` | string | yes | The SHA-256 fingerprint of the certificate's DER, upper-case hex with no colons: what an administrator in another realm names in `issuerFingerprint` to trust this realm's exports, and what an inspection of an export answers as `issuerFingerprint`. |
+| `issuingCa.issuer` | string | yes | Its issuer: this realm's Intermediate. |
+| `issuingCa.keyAlg` | string | yes | The CA's own key algorithm. |
+| `issuingCa.notAfter` | string | yes | Valid until, ISO 8601. |
+| `issuingCa.notBefore` | string | yes | Valid from, ISO 8601. |
+| `issuingCa.root` | object | yes | The service Root the chain ends at, which every realm of this service shares. |
+| `issuingCa.root.fingerprint256` | string | yes | Its SHA-256 fingerprint, upper-case hex with no colons. |
+| `issuingCa.root.subject` | string | yes |  |
+| `issuingCa.serialHex` | string | yes | Its serial number, lower-case hex. |
+| `issuingCa.signatureAlg` | string | yes | What the CA signs the export signer's certificate with. |
+| `issuingCa.subject` | string | yes | The Issuing CA's subject, as RFC 4514 writes it. |
+| `issuingCa.x5t#S256` | string | yes | The same digest as RFC 7515 section 4.1.8's `x5t#S256`: base64url, unpadded. |
+| `paranoidPolicySigner` | boolean | yes | Whether `pki.paranoidPolicySigner` is on here, which forces the full paranoid checks on an export's signer in every mode. |
+| `realm` | string | yes | The realm this view is about. |
+| `trustedSigners` | list | yes | The signer truststore's entries in this realm that serve policy-signer: the chains of the other realms whose exports this realm has trusted. |
+| `trustedSigners[].addedAt` | string | yes | When it was added. |
+| `trustedSigners[].addedBy` | string | yes | Who added it. |
+| `trustedSigners[].fingerprint256` | string | yes | The SHA-256 fingerprint, upper-case hex with no colons. |
+| `trustedSigners[].issuer` | string | yes |  |
+| `trustedSigners[].kind` | string | yes | `anchor` for a Root, `intermediate` for a CA under one. |
+| `trustedSigners[].notAfter` | string | yes | Valid until, ISO 8601; empty where the certificate could not be read. |
+| `trustedSigners[].notBefore` | string | yes | Valid from, ISO 8601; empty where the certificate could not be read. |
+| `trustedSigners[].purposes` | list | yes | The use cases the entry serves; empty serves every one, policy-signer included. |
+| `trustedSigners[].purposes[]` | string |  |  |
+| `trustedSigners[].source` | string | yes | `runtime` for an entry an administrator added (an import's yes among them), `file` for one `pki.signerTrustAnchorsFile` named. |
+| `trustedSigners[].subject` | string | yes |  |
+| `trustedSigners[].unadmittable` | string |  | Why the entry would no longer be admitted (it expired where it sits, for one); absent while it would be. |
+
 ## POST /admin-api/policies/transfer/export
 
 `exportPolicies`

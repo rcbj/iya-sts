@@ -378,6 +378,18 @@ CA's SHA-256 fingerprint from the inspection. Export, the yes and the import
 each write an audit row: `admin.policies.export`,
 `admin.policies.trust-signer` and `admin.policies.import`.
 
+**What this realm signs with, and whom it trusts.** The tab, and
+`GET /admin-api/policies/transfer`, show the algorithm the next export is
+signed with, whether `pki.paranoidPolicySigner` is on, this realm's Policy
+Export Signing CA, and the signer truststore's entries for policy imports.
+The CA is shown with its subject, its validity and its SHA-256 fingerprint,
+the value another realm's administrator names to trust this realm's exports.
+The answer also carries the CA's `x5t#S256` and its chain up to the service
+Root, without the Root itself. The entries are the other realms this realm
+has said yes to. The CA is missing until the realm's first export creates it,
+and reading the tab or the API does not create it. The answer holds
+certificates only, never a private key.
+
 ## In the running service
 
 * **Console:** Directory → Policies, `/admin/policies`. A tab per kind, then

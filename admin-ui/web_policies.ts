@@ -238,7 +238,70 @@ class PoliciesPage {
     }
     return '<h2 id="transfer">' + t.html('consolePolicies.transfer.heading') +
       '</h2>' + kit.note(t.html('consolePolicies.transfer.lead')) +
+      PoliciesPage.transferSigner(view.transfer, t) +
       exportForm + importForm + result;
+  }
+
+  /**
+   * Draws the tab's account of this realm's own export signer and the
+   * signers it trusts, from `GET /admin-api/policies/transfer` (composed into
+   * the view as `transfer`): the algorithm, the paranoid row, the Policy
+   * Export Signing CA with the fingerprint another realm names to trust it,
+   * and the other realms' chains this realm holds for policy-signer. Nothing
+   * when the view carries no `transfer`.
+   *
+   * @param transfer - the transfer view, or undefined
+   * @param t - the page's translator (#539)
+   * @returns the section as HTML
+   */
+  static transferSigner(transfer, t) {
+    if (!transfer || typeof transfer !== 'object') {
+      return '';
+    }
+    const yesNo = function (on) {
+      return on ? t.html('consolePolicies.yes') : t.html('consolePolicies.no');
+    };
+    const ca = transfer.issuingCa;
+    const caTable = ca
+      ? '<table>' +
+        '<tr><th>' + t.html('consolePolicies.transfer.subject') +
+        '</th><td>' + kit.esc(ca.subject) + '</td></tr>' +
+        '<tr><th>' + t.html('consolePolicies.transfer.view.validity') +
+        '</th><td>' + kit.esc(ca.notBefore) + ' – ' + kit.esc(ca.notAfter) +
+        '</td></tr>' +
+        '<tr><th>' + t.html('consolePolicies.transfer.fingerprint') +
+        '</th><td><code>' + kit.esc(ca.fingerprint256) + '</code></td></tr>' +
+        '<tr><th>x5t#S256</th><td><code>' + kit.esc(ca['x5t#S256']) +
+        '</code></td></tr></table>' +
+        kit.note(t.html('consolePolicies.transfer.view.fingerprintNote'))
+      : kit.note(t.html('consolePolicies.transfer.view.noIssuingCa'));
+    const trusted = transfer.trustedSigners || [];
+    const trustedTable = trusted.length
+      ? '<table><tr><th>' + t.html('consolePolicies.transfer.subject') +
+        '</th><th>' + t.html('consolePolicies.transfer.view.kind') +
+        '</th><th>' + t.html('consolePolicies.transfer.fingerprint') +
+        '</th><th>' + t.html('consolePolicies.transfer.view.addedBy') +
+        '</th></tr>' +
+        trusted.map(function (one) {
+          return '<tr><td>' + kit.esc(one.subject) + '</td><td>' +
+            kit.esc(one.kind) + '</td><td><code>' +
+            kit.esc(one.fingerprint256) + '</code></td><td>' +
+            kit.esc(one.addedBy || '') + '</td></tr>';
+        }).join('') + '</table>'
+      : kit.note(t.html('consolePolicies.transfer.view.noneTrusted'));
+    return '<h3 id="transfer-signer-own">' +
+      t.html('consolePolicies.transfer.view.signerHeading') + '</h3>' +
+      '<table>' +
+      '<tr><th>' + t.html('consolePolicies.transfer.view.algorithm') +
+      '</th><td><code>' + kit.esc(transfer.algorithm) + '</code></td></tr>' +
+      '<tr><th>' + t.html('consolePolicies.transfer.view.paranoid') +
+      '</th><td>' + yesNo(transfer.paranoidPolicySigner) + '</td></tr>' +
+      '</table>' +
+      '<h4>' + t.html('consolePolicies.transfer.view.issuingCa') + '</h4>' +
+      caTable +
+      '<h3 id="transfer-trusted">' +
+      t.html('consolePolicies.transfer.view.trustedHeading') + '</h3>' +
+      trustedTable;
   }
 
   /**

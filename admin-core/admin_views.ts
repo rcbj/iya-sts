@@ -174,6 +174,9 @@ import passwordPolicy = require('../common/password_policy');
 // THE KINDS OF POLICY ON THAT PAGE (#64): the password policy, the
 // authentication policy, and whatever is defined next. A library.
 import policyKinds = require('./policy_kinds');
+// POLICY EXPORT AND IMPORT (#1713): the transfer view of the Export and
+// import tab. A library; it registers nothing.
+import policyTransfer = require('./policy_transfer');
 // THE PROSE THE SERVER TRANSLATES (#543): `fill()` for the keys and notes
 // built as templates below. A library that requires nothing of this file.
 import serverProse = require('../common/server_prose');
@@ -917,6 +920,7 @@ interface AdminViewsDeps {
   roles: typeof roles;
   passwordPolicy: typeof passwordPolicy;
   policyKinds: typeof policyKinds;
+  policyTransfer: typeof policyTransfer;
   auditLog: typeof auditLog;
   errorCodes: typeof errorCodes;
   usedAssertions: typeof usedAssertions;
@@ -1142,6 +1146,7 @@ class AdminViews {
       roles: roles,
       passwordPolicy: passwordPolicy,
       policyKinds: policyKinds,
+      policyTransfer: policyTransfer,
       auditLog: auditLog,
       errorCodes: errorCodes,
       usedAssertions: usedAssertions,
@@ -10588,6 +10593,27 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // DIRECTORY → POLICIES → EXPORT AND IMPORT (#1713), the read rule 7 and
+  // `sts_admin_api_operations`' read-back owe the three transfer acts: the
+  // algorithm an export is signed with, this realm's Policy Export Signing
+  // CA (whose fingerprint another realm trusts), the paranoid row, and the
+  // signers this realm has trusted. `admin-core/policy_transfer.ts` owns
+  // every fact; this is the door both surfaces read it through.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `GET /admin-api/policies/transfer`'s answer for the ambient realm.
+   *
+   * @returns the transfer view
+   */
+  policyTransferJson(): IyaApi.AdminAnswer<'getPolicyTransfer'> {
+    const { log, policyTransfer } = this.deps;
+    log.debug("Entering AdminViews.policyTransferJson().");
+    const out = policyTransfer.view();
+    log.debug("Leaving AdminViews.policyTransferJson().");
+    return out;
+  }
+
   // WHAT /admin/authorization-servers ANSWERS: the profiles, and one of them.
   /**
    * Builds `/admin/authorization-servers`'s list of profiles.
@@ -16438,6 +16464,7 @@ export = {
   saml11Json: slot.forward('saml11Json'),
   saml11ListJson: slot.forward('saml11ListJson'),
   samlIdpInitiatedJson: slot.forward('samlIdpInitiatedJson'),
+  policyTransferJson: slot.forward('policyTransferJson'),
   saml2ServiceProviders: slot.forward('saml2ServiceProviders'),
   saml2Facts: slot.forward('saml2Facts'),
   valuesFor: slot.forward('valuesFor'),

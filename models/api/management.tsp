@@ -37038,6 +37038,70 @@ op `deleteNamedAuthnPolicy`(@js(#{`examples`:#[#{`name`:"passkeys-only"}]}) `req
     @js(#{`description`:"With `needsTrust`: what the question is about, as `inspect` answers it."}) `inspection`?: PolicyTransferValue
   }
 
+@component model `PolicyExportIssuingCa` {
+    @js(#{`description`:"The Issuing CA's subject, as RFC 4514 writes it."}) `subject`: string;
+    @js(#{`description`:"Its issuer: this realm's Intermediate."}) `issuer`: string;
+    @js(#{`description`:"Its serial number, lower-case hex."}) `serialHex`: string;
+    @js(#{`description`:"Valid from, ISO 8601."}) `notBefore`: string;
+    @js(#{`description`:"Valid until, ISO 8601."}) `notAfter`: string;
+    @js(#{`description`:"The CA's own key algorithm."}) `keyAlg`: string;
+    @js(#{`description`:"What the CA signs the export signer's certificate with."}) `signatureAlg`: string;
+    @js(#{`description`:"The SHA-256 fingerprint of the certificate's DER, upper-case hex with no colons: what an administrator in another realm names in `issuerFingerprint` to trust this realm's exports, and what an inspection of an export answers as `issuerFingerprint`."}) `fingerprint256`: string;
+    @js(#{`description`:"The same digest as RFC 7515 section 4.1.8's `x5t#S256`: base64url, unpadded."}) `x5t#S256`: string;
+    @js(#{`description`:"The Issuing CA's certificate, PEM. The second certificate of every export's `x5c`."}) `certificatePem`: string;
+    @js(#{`description`:"The chain up to but not including the service Root, PEM, the Issuing CA first and then this realm's Intermediate."}) `chainPem`: (string)[];
+    @js(#{`description`:"The service Root the chain ends at, which every realm of this service shares."}) `root`: {
+      `subject`: string;
+      @js(#{`description`:"Its SHA-256 fingerprint, upper-case hex with no colons."}) `fingerprint256`: string;
+    };
+  }
+
+@component model `PolicyTrustedSigner` {
+    `subject`: string;
+    `issuer`: string;
+    @js(#{`description`:"`anchor` for a Root, `intermediate` for a CA under one."}) `kind`: string;
+    @js(#{`description`:"The use cases the entry serves; empty serves every one, policy-signer included."}) `purposes`: (string)[];
+    @js(#{`description`:"The SHA-256 fingerprint, upper-case hex with no colons."}) `fingerprint256`: string;
+    @js(#{`description`:"Valid from, ISO 8601; empty where the certificate could not be read."}) `notBefore`: string;
+    @js(#{`description`:"Valid until, ISO 8601; empty where the certificate could not be read."}) `notAfter`: string;
+    @js(#{`description`:"`runtime` for an entry an administrator added (an import's yes among them), `file` for one `pki.signerTrustAnchorsFile` named."}) `source`: string;
+    @js(#{`description`:"Who added it."}) `addedBy`: string;
+    @js(#{`description`:"When it was added."}) `addedAt`: string;
+    @js(#{`description`:"Why the entry would no longer be admitted (it expired where it sits, for one); absent while it would be."}) `unadmittable`?: string;
+  }
+
+@component model `PolicyTransferView` {
+    @js(#{`description`:"The realm this view is about."}) `realm`: string;
+    @js(#{`description`:"`pki.policyExportAlgorithm` in force here: the JWS algorithm the next export is signed with."}) `algorithm`: string;
+    @js(#{`description`:"Every value that setting may take."}) `algorithms`: (string)[];
+    @js(#{`description`:"Whether `pki.paranoidPolicySigner` is on here, which forces the full paranoid checks on an export's signer in every mode."}) `paranoidPolicySigner`: boolean;
+    @js(#{`description`:"This realm's Policy Export Signing Issuing CA; null until the first export builds it."}) `issuingCa`: PolicyExportIssuingCa | null;
+    @js(#{`description`:"The signer truststore's entries in this realm that serve policy-signer: the chains of the other realms whose exports this realm has trusted."}) `trustedSigners`: (PolicyTrustedSigner)[];
+  }
+
+@endpoint("/admin-api/policies/transfer",
+  "get",
+  #{
+    `operationId`:"getPolicyTransfer",
+    `summary`:"How this realm's policy exports are signed, and whose it trusts",
+    `description`:"The policy transfer view (#1713): the JWS algorithm the next export is signed with (`pki.policyExportAlgorithm`), whether `pki.paranoidPolicySigner` is on, this realm's Policy Export Signing Issuing CA with its SHA-256 fingerprint (the `issuerFingerprint` another realm's import names to trust this realm's exports), its validity and its chain up to but not including the service Root, and the signer truststore's entries in this realm for policy-signer — the chains of the other realms it has trusted. `issuingCa` is null until this realm's first export builds the CA; a read builds nothing. Certificates only: no private key is in the answer. A view that cannot be built is STS-ADMIN-0936.\n\n**Mirrors** `GET /admin/policies` on the admin console.",
+    `tags`:#["Policies"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The algorithm, the paranoid row, the Issuing CA and the trusted signers.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getPolicyTransfer`(`responses/200/content/application~1json/schema`: `PolicyTransferView`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
 @endpoint("/admin-api/policies/transfer/export",
   "post",
   #{

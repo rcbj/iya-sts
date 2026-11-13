@@ -833,6 +833,100 @@ class PolicyTransfer {
     return answer;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE VIEW (`GET /admin-api/policies/transfer`, the Export and import
+  // tab): what an export from this realm is signed under and who this realm
+  // has trusted, READ and never made. A realm whose branch has no Policy
+  // Export Signing CA yet answers `issuingCa: null`: the first export builds
+  // it (`pki.ensureScope()`), and a read does not mint a CA. The Issuing
+  // CA's SHA-256 fingerprint is what another realm's import names in
+  // `issuerFingerprint`, so it is published in that spelling and as RFC
+  // 7515's `x5t#S256`. Certificates only: neither `describeIssuer()` nor the
+  // signer truststore's `list()` reaches a private key.
+  // ---------------------------------------------------------------------------
+
+  // An instant as ISO 8601, or '' where nothing states one.
+  private isoOf(value: unknown): string {
+    this.deps.log.debug("Entering PolicyTransfer.isoOf().");
+    const ms = typeof value === 'number' ? value : Date.parse(String(value));
+    const out = value === null || value === undefined || value === '' ||
+      !isFinite(ms) ? '' : new Date(ms).toISOString();
+    this.deps.log.debug("Leaving PolicyTransfer.isoOf().");
+    return out;
+  }
+
+  /**
+   * This realm's policy-transfer view: the export algorithm in force, its
+   * Policy Export Signing Issuing CA (null before the first export), the
+   * paranoid row, and the signer truststore's entries that serve
+   * `policy-signer`.
+   *
+   * @returns the view, which carries no private key
+   */
+  view(): Json {
+    const { log, config, realms, crypto, pki, trust, signers } = this.deps;
+    log.debug("Entering PolicyTransfer.view().");
+    const realmId = realms.currentId();
+    const alg = String(config.value('pki.policyExportAlgorithm') || 'RS256');
+    const issuer: Json = pki.describeIssuer(realmId, USE_CASE);
+    let issuingCa: Json = null;
+    if (issuer) {
+      const facts = crypto.certificateFacts(issuer.certificatePem);
+      const root = issuer.root || {};
+      issuingCa = {
+        subject: String(facts.subject || ''),
+        issuer: String(facts.issuer || ''),
+        serialHex: String(facts.serialHex || ''),
+        notBefore: this.isoOf(facts.notBefore),
+        notAfter: this.isoOf(facts.notAfter),
+        keyAlg: String(issuer.keyAlg || ''),
+        signatureAlg: String(issuer.signatureAlg || ''),
+        fingerprint256: this.fingerprintOf(issuer.certificatePem),
+        'x5t#S256': crypto.certificateThumbprint(issuer.certificatePem),
+        certificatePem: String(issuer.certificatePem),
+        // From the Issuing CA upward, the Root excluded: the Root is every
+        // realm's, and is named apart as `root`.
+        chainPem: (issuer.chainPem || []).map(String),
+        root: { subject: String(root.subject || ''),
+                fingerprint256: root.certificatePem
+                  ? this.fingerprintOf(root.certificatePem) : '' }
+      };
+    }
+    const trusted = signers.list(realmId).filter(function (row: Json) {
+      return !row.purposes || !row.purposes.length ||
+             row.purposes.indexOf(PURPOSE) !== -1;
+    }).map((row: Json) => {
+      const one: Json = {
+        subject: String(row.subject || ''),
+        issuer: String(row.issuer || ''),
+        kind: String(row.kind || ''),
+        purposes: (row.purposes || []).map(String),
+        fingerprint256: String(row.fingerprint256 || ''),
+        notBefore: this.isoOf(row.notBefore || null),
+        notAfter: this.isoOf(row.notAfter || null),
+        source: String(row.source || ''),
+        addedBy: String(row.addedBy || ''),
+        addedAt: String(row.addedAt || '')
+      };
+      if (row.unadmittable) {
+        one.unadmittable = String(row.unadmittable);
+      }
+      return one;
+    });
+    const out = {
+      realm: realmId || 'default',
+      algorithm: alg,
+      algorithms: Object.keys(ALGORITHMS),
+      paranoidPolicySigner: trust.rowOn(PURPOSE, realmId),
+      issuingCa: issuingCa,
+      trustedSigners: trusted
+    };
+    log.debug("Leaving PolicyTransfer.view(). " +
+              (issuingCa ? 'An Issuing CA' : 'No Issuing CA') + ', ' +
+              trusted.length + ' trusted.');
+    return out;
+  }
+
   /**
    * What `inspect()` answers, without the signed content and the PEMs: what
    * a page or an API caller is shown.
@@ -879,5 +973,6 @@ export = {
   inspect: slot.forward('inspect'),
   importPolicies: slot.forward('importPolicies'),
   verifySigner: slot.forward('verifySigner'),
-  publicView: slot.forward('publicView')
+  publicView: slot.forward('publicView'),
+  view: slot.forward('view')
 };
