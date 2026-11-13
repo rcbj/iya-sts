@@ -5071,7 +5071,21 @@ const CODES = [
     summary: 'pki.keyAlgorithm names a composite ML-DSA key, which the TLS ' +
       'listeners cannot load, so the service Root or the process branch ' +
       'being built without a named algorithm used the classical default ' +
-      'instead. Realm branches still take the setting.',
+      'instead. A realm branch falls back too, as STS-PKI-0275.',
+    spec: 'none: a log line; the build goes on' },
+  { code: 'STS-PKI-0274',
+    summary: 'A realm\'s certificate authority branch was asked for a ' +
+      'composite ML-DSA signing key. Its Intermediate is on the chain of ' +
+      'the realm\'s SPIFFE gRPC listeners, Remote PEP listeners and custom ' +
+      'listeners, and OpenSSL cannot read a composite key, so each of them ' +
+      'would have refused the chain. Refused before any key is made; ' +
+      'nothing is stored.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0275',
+    summary: 'pki.keyAlgorithm names a composite ML-DSA key, which the ' +
+      'realm\'s TLS listeners cannot load, so a realm branch being built ' +
+      'without a named algorithm used the classical default instead.',
     spec: 'none: a log line; the build goes on' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',

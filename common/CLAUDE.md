@@ -8493,6 +8493,20 @@ already presenting. SLH-DSA-256f (49856 bytes) is past the limit as either
 key. ML-DSA-87 is not. A realm branch is not that chain and is not refused
 for size.
 
+**No branch, and not the Root, may hold a composite ML-DSA key** (2026-11-12;
+`listenerChainOptions()`). OpenSSL — node's, grpc-js's — cannot read one, and
+`tls.createSecureContext()` throws `03000072 decode error` for a chain
+holding a composite-keyed CA. The Root and the process branch are on the main
+port's and LDAPS's chain (`STS-PKI-0272`), and a realm's INTERMEDIATE is on
+its SPIFFE gRPC listeners' (the server SVID), its Remote PEP listeners' and
+its custom listeners' (`STS-PKI-0274`) — the Intermediate alone is enough to
+break the load, so no choice of Issuing CA key could save a composite realm
+branch. A caller naming one is refused before anything is made; the
+`pki.keyAlgorithm` setting naming one makes the build classical and says so
+(`STS-PKI-0273`, `STS-PKI-0275`), so a deployment that stored it still starts.
+A branch already stored composite is left as it is. A composite LEAF key is
+not this rule's business: nothing here loads one into OpenSSL.
+
 ### 3w, CONTINUED: SIGNER GROUPS, COLLAPSED BY ALGORITHM (2026-09-26, #68 phase 2a)
 
 `keys.signerModel = hybrid-groups` gives a realm a second family of signing
