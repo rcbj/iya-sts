@@ -499,7 +499,9 @@ async function throughTheSwitcher(driver, path) {
     await driver.get(root("/admin?realm=default"));
     await waitForDrawn(driver, "the console's front page");
   }
-  const leaving = await driver.findElement(By.css(".shell"));
+  // MARKED AND PRESSED IN ONE SCRIPT, and waited for by the mark (see
+  // PRESS_MARK below): no element handle is held across the switch.
+  const token = pressToken();
   const switched = await driver.executeScript(`
     const f = document.querySelector('form.realmpick');
     if (!f) { return 'no switcher on ' + location.href; }
@@ -508,28 +510,41 @@ async function throughTheSwitcher(driver, path) {
     if (pick.value !== arguments[0]) {
       return 'the switcher does not offer ' + arguments[0];
     }
+    const frame = document.querySelector('.shell');
+    if (!frame) { return 'no console frame on ' + location.href; }
+    frame[arguments[3]] = arguments[2];
     f.querySelector('input[name=to]').value = arguments[1];
     f.querySelector('button').click();
     return '';
-  `, REALM, path);
+  `, REALM, path, token, PRESS_MARK);
   assert.strictEqual(switched, "", "switching to " + REALM + ": " + switched);
-  await replaced(driver, leaving, "the switch to " + REALM);
-  await waitForDrawn(driver, path);
+  await afterThePress(driver, token, "the switch to " + REALM, false);
   log.debug("Leaving throughTheSwitcher().");
 }
 
-// THE ELEMENT'S PAGE HAS BEEN REPLACED: a navigation, or the console drawing
-// in place (#446), which replaces everything inside <body>. Not
-// `until.stalenessOf()`: a probe that lands while Chrome tears a document
-// down answers "Node with given id does not belong to the document", which
-// means the same thing here.
-// HOW LONG A PRESSED FORM'S PAGE HAS TO BE REPLACED (2026-10-26). It was
-// fifteen seconds, the tightest bound in this file and shorter than the
-// twenty waitForDrawn() then gives the drawing. On 2026-10-26, in memory
-// mode with four conformance lanes beside it, form 22 ("A condition, added
-// once") was not replaced within the fifteen. Nothing on either side says
-// why: a successful edit writes no line in the service log.
-const REPLACED_MS = 45000;
+// HOW LONG A PRESSED FORM HAS TO BE ANSWERED (2026-10-26). It was fifteen
+// seconds, the tightest bound in this file and shorter than the twenty
+// waitForDrawn() then gives the drawing. On 2026-10-26, in memory mode with
+// four conformance lanes beside it, form 22 ("A condition, added once") was
+// not answered within the fifteen, and at 45 it went on failing there.
+//
+// **WHAT THAT FAILURE IS, FOUND 2026-11-13, AND IT IS NOT THIS FILE.** The
+// first form a console tab POSTs makes it fetch `GET /admin-api/openapi.json`
+// (`requestSchema()` in `admin-ui/web_runtime.ts`, to shape the body), and
+// that document is 6.5 MB. Recorded with the body's own completion (the
+// `bodyMs` FETCH_RECORDER keeps): its headers arrive, 200, in well under a
+// second, and its BODY NEVER FINISHES — 45 s later the console is still in
+// `res.json()`, never asks for the second document, never sends the edit,
+// and the page sits as it was while the announcement poll beside it answers
+// every five seconds. Five runs in 124 of this job, five to ten at a time;
+// none in 70 with `STS_HTTP_HTTP2=false` under the same load. It is
+// the browser's HTTP/2 connection to the main port (#407, on since
+// 2026-10-19, a week before the first of these) delivering a large answer,
+// and a person pressing the same button would see the same nothing — so
+// this job fails on it rather than waiting it out. The wait is a bound on
+// how long that defect may take to show, not a guess at how slow the
+// service is; a press here is answered in about a second.
+const PRESSED_MS = 45000;
 
 // What the browser showed when a pressed form's page was never replaced, so
 // the next such failure says whether the request went out. Read only once
@@ -580,6 +595,9 @@ async function pageEvidence(driver) {
           return { method: one.method, url: one.url,
                    startedMsAgo: Math.round(now - one.at),
                    ms: one.ms, status: one.status,
+                   bodyMs: one.bodyMs === undefined ? null : one.bodyMs,
+                   bytes: one.bytes || 0,
+                   bodyError: one.bodyError || '',
                    error: one.error || '' };
         })
       };
@@ -619,6 +637,13 @@ async function pageEvidence(driver) {
 // nothing the page sees but who answers `fetch`, which still answers the
 // same promise. Best-effort: a browser that refuses the command leaves
 // pageEvidence() with the Resource Timing list alone, as before.
+//
+// **AND WHEN EACH BODY HAD ARRIVED (2026-11-13).** `fetch` resolves on the
+// HEADERS, so `ms` and `status` said every request of a stuck press had been
+// answered — including the one whose body never came, which is the defect
+// PRESSED_MS describes. A clone of each response is read to its end and the
+// time recorded as `bodyMs` (null while it is still arriving); reading the
+// clone does not consume the page's own copy.
 const FETCH_RECORDER = `
   (function () {
     if (typeof window.fetch !== 'function' || window.__stsFetches) {
@@ -641,6 +666,17 @@ const FETCH_RECORDER = `
       return real.apply(this, arguments).then(function (res) {
         one.ms = Math.round(performance.now() - one.at);
         one.status = res.status;
+        one.bodyMs = null;
+        try {
+          res.clone().arrayBuffer().then(function (body) {
+            one.bodyMs = Math.round(performance.now() - one.at);
+            one.bytes = body.byteLength;
+          }, function (e) {
+            one.bodyError = String((e && e.message) || e).slice(0, 200);
+          });
+        } catch (e) {
+          one.bodyError = 'not cloned: ' + String((e && e.message) || e);
+        }
         return res;
       }, function (e) {
         one.ms = Math.round(performance.now() - one.at);
@@ -664,30 +700,6 @@ async function recordFetches(driver) {
              "Timing alone.");
   }
   log.debug("Leaving recordFetches().");
-}
-
-async function replaced(driver, element, what) {
-  log.debug("Entering replaced().");
-  await driver.wait(async function () {
-    try {
-      await element.isEnabled();
-      return false;
-    } catch (e) {
-      log.debug("Caught in replaced(): " + ((e && e.message) || e));
-      if ((e && e.name === "StaleElementReferenceError") ||
-          /does not belong to the document|No node with given id/
-            .test(String(e && e.message))) {
-        return true;
-      }
-      throw e;
-    }
-  }, REPLACED_MS, what + " never replaced the page it was pressed on")
-    .catch(async function (e) {
-      log.debug("Caught in replaced(): " + ((e && e.message) || e));
-      throw new Error(((e && e.message) || e) + ". The page: " +
-                      await pageEvidence(driver));
-    });
-  log.debug("Leaving replaced().");
 }
 
 // Everything this file asserts about a drawn page, taken in ONE script so that
@@ -835,81 +847,191 @@ function chooserOf(page) {
   })[0] || null;
 }
 
-// Fill named fields in one form and press its submit button. Everything goes
-// through the browser: `sendKeys` on a text field, a click on an `<option>`,
-// a click on the button.
-async function submitForm(driver, index, values) {
-  log.debug("Entering submitForm(). index=" + index);
-  const forms = await driver.findElements(By.css("form"));
-  assert.ok(forms[index], "there is no form " + index + " on " +
-            (await driver.getCurrentUrl()));
-  const form = forms[index];
-  const wanted = values || {};
-  for (const name of Object.keys(wanted)) {
-    const fields = await form.findElements(By.css("[name='" + name + "']"));
-    assert.ok(fields.length,
-      "form " + index + " has no control named " + name);
-    const field = fields[0];
-    const tag = await field.getTagName();
-    if (tag === "select") {
-      const option = await field.findElements(
-        By.css("option[value='" + wanted[name] + "']"));
-      assert.ok(option.length,
-        "the " + name + " menu on form " + index + " does not offer " +
-        wanted[name] + ", which is what this file is asserting it should. It " +
-        "offers " + JSON.stringify(await Promise.all(
-          (await field.findElements(By.css("option"))).map(function (o) {
-            return o.getAttribute("value");
-          }))));
-      await option[0].click();
-    } else {
-      await field.clear();
-      await field.sendKeys(String(wanted[name]));
-    }
+// ---------------------------------------------------------------------------
+// PRESSING A FORM, AND KNOWING THE ANSWER HAS BEEN DRAWN (2026-11-13).
+//
+// **NO ELEMENT HANDLE SURVIVES A PRESS, AND NOTHING WAITS FOR ONE TO GO
+// STALE.** Until this date a press was `findElements()` for the form, a
+// `sendKeys()` or an `<option>` click per field and a click on the button —
+// each a WebDriver round trip holding a handle into the page — and the page
+// was taken to have been answered when that button's handle went stale. That
+// had already failed three ways (2026-09-21, 2026-09-23, 2026-10-26): read
+// before the browser began, a probe landing mid-teardown answering "Node with
+// given id does not belong to the document", and a wait that could not say
+// what it was waiting for. A handle is a question about the DOM; what this
+// file needs to know is a fact about the CONSOLE — that it has drawn the
+// answer to the press.
+//
+// So a press is now ONE script: find the form by its index, check it is the
+// form the survey chose (its hidden `path`), set the fields, put a mark on the
+// console's frame (`.shell`) and click the button. The browser still builds
+// what is sent — the click is a real click on the real button, the form's
+// own controls are what FormData reads, and a field is set by assigning its
+// value and firing the `input` and `change` a person's typing fires — so the
+// argument of WHY A BROWSER above still holds. The mark is an expando
+// property, not an attribute, so nothing the page draws or sends can carry it.
+//
+// THE ANSWER IS DRAWN when the frame no longer carries the mark and the page
+// is a drawn console page. Every way the console answers a form replaces the
+// frame: `draw()` replaces everything inside <body> (`WebSafeDom.render`), a
+// GET form is `go()` and a draw, and a real navigation is a new document —
+// and none of them can carry an expando across. The probe that sees it reads
+// the page in the SAME script (SURVEY), so nothing asserted afterwards can be
+// read from a page that moved between the wait and the read. A probe that
+// lands while a document is being replaced is asked again; with no handles
+// there is nothing for it to have gone stale.
+//
+// A wait that runs out reports the last state it saw — the URL, whether the
+// frame was still the marked one, the ready state — beside pageEvidence().
+// ---------------------------------------------------------------------------
+const PRESS_MARK = "__stsXacmlEditorPress";
+
+function pressToken() {
+  log.debug("Entering pressToken().");
+  log.debug("Leaving pressToken().");
+  return Date.now().toString(36) + "-" +
+         Math.random().toString(36).slice(2);
+}
+
+// The press. Returns `{ error }` — empty when the button was clicked — and
+// what a select it was asked to set did not offer, so that assertion keeps
+// the words it had. Runs in the browser, so it carries no log lines.
+const PRESS = `
+  const index = arguments[0];
+  const values = arguments[1] || {};
+  const expectPath = arguments[2];
+  const token = arguments[3];
+  const mark = arguments[4];
+  const form = document.forms[index];
+  if (!form) {
+    return { error: 'there is no form ' + index + ' on ' + location.href };
   }
-  const buttons = await form.findElements(By.css(
-      "button, input[type='submit']"));
-  assert.ok(buttons.length, "form " + index + " has no submit button");
-  await buttons[0].click();
-  // THE OLD PAGE GONE FIRST (2026-09-21). Straight after the click the page
-  // that holds the button is still the document, and its readyState is
-  // already "complete" — so the wait below could pass before the browser had
-  // even begun the navigation, and the survey read the OLD page's URL, with
-  // neither `error=` nor `notice=` on it. That is the "came back with no
-  // outcome at all" this file failed with twice on 2026-09-21, in memory and
-  // single-node, for a refusal the service had made correctly. The pressed
-  // button going stale is the old document being replaced.
-  //
-  // NOT `until.stalenessOf()` (2026-09-23): it counts only a
-  // StaleElementReferenceError as stale, and a probe that lands while Chrome
-  // is tearing the old document down answers "Node with given id does not
-  // belong to the document" instead — which escaped the wait and failed this
-  // job twice in single-node and cluster mode, on a page that had in fact been
-  // replaced. Both errors mean the same thing here.
-  await driver.wait(async function () {
-    try {
-      await buttons[0].isEnabled();
-      return false;
-    } catch (e) {
-      log.debug("Caught in submitForm(): " + ((e && e.message) || e));
-      if ((e && e.name === "StaleElementReferenceError") ||
-          /does not belong to the document|No node with given id/
-            .test(String(e && e.message))) {
-        return true;
-      }
-      throw e;
+  const pathField = form.querySelector('[name="path"]');
+  if (expectPath !== null && (!pathField || pathField.value !== expectPath)) {
+    return { error: 'form ' + index + ' is no longer the one surveyed: it ' +
+      'carries path=' + JSON.stringify(pathField ? pathField.value : null) +
+      ' where ' + JSON.stringify(expectPath) + ' was chosen, on ' +
+      location.href };
+  }
+  const names = Object.keys(values);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    const wanted = String(values[name]);
+    const field = Array.from(form.querySelectorAll('[name]'))
+      .filter(function (e) { return e.name === name; })[0];
+    if (!field) {
+      return { error: 'form ' + index + ' has no control named ' + name };
     }
-  }, REPLACED_MS, "form " + index + " was submitted and the page it was on " +
-                 "was never replaced").catch(async function (e) {
-    log.debug("Caught in submitForm(): " + ((e && e.message) || e));
-    throw new Error(((e && e.message) || e) + ". The page: " +
-                    await pageEvidence(driver));
-  });
-  // AND DRAWN AGAIN (#446): the console sends the form to its /admin-api
-  // operation and draws the page it came from in place, with the answer's
-  // `?notice=` or `?error=` on its URL.
-  await waitForDrawn(driver, "the page after form " + index);
+    if (field.tagName.toLowerCase() === 'select') {
+      const offered = Array.from(field.options).map(function (o) {
+        return o.value;
+      });
+      if (offered.indexOf(wanted) < 0) {
+        return { error: 'not offered', name: name, wanted: wanted,
+                 offered: offered };
+      }
+    }
+    field.value = wanted;
+    if (field.value !== wanted) {
+      return { error: 'the ' + name + ' control on form ' + index +
+               ' would not take ' + JSON.stringify(wanted) };
+    }
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const button = form.querySelector('button, input[type="submit"]');
+  if (!button) {
+    return { error: 'form ' + index + ' has no submit button' };
+  }
+  const frame = document.querySelector('.shell');
+  if (!frame) {
+    return { error: 'there is no console frame (.shell) on ' + location.href };
+  }
+  frame[mark] = token;
+  button.click();
+  return { error: '' };
+`;
+
+// The wait's one probe: has the marked frame been replaced by a drawn page,
+// and if so, that page, surveyed in the same script. Runs in the browser.
+const AFTER_PRESS = `
+  const token = arguments[0];
+  const mark = arguments[1];
+  const wantSurvey = arguments[2];
+  const frame = document.querySelector('.shell');
+  const lede = document.querySelector('p.lede');
+  const state = {
+    url: location.href,
+    readyState: document.readyState,
+    frame: !!frame,
+    stillTheMarkedFrame: !!frame && frame[mark] === token,
+    pagehead: !!document.querySelector('.pagehead'),
+    signingIn: !!lede && /^Signing in/.test(lede.textContent),
+    reauth: !!document.getElementById('reauth-bar')
+  };
+  const drawn = document.readyState === 'complete' && !!frame &&
+    /\\/admin(\\/|$)/.test(location.pathname) &&
+    !/\\/admin\\/callback$/.test(location.pathname) &&
+    !state.signingIn && state.pagehead;
+  if (state.stillTheMarkedFrame || !drawn) {
+    return { done: false, state: state };
+  }
+  return { done: true, state: state,
+           page: wantSurvey ? (function () { ${SURVEY} })() : null };
+`;
+
+// Waits for the answer to the press marked `token` to be drawn, and returns
+// the page it drew (surveyed when `wantSurvey`).
+async function afterThePress(driver, token, what, wantSurvey) {
+  log.debug("Entering afterThePress().");
+  let last = null;
+  let probeError = "";
+  const answered = await driver.wait(async function () {
+    const now = await driver.executeScript(AFTER_PRESS, token, PRESS_MARK,
+                                           !!wantSurvey)
+      .catch(function (e) {
+        // A document being replaced under the probe, or a navigation in
+        // progress: asked again, and remembered for the report.
+        log.debug("Caught in afterThePress(): " + ((e && e.message) || e));
+        probeError = String((e && e.message) || e).slice(0, 200);
+        return null;
+      });
+    if (now) {
+      last = now.state;
+    }
+    return now && now.done ? now : false;
+  }, PRESSED_MS, what + " was pressed and its answer was never drawn")
+    .catch(async function (e) {
+      log.debug("Caught in afterThePress(): " + ((e && e.message) || e));
+      throw new Error(((e && e.message) || e) + ". The last state seen: " +
+                      JSON.stringify(last) +
+                      (probeError ? "; the last probe error: " + probeError
+                                  : "") +
+                      ". The page: " + await pageEvidence(driver));
+    });
+  log.debug("Leaving afterThePress(). At " + answered.state.url);
+  return answered.page;
+}
+
+// Fill named fields in one form and press its submit button, in one script
+// (PRESS), then wait for the console to draw the answer and return that page.
+// `expectPath` is the hidden `path` the form must carry — null for a form
+// with none, the policy chooser.
+async function submitForm(driver, index, values, expectPath) {
+  log.debug("Entering submitForm(). index=" + index);
+  const token = pressToken();
+  const pressed = await driver.executeScript(PRESS, index, values || {},
+      expectPath === undefined ? null : expectPath, token, PRESS_MARK);
+  if (pressed && pressed.error === "not offered") {
+    assert.fail("the " + pressed.name + " menu on form " + index + " does " +
+      "not offer " + pressed.wanted + ", which is what this file is " +
+      "asserting it should. It offers " + JSON.stringify(pressed.offered));
+  }
+  assert.ok(pressed && pressed.error === "",
+    "pressing form " + index + ": " + JSON.stringify(pressed));
+  const page = await afterThePress(driver, token, "form " + index, true);
   log.debug("Leaving submitForm().");
+  return page;
 }
 
 // One edit: survey, find the form, press it, survey again. Returns the page as
@@ -946,8 +1068,7 @@ async function pressOn(driver, path, action, values, carrying) {
       })) {
     wanted.action = action;
   }
-  await submitForm(driver, index, wanted);
-  const after = await survey(driver);
+  const after = await submitForm(driver, index, wanted, path);
   log.debug("Leaving pressOn().");
   return after;
 }
@@ -1861,8 +1982,8 @@ async function theChooserOpensAnotherPolicy(driver) {
   const page = await survey(driver);
   const chooser = chooserOf(page);
   assert.ok(chooser, "the editor should draw a policy chooser");
-  await submitForm(driver, chooser.index, { policy: SECOND_POLICY });
-  const opened = await survey(driver);
+  const opened = await submitForm(driver, chooser.index,
+                                  { policy: SECOND_POLICY }, null);
 
   check("the chooser opens the policy it was pointed at", function () {
     assert.ok(opened.url.indexOf(encodeURIComponent(SECOND_POLICY)) > 0 ||
