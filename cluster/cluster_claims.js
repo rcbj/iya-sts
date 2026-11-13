@@ -319,6 +319,9 @@ function claim(opts) {
     }).then(function () {
       won.fenced = true;
       won.lockName = lockName;
+      // On the handle too, so releaseMany() knows this claim has a lock to
+      // delete. A claim with no fence costs its release no lock statement.
+      handle.fenced = true;
       return won;
     }, function (e) {
       const giveBack = typeof theStore.releaseClaimFences === 'function'
@@ -576,14 +579,27 @@ function claimRowByRow(theStore, handles, ttlMs) {
 
 // Gives several claims back: ONE statement on a store that has
 // `releaseClaims()`, each in turn otherwise. Never rejects.
+//
+// ONLY A FENCED CLAIM'S LOCK IS DELETED FIRST (2026-11-12). #884 deleted
+// the fence locks of every handle before its claims, in a synchronous
+// transaction of its own, so every directory create a door refused paid a
+// BEGIN, a DELETE and a COMMIT that #628 had taken away
+// (`tests/directory_create_cluster_claims.js` B3). A fence is installed
+// only by claim() with `fence`, which marks the handle. A handle read back
+// from the claims table cannot say whether its claim was fenced, so a
+// caller releasing those passes `{ fences: true }` — releaseAbandoned()
+// does.
 /**
  * Gives several claims back, in one statement where the store can. A failure
- * leaves them held until they expire.
+ * leaves them held until they expire. The fence lock of a handle claim()
+ * fenced is deleted first; with `opts.fences`, every handle's is.
  *
  * @param handles - handles claim() or claimMany() returned
+ * @param [opts] - `{ fences }`: delete every handle's fence lock first,
+ *   for handles read from the claims table
  * @returns a promise of how many were released; it never rejects
  */
-function releaseMany(handles) {
+function releaseMany(handles, opts) {
   log.debug("Entering releaseMany().");
   const list = (handles || []).filter(function (handle) {
     return handle && handle.key;
@@ -605,11 +621,15 @@ function releaseMany(handles) {
   // then is the claim itself deleted. A crash between the two leaves the
   // claim, which wastes the block and does not reuse it. A store with no
   // fence door releases the claims as it always did.
+  const allFences = !!(opts && opts.fences);
+  const fenced = list.filter(function (handle) {
+    return allFences || handle.fenced === true;
+  });
   return Promise.resolve().then(function () {
-    if (typeof theStore.releaseClaimFences !== 'function') {
+    if (!fenced.length || typeof theStore.releaseClaimFences !== 'function') {
       return 0;
     }
-    return theStore.releaseClaimFences(list);
+    return theStore.releaseClaimFences(fenced);
   }).then(function () {
     return theStore.releaseClaims(list);
   }).then(function (count) {
@@ -880,7 +900,8 @@ function releaseAbandoned(scope, opts) {
     if (!selected.length) {
       return 0;
     }
-    return releaseMany(selected);
+    // Rows from the table do not say whether their claim was fenced.
+    return releaseMany(selected, { fences: true });
   });
 }
 

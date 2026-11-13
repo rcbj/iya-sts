@@ -515,7 +515,13 @@ stay until they expire (`STS-CLUSTER-0164`). `claimMany()` and a `releaseMany()`
 with `synchronous_commit` off (the driver's `NO_FLUSH_WAIT`, argued there).
 `claim({ noFlushWait: true })` commits that one postgres statement without
 waiting for the WAL flush. The refresh spend is the caller
-(`oauth-oidc/CLAUDE.md`, #886). `release()` is unchanged. A store without
+(`oauth-oidc/CLAUDE.md`, #886). `release()` is unchanged. **A
+`releaseMany()` deletes a fence lock (#884) only for a handle
+`claim({ fence: true })` fenced**, or for every handle when
+the caller passes `{ fences: true }` because its handles were read back from
+the table (`releaseAbandoned()`); #884 first deleted them for every handle,
+in a synchronous transaction of its own, and every refused directory create
+paid a BEGIN and a COMMIT again (2026-11-12). A store without
 `claimMany` /
 `releaseClaims` (a test's double) is asked row by row. The caller is a
 directory create (`ldap/CLAUDE.md`, *SEVERAL NODES: A CREATE CLAIMS ITS
