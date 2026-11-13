@@ -11686,6 +11686,11 @@ class AdminApi {
         // falls through to the same checks. No Entering/Leaving pair on
         // this continuation: it is this middleware's own remainder, and a
         // Leaving line before each of its returns would be the change.
+        // It does not call `next()` itself: it marks `admitted`, and
+        // `runAdmit()` calls `next()` once the checks are over, OUTSIDE the
+        // window in which a remembered username may be read (#880's
+        // review), because a handler it admits may create a person.
+        const admitted = { yes: false };
         const admit = function () {
         // A TOKEN THIS SERVICE HAS SINCE REVOKED OR DISOWNED, AND ONE MADE FOR
         // A PERSON WHOSE ACCOUNT IS DISABLED (2026-09-17, #36 follow-up). This
@@ -12213,15 +12218,27 @@ class AdminApi {
           res.locals.ownerProjection = owned.project;
         }
         res.locals.apiCaller.owner = !!owned;
-        return next();
+        admitted.yes = true;
+        return undefined;
         };
         // No Entering/Leaving pair: this only guards the continuation
         // above. The middleware has returned by the time it runs, so a
         // throw in the remainder is not Express's to catch. Hand it to
         // next, which is what a throw in the middleware used to become.
+        // The checks run inside `withRememberedUserNames()`, the one place
+        // the username answers `warmGateRows()` asked for are read, and
+        // `next()` runs after it.
         const runAdmit = function () {
           try {
-            admit();
+            const ldap = require('../ldap/ldap_server');
+            if (ldap && typeof ldap.withRememberedUserNames === 'function') {
+              ldap.withRememberedUserNames(admit);
+            } else {
+              admit();
+            }
+            if (admitted.yes) {
+              next();
+            }
           } catch (err) {
             log.debug("Caught in AdminApi.registerGate(): " +
                       ((err && err.message) || err));

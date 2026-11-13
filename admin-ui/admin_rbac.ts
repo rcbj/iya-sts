@@ -755,8 +755,23 @@ class AdminRbac {
       return out;
     }
     let flags = null;
+    // READ THROUGH THE GATE'S REMEMBERED USERNAMES WHERE THE DIRECTORY OFFERS
+    // THEM (#880's review). The roster and `GET /admin-api/me` read this on
+    // every console request, and the `/admin-api` gate warmed the bootstrap
+    // name off the event loop for exactly this read. It is safe to read a
+    // remembered "nobody" here, which no create is: this answers flags, and
+    // an absent entry means nothing to report and nothing written.
+    // `ensureBootstrap()`, which may CREATE the entry, reads the directory
+    // directly and never through this.
+    const view = directory;
+    const read = function () {
+      log.debug("Entering AdminRbac.bootstrapState()'s read().");
+      log.debug("Leaving AdminRbac.bootstrapState()'s read().");
+      return view.readPersonFlags(name);
+    };
     try {
-      flags = directory.readPersonFlags(name);
+      flags = typeof view.withRememberedUserNames === 'function'
+        ? view.withRememberedUserNames(read) : read();
     } catch (e) {
       log.debug("Caught in AdminRbac.bootstrapState(): " +
                 ((e && e.message) || e));

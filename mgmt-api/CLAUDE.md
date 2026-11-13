@@ -1490,7 +1490,21 @@ accounts (`serviceAccountNames()`). Those are warmed in the token's realm
 too: `warmUserNamesAsync()` puts the `uid=` key, absence included, and
 remembers the `byName` answer until a write under `ou=users`, and
 `serviceAccountNamesAsync()` fills the list the synchronous call keeps.
-An absence at `uid=<name>` is not treated as nobody. A warm that fails
+An absence at `uid=<name>` is not treated as nobody.
+
+**THE REMEMBERED ANSWER IS READ BY THE GATE'S CHECKS AND NOTHING ELSE
+(#880's review, 2026-11-13).** The first version wrote an answer down on
+every `existingUserEntry()` lookup in a windowed process, so every name
+presented at any sign-in, before authentication, became an entry of an
+unbounded Map, and a remembered "nobody" was trusted by the creates too
+(`ldap/CLAUDE.md`, *THE CONSOLE GATE'S REMEMBERED USERNAMES*). So the
+continuation `admit()` no longer calls `next()`: it marks `admitted`, and
+`runAdmit()` runs it inside `ldap.withRememberedUserNames()` and calls
+`next()` after that returns. A handler the gate admits, which may create a
+person, therefore never reads a remembered answer. The one read after
+`next()` that does is the bootstrap administrator's flags
+(`admin_rbac.ts`'s `bootstrapState()`, asked by `GET /admin-api/me` and the
+roster), which creates nothing. A warm that fails
 holds nothing and the same checks run; the decision is not cached, and a
 failed warm is not a refusal of its own. Applications stay resident, so
 `applications.load()` is not this cost. The group index's `classesUnder`
