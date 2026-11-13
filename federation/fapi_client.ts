@@ -17,13 +17,17 @@
 // `fedFapi` names the profile. Empty is today's relying party (#930).
 //
 //   * `1-advanced` — FAPI 1.0 Advanced. `code id_token`, PKCE S256, a PS256
-//     request object by value (RFC 9101), and `private_key_jwt`. No DPoP and
-//     no pushed authorization request: the representative certification
-//     variant is a plain hybrid response, and a DPoP proof sent to an
+//     request object by value (RFC 9101), and `private_key_jwt` — or, where
+//     `fedTokenAuth` says `tls_client_auth`, RFC 8705 section 2.1's mutual-TLS
+//     client authentication. Its access tokens are sender-constrained the
+//     way that profile requires, by mutual TLS (RFC 8705 section 3; rcbj's
+//     decision of 2026-11-13): the token request, the refresh and UserInfo
+//     present the relationship's TLS client certificate
+//     (`federation_client_certificate.ts`), and the partner binds the token
+//     to it (`cnf.x5t#S256`). Where the partner's discovery document names
+//     `mtls_endpoint_aliases` (section 5), those addresses are dialled. No
+//     DPoP and no pushed authorization request: a DPoP proof sent to an
 //     authorization server that does not advertise DPoP fails the plan.
-//     The normative sender constraint of that profile is mutual TLS
-//     (RFC 8705). This service does not authenticate to a partner with a
-//     client certificate, so that variant is not what `1-advanced` runs.
 //   * `2-security` — FAPI 2.0 Security Profile. Discovery is required.
 //     The authorization request is pushed (RFC 9126) to the
 //     `pushed_authorization_request_endpoint` the discovery document names,
@@ -44,7 +48,7 @@
 // one retry when the partner answers `use_dpop_nonce`. The key rides on the
 // flow context for the sign-in. When the relationship keeps the partner's
 // refresh token, the key is sealed with that token and opened again for the
-// refresh. There is no outbound mutual TLS.
+// refresh. Outbound mutual TLS is `1-advanced`'s alone (`usesMtls()`).
 //
 // WHAT THE ANSWER IS HELD TO, beside a plain relationship's checks (#931's
 // review). 1-advanced requires `s_hash` over the `state` on the front
@@ -126,6 +130,38 @@ class FapiClient {
     log.debug("Entering FapiClient.usesDpop().");
     log.debug("Leaving FapiClient.usesDpop().");
     return profile === '2-security' || profile === '2-message-signing';
+  }
+
+  /**
+   * Whether the profile sender-constrains the access token with mutual TLS
+   * (RFC 8705 section 3): FAPI 1.0 Advanced (#931, rcbj's decision of
+   * 2026-11-13). The token request, the refresh and UserInfo present the
+   * relationship's TLS client certificate.
+   *
+   * @param profile - `profileOf()`
+   * @returns whether it does
+   */
+  static usesMtls(profile: string): boolean {
+    log.debug("Entering FapiClient.usesMtls().");
+    log.debug("Leaving FapiClient.usesMtls().");
+    return profile === '1-advanced';
+  }
+
+  /**
+   * Whether the profile authenticates at the token endpoint with its TLS
+   * client certificate rather than `private_key_jwt`: `1-advanced` with
+   * `fedTokenAuth` `tls_client_auth` (RFC 8705 section 2.1). The 2.x
+   * profiles always use `private_key_jwt`.
+   *
+   * @param record - the relationship
+   * @returns whether it does
+   */
+  static usesTlsClientAuth(record: Json): boolean {
+    log.debug("Entering FapiClient.usesTlsClientAuth().");
+    const out = FapiClient.usesMtls(FapiClient.profileOf(record)) &&
+      String((record && record.fedTokenAuth) || '') === 'tls_client_auth';
+    log.debug("Leaving FapiClient.usesTlsClientAuth(). " + out);
+    return out;
   }
 
   /**

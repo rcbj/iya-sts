@@ -94,6 +94,7 @@
   "fedAuthorizeParams": 90,
   "fedAutocreateUsers": 91,
   "fedBinding": 92,
+  "fedClientCertificate": 750,
   "fedClientId": 93,
   "fedClientSecret": 94,
   "fedClientSigningKey": 95,

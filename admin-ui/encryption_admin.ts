@@ -496,6 +496,23 @@ const DATA_CLASSES = [
          'to seal. All three are named in `common/mode.js`’s `NOT_YET` ' +
          'rather than left to be discovered, because *not stored* and *not ' +
          'protected* read the same from outside and are not the same thing.'
+  },
+  // Last rather than beside `federation-encryption-key`, because a row's
+  // translations are keyed by its place in this list (#931).
+  {
+    label: 'federation-client-certificate',
+    what: 'A FAPI 1.0 Advanced federation relationship’s TLS client ' +
+          'certificate private key (#931) — what this service presents to ' +
+          'the partner’s token and UserInfo endpoints, in ' +
+          '`fedClientCertificate`',
+    where: 'the relationship’s own entry under `ou=federations`',
+    sealed: true,
+    why: 'Whoever holds it can authenticate to that partner as this ' +
+         'service (`tls_client_auth`) and present the access tokens the ' +
+         'partner bound to the certificate. Sealed at rest wherever keys ' +
+         'persist, and withheld — ciphertext included — from every LDAP ' +
+         'search, page and `/admin-api` reply, which carry the certificate ' +
+         'only.'
   }
 ];
 

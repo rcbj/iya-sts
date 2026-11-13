@@ -2157,28 +2157,35 @@ project), and this service serves the result:
   assertions from any identity provider, and on the console's origin a flaw in
   either would be a script able to drive the console.
 * **Its api as a child process** on a unix socket, forwarded at `/api` with the
-  prefix stripped, the browser's cookies and credentials removed, and its own
-  Express, dependencies and environment. Nothing of the debugger is loaded into
-  this process.
-* **Behind this service's own authorization server.** The debugger is an OpenID
-  Connect relying party like `/admin` and `/portal` — the seeded client
-  `sts-debugger-ui` — and its api is a resource server, `sts-debugger-api`, that
-  exposes one delegated permission, `urn:sts:debugger-api:debugger`, which the
-  UI's entry is granted ([Applications](applications.md#the-applications-that-are-this-service)).
+  prefix stripped, this service's cookies removed, and its own Express,
+  dependencies and environment. Nothing of the debugger is loaded into this
+  process.
+* **Behind this service's own authorization server.** The debugger and its api
+  are ONE OpenID Connect relying party, like `/admin` and `/portal` — the
+  seeded client `sts-debugger-ui`
+  ([Applications](applications.md#the-applications-that-are-this-service)). It
+  is a confidential client: the sign-in is the authorization code flow
+  redeemed by this service, the tokens stay here, and the browser holds only
+  the debugger's session cookie.
+* **The `Authorization` header is the debugger's, not the gate's.** The gate
+  reads the session cookie and nothing else, and passes `Authorization` and
+  `DPoP` through to the api untouched — the debugger sends them as the very
+  requests it is testing (a UserInfo call's Bearer token, introspection's Basic
+  client credentials, SCIM's and GNAP's own). It accepts no access token.
+  Until #1717 it did, and read those headers as its own credential.
 
-**Only console administrators get the permission.** The authorization server
-issues it to members of the Admin Read or Admin Write group of the default
-realm, and to nobody else: it is taken off the grant for any other person, for
-any application, and in any realm but the default one. The gate checks the
-token on every request, and checks that its subject is *still* an
-administrator.
+**Only console administrators get in.** The gate asks, on every request,
+whether the session's person is a member of the Admin Read or Admin Write group
+of the default realm — so a role revoked from somebody already signed in stops
+working at their next request. Anybody else who signs in is shown a page saying
+the debugger is for administrators, with a way to sign out.
 
 * **In development, a role held only because the console is open to everybody
   does not count** — the debugger stays shut until somebody really is in a role
   group. Grant somebody a role on `/admin/rbac` first.
 * **In product mode**, until the bootstrap administrator has claimed the
-  console with its password, it is refused the permission too
-  (`STS-DBG-0033`); sign in to `/admin` with the password first.
+  console with its password, it is refused too (`STS-DBG-0033`); sign in to
+  `/admin` with the password first.
 
 **There is no setting that opens it.** `debugger.enabled` decides whether it is
 served — `auto` is on in development mode and off in product mode. In product

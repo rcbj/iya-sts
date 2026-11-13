@@ -172,8 +172,14 @@ function run(t) {
   t.check(/unreleased someNewName took 3/.test(
     problemsOf(released, gap).join(';')),
   'a new name below the released numbers is refused');
+  // THE NEXT NUMBER IS THE REGISTER'S, not a constant: a branch that
+  // numbers a new attribute (#931 took 750) moves it.
   const next = copy();
-  next.attributes.someNewName = 750;
+  const highest = Math.max.apply(null, Object.keys(next.attributes)
+    .map(function (name) {
+      return Number(next.attributes[name]) || 0;
+    }));
+  next.attributes.someNewName = highest + 1;
   t.equal(problemsOf(released, next).join(';'), '',
           'a new name on the next number is accepted');
   const moved = copy();
