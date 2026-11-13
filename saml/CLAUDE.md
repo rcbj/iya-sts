@@ -1138,6 +1138,13 @@ or SAML 2.0 sub-sub-tab supplies that declared family explicitly, so a
 dual-protocol application consumes the matching descriptor. The shared ACS
 representation is what lets `saml11_sso.ts` infer Browser/POST versus
 Browser/Artifact from the registered `shire`, without a `profile` parameter.
+**Every door that writes a document onto an entry consumes it** — the
+create, the upload, and since run 22 (2026-11-13) `set` / `add` of
+`samlSpMetadata` and the field grid's save (`admin_actions.ts`'s
+`consumeWrittenMetadata()`, `STS-ADMIN-0935` when refused). A document stored
+without being consumed registers no endpoint, so a shire registered on
+artifact-01 was answered on Browser/POST; `tests/saml11_metadata_written.js`
+holds it.
 
 **It is a trust act because only an operator can cause it**: a refresh dials the
 URL an administrator put on the entry (never one from a request), when an

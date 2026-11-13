@@ -25572,6 +25572,12 @@ const CODES = [
       'inspect or import (#1713).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-ADMIN-0935',
+    summary: 'A service provider\'s metadata document written to an ' +
+      'existing application (set, add, or the field grid\'s save) was ' +
+      'refused when it was consumed; nothing on the entry changed.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
