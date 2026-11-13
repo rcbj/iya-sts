@@ -287,8 +287,9 @@ verifier's web site would:
   that point a development relationship at that dummy. The addresses use
   the companion's public URL; a service in another container dials the
   companion by that address, not localhost. The two generic profiles are
-  not served. [Social sign-in](federation-consumer-providers.md) is the
-  catalogue.
+  not served.
+  [The companion dummy of each provider](federation-consumer-providers.md#the-companion-dummy-of-each-provider)
+  lists the document each dummy follows.
 
 It calls `/admin-api` as an application of its own, `iya-sts-companion`,
 holding Admin Read and Admin Write. Give it either

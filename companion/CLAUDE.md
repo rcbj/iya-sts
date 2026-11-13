@@ -190,7 +190,10 @@ and none is kept. `social_idps.js` serves a dummy of each named one at
 `/social/{id}`: one fixed person, and the client authentication and PKCE
 that profile asks for. Steam's OpenID 2.0 check, DiscourseConnect and
 Bluesky's DPoP push are the three that are not a code grant. The two
-generic profiles are not served.
+generic profiles are not served. The document each dummy follows is
+`docs/federation-consumer-providers.md` (*The companion dummy of each
+provider*): the profile's recorded document, and the extra protocol
+page where that document is not the whole answer.
 
 Each page lists the relationship fields that point a development
 relationship at that dummy. The addresses are this companion's public URL.
