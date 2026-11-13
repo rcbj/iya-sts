@@ -72,6 +72,7 @@ const capabilities = require('./cluster_capabilities');
 // A LEAF: where a dispatched request's time goes (#820).
 const requestPhases = require('../common/request_phases');
 const workerThreads = require('worker_threads');
+const asyncHooks = require('async_hooks');
 
 const log = bunyan.createLogger({ name: 'sts-cluster-barrier' });
 config.registerLogger(log);
@@ -90,7 +91,8 @@ const SYNCED = Symbol('sts.clusterBarrier.synced');
 const stats = { requests: 0, caughtUp: 0, gaveUp: 0, heldForCommit: 0,
                 answeredUnheld: 0, commitFailures: 0, totalWaitMs: 0,
                 totalHoldMs: 0, refusedForCommit: 0, heldForBacklog: 0,
-                ldapHeldForCommit: 0, ldapRefusedForCommit: 0 };
+                ldapHeldForCommit: 0, ldapRefusedForCommit: 0,
+                checkRefusals: 0 };
 
 // ---------------------------------------------------------------------------
 // WHAT A REFUSED COMMIT IS ANSWERED WITH (#351).
@@ -129,6 +131,37 @@ const REFUSED_BODY = JSON.stringify({
 // the row the operator reads, because the row it recorded a moment earlier
 // carried the handler's status.
 const ON_REFUSED = Symbol('sts.clusterBarrier.onRefused');
+
+// ---------------------------------------------------------------------------
+// A CHECK THAT RIDES ON THE RESPONSE'S OWN COMMIT (#884's review,
+// 2026-11-13).
+//
+// A library that wrote a row whose fate only the commit can tell — an
+// access-token status index published under a block claim's fence lock,
+// which the flush drops when the lock is gone — had to wait for that
+// commit itself before it could hand its answer on, and that was a commit
+// of its own, before the response's: two synchronous commits for a
+// refresh, where #886 had made it one. `deferUntilCommitted(check)` hands
+// the check to the response this code is running for instead. The held
+// `end()` below waits for the response's commit as it always did, then
+// runs every check, and a check that answers a reason refuses the
+// response 503 exactly as a failed commit does (STS-CLUSTER-0166): the
+// handler's body, with the token in it, is discarded, so nothing the check
+// could not vouch for leaves.
+//
+// The response is found through an AsyncLocalStorage entered by the
+// middleware, because the caller is several modules below the handler and
+// a response object threaded down to it would change every signature on
+// the way. Where there is none — not a request, rule 2 not in force, a
+// response already ended — `deferUntilCommitted()` answers false and the
+// caller waits for its commit itself, as before. A check runs ONCE: the
+// held end runs it, or the response's `close` does when `end()` never ran,
+// so a hold the check releases is never left behind.
+// ---------------------------------------------------------------------------
+const heldResponse = new asyncHooks.AsyncLocalStorage();
+const CHECKS = Symbol('sts.clusterBarrier.checks');
+// Set once the held `end()` has taken the checks; a later one is refused.
+const CHECKS_TAKEN = Symbol('sts.clusterBarrier.checksTaken');
 
 // Methods that change something, by RFC 9110 section 9.2.1's definition of
 // safe. A request with one of them is held while a refused write is still
@@ -437,6 +470,92 @@ function reportPhases(res, handledAt) {
 }
 
 /**
+ * Hands a check to the response this code is running for, to be run after
+ * that response's commit and before it is sent. The check is called once,
+ * with `{ committed }` (false when the response's own commit failed or the
+ * response closed unsent), and answers a promise of '' or null to let the
+ * response go, or a reason to refuse it 503 (STS-CLUSTER-0166).
+ *
+ * @param {(state: { committed: boolean }) => Promise<string | null>} check
+ * @returns {boolean} true when a held response took it; false when the
+ *   caller must settle what it wrote itself
+ */
+function deferUntilCommitted(check) {
+  log.debug("Entering deferUntilCommitted().");
+  /** @type {any} */
+  const res = heldResponse.getStore();
+  if (!res || typeof check !== 'function' || res[CHECKS_TAKEN] ||
+      res.writableEnded || res.headersSent) {
+    log.debug("Leaving deferUntilCommitted(). No held response.");
+    return false;
+  }
+  /** @type {Promise<string> | null} */
+  let ran = null;
+  /** @param {{ committed: boolean }} state */
+  const once = function (state) {
+    log.debug("Entering once().");
+    if (!ran) {
+      ran = Promise.resolve().then(function () {
+        return check(state);
+      }).then(function (reason) {
+        return reason ? String(reason) : '';
+      }, function (e) {
+        log.debug("Caught in deferUntilCommitted(): " +
+                  ((e && e.message) || e));
+        // A check that throws vouches for nothing: refuse.
+        return String((e && e.message) || e || 'the check failed');
+      });
+    }
+    log.debug("Leaving once().");
+    return ran;
+  };
+  if (!res[CHECKS]) {
+    res[CHECKS] = [];
+    // A response that closes without its held end running (the client
+    // went away before the handler answered) still runs its checks, for
+    // what they release; there is nobody to refuse.
+    res.once('close', function () {
+      if (!res[CHECKS_TAKEN]) {
+        res[CHECKS_TAKEN] = true;
+        (res[CHECKS] || []).forEach(function (one) {
+          one({ committed: false });
+        });
+      }
+    });
+  }
+  res[CHECKS].push(once);
+  log.debug("Leaving deferUntilCommitted(). Held.");
+  return true;
+}
+
+/**
+ * The checks deferred onto a response, run once; their reasons, '' left
+ * out. Never rejects.
+ *
+ * @param {any} res - the response
+ * @param {boolean} committed - whether the response's own commit held
+ * @returns {Promise<string[]>} the refusals
+ */
+function runChecks(res, committed) {
+  log.debug("Entering runChecks().");
+  if (res[CHECKS_TAKEN] || !res[CHECKS] || !res[CHECKS].length) {
+    res[CHECKS_TAKEN] = true;
+    log.debug("Leaving runChecks(). None.");
+    return Promise.resolve([]);
+  }
+  res[CHECKS_TAKEN] = true;
+  const checks = res[CHECKS];
+  log.debug("Leaving runChecks(). " + checks.length + ".");
+  return Promise.all(checks.map(function (/** @type {any} */ one) {
+    return one({ committed: committed });
+  })).then(function (reasons) {
+    return reasons.filter(function (reason) {
+      return !!reason;
+    });
+  });
+}
+
+/**
  * Wraps `res.end()` so that a response whose request wrote anything is sent
  * only once those writes have committed; one that wrote nothing is sent at
  * once, and one whose commit FAILED is answered 503 instead (#351).
@@ -468,13 +587,16 @@ function holdUntilCommitted(res, arrival, req) {
     // held for it: see `persistence.commitBacklog()`.
     const backlog = positioned && UNSAFE_METHODS.indexOf(method) >= 0 &&
       typeof store.commitBacklog === 'function' && !!store.commitBacklog();
-    const wrote = positioned
+    // A check deferred onto this response is a write whose fate the commit
+    // decides, so it holds the response whatever the positions say.
+    const checked = !!(res[CHECKS] && res[CHECKS].length);
+    const wrote = checked || (positioned
       ? (handled.directory !== arrival.directory ||
          mintedWrites(handled) !== mintedWrites(arrival) ||
          (logged && logged.mustCommit) ||
          (typeof store.keysPending === 'function' && store.keysPending()) ||
          backlog)
-      : store.pendingWrites();
+      : store.pendingWrites());
     if (!wrote) {
       stats.answeredUnheld += 1;
       reportPhases(res, handledAt);
@@ -487,10 +609,27 @@ function holdUntilCommitted(res, arrival, req) {
       stats.heldForBacklog += 1;
     }
     commitFailures(store, now).then(function (failed) {
+      return runChecks(res, !failed.length).then(function (refusals) {
+        return { failed: failed, refusals: refusals };
+      });
+    }).then(function (outcome) {
+      const failed = outcome.failed;
       stats.totalHoldMs += Date.now() - began;
-      if (!failed.length) {
+      if (!failed.length && !outcome.refusals.length) {
         reportPhases(res, handledAt);
         end.apply(res, args);
+        return;
+      }
+      if (!failed.length) {
+        stats.checkRefusals += 1;
+        const what = res.req ? res.req.method + ' ' +
+          String(res.req.originalUrl || res.req.url || '').split('?')[0]
+          : '';
+        log.error(errorCodes.tag('STS-CLUSTER-0166') + 'persistence: ' +
+                  (what || 'a response') + ' committed, and a check it ' +
+                  'carried refused it (' + outcome.refusals.join('; ') +
+                  '); it is answered 503 instead of its success.');
+        refuseForCommit(res, end);
         return;
       }
       stats.commitFailures += 1;
@@ -735,10 +874,17 @@ function middleware() {
     // reported by the response's end below.
     stampPhases(req, res);
     holdUntilCommitted(res, arrival, req);
+    // The rest of the chain runs with this response findable, for a check
+    // deferred onto its commit (`deferUntilCommitted()`).
+    const held = function () {
+      log.debug("Entering held().");
+      heldResponse.run(res, next);
+      log.debug("Leaving held().");
+    };
     // RULE 1 IS STILL A CLUSTER RULE: one node has nobody to catch up with.
     if (!active()) {
       log.debug("Leaving clusterBarrier(). Rule 2 only.");
-      next();
+      held();
       return;
     }
     stats.requests += 1;
@@ -757,7 +903,7 @@ function middleware() {
                  'with the others (' + JSON.stringify(answer) + ').');
       }
       log.debug("Leaving clusterBarrier().");
-      next();
+      held();
     });
   };
 }
@@ -792,6 +938,8 @@ module.exports = {
   middleware: middleware,
   syncShared: syncShared,
   holdUntilCommitted: holdUntilCommitted,
+  deferUntilCommitted: deferUntilCommitted,
+  heldResponse: heldResponse,
   stampPhases: stampPhases,
   answerAfterCommit: answerAfterCommit,
   onCommitRefused: onCommitRefused,

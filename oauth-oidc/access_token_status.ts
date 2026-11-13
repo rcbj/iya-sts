@@ -218,6 +218,37 @@ const ALLOCATION_ATTEMPTS = 32;
 // holds it, and only then deletes the claim. A process with no shared
 // committing store still returns the index at once.
 //
+// ONE COMMIT PER RESPONSE, NOT ONE PER TOKEN (#884's review, 2026-11-13).
+// Waiting for that commit inside `allocate()` was a synchronous commit of
+// its own, ahead of the response's: a rotating refresh waited on two again
+// after #886 had made it one. So the wait is made where it is needed and
+// deferred everywhere else:
+//
+//   * THE FIRST INDEX OF A NEW LEASE WAITS, as before. It proves the lock
+//     is installed on the database that writes the row and the block is
+//     ours, before any token from it is signed; a lost fence there costs
+//     nothing but another block. Once per block, not per token.
+//   * EVERY LATER INDEX OF A PROVEN LEASE IS NOT WAITED FOR HERE, while
+//     this process's origin claim was confirmed within its lifetime
+//     (`persistence.originFresh()`). Its check is handed to the response
+//     being answered (`cluster_barrier.deferUntilCommitted()`), which waits
+//     for its own commit — the same flush, usually, so the status row and
+//     the refresh token commit together — and then asks whether this row
+//     was written under the lock. If it was not, the response is refused
+//     503 (STS-CLUSTER-0166, STS-OAUTH-1010) and the token in it never
+//     leaves; the lease is dead, and the next token takes another block.
+//   * Where there is no held response (a scheduler job, a dispatched
+//     operation, a test calling this directly) or the origin is not known
+//     to be live, the index waits here as it always did.
+//
+// What makes the deferral safe is that a block is released from under a
+// live holder only by the reap job, and only once the holder's origin
+// claim has been lapsed for `cluster_claims.ORIGIN_LAPSE_GRACE_MS` (90 s);
+// an index is deferred only while that claim is fresh, so its row is
+// share-locking the fence long before any such release. And if a process
+// stalls past even that, the check at the commit still catches the drop:
+// a token is never sent on an index whose row did not land.
+//
 // `allocateInProcess()`, a process with no shared claims table, is unchanged.
 // ---------------------------------------------------------------------------
 const BLOCK_SIZE = 1024;
@@ -241,6 +272,9 @@ interface StatusLease {
   // else out.
   lockName: string;
   dead: boolean;
+  // A row of this lease has committed under its lock (#884's review): the
+  // indexes after it need not wait for their own commit (see the header).
+  proven: boolean;
 }
 
 // idx -> { jti, kind, expiresAt (ms), allocatedAt (ms) }
@@ -505,6 +539,14 @@ interface AccessTokenStatusDeps {
   // `{ lost: true }` or a failure.
   settlePublished?: (row: { idx: number; lockName: string }) =>
     Promise<{ committed?: boolean; lost?: boolean; error?: string }>;
+  // Hands a check to the response being answered, run after its commit
+  // (#884's review); false where there is none, and the publish waits.
+  // `cluster_barrier.deferUntilCommitted()` in the service.
+  deferSettle?: (check: (state: { committed: boolean }) =>
+    Promise<string | null>) => boolean;
+  // Whether this process's origin claim was confirmed within its lifetime
+  // (`persistence.originFresh()`). Not fresh: every index waits.
+  originFresh?: () => boolean;
   entries: any;
   invalid?: any;
   now: () => number;
@@ -656,6 +698,40 @@ class AccessTokenStatus {
             return Number.isInteger(idx);
           });
         });
+      },
+      deferSettle: function deferSettle(check: (state: {
+        committed: boolean }) => Promise<string | null>): boolean {
+        helpers.log.debug("Entering deferSettle().");
+        let barrier: any = null;
+        try {
+          barrier = require('../cluster/cluster_barrier');
+        } catch (e) {
+          helpers.log.debug("Caught in deferSettle(): " +
+                            ((e && e.message) || e));
+          // No barrier in this process: the publish waits for itself.
+          barrier = null;
+        }
+        const held = !!barrier &&
+          typeof barrier.deferUntilCommitted === 'function' &&
+          barrier.deferUntilCommitted(check) === true;
+        helpers.log.debug("Leaving deferSettle(). " + held);
+        return held;
+      },
+      originFresh: function originFresh(): boolean {
+        helpers.log.debug("Entering originFresh().");
+        let fresh = false;
+        try {
+          const persistence = require('../persistence/persistence');
+          fresh = typeof persistence.originFresh === 'function' &&
+            persistence.originFresh() === true;
+        } catch (e) {
+          helpers.log.debug("Caught in originFresh(): " +
+                            ((e && e.message) || e));
+          // Not known: the publish waits, which is the safe answer.
+          fresh = false;
+        }
+        helpers.log.debug("Leaving originFresh(). " + fresh);
+        return fresh;
       },
       entries: entries,
       invalid: invalid,
@@ -863,8 +939,10 @@ class AccessTokenStatus {
     throw this.full();
   }
 
-  // Writes the entry and, when the block is fenced, waits until that row
-  // has committed under the lock. A lost lock or a store error undoes the
+  // Writes the entry and, when the block is fenced, settles it: waits until
+  // that row has committed under the lock, or — a proven lease, a fresh
+  // origin and a response to ride on — hands that wait to the response's
+  // own commit (see the header). A lost lock or a store error undoes the
   // local entry. The undo does not journal a delete: a delete flushed after
   // the next lessee had written the index would remove that token's row.
   private async publish(lease: StatusLease, idx: number,
@@ -874,7 +952,8 @@ class AccessTokenStatus {
     const { log } = this.deps;
     log.debug("Entering AccessTokenStatus.publish(). idx=" + idx);
     const lockName = lease.lockName || '';
-    if (lockName && typeof this.deps.settlePublished !== 'function') {
+    const standIn = typeof this.deps.settlePublished === 'function';
+    if (lockName && !standIn) {
       this.holdFence(lockName, realmId, idx);
     }
     const ref = this.take(idx, opts, expiresAt);
@@ -882,59 +961,159 @@ class AccessTokenStatus {
       log.debug("Leaving AccessTokenStatus.publish(). No shared store.");
       return { ok: true, lost: false, ref: ref };
     }
-    const settle = this.deps.settlePublished;
-    if (typeof settle === 'function') {
-      let answer: { committed?: boolean; lost?: boolean; error?: string }
-        | null = null;
-      try {
-        answer = await settle({ idx: idx, lockName: lockName });
-      } catch (e) {
-        log.debug("Caught in AccessTokenStatus.publish(): " +
-                  ((e && (e as Error).message) || e));
-        // The stand-in failed closed. The index is not returned.
-        answer = { error: (e && (e as Error).message) || String(e) };
-      }
-      if (answer && answer.committed && !answer.lost && !answer.error) {
-        log.debug("Leaving AccessTokenStatus.publish(). Committed.");
+    // The write position the row was journalled at: the commit that covers
+    // it is the one that decides whether it landed.
+    const target = standIn ? null : this.writePosition();
+    if (this.mayDefer(lease)) {
+      const self = this;
+      const deferSettle = this.deps.deferSettle as (check: (state: {
+        committed: boolean }) => Promise<string | null>) => boolean;
+      const deferred = deferSettle(
+        function settleAtCommit(state: { committed: boolean }):
+            Promise<string | null> {
+          log.debug("Entering settleAtCommit(). idx=" + idx);
+          return self.settle(idx, lockName, realmId, target,
+                             !!(state && state.committed))
+            .then(function (settled) {
+              if (settled.ok) {
+                log.debug("Leaving settleAtCommit(). Committed.");
+                return null;
+              }
+              self.retire(lease, realmId);
+              log.error(self.deps.errorCodes.tag('STS-OAUTH-1010') +
+                        'access_token_status: an index handed out without ' +
+                        'its own commit wait was ' +
+                        (settled.lost ? 'dropped, its block claim\'s ' +
+                         'fence gone,' : 'not written') + ' at the ' +
+                        'response\'s commit; the response carrying the ' +
+                        'token is refused and the block is given up.');
+              log.debug("Leaving settleAtCommit(). Refused.");
+              return settled.lost
+                ? 'the access-token status row was dropped: its block ' +
+                  'claim\'s fence was lost'
+                : 'the access-token status row was not written';
+            });
+        });
+      if (deferred === true) {
+        log.debug("Leaving AccessTokenStatus.publish(). Settled at the " +
+                  "response's commit.");
         return { ok: true, lost: false, ref: ref };
       }
+    }
+    const settled = await this.settle(idx, lockName, realmId, target, true);
+    if (settled.ok) {
+      lease.proven = true;
+      log.debug("Leaving AccessTokenStatus.publish(). Committed.");
+      return { ok: true, lost: false, ref: ref };
+    }
+    log.debug("Leaving AccessTokenStatus.publish(). " +
+              (settled.lost ? "Lost." : "Not committed."));
+    return { ok: false, lost: settled.lost, ref: null };
+  }
+
+  // Whether an index of this lease may leave without its own commit wait.
+  // Hot path (every access token): no Entering/Leaving pair.
+  private mayDefer(lease: StatusLease): boolean {
+    if (!lease.proven || lease.dead ||
+        typeof this.deps.deferSettle !== 'function') {
+      return false;
+    }
+    return typeof this.deps.originFresh === 'function' &&
+      this.deps.originFresh() === true;
+  }
+
+  // A lease whose row did not land hands nothing else out.
+  private retire(lease: StatusLease, realmId: string): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.retire().");
+    lease.dead = true;
+    if (this.leases.get(realmId) === lease) {
+      this.leases.delete(realmId);
+    }
+    log.debug("Leaving AccessTokenStatus.retire().");
+  }
+
+  // This process's write position, or null where there is no store.
+  private writePosition(): any {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.writePosition().");
+    const persistence = require('../persistence/persistence');
+    const position = typeof persistence.writeGeneration === 'function'
+      ? persistence.writeGeneration() : null;
+    log.debug("Leaving AccessTokenStatus.writePosition().");
+    return position;
+  }
+
+  // Waits until the published row has committed under its lock, and says
+  // whether it did. `committed` false is a response whose own commit failed
+  // or that closed unsent: nothing is waited for, and the row is undone.
+  // Never rejects.
+  private async settle(idx: number, lockName: string, realmId: string,
+                       target: any, committed: boolean):
+      Promise<{ ok: boolean; lost: boolean }> {
+    const { log } = this.deps;
+    log.debug("Entering AccessTokenStatus.settle(). idx=" + idx);
+    const settleStandIn = this.deps.settlePublished;
+    if (typeof settleStandIn === 'function') {
+      let answer: { committed?: boolean; lost?: boolean; error?: string }
+        | null = null;
+      if (committed) {
+        try {
+          answer = await settleStandIn({ idx: idx, lockName: lockName });
+        } catch (e) {
+          log.debug("Caught in AccessTokenStatus.settle(): " +
+                    ((e && (e as Error).message) || e));
+          // The stand-in failed closed. The index is not returned.
+          answer = { error: (e && (e as Error).message) || String(e) };
+        }
+      }
+      if (answer && answer.committed && !answer.lost && !answer.error) {
+        log.debug("Leaving AccessTokenStatus.settle(). Committed.");
+        return { ok: true, lost: false };
+      }
       this.undoEntry(realmId, idx);
-      const wasLost = !!(answer && answer.lost);
-      log.debug("Leaving AccessTokenStatus.publish(). " +
-                (wasLost ? "Lost." : "Not committed."));
-      return { ok: false, lost: wasLost, ref: null };
+      log.debug("Leaving AccessTokenStatus.settle(). Not committed.");
+      return { ok: false, lost: !!(answer && answer.lost) };
+    }
+    if (!committed) {
+      // The response that carried this index was not sent. The hold is
+      // dropped so a later flush does not wait on it.
+      this.endFence(lockName, realmId, idx);
+      this.undoEntry(realmId, idx);
+      log.debug("Leaving AccessTokenStatus.settle(). Not sent.");
+      return { ok: false, lost: false };
     }
     let answers: any[] = [];
     let dropped = false;
     try {
       const persistence = require('../persistence/persistence');
       answers = await persistence.commitThrough(
-        persistence.writeGeneration());
+        target || persistence.writeGeneration());
       dropped = typeof persistence.claimFenceDropped === 'function' &&
         !!persistence.claimFenceDropped('access_token_status.entries',
                                         realmId, String(idx));
       this.endFence(lockName, realmId, idx);
     } catch (e) {
-      log.debug("Caught in AccessTokenStatus.publish(): " +
+      log.debug("Caught in AccessTokenStatus.settle(): " +
                 ((e && (e as Error).message) || e));
       // The wait failed. The index is not returned, and the hold is
       // dropped so a later flush of some other row does not wait on it.
       this.endFence(lockName, realmId, idx);
       this.undoEntry(realmId, idx);
-      log.debug("Leaving AccessTokenStatus.publish(). The wait failed.");
-      return { ok: false, lost: false, ref: null };
+      log.debug("Leaving AccessTokenStatus.settle(). The wait failed.");
+      return { ok: false, lost: false };
     }
     const erred = (answers || []).some(function (one: any) {
       return one && one.error;
     });
     if (!dropped && !erred) {
-      log.debug("Leaving AccessTokenStatus.publish(). Committed.");
-      return { ok: true, lost: false, ref: ref };
+      log.debug("Leaving AccessTokenStatus.settle(). Committed.");
+      return { ok: true, lost: false };
     }
     this.undoEntry(realmId, idx);
-    log.debug("Leaving AccessTokenStatus.publish(). " +
+    log.debug("Leaving AccessTokenStatus.settle(). " +
               (dropped ? "Lost." : "The store failed."));
-    return { ok: false, lost: !!dropped, ref: null };
+    return { ok: false, lost: !!dropped };
   }
 
   // The in-memory hold the minted flush share-locks. Registered before the
@@ -1128,7 +1307,7 @@ class AccessTokenStatus {
       const lease: StatusLease = {
         block: block, untilMs: t + ttlMs, useUntilMs: t + BLOCK_USE_MS,
         cursor: stsCrypto.randomInt(0, BLOCK_SIZE), taken: new Set<number>(),
-        lockName: lockName, dead: false
+        lockName: lockName, dead: false, proven: false
       };
       if (lockName) {
         try {

@@ -5922,6 +5922,16 @@ of THIS directory needs:
   row has committed under that block claim's fence lock, and a new lessee
   skips an index whose row is already in the store. The header of
   `access_token_status.ts` argues it.
+* **One commit per response, not per token (#884's review, 2026-11-13).**
+  Only the first index of a new block waits for its own commit. A later
+  index of that proven block, while this process's origin claim is fresh,
+  hands its check to the response's commit
+  (`cluster_barrier.deferUntilCommitted()`), so a rotating refresh is one
+  synchronous commit again (#886); a row the flush dropped refuses that
+  response 503 (`STS-CLUSTER-0166`, `STS-OAUTH-1010`) and the next token
+  takes a fresh block. The reap job counts an origin claim lapsed for less
+  than `cluster_claims.ORIGIN_LAPSE_GRACE_MS` (90 s) as live, so a late
+  renewal no longer costs a live holder its block.
 * **The packed list is cached per realm, for this process (#885).** A
   publication reuses the compressed bytes until this process's invalid-bit
   generation for the realm moves, or the earliest INVALID bit's expiry has

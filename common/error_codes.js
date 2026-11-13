@@ -2263,6 +2263,14 @@ const CODES = [
       'waits behind it (#770). Logged once per wait; one that repeats for a ' +
       'node lifetime names a write that does not finish.',
     spec: '' },
+  { code: 'STS-CLUSTER-0166',
+    summary: 'A response\'s writes committed, and a check deferred onto ' +
+      'that commit refused it, so it was answered 503 with Retry-After ' +
+      'instead of its success (#884\'s review). The one check today is an ' +
+      'access-token status index published without its own commit wait, ' +
+      'whose row the flush dropped because the block claim\'s fence was ' +
+      'gone: the token in the discarded body is not delivered.',
+    spec: 'RFC 9110 section 15.6.4' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -11688,6 +11696,15 @@ const CODES = [
       'block claim\'s fence was lost before its status row committed ' +
       '(#884). The access token is not minted on that index.',
     spec: 'none (recorded only)' },
+  { code: 'STS-OAUTH-1010',
+    summary: 'An access-token status index handed out without waiting for ' +
+      'its own commit (#884\'s review: a block already proven durable, ' +
+      'this process\'s origin claim fresh) was found, at the response\'s ' +
+      'commit, not to have been written: its block claim\'s fence was ' +
+      'gone, or the write failed. The response carrying the token is ' +
+      'refused (STS-CLUSTER-0166), and the block is handed out from no ' +
+      'more.',
+    spec: 'none (recorded; the response is the 503 STS-CLUSTER-0166 names)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

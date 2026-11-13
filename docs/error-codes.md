@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5460** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5462** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -54,7 +54,7 @@ is an ordinary outcome.
 * [Service core (`STS-CORE`)](#sts-core) — 108
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 52
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 33
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 22
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 757
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 758
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
@@ -490,6 +490,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0163` | A spend against a shared budget could not be refunded: the store could not be asked (#432 phase 5). | — |
 | `STS-CLUSTER-0164` | The flush that was to give back a directory create's claims (its DN and username) failed, so they stay held until they expire (two minutes): the release is a statement of the transaction that writes the entry, or follows that flush on one node, and goes back with it (#628). A create of one of those names before then waits and is refused as in progress (STS-LDAP-0092). | — |
 | `STS-CLUSTER-0165` | Taking over a lease is waiting for writes the previous holder still has in flight under it: the ask is bounded by the heartbeat's own bound, rolls back when the bound runs out, and is made again on the next heartbeat, so this node's own renewal never waits behind it (#770). Logged once per wait; one that repeats for a node lifetime names a write that does not finish. | — |
+| `STS-CLUSTER-0166` | A response's writes committed, and a check deferred onto that commit refused it, so it was answered 503 with Retry-After instead of its success (#884's review). The one check today is an access-token status index published without its own commit wait, whose row the flush dropped because the block claim's fence was gone: the token in the discarded body is not delivered. | RFC 9110 section 15.6.4 |
 
 ## STS-CELL
 
@@ -2539,6 +2540,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1007` | A dynamic client registration, an RFC 7592 update or an OpenID Federation automatic registration carried a member of a JSON type models/oauth/oauth_members.tsp's RegistrationRequest does not allow (grant_types as a string, client_name as a number, an array holding a non-string) that no more specific refusal tested (rcbj on #1579). Until 2026-11-11 it was recorded under STS-OAUTH-1005 and accepted. | invalid_client_metadata (HTTP 400), RFC 7591 section 3.2.2 |
 | `STS-OAUTH-1008` | Releasing access-token status-list block leases held by a stopped process failed (#884). The leases stay until they expire, so a restarted process keeps wasting blocks until then. | none (recorded only) |
 | `STS-OAUTH-1009` | An access-token status index was not published because the block claim's fence was lost before its status row committed (#884). The access token is not minted on that index. | none (recorded only) |
+| `STS-OAUTH-1010` | An access-token status index handed out without waiting for its own commit (#884's review: a block already proven durable, this process's origin claim fresh) was found, at the response's commit, not to have been written: its block claim's fence was gone, or the write failed. The response carrying the token is refused (STS-CLUSTER-0166), and the block is handed out from no more. | none (recorded; the response is the 503 STS-CLUSTER-0166 names) |
 
 ## STS-SAML
 
