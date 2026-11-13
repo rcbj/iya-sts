@@ -921,6 +921,13 @@ const JOBS = [
   // enrolment in its realm.
   // `local: true`: this repository's own portal, sign-in screen and API.
   { file: 'sts_passkey_dual_lane.js', browser: false },
+  // MANY PEOPLE, ONE PASSKEY EACH, THROUGH THE MANAGEMENT API (#957).
+  // POST /admin-api/users/create, then begin-passkey-enrolment and
+  // finish-passkey-enrolment with a software authenticator. A throwaway
+  // realm: adminEnrolment must not come on in the default realm. Not lane
+  // `bulk` — that lane is the five-thousand-person timings, and this job
+  // does not share BULK_USERS. `local: true`: this repository's own API.
+  { file: 'sts_passkey_bulk_enrolment.js', browser: false },
   // A POST-QUANTUM PASSKEY REQUIRED (#718): the passkey policy's
   // postQuantumRequired set through `/admin-api`, then an ES256 key and an
   // ML-DSA-65 key (no lane on its row) each signing in, the save refused

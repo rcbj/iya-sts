@@ -251,8 +251,15 @@ function canonical(value: any): any {
   }
   if (value && typeof value === 'object') {
     const out: any = {};
+    // defineProperty, not `out[key] =`: an assignment of `__proto__` on
+    // a plain object sets its prototype and adds no member, so a detail
+    // carrying one hashed as if it did not. Every other key is defined
+    // exactly as the assignment did, so no other digest moves.
     Object.keys(value).sort().forEach(function (key: string) {
-      out[key] = canonical(value[key]);
+      Object.defineProperty(out, key, {
+        value: canonical(value[key]), enumerable: true,
+        writable: true, configurable: true
+      });
     });
     log.debug("Leaving canonical(). An object.");
     return out;
