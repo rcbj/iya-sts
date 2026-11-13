@@ -388,6 +388,17 @@ class WsTrustCapabilities {
       'targetNamespace="' + NS + '" elementFormDefault="qualified" ' +
       'version="1">' +
       '<xsd:element name="TokenCapabilities" type="iya:TokenCapabilities"/>' +
+      // The WSDL's pointer to this document (WsTrustMetadata.document()):
+      // a WSDL 1.1 extensibility element, declared here so a processor that
+      // loads this schema validates it rather than skipping it, and so the
+      // WSDL names no element no schema declares (tests/wstrust_metadata.js
+      // W). wsdl:required arrives through the attribute wildcard.
+      '<xsd:element name="TokenCapabilitiesReference"><xsd:complexType>' +
+      '<xsd:sequence>' + ext + '</xsd:sequence>' +
+      '<xsd:attribute name="location" type="xsd:anyURI" use="required"/>' +
+      '<xsd:attribute name="schemaLocation" type="xsd:anyURI"/>' +
+      '<xsd:attribute name="metadataExchange" type="xsd:anyURI"/>' +
+      anyAttr + '</xsd:complexType></xsd:element>' +
       '<xsd:complexType name="TokenCapabilities"><xsd:sequence>' +
       '<xsd:element name="InputTokens"><xsd:complexType><xsd:sequence>' +
       '<xsd:element name="InputToken" type="iya:InputToken" minOccurs="0" ' +

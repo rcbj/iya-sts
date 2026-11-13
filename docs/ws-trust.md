@@ -56,13 +56,23 @@ action this service writes on the answer:
 | Port type | Namespace | Operations | Issue answers |
 |---|---|---|---|
 | `TrustMay2004` | `http://schemas.xmlsoap.org/ws/2004/04/trust` | Issue, Renew, Validate (May 2004 has no Cancel, which is refused as `wst:InvalidRequest`) | one `RequestSecurityTokenResponse`, action `…/RSTR/Issue` |
-| `TrustFeb2005` | `http://schemas.xmlsoap.org/ws/2005/02/trust` | Issue, Renew, Validate, Cancel | a collection, action `…/RSTRC/IssueFinal` |
+| `TrustFeb2005` | `http://schemas.xmlsoap.org/ws/2005/02/trust` | Issue, Renew, Validate, Cancel | one `RequestSecurityTokenResponse`, action `…/RSTR/Issue` |
 | `Trust13` | `http://docs.oasis-open.org/ws-sx/ws-trust/200512` | Issue, Renew, Validate, Cancel | a collection, action `…/RSTRC/IssueFinal` |
 | `Trust14` | 1.3's namespace, with `ActAs` in `http://docs.oasis-open.org/ws-sx/ws-trust/200802` | Issue, Renew, Validate, Cancel | a collection, action `…/RSTRC/IssueFinal` |
 
-Renew, Validate and Cancel answer `…/RSTR/RenewFinal`, `…/RSTR/ValidateFinal`
-and `…/RSTR/CancelFinal` in the request's namespace. An input's action is
-`{namespace}/RST/{operation}`.
+In WS-Trust 1.3 and 1.4, Renew, Validate and Cancel answer
+`…/RSTR/RenewFinal`, `…/RSTR/ValidateFinal` and `…/RSTR/CancelFinal`. The two
+earlier versions, May 2004 and February 2005, answer with the operation's own
+action, `…/RSTR/Renew`, `…/RSTR/Validate` and `…/RSTR/Cancel`, as those
+specifications define them. Each answer is in the request's namespace. An
+input's action is `{namespace}/RST/{operation}`. Until November 2026, February
+2005 answered with 1.3's actions and an Issue collection; a client of that
+version now receives what its specification names.
+
+The WSDL is checked against the published schemas: WSDL 1.1, its SOAP 1.1 and
+1.2 bindings, WS-Policy, WS-SecurityPolicy 1.2 and each version's WS-Trust
+schema. Its policy assertions are in WS-SecurityPolicy 1.2's namespace,
+`http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702`.
 
 Each version has a SOAP 1.1 and a SOAP 1.2 binding and port, eight ports in
 all, and every one gives the RequestSecurityToken address as `{base}/sts`:

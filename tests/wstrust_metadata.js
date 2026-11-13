@@ -32,6 +32,17 @@
 //    SOAP version and either addressing namespace, the three sections, a
 //    Dialect narrowing, an unknown dialect answered empty, RelatesTo, and
 //    the two faults with their codes.
+// W. THE WHOLE CONTRACT, AGAINST THE PUBLISHED SCHEMAS (rcbj, 2026-11-13):
+//    what each spec says, written here rather than read from the model —
+//    the four versions as four port types whose messages are elements the
+//    version's own published XSD declares, the operations each defines, the
+//    actions each names, a SOAP 1.1 and a SOAP 1.2 binding each at /sts;
+//    every authentication type and every issued token type, as a set, in
+//    development and in product; and the whole document validated with
+//    xmllint against WSDL 1.1, its SOAP bindings, WS-Policy, WS-SecurityPolicy
+//    1.2 and the trust schemas (tests/xml-schemas), with every element it
+//    names declared by one of them, because a lax wildcard skips an element
+//    nothing declares (that is how sp: in 1.3's namespace passed).
 // F. ALWAYS FORMATTED (rcbj, 2026-11-13): the WSDL is one element a line,
 //    each two spaces deeper than its parent, and the text is the same
 //    document with the indentation taken out; so is the WSDL in WS-MEX.
@@ -165,6 +176,7 @@ function run(t) {
   capabilities(t);
   mex(t);
   formatted(t, dev);
+  wholeContract(t);
   t.check(contains(dev, '2004/04 has no Cancel') &&
           contains(dev, 'wst:' + WsModel.term('wst.fault', 'InvalidRequest')),
           '2004/04 Cancel is refused as InvalidRequest');
@@ -307,7 +319,7 @@ function versions(t, xml) {
   };
   const want = {
     TrustMay2004: { ns: ns('trust2004'), cancel: false, collection: false },
-    TrustFeb2005: { ns: ns('trust2005'), cancel: true, collection: true },
+    TrustFeb2005: { ns: ns('trust2005'), cancel: true, collection: false },
     Trust13: { ns: ns('trust13'), cancel: true, collection: true },
     Trust14: { ns: ns('trust13'), cancel: true, collection: true }
   };
@@ -354,9 +366,11 @@ function versions(t, xml) {
               'version', JSON.stringify(outMsg));
       t.equal(input.getAttributeNS(WSAM, 'Action'), v.ns + '/RST/' + opName,
               name + ' ' + opName + '\'s input action');
-      let term = opName.toLowerCase() + 'Final';
-      if (opName === 'Issue') {
-        term = v.collection ? 'issueFinal' : 'issue';
+      // The pre-OASIS versions name the operation; 1.3 and 1.4 the Final.
+      let term = v.collection ? opName.toLowerCase() + 'Final'
+                              : opName.toLowerCase();
+      if (opName === 'Issue' && v.collection) {
+        term = 'issueFinal';
       }
       t.equal(output.getAttributeNS(WSAM, 'Action'),
               WsModel.relative('wst.action', term, v.ns),
@@ -585,6 +599,384 @@ function answered(t) {
   t.check(body === want, 'send is the document for the request base',
           String(body).length + ' characters, want ' + String(want).length);
   log.debug("Leaving answered().");
+}
+
+// W. Where tests/tools/fetch-xml-schemas.sh put the published schemas: the
+// tests image has them at /opt/xml-schemas; a hand run names its own copy.
+const SCHEMA_DIR = process.env.STS_XML_SCHEMA_DIR || '/opt/xml-schemas';
+const SPEC = {
+  wsdl: 'http://schemas.xmlsoap.org/wsdl/',
+  soap: 'http://schemas.xmlsoap.org/wsdl/soap/',
+  soap12: 'http://schemas.xmlsoap.org/wsdl/soap12/',
+  wsp: 'http://schemas.xmlsoap.org/ws/2004/09/policy',
+  sp: 'http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702',
+  xsd: 'http://www.w3.org/2001/XMLSchema',
+  wsam: 'http://www.w3.org/2007/05/addressing/metadata',
+  http: 'http://schemas.xmlsoap.org/soap/http',
+  // Each version: its namespace, the published XSD its messages are
+  // declared in, the operations it defines (May 2004 has no Cancel), and
+  // the action of each answer as the version names it.
+  versions: [
+    { title: 'WS-Trust May 2004',
+      ns: 'http://schemas.xmlsoap.org/ws/2004/04/trust',
+      xsd: 'ws-trust-2004-04.xsd',
+      ops: ['Issue', 'Renew', 'Validate'],
+      answer: function (ns, op) { return ns + '/RSTR/' + op; },
+      answerElement: function () { return 'RequestSecurityTokenResponse'; } },
+    { title: 'WS-Trust February 2005',
+      ns: 'http://schemas.xmlsoap.org/ws/2005/02/trust',
+      xsd: 'ws-trust-2005-02.xsd',
+      ops: ['Issue', 'Renew', 'Validate', 'Cancel'],
+      answer: function (ns, op) { return ns + '/RSTR/' + op; },
+      answerElement: function () { return 'RequestSecurityTokenResponse'; } },
+    // 1.3 and 1.4 share the 200512 namespace for every element 1.3 defines;
+    // the Issue answer is the collection, with its own action (1.3 4.4).
+    { title: 'WS-Trust 1.3',
+      ns: 'http://docs.oasis-open.org/ws-sx/ws-trust/200512',
+      xsd: 'ws-trust-1.3-ns.xsd',
+      ops: ['Issue', 'Renew', 'Validate', 'Cancel'],
+      answer: function (ns, op) {
+        return op === 'Issue' ? ns + '/RSTRC/IssueFinal'
+                              : ns + '/RSTR/' + op + 'Final';
+      },
+      answerElement: function (op) {
+        return op === 'Issue' ? 'RequestSecurityTokenResponseCollection'
+                              : 'RequestSecurityTokenResponse';
+      } },
+    { title: 'WS-Trust 1.4',
+      ns: 'http://docs.oasis-open.org/ws-sx/ws-trust/200512',
+      xsd: 'ws-trust-1.3-ns.xsd',
+      ops: ['Issue', 'Renew', 'Validate', 'Cancel'],
+      answer: function (ns, op) {
+        return op === 'Issue' ? ns + '/RSTRC/IssueFinal'
+                              : ns + '/RSTR/' + op + 'Final';
+      },
+      answerElement: function (op) {
+        return op === 'Issue' ? 'RequestSecurityTokenResponseCollection'
+                              : 'RequestSecurityTokenResponse';
+      } }
+  ],
+  ws14: 'http://docs.oasis-open.org/ws-sx/ws-trust/200802',
+  // The issued types: the SAML Token Profile 1.1's two, RFC 8693's JWT,
+  // and the Kerberos Token Profile 1.1's six AP-REQ ValueTypes.
+  saml2: 'http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0',
+  saml11: 'http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV1.1',
+  jwt: 'urn:ietf:params:oauth:token-type:jwt',
+  kerberos: ['Kerberosv5_AP_REQ', 'GSS_Kerberosv5_AP_REQ',
+             'Kerberosv5_AP_REQ1510', 'GSS_Kerberosv5_AP_REQ1510',
+             'Kerberosv5_AP_REQ4120', 'GSS_Kerberosv5_AP_REQ4120']
+    .map(function (one) {
+      return 'http://docs.oasis-open.org/wss/' +
+             'oasis-wss-kerberos-token-profile-1.1#' + one;
+    })
+};
+
+// W. Every element name each published schema declares, by its namespace.
+function declaredNames() {
+  log.debug("Entering declaredNames().");
+  const out = {};
+  const add = function (text) {
+    const ns = /targetNamespace\s*=\s*["']([^"']+)["']/.exec(text);
+    if (!ns) {
+      return;
+    }
+    const key = ns[1].replace(/\/$/, '') === SPEC.versions[2].ns
+      ? SPEC.versions[2].ns : ns[1];
+    out[key] = out[key] || new Set();
+    const re = /<(?:xs|xsd):element\s+[^>]*?name\s*=\s*["']([^"']+)["']/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      out[key].add(m[1]);
+    }
+  };
+  fs.readdirSync(SCHEMA_DIR).filter(function (name) {
+    return /\.xsd$/.test(name);
+  }).forEach(function (name) {
+    add(fs.readFileSync(path.join(SCHEMA_DIR, name), 'utf8'));
+  });
+  add(WsTrustCapabilities.schema());
+  log.debug("Leaving declaredNames().");
+  return out;
+}
+
+// W. xmllint against the published schemas, offline through the catalog.
+function againstPublished(xml) {
+  log.debug("Entering againstPublished().");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wstrust-w-'));
+  try {
+    const doc = path.join(dir, 'wsdl.xml');
+    fs.writeFileSync(doc, xml);
+    const run = childProcess.spawnSync('xmllint', ['--noout', '--nonet',
+      '--schema', path.join(SCHEMA_DIR, 'all.xsd'), doc], {
+      encoding: 'utf8', cwd: SCHEMA_DIR,
+      env: Object.assign({}, process.env, {
+        XML_CATALOG_FILES: path.join(SCHEMA_DIR, 'catalog.xml') }) });
+    const errors = String(run.stderr || (run.error && run.error.message) ||
+                          '').split('\n').filter(function (line) {
+      return line.trim() !== '' && !/parser warning/.test(line) &&
+             !/ validates$/.test(line);
+    });
+    const out = { ok: run.status === 0 && errors.length === 0,
+                  errors: errors.join('\n') };
+    log.debug("Leaving againstPublished(). " + out.ok);
+    return out;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// W. A QName attribute value, resolved through the declarations in scope.
+function qname(node, value) {
+  const at = String(value || '').indexOf(':');
+  const prefix = at < 0 ? null : value.slice(0, at);
+  return { ns: node.lookupNamespaceURI(prefix),
+           local: at < 0 ? value : value.slice(at + 1) };
+}
+
+// W. The alternatives of one of the document's two policies, each written as
+// the assertion and what it carries: "UsernameToken WssUsernameToken11",
+// "IssuedToken <token type>", "" for the empty alternative.
+function alternativesOf(doc, id) {
+  log.debug("Entering alternativesOf(). " + id);
+  const policy = elements(doc.documentElement, SPEC.wsp, 'Policy')
+    .filter(function (one) {
+      return one.getAttributeNS(
+        'http://docs.oasis-open.org/wss/2004/01/' +
+        'oasis-200401-wss-wssecurity-utility-1.0.xsd', 'Id') === id;
+    })[0];
+  const out = [];
+  if (policy) {
+    elements(policy, SPEC.wsp, 'All').forEach(function (all) {
+      if (all.parentNode.localName !== 'ExactlyOne' ||
+          all.parentNode.parentNode !== policy) {
+        return;
+      }
+      const token = elements(all, SPEC.sp, '*').filter(function (one) {
+        return one.parentNode === all && /Token$/.test(one.localName);
+      })[0];
+      if (!token) {
+        out.push('');
+        return;
+      }
+      let what = '';
+      if (token.localName === 'IssuedToken') {
+        const types = elements(token, '*', 'TokenType');
+        what = types.length ? String(types[0].textContent).trim() : '?';
+      } else {
+        const inner = elements(token, SPEC.sp, '*').filter(function (one) {
+          return one.parentNode && one.parentNode.localName === 'Policy';
+        });
+        what = inner.map(function (one) {
+          return one.localName;
+        }).join(' ');
+      }
+      out.push(token.localName + ' ' + what);
+    });
+  }
+  log.debug("Leaving alternativesOf(). " + out.length);
+  return out.sort();
+}
+
+function wholeContract(t) {
+  log.debug("Entering wholeContract().");
+  if (!t.check(fs.existsSync(path.join(SCHEMA_DIR, 'all.xsd')) &&
+               fs.existsSync(path.join(SCHEMA_DIR, 'wsdl.xsd')),
+               'W0. the published schemas are where the tests image puts ' +
+               'them', SCHEMA_DIR)) {
+    log.debug("Leaving wholeContract(). No schemas.");
+    return;
+  }
+  const declared = declaredNames();
+  const cases = [
+    { name: 'development, everything on',
+      flags: flags({ issueKerberos: true }),
+      inputs: ['', 'HttpsToken RequireClientCertificate',
+               'IssuedToken ' + SPEC.jwt,
+               'KerberosToken WssKerberosV5ApReqToken11',
+               'SamlToken WssSamlV11Token11', 'SamlToken WssSamlV20Token11',
+               'UsernameToken WssUsernameToken11',
+               'X509Token WssX509V3Token11'],
+      outputs: [SPEC.saml2, SPEC.saml11, SPEC.jwt].concat(SPEC.kerberos) },
+    { name: 'product, Kerberos and TLS off',
+      flags: flags({ verifiesCredentials: true, acceptKerberos: false,
+                     acceptClientCertificate: false }),
+      inputs: ['IssuedToken ' + SPEC.jwt, 'SamlToken WssSamlV11Token11',
+               'SamlToken WssSamlV20Token11',
+               'UsernameToken WssUsernameToken11',
+               'X509Token WssX509V3Token11'],
+      outputs: [SPEC.saml2, SPEC.saml11, SPEC.jwt] }
+  ];
+  cases.forEach(function (one) {
+    const xml = documentOf(one.flags);
+    const doc = parse(xml);
+    const root = doc.documentElement;
+    const lint = againstPublished(xml);
+    t.check(lint.ok, 'W1. ' + one.name + ': the WSDL validates against ' +
+            'WSDL 1.1, its SOAP bindings, WS-Policy, WS-SecurityPolicy 1.2 ' +
+            'and the trust schemas', lint.errors.slice(0, 600));
+    const undeclared = [];
+    const walk = function (node, inTypes) {
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType !== 1) {
+          continue;
+        }
+        const types = inTypes || (c.namespaceURI === SPEC.wsdl &&
+                                  c.localName === 'types');
+        if (!types && c.namespaceURI !== SPEC.wsdl &&
+            !(declared[c.namespaceURI] &&
+              declared[c.namespaceURI].has(c.localName))) {
+          undeclared.push('{' + c.namespaceURI + '}' + c.localName);
+        }
+        if (!(c.namespaceURI === SPEC.wsdl &&
+              c.localName === 'documentation')) {
+          walk(c, types);
+        }
+      }
+    };
+    walk(root, false);
+    t.check(undeclared.length === 0,
+            'W2. ' + one.name + ': every element outside wsdl:types is ' +
+            'declared by a published schema (a lax wildcard skips one that ' +
+            'is not)', Array.from(new Set(undeclared)).join(' '));
+
+    // The four versions.
+    const portTypes = elements(root, SPEC.wsdl, 'portType');
+    const messages = {};
+    elements(root, SPEC.wsdl, 'message').forEach(function (m) {
+      const part = elements(m, SPEC.wsdl, 'part')[0];
+      messages[m.getAttribute('name')] =
+        part ? qname(part, part.getAttribute('element')) : null;
+    });
+    const found = [];
+    portTypes.forEach(function (pt) {
+      const ops = elements(pt, SPEC.wsdl, 'operation');
+      const first = ops.length ? elements(ops[0], SPEC.wsdl, 'input')[0]
+                               : null;
+      const msg = first ? messages[qname(first,
+        first.getAttribute('message')).local] : null;
+      found.push({ pt: pt, ns: msg && msg.ns, ops: ops });
+    });
+    t.equal(portTypes.length, 4, 'W3. ' + one.name + ': four port types, ' +
+            'one per trust version');
+    const versionsSeen = [];
+    SPEC.versions.forEach(function (v, index) {
+      // 1.3 and 1.4 share a namespace: the second port type in it is 1.4.
+      const same = found.filter(function (f) {
+        return f.ns === v.ns;
+      });
+      const pick = v.title === 'WS-Trust 1.4' ? same[1] : same[0];
+      if (!pick) {
+        t.check(false, 'W4. ' + one.name + ': a port type for ' + v.title);
+        return;
+      }
+      versionsSeen.push(index);
+      const names = pick.ops.map(function (op) {
+        return op.getAttribute('name');
+      }).sort();
+      t.equal(names.join(' '), v.ops.slice().sort().join(' '),
+              'W4. ' + one.name + ': ' + v.title + ' offers the operations ' +
+              'the version defines');
+      const xsdNames = declared[v.ns] || new Set();
+      pick.ops.forEach(function (op) {
+        const opName = op.getAttribute('name');
+        const input = elements(op, SPEC.wsdl, 'input')[0];
+        const output = elements(op, SPEC.wsdl, 'output')[0];
+        const inMsg = messages[qname(input, input.getAttribute('message'))
+          .local];
+        const outMsg = messages[qname(output, output.getAttribute('message'))
+          .local];
+        t.check(inMsg && inMsg.ns === v.ns &&
+                inMsg.local === 'RequestSecurityToken' &&
+                xsdNames.has(inMsg.local) &&
+                outMsg && outMsg.ns === v.ns &&
+                outMsg.local === v.answerElement(opName) &&
+                xsdNames.has(outMsg.local),
+                'W5. ' + one.name + ': ' + v.title + ' ' + opName + ' sends ' +
+                'and answers elements its published XSD (' + v.xsd +
+                ') declares', JSON.stringify([inMsg, outMsg]));
+        t.check(input.getAttributeNS(SPEC.wsam, 'Action') ===
+                v.ns + '/RST/' + opName &&
+                output.getAttributeNS(SPEC.wsam, 'Action') ===
+                v.answer(v.ns, opName),
+                'W6. ' + one.name + ': ' + v.title + ' ' + opName + ' names ' +
+                'the version\'s request and answer actions',
+                input.getAttributeNS(SPEC.wsam, 'Action') + ' / ' +
+                output.getAttributeNS(SPEC.wsam, 'Action'));
+      });
+      // And what the endpoint sends is what the WSDL says (the recorded wire
+      // holds only Issue; Renew, Validate and Cancel are held here).
+      const sends = require('../ws-trust/wstrust').WsTrust;
+      const sent = pick.ops.map(function (op) {
+        const opName = op.getAttribute('name');
+        const out = elements(op, SPEC.wsdl, 'output')[0];
+        return sends.answerAction(opName.toLowerCase(), v.ns) ===
+          out.getAttributeNS(SPEC.wsam, 'Action') &&
+          sends.answerAction(opName.toLowerCase(), v.ns) ===
+          v.answer(v.ns, opName) ? '' : opName;
+      }).filter(Boolean);
+      t.check(sent.length === 0,
+              'W12. ' + one.name + ': ' + v.title + ' answers each ' +
+              'operation with the action the WSDL declares',
+              sent.join(' '));
+      // Its bindings: one SOAP 1.1, one SOAP 1.2, over HTTP, each with the
+      // input action as the soapAction, each with a port at /sts.
+      const ptName = pick.pt.getAttribute('name');
+      const bindings = elements(root, SPEC.wsdl, 'binding')
+        .filter(function (b) {
+          return qname(b, b.getAttribute('type')).local === ptName;
+        });
+      const soaps = bindings.map(function (b) {
+        const s11 = elements(b, SPEC.soap, 'binding')[0];
+        const s12 = elements(b, SPEC.soap12, 'binding')[0];
+        const tag = s11 ? 'soap11' : s12 ? 'soap12' : 'none';
+        const transportOk = (s11 || s12) &&
+          (s11 || s12).getAttribute('transport') === SPEC.http;
+        const actionsOk = elements(b, SPEC.wsdl, 'operation')
+          .every(function (op) {
+            const so = elements(op, s11 ? SPEC.soap : SPEC.soap12,
+                                'operation')[0];
+            return so && so.getAttribute('soapAction') ===
+              v.ns + '/RST/' + op.getAttribute('name');
+          });
+        const ports = elements(root, SPEC.wsdl, 'port').filter(function (p) {
+          return qname(p, p.getAttribute('binding')).local ===
+            b.getAttribute('name');
+        });
+        const addressOk = ports.length === 1 &&
+          elements(ports[0], s11 ? SPEC.soap : SPEC.soap12, 'address')
+            .some(function (a) {
+              return a.getAttribute('location') === BASE + '/sts';
+            });
+        return tag + (transportOk && actionsOk && addressOk ? '' : '!');
+      }).sort();
+      t.equal(soaps.join(' '), 'soap11 soap12',
+              'W7. ' + one.name + ': ' + v.title + ' is bound to SOAP 1.1 ' +
+              'and SOAP 1.2 over HTTP, with its actions, at /sts');
+    });
+    t.equal(versionsSeen.length, 4,
+            'W8. ' + one.name + ': all four trust versions are described');
+    const actAs = elements(root, SPEC.xsd, 'schema').some(function (x) {
+      return x.getAttribute('targetNamespace') === SPEC.ws14 &&
+        elements(x, SPEC.xsd, 'element').some(function (e) {
+          return e.getAttribute('name') === 'ActAs';
+        });
+    });
+    t.check(actAs && declared[SPEC.ws14] && declared[SPEC.ws14].has('ActAs'),
+            'W9. ' + one.name + ': 1.4\'s ActAs is declared in 1.4\'s ' +
+            'namespace, as its published XSD declares it');
+
+    // Every authentication type and every issued type, as sets.
+    t.equal(alternativesOf(doc, 'RequesterAuthentication').join(' | '),
+            one.inputs.slice().sort().join(' | '),
+            'W10. ' + one.name + ': the requester may authenticate with ' +
+            'exactly these credentials');
+    t.equal(alternativesOf(doc, 'IssuedTokenTypes').join(' | '),
+            one.outputs.map(function (uri) {
+              return 'IssuedToken ' + uri;
+            }).sort().join(' | '),
+            'W11. ' + one.name + ': exactly these token types are issued');
+  });
+  log.debug("Leaving wholeContract().");
 }
 
 // F. The WSDL is indented, one element a line, and only whitespace between

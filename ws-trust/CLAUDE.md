@@ -24,6 +24,15 @@ advertised moves with what is accepted:
   a level, so `GET /sts/metadata` and the WS-MEX section are readable as
   they arrive. Only whitespace between elements is added
   (`tests/wstrust_metadata.js` F).
+  **It is validated against the published schemas** (`tests/wstrust_metadata.js`
+  W, rcbj 2026-11-13): WSDL 1.1, its SOAP 1.1 and 1.2 bindings, WS-Policy
+  2004/09, WS-SecurityPolicy 1.2 and the four trust XSDs (`tests/xml-schemas`,
+  in the corpora image), with every element outside `wsdl:types` declared by
+  one of them, every message an element its version's XSD declares, every
+  action the version's own, and the authentication and issued types as exact
+  sets. **The policy assertions are in SP 1.2's namespace (200702)**: SP 1.3's
+  200802 declares only the five assertions 1.3 added, and they were written
+  there until the check found it.
 * **The capability document is an IYA-STS extension, not a standard**
   (`urn:iya-sts:metadata:token-capabilities:1`): WS-SecurityPolicy cannot
   say which credential is exchanged for which token type, and the ticket
@@ -338,8 +347,15 @@ found three elements the **2004/04** member submission does not have:
 * **Issue is answered with the RSTR itself.** That version's
   `RequestSecurityTokenResponseCollection` holds `minOccurs='2'` responses —
   it is for several tokens at once — so a collection of one was invalid.
-  The action is `.../RSTR/Issue`. 2005/02 (`minOccurs='1'`) and 1.3 (the
-  collection is REQUIRED for an Issue's final response) are unchanged.
+  The action is `.../RSTR/Issue`. 1.3 and 1.4 keep the collection (it is
+  REQUIRED for an Issue's final response). **2005/02 answers with the RSTR
+  too since 2026-11-13**, and every pre-OASIS answer carries the operation's
+  own action (`RSTR/Issue`, `RSTR/Renew`, `RSTR/Validate`, `RSTR/Cancel`),
+  which is what both versions define and what their clients (WCF's
+  WSTrustFeb2005) dispatch on; until then they carried 1.3's
+  `RSTRC/IssueFinal` and `RSTR/<Op>Final`. `WsTrust.answerAction()` is the
+  one rule, and the WSDL asks it. Holding the WSDL to the published
+  specifications (`tests/wstrust_metadata.js` W) found it.
 * **The reference is `wst:RequestedTokenReference`**, the element 2005/02
   renamed `RequestedAttachedReference`.
 * **Cancel is refused** with that namespace's `wst:InvalidRequest` fault

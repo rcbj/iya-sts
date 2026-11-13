@@ -107,9 +107,23 @@ model RequestTypes {
 @vocabulary(#{ id: "wst.action", relative: true,
                cite: "WS-Trust 1.3 section 3.3; WS-Trust 1.4 section 3.3" })
 model Actions {
-  /** 2004/04's Issue, answered with one RSTR (#188). */
-  @term(#{ cite: "WS-Trust May 2004 section 3.3" })
+  /**
+   * The pre-OASIS versions' answers (May 2004 and February 2005): one RSTR,
+   * its action the operation's own name. WS-Trust 1.3 added the "Final"
+   * names and the collection; the two older versions define neither, and a
+   * client of them (WCF's WSTrustFeb2005 among them) dispatches on these.
+   */
+  @term(#{ cite: "WS-Trust May 2004 section 3.3; WS-Trust February 2005 section 4.1" })
   issue: "/RSTR/Issue";
+
+  @term(#{ cite: "WS-Trust May 2004 section 5; WS-Trust February 2005 section 7" })
+  renew: "/RSTR/Renew";
+
+  @term(#{ cite: "WS-Trust May 2004 section 6; WS-Trust February 2005 section 9" })
+  validate: "/RSTR/Validate";
+
+  @term(#{ cite: "WS-Trust February 2005 section 8" })
+  cancel: "/RSTR/Cancel";
 
   @term(#{ cite: "WS-Trust 1.3 section 3.3 (RSTRC/IssueFinal)" })
   issueFinal: "/RSTRC/IssueFinal";
