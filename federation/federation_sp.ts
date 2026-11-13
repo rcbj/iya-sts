@@ -225,6 +225,11 @@ import roles = require('./../common/roles');
 // to and the policy it is decrypted under. A static utility class that
 // registers no route and requires nothing here back.
 import fedEncryption = require('./federation_encryption');
+// A FAPI 1.0 ADVANCED RELATIONSHIP'S TLS CLIENT CERTIFICATE (#931): what
+// its token, refresh and UserInfo requests present (RFC 8705). A static
+// utility class that registers no route; requiring it registers the
+// scheduler job `federation.client-certificate-renew`.
+import fedClientCert = require('./federation_client_certificate');
 // THE IDLE SWEEP (#358). Requiring it registers `federation.provision-idle`;
 // the module offers no route. A second register below is the guard's no-op
 // when this file is what loaded it.
@@ -5053,16 +5058,52 @@ class FederationSp {
   // a FetchResult (STS-FED-0245, 0247), never a throw — redeemCode()'s catch
   // would record that throw as STS-FED-0042.
   private fapiTokenRequest(record, form, key, nonce): Promise<any> {
-    const { fedHttp, log } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering FederationSp.fapiTokenRequest().");
     const profile = FapiClient.profileOf(record);
+    // FAPI 1.0 ADVANCED PRESENTS ITS CLIENT CERTIFICATE (#931, RFC 8705):
+    // the partner binds the access token to it, and with tls_client_auth
+    // authenticates the client by it. One that cannot be had is a failed
+    // answer (STS-FED-0252), never a request made without it.
+    if (FapiClient.usesMtls(profile)) {
+      log.debug("Leaving FederationSp.fapiTokenRequest(). Over mutual TLS.");
+      return fedClientCert.materialFor(record).then((material) => {
+        if (!material.ok) {
+          return { ok: false, status: 0, json: null, text: '',
+                   url: String(record.fedTokenUrl || ''), headers: {},
+                   errorCode: 'STS-FED-0252', why: material.why };
+        }
+        return this.fapiTokenRequestWith(record, form, key, nonce,
+          { cert: material.cert, key: material.key });
+      });
+    }
+    log.debug("Leaving FederationSp.fapiTokenRequest().");
+    return this.fapiTokenRequestWith(record, form, key, nonce, null);
+  }
+
+  // The token or refresh request itself, with the client certificate a
+  // 1-advanced relationship presents (or none). tls_client_auth sends the
+  // client_id and nothing else to authenticate (RFC 8705 section 2.1).
+  private fapiTokenRequestWith(record, form, key, nonce,
+                               clientCertificate): Promise<any> {
+    const { fedHttp, log } = this.deps;
+    log.debug("Entering FederationSp.fapiTokenRequestWith().");
+    const profile = FapiClient.profileOf(record);
+    if (FapiClient.usesTlsClientAuth(record)) {
+      form.client_id = String(record.fedClientId || '');
+      log.debug("Leaving FederationSp.fapiTokenRequestWith(). " +
+                "tls_client_auth.");
+      return fedHttp.fetchJson(record, 'fedTokenUrl',
+        { method: 'POST', form: form,
+          clientCertificate: clientCertificate || undefined });
+    }
     let assertion = '';
     try {
       assertion = FapiClient.clientAssertion(record);
     } catch (e) {
-      log.debug("Caught in FederationSp.fapiTokenRequest(): " +
+      log.debug("Caught in FederationSp.fapiTokenRequestWith(): " +
                 ((e && e.message) || e));
-      log.debug("Leaving FederationSp.fapiTokenRequest(). Not signed.");
+      log.debug("Leaving FederationSp.fapiTokenRequestWith(). Not signed.");
       return Promise.resolve({ ok: false, status: 0, json: null, text: '',
         url: String(record.fedTokenUrl || ''), headers: {},
         errorCode: 'STS-FED-0245',
@@ -5073,25 +5114,26 @@ class FederationSp {
     form.client_assertion_type = FapiClient.CLIENT_ASSERTION_TYPE;
     form.client_assertion = assertion;
     if (!FapiClient.usesDpop(profile)) {
-      log.debug("Leaving FederationSp.fapiTokenRequest().");
+      log.debug("Leaving FederationSp.fapiTokenRequestWith().");
       return fedHttp.fetchJson(record, 'fedTokenUrl',
-                               { method: 'POST', form: form });
+        { method: 'POST', form: form,
+          clientCertificate: clientCertificate || undefined });
     }
     if (!key || !key.pem) {
-      log.debug("Leaving FederationSp.fapiTokenRequest(). No key.");
+      log.debug("Leaving FederationSp.fapiTokenRequestWith(). No key.");
       return Promise.resolve({ ok: false, status: 0, json: null, text: '',
         url: String(record.fedTokenUrl || ''), headers: {},
         errorCode: 'STS-FED-0247',
         why: 'this sign-in holds no DPoP key' });
     }
     const url = String(record.fedTokenUrl || '');
-    log.debug("Leaving FederationSp.fapiTokenRequest().");
+    log.debug("Leaving FederationSp.fapiTokenRequestWith().");
     return FapiClient.withNonce((n) => {
       let proof = '';
       try {
         proof = FapiClient.proof(key, 'POST', url, String(n || ''));
       } catch (e) {
-        log.debug("Caught in FederationSp.fapiTokenRequest(): " +
+        log.debug("Caught in FederationSp.fapiTokenRequestWith(): " +
                   ((e && e.message) || e));
         return Promise.resolve({ ok: false, status: 0, json: null, text: '',
           url: url, headers: {}, errorCode: 'STS-FED-0247',
@@ -5119,6 +5161,27 @@ class FederationSp {
     const { fedHttp, log } = this.deps;
     log.debug("Entering FederationSp.userinfoFetch().");
     const profile = FapiClient.profileOf(record);
+    // FAPI 1.0 ADVANCED (#931): the access token is bound to the client
+    // certificate (RFC 8705 section 3), so UserInfo is asked over the same
+    // mutual TLS. A certificate that cannot be had is a failed answer
+    // (STS-FED-0252), not a presentation without it.
+    if (FapiClient.usesMtls(profile)) {
+      log.debug("Leaving FederationSp.userinfoFetch(). Over mutual TLS.");
+      return fedClientCert.materialFor(record).then((material) => {
+        if (!material.ok) {
+          return { nonce: String(nonce || ''), answer: {
+            ok: false, status: 0, json: null, text: '',
+            url: String(record.fedUserinfoUrl || ''), headers: {},
+            errorCode: 'STS-FED-0252', why: material.why } };
+        }
+        return fedHttp.fetchJson(record, 'fedUserinfoUrl',
+          { method: 'GET', bearer: accessToken,
+            clientCertificate: { cert: material.cert, key: material.key } })
+          .then((answer) => {
+            return { answer: answer, nonce: String(nonce || '') };
+          });
+      });
+    }
     if (!FapiClient.usesDpop(profile)) {
       log.debug("Leaving FederationSp.userinfoFetch().");
       return fedHttp.fetchJson(record, 'fedUserinfoUrl',
@@ -6305,6 +6368,25 @@ class FederationSp {
         // registration.
         fedParUrl: String(doc.pushed_authorization_request_endpoint || '')
       };
+      // A CLIENT THAT USES MUTUAL TLS DIALS THE ALIASES (RFC 8705 section
+      // 5, #931): a FAPI 1.0 Advanced relationship presents its client
+      // certificate, so the token, UserInfo and pushed-authorization
+      // endpoints are the ones `mtls_endpoint_aliases` names where it names
+      // them. Each is the same kind of address as the document's own:
+      // named by the issuer's document, never by a request.
+      const aliases = doc.mtls_endpoint_aliases;
+      if (FapiClient.usesMtls(FapiClient.profileOf(record)) && aliases &&
+          typeof aliases === 'object' && !Array.isArray(aliases)) {
+        [['token_endpoint', 'fedTokenUrl'],
+         ['userinfo_endpoint', 'fedUserinfoUrl'],
+         ['pushed_authorization_request_endpoint', 'fedParUrl']]
+          .forEach(function (pair) {
+            const named = aliases[pair[0]];
+            if (typeof named === 'string' && named) {
+              endpoints[pair[1]] = named;
+            }
+          });
+      }
       if (issuer) {
         endpoints.fedPeer = issuer;
       }
@@ -6496,7 +6578,8 @@ class FederationSp {
       answer = await this.fapiTokenRequest(record, form, dpopKey,
                                            String(entry.dpopNonce || ''));
       if (!answer.ok && (answer.errorCode === 'STS-FED-0245' ||
-                         answer.errorCode === 'STS-FED-0247')) {
+                         answer.errorCode === 'STS-FED-0247' ||
+                         answer.errorCode === 'STS-FED-0252')) {
         log.debug("Leaving FederationSp.refreshOne(). Not signed.");
         return this.endForRefresh(session, record, entry, answer.errorCode,
                                   String(answer.why || ''));
@@ -6871,6 +6954,29 @@ class FederationSp {
       }
       if (FapiClient.usesDpop(profile)) {
         metadata.dpop_bound_access_tokens = true;
+      }
+      // FAPI 1.0 ADVANCED BINDS TO THE CLIENT CERTIFICATE (#931, RFC 8705
+      // section 3.4), and with tls_client_auth authenticates by it
+      // (section 2.1.2): the subject DN registered is the certificate's,
+      // which a renewal keeps.
+      if (FapiClient.usesMtls(profile)) {
+        metadata.tls_client_certificate_bound_access_tokens = true;
+        if (FapiClient.usesTlsClientAuth(record)) {
+          const material = await fedClientCert.materialFor(record);
+          const row = material.ok
+            ? fedClientCert.currentOf(federation.get(record.fedId) || record)
+            : null;
+          if (!row) {
+            log.debug("Leaving FederationSp.ensureRegistered(). No " +
+                      "client certificate.");
+            return { ok: false, errorCode: 'STS-FED-0252',
+                     why: material.why || 'the relationship holds no ' +
+                          'client certificate to register' };
+          }
+          metadata.token_endpoint_auth_method = 'tls_client_auth';
+          metadata.tls_client_auth_subject_dn = String(row.subject || '');
+          delete metadata.token_endpoint_auth_signing_alg;
+        }
       }
       if (FapiClient.usesJarm(profile)) {
         metadata.authorization_signed_response_alg = 'PS256';
@@ -8755,11 +8861,14 @@ class FederationSp {
                   'request failed.');
         const failed = answer.errorCode || 'STS-FED-0056';
         const signing = failed === 'STS-FED-0245' ||
-                        failed === 'STS-FED-0247';
+                        failed === 'STS-FED-0247' ||
+                        failed === 'STS-FED-0252';
         errorCodes.mark(res, failed);
         return this.refuse(res, record, signing ? 500 : 502,
           signing ? (failed === 'STS-FED-0247'
             ? 'The DPoP proof could not be made'
+            : failed === 'STS-FED-0252'
+            ? 'The client certificate could not be presented'
             : 'The FAPI request could not be signed')
                   : 'The code could not be redeemed',
           'The token request to ' + (answer.url || 'the partner') + ' ' +

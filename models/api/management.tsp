@@ -2461,6 +2461,7 @@ namespace IyaSts.Api.Management {
     `signalArrivals`?: (WithRelationshipJtiViaEtc15)[];
     `outboundSignals`?: NullableObject63;
     `encryption`?: NullableObject64;
+    `clientCertificate`?: NullableFederationClientCertificate;
     `links`?: (WithUsernameDnLinkEtc5)[];
     `linksPaging`?: WithPagePagesPerPageEtc8;
     `setFields`?: (WithNameKindRoleEtc9)[];
@@ -6603,6 +6604,7 @@ namespace IyaSts.Api.Management {
       `fedKeyManagementAlgorithm`:#{`type`:"string"},
       `fedContentEncryptionAlgorithm`:#{`type`:"string"},
       `fedAllowUnencrypted`:#{`type`:"string"},
+      `fedClientCertificate`:#{`type`:"string"},
       `fedAllowUnsolicited`:#{`type`:"string"},
       `fedApplication`:#{`type`:"string"},
       `fedAuthnMechanism`:#{`type`:"string"},
@@ -24098,6 +24100,7 @@ op `getFederationRelationships`(`parameters/0/schema`: string,
     `signalArrivals`?: `WithAdditionalPropertiesPropertiesKty`;
     `outboundSignals`?: NullableObject63;
     `encryption`?: get_admin_api_federation_r200_application_json_encryption_h2696;
+    `clientCertificate`?: NullableFederationClientCertificate;
     `links`?: (WithUsernameDnLinkEtc5)[];
     `linksPaging`?: `WithPagePagesPerPage`;
     `setFields`?: `WithDescriptionAdditionalPropertiesProperties`;

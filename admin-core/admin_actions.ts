@@ -181,6 +181,10 @@ import fedLinks = require('../federation/federation_links');
 // request or when its key type changes. A static utility class; it registers
 // nothing.
 import fedEncryption = require('../federation/federation_encryption');
+// A FAPI 1.0 Advanced relationship's TLS client certificate (#931): issued
+// when fedFapi becomes 1-advanced. A static utility class; requiring it
+// registers its scheduler job and no route.
+import fedClientCert = require('../federation/federation_client_certificate');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import spiffeRegistry = require('../spiffe/spiffe_registry');
 import spiffeIdLib = require('../spiffe/spiffe_id');
@@ -11750,6 +11754,26 @@ class AdminActions {
                 message: result.message + ' ' + keyed.message })
             : keyed);
         }
+      }
+      // A FAPI 1.0 ADVANCED RELATIONSHIP GETS ITS CLIENT CERTIFICATE NOW
+      // (#931), so the administrator can register it at the partner before
+      // the first sign-in. One that cannot be issued leaves the profile set
+      // and says so; the renewal job and the first sign-in try again.
+      if (result.ok && String(body.field || '') === 'fedFapi' &&
+          fedClientCert.needed(result.relationship) &&
+          !fedClientCert.currentOf(result.relationship)) {
+        const made = await fedClientCert.issue(id,
+          'a client certificate was issued when fedFapi became 1-advanced');
+        return this.refusedBy('STS-ADMIN-0575',
+          Object.assign({}, result, {
+            relationship: federation.get(id) || result.relationship,
+            readiness: federation.readinessOf(federation.get(id) ||
+                                              result.relationship),
+            message: result.message + ' ' + (made.ok ? made.message
+              : 'ITS TLS CLIENT CERTIFICATE WAS NOT ISSUED: ' +
+                (made.errors || []).join(' ') + ' The scheduler job ' +
+                'federation.client-certificate-renew and the first ' +
+                'sign-in try again.') }));
       }
       return this.refusedBy('STS-ADMIN-0575', result);
     }

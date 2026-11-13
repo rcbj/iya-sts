@@ -95,6 +95,14 @@
     "en": "af65a7bf379c0b71",
     "text": "從 devices.androidStatusUrl 下載 Google 的 Android 金鑰證明狀態清單，並載入為風險資料集 android.attestation-status：哪些證明憑證已撤銷或暫停。每日執行（devices.androidStatusRefreshS）；與使用中清單完全相同的清單不會載入任何內容。"
   },
+  "sched.jobs.federation.client-certificate-renew.title": {
+    "en": "f37b7eff9973c660",
+    "text": "聯合用戶端憑證續期"
+  },
+  "sched.jobs.federation.client-certificate-renew.describe": {
+    "en": "655fd604e686a4d3",
+    "text": "為每個尚無憑證的 FAPI 1.0 Advanced 聯合關係簽發 TLS 用戶端憑證，並為憑證將在 federation.clientCertificateRenewDays 內到期的每個關係以相同主體簽發新憑證。"
+  },
   "sched.jobs.federation.encryption-key-retire.title": {
     "en": "0c323ec372941184",
     "text": "聯盟加密金鑰淘汰"

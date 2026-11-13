@@ -3124,7 +3124,8 @@ const DIRECTORY_CLASSES = [
   'application-private-key', 'client-secret', 'registration-access-token',
   'federation-client-secret', 'identity-verifications', 'gnap-shared-key',
   'gnap-macaroon-key', 'person-private-key', 'federation-encryption-key',
-  'kerberos-keys', 'totp-secret', 'recovery-codes', 'directory',
+  'federation-client-certificate', 'kerberos-keys', 'totp-secret',
+  'recovery-codes', 'directory',
   'secret-destination-credential', 'scim-client-credential'
 ];
 

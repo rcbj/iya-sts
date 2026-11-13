@@ -2037,6 +2037,7 @@ what its api may dial.
 | `federation.spNameIdFormat` | `STS_FEDERATION_SP_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified` | yes | The `<md:NameIDFormat>` in `/federation/metadata/{id}`. |
 | `federation.atprotoPlcDirectory` | `STS_FEDERATION_ATPROTO_PLC_DIRECTORY` | `https://plc.directory` | yes | Where a Bluesky sign-in looks up the did:plc it was given, to check that the person's data server trusts the issuer that named them. A Bluesky relationship is the only reader. |
 | `federation.encryptionKeyGraceS` | `STS_FEDERATION_ENCRYPTION_KEY_GRACE_S` | `86400` | yes | How long a federation relationship's encryption key still decrypts after a rotation replaced it (#168); `0` ends it at the rotation. |
+| `federation.clientCertificateRenewDays` | `STS_FEDERATION_CLIENT_CERTIFICATE_RENEW_DAYS` | `30` | yes | How many days before a FAPI 1.0 Advanced relationship's TLS client certificate expires the scheduler job `federation.client-certificate-renew` issues a new one, with the same subject (#931). |
 
 ### SAML
 

@@ -976,7 +976,7 @@ Three rules that are not optional here:
 | `federation_map_bands.js` | that the federation picture is THREE BANDS — left asks, right authenticates — that the four relationship states are four distinguishable strokes, that a brokered partner is ONE arrow which keeps that pair's counts, and that the per-application counts either add up or report the difference |
 | `spnego_identity.js` | what a SPNEGO sign-in claims: which part of a Kerberos principal becomes the session's username, and the `amr`/`acr` read off the ticket's own flags |
 | `federation_pages.js` | `GET /federation` and what `/federation/login/{id}` and `/federation/link/{handle}` say when they refuse are the federation pages' shell carrying `data-sts-state`, each with the status it always had (200, 404 twice, 400, 403 with `fedLastError` written, 409) and `no-store`, under a policy that runs `/federation/pages.js` and keeps `frame-ancestors`; the assertion consumer service's refusal of the same relationship still server-drawn under `script-src 'none'`; the script served; every kind of view drawn (escaped; the landing page's sign-in link through `/portal`); the emailed factor's end page the bytes it was; and the runtime drawing the landing page from its shell in French, asking for catalogs and nothing else (#580) |
-| `federation_oidc_rp.js` | **AN INBOUND OPENID CONNECT RELATIONSHIP AS THE RELYING-PARTY PLANS HOLD IT** (#930): the whole stack and a small OpenID Provider written in the file, in a child process over HTTP. The code flow's refusals each by code — no `sub` (`STS-FED-0195`), no `iat` (`0196`), a foreign `azp` or two audiences and none (`0197`), no nonce (`0198`), another nonce (`0039`) — with UserInfo never asked after them, and UserInfo answering for another `sub` (`0202`); `code id_token` with PKCE and form_post asked, a missing or wrong `c_hash` refused before the code is redeemed (`0199`) and the two ID Tokens held to one subject (`0201`); `id_token token` in the fragment mode (no `response_mode` asked, the page and `/federation/fragment.js` under `script-src 'self'`, a wrong `at_hash` refused (`0200`), a right one asking UserInfo with the front access token) and `query` with it not ready; discovery's endpoints used and another issuer refused (`0204`); the login initiation endpoint off (`0205`), another `iss` (`0206`), and the partner's own starting the sign-in with its `login_hint`; a FAPI client (#931) in case 10, including a refused push (`0244`), JARM refusals (`0246`) and a partner error (`0025`) that does not redeem, the DPoP nonce retry, registration metadata, `beginConnect` refusing a profile (`0184`), and refresh with the sign-in's DPoP key or without one for 1-advanced; and what a profile holds the answer to (#931's review, 10v–10ac): 1-advanced's front ID Token without `s_hash` or with another state's (`0248`), a 2.x answer naming no issuer (`0249`) or another (`0238`), a JARM response with no `exp` (`0250`), and a 2.x token response or refresh whose `token_type` is not DPoP (`0251`), none redeeming a code, with `dpop` in lower case accepted. Mutation-tested: each of the four checks removed fails its own cases (and 10g, 10c, 10t stay green with them in) |
+| `federation_oidc_rp.js` | **AN INBOUND OPENID CONNECT RELATIONSHIP AS THE RELYING-PARTY PLANS HOLD IT** (#930): the whole stack and a small OpenID Provider written in the file, in a child process over HTTP. The code flow's refusals each by code — no `sub` (`STS-FED-0195`), no `iat` (`0196`), a foreign `azp` or two audiences and none (`0197`), no nonce (`0198`), another nonce (`0039`) — with UserInfo never asked after them, and UserInfo answering for another `sub` (`0202`); `code id_token` with PKCE and form_post asked, a missing or wrong `c_hash` refused before the code is redeemed (`0199`) and the two ID Tokens held to one subject (`0201`); `id_token token` in the fragment mode (no `response_mode` asked, the page and `/federation/fragment.js` under `script-src 'self'`, a wrong `at_hash` refused (`0200`), a right one asking UserInfo with the front access token) and `query` with it not ready; discovery's endpoints used and another issuer refused (`0204`); the login initiation endpoint off (`0205`), another `iss` (`0206`), and the partner's own starting the sign-in with its `login_hint`; a FAPI client (#931) in case 10, including a refused push (`0244`), JARM refusals (`0246`) and a partner error (`0025`) that does not redeem, the DPoP nonce retry, registration metadata, `beginConnect` refusing a profile (`0184`), and refresh with the sign-in's DPoP key or without one for 1-advanced; and what a profile holds the answer to (#931's review, 10v–10ac): 1-advanced's front ID Token without `s_hash` or with another state's (`0248`), a 2.x answer naming no issuer (`0249`) or another (`0238`), a JARM response with no `exp` (`0250`), and a 2.x token response or refresh whose `token_type` is not DPoP (`0251`), none redeeming a code, with `dpop` in lower case accepted. Mutation-tested: each of the four checks removed fails its own cases (and 10g, 10c, 10t stay green with them in). **1-advanced over mutual TLS** (#931, rcbj 2026-11-13, 10ad-10al) against the partner on a listener that asks for a client certificate and binds the token to it: the relationship's certificate presented at the token endpoint and UserInfo, `tls_client_auth` with the `client_id` alone and not ready without the profile, a key that will not open `0252` with nothing dialled, the renewal keeping the subject, the registration's `tls_client_auth_subject_dn`, and the discovery document's `mtls_endpoint_aliases` |
 | `description_pages.js` | the six protocol families' description pages (#584): `/xacml` and `/xacml/description.js` (and its JSON form) refused alike with `xacml.enforceAccess` on and both answering with it off; each of `/saml2`, `/saml11`, `/xacml`, `/ssf`, `/scim`, `/spiffe` the shell (200, `no-store`, its family's script, a policy that keeps `frame-ancestors`) carrying its kind of view; the JSON form by `?format=json` and by `Accept`, `*/*` and `?format=html` the shell; each `description.js` served; no mock SP or RP in either mode (#592), and the embedded PEP listed in development and in neither JSON nor shell in product; the bare `/saml2/ars` and `/saml11/responder` still server-drawn under `script-src 'none'`, metadata, SSF configuration and SCIM discovery unchanged; every renderer drawing its real view in French with every key found, escaped; and the runtime drawing `/ssf` from its shell loading only `describeSsf` catalogs |
 | `diagnostic_pages.js` | **#583's diagnostic pages are gone.** The TLS half went with #597: `/tls`, `/tls/forwarded`, `/tls/pages.js`, `POST /tls/trust` and `/tls/trust/clear` answer as unrouted paths in development; and the SPNEGO half with #595: `/spnego`, `/spnego?format=json`, `/spnego/protected`, `/spnego/pages.js`, `/krb5/service` and `/krb5/principals` answer as unrouted paths too, with no Negotiate challenge (the first four are the companion's, `companion.js`; the RFC 4559 exchange of the sign-in is `spnego_shell.js`'s) |
 | `tls_connection_page.js` | **Monitoring → TLS connection** (#597): `GET /admin-api/tls-connection` over a real TLS listener of the child's own serving the shared app — no client certificate, an untrusted one (presented, NOT verified, OpenSSL's reason), a trusted one (verified, subject, fingerprint, thumbprint, the identity gate, no session); every forwarding header by its value, the certificate headers read by nothing, `global.trustProxy` off, on with no ranges and on with a range the peer is not in; the page drawn by the static console's renderer and escaped; pinned to the front process, not a service page, the operation mirroring the page; the old paths unrouted |
@@ -1776,6 +1776,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/protocol/sts_fapi_conformance.js` **(ours)** | **THE OPENID FOUNDATION'S CONFORMANCE SUITE** (#176, 2026-09-24) — the independent check the four rows above are not. FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA, one plan each in a throwaway realm under the profile it tests, every module run through the suite's API; a FAILED or timed-out module fails the job unless `EXPECTED` names it with its reason (empty). `conformance: true`: SKIPPED with the reason where the launcher brought no suite up. See *The OpenID conformance suite*, below |
 | `tests/protocol/sts_oidcc_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID CONNECT PLANS** (#187, 2026-09-24): the nine OP certification profiles (basic twice, dynamic and static clients; implicit, hybrid, config, dynamic, the three form_post ones, 3rd-party-initiated login), `oidcc-test-plan` once per client authentication (`client_secret_basic`, `_post`, `_jwt`, `private_key_jwt`, mutual TLS) across query, fragment and form_post, the four logout plans (RP-Initiated, Front-Channel, Back-Channel, Session Management) and Identity Assurance's `ekyc-test-plan-oidccore`. A FAILED module, or a WARNING from a condition `KNOWN_WARNINGS` does not name, fails the job. `conformance: true`. See *The OpenID conformance suite*, below |
 | `tests/protocol/sts_oidcc_rp_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID CONNECT RELYING-PARTY PLANS** (#930, 2026-11-02): basic, implicit, hybrid, config, dynamic, the three form_post plans, third-party-initiated login, logout and refresh tokens, with the suite as the OpenID Provider and an inbound OpenID Connect federation relationship as the relying party. See *THE OPENID CONNECT RELYING PARTY PLANS* below. `conformance: true`, `browser: true`, lane `conformance-rp` |
+| `tests/protocol/sts_fapi_client_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S FAPI CLIENT PLANS** (#931, 2026-11-13): FAPI 1.0 Advanced (`private_key_jwt` and `tls_client_auth`, both over the relationship's TLS client certificate), FAPI 2.0 Security Profile and Message Signing, each with its classical twin, the suite as the authorization server and an inbound OpenID Connect relationship held to `fedFapi` as its client. See *THE FAPI CLIENT PLANS* below. `conformance: true`, `browser: true`, lane `conformance-fapi-client` |
 | `tests/protocol/sts_ssf_oidf_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S SHARED SIGNALS PLANS** (#187): the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll; the job emits the CAEP events the interop module waits for. Not `sts_ssf_conformance.js` (#144, this repository's own SSF checks). `conformance: true` |
 | `tests/protocol/sts_ssf_receiver_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S SHARED SIGNALS RECEIVER PLANS** (#932): the SSF receiver plan and the CAEP interop receiver plan, each by push and by poll, the suite the transmitter. Per plan a realm receiving through a signals-only relationship; the job presses the stream buttons each module waits for, deletes the stream once a module ends, and asserts the suite's CAEP `session-revoked` ended the person's sessions (`signalsOnlyEndSessionEvents` turned on through the signal-response template). No classical twin: the suite verifies nothing the realm signs. `conformance: true`, lane `conformance-b` |
 | `tests/protocol/sts_oidfed_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID FEDERATION PLANS** (#187, #933): the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor; the plan in which the suite plays a federation (Trust Anchor and RP, keys made by the job) that a realm's OP has joined, registering the RP automatically; and the plan in which this service is that federation's relying party (`openid-federation-entity-joined-to-test-federation-rp-test-plan`), registering automatically. A suite run of the relying-party plan is outstanding. See *THE OPENID FEDERATION RELYING-PARTY PLAN* below. `conformance: true`, `browser: true`, lane `conformance-b` |
@@ -2534,64 +2535,58 @@ changed. Explicit registration was not built.
   their twins are eight sixths of the job the two-hour watchdog covered.
   `STS_CONFORMANCE_TIMEOUT` and the workflow job's minutes are unchanged.
 
-### HOW THE FAPI CLIENT PLANS WOULD RUN (#931)
+### THE FAPI CLIENT PLANS (#931, 2026-11-13)
 
-Not a job, and not a row of `tests/protocol/MANIFEST.js`. The client role is
-`fedFapi` on an inbound OpenID Connect relationship
-(`federation/CLAUDE.md`, *THIS SERVICE AS A FAPI CLIENT*). A local `true`
-protocol job that `./run-tests.sh` scheduled before a run had passed would
-fail inside the conformance bound. The file, when it is written, is
 `tests/protocol/sts_fapi_client_conformance.js`, on the shape of
-`sts_oidcc_rp_conformance.js`.
+`sts_oidcc_rp_conformance.js`, `conformance: true`, `browser: true`, lane
+`conformance-fapi-client`, a two-hour watchdog until a run sizes it. The
+client role is `fedFapi` on an inbound OpenID Connect relationship
+(`federation/CLAUDE.md`, *THIS SERVICE AS A FAPI CLIENT*). It had not run
+when it was written: the first run is the integrator's, and what it finds
+goes in EXPECTED (only once `federation/CLAUDE.md` records the decision) or
+is fixed in the service.
 
 * **The suite is the authorization server**, image and release the jobs
   above already use (`release-v5.3.1`). One throwaway realm per plan, one
-  service-provider `oidc` relationship, `fedFapi` the profile. The person
-  starts at `/federation/login/{id}` in the one Chrome, as the relying-party
-  job does. `conformance: true`, `browser: true`.
-* **The three plans, one variant each.** The variant keys are the ones
-  `sts_fapi_conformance.js` already sends for the same plan family, with the
-  client role's plan name. A `createPlan` that rejects a key is a fix to
-  that JSON.
-  * `fapi2-security-profile-final-client-test-plan` —
-    `client_auth_type=private_key_jwt`, `sender_constrain=dpop`.
-    `fedFapi=2-security`.
-  * `fapi2-message-signing-final-client-test-plan` —
-    `private_key_jwt`, `sender_constrain=dpop`,
-    `fapi_request_method=signed_non_repudiation`,
-    `fapi_response_mode=jarm`. `fedFapi=2-message-signing`.
-  * `fapi1-advanced-final-client-test-plan` —
-    `client_auth_type=private_key_jwt`,
-    `fapi_auth_request_method=by_value`,
-    `fapi_response_mode=plain_response`. `fedFapi=1-advanced`. No DPoP.
-* **Not these variants.** The suite's mutual-TLS client authentication, its
-  mutual-TLS sender constraint, and FAPI 1.0 Advanced's `by_reference` and
-  `pushed` request methods. This service does not authenticate to a partner
-  with a client certificate, and `1-advanced` does not push and does not
-  send DPoP. `fapi-ciba-id1-client-test-plan` is left out: there is no CIBA
-  client (`POST /oauth2/bc-authorize` is the authorization-server role, the
-  plan without `-client-`). FAPI 1.0 Baseline has no suite plan. Push-mode
-  FAPI-CIBA has no published plan. Both are already in `docs/conformance.md`.
-* **Registration.** The 2.x relationships are the dynamic plan's shape:
-  `fedDiscovery` on (a 2.x profile refuses to start without it),
-  `fedRegister` on, no `fedClientId`, so the sign-in registers the PS256 key
-  and the profile's metadata at the suite's `registration_endpoint`.
-  `1-advanced` can be given the suite's authorization, token, UserInfo and
-  jwks addresses the way the basic plan is, and registers when the
-  instructions name a registration endpoint. A plan that instead hands out a
-  static `client_id` is configured with that id; the first instructions
-  page says which.
-* **The same knobs.** `CHECK_ONLY`, `REGISTER_ONLY` and `WEBFINGER` are how
-  a module that ends before a sign-in is answered — a FAPI client plan has
-  no WebFinger module, so `WEBFINGER` stays empty unless one appears.
-  `EXPECTED` starts empty. `ARGUED_SECONDS` only for a module the directory
-  file has already called a decision. `CONFORMANCE_PLANS` selects by key.
-* **Classical twins.** Each plan also as `<key>-cl`
-  (`withClassicalTwins()`), `PQ_ONLY` empty. The relationship registers the
-  one classical PS256 key, the dynamic plan's position. A twin that passes
-  has nothing post-quantum excused.
-* **A lane of its own** (`conformance-fapi-client`), so `conformance-rp`
-  does not grow. The watchdog is sized from the first run.
+  service-provider `oidc` relationship with `fedDiscovery` on (the suite's
+  document names, for FAPI 1.0 Advanced, the `mtls_endpoint_aliases` the
+  client must dial), `fedFapi` the profile, `fedIdTokenSignedResponseAlg`
+  PS256. The person starts at `/federation/login/{id}` in the one Chrome.
+* **A STATIC client** (the client plans have no registration variant):
+  `client_id` made at run time and written as `fedClientId`, `scope`,
+  `redirect_uri` the relationship's assertion consumer service, `jwks` the
+  realm's RSA signing keys from `/oauth2/jwks` marked `alg: PS256` (what
+  `private_key_jwt` and the request object are signed with), and for FAPI
+  1.0 Advanced `certificate`, read off the relationship's
+  `clientCertificate` member — issued when `fedFapi` was set to
+  `1-advanced`. The suite holds every token and UserInfo call to it
+  (`EnsureClientCertificateMatches`).
+* **The plans**, with the client role's variant keys read off the suite's
+  plan classes (a `createPlan` that rejects one is a fix to that JSON):
+  * `fapi1adv` — `fapi1-advanced-final-client-test-plan`,
+    `client_auth_type=private_key_jwt`, `fapi_auth_request_method=by_value`,
+    `fapi_response_mode=plain_response`, `fapi_client_type=oidc`;
+    `fedResponseMode=fragment` (the hybrid answer comes back in the
+    fragment).
+  * `fapi1adv-mtls` — the same with `client_auth_type=mtls` and
+    `fedTokenAuth=tls_client_auth`.
+  * `fapi2sp` — `fapi2-security-profile-final-client-test-plan`,
+    `private_key_jwt`, `sender_constrain=dpop`.
+  * `fapi2ms` — `fapi2-message-signing-final-client-test-plan`, the same
+    plus `fapi_request_method=signed_non_repudiation`,
+    `fapi_response_mode=jarm`, `authorization_request_type=simple`.
+* **Not these.** FAPI 1.0 Advanced's `pushed` and `by_reference` request
+  methods and its JARM mode (1-advanced sends its request object by value
+  on a plain hybrid response); the 2.x plans' mutual-TLS sender constraint
+  (2.x binds with DPoP). `fapi-ciba-id1-client-test-plan`: there is no CIBA
+  client (`POST /oauth2/bc-authorize` is the authorization-server role).
+* **Classical twins.** Every plan also as `<key>-cl`
+  (`withClassicalTwins()`), `PQ_ONLY` empty: the suite is handed only the
+  realm's RSA keys.
+* **Running it alone**: `./run-tests.sh --modes=memory
+  --only=sts_fapi_client_conformance` (`CONFORMANCE_PLANS=fapi1adv*` for
+  one profile's two plans and their twins). It also runs in every
+  `./run-tests.sh` whose modes include one STS_TEST_CONFORMANCE_MODES names.
 
 **By hand, beside a service of your own**: start the three images on one
 docker network with the aliases above (`mongodb`, `server`,
