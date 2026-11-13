@@ -285,6 +285,9 @@ checks the chain and the host name, and `verify-ca` checks the chain only. A
 certificate that does not verify stops the service starting
 (`STS-STORE-0006`, with the TLS error). The setting decides only for a string
 whose `sslmode` is unset, `require` or `prefer`, and checks the host name too.
+The name that is checked is the one written in the connection string. An IP
+address is checked as that address: a certificate that names only `localhost`
+does not authenticate a database dialled by a different address.
 
 **Upgrading from an older stack needs `docker compose down -v`.** The image is
 `postgres:18` now, and a major version will not read a data directory written by
