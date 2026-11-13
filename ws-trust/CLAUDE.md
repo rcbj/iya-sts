@@ -19,6 +19,11 @@ advertised moves with what is accepted:
   output's `wsam:Action` (the output's the one this file writes) — and a
   SOAP 1.1 and 1.2 port each, all at `/sts`. The credentials and the issued
   types are WS-SecurityPolicy alternatives that appear only while accepted.
+  **It is always returned formatted** (rcbj, 2026-11-13): `document()`
+  hands its text to `common/xml_format.ts`, one element a line, two spaces
+  a level, so `GET /sts/metadata` and the WS-MEX section are readable as
+  they arrive. Only whitespace between elements is added
+  (`tests/wstrust_metadata.js` F).
 * **The capability document is an IYA-STS extension, not a standard**
   (`urn:iya-sts:metadata:token-capabilities:1`): WS-SecurityPolicy cannot
   say which credential is exchanged for which token type, and the ticket

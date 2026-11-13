@@ -55,6 +55,7 @@
 
 import helpers = require('../common/helpers');
 import Html = require('../common/html');
+import XmlFormat = require('../common/xml_format');
 import config = require('../common/config');
 import mode = require('../common/mode');
 import IssuerNames = require('../common/issuer_names');
@@ -170,7 +171,10 @@ class WsTrustMetadata {
       this.service(root, terms) +
       '</wsdl:definitions>\n';
     log.debug("Leaving WsTrustMetadata.document().");
-    return xml;
+    // ALWAYS FORMATTED (rcbj, 2026-11-13): one element a line, indented, so
+    // a person reading `GET /sts/metadata` or the WS-MEX answer can read it.
+    // Whitespace between elements changes nothing a WSDL reader sees.
+    return XmlFormat.indent(xml, log);
   }
 
   /**
