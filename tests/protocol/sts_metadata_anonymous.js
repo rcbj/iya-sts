@@ -249,6 +249,9 @@ const DID_TYPE = /^application\/did\+json\b/;
 const SAML_TYPE = /^application\/samlmetadata\+xml\b/;
 const XML_TYPE = /^application\/xml\b/;
 const TEXT_TYPE = /^text\/plain\b/;
+// WSDL 1.1 names no media type. application/wsdl+xml is the conventional one
+// GET /sts/metadata sends (#958).
+const WSDL_TYPE = /^application\/wsdl\+xml\b/;
 // OpenID Federation 1.1 section 9: an Entity Configuration's media type, and
 // 8.7.2's for the Historical Keys.
 const ENTITY_STATEMENT_TYPE = /^application\/entity-statement\+jwt\b/;
@@ -731,12 +734,42 @@ const DOCUMENTS = [
       log.debug("Leaving must().");
       return bad;
     } },
+  { family: "WS-Trust", spec: "WS-Trust 1.3", path: "/sts/metadata",
+    type: WSDL_TYPE, json: false, badCredential: "ignored",
+    // THE WSDL (#958). SOAP WS-MetadataExchange is still not served. The
+    // certificate stays at /sts/cert; this document names that address and
+    // does not carry the key.
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<wsdl:definitions[\s>]/.test(text)) {
+        bad.push("no wsdl:definitions");
+      }
+      if (!/wsu:Id="RequesterAuthentication"/.test(text)) {
+        bad.push("no requester policy");
+      }
+      if (!/wsu:Id="IssuedTokenTypes"/.test(text)) {
+        bad.push("no issued-type policy");
+      }
+      if (!/sp:UsernameToken/.test(text)) {
+        bad.push("no UsernameToken alternative");
+      }
+      if (/SAML 1\.2/.test(text)) {
+        bad.push("advertises SAML 1.2, which this service does not speak");
+      }
+      if (/AlgorithmSuite|Basic256/.test(text)) {
+        bad.push("names an algorithm suite");
+      }
+      if (!/location="[^"]*\/sts"/.test(text)) {
+        bad.push("the RST address is not /sts");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
   { family: "WS-Trust", spec: "WS-Trust 1.3", path: "/sts/cert",
     type: TEXT_TYPE, json: false, badCredential: "ignored",
-    // THE ONLY "METADATA" THIS FAMILY HAS. WS-Trust's own discovery is
-    // WS-MetadataExchange, which this service does not implement, so the
-    // certificate a client verifies issued tokens against is the whole of
-    // what it can read before it sends anything.
+    // THE SIGNING CERTIFICATE. The WSDL is /sts/metadata. This row stays
+    // the certificate a client verifies issued tokens against.
     must: function (text) {
       log.debug("Entering must().");
       log.debug("Leaving must().");

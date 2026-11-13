@@ -252,8 +252,8 @@
     "text": "partial：响应程序应尽的部分。明文 HTTP（第 5 节）——响应程序在 `pki.httpPort` 以及 TLS 主端口上应答，证书指明明文端口；附加 base64 请求的 GET；任何 GeneralizedTime 中都没有小数秒（第 2.2.4 节）；响应程序 ID 按密钥哈希给出（第 2.2.2 节）；对其无权威的请求返回 `unauthorized`（第 2.2.3 节）；以及第 6.2 节的缓存标头——max-age 不晚于 nextUpdate、Last-Modified、Expires 和强 ETag，权威应答上从不使用 no-cache 或 no-store。未完成：响应按请求签名，而不是预先生成（第 2.2.1 节建议在高流量时预先生成），并且对携带 nonce 的请求的应答被标记为 private，而不是从缓存提供。"
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "cafeffef561dcd9a",
-    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。若请求方的 wsse:Security 不携带任何凭据，则在两种模式下均以连接上的 TLS 客户端证书认证请求方，前提是该证书由本领域颁发给某个人或某个应用程序（#1046），或者来自外部证书颁发机构并存储在其恰好一个条目的 userCertificate 中（#1061）。"
+    "en": "5c31b63d05af8ac9",
+    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。GET /sts/metadata 是嵌入凭据的 WS-SecurityPolicy 的 WSDL 1.1；不提供 SOAP WS-MetadataExchange。对 Body 和 Timestamp 的 WS-Security 签名是一种凭据（#521），在产品模式下加以验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken、本 STS 签发的 SAML 2.0 或 SAML 1.1 断言或 JWT、WS-Security 签名，或针对本服务自身 SPN 的 Kerberos 令牌——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中由本 STS 签发的令牌；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。若请求方的 wsse:Security 不携带任何凭据，则在两种模式下均以连接上的 TLS 客户端证书认证请求方，前提是该证书由本领域颁发给某个人或某个应用程序（#1046），或者来自外部证书颁发机构并存储在其恰好一个条目的 userCertificate 中（#1061）。"
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
@@ -2458,6 +2458,10 @@
   "stsmetadata.endpoints./sts.what": {
     "en": "66812a407152a91b",
     "text": "POST 一个 SOAP RequestSecurityToken；按 wst:RequestType（Issue、Renew、Validate、Cancel）分派并返回 RSTR。GET 描述该端点。添加 ?encrypt=1 可使所颁发的断言以 EncryptedAssertion 形式返回。"
+  },
+  "stsmetadata.endpoints./sts/metadata.what": {
+    "en": "2d6d8310a37af24d",
+    "text": "带有 WS-SecurityPolicy 的 WSDL 1.1，涵盖全部四种 trust 版本以及 Issue、Renew、Validate 和 Cancel。凭据为 UsernameToken、SAML 2.0 或 SAML 1.1 断言、JWT、X.509 签名、在 wstrust.acceptKerberos 开启时的 Kerberos 令牌，以及在 wstrust.acceptClientCertificate 开启时的 TLS 客户端证书。RST 地址是 /sts。不提供 SOAP WS-MetadataExchange。以 Cache-Control: no-store 提供。"
   },
   "stsmetadata.endpoints./sts/cert.what": {
     "en": "bb1a31c1486e5138",

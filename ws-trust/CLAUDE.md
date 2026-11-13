@@ -1,9 +1,11 @@
 # ws-trust/
 
 WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
-`/sts/cert`). Two files: `wstrust.ts`, the endpoint, and `ws_model.ts`, the
-model as both this family and `../ws-federation/` read it — see *THE MESSAGES
-ARE THE MODEL'S*, at the end.
+`/sts/cert` and the WSDL at `/sts/metadata`, #958). Three files:
+`wstrust.ts`, the endpoint; `wstrust_metadata.ts`, the WSDL, kept out of
+`wstrust.ts` because `tests/model_ws.js` refuses a URI written there; and
+`ws_model.ts`, the model as both this family and `../ws-federation/` read
+it — see *THE MESSAGES ARE THE MODEL'S*, at the end.
 
 **ONE PARSER ANSWERS ALL FOUR VERSIONS**, and that is not a simplification. The
 trust namespace alone has four versions in use, so `firstByLocal()` and
@@ -1012,9 +1014,11 @@ file, `models/generated/ws.json`, by the prefixes of their ids, and
   inside against SAML's own model — logs a gap under **STS-WSTRUST-0071**,
   and sends it unchanged.
 
-**What `/sts` does not serve, stated in the model**: no WSDL, no
-WS-MetadataExchange, no WS-Policy assertion — `GET /sts` answers text and
-`GET /sts/cert` the certificate — and no KET or BatchIssue of its own: a
+**What `/sts` serves as metadata, stated in the model**: `GET /sts/metadata`
+is WSDL 1.1 with WS-SecurityPolicy (#958), built by `wstrust_metadata.ts`
+from the same terms and flags the endpoint accepts. SOAP
+WS-MetadataExchange is not served. `GET /sts` still answers text and
+`GET /sts/cert` the certificate. No KET or BatchIssue of its own: a
 request type that is not Renew, Validate or Cancel is answered as an Issue,
 as it always was.
 

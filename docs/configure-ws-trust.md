@@ -75,8 +75,10 @@ The security token service is `POST /sts`. It speaks WS-Trust 1.4, 1.3, and
 the 2005/02 and 2004/04 namespaces, over SOAP 1.1 (`text/xml`) or SOAP 1.2
 (`application/soap+xml`). The answer is in the namespace and SOAP version the
 request used. `GET /sts` describes the endpoint and names the issuer every
-token carries: the realm's OAuth 2.0 issuer. `GET /sts/cert` is the
-certificate a relying party verifies an assertion with.
+token carries: the realm's OAuth 2.0 issuer. `GET /sts/metadata` is the
+WSDL, with WS-SecurityPolicy for the credentials the running service
+accepts. `GET /sts/cert` is the certificate a relying party verifies an
+assertion with.
 
 ## Register the relying party
 

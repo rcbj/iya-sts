@@ -1447,6 +1447,10 @@
     "en": "974efec49bd38548",
     "text": "Security Token Service"
   },
+  "endpoints.route./sts/metadata.name": {
+    "en": "6d139ba55ee24788",
+    "text": "Metadata ng WS-Trust"
+  },
   "endpoints.route./sts/cert.name": {
     "en": "a8e401846d25c111",
     "text": "STS certificate"

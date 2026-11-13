@@ -24,6 +24,7 @@ the request used.
 |---|---|
 | `POST /sts` | the `RequestSecurityToken` endpoint, SOAP 1.1 or SOAP 1.2 |
 | `GET /sts` | what the endpoint is, and the issuer every token it issues names: the realm's OAuth 2.0 issuer (#523) |
+| `GET /sts/metadata` | WSDL 1.1 with WS-SecurityPolicy, describing the four versions, the four operations and every credential the running service accepts |
 | `GET /sts/cert` | the signing certificate, the key a relying party verifies an assertion with |
 
 In a trust realm every path is under `/realm/{id}`. The full, current list is
@@ -32,6 +33,83 @@ at `/admin/sts-metadata`.
 The SOAP version is taken from the envelope's namespace (or, failing that, the
 content type: `text/xml` is SOAP 1.1) and the response uses the same one.
 
+### The metadata document
+
+`GET /sts/metadata` is the machine-readable description of the security token
+service. It is WSDL 1.1, `Content-Type: application/wsdl+xml`, with
+`Cache-Control: no-store` because the address is the request's own base. The
+document is not signed and does not carry the signing certificate; that stays
+at `GET /sts/cert`. SOAP WS-MetadataExchange is not served, and `GET /sts`
+stays the plain-text description it has always been.
+
+Both ports, SOAP 1.1 and SOAP 1.2, give the RequestSecurityToken address as
+`{base}/sts`. The document's own URL is not that address. `soapAction` is
+empty: the service dispatches on `wst:RequestType`, not on SOAPAction or
+`wsa:Action`.
+
+The versions the documentation names are the four the service speaks:
+
+* WS-Trust 1.3, and 1.4 for everything 1.3 defines,
+  `http://docs.oasis-open.org/ws-sx/ws-trust/200512` (no trailing slash);
+* ActAs only, `http://docs.oasis-open.org/ws-sx/ws-trust/200802`;
+* February 2005, `http://schemas.xmlsoap.org/ws/2005/02/trust`;
+* the May 2004 member submission,
+  `http://schemas.xmlsoap.org/ws/2004/04/trust`. An Issue in that namespace
+  is one `RequestSecurityTokenResponse`, and Cancel is refused as
+  `wst:InvalidRequest`.
+
+The operations are Issue, Renew, Validate and Cancel. A request type that is
+none of those is answered as Issue. Key Exchange Token and BatchIssue are
+not implemented.
+
+The credentials are one `wsp:ExactlyOne`. An alternative is present only
+while the running service accepts it, in the order the endpoint looks:
+
+1. a WS-Security signature over the SOAP Body and the `wsu:Timestamp`
+   (`sp:X509Token` / `sp:WssX509V3Token11`, with `sp:SignedParts`). The
+   certificate is named by a Reference to an X.509 v3 BinarySecurityToken, a
+   ThumbprintSHA1 KeyIdentifier, an X509SubjectKeyIdentifier, or an
+   X509IssuerSerial. A signature made with a Kerberos token's session key
+   (HMAC-SHA256, HMAC-SHA384 or HMAC-SHA512) is that check's other branch;
+2. a UsernameToken (`sp:WssUsernameToken11`), a person or a service account,
+   or else an application's identifier or client_id with one of its client
+   secrets. A person who must hold a second factor presents an application
+   password. The fault does not say whether the name was unknown or the
+   password was wrong;
+3. a SAML 2.0 assertion (`sp:WssSamlV20Token11`);
+4. a SAML 1.1 assertion (`sp:WssSamlV11Token11`). An older client may name
+   the token type as `urn:oasis:names:tc:SAML:1.0:assertion`. There is no
+   SAML 1.2;
+5. a JWT (`sp:IssuedToken` whose `wst:TokenType` is
+   `urn:ietf:params:oauth:token-type:jwt`);
+6. a Kerberos token of the Web Services Security Kerberos Token Profile 1.1,
+   one of its six AP-REQ ValueTypes, for this service's own service
+   principal (`sp:KerberosToken` / `sp:WssKerberosV5ApReqToken11`). The
+   alternative is omitted while `wstrust.acceptKerberos` is off. The six
+   ValueTypes are still named in the documentation;
+7. the TLS client certificate on the connection
+   (`sp:HttpsToken` / `sp:RequireClientCertificate`), and only when the
+   message carries none of the above. Omitted while
+   `wstrust.acceptClientCertificate` is off;
+8. no credential at all, an empty alternative, only while credentials are
+   not verified. Product mode refuses a request with no credential, and the
+   document then has no empty alternative.
+
+The issued types are a second policy: SAML 2.0 (what an omitted TokenType
+issues), SAML 1.1 and JWT. A SAML or JWT proof is Bearer. Each Kerberos
+ValueType is an issued type only while `wstrust.issueKerberos` is on, and
+issuing one also needs a Kerberos AppliesTo and TLS; the proof key is then a
+SymmetricKey `BinarySecret`. A Kerberos token cannot be renewed or cancelled
+here. SAML 2.0, SAML 1.1 and JWT may each be the requester's credential, the
+token inside OnBehalfOf or ActAs, and the issued TokenType. A UsernameToken,
+a TLS client certificate and a message signature are credentials, not types
+this service issues. A Kerberos token inside OnBehalfOf or ActAs must have
+been obtained by delegation for this service's own service principal. Both
+elements in one request are refused.
+
+No alternative names an algorithm suite. The policy says which token is
+accepted, not which suite the listener promises.
+
 ### The four operations
 
 The operation is the last path segment of `wst:RequestType`, so any version's
@@ -39,7 +117,7 @@ namespace works:
 
 | `RequestType` | Answer |
 |---|---|
-| `Issue` | an RSTR Collection carrying a freshly minted, signed token, its `wst:Lifetime`, `KeyType` Bearer (every token here is a bearer token, whatever was asked for) and a reference to the token |
+| `Issue` | an RSTR Collection carrying a freshly minted, signed token, its `wst:Lifetime`, `KeyType` Bearer for a SAML assertion or a JWT, and a reference to the token. A Kerberos ticket's proof is a SymmetricKey `BinarySecret` |
 | `Renew` | an RSTR carrying a fresh token for the subject of the `RenewTarget` |
 | `Validate` | an RSTR carrying `wst:Status` — `valid` when the `ValidateTarget` holds a token, `invalid` when it holds none |
 | `Cancel` | an RSTR carrying `wst:RequestedTokenCancelled` |
@@ -72,7 +150,7 @@ its audience is the `AppliesTo`, its validity window is widened by
 [custom SAML attributes](saml2-sso.md#custom-saml-attributes). Its
 `AuthnContextClassRef` names the credential that was presented:
 `PasswordProtectedTransport` for a UsernameToken, `PreviousSession` for an
-assertion, `TLSClient` for a TLS client certificate, `X509` for a
+assertion or a JWT, `TLSClient` for a TLS client certificate, `X509` for a
 WS-Security signature over the request, `Kerberos` for a Kerberos token,
 `unspecified` for a
 delegation or nothing. The `wsu:Lifetime` around
@@ -577,8 +655,10 @@ changed on `/admin/wstrust` or with `POST /admin-api/config/set`.
   **`/admin/tokens`** follows what one exchange produced into the next.
 * `GET /admin-api/wstrust` returns the same settings; the full API is in
   `/admin-api/openapi.json`.
-* `GET /sts` describes the endpoint live. Failures are recorded under
-  `STS-WSTRUST-NNNN` codes — see [Error codes](error-codes.md).
+* `GET /sts` describes the endpoint live, in plain text. `GET /sts/metadata`
+  is the WSDL, with the credentials the running service accepts. Failures
+  are recorded under `STS-WSTRUST-NNNN` codes — see
+  [Error codes](error-codes.md).
 
 ## Related
 

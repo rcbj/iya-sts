@@ -173,6 +173,10 @@ import krb5Tokens = require('../kerberos/krb5_tokens');
 // `models/ws/*.tsp`'s; every envelope this endpoint sends is held to it. A
 // leaf: it requires only `common/xml_model`.
 import WsModel = require('./ws_model');
+// THE WSDL (#958). It registers nothing itself. It is its own file so the
+// URIs a WSDL quotes are not written in this one: tests/model_ws.js fails
+// when this file quotes one.
+import WsTrustMetadata = require('./wstrust_metadata');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -374,7 +378,8 @@ class WsTrust {
   // THE ROUTES, in the order this module has always registered them.
   // -------------------------------------------------------------------------
   /**
-   * Registers `GET /sts/cert`, `GET /sts` and `POST /sts`.
+   * Registers `GET /sts/cert`, `GET /sts/metadata`, `GET /sts` and
+   * `POST /sts`.
    *
    * @param app - the shared express app
    */
@@ -384,6 +389,11 @@ class WsTrust {
     // GET /sts/cert
     app.get('/sts/cert', (req, res) => {
       return this.stsCertEndpoint(req, res);
+    });
+    // GET /sts/metadata (#958). The WSDL, not a second RST address.
+    // Express matches this path exactly, so it does not take GET /sts.
+    app.get('/sts/metadata', (req, res) => {
+      return WsTrustMetadata.send(req, res);
     });
     // GET /sts
     app.get('/sts', (req, res) => {

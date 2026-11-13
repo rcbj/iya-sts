@@ -26,10 +26,11 @@
 //   assertion against SAML's own model — logs a gap under STS-WSTRUST-0071
 //   and changes nothing.
 //
-// What `/sts` does NOT serve, stated rather than left to be discovered: no
-// WSDL, no WS-MetadataExchange and no WS-Policy assertion is published —
-// `GET /sts` answers a description in plain text and `GET /sts/cert` the
-// signing certificate. No KET, BatchIssue or other request type has an
+// What `/sts` publishes, stated rather than left to be discovered:
+// `GET /sts/metadata` is WSDL 1.1 with WS-SecurityPolicy embedded (#958).
+// SOAP WS-MetadataExchange is still not served. `GET /sts` answers a
+// description in plain text and `GET /sts/cert` the signing certificate.
+// No KET, BatchIssue or other request type has an
 // answer of its own: the code reads the request type's LAST SEGMENT, and one
 // that is not Renew, Validate or Cancel is answered as an Issue
 // (ws-trust/CLAUDE.md). The Kerberos Token Profile's token and value types

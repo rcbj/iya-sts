@@ -1447,6 +1447,10 @@
     "en": "974efec49bd38548",
     "text": "安全令牌服务"
   },
+  "endpoints.route./sts/metadata.name": {
+    "en": "6d139ba55ee24788",
+    "text": "WS-Trust 元数据"
+  },
   "endpoints.route./sts/cert.name": {
     "en": "a8e401846d25c111",
     "text": "STS 证书"

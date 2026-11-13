@@ -1427,7 +1427,10 @@ const SPECS: Spec[] = [
     where: 'OASIS ws-sx',
     url: 'https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html',
     coverage: 'partial: Issue, Renew, Validate and Cancel over SOAP 1.1 and ' +
-              '1.2. Request signatures are not verified. OnBehalfOf and ' +
+              '1.2. GET /sts/metadata is WSDL 1.1 with the credentials as ' +
+              'WS-SecurityPolicy; SOAP WS-MetadataExchange is not served. ' +
+              'A WS-Security signature over the Body and the Timestamp is ' +
+              'a credential (#521), verified in product. OnBehalfOf and ' +
               'ActAs ' +
               'are decided by the issuance policy (#186, the rules the token ' +
               'exchange and Kerberos S4U share) — OnBehalfOf asks for ' +
@@ -1440,9 +1443,11 @@ const SPECS: Spec[] = [
               'development records what would have been refused. In PRODUCT ' +
               'mode (2026-09-12) every ' +
               'operation needs a credential — a UsernameToken verified ' +
-              'against the directory, or a SAML assertion this STS signed ' +
-              'and inside its Conditions — and an OnBehalfOf/ActAs needs the ' +
-              'requester\'s own credential and such an assertion inside it; ' +
+              'against the directory, a SAML 2.0 or SAML 1.1 assertion or ' +
+              'a JWT this STS issued, a WS-Security signature, or a ' +
+              'Kerberos token for this service\'s own SPN — and an ' +
+              'OnBehalfOf/ActAs needs the requester\'s own credential and ' +
+              'a token this STS issued inside it; ' +
               'development accepts none, as it always did. In both modes a ' +
               'requested wst:Lifetime is clamped ' +
               '(wstrust.maxTokenLifetimeMin) and the issued assertion\'s ' +
@@ -7651,6 +7656,16 @@ const ENDPOINTS: EndpointEntry[] = [
           '(Issue, Renew, Validate, Cancel) and returns an RSTR. GET ' +
           'describes the endpoint. Add ?encrypt=1 to have the issued ' +
           'assertion returned as an EncryptedAssertion.' },
+  { path: '/sts/metadata', group: 'WS-Trust', name: 'WS-Trust metadata',
+    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'saml2', 'xmldsig'],
+    what: 'WSDL 1.1 with WS-SecurityPolicy for all four trust versions ' +
+          'and Issue, Renew, Validate and Cancel. The credentials are a ' +
+          'UsernameToken, a SAML 2.0 or SAML 1.1 assertion, a JWT, an ' +
+          'X.509 signature, a Kerberos token when wstrust.acceptKerberos ' +
+          'is on, and a TLS client certificate when ' +
+          'wstrust.acceptClientCertificate is on. The RST address is ' +
+          '/sts. SOAP WS-MetadataExchange is not served. Served with ' +
+          'Cache-Control: no-store.' },
   { path: '/sts/cert', group: 'WS-Trust', name: 'STS certificate',
     specs: ['ws-trust'], what: 'The PEM certificate whose key signs the ' +
                                'assertions, so a relying party can verify ' +
