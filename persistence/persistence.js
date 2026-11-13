@@ -3160,6 +3160,12 @@ let originAdoption = null;
 // When the last renewal STARTED, on the monotonic clock, for the lateness
 // check below; 0 before the first.
 let originRenewStartedAt = 0;
+// When the last renewal that the store CONFIRMED started (or the adoption
+// did), on the monotonic clock; 0 before the claim is held. The claim's
+// expiry is at least this plus ORIGIN_TTL_MS, by the store's clock, so
+// `originFresh()` can say "my claim has not lapsed" without asking (#884's
+// review, 2026-11-13).
+let originConfirmedAt = 0;
 
 // ---------------------------------------------------------------------------
 // HOW LONG THE EVENT LOOP WAS BLOCKED, MEASURED (2026-09-29, #351).
@@ -3370,6 +3376,7 @@ function adoptStableOrigin() {
   const nodeId = slot && cluster.mode() !== 'off' ? cluster.plannedNodeId()
                                                     : '';
   log.debug("Leaving adoptStableOrigin().");
+  const adoptionStartedAt = performance.now();
   return driver.adoptOrigin({ name: name, ttlMs: ORIGIN_TTL_MS,
                               waitMs: ORIGIN_WAIT_MS,
                               nodeId: nodeId }).then(function (a) {
@@ -3390,12 +3397,16 @@ function adoptStableOrigin() {
               'holder\'s claim to lapse' : '') + '; what that origin wrote ' +
              'before a restart is restored as this process\'s own.');
     originRenewStartedAt = 0;
+    originConfirmedAt = adoptionStartedAt;
     originTimer = setInterval(function () {
       const startedAt = performance.now();
       const previous = originRenewStartedAt;
       originRenewStartedAt = startedAt;
       driver.renewOrigin(ORIGIN_TTL_MS).then(function (still) {
         checkRenewalTiming(previous, startedAt, performance.now());
+        if (still) {
+          originConfirmedAt = Math.max(originConfirmedAt, startedAt);
+        }
         if (!still) {
           originLost(new Error('the claim on ' + a.origin + ' could not ' +
                                'be renewed'));
@@ -3423,6 +3434,27 @@ function originStatus() {
     ? { origin: originAdoption.origin, adopted: !!originAdoption.adopted,
         why: originAdoption.why || '' }
     : null;
+}
+
+// WHETHER THIS PROCESS'S ORIGIN CLAIM IS CERTAINLY STILL LIVE (#884's
+// review, 2026-11-13): a renewal the store confirmed started less than one
+// claim lifetime ago. Read without a round trip on every access token a
+// leased status block hands out, so it is a clock comparison and nothing
+// else; false means "not known", never "lost". A process that holds no
+// renewing claim (no stable origin, or a store without origins) has no
+// claim that can lapse, and answers true.
+// Hot path (every access token): no Entering/Leaving pair.
+/**
+ * Whether this process's origin claim was confirmed within its lifetime.
+ *
+ * @returns true when it was, or when this process renews no origin claim
+ */
+function originFresh() {
+  if (!originTimer || !originAdoption || !originAdoption.adopted) {
+    return true;
+  }
+  return originConfirmedAt > 0 &&
+    performance.now() - originConfirmedAt < ORIGIN_TTL_MS;
 }
 
 // THIS PROCESS'S ORIGIN AS A STRING (#465), for the audit log and the
@@ -5836,6 +5868,7 @@ module.exports = {
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
   originId: originId,
+  originFresh: originFresh,
   currentDriver: currentDriver,
   materializeEntry: materializeEntry,
   dematerializeEntry: dematerializeEntry,

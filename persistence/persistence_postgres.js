@@ -8618,13 +8618,24 @@ function create(options) {
     // STABLE ORIGINS THAT STILL HOLD THEIR CLAIM (#884). The key is the
     // origin (`n:…`); the row's origin column is the membership text and
     // is not what a block claim is matched on.
-    liveOriginKeys: function () {
+    //
+    // `graceMs` COUNTS A CLAIM THAT LAPSED LESS THAN THAT LONG AGO AS LIVE
+    // (#884's review, 2026-11-13). A live process whose renewal was late
+    // (#770's bounded renewals time out rather than wait) has a lapsed
+    // claim for a few seconds and re-asserts it on its next write; the
+    // reap job must not take its blocks for that. A lapsed origin row is
+    // kept for ORIGIN_RETAIN_MS, so how long ago it lapsed is read off the
+    // row. A row that is gone (a clean stop releases it) is not live.
+    // Omitted, nothing lapsed counts, which is what the job asked before.
+    liveOriginKeys: function (graceMs) {
       log.debug("Entering liveOriginKeys().");
+      const grace = Number(graceMs) > 0 ? Number(graceMs) : 0;
       log.debug("Leaving liveOriginKeys().");
       return dialect.run(pool, 'liveOriginKeys',
         kx('sts_cluster_claims').select('key')
           .where({ scope: ORIGIN_SCOPE })
-          .where('expires_at', '>', dialect.now())
+          .where('expires_at', '>',
+                 grace ? dialect.now(grace, '-') : dialect.now())
       ).then(function (r) {
         return dialect.rowsOf(r).map(function (row) {
           return String(row.key || '');
