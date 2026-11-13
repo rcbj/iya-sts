@@ -208,5 +208,16 @@
   "transfer.verdictRefused": "La chaîne a été refusée par la validation PKI ; rien ne peut être importé.",
   "transfer.question": "Faire confiance à ce signataire pour les imports de politiques dans ce domaine ? Oui ajoute les trois autorités de certification ci-dessus au magasin de confiance des signataires de ce domaine, pour les imports de politiques et rien d'autre, et importe le document. L'empreinte de l'AC d'émission est {fingerprint}.",
   "transfer.trustAndImport": "Oui : approuver cette chaîne et importer",
-  "transfer.importTrusted": "L'importer"
+  "transfer.importTrusted": "L'importer",
+  "transfer.view.signerHeading": "Le signataire des exports de ce domaine",
+  "transfer.view.algorithm": "Algorithme de signature (pki.policyExportAlgorithm)",
+  "transfer.view.paranoid": "Validation paranoïaque complète du signataire d'un export (pki.paranoidPolicySigner)",
+  "transfer.view.issuingCa": "AC d'émission de signature des exports de politiques",
+  "transfer.view.noIssuingCa": "Ce domaine n'a pas encore d'AC d'émission de signature des exports de politiques. Le premier export la crée.",
+  "transfer.view.validity": "Valide",
+  "transfer.view.fingerprintNote": "Un administrateur d'un autre domaine indique cette empreinte pour faire confiance aux exports de ce domaine.",
+  "transfer.view.trustedHeading": "Autres domaines auxquels ce domaine fait confiance",
+  "transfer.view.noneTrusted": "Ce domaine ne fait confiance aux exports de politiques d'aucun autre domaine.",
+  "transfer.view.kind": "Type",
+  "transfer.view.addedBy": "Ajouté par"
 }

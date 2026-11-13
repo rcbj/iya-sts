@@ -2099,6 +2099,10 @@
     "en": "148c1a64de18a40e",
     "text": "每种策略的 save-<kind>-policy 和 reset-<kind>-policy——目前为 save-password-policy、reset-password-policy、save-authn-policy 和 reset-authn-policy——与控制台提交到 /admin/policies 的相同，通过同一个函数执行。保存会替换配置文件，并且每个字段都是必需的，因此遗漏的字段会被按名称拒绝，而不是悄悄重置。重置会删除已存储的条目并恢复内置默认值。两者都适用于该领域中设置的下一个密码，而不适用于任何已存储的密码。"
   },
+  "stsmetadata.endpoints./admin-api/policies/transfer.what": {
+    "en": "accd8d6a469cce08",
+    "text": "非规范。与 export、inspect 和 import 并列的读取操作（#1713）：生效的 pki.policyExportAlgorithm、pki.paranoidPolicySigner 是否开启、本领域的策略导出签名颁发 CA（主题、有效期、直到服务根但不含根的证书链，以及其他领域为信任其导出而填写的 SHA-256 指纹和 x5t#S256；在第一次导出创建它之前为 null），以及签名者信任库中用于 policy-signer 的条目：它已信任的其他领域。只有证书，绝无私钥。"
+  },
   "stsmetadata.endpoints./admin-api/policies/transfer/:action.what": {
     "en": "c9ad043e74f40a37",
     "text": "NON-SPEC. export、inspect 和 import（#1713）：一个领域在 Directory → Policies 上存储的每个配置文件，作为一个 JSON 文档，即扁平 JSON 序列化的 JWS，由领域的 Policy Export Signing CA 下的一把新密钥签名，整条链在其 x5c 中。inspect 验证签名并将链交给验证门（用途 policy-signer，在 pki.paranoidPolicySigner 开启时执行完整的偏执检查）；import 通过各类型自己的保存写入每个配置文件。本领域自己的签名者受信任；另一领域的仅在管理员点名其 Issuing CA 表示同意后才受信任，这会把该链加入签名者信任库，仅用于 policy-signer。"

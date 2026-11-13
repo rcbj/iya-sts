@@ -9831,7 +9831,40 @@ class AdminApi {
       // import of another realm's export answers 400 with `needsTrust` until
       // it is posted again with `trustSigner` and the Issuing CA's
       // fingerprint it was shown: the console's question, as JSON.
+      //
+      // THE READ BESIDE THEM (rule 7, and the read-back
+      // `sts_admin_api_operations` asks of every write's resource): the
+      // export algorithm, this realm's Policy Export Signing CA with the
+      // fingerprint another realm trusts, the paranoid row and the signers
+      // this realm has trusted. Certificates only. The Export and import tab
+      // of /admin/policies draws it (`web_pages.ts` composes it as
+      // `transfer`).
       // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/policies/transfer', tag: 'Policies',
+        operationId: 'getPolicyTransfer',
+        mirrors: 'GET /admin/policies',
+        handler: function (req, res) {
+          log.debug("Entering the management API policy transfer view.");
+          let view = null;
+          try {
+            view = adminViews.policyTransferJson();
+          } catch (e) {
+            log.debug("Caught in the management API policy transfer view: " +
+                      ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-ADMIN-0936') + 'The policy ' +
+                      'transfer view could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-ADMIN-0936');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The policy transfer view could not be read.'] });
+            log.debug("Leaving the management API policy transfer view. " +
+                      "Failed.");
+            return;
+          }
+          self.sendJson(res, 200, view);
+          log.debug("Leaving the management API policy transfer view.");
+        } },
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/policies/transfer/:action', tag: 'Policies',
         mirrors: 'POST /admin/policies',

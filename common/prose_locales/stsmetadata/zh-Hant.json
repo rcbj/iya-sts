@@ -2099,6 +2099,10 @@
     "en": "148c1a64de18a40e",
     "text": "每一種原則的 save-<kind>-policy 與 reset-<kind>-policy——目前為 save-password-policy、reset-password-policy、save-authn-policy 與 reset-authn-policy——與主控台 POST 至 /admin/policies 的相同，透過同一個函式。儲存會「取代」設定檔且每個欄位都是必要的，因此遺漏的欄位會依名稱被拒絕，而不是被悄悄重設。重設會刪除已儲存的項目並恢復內建預設值。兩者都套用於此領域中「下一次」設定的密碼，不影響任何已儲存的密碼。"
   },
+  "stsmetadata.endpoints./admin-api/policies/transfer.what": {
+    "en": "accd8d6a469cce08",
+    "text": "非規範。與 export、inspect 和 import 並列的讀取作業（#1713）：生效的 pki.policyExportAlgorithm、pki.paranoidPolicySigner 是否開啟、本領域的原則匯出簽章發行 CA（主體、有效期間、直到服務根但不含根的憑證鏈，以及其他領域為信任其匯出而填入的 SHA-256 指紋與 x5t#S256；在第一次匯出建立它之前為 null），以及簽署者信任存放區中用於 policy-signer 的項目：它已信任的其他領域。只有憑證，絕無私密金鑰。"
+  },
   "stsmetadata.endpoints./admin-api/policies/transfer/:action.what": {
     "en": "c9ad043e74f40a37",
     "text": "NON-SPEC. export、inspect 和 import（#1713）：一個領域在 Directory → Policies 上儲存的每個設定檔，作為一個 JSON 文件，即扁平 JSON 序列化的 JWS，由領域的 Policy Export Signing CA 下的一把新金鑰簽署，整條鏈在其 x5c 中。inspect 驗證簽章並將鏈交給驗證門（用途 policy-signer，在 pki.paranoidPolicySigner 開啟時執行完整的偏執檢查）；import 透過各類型自己的儲存寫入每個設定檔。本領域自己的簽署者受信任；另一領域的僅在管理員指名其 Issuing CA 表示同意後才受信任，這會把該鏈加入簽署者信任庫，僅用於 policy-signer。"

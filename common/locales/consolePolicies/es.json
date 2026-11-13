@@ -208,5 +208,16 @@
   "transfer.verdictRefused": "La validación PKI rechazó la cadena, así que no se puede importar nada.",
   "transfer.question": "¿Confiar en este firmante para importar políticas en este dominio? Sí añade las tres autoridades de certificación de arriba al almacén de confianza de firmantes de este dominio, solo para importar políticas, e importa el documento. La huella de la CA emisora es {fingerprint}.",
   "transfer.trustAndImport": "Sí: confiar en esta cadena e importar",
-  "transfer.importTrusted": "Importarla"
+  "transfer.importTrusted": "Importarla",
+  "transfer.view.signerHeading": "El firmante de las exportaciones de este dominio",
+  "transfer.view.algorithm": "Algoritmo de firma (pki.policyExportAlgorithm)",
+  "transfer.view.paranoid": "Validación paranoica completa del firmante de una exportación (pki.paranoidPolicySigner)",
+  "transfer.view.issuingCa": "CA de firma de exportaciones de políticas",
+  "transfer.view.noIssuingCa": "Este dominio aún no tiene CA de firma de exportaciones de políticas. La primera exportación la crea.",
+  "transfer.view.validity": "Válido",
+  "transfer.view.fingerprintNote": "Un administrador de otro dominio indica esta huella para confiar en las exportaciones de este dominio.",
+  "transfer.view.trustedHeading": "Otros dominios en los que confía este dominio",
+  "transfer.view.noneTrusted": "Este dominio no confía en las exportaciones de políticas de ningún otro dominio.",
+  "transfer.view.kind": "Tipo",
+  "transfer.view.addedBy": "Añadido por"
 }

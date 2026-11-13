@@ -208,5 +208,16 @@
   "transfer.verdictRefused": "Tinanggihan ng PKI validation ang chain, kaya walang maii-import.",
   "transfer.question": "Pagkatiwalaan ang lumagdang ito para sa pag-import ng patakaran sa realm na ito? Idinadagdag ng Oo ang tatlong certificate authority sa itaas sa signer truststore ng realm na ito, para lamang sa pag-import ng patakaran, at ini-import ang dokumento. Ang fingerprint ng Issuing CA ay {fingerprint}.",
   "transfer.trustAndImport": "Oo: pagkatiwalaan ang chain na ito at i-import",
-  "transfer.importTrusted": "I-import ito"
+  "transfer.importTrusted": "I-import ito",
+  "transfer.view.signerHeading": "Ang pumipirma ng mga export ng realm na ito",
+  "transfer.view.algorithm": "Algorithm ng pagpirma (pki.policyExportAlgorithm)",
+  "transfer.view.paranoid": "Buong paranoid na pagpapatunay sa pumirma ng isang export (pki.paranoidPolicySigner)",
+  "transfer.view.issuingCa": "Policy Export Signing CA",
+  "transfer.view.noIssuingCa": "Wala pang Policy Export Signing CA ang realm na ito. Ang unang export ang gagawa nito.",
+  "transfer.view.validity": "May bisa",
+  "transfer.view.fingerprintNote": "Ang fingerprint na ito ang binabanggit ng administrator sa ibang realm upang pagkatiwalaan ang mga export ng realm na ito.",
+  "transfer.view.trustedHeading": "Ibang mga realm na pinagkakatiwalaan ng realm na ito",
+  "transfer.view.noneTrusted": "Walang pinagkakatiwalaang export ng patakaran mula sa ibang realm ang realm na ito.",
+  "transfer.view.kind": "Uri",
+  "transfer.view.addedBy": "Idinagdag ni"
 }
