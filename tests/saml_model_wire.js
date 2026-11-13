@@ -280,6 +280,9 @@ function childMain() {
     const SP_SLO = 'https://sp.wire.test/slo';
     const RP = 'https://rp.wire.test/rp';
     const RP_SHIRE = 'https://rp.wire.test/shire';
+    // The relying party's Browser/Artifact consumer: the binding registered
+    // for the shire is what picks the profile, so it has its own Location.
+    const RP_ARTIFACT = 'https://rp.wire.test/artifact';
     const PERSON = 'wirealice';
 
     const parties = function () {
@@ -299,6 +302,15 @@ function childMain() {
                   saml11IdpInitiatedSso: 'TRUE' } });
       if (!rp.ok) {
         record.problems.push('rp: ' + JSON.stringify(rp));
+      }
+      // What consuming its metadata writes: the artifact consumer WITH its
+      // profile. RP_SHIRE has none, so saml11.defaultProfile answers it.
+      const bound = applications.replaceSamlMetadataFields(RP, {
+        samlAssertionConsumerService: [RP_ARTIFACT],
+        samlAcsEndpoint: ['1 - urn:oasis:names:tc:SAML:1.0:profiles:' +
+                          'artifact-01 ' + RP_ARTIFACT] });
+      if (!bound.ok) {
+        record.problems.push('rp endpoints: ' + JSON.stringify(bound));
       }
     };
 
@@ -680,11 +692,14 @@ function childMain() {
       await step('Browser/POST, no session: to the sign-in screen', 'GET',
                  sso11());
       await step('Browser/POST', 'GET', sso11(), bob.cookie);
-      await step('Browser/POST, a format asked for', 'GET', sso11({
-        format: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress' }),
-      bob.cookie);
-      const art11 = await step('Browser/Artifact', 'GET',
-                               sso11({ profile: 'artifact' }), bob.cookie);
+      set('saml11.nameIdFormat',
+          'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress');
+      await step('Browser/POST, saml11.nameIdFormat emailAddress', 'GET',
+                 sso11(), bob.cookie);
+      clear('saml11.nameIdFormat');
+      const art11 = await step('Browser/Artifact, the shire\'s registered ' +
+                               'binding', 'GET', sso11({ shire: RP_ARTIFACT }),
+                               bob.cookie);
       const art11Value = (function () {
         try {
           return new URL(String(art11.headers.location || ''))
@@ -745,7 +760,9 @@ function childMain() {
       await step('a relying party nobody registered', 'GET', sso11({
         providerId: 'https://stranger.wire.test/rp',
         shire: 'https://stranger.wire.test/shire' }), bob.cookie);
-      await step('an unknown profile', 'GET', sso11({ profile: 'paos' }),
+      // Not Shibboleth's request profile, so ignored rather than honoured.
+      await step('profile and format parameters, ignored', 'GET',
+                 sso11({ profile: 'artifact', format: 'urn:made:up' }),
                  bob.cookie);
       await step('the inter-site transfer service\'s own start', 'GET',
                  P + '/saml11/sso/' + encodeURIComponent(RP) +

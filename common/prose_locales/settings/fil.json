@@ -5524,16 +5524,16 @@
     "text": "Default na NameIdentifier format"
   },
   "saml11.nameIdFormat|description": {
-    "en": "2075551ddbb8336f",
-    "text": "Ang Format sa <saml:NameIdentifier> kapag walang hinihingi ang request — na sa SAML 1.1 ay PALAGI, dahil walang request message ang profile na makapagdadala ng NameIDPolicy. Iyon ang pagkakaiba sa saml2.nameIdFormat, na isang default na karaniwang ino-override ng request: ito ang sagot maliban kung ino-override ito ng non-spec na `format` parameter."
+    "en": "1f1bb898326ff544",
+    "text": "Ang Format sa <saml:NameIdentifier> kapag walang hinihingi ang request — na sa SAML 1.1 ay PALAGI, dahil walang request message ang profile na makapagdadala ng NameIDPolicy. Iyon ang pagkakaiba sa saml2.nameIdFormat, na isang default na karaniwang ino-override ng request: ito ang sagot, maliban kung itinatakda ng entry ng relying party ang saml11NameIdFormat."
   },
   "saml11.defaultProfile|label": {
     "en": "18dccb1d7410af14",
     "text": "Default na browser profile"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "Aling profile ang ginagamit ng inter-site transfer service kapag hindi sinasabi ng request: Browser/POST (section 4.2), kung saan naglalakbay ang assertion sa browser sa isang form POST, o Browser/Artifact (section 4.1), kung saan isang reference ang naglalakbay sa browser at kinukuha ng relying party ang assertion sa SOAP. POST ang default dahil hindi ito nangangailangan ng server sa likod ng assertion consumer ng relying party, kaya ito ang gumagana kapag itinuro ito ng isang tao sa isang URL at nanood. Ino-override ito ng non-spec na `profile` parameter, gayundin ng binding na ini-register ng relying party para sa `shire` na ipinapadala nito (samlAcsEndpoint, mula sa na-consume na metadata)."
+    "en": "8ce998424bcc2563",
+    "text": "Aling profile ang ginagamit ng inter-site transfer service kapag walang binding na ini-register ang relying party para sa `shire` na ipinapadala nito: Browser/POST (section 4.2), kung saan naglalakbay ang assertion sa browser sa isang form POST, o Browser/Artifact (section 4.1), kung saan isang reference ang naglalakbay sa browser at kinukuha ng relying party ang assertion sa SOAP. POST ang default dahil hindi ito nangangailangan ng server sa likod ng assertion consumer ng relying party, kaya ito ang gumagana kapag itinuro ito ng isang tao sa isang URL at nanood. Ino-override ito ng binding na ini-register ng relying party para sa `shire` na ipinapadala nito (samlAcsEndpoint, mula sa na-consume na metadata); walang anuman sa request ang nag-o-override nito."
   },
   "saml11.doNotCacheCondition|label": {
     "en": "e1fd907d123fa918",

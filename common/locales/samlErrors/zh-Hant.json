@@ -33,7 +33,6 @@
   "refusal.STS-KEYS-0070": "該 LogoutRequest 的 EncryptedID 使用了此服務不解包的金鑰傳輸方式（rsa-1_5）。未結束任何工作階段：您仍處於登入狀態。",
   "refusal.STS-REG-0049": "回應將送達的位址先前出現過，但尚未為此應用程式確認，因此不予使用。",
   "refusal.STS-SAML-0025": "此登入已過期：您在登入頁面時它被保留，但保留時間過長。",
-  "refusal.STS-SAML-0026": "此連結指定的設定檔不是 SAML 1.1 的兩種瀏覽器設定檔 post 和 artifact 之一。",
   "refusal.STS-SAML-0028": "回應將送達的位址（shire）未為此信賴方註冊，或者沒有註冊任何位址。",
   "refusal.STS-SAML-0029": "回應將送達的位址不是絕對的 http 或 https URL。",
   "refusal.STS-SAML-0030": "此連結沒有說明它是給哪個信賴方的：它沒有 providerId，也沒有可推斷出信賴方的 TARGET。",

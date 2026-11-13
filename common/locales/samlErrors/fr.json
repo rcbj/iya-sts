@@ -33,7 +33,6 @@
   "refusal.STS-KEYS-0070": "L’EncryptedID du LogoutRequest utilise un transport de clé que ce service ne déchiffre pas (rsa-1_5). Rien n’a été fermé : vous êtes toujours connecté.",
   "refusal.STS-REG-0049": "L’adresse à laquelle la réponse serait remise a déjà été vue mais n’a pas été confirmée pour cette application ; elle n’est donc pas utilisée.",
   "refusal.STS-SAML-0025": "Cette connexion a expiré : elle a été conservée pendant que vous étiez sur l’écran de connexion, et trop longtemps.",
-  "refusal.STS-SAML-0026": "Ce lien désigne un profil autre que les deux profils de navigateur SAML 1.1, post et artifact.",
   "refusal.STS-SAML-0028": "L’adresse à laquelle la réponse serait remise (le shire) n’est pas enregistrée pour cette partie de confiance, ou aucune n’est enregistrée.",
   "refusal.STS-SAML-0029": "L’adresse à laquelle la réponse serait remise n’est pas une URL http ou https absolue.",
   "refusal.STS-SAML-0030": "Ce lien n’indique pas à quelle partie de confiance il est destiné : il n’a pas de providerId, ni de TARGET permettant d’en déduire une.",

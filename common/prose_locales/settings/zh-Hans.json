@@ -5524,16 +5524,16 @@
     "text": "默认 NameIdentifier 格式"
   },
   "saml11.nameIdFormat|description": {
-    "en": "2075551ddbb8336f",
-    "text": "当请求未要求任何格式时 <saml:NameIdentifier> 上的 Format——在 SAML 1.1 中总是如此，因为该配置文件没有可以携带 NameIDPolicy 的请求消息。这就是它与 saml2.nameIdFormat 的区别，后者是请求经常会覆盖的默认值：而此值就是最终答案，除非非规范的 `format` 参数覆盖它。"
+    "en": "1f1bb898326ff544",
+    "text": "当请求未要求任何格式时 <saml:NameIdentifier> 上的 Format——在 SAML 1.1 中总是如此，因为该配置文件没有可以携带 NameIDPolicy 的请求消息。这就是它与 saml2.nameIdFormat 的区别，后者是请求经常会覆盖的默认值：而此值就是最终答案，除非依赖方的条目设置了 saml11NameIdFormat。"
   },
   "saml11.defaultProfile|label": {
     "en": "18dccb1d7410af14",
     "text": "默认浏览器配置文件"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "当请求未指明时，站点间传输服务使用的配置文件：Browser/POST（第 4.2 节），断言通过表单 POST 经由浏览器传输；或 Browser/Artifact（第 4.1 节），引用经由浏览器传输，依赖方通过 SOAP 获取断言。POST 是默认值，因为它不需要依赖方的断言消费者背后有服务器，所以当有人把它指向某个 URL 并观察时，它是能正常工作的那一种。非规范的 `profile` 参数会覆盖它，依赖方为其所发送的 `shire` 注册的绑定（samlAcsEndpoint，来自已导入的元数据）也会覆盖它。"
+    "en": "8ce998424bcc2563",
+    "text": "当依赖方没有为其所发送的 `shire` 注册绑定时，站点间传输服务使用的配置文件：Browser/POST（第 4.2 节），断言通过表单 POST 经由浏览器传输；或 Browser/Artifact（第 4.1 节），引用经由浏览器传输，依赖方通过 SOAP 获取断言。POST 是默认值，因为它不需要依赖方的断言消费者背后有服务器，所以当有人把它指向某个 URL 并观察时，它是能正常工作的那一种。依赖方为其所发送的 `shire` 注册的绑定（samlAcsEndpoint，来自已导入的元数据）会覆盖它；请求中的任何内容都不会覆盖它。"
   },
   "saml11.doNotCacheCondition|label": {
     "en": "e1fd907d123fa918",

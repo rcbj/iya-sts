@@ -5524,16 +5524,16 @@
     "text": "Formato de NameIdentifier predeterminado"
   },
   "saml11.nameIdFormat|description": {
-    "en": "2075551ddbb8336f",
-    "text": "El Format del <saml:NameIdentifier> cuando la solicitud no pide ninguno — lo que en SAML 1.1 ocurre SIEMPRE, porque el perfil no tiene ningún mensaje de solicitud en el que llevar un NameIDPolicy. Esa es la diferencia con saml2.nameIdFormat, que es un predeterminado que una solicitud anula habitualmente: este es la respuesta salvo que lo anule el parámetro `format`, ajeno a la especificación."
+    "en": "1f1bb898326ff544",
+    "text": "El Format del <saml:NameIdentifier> cuando la solicitud no pide ninguno — lo que en SAML 1.1 ocurre SIEMPRE, porque el perfil no tiene ningún mensaje de solicitud en el que llevar un NameIDPolicy. Esa es la diferencia con saml2.nameIdFormat, que es un predeterminado que una solicitud anula habitualmente: este es la respuesta, salvo que la entrada de la parte que confía establezca saml11NameIdFormat."
   },
   "saml11.defaultProfile|label": {
     "en": "18dccb1d7410af14",
     "text": "Perfil de navegador predeterminado"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "Qué perfil usa el servicio de transferencia entre sitios cuando la solicitud no lo indica: Browser/POST (sección 4.2), en el que la aserción viaja por el navegador en un POST de formulario, o Browser/Artifact (sección 4.1), en el que una referencia viaja por el navegador y la parte que confía obtiene la aserción por SOAP. POST es el predeterminado porque no necesita ningún servidor detrás del consumidor de aserciones de la parte que confía, así que es el que funciona cuando alguien apunta esto a una URL y observa. Lo anula el parámetro `profile`, ajeno a la especificación, y también el binding que una parte que confía registró para el `shire` que envía (samlAcsEndpoint, de los metadatos consumidos)."
+    "en": "8ce998424bcc2563",
+    "text": "Qué perfil usa el servicio de transferencia entre sitios cuando la parte que confía no registró ningún binding para el `shire` que envía: Browser/POST (sección 4.2), en el que la aserción viaja por el navegador en un POST de formulario, o Browser/Artifact (sección 4.1), en el que una referencia viaja por el navegador y la parte que confía obtiene la aserción por SOAP. POST es el predeterminado porque no necesita ningún servidor detrás del consumidor de aserciones de la parte que confía, así que es el que funciona cuando alguien apunta esto a una URL y observa. Lo anula el binding que una parte que confía registró para el `shire` que envía (samlAcsEndpoint, de los metadatos consumidos); nada de la solicitud lo anula."
   },
   "saml11.doNotCacheCondition|label": {
     "en": "e1fd907d123fa918",

@@ -33,7 +33,6 @@
   "refusal.STS-KEYS-0070": "El EncryptedID del LogoutRequest usa un transporte de clave que este servicio no descifra (rsa-1_5). No se cerró nada: su sesión sigue iniciada.",
   "refusal.STS-REG-0049": "La dirección a la que se entregaría la respuesta ya se vio antes, pero no se ha confirmado para esta aplicación, por lo que no se usa.",
   "refusal.STS-SAML-0025": "Este inicio de sesión ha caducado: se retuvo mientras usted estaba en la pantalla de inicio de sesión, y durante demasiado tiempo.",
-  "refusal.STS-SAML-0026": "Este enlace indica un perfil distinto de los dos perfiles de navegador de SAML 1.1, post y artifact.",
   "refusal.STS-SAML-0028": "La dirección a la que se entregaría la respuesta (el shire) no está registrada para esta parte de confianza, o no hay ninguna registrada.",
   "refusal.STS-SAML-0029": "La dirección a la que se entregaría la respuesta no es una URL http o https absoluta.",
   "refusal.STS-SAML-0030": "Este enlace no indica para qué parte de confianza es: no tiene providerId ni un TARGET del que deducirla.",

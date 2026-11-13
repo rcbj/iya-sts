@@ -5524,16 +5524,16 @@
     "text": "預設 NameIdentifier 格式"
   },
   "saml11.nameIdFormat|description": {
-    "en": "2075551ddbb8336f",
-    "text": "當要求未要求任何格式時，<saml:NameIdentifier> 上的 Format——在 SAML 1.1 中這是「一定」的情況，因為該設定檔沒有可攜帶 NameIDPolicy 的要求訊息。這是與 saml2.nameIdFormat 的差異，後者是要求經常會覆寫的預設值：此值就是答案，除非非規格的 `format` 參數覆寫它。"
+    "en": "1f1bb898326ff544",
+    "text": "當要求未要求任何格式時，<saml:NameIdentifier> 上的 Format——在 SAML 1.1 中這是「一定」的情況，因為該設定檔沒有可攜帶 NameIDPolicy 的要求訊息。這是與 saml2.nameIdFormat 的差異，後者是要求經常會覆寫的預設值：此值就是答案，除非依賴方的項目設定了 saml11NameIdFormat。"
   },
   "saml11.defaultProfile|label": {
     "en": "18dccb1d7410af14",
     "text": "預設瀏覽器設定檔"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "要求未指明時，站際傳輸服務使用哪個設定檔：Browser/POST（section 4.2），斷言透過瀏覽器以表單 POST 傳遞；或 Browser/Artifact（section 4.1），參照透過瀏覽器傳遞，依賴方再透過 SOAP 擷取斷言。預設為 POST，因為它不需要依賴方的斷言取用端後面有伺服器，所以在有人把它指向某個 URL 並觀察時能夠運作。非規格的 `profile` 參數會覆寫它，依賴方為其傳送之 `shire` 所註冊的繫結（samlAcsEndpoint，來自已採用的中繼資料）也會覆寫它。"
+    "en": "8ce998424bcc2563",
+    "text": "依賴方未為其傳送之 `shire` 註冊繫結時，站際傳輸服務使用哪個設定檔：Browser/POST（section 4.2），斷言透過瀏覽器以表單 POST 傳遞；或 Browser/Artifact（section 4.1），參照透過瀏覽器傳遞，依賴方再透過 SOAP 擷取斷言。預設為 POST，因為它不需要依賴方的斷言取用端後面有伺服器，所以在有人把它指向某個 URL 並觀察時能夠運作。依賴方為其傳送之 `shire` 所註冊的繫結（samlAcsEndpoint，來自已採用的中繼資料）會覆寫它；要求中的任何內容都不會覆寫它。"
   },
   "saml11.doNotCacheCondition|label": {
     "en": "e1fd907d123fa918",

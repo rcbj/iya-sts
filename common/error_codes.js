@@ -11773,8 +11773,10 @@ const CODES = [
     spec: 'HTTP 400 page' },
   { code: 'STS-SAML-0026',
     summary: 'A SAML 1.1 flow named a profile other than post or artifact in ' +
-      'the non-spec profile parameter.',
-    spec: 'HTTP 400 page' },
+      'the non-spec profile parameter. Retired 2026-11-13: the parameter ' +
+      'was removed for spec compliance, and the binding registered for the ' +
+      'shire decides the profile.',
+    spec: 'HTTP 400 page', retired: true },
   { code: 'STS-SAML-0027',
     summary: 'saml11.providerId is empty in a product-mode realm, so the ' +
       'SAML 1.1 identity provider has no name to issue or publish ' +

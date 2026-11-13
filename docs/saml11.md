@@ -112,10 +112,10 @@ party ask in the protocol, but a relying party whose metadata was consumed
 registered each assertion consumer service WITH its profile — a Shibboleth SP
 publishes `/SAML/POST` as `browser-post` and `/SAML/Artifact` as
 `artifact-01` — so the `shire` it sends chooses, which is what a Shibboleth
-identity provider does. Otherwise `saml11.defaultProfile` decides, and the
-non-spec `profile` parameter overrides both — the same
-kind of device as WS-Trust's `/sts?encrypt=1`, and marked as non-spec wherever
-it appears.
+identity provider does. Otherwise `saml11.defaultProfile` decides. Nothing in
+the request overrides either: the non-spec `profile` parameter that once did
+was removed, and so was `format` (the NameIdentifier format is
+`saml11.nameIdFormat`, or the relying party's `saml11NameIdFormat`).
 
 * **Browser/POST** (profiles section 4.2) puts the whole signed Response in a
   self-submitting form. The assertion is confirmed
@@ -282,8 +282,8 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 | `saml11.assertionLifetimeMin` | `STS_SAML11_ASSERTION_LIFETIME_MIN` | `60` | yes | Assertion lifetime; per relying party with `saml11AssertionLifetimeMin`. |
 | `saml11.signAssertion` | `STS_SAML11_SIGN_ASSERTION` | `true` | yes | Sign the assertion (required by Browser/POST); per relying party with `saml11SignAssertion`. Off is development mode only: product signs every assertion, and turning it off is refused, here and per relying party (#181). |
 | `saml11.signResponse` | `STS_SAML11_SIGN_RESPONSE` | `true` | yes | Sign the Response; per relying party with `saml11SignResponse`. Off is development mode only: Browser/POST requires a signed Response, so product always signs it and refuses turning it off (#181). |
-| `saml11.nameIdFormat` | `STS_SAML11_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` | yes | The NameIdentifier format, unless the non-spec `format` overrides it; per relying party with `saml11NameIdFormat`. |
-| `saml11.defaultProfile` | `STS_SAML11_DEFAULT_PROFILE` | `post` | yes | `post` or `artifact`, when the request does not say. |
+| `saml11.nameIdFormat` | `STS_SAML11_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` | yes | The NameIdentifier format; per relying party with `saml11NameIdFormat`. |
+| `saml11.defaultProfile` | `STS_SAML11_DEFAULT_PROFILE` | `post` | yes | `post` or `artifact`, when no binding is registered for the `shire`. |
 | `saml11.doNotCacheCondition` | `STS_SAML11_DO_NOT_CACHE_CONDITION` | `false` | yes | A `<saml:DoNotCacheCondition/>` on a Browser/POST assertion. Off by default (#189): the profile does not require it, and the Shibboleth SP's stock policy refuses it. **Warning:** turn it on only for relying parties known to honour it. |
 | `saml11.artifactTtlS` | `STS_SAML11_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per relying party with `saml11ArtifactTtlS`. |
 | `saml11.autocreateApplications` | `STS_SAML11_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry the first time a relying party is named. |

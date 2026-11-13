@@ -117,8 +117,8 @@ model Status {
 
 // The formats ADVERTISED: what SAML 1.1 defines plus the X.509 one every
 // deployment used, and not 2.0's three, which a 1.1 assertion has no way
-// to ask for. Not a list of what is accepted: the non-spec `format`
-// parameter is answered with whatever it says.
+// to ask for. Not a list of what is chosen from: the relying party's
+// saml11.nameIdFormat setting is what an assertion carries.
 @vocabulary(#{ id: "saml11.nameIdFormat",
                cite: "saml-core-1.1 section 7.3",
                prefix: "urn:oasis:names:tc:SAML:1.1:nameid-format:" })
@@ -219,8 +219,13 @@ model Requests {
 
 /**
  * The inter-site transfer service's parameters (saml-bindings-1.1 section
- * 4.1, and Shibboleth's request profile). Three are this service's own and
- * no specification's: `profile`, `format` and `authnContextClassRef`.
+ * 4.1, and Shibboleth's request profile). One is this service's own and no
+ * specification's: `authnContextClassRef`. The browser profile is the
+ * binding registered for the `shire` and the NameIdentifier format is the
+ * relying party's setting, as the specifications have it: the non-spec
+ * `profile` and `format` parameters that chose them were removed, because a
+ * `profile` that disagreed with the shire's registered binding sent an
+ * assertion over a profile that consumer does not answer.
  */
 @params(#{ id: "saml11.browser",
            cite: "saml-bindings-1.1 section 4.1; Shibboleth 1.3 Architecture and Protocols section 3.1.1" })
@@ -241,14 +246,6 @@ model BrowserParams {
 
   @param(#{ wire: "time", cite: "Shibboleth 1.3 section 3.1.1.1" })
   time: string;
-
-  @param(#{ wire: "profile", nonSpec: true, accepts: #["post", "artifact"],
-            cite: "this service's: which browser profile answers" })
-  profile: string;
-
-  @param(#{ wire: "format", nonSpec: true,
-            cite: "this service's: the NameIdentifier format" })
-  format: string;
 
   /** The EAP class URIs SAML 1.1 has no spelling for (#736). */
   @param(#{ wire: "authnContextClassRef", nonSpec: true,

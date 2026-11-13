@@ -245,9 +245,19 @@ function readers(t) {
   }
   t.check(/no attribute colour/.test(threw),
           'B. an attribute the model does not declare is refused', threw);
-  t.check(SamlModel.param('saml11.browser', 'profile').accepts.join() ===
-          'post,artifact',
-          'B. the profile parameter\'s values are the model\'s');
+  // SAML 1.1's request is Shibboleth's: the shire's registered binding picks
+  // the profile and the relying party's setting the format, so the non-spec
+  // `profile` and `format` parameters that once chose them are not declared.
+  ['profile', 'format'].forEach(function (name) {
+    threw = '';
+    try {
+      SamlModel.param('saml11.browser', name);
+    } catch (e) {
+      threw = String(e && e.message);
+    }
+    t.check(/has no /.test(threw),
+            'B. saml11.browser declares no ' + name + ' parameter', threw);
+  });
   log.debug("Leaving readers().");
 }
 
