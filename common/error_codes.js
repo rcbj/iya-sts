@@ -2806,6 +2806,12 @@ const CODES = [
   // ===== KEYS ==============================================================
   { code: 'STS-SCHED-0022',
     summary: 'The clock of this node differs from the database clock.' },
+  { code: 'STS-SCHED-0023',
+    summary: 'The store could not say whether some runs of the current ' +
+      'slot had already run (#883\'s review): those runs were held back ' +
+      'for this tick, neither run nor taken as finished, and are asked ' +
+      'about again at the next; every other run in the tick went on.',
+    spec: '' },
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
       'ignored.',

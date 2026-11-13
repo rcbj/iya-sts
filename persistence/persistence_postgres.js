@@ -116,7 +116,6 @@
 // A LEAF with no requires: the failure codes on the log lines and the startup
 // refusals below. It reaches for no setting and no store, so this driver still
 // reaches for nothing.
-const tls = require('tls');
 const ModelTables = require('../common/model_tables');
 const OnlineIndexes = require('./online_indexes');
 const errorCodes = require('../common/error_codes');
@@ -2397,10 +2396,9 @@ function dialOptions(url, verifyTls, ca, engine) {
   if (verifyChain && !verifyHostname) {
     // libpq's verify-ca: the chain, and no host name. Node checks the host
     // name through this hook whenever it verifies the chain, so answering
-    // "no error" is how the check is left out — and only that check.
-    ssl.checkServerIdentity = function () {
-      return undefined;
-    };
+    // "no error" is how the check is left out — and only that check. The
+    // hook is `knex_store.js`'s, the one the bridge's thread puts back.
+    ssl.checkServerIdentity = require('./knex_store').chainOnlyCheck();
   } else if (verifyHostname && parsed.hostname) {
     // The name in the string, not the one `pg` leaves node (#951, above).
     // Anonymous: this module has no logger yet, and the hook runs on the
@@ -2411,9 +2409,10 @@ function dialOptions(url, verifyTls, ca, engine) {
       host = host.slice(1, -1);
     }
     ssl.checkHost = host;
-    ssl.checkServerIdentity = function (_presented, cert) {
-      return tls.checkServerIdentity(host, cert);
-    };
+    // `knex_store.js`'s hook, which the bridge's thread is handed back
+    // from the same function (#951's review): one place says how the
+    // database's name is checked, in every process and thread.
+    ssl.checkServerIdentity = require('./knex_store').hostCheck(host);
   }
   return {
     connectionString: parsed.toString(),
@@ -7621,24 +7620,9 @@ function create(options) {
       // pools do not, and dropping `checkHost` would check `localhost`
       // for an address. `ca` and `stsOutboundVariant` cross as data; the
       // variant is what the outbound gate reads.
-      const ssl = options.ssl;
-      if (ssl && typeof ssl.checkServerIdentity === 'function') {
-        const posted = {
-          rejectUnauthorized: ssl.rejectUnauthorized
-        };
-        if (ssl.checkHost) {
-          posted.checkHost = String(ssl.checkHost);
-        } else {
-          posted.hostnameUnchecked = true;
-        }
-        if (ssl.ca) {
-          posted.ca = ssl.ca;
-        }
-        if (ssl.stsOutboundVariant) {
-          posted.stsOutboundVariant = ssl.stsOutboundVariant;
-        }
-        options.ssl = posted;
-      }
+      // `knex_store.postableSsl()` says it, and the thread's
+      // `restoredSsl()` is its inverse in the same file (#951's review).
+      options.ssl = require('./knex_store').postableSsl(options.ssl);
       log.debug("Leaving bridgeConnection().");
       return options;
     },

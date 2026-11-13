@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 22
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 23
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 262
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
@@ -619,6 +619,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0020` | A cluster job is not registered in the request worker its run was handed to (#408), so it ran on the front process's thread, and every later run of it in this process does too; register it at its owner's load, or give it an onFront reason. | — |
 | `STS-SCHED-0021` | A cluster run's body on a request worker stopped owning its run because the leader had not renewed its grant in time (#1305): the leader's thread did not run, or its renewals did not arrive. The body stops at its next step; the leader, or the attempt that takes the run over, decides the run. | — |
 | `STS-SCHED-0022` | The clock of this node differs from the database clock. | — |
+| `STS-SCHED-0023` | The store could not say whether some runs of the current slot had already run (#883's review): those runs were held back for this tick, neither run nor taken as finished, and are asked about again at the next; every other run in the tick went on. | — |
 
 ## STS-KEYS
 
