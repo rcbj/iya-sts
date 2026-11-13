@@ -72,6 +72,7 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import ownMembers = require('../common/own_members');
 import model = require('./xacml_model');
 import datatypes = require('./xacml_datatypes');
 import functions = require('./xacml_functions');
@@ -425,17 +426,10 @@ class XacmlEditor {
    */
   static ownStep(node: ModelNode, key: string): boolean {
     helpers.log.debug("Entering XacmlEditor.ownStep().");
-    if (node === null || typeof node !== 'object') {
-      helpers.log.debug("Leaving XacmlEditor.ownStep(). Not an object.");
-      return false;
-    }
-    if (Array.isArray(node)) {
-      const own = /^[0-9]+$/.test(key) && Number(key) < node.length;
-      helpers.log.debug("Leaving XacmlEditor.ownStep(). Index " + own);
-      return own;
-    }
-    const own = Object.prototype.hasOwnProperty.call(node, key);
-    helpers.log.debug("Leaving XacmlEditor.ownStep(). Member " + own);
+    // The rule is `common/own_members.ts`'s (2026-11-12): one place, which
+    // every read of a name a caller chose goes through.
+    const own = ownMembers.has(node, key);
+    helpers.log.debug("Leaving XacmlEditor.ownStep(). " + own);
     return own;
   }
 
@@ -1125,12 +1119,13 @@ class XacmlEditor {
       }
       if (!id) {
         let n = Object.keys(node.variables).length + 1;
-        while (node.variables['v' + n]) {
+        while (ownMembers.has(node.variables, 'v' + n)) {
           n += 1;
         }
         id = 'v' + n;
       }
-      if (node.variables[id]) {
+      // Own members only (2026-11-12): `toString` is not already defined.
+      if (ownMembers.read(node.variables, id)) {
         // The reader refuses a document with two definitions of one id, so
         // producing one here would write a policy this service cannot load
         // back.
@@ -1143,11 +1138,11 @@ class XacmlEditor {
       // same starting expression `add-condition` uses and for the same reason —
       // a VariableDefinition with no expression is a document that will not
       // load.
-      node.variables[id] = {
+      ownMembers.put(node.variables, id, {
         kind: 'designator', category: model.CATEGORY.ACCESS_SUBJECT,
         attributeId: 'employeeType', dataType: TYPE.STRING,
         issuer: null, mustBePresent: false
-      };
+      });
       log.debug('Leaving XacmlEditor.applyEdit(). Variable added.');
       return { ok: true, what: 'Variable $' + id + ' added.' };
     }
@@ -1166,7 +1161,7 @@ class XacmlEditor {
         return { ok: true, what: 'Unchanged.' };
       }
       const variables = holder && holder.variables;
-      if (variables && variables[renamed]) {
+      if (variables && ownMembers.read(variables, renamed)) {
         log.debug('Leaving XacmlEditor.applyEdit(). Duplicate variable id.');
         return { ok: false,
                  why: 'This policy already defines $' + renamed + '.' };
@@ -1176,7 +1171,7 @@ class XacmlEditor {
       // resolves. Copying that miss stored `undefined`, and writePolicy then
       // threw reading `.kind` (STS-API-0140, #1403). A policy set has no
       // variables map, and reading it threw the same way.
-      const defined = variables && variables[wasCalled];
+      const defined = variables && ownMembers.read(variables, wasCalled);
       if (!defined || !defined.kind) {
         log.debug('Leaving XacmlEditor.applyEdit(). No such variable.');
         return { ok: false,
@@ -1189,7 +1184,7 @@ class XacmlEditor {
       // rename that left the references behind would produce a document that
       // does not load, and the store would refuse the write with a message
       // about a variable that no longer exists.
-      holder.variables[renamed] = defined;
+      ownMembers.put(holder.variables, renamed, defined);
       delete holder.variables[wasCalled];
       const rewritten = self.renameVariableReferences(holder, wasCalled,
                                                       renamed);
