@@ -116,6 +116,7 @@
 // A LEAF with no requires: the failure codes on the log lines and the startup
 // refusals below. It reaches for no setting and no store, so this driver still
 // reaches for nothing.
+const tls = require('tls');
 const ModelTables = require('../common/model_tables');
 const errorCodes = require('../common/error_codes');
 // The process origin's UUID, a jitter and a reservation are drawn from
@@ -2297,6 +2298,18 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
 // `hostnameUnchecked` instead and `common/sync_query_thread.ts` puts the
 // function back (`bridgeConnection()`, below).
 //
+// **AN ADDRESS IS CHECKED AS THAT ADDRESS (#951).** `pg` sets `servername`
+// only when the host is not an IP, and it passes no `host` to
+// `tls.connect`. The default check then runs against `localhost`, so a
+// certificate that names `localhost` was accepted for every address. When
+// the host name IS checked, the hook calls `tls.checkServerIdentity` with
+// the host from the connection string and ignores the name it was given.
+// An IPv6 literal is that address without the brackets `URL.hostname`
+// keeps. The function is read at the handshake, so the process-wide check
+// (`outbound_tls`, once installed) is what runs, against that host. The
+// bridge cannot be posted a function, so the same host goes as `checkHost`
+// and the thread puts this hook back.
+//
 // A PURE FUNCTION with no log line, for `poolMax()`'s reason: this module's
 // logger arrives with create(). `refused` carries why a string cannot be
 // dialled, and each caller throws it, tagged, on its own logger.
@@ -2369,7 +2382,7 @@ function dialOptions(url, verifyTls, ca, engine) {
   const verifyHostname = sslmode === 'verify-ca' ? false : verifyChain;
   /**
    * @type {{ rejectUnauthorized: boolean, ca?: string,
-   *          checkServerIdentity?: Function }}
+   *          checkServerIdentity?: Function, checkHost?: string }}
    */
   // `stsOutboundVariant`: the store's row of the outbound gate (#1360,
   // `common/certificate_trust.ts`); node ignores a member it does not know.
@@ -2386,6 +2399,19 @@ function dialOptions(url, verifyTls, ca, engine) {
     // "no error" is how the check is left out — and only that check.
     ssl.checkServerIdentity = function () {
       return undefined;
+    };
+  } else if (verifyHostname && parsed.hostname) {
+    // The name in the string, not the one `pg` leaves node (#951, above).
+    // Anonymous: this module has no logger yet, and the hook runs on the
+    // driver's handshake. `_presented` is `localhost` for an address.
+    // Brackets are the URL's, not the address a certificate names.
+    let host = parsed.hostname;
+    if (host.charAt(0) === '[' && host.charAt(host.length - 1) === ']') {
+      host = host.slice(1, -1);
+    }
+    ssl.checkHost = host;
+    ssl.checkServerIdentity = function (_presented, cert) {
+      return tls.checkServerIdentity(host, cert);
     };
   }
   return {
@@ -7461,19 +7487,30 @@ function create(options) {
     bridgeConnection: function () {
       log.debug("Entering bridgeConnection().");
       const options = readClientOptions();
-      // A function cannot be posted to a thread, and verify-ca's ssl option
-      // carries one (dialOptions()). Said as data instead, and put back by
-      // `common/sync_query_thread.ts`, so the thread checks exactly what
-      // this side's pools check rather than failing to start — or, with the
-      // hook merely dropped, checking a host name verify-ca does not.
-      // The trust anchors (`ca`, PEM text) cross as they are.
+      // A function cannot be posted to a thread. verify-ca's hook checks
+      // nothing, said as `hostnameUnchecked`. A hook that checks the
+      // configured host (#951) is said as `checkHost`. The thread puts
+      // the same hook back: dropping verify-ca's would check a name the
+      // pools do not, and dropping `checkHost` would check `localhost`
+      // for an address. `ca` and `stsOutboundVariant` cross as data; the
+      // variant is what the outbound gate reads.
       const ssl = options.ssl;
       if (ssl && typeof ssl.checkServerIdentity === 'function') {
-        options.ssl = { rejectUnauthorized: ssl.rejectUnauthorized,
-                        hostnameUnchecked: true };
-        if (ssl.ca) {
-          options.ssl.ca = ssl.ca;
+        const posted = {
+          rejectUnauthorized: ssl.rejectUnauthorized
+        };
+        if (ssl.checkHost) {
+          posted.checkHost = String(ssl.checkHost);
+        } else {
+          posted.hostnameUnchecked = true;
         }
+        if (ssl.ca) {
+          posted.ca = ssl.ca;
+        }
+        if (ssl.stsOutboundVariant) {
+          posted.stsOutboundVariant = ssl.stsOutboundVariant;
+        }
+        options.ssl = posted;
       }
       log.debug("Leaving bridgeConnection().");
       return options;

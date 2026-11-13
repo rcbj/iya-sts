@@ -3134,6 +3134,15 @@ do not, and refuse a server they accept. `dialOptions()` answers
 `verifyChain` and `verifyHostname`, and `describeDatabase()` reports from
 those, so the *Transport* row says what the driver checks.
 
+**An address is checked as that address (#951).** `pg` sets TLS `servername`
+only when the host is not an IP and passes no `host` to `tls.connect`, so the
+default check — including this process's RFC 9525 replacement of it — ran
+against `localhost`. A certificate naming `localhost` was accepted for every
+address. When the host name is checked, `dialOptions()` supplies a hook that
+calls `tls.checkServerIdentity` with the host from the connection string and
+ignores the name node would have used. The bridge carries that host as
+`checkHost` and the thread puts the same hook back. `verify-ca` is unchanged.
+
 The flag and the CA are READ in `persistence.js` and PASSED IN to the driver,
 rather than read there: that module takes its url and its logger as options and reaches for
 nothing, which is what lets a test construct one against any database without

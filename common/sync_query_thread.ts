@@ -36,6 +36,7 @@
 // ---------------------------------------------------------------------------
 
 import workerThreads = require('worker_threads');
+import tls = require('tls');
 
 // The thread's own shape of what it was handed.
 interface ThreadData {
@@ -80,19 +81,33 @@ function databaseBackend(connection: Record<string, unknown>,
   // be posted here, so the driver's `bridgeConnection()` says it as
   // `hostnameUnchecked` and it is put back now (#543 round 2). Without it
   // node would check the host name, and this thread would refuse a server
-  // the driver's own pools accept. The trust anchors (`ca`, the database's
-  // own since 2026-10-12) are kept: dropping them here would verify against
-  // node's default store and refuse a certificate the pools trust.
+  // the driver's own pools accept. A host that IS checked arrives as
+  // `checkHost` (#951): `pg` would otherwise check `localhost` for an
+  // address. The hook is the one `dialOptions()` installs, against that
+  // host. The trust anchors (`ca`, the database's own since 2026-10-12)
+  // and `stsOutboundVariant` are kept: dropping the anchors would verify
+  // against node's default store and refuse a certificate the pools trust.
   const ssl = connection.ssl as Record<string, unknown> | undefined;
-  if (ssl && ssl.hostnameUnchecked === true) {
+  if (ssl && (ssl.hostnameUnchecked === true || ssl.checkHost)) {
     const restored: Record<string, unknown> = {
-      rejectUnauthorized: ssl.rejectUnauthorized,
-      checkServerIdentity: function () {
-        return undefined;
-      }
+      rejectUnauthorized: ssl.rejectUnauthorized
     };
+    if (ssl.checkHost) {
+      const host = String(ssl.checkHost);
+      restored.checkServerIdentity = function (_presented: string,
+                                                cert: any) {
+        return tls.checkServerIdentity(host, cert);
+      };
+    } else {
+      restored.checkServerIdentity = function () {
+        return undefined;
+      };
+    }
     if (ssl.ca) {
       restored.ca = ssl.ca;
+    }
+    if (ssl.stsOutboundVariant) {
+      restored.stsOutboundVariant = ssl.stsOutboundVariant;
     }
     connection = Object.assign({}, connection, { ssl: restored });
   }
