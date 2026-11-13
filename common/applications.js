@@ -15807,6 +15807,96 @@ function removeOwner(identifier, owner) {
                     record.identifier + '.' };
 }
 
+// ---------------------------------------------------------------------------
+// A DELETED OWNER OWNS NOTHING; A RENAMED ONE STILL OWNS IT (2026-11-13,
+// #1612's review). `appOwner` holds the DNs of people and groups, and under
+// #607 an owner is issued owner:write. A person deleted and made again at
+// the same DN was an owner of every application the first one owned, so the
+// directory's delete of a person or a group calls forgetOwner(), and its
+// rename renameOwner(). The applications are found off the kept listing
+// (`ownerValues()`'s source), not by a view of each, and each one named is
+// written as removeOwner() writes it. Returns the identifiers changed, for
+// the caller's audit row.
+// ---------------------------------------------------------------------------
+function replaceOwner(from, to) {
+  log.debug("Entering replaceOwner().");
+  const was = ownerLower(String(from || '').trim());
+  const now = String(to || '').trim();
+  const kept = listing();
+  if (!was || was === ownerLower(now) || !kept) {
+    log.debug("Leaving replaceOwner(). Nothing to change.");
+    return [];
+  }
+  const named = [];
+  kept.items.forEach(function (item) {
+    if (valuesOf(item.record.fields.appOwner).some(function (one) {
+      return ownerLower(String(one).trim()) === was;
+    })) {
+      named.push(item.record.identifier);
+    }
+  });
+  const changed = [];
+  named.forEach(function (identifier) {
+    const loaded = load(identifier);
+    if (!loaded.known) {
+      return;
+    }
+    const record = loaded.record;
+    const owners = [];
+    valuesOf(record.fields.appOwner).forEach(function (one) {
+      const value = ownerLower(String(one).trim()) === was ? now : String(one);
+      if (value && !owners.some(function (other) {
+        return ownerLower(other) === ownerLower(value);
+      })) {
+        owners.push(value);
+      }
+    });
+    record.fields.appOwner = owners;
+    if (save(record, { quiet: true })) {
+      changed.push(identifier);
+    } else {
+      // The old DN stays on the application; the line names both, so an
+      // administrator can take it off by hand (remove-owner).
+      log.error(errorCodes.tag('STS-ADMIN-0922') + 'applications: could ' +
+                'not ' + (now ? 'move the owner ' + from + ' to ' + now +
+                                ' on'
+                              : 'take the deleted owner ' + from + ' off') +
+                ' ' + identifier + '.');
+    }
+  });
+  log.debug("Leaving replaceOwner(). " + changed.length + " application(s).");
+  return changed;
+}
+
+/**
+ * Takes a deleted person's or group's DN off the owners of every application
+ * in the ambient realm.
+ *
+ * @param dn - the deleted entry's DN
+ * @returns the identifiers of the applications it was taken off
+ */
+function forgetOwner(dn) {
+  log.debug("Entering forgetOwner().");
+  const changed = replaceOwner(dn, '');
+  log.debug("Leaving forgetOwner(). " + changed.length);
+  return changed;
+}
+
+/**
+ * Moves a renamed person's or group's DN on the owners of every application
+ * in the ambient realm.
+ *
+ * @param from - the DN it had
+ * @param to - the DN it has now
+ * @returns the identifiers of the applications changed
+ */
+function renameOwner(from, to) {
+  log.debug("Entering renameOwner().");
+  const changed = String(to || '').trim() ? replaceOwner(from, to) : [];
+  log.debug("Leaving renameOwner(). " + changed.length);
+  return changed;
+}
+
 /**
  * Tells whether an application is closed to its owners (#607).
  *
@@ -18461,6 +18551,9 @@ module.exports = {
   ownersOf: ownersOf,
   addOwner: addOwner,
   removeOwner: removeOwner,
+  // A deleted owner owns nothing; a renamed one still does (2026-11-13).
+  forgetOwner: forgetOwner,
+  renameOwner: renameOwner,
   // Closed to its owners (#607).
   ownerProtected: ownerProtected,
   setOwnerProtected: setOwnerProtected,

@@ -25400,6 +25400,24 @@ const CODES = [
       'realm\'s directory; a role is granted only to a person who exists ' +
       '(admin_rbac.ts grant(), reason noSuchPerson).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0921',
+    summary: 'A deleted application\'s identifier could not be taken off ' +
+      'the clients conferring a role, so whatever is next registered under ' +
+      'that identifier still confers it (roles.forgetConferrer()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0922',
+    summary: 'A deleted or renamed person or group could not be taken off, ' +
+      'or moved on, the owners of a role, group, application or service ' +
+      'account that named its DN, so that object still names the old DN ' +
+      '(roles.forgetOwner(), applications.forgetOwner(), the directory\'s ' +
+      'forgetOwnerReferences() and moveOwnerReferences()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0923',
+    summary: 'The store named as many entries as one question answers for a ' +
+      'deleted or renamed DN held in an owner attribute, so some groups or ' +
+      'service accounts may still name it as an owner ' +
+      '(entriesNamingOwner()).',
+    spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

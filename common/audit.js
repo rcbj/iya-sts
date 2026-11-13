@@ -1611,6 +1611,16 @@ const ACTIONS = [
     label: 'An owner was added to a role' },
   { action: 'roles.remove-owner', category: 'admin',
     label: 'An owner was taken off a role' },
+  // #454's two, written by admin_actions.ts through a ternary the vocabulary
+  // test could not read, so they had no row; and since 2026-11-13 the
+  // directory writes `roles.unconfer` when a deleted application is taken
+  // off the clients conferring a role (#1612's review).
+  { action: 'roles.confer', category: 'admin',
+    label: 'A client was made to confer a role on everybody who signs in ' +
+           'through it' },
+  { action: 'roles.unconfer', category: 'admin',
+    label: 'A client no longer confers a role on everybody who signs in ' +
+           'through it' },
   { action: 'roles.create', category: 'admin',
     label: 'A role was created' },
   { action: 'roles.delete', category: 'admin',
