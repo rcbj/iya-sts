@@ -36,7 +36,6 @@
 // ---------------------------------------------------------------------------
 
 import workerThreads = require('worker_threads');
-import tls = require('tls');
 
 // The thread's own shape of what it was handed.
 interface ThreadData {
@@ -76,40 +75,22 @@ function databaseBackend(connection: Record<string, unknown>,
   // A thread has a `tls` module of its own, so the host check, the path rules
   // and the outbound gate are installed here too (#1360).
   require('./outbound_tls').installProcessWide();
-  // sslmode=verify-ca verifies the chain and not the host name, which takes
-  // a `checkServerIdentity` that checks nothing — a function, which cannot
-  // be posted here, so the driver's `bridgeConnection()` says it as
-  // `hostnameUnchecked` and it is put back now (#543 round 2). Without it
-  // node would check the host name, and this thread would refuse a server
-  // the driver's own pools accept. A host that IS checked arrives as
-  // `checkHost` (#951): `pg` would otherwise check `localhost` for an
-  // address. The hook is the one `dialOptions()` installs, against that
-  // host. The trust anchors (`ca`, the database's own since 2026-10-12)
-  // and `stsOutboundVariant` are kept: dropping the anchors would verify
-  // against node's default store and refuse a certificate the pools trust.
+  // A function cannot be posted here, so the driver's `bridgeConnection()`
+  // says the TLS decision as data (`knex_store.postableSsl()`) and it is
+  // turned back into options by its inverse, `knex_store.restoredSsl()`
+  // (#951's review, 2026-11-13). The hooks are the ones `dialOptions()`
+  // gives the driver's own pools, made by the same two functions — the
+  // configured host checked for an address (#951), verify-ca checking
+  // nothing (#543 round 2) — and they call `tls.checkServerIdentity` at the
+  // handshake, which is this thread's `outbound_tls` check installed just
+  // above: RFC 9525's names and the path rules. Until then this thread
+  // built its own hooks, a second copy of the decision a change could
+  // miss. The trust anchors and `stsOutboundVariant` are kept: dropping the
+  // anchors would verify against node's default store.
   const ssl = connection.ssl as Record<string, unknown> | undefined;
-  if (ssl && (ssl.hostnameUnchecked === true || ssl.checkHost)) {
-    const restored: Record<string, unknown> = {
-      rejectUnauthorized: ssl.rejectUnauthorized
-    };
-    if (ssl.checkHost) {
-      const host = String(ssl.checkHost);
-      restored.checkServerIdentity = function (_presented: string,
-                                                cert: any) {
-        return tls.checkServerIdentity(host, cert);
-      };
-    } else {
-      restored.checkServerIdentity = function () {
-        return undefined;
-      };
-    }
-    if (ssl.ca) {
-      restored.ca = ssl.ca;
-    }
-    if (ssl.stsOutboundVariant) {
-      restored.stsOutboundVariant = ssl.stsOutboundVariant;
-    }
-    connection = Object.assign({}, connection, { ssl: restored });
+  if (ssl) {
+    connection = Object.assign({}, connection,
+                               { ssl: knexStore.restoredSsl(ssl) });
   }
   let client: any = null;
   let connecting: Promise<any> | null = null;

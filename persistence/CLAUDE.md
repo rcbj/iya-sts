@@ -358,7 +358,18 @@ connection comes from. What carried over, rule by rule:
   "timeout exceeded when trying to connect". `min` is 0: nothing is dialled
   until something asks.
 * **TLS decided in one place.** `dialOptions()` still decides it, and its
-  `{ connectionString, ssl }` is what the pool's Knex instance is built from;
+  `{ connectionString, ssl }` is what the pool's Knex instance is built from.
+  **The hooks it installs are `knex_store.js`'s** (`hostCheck()`,
+  `chainOnlyCheck()`, #951's review, 2026-11-13), and so is the data the
+  directory bridge's thread is posted (`postableSsl()`, from
+  `bridgeConnection()`) and the inverse the thread dials with
+  (`restoredSsl()`): until then the thread built its own copy of both
+  hooks, a second place a change to how the database's name is checked
+  could miss. Each hook calls `tls.checkServerIdentity` at the handshake,
+  which is `common/outbound_tls.ts`'s RFC 9525 and path-rules check in the
+  front process and in the thread alike (the thread installs it before it
+  dials); `tests/database_tls_ca.js` section F dials a stand-in by address
+  from the real thread;
   the password is still injected into the URL by `persistence.js` from
   `secrets.js` before the driver sees it.
 * **The dedicated connections.** LISTEN (a pooled connection cannot hold a

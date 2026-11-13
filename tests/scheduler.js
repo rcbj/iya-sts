@@ -56,8 +56,11 @@
 //      into scheduler.runs is not held (#883);
 //   P. a finished interval slot is learnt from one read per realm and is
 //      not held; a second tick of that slot does not read again; an empty
-//      answer runs the slot once; a failed read is STS-SCHED-0013 and is
-//      asked again (#883).
+//      answer runs the slot once; a failed read is asked again job by job,
+//      holds back only the job it could not answer (STS-SCHED-0023, the
+//      tick not failed) and is asked again at the next tick; an outage
+//      stops the asking after two job reads; and an absence a reader with
+//      no store answers is remembered for the slot (#883, its review).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -1303,6 +1306,10 @@ async function run(t) {
             'and the same slot is not read or run again',
             JSON.stringify({ calls: empty.calls.length, ran: ranEmpty }));
 
+    // A READ THAT FAILS HOLDS BACK ITS OWN JOB, NOT THE TICK (#883's
+    // review). With one job the realm's batch is that job's read, so the
+    // job is held back under STS-SCHED-0023 rather than the tick failing
+    // under STS-SCHED-0013.
     const failed = recallWorld(function () {
       return Promise.reject(new Error('the store did not answer'));
     });
@@ -1319,17 +1326,135 @@ async function run(t) {
     await failed.w.settle();
     const logged = failed.w.logs.some(function (row) {
       return row.level === 'error' &&
-        String(row.m).indexOf('STS-SCHED-0013') >= 0;
+        String(row.m).indexOf('STS-SCHED-0023') >= 0;
     });
-    t.check(ranFailed === 0 && logged && failed.calls.length === 1,
-            'a failed read does not run the slot and is STS-SCHED-0013',
+    const tickFailed = failed.w.logs.some(function (row) {
+      return String(row.m).indexOf('STS-SCHED-0013') >= 0;
+    });
+    t.check(ranFailed === 0 && logged && !tickFailed &&
+            failed.calls.length === 1,
+            'a failed read does not run the slot: the job is held back ' +
+            'under STS-SCHED-0023 and the tick is not failed',
             JSON.stringify({ ran: ranFailed, logged: logged,
+                             tickFailed: tickFailed,
                              calls: failed.calls.length,
                              logs: failed.w.logs }));
     await failedNode.scheduler.tick();
     await failed.w.settle();
-    t.equal(failed.calls.length, 2,
-            'the failed read is asked again at the next tick');
+    t.check(failed.calls.length === 2 && ranFailed === 0,
+            'the failed read is asked again at the next tick',
+            JSON.stringify({ calls: failed.calls.length, ran: ranFailed }));
+
+    // P2. ONE JOB'S ROWS THE STORE CANNOT ANSWER: the other job runs. The
+    // realm's batch fails because it holds the first job's rows; asked job
+    // by job, only that job's read fails.
+    let poison = '';
+    const partial = recallWorld(function (realmId, ids) {
+      if (ids.length > 2) {
+        poison = poison || ids[0];
+        return Promise.reject(new Error('one row would not open'));
+      }
+      if (ids.indexOf(poison) >= 0) {
+        return Promise.reject(new Error('one row would not open'));
+      }
+      return Promise.resolve(new Map());
+    });
+    const ranPartial = { bad: 0, good: 0 };
+    const partialNode = partial.w.node('a');
+    partialNode.scheduler.register(baseJob({
+      id: 'test.recall-bad',
+      run: function () {
+        ranPartial.bad++;
+      }
+    }));
+    partialNode.scheduler.register(baseJob({
+      id: 'test.recall-good',
+      run: function () {
+        ranPartial.good++;
+      }
+    }));
+    partialNode.scheduler.start('front');
+    await partialNode.scheduler.tick();
+    await partial.w.settle();
+    const partialLogged = partial.w.logs.filter(function (row) {
+      return row.level === 'error' &&
+        String(row.m).indexOf('STS-SCHED-0023') >= 0;
+    });
+    const partialTickFailed = partial.w.logs.some(function (row) {
+      return String(row.m).indexOf('STS-SCHED-0013') >= 0;
+    });
+    t.check(ranPartial.good === 1 && ranPartial.bad === 0 &&
+            partialLogged.length === 1 && !partialTickFailed &&
+            partial.calls.length === 3 &&
+            /1 run\(s\)/.test(String(partialLogged[0] &&
+                                     partialLogged[0].m)),
+            'P2. one job\'s rows the store cannot answer: the other job ' +
+            'runs, that one is held back, and one STS-SCHED-0023 line ' +
+            'names one run (the batch, then each job alone)',
+            JSON.stringify({ ran: ranPartial, calls: partial.calls.length,
+                             logs: partial.w.logs }));
+    await partialNode.scheduler.tick();
+    await partial.w.settle();
+    t.check(ranPartial.good === 1 && ranPartial.bad === 0 &&
+            partial.calls.length === 4,
+            'and the next tick asks about the held-back job alone, and ' +
+            'still does not run it or the other one again',
+            JSON.stringify({ ran: ranPartial,
+                             calls: partial.calls.length }));
+
+    // P3. AN OUTAGE IS NOT ASKED JOB BY JOB FOR EVER: two job reads
+    // failing in a row stop the asking for the tick.
+    const down = recallWorld(function () {
+      return Promise.reject(new Error('connection refused'));
+    });
+    let ranDown = 0;
+    const downNode = down.w.node('a');
+    ['one', 'two', 'three', 'four'].forEach(function (name) {
+      downNode.scheduler.register(baseJob({
+        id: 'test.recall-' + name,
+        run: function () {
+          ranDown++;
+        }
+      }));
+    });
+    downNode.scheduler.start('front');
+    await downNode.scheduler.tick();
+    await down.w.settle();
+    const downLine = down.w.logs.filter(function (row) {
+      return String(row.m).indexOf('STS-SCHED-0023') >= 0;
+    });
+    t.check(ranDown === 0 && down.calls.length === 3 &&
+            downLine.length === 1 &&
+            /4 run\(s\)/.test(String(downLine[0] && downLine[0].m)),
+            'P3. with the store down: the batch and two jobs are asked, ' +
+            'the other two are held back unasked, nothing runs, one line',
+            JSON.stringify({ ran: ranDown, calls: down.calls.length,
+                             logs: down.w.logs }));
+
+    // P4. AN ABSENCE SAID BY NO STORE IS REMEMBERED FOR THE SLOT TOO: the
+    // reader answering null is asked once a slot, not once a tick.
+    const none = recallWorld(function () {
+      return Promise.resolve(null);
+    });
+    let ranNone = 0;
+    const noneNode = none.w.node('a');
+    noneNode.scheduler.register(baseJob({
+      id: 'test.recall',
+      run: function () {
+        ranNone++;
+      }
+    }));
+    noneNode.scheduler.start('front');
+    await noneNode.scheduler.tick();
+    await none.w.settle();
+    await noneNode.scheduler.tick();
+    await none.w.settle();
+    await noneNode.scheduler.tick();
+    await none.w.settle();
+    t.check(none.calls.length === 1 && ranNone === 1,
+            'P4. a reader with no store is asked once for the slot over ' +
+            'three ticks, and the slot runs once (the map decides)',
+            JSON.stringify({ calls: none.calls.length, ran: ranNone }));
   }
   log.debug('Leaving run().');
 }
