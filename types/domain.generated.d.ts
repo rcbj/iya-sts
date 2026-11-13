@@ -347,6 +347,7 @@ declare namespace IyaDomain {
     requestObjectSigningAlg?: string;
     webFinger?: string;
     discovery?: string;
+    fapi?: string;
     initiateLogin?: string;
     binding?: string;
     signRequest?: string;

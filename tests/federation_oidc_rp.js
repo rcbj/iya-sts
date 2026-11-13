@@ -42,6 +42,21 @@
 //      and UserInfo asked with the new access token; a refreshed ID Token
 //      naming another iss (0211) and a refused refresh (0210) end the
 //      session; an ended session's token is gone.
+//   10. a FAPI client (#931): 2-security pushes, then redeems with
+//      private_key_jwt and DPoP and asks UserInfo as DPoP; discovery off,
+//      or a document with no PAR endpoint, refuses (0243); 1-advanced puts
+//      a PS256 request object on the browser URL and redeems with
+//      private_key_jwt and no DPoP; message signing puts that object in the
+//      push, not on the URL, and opens a JARM response before redeeming.
+//      A push the partner refuses stays 502 (0244) and does not redirect.
+//      A JARM response signed by another key, or one with no state, is
+//      refused (0246) without redeeming; one that carries the partner's
+//      error is that error (0025), and the same sign-in then redeems a
+//      good response. The first push answered use_dpop_nonce is retried
+//      with that nonce. Registration sends private_key_jwt and PS256, and
+//      DPoP or JARM where the profile uses them. beginConnect will not
+//      start a FAPI sign-in (0184). A 2.x refresh proves DPoP with the
+//      sign-in's key; 1-advanced refreshes with the assertion alone.
 // The conformance suite's relying-party plans drive the same code over the
 // wire (`tests/protocol/sts_oidcc_rp_conformance.js`); this pins each
 // refusal's code and that nothing is dialled after it.
@@ -115,7 +130,8 @@ function childMain() {
       req.on('end', function () {
         const url = new URL(req.url, 'http://x');
         op.calls.push({ path: url.pathname, body: body,
-                        auth: String(req.headers.authorization || '') });
+                        auth: String(req.headers.authorization || ''),
+                        dpop: String(req.headers.dpop || '') });
         const send = function (status, json) {
           res.writeHead(status, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(json));
@@ -148,6 +164,26 @@ function childMain() {
         }
         if (/\/jwks$/.test(url.pathname)) {
           return send(200, { keys: [jwk] });
+        }
+        if (/\/par$/.test(url.pathname)) {
+          op.par = new URLSearchParams(body);
+          // The call was recorded above, so the first push of a cleared
+          // list is posts === 1. A nonce answer cannot use send(): that
+          // helper sets only Content-Type, and the retry reads DPoP-Nonce.
+          const posts = op.calls.filter(function (c) {
+            return /\/par$/.test(c.path);
+          }).length;
+          if (s.parNonce && posts === 1) {
+            res.writeHead(400, { 'Content-Type': 'application/json',
+                                 'DPoP-Nonce': String(s.parNonce) });
+            res.end(JSON.stringify({ error: 'use_dpop_nonce' }));
+            return;
+          }
+          if (s.parRefuse) {
+            return send(400, { error: 'invalid_request' });
+          }
+          return send(200, { request_uri: s.base + 'pushed',
+                             expires_in: 90 });
         }
         if (/\/token$/.test(url.pathname)) {
           // A refresh answers by the token it was sent, so each held
@@ -786,6 +822,492 @@ function childMain() {
          '5c. the partner\'s own issuer starts the sign-in, its login_hint ' +
          'passed on and a foreign target dropped', r.status + ' ' +
          r.headers.location);
+
+    // --- 10. a FAPI client (#931) ------------------------------------------
+    const jwtParts = function (token) {
+      const parts = String(token || '').split('.');
+      if (parts.length !== 3) {
+        return null;
+      }
+      return {
+        header: JSON.parse(Buffer.from(parts[0], 'base64url').toString()),
+        claims: JSON.parse(Buffer.from(parts[1], 'base64url').toString())
+      };
+    };
+    const parClaims = function () {
+      const now = Math.floor(Date.now() / 1000);
+      return { iss: opBase, sub: 'frp-person', aud: 'frp-client', iat: now,
+               exp: now + 300, nonce: op.par.get('nonce') };
+    };
+    const SEC = make('frp-fapi2-' + stamp, { fedFapi: '2-security',
+      fedDiscovery: 'TRUE', fedSsoUrl: null, fedTokenUrl: null,
+      fedJwksUri: null, fedUserinfoUrl: null });
+    note(SEC === 'frp-fapi2-' + stamp &&
+         federation.readinessOf(federation.get(SEC)).ready,
+         '10a. a 2-security relationship is ready with no endpoint written',
+         SEC);
+    op.calls = [];
+    op.par = null;
+    op.scenario = { issuer: opBase, base: opBase, discovery: {
+      pushed_authorization_request_endpoint: opBase + 'par' },
+      backClaims: parClaims };
+    const secJar = {};
+    started = await begin(SEC, secJar);
+    const secKeys = Array.from(started.params.keys()).sort().join(',');
+    const secPar = op.par || new URLSearchParams();
+    const secAssert = jwtParts(secPar.get('client_assertion'));
+    const secProof = jwtParts((op.calls.filter(function (c) {
+      return /\/par$/.test(c.path);
+    })[0] || {}).dpop);
+    note(started.status === 302 && secKeys === 'client_id,request_uri' &&
+         started.params.get('client_id') === 'frp-client' &&
+         started.params.get('request_uri') === opBase + 'pushed' &&
+         secPar.get('response_type') === 'code' &&
+         secPar.get('code_challenge_method') === 'S256' &&
+         !secPar.get('request') &&
+         secAssert && secAssert.header.alg === 'PS256' &&
+         secAssert.claims.aud === opBase &&
+         secAssert.claims.iss === 'frp-client' &&
+         secProof && secProof.header.typ === 'dpop+jwt' &&
+         secProof.claims.htm === 'POST',
+         '10b. 2-security pushes the request and sends the browser only ' +
+         'client_id and request_uri',
+         started.status + ' ' + started.location + ' ' + secPar.toString()
+           .slice(0, 400));
+    op.calls = [];
+    r = await call('GET', '/federation/acs/' + SEC + '?state=' +
+      encodeURIComponent(secPar.get('state')) + '&code=c-fapi2', null,
+      secJar);
+    const secToken = op.calls.filter(function (c) {
+      return /\/token$/.test(c.path);
+    })[0] || { body: '', dpop: '', auth: '' };
+    const secForm = new URLSearchParams(secToken.body);
+    const secUser = op.calls.filter(function (c) {
+      return /\/userinfo$/.test(c.path);
+    })[0] || { auth: '' };
+    note(r.status < 400 && secForm.get('client_assertion') &&
+         !secForm.get('client_secret') && secToken.dpop &&
+         secUser.auth.indexOf('DPoP ') === 0,
+         '10c. the code is redeemed with private_key_jwt and DPoP, and ' +
+         'UserInfo is asked as DPoP',
+         r.status + ' ' + secUser.auth + ' ' + secToken.body.slice(0, 240));
+
+    const NODISCO = make('frp-fapi2-off-' + stamp,
+                         { fedFapi: '2-security' });
+    before = coded('STS-FED-0243');
+    op.calls = [];
+    started = await begin(NODISCO, {});
+    note(NODISCO === 'frp-fapi2-off-' + stamp && started.status === 502 &&
+         coded('STS-FED-0243') === before + 1 &&
+         !op.calls.some(function (c) {
+           return /openid-configuration|\/par$/.test(c.path);
+         }),
+         '10d. 2-security with fedDiscovery off is refused (STS-FED-0243) ' +
+         'and nothing is dialled', started.status + ' ' + NODISCO);
+
+    const NOPAR = make('frp-fapi2-nopar-' + stamp, { fedFapi: '2-security',
+      fedDiscovery: 'TRUE', fedSsoUrl: null, fedTokenUrl: null,
+      fedJwksUri: null, fedUserinfoUrl: null });
+    before = coded('STS-FED-0243');
+    op.scenario = { issuer: opBase, base: opBase };
+    started = await begin(NOPAR, {});
+    note(started.status === 502 && coded('STS-FED-0243') === before + 1,
+         '10e. a discovery document with no PAR endpoint is refused ' +
+         '(STS-FED-0243)', started.status);
+
+    const ADV = make('frp-fapi1-' + stamp, { fedFapi: '1-advanced' });
+    op.calls = [];
+    op.par = null;
+    const advJar = {};
+    started = await begin(ADV, advJar);
+    const advReq = jwtParts(started.params.get('request'));
+    note(started.status === 302 &&
+         started.params.get('response_type') === 'code id_token' &&
+         started.params.get('response_mode') === 'form_post' &&
+         started.params.get('code_challenge_method') === 'S256' &&
+         advReq && advReq.header.alg === 'PS256' &&
+         advReq.header.typ === 'oauth-authz-req+jwt' &&
+         advReq.claims.response_type === 'code id_token' &&
+         !op.calls.some(function (c) {
+           return /\/par$/.test(c.path);
+         }),
+         '10f. 1-advanced puts a PS256 request object on the browser URL ' +
+         'and does not push',
+         started.status + ' ' + started.location.slice(0, 240));
+    op.calls = [];
+    op.scenario = { backClaims: function () {
+      return claims(started);
+    } };
+    r = await call('POST', '/federation/acs/' + ADV, {
+      state: started.params.get('state'), code: 'c-adv',
+      id_token: sign(claims(started, { c_hash: halfHash('c-adv') }))
+    }, advJar);
+    const advToken = op.calls.filter(function (c) {
+      return /\/token$/.test(c.path);
+    })[0] || { body: '', dpop: 'none', auth: '' };
+    const advForm = new URLSearchParams(advToken.body);
+    const advUser = op.calls.filter(function (c) {
+      return /\/userinfo$/.test(c.path);
+    })[0] || { auth: '' };
+    note(r.status < 400 && advForm.get('client_assertion') &&
+         !advToken.dpop && advUser.auth.indexOf('Bearer ') === 0,
+         '10g. 1-advanced redeems with private_key_jwt and no DPoP, and ' +
+         'UserInfo stays bearer',
+         r.status + ' ' + advUser.auth + ' dpop=' + advToken.dpop);
+
+    const MS = make('frp-fapi2ms-' + stamp, {
+      fedFapi: '2-message-signing', fedDiscovery: 'TRUE', fedSsoUrl: null,
+      fedTokenUrl: null, fedJwksUri: null, fedUserinfoUrl: null });
+    op.calls = [];
+    op.par = null;
+    op.scenario = { issuer: opBase, base: opBase, discovery: {
+      pushed_authorization_request_endpoint: opBase + 'par' },
+      backClaims: parClaims };
+    const msJar = {};
+    started = await begin(MS, msJar);
+    const msPar = op.par || new URLSearchParams();
+    const msReq = jwtParts(msPar.get('request'));
+    note(MS === 'frp-fapi2ms-' + stamp && started.status === 302 &&
+         started.location.indexOf('request=') < 0 &&
+         msReq && msReq.header.alg === 'PS256' &&
+         msReq.header.typ === 'oauth-authz-req+jwt' &&
+         msReq.claims.response_mode === 'jwt' &&
+         msReq.claims.response_type === 'code',
+         '10h. message signing puts the request object in the push, not ' +
+         'on the browser URL',
+         started.status + ' ' + started.location);
+    const jarm = sign({ iss: opBase, aud: 'frp-client',
+      state: msPar.get('state'), code: 'c-jarm',
+      exp: Math.floor(Date.now() / 1000) + 300 });
+    op.calls = [];
+    r = await call('GET', '/federation/acs/' + MS + '?response=' +
+      encodeURIComponent(jarm), null, msJar);
+    const msToken = op.calls.filter(function (c) {
+      return /\/token$/.test(c.path);
+    })[0] || { body: '', dpop: '' };
+    const msUser = op.calls.filter(function (c) {
+      return /\/userinfo$/.test(c.path);
+    })[0] || { auth: '' };
+    note(r.status < 400 && /code=c-jarm/.test(msToken.body) &&
+         msToken.dpop && msUser.auth.indexOf('DPoP ') === 0,
+         '10i. a JARM response is opened and the code inside it redeemed ' +
+         'with DPoP',
+         r.status + ' ' + msUser.auth + ' ' + msToken.body.slice(0, 200));
+
+    // --- 10j. a push the partner refuses ------------------------------------
+    const PARNO = make('frp-fapi-par-' + stamp, {
+      fedFapi: '2-security', fedDiscovery: 'TRUE', fedSsoUrl: null,
+      fedTokenUrl: null, fedJwksUri: null, fedUserinfoUrl: null });
+    before = coded('STS-FED-0244');
+    op.calls = [];
+    op.scenario = { issuer: opBase, base: opBase, discovery: {
+      pushed_authorization_request_endpoint: opBase + 'par' },
+      parRefuse: true };
+    started = await begin(PARNO, {});
+    const refusedPushes = op.calls.filter(function (c) {
+      return /\/par$/.test(c.path);
+    }).length;
+    note(PARNO === 'frp-fapi-par-' + stamp && started.status === 502 &&
+         coded('STS-FED-0244') === before + 1 &&
+         started.location.indexOf('request_uri') < 0 &&
+         refusedPushes === 1,
+         '10j. a push the partner refuses stays 502 (STS-FED-0244) and ' +
+         'the browser is not redirected',
+         started.status + ' ' + started.location + ' pushes=' +
+         refusedPushes);
+
+    // --- 10k. DPoP-Nonce on the wire ----------------------------------------
+    // withNonce is unit-tested. This is the push: the first answer carries
+    // the header, and only the second proof claims that nonce.
+    const NONCE = make('frp-fapi-nonce-' + stamp, {
+      fedFapi: '2-security', fedDiscovery: 'TRUE', fedSsoUrl: null,
+      fedTokenUrl: null, fedJwksUri: null, fedUserinfoUrl: null });
+    op.calls = [];
+    op.scenario = { issuer: opBase, base: opBase, discovery: {
+      pushed_authorization_request_endpoint: opBase + 'par' },
+      parNonce: 'nonce-from-the-partner' };
+    started = await begin(NONCE, {});
+    const noncePushes = op.calls.filter(function (c) {
+      return /\/par$/.test(c.path);
+    });
+    const firstProof = jwtParts(noncePushes[0] && noncePushes[0].dpop);
+    const secondProof = jwtParts(noncePushes[1] && noncePushes[1].dpop);
+    note(NONCE === 'frp-fapi-nonce-' + stamp && noncePushes.length === 2 &&
+         started.status === 302 &&
+         started.location.indexOf('request_uri=') >= 0 &&
+         firstProof && !firstProof.claims.nonce &&
+         secondProof &&
+         secondProof.claims.nonce === 'nonce-from-the-partner',
+         '10k. the first push is answered use_dpop_nonce, and the second ' +
+         'carries that nonce and is the one that redirects',
+         started.status + ' ' + noncePushes.length + ' ' +
+         JSON.stringify(secondProof && secondProof.claims));
+
+    // --- 10l, 10m. what a FAPI profile registers ----------------------------
+    const regBits = function (id, profile, fields) {
+      return make(id, Object.assign({
+        fedFapi: profile, fedDiscovery: 'TRUE', fedRegister: 'TRUE',
+        fedClientId: null, fedClientSecret: null, fedSsoUrl: null,
+        fedTokenUrl: null, fedJwksUri: null, fedUserinfoUrl: null
+      }, fields || {}));
+    };
+    const REGMS = regBits('frp-fapi-regms-' + stamp, '2-message-signing');
+    const regsBefore = op.registrations || 0;
+    op.scenario = { issuer: opBase, base: opBase, discovery: {
+      pushed_authorization_request_endpoint: opBase + 'par' } };
+    started = await begin(REGMS, {});
+    let reg = op.registered || {};
+    let regKey = ((reg.jwks || {}).keys || [])[0] || {};
+    note(REGMS === 'frp-fapi-regms-' + stamp && started.status === 302 &&
+         op.registrations === regsBefore + 1 &&
+         reg.token_endpoint_auth_method === 'private_key_jwt' &&
+         reg.token_endpoint_auth_signing_alg === 'PS256' &&
+         reg.dpop_bound_access_tokens === true &&
+         reg.authorization_signed_response_alg === 'PS256' &&
+         reg.request_object_signing_alg === 'PS256' &&
+         reg.require_pushed_authorization_requests === true &&
+         JSON.stringify(reg.response_types) === '["code"]' &&
+         (reg.grant_types || []).indexOf('implicit') < 0 &&
+         regKey.kty === 'RSA' && !regKey.d,
+         '10l. message signing registers private_key_jwt, PS256, DPoP ' +
+         'and a signed authorization response',
+         started.status + ' ' + JSON.stringify(reg).slice(0, 500));
+    const REGADV = regBits('frp-fapi-regadv-' + stamp, '1-advanced');
+    op.scenario = { issuer: opBase, base: opBase };
+    started = await begin(REGADV, {});
+    reg = op.registered || {};
+    regKey = ((reg.jwks || {}).keys || [])[0] || {};
+    note(started.status === 302 &&
+         reg.token_endpoint_auth_method === 'private_key_jwt' &&
+         reg.token_endpoint_auth_signing_alg === 'PS256' &&
+         reg.request_object_signing_alg === 'PS256' &&
+         JSON.stringify(reg.response_types) === '["code id_token"]' &&
+         (reg.grant_types || []).indexOf('authorization_code') >= 0 &&
+         (reg.grant_types || []).indexOf('implicit') >= 0 &&
+         reg.dpop_bound_access_tokens !== true &&
+         !reg.authorization_signed_response_alg &&
+         !reg.require_pushed_authorization_requests &&
+         regKey.kty === 'RSA' && !regKey.d,
+         '10m. 1-advanced registers the request object and the hybrid ' +
+         'response, and not DPoP, JARM or a pushed request',
+         started.status + ' ' + JSON.stringify(reg).slice(0, 500));
+
+    // --- 10n, 10o. account linking ------------------------------------------
+    // An enterprise relationship is also 0184, so the control is a consumer
+    // provider that connects, and the same relationship with a profile set
+    // that does not. fedProvider is applied only at create.
+    config.setOverride('federation.consumerProviders', 'true');
+    const LINK = 'frp-link-' + stamp;
+    const linkMade = federation.create({
+      fedId: LINK, fedRole: 'service-provider', fedProtocol: 'oidc',
+      fedPeer: opBase, fedProvider: 'generic-oidc' });
+    const linkFields = {
+      fedClientId: 'frp-client', fedClientSecret: 'frp-secret-' + stamp,
+      fedSsoUrl: opBase + 'authorize', fedTokenUrl: opBase + 'token',
+      fedJwksUri: opBase + 'jwks', fedUserinfoUrl: opBase + 'userinfo',
+      fedEnabled: 'TRUE' };
+    const linkWrites = [linkMade];
+    Object.keys(linkFields).forEach(function (field) {
+      linkWrites.push(federation.update(LINK, { field: field,
+        value: String(linkFields[field]) }));
+    });
+    const linkReady = linkWrites.every(function (one) {
+      return one && one.ok;
+    });
+    const linkRecord = federation.get(LINK) || {};
+    const callsAtLink = op.calls.length;
+    const opened = fedSp.beginConnect({}, { relationship: LINK,
+                                            username: 'ada' });
+    note(linkReady && linkRecord.fedProvider === 'generic-oidc' &&
+         opened.ok === true &&
+         String(opened.location || '').indexOf(opBase + 'authorize?') ===
+           0 && op.calls.length === callsAtLink,
+         '10n. a consumer relationship can be connected, and that door ' +
+         'dials nothing',
+         JSON.stringify({ ok: opened.ok, location: opened.location,
+           ready: federation.readinessOf(linkRecord) }).slice(0, 400));
+    const profiles = ['2-security', '1-advanced', '2-message-signing'];
+    const linkRefusals = profiles.map(function (profile) {
+      federation.update(LINK, { field: 'fedFapi', value: profile });
+      return fedSp.beginConnect({}, { relationship: LINK,
+                                      username: 'ada' });
+    });
+    note(linkRefusals.every(function (one) {
+      return one && one.ok === false && one.code === 'STS-FED-0184';
+    }) && op.calls.length === callsAtLink,
+         '10o. beginConnect will not start a FAPI sign-in (STS-FED-0184)',
+         JSON.stringify(linkRefusals.map(function (one) {
+           return one && one.code;
+         })));
+
+    // --- 10p-10s. JARM refusals, then the same sign-in still redeems -------
+    // A discovering relationship stores no jwks URI. A response with no
+    // state has no context to take the discovered URI from, so the partner
+    // key is pasted: otherwise 0246 is "no keys" and never "no state".
+    // The wrong key is signed as kid frp-1, so that key is selected and
+    // the signature is what fails.
+    const JARM = make('frp-fapi-jarm-' + stamp, {
+      fedFapi: '2-message-signing', fedDiscovery: 'TRUE', fedSsoUrl: null,
+      fedTokenUrl: null, fedJwksUri: null, fedUserinfoUrl: null });
+    const pastedKeys = federation.update(JARM, { field: 'fedJwks',
+      value: JSON.stringify({ keys: [jwk] }) });
+    const otherPair = nodeCrypto.generateKeyPairSync('rsa',
+      { modulusLength: 2048 });
+    const signOther = function (claims) {
+      const input = b64u({ alg: 'RS256', kid: 'frp-1', typ: 'JWT' }) + '.' +
+                    b64u(claims);
+      return input + '.' + nodeCrypto.sign('sha256', Buffer.from(input),
+                                           otherPair.privateKey)
+        .toString('base64url');
+    };
+    const jarmExp = function () {
+      return Math.floor(Date.now() / 1000) + 300;
+    };
+    op.calls = [];
+    op.par = null;
+    op.scenario = { issuer: opBase, base: opBase, discovery: {
+      pushed_authorization_request_endpoint: opBase + 'par' },
+      backClaims: function () {
+        return parClaims();
+      } };
+    const jarmJar = {};
+    started = await begin(JARM, jarmJar);
+    const jState = (op.par || new URLSearchParams()).get('state');
+    const jarmGet = function (token) {
+      op.calls = [];
+      return call('GET', '/federation/acs/' + JARM + '?response=' +
+        encodeURIComponent(token), null, jarmJar);
+    };
+    const noToken = function () {
+      return !op.calls.some(function (c) {
+        return /\/token$/.test(c.path);
+      });
+    };
+    before = coded('STS-FED-0246');
+    r = await jarmGet(signOther({ iss: opBase, aud: 'frp-client',
+      state: jState, code: 'c-stolen', exp: jarmExp() }));
+    note(pastedKeys && pastedKeys.ok && jState && r.status === 401 &&
+         coded('STS-FED-0246') === before + 1 && noToken() &&
+         r.text.indexOf('did not verify') >= 0,
+         '10p. a JARM response signed by another key is refused ' +
+         '(STS-FED-0246) and the code is not redeemed',
+         r.status + ' ' + r.text.slice(0, 300));
+    before = coded('STS-FED-0246');
+    r = await jarmGet(sign({ iss: opBase, aud: 'frp-client',
+      code: 'c-nostate', exp: jarmExp() }));
+    note(r.status === 401 && coded('STS-FED-0246') === before + 1 &&
+         noToken() && r.text.indexOf('no state') >= 0,
+         '10q. a JARM response with no state is refused (STS-FED-0246) ' +
+         'and the code is not redeemed',
+         r.status + ' ' + r.text.slice(0, 300));
+    before = coded('STS-FED-0025');
+    const jarmCodes = coded('STS-FED-0246');
+    r = await jarmGet(sign({ iss: opBase, aud: 'frp-client', state: jState,
+      error: 'access_denied', exp: jarmExp() }));
+    note(r.status === 400 && coded('STS-FED-0025') === before + 1 &&
+         coded('STS-FED-0246') === jarmCodes && noToken() &&
+         r.text.indexOf('access_denied') >= 0,
+         '10r. a JARM response carrying the partner\'s error is that ' +
+         'error (STS-FED-0025) and does not redeem a code',
+         r.status + ' ' + r.text.slice(0, 300));
+    r = await jarmGet(sign({ iss: opBase, aud: 'frp-client', state: jState,
+      code: 'c-jarm-kept', exp: jarmExp() }));
+    const keptToken = op.calls.filter(function (c) {
+      return /\/token$/.test(c.path);
+    })[0] || { body: '' };
+    note(r.status < 400 && /code=c-jarm-kept/.test(keptToken.body),
+         '10s. the same sign-in still redeems a good JARM response',
+         r.status + ' ' + keptToken.body.slice(0, 200));
+
+    // --- 10t, 10u. refresh ---------------------------------------------------
+    // sealPartnerToken is the clear value when this process holds no
+    // durable key-encryption key, so the sealed blob is not what shows the
+    // key survived. The public jwk in the two DPoP proofs is. refreshDue
+    // also refreshes the still-live session from case 6, so the assertion
+    // is this refresh_token, not the count.
+    const proofX = function (header) {
+      const parsed = jwtParts(header);
+      return parsed && parsed.header.jwk && parsed.header.jwk.x;
+    };
+    const FREF = make('frp-fapi-ref-' + stamp, {
+      fedFapi: '2-security', fedDiscovery: 'TRUE',
+      fedRefreshTokens: 'TRUE', fedRefreshEverySeconds: '1',
+      fedSsoUrl: null, fedTokenUrl: null, fedJwksUri: null,
+      fedUserinfoUrl: null });
+    const frefJar = {};
+    op.calls = [];
+    op.par = null;
+    op.scenario = { issuer: opBase, base: opBase, rt: 'rt-fapi2',
+      discovery: { pushed_authorization_request_endpoint: opBase + 'par' },
+      backClaims: function () {
+        return parClaims();
+      } };
+    started = await begin(FREF, frefJar);
+    await call('GET', '/federation/acs/' + FREF + '?state=' +
+      encodeURIComponent((op.par || new URLSearchParams()).get('state')) +
+      '&code=c-fref', null, frefJar);
+    const signInX = proofX((op.calls.filter(function (c) {
+      return /\/token$/.test(c.path);
+    })[0] || {}).dpop);
+    op.byToken['rt-fapi2'] = { claims: function () {
+      const now = Math.floor(Date.now() / 1000);
+      return { iss: opBase, sub: 'frp-person', aud: 'frp-client', iat: now,
+               exp: now + 300 };
+    } };
+    op.calls = [];
+    await fedSp.refreshDue(Date.now() + 5000);
+    const frefCall = op.calls.filter(function (c) {
+      return /\/token$/.test(c.path) &&
+             /refresh_token=rt-fapi2/.test(c.body);
+    })[0] || { body: '', dpop: '' };
+    const frefForm = new URLSearchParams(frefCall.body);
+    const frefUser = op.calls.filter(function (c) {
+      return /\/userinfo$/.test(c.path) && c.auth === 'DPoP at-rt-fapi2';
+    })[0];
+    note(FREF === 'frp-fapi-ref-' + stamp && signInX &&
+         proofX(frefCall.dpop) === signInX &&
+         frefForm.get('client_assertion') && !frefForm.get('client_secret') &&
+         !!frefUser,
+         '10t. a 2.x refresh sends private_key_jwt and a DPoP proof from ' +
+         'the sign-in key, and UserInfo is asked as DPoP',
+         'x=' + signInX + ' again=' + proofX(frefCall.dpop) + ' ' +
+         frefCall.body.slice(0, 180));
+    const AREF = make('frp-fapi1-ref-' + stamp, {
+      fedFapi: '1-advanced', fedRefreshTokens: 'TRUE',
+      fedRefreshEverySeconds: '1' });
+    const arefJar = {};
+    op.calls = [];
+    op.scenario = { rt: 'rt-fapi1' };
+    started = await begin(AREF, arefJar);
+    // The token endpoint is the callback's, so the ID Token is this
+    // sign-in's nonce and not the previous case's.
+    op.scenario.backClaims = function () {
+      return claims(started);
+    };
+    await call('POST', '/federation/acs/' + AREF, {
+      state: started.params.get('state'), code: 'c-aref',
+      id_token: sign(claims(started, { c_hash: halfHash('c-aref') }))
+    }, arefJar);
+    op.byToken['rt-fapi1'] = { claims: function () {
+      const now = Math.floor(Date.now() / 1000);
+      return { iss: opBase, sub: 'frp-person', aud: 'frp-client', iat: now,
+               exp: now + 300 };
+    } };
+    op.calls = [];
+    await fedSp.refreshDue(Date.now() + 5000);
+    const arefCall = op.calls.filter(function (c) {
+      return /\/token$/.test(c.path) &&
+             /refresh_token=rt-fapi1/.test(c.body);
+    })[0] || { body: '', dpop: 'none' };
+    const arefForm = new URLSearchParams(arefCall.body);
+    const arefUser = op.calls.filter(function (c) {
+      return /\/userinfo$/.test(c.path) &&
+             c.auth === 'Bearer at-rt-fapi1';
+    })[0];
+    note(arefForm.get('client_assertion') && !arefCall.dpop && !!arefUser,
+         '10u. a 1-advanced refresh sends the assertion and no DPoP ' +
+         'proof, and UserInfo stays bearer',
+         'dpop=' + arefCall.dpop + ' ' + arefCall.body.slice(0, 180));
 
     fs.writeFileSync(OUT, JSON.stringify(findings));
     server.close();

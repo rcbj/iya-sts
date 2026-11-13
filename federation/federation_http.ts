@@ -289,6 +289,9 @@ interface FetchResult {
   url: string;
   errorCode: string;
   why: string;
+  // The answer's headers, lower-cased, where a response arrived. A DPoP
+  // nonce is read from here (#931). Absent when the request was not sent.
+  headers?: Record<string, any>;
 }
 
 interface FetchOptions {
@@ -2144,6 +2147,7 @@ class FederationHttp {
             done({ ok: status >= 200 && status < 300, status: status,
                    json: json,
                    text: text,
+                   headers: response.headers,
                    errorCode: status >= 200 && status < 300 ? ''
                      : 'STS-FED-0051',
                    why: status >= 200 && status < 300 ? ''

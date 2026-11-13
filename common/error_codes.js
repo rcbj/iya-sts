@@ -13915,6 +13915,25 @@ const CODES = [
   { code: 'STS-FED-0242',
     summary: 'A partner was asked for a fresh sign-in and answered with an earlier authentication.',
     spec: 'HTTP 401' },
+  { code: 'STS-FED-0243',
+    summary: 'A FAPI 2 client profile cannot start: discovery is off, or ' +
+      'the partner\'s discovery document names no pushed authorization ' +
+      'request endpoint.',
+    spec: 'HTTP 502' },
+  { code: 'STS-FED-0244',
+    summary: 'The pushed authorization request to a FAPI partner failed.',
+    spec: 'HTTP 502' },
+  { code: 'STS-FED-0245',
+    summary: 'A FAPI client could not sign its private_key_jwt or its ' +
+      'request object.',
+    spec: 'HTTP 500' },
+  { code: 'STS-FED-0246',
+    summary: 'A FAPI partner\'s JARM response was missing or did not ' +
+      'verify.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0247',
+    summary: 'A DPoP proof for a FAPI partner could not be made.',
+    spec: 'HTTP 500' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
