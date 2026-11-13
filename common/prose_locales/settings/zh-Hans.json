@@ -6980,8 +6980,8 @@
     "text": "可续订有效期（秒）"
   },
   "krb5.renewLifetimeSeconds|description": {
-    "en": "c5e760b09dd1a975",
-    "text": "以可续订方式签发的票据，其 renew-till 可延伸多远。七天是 Active Directory 的默认值。"
+    "en": "5e2fb0a8cf795055",
+    "text": "以可续订方式签发的票据，其 renew-till 的上限，自票据起始时间起算。客户端请求的 rtime 会缩短它；未给出 rtime 时票据采用此上限。rtime 早于或等于票据 endtime 时仍将其标为可续订，与 MIT krb5 相同。仅当所请求的 endtime 被缩短，且由此得到的 renew-till 晚于所签发的 endtime 时，RENEWABLE-OK 才设置该标志。七天是 Active Directory 的默认值。"
   },
   "krb5.logonServer|label": {
     "en": "430185046b3ddca6",

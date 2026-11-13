@@ -56,8 +56,23 @@ client cannot guess.
   S4U2Proxy** the subject is `krb5.s4uRoleSubject`'s choice: `user`, the
   person the ticket is for (the default), or `service`, the service that
   asks — see [A role a service requires, under S4U](#a-role-a-service-requires-under-s4u).
-* **Renewable tickets**, bounded by `krb5.ticketLifetimeSeconds` and
-  `krb5.renewLifetimeSeconds` (Active Directory's ten hours and seven days).
+* **Renewable tickets.** `krb5.ticketLifetimeSeconds` (ten hours) is still
+  the longest endtime when the client asks for more.
+  `krb5.renewLifetimeSeconds` (seven days, Active Directory's default) is
+  the **maximum** renew-till, measured from the ticket's start. An AS-REQ
+  or a TGS-REQ that sends `rtime` is given the earlier of that instant, this
+  maximum, and — on a service ticket — the ticket-granting ticket's own
+  renew-till. With `RENEWABLE` and no `rtime`, renew-till is the maximum.
+  An `rtime` at or before endtime still sets the flag and that renew-till,
+  which is what MIT krb5 does, so a renewal cannot extend the ticket past
+  it. `RENEWABLE-OK` sets the flag only when the KDC shortened the requested
+  endtime and the renew-till that results is later than the endtime it
+  issued. A renewal never moves renew-till. A service ticket stays
+  renewable when its ticket-granting ticket was, even when the TGS-REQ does
+  not repeat `RENEWABLE` (MIT clears that inherited flag; this KDC does
+  not, so a service ticket taken with an empty option list can still be
+  renewed). A ticket-granting ticket that is not renewable cannot buy a
+  renewable service ticket.
 * **Cross-realm referrals** through **Kerberos trusts**: one record per
   partner realm in the realm's own directory (`ou=kerberosTrusts`), holding
   the inter-realm keys — two trust realms of this service may trust each
@@ -979,7 +994,7 @@ Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mo
 | `krb5.allowSha1Enctypes` | `KRB5_ALLOW_SHA1_ENCTYPES` | `false` | no | Product mode only. On, the KDC may also use enctypes 17 and 18 (AES with HMAC-SHA1-96, RFC 3962); off, product uses 19 and 20 (RFC 8009) alone. **Warning:** ASVS 5.0.0 11.4.1 does not accept SHA-1 here; turn it on only for clients that speak nothing newer. |
 | `krb5.kvno` | `KRB5_KVNO` | `3` | no | The kvno of every account built from a configured password, and the starting kvno of stored keys. |
 | `krb5.ticketLifetimeSeconds` | `KRB5_TICKET_LIFETIME_S` | `36000` | yes | The longest a ticket is valid. |
-| `krb5.renewLifetimeSeconds` | `KRB5_RENEW_LIFETIME_S` | `604800` | yes | How far `renew-till` reaches for a renewable ticket. |
+| `krb5.renewLifetimeSeconds` | `KRB5_RENEW_LIFETIME_S` | `604800` | yes | The maximum `renew-till`, from the ticket's start. A requested `rtime` shortens it; with none, the ticket takes this maximum. An `rtime` at or before endtime still marks the ticket renewable (MIT krb5). `RENEWABLE-OK` sets the flag only when the requested endtime was shortened and the resulting renew-till is later than the endtime issued. |
 | `krb5.logonServer` | `KRB5_LOGON_SERVER` | `DC01` | yes | The LogonServer name in every PAC. |
 | `krb5.pacClaims` | `KRB5_PAC_CLAIMS` | `false` | yes | Whether every ticket's PAC carries the client's claims (PAC_CLIENT_CLAIMS_INFO, [MS-PAC] 2.11): the realm's Kerberos PAC claims and the person's realm-wide roles in a TGT, and a service ticket's TGT claims with the claims of the application that registered its SPN added. Never compressed. See `docs/kerberos.md`, *PAC claims*. |
 | `krb5.maxRequestBytes` | `KRB5_MAX_REQUEST_BYTES` | `131072` | yes | The most a client may send on one TCP connection before it is closed. |

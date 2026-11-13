@@ -1744,7 +1744,7 @@
   "krb5.ticketLifetimeSeconds|label": "Ticket lifetime (s)",
   "krb5.ticketLifetimeSeconds|description": "The longest a ticket this KDC issues is valid for when the client asks for more (or names no till). Ten hours is Active Directory's default.",
   "krb5.renewLifetimeSeconds|label": "Renewable lifetime (s)",
-  "krb5.renewLifetimeSeconds|description": "How far renew-till reaches for a ticket issued renewable. Seven days is Active Directory's default.",
+  "krb5.renewLifetimeSeconds|description": "The maximum renew-till of a ticket issued renewable, measured from its start. A requested rtime shortens it, and with no rtime the ticket takes this maximum. An rtime at or before the ticket's endtime still marks it renewable, as MIT krb5 does. RENEWABLE-OK sets the flag only when the requested endtime was shortened and the resulting renew-till is later than the endtime issued. Seven days is Active Directory's default.",
   "krb5.logonServer|label": "PAC logon server",
   "krb5.logonServer|description": "The LogonServer name in every PAC's KERB_VALIDATION_INFO ([MS-PAC] 2.5): the NetBIOS name of the domain controller that authenticated the user.",
   "krb5.pacClaims|label": "PAC client claims (PAC_CLIENT_CLAIMS_INFO)",

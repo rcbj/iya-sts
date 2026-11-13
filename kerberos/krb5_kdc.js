@@ -311,6 +311,70 @@ function kdcTime(offsetSeconds) {
   return new Date(now().getTime() + (offsetSeconds || 0) * 1000);
 }
 
+// The renew-till of a ticket being ISSUED (#897). A renewal does not call
+// this: it copies the presented ticket's renew-till, and that instant does
+// not move.
+//
+// RFC 4120 section 3.1.3 lets renew-till be the earliest of the requested
+// rtime, starttime plus each principal's maximum renewable life, and
+// starttime plus the realm's. This service has the one realm maximum
+// (`krb5.renewLifetimeSeconds`) and no per-principal maximum. On a TGS
+// exchange the presented ticket's own renew-till is a further cap, and a
+// ticket that is not renewable cannot buy one that is.
+//
+// MIT krb5's kdc_get_ticket_renewtime, with the differences kerberos/CLAUDE.md
+// records. `inherited` is the caller's choice to keep a TGT's RENEWABLE flag
+// when the TGS-REQ did not repeat the option; MIT would have cleared it.
+// RENEWABLE-OK (option 27) sets the flag only when the requested till was
+// shortened to endtime and the capped renew-till is strictly later than that
+// endtime. An explicit RENEWABLE, and an inherited flag, keep the flag even
+// when rtime does not pass endtime.
+//
+// `spec.start` is the ticket's starttime, `spec.endtime` the endtime about
+// to be issued. `spec.presented` is null on an AS exchange and
+// `{ renewable, renewTill }` on a TGS exchange.
+function decideRenewTill(spec) {
+  log.debug("Entering decideRenewTill().");
+  const options = spec.options || [];
+  const asked = options.indexOf(msgs.KDC_OPTION.RENEWABLE) !== -1;
+  const askedOk = options.indexOf(msgs.KDC_OPTION.RENEWABLE_OK) !== -1;
+  const presented = spec.presented || null;
+  if (presented && !presented.renewable) {
+    log.debug("Leaving decideRenewTill().");
+    return { renewable: false, renewTill: null };
+  }
+  const realmCap = spec.start.getTime() + renewLifetimeSeconds() * 1000;
+  let requested = null;
+  let fromOk = false;
+  if (asked || spec.inherited) {
+    requested = spec.rtime instanceof Date ? spec.rtime.getTime() : realmCap;
+  } else if (askedOk && spec.till instanceof Date &&
+             spec.till.getTime() > spec.endtime.getTime()) {
+    fromOk = true;
+    requested = spec.till.getTime();
+  } else {
+    log.debug("Leaving decideRenewTill().");
+    return { renewable: false, renewTill: null };
+  }
+  let cap = requested;
+  if (cap > realmCap) {
+    cap = realmCap;
+  }
+  if (presented && presented.renewTill instanceof Date &&
+      cap > presented.renewTill.getTime()) {
+    cap = presented.renewTill.getTime();
+  }
+  // RENEWABLE-OK only. An explicit request keeps the flag, so a renewal is
+  // refused at once (STS-KRB-0045) rather than the ticket pretending it can
+  // be extended.
+  if (fromOk && cap <= spec.endtime.getTime()) {
+    log.debug("Leaving decideRenewTill().");
+    return { renewable: false, renewTill: null };
+  }
+  log.debug("Leaving decideRenewTill().");
+  return { renewable: true, renewTill: new Date(cap) };
+}
+
 // ---------------------------------------------------------------------------
 // THE KEY A PRESENTED TICKET IS OPENED WITH (2026-09-12).
 //
@@ -3654,11 +3718,16 @@ async function answerAsReq(request, fast) {
     kdcTime(ticketLifetimeSeconds()).getTime(),
     preauth && preauth.pkinit && preauth.pkinit.notAfter
       ? preauth.pkinit.notAfter.getTime() : Infinity));
+  // #897. renew-till follows the requested rtime, capped by the realm
+  // maximum. RENEWABLE-OK can add the flag; an explicit RENEWABLE keeps it
+  // even when rtime does not pass endtime.
+  const renewal = decideRenewTill({
+    options: body.kdcOptions, rtime: body.rtime, till: body.till,
+    start: authtime, endtime: endtime, inherited: false, presented: null
+  });
 
   const wantsForwardable = (body.kdcOptions || []).indexOf(
       msgs.KDC_OPTION.FORWARDABLE) !== -1;
-  const wantsRenewable = (body.kdcOptions || []).indexOf(
-      msgs.KDC_OPTION.RENEWABLE) !== -1;
   const flags = [msgs.TICKET_FLAG.INITIAL];
   // "Account is sensitive and cannot be delegated". The refusal is not an error
   // — the ticket is issued, simply WITHOUT the forwardable flag — and that is
@@ -3675,7 +3744,9 @@ async function answerAsReq(request, fast) {
   } else if (wantsForwardable) {
     flags.push(msgs.TICKET_FLAG.FORWARDABLE);
   }
-  if (wantsRenewable) flags.push(msgs.TICKET_FLAG.RENEWABLE);
+  if (renewal.renewable) {
+    flags.push(msgs.TICKET_FLAG.RENEWABLE);
+  }
   // pre-authent is set only if pre-authentication actually happened. A service
   // can read this flag and insist on it, so setting it unconditionally would be
   // a lie with security consequences. Any of the three methods sets it; what
@@ -3695,7 +3766,7 @@ async function answerAsReq(request, fast) {
   }
   // RFC 6806 section 11, on every ticket issued (encPaRepData() above).
   if (request[REQUEST_BYTES]) flags.push(msgs.TICKET_FLAG.ENC_PA_REP);
-  const renewTill = wantsRenewable ? kdcTime(renewLifetimeSeconds()) : null;
+  const renewTill = renewal.renewTill;
 
   // THREE ENCTYPES, NOT ONE (#204, 2026-09-26). The request's etype list
   // chooses the REPLY key — the client's own, `etype` above — and the SESSION
@@ -5024,7 +5095,8 @@ async function answerTgsReq(request, state) {
   //   * the presented ticket must be flagged RENEWABLE and carry a renew-till;
   //   * the new endtime is capped at renew-till, which does NOT move — that cap
   //     is the whole point of a renewable ticket, since otherwise it would be
-  //     immortal;
+  //     immortal. An rtime on the renewal is ignored (#897): recomputing
+  //     renew-till here would let the client name a later one;
   //   * **authtime is preserved.** A renewed ticket must not look freshly
   //     authenticated: a service reading authtime to decide how recently the
   //     user proved themselves would otherwise be told a lie that grows more
@@ -5273,6 +5345,34 @@ async function answerTgsReq(request, state) {
     ? new Date(Math.min(requestedTill.getTime(),
                         ticketPart.renewTill.getTime()))
     : new Date(Math.min(requestedTill.getTime(), ticketPart.endtime.getTime()));
+  // #897. A renewal copies renew-till. Every other TGS ticket takes
+  // decideRenewTill(): a requested rtime shortens it, it cannot pass the
+  // TGT's own renew-till, and a TGT that is not renewable cannot source one
+  // that is. The flag is still inherited when the TGS-REQ does not repeat
+  // RENEWABLE — MIT would clear it, and the clients that renew a service
+  // ticket obtained with an empty kdcOptions list depend on this KDC not
+  // doing so.
+  const presentedRenewable = (ticketPart.flags || [])
+    .indexOf(msgs.TICKET_FLAG.RENEWABLE) !== -1 &&
+    ticketPart.renewTill instanceof Date;
+  let renewTill = ticketPart.renewTill || null;
+  if (!wantsRenew) {
+    const decision = decideRenewTill({
+      options: body.kdcOptions, rtime: body.rtime, till: body.till,
+      start: at, endtime: endtime, inherited: presentedRenewable,
+      presented: { renewable: presentedRenewable,
+                   renewTill: ticketPart.renewTill }
+    });
+    flags = flags.filter(function (f) {
+      return f !== msgs.TICKET_FLAG.RENEWABLE;
+    });
+    if (decision.renewable) {
+      flags.push(msgs.TICKET_FLAG.RENEWABLE);
+      renewTill = decision.renewTill;
+    } else {
+      renewTill = null;
+    }
+  }
 
   const serviceKey = u2u ? u2u.key.key
                          : await principals.longTermKey(service, ticketEtype);
@@ -5311,7 +5411,7 @@ async function answerTgsReq(request, state) {
       authtime: authtime,
       starttime: at,
       endtime: endtime,
-      renewTill: ticketPart.renewTill,
+      renewTill: renewTill,
       authorizationData: ad.length ? ad : null
     });
   };
@@ -5613,7 +5713,7 @@ async function answerTgsReq(request, state) {
     authtime: authtime,
     starttime: at,
     endtime: endtime,
-    renewTill: ticketPart.renewTill,
+    renewTill: renewTill,
     srealm: answeringRealm,
     sname: body.sname,
     // RFC 6806 section 11's checksum, when the TGS-REQ asked for it — "any
