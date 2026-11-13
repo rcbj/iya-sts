@@ -346,15 +346,17 @@ variable "cloudfront_enabled" {
     A CloudFront distribution in front of the load balancer (cloudfront.tf):
     public_hostname goes to it, and direct_hostname stays on the load balancer
     for mutual TLS, Kerberos, LDAP, SPIFFE and the plain-HTTP revocation
-    listener. Needs public_hostname and direct_hostname, in a single-cell
-    environment, and a foundation re-applied by an administrator.
+    listener. Needs public_hostname and direct_hostname, and a foundation
+    re-applied by an administrator. In a multi-cell environment (#1341) the
+    primary cell holds the one distribution and the cells' tree moves to
+    direct_hostname (cloudfront.tf, dns_cells.tf).
   EOT
   type        = bool
   default     = false
 }
 
 variable "direct_hostname" {
-  description = "The name that reaches the load balancer itself where cloudfront_enabled is on, e.g. `direct.test-idp.iyasec.io`. The node's certificate names it too (deploy/aws/certificate)."
+  description = "The name that reaches the load balancer itself where cloudfront_enabled is on, e.g. `direct.test-idp.iyasec.io` — in a multi-cell environment the cells' Route 53 tree, and CloudFront's origin. The node's certificate names it too (deploy/aws/certificate)."
   type        = string
   default     = ""
 }

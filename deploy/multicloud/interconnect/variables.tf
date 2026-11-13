@@ -86,3 +86,16 @@ variable "jurisdictions" {
   }))
   default = {}
 }
+
+variable "direct_hostname" {
+  description = <<-EOT
+    The direct name, from the cells file (#1341). SET, the AWS primary cell's
+    CloudFront distribution answers the public name, and this stack writes
+    the tree at this name instead — the distribution's origin, and the name
+    for a client certificate, Kerberos, LDAP, SPIFFE and revocation — and
+    admits CloudFront to the GCP cells on 443 (routing.tf). EMPTY, the tree
+    is at the public name, as it was.
+  EOT
+  type        = string
+  default     = ""
+}

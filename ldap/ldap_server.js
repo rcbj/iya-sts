@@ -27812,6 +27812,19 @@ function noteApplicationRemoved(stored, via) {
   // otherwise hold every role this one did. Here, because both doors reach
   // here.
   forgetGroupMemberships(String(stored.dn), via);
+  // AND THE ROLES IT OWNS GO WITH IT (rcbj, 2026-11-13, #1612): a role made
+  // for this application (`<role>@<identifier>`, `roleApplication`) is
+  // deleted as the console's delete-role deletes one — roles.remove(), then
+  // a `roles.delete` row — so an application registered later under the
+  // same identifier finds no role name waiting for it. First, so the two
+  // calls below do not rewrite a role that is about to go.
+  roles.forgetApplicationRoles(identifier).forEach(function (role) {
+    audit.audit({ action: 'roles.delete', actor: '', target: role,
+                  protocol: 'XACML', channel: 'internal',
+                  detail: 'deleted the role "' + role + '": the ' +
+                          'application "' + identifier + '" it belonged ' +
+                          'to was deleted by ' + via });
+  });
   roles.forgetMember('applications', identifier);
   // AND IT CONFERS NOTHING (2026-11-13, #1612's review): forgetMember() keeps
   // `roleConferredBy`, so the identifier stayed there and the next

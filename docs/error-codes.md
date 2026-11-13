@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5453** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5455** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 22
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 23
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 262
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 272
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 273
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -619,6 +619,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0020` | A cluster job is not registered in the request worker its run was handed to (#408), so it ran on the front process's thread, and every later run of it in this process does too; register it at its owner's load, or give it an onFront reason. | — |
 | `STS-SCHED-0021` | A cluster run's body on a request worker stopped owning its run because the leader had not renewed its grant in time (#1305): the leader's thread did not run, or its renewals did not arrive. The body stops at its next step; the leader, or the attempt that takes the run over, decides the run. | — |
 | `STS-SCHED-0022` | The clock of this node differs from the database clock. | — |
+| `STS-SCHED-0023` | The store could not say whether some runs of the current slot had already run (#883's review): those runs were held back for this tick, neither run nor taken as finished, and are asked about again at the next; every other run in the tick went on. | — |
 
 ## STS-KEYS
 
@@ -5591,6 +5592,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0921` | A deleted application's identifier could not be taken off the clients conferring a role, so whatever is next registered under that identifier still confers it (roles.forgetConferrer()). | — |
 | `STS-ADMIN-0922` | A deleted or renamed person or group could not be taken off, or moved on, the owners of a role, group, application or service account that named its DN, so that object still names the old DN (roles.forgetOwner(), applications.forgetOwner(), the directory's forgetOwnerReferences() and moveOwnerReferences()). | — |
 | `STS-ADMIN-0923` | The store named as many entries as one question answers for a deleted or renamed DN held in an owner attribute, so some groups or service accounts may still name it as an owner (entriesNamingOwner()). | — |
+| `STS-ADMIN-0924` | A role a deleted application owned (its roleApplication named the application) could not be deleted with it, so an application registered later under that identifier finds the role already there (roles.forgetApplicationRoles()). | — |
 
 ## STS-API
 

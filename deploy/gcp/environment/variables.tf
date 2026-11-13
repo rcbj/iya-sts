@@ -179,6 +179,29 @@ variable "public_hostname" {
   default     = ""
 }
 
+variable "cdn_enabled" {
+  description = <<-EOT
+    A CDN in front of the load balancer (cdn.tf, #1341). Single-region: Cloud
+    CDN behind a global external Application Load Balancer at public_hostname,
+    and direct_hostname on the passthrough load balancer for mutual TLS,
+    Kerberos, LDAP, SPIFFE and the plain-HTTP revocation listener. In a cell
+    of a multi-cloud environment (#97): the AWS primary cell's CloudFront
+    distribution, whose ranges and origin secret the nodes are told.
+  EOT
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.cdn_enabled || (var.public_hostname != "" && var.direct_hostname != "" && var.direct_hostname != var.public_hostname)
+    error_message = "cdn_enabled needs public_hostname and a direct_hostname of its own."
+  }
+}
+
+variable "direct_hostname" {
+  description = "The name that reaches the passthrough load balancer itself where cdn_enabled is on, e.g. `direct.test-idp.gcp.iyasec.io`. The node's ACME certificate names it too."
+  type        = string
+  default     = ""
+}
+
 variable "dns_zone_name" {
   description = "The Cloud DNS zone public names go in (foundation/dns.tf), delegated from Route 53."
   type        = string

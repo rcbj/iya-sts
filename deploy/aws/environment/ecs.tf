@@ -252,7 +252,8 @@ locals {
   node_secrets = [for s in concat(
     [{ name = "ADMIN_API_CLIENT_SECRET", valueFrom = local.shared_secret_arns["admin-api-client-secret"] }],
     # What CloudFront proves itself with (cloudfront.tf, #1336).
-    local.cloudfront ? [{ name = "STS_EDGE_SECRET", valueFrom = aws_secretsmanager_secret.main["cloudfront-edge-secret"].arn }] : [],
+    # In a cell it is the global/ stack's replica (#1341), dropped in `base`.
+    [{ name = "STS_EDGE_SECRET", valueFrom = local.edge_secret_arn }],
     # THE BOOTSTRAP ADMINISTRATOR'S PASSWORD, in product mode. Injected by
     # ECS from Secrets Manager rather than written into the task
     # definition, like the three secrets beside it: a task definition is
