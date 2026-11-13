@@ -51,6 +51,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import ownMembers = require('../common/own_members');
 import model = require('./xacml_model');
 import datatypes = require('./xacml_datatypes');
 
@@ -261,7 +262,9 @@ class XacmlAttributeRows {
     const uris = Object.keys(CATEGORY_NAMES).map(function (key: string) {
       return CATEGORY_NAMES[key];
     });
-    const out = CATEGORY_NAMES[text] || (uris.indexOf(text) >= 0 ? text : '');
+    // An own member only: `constructor` is not a category (2026-11-12).
+    const out = ownMembers.read(CATEGORY_NAMES, text) ||
+      (uris.indexOf(text) >= 0 ? text : '');
     log.debug("Leaving XacmlAttributeRows.categoryOf().");
     return out;
   }
@@ -278,7 +281,9 @@ class XacmlAttributeRows {
     const uris = Object.keys(TYPE_NAMES).map(function (key: string) {
       return TYPE_NAMES[key];
     });
-    const out = TYPE_NAMES[given] || (uris.indexOf(given) >= 0 ? given : '');
+    // An own member only: `toString` is not a datatype (2026-11-12).
+    const out = ownMembers.read(TYPE_NAMES, given) ||
+      (uris.indexOf(given) >= 0 ? given : '');
     log.debug("Leaving XacmlAttributeRows.dataTypeOf().");
     return out;
   }

@@ -1135,7 +1135,12 @@ the source of:
   `gnap_interact.ts`'s `answer()` hold each answer and record a gap under
   STS-GNAP-0910 (an error code the model does not declare, 0911) — **the
   answer is sent unchanged**, as OAuth's are. `GnapModel.gaps()` keeps the
-  last hundred for a test.
+  last hundred for a test. **`/gnap-api`'s `preferredLanguage` is the set
+  `gnap-api-language`, `{ value, populated }`** — what
+  `authn.preferredLanguageOf()` answers, the page's runtime reads and
+  `/authn-api` models. It was declared a string until 2026-11-12, so every
+  view answered to a signed-in person with a language of their own recorded
+  a gap (seen in `sts_gnap_core`'s service log); the wire never changed.
 * **The error codes**: RFC 9635 section 3.6's thirteen, and
   `invalid_resource_server` and `invalid_access`, this service's own.
 * **The access-type catalogue's definition** (rule 3bz):

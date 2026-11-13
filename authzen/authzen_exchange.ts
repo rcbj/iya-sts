@@ -81,6 +81,7 @@
 
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
+import ownMembers = require('../common/own_members');
 import catalogue = require('./authzen_catalogue');
 
 const { log } = helpers;
@@ -788,7 +789,8 @@ class AuthzenTokenExchange {
       const verdicts = self.scopeVerdicts(plan, group.subject, fixed, asked,
                                           true);
       out.granted_scope = asked.filter(function (one: string) {
-        return verdicts[one] && verdicts[one].keep;
+        const verdict = ownMembers.read(verdicts, one);
+        return verdict && verdict.keep;
       }).join(' ');
     }
     log.debug("Leaving AuthzenTokenExchange.issuance().");
@@ -834,14 +836,20 @@ class AuthzenTokenExchange {
     const subject = { kind: facts.kind === 'application' ? 'application'
                                                          : 'user',
                       name: String(facts.id || name), authenticated: true };
+    // A SCOPE IS A NAME A CALLER CHOSE (2026-11-12): every verdict is an
+    // own member, read and written through `common/own_members.ts`, so a
+    // scope called `constructor` is not inherited as a verdict or as a
+    // delegated permission, and one called `__proto__` is a verdict rather
+    // than the map's prototype (which every other scope would then inherit).
     const out: Json = {};
     asked.forEach(function (one: string) {
-      out[one] = { keep: true, code: '', why: '' };
+      ownMembers.put(out, one, { keep: true, code: '', why: '' });
     });
     const drop = function (one: string, code: string, why: string): void {
       log.debug("Entering drop(). " + one);
-      if (out[one] && out[one].keep) {
-        out[one] = { keep: false, code: code, why: why };
+      const was = ownMembers.read(out, one);
+      if (was && was.keep) {
+        ownMembers.put(out, one, { keep: false, code: code, why: why });
       }
       log.debug("Leaving drop().");
     };
@@ -858,7 +866,7 @@ class AuthzenTokenExchange {
         const found = self.deps.loadOauth2().audienceScopes(asked.join(' '),
                                                             client);
         (found.permissions || []).forEach(function (p: Json) {
-          permissionOf[p.scope] = p;
+          ownMembers.put(permissionOf, p.scope, p);
         });
       } catch (e) {
         log.debug("Caught in AuthzenTokenExchange.scopeVerdicts(): " +
@@ -875,7 +883,7 @@ class AuthzenTokenExchange {
         grantType: GRANT_TYPE,
         requested: asked,
         facts: asked.map(function (one: string): Json {
-          const permission = permissionOf[one];
+          const permission = ownMembers.read(permissionOf, one);
           const inSubject = granted.indexOf(one) >= 0 ||
             (!!permission && granted.indexOf(permission.permission) >= 0);
           const attributes = [
@@ -986,7 +994,7 @@ class AuthzenTokenExchange {
                       id: String(body.subject.id) };
       const asked = self.scopesOf(plan, party);
       const verdicts = self.scopeVerdicts(plan, party, fixed, asked, false);
-      const verdict = verdicts[scope] || { keep: false,
+      const verdict = ownMembers.read(verdicts, scope) || { keep: false,
         code: 'STS-AUTHZEN-0111', why: 'not decided' };
       out.decision = !!verdict.keep;
       out.code = verdict.code;

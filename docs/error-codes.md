@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5440** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5445** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 71
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
-* [Federation (`STS-FED`)](#sts-fed) — 217
+* [Federation (`STS-FED`)](#sts-fed) — 222
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 166
@@ -3011,6 +3011,11 @@ Raised from: federation/.
 | `STS-FED-0240` | A federated sign-in was refused because the partner authenticated the person too long ago. | HTTP 401 |
 | `STS-FED-0241` | A federated assertion was refused because it names no audience. | HTTP 401 |
 | `STS-FED-0242` | A partner was asked for a fresh sign-in and answered with an earlier authentication. | HTTP 401 |
+| `STS-FED-0243` | A FAPI 2 client profile cannot start: discovery is off, or the partner's discovery document names no pushed authorization request endpoint. | HTTP 502 |
+| `STS-FED-0244` | The pushed authorization request to a FAPI partner failed. | HTTP 502 |
+| `STS-FED-0245` | A FAPI client could not sign its private_key_jwt or its request object. | HTTP 500 |
+| `STS-FED-0246` | A FAPI partner's JARM response was missing or did not verify. | HTTP 401 |
+| `STS-FED-0247` | A DPoP proof for a FAPI partner could not be made. | HTTP 500 |
 
 ## STS-OIDFED
 

@@ -21,7 +21,9 @@
 //      approval page sends a browser with no session to the sign-in screen;
 //      a cancelled sign-in enacts the redirect finish with `hash` and
 //      `interact_ref`, the hash RFC 9635 section 4.2.3's.
-//   4. THE VIEW: facts and no words, and `csrf`; with no session it sends
+//   4. THE VIEW: facts and no words, and `csrf` (and a signed-in person's
+//      own language as `{ value, populated }`, held to its model with no
+//      STS-GNAP-0910); with no session it sends
 //      the browser back to the page.
 //   5. THE BINDING of an act: JSON, an Origin of this service, the token;
 //      no refusal carries an error code; a malformed body and a limit
@@ -271,6 +273,28 @@ function childMain() {
          !/Allow access/.test(r.text),
          '4d. the view is facts and no words, with its csrf',
          r.text.slice(0, 600));
+    // A signed-in person WITH a language of their own: the view carries it
+    // as `{ value, populated }`, the shape the page's runtime reads and
+    // `/authn-api` answers, and the holding records no STS-GNAP-0910 for
+    // it (the model declared a string until 2026-11-12).
+    const editor = require(ROOT_DIR + '/ldap/person_editor');
+    const GnapModel = require(ROOT_DIR + '/gnap/gnap_model');
+    editor.update('gia-alice', { attribute: 'preferredLanguage', mode: 'set',
+                                 value: 'fr' },
+                  { actor: 'gnap_interact_api test', via: 'test' });
+    const gapsBefore = GnapModel.gaps().length;
+    r = await get(jar, one.api);
+    const ownLanguage = r.json && r.json.preferredLanguage;
+    const newGaps = GnapModel.gaps().slice(gapsBefore);
+    note(r.status === 200 && ownLanguage && ownLanguage.value === 'fr' &&
+         typeof ownLanguage.populated === 'boolean' && newGaps.length === 0,
+         '4e. a person\'s own language is answered as { value, populated }, ' +
+         'and the answer is its model\'s',
+         r.status + ' ' + JSON.stringify(ownLanguage) + ' ' +
+         newGaps.join(' | '));
+    editor.update('gia-alice', { attribute: 'preferredLanguage',
+                                 mode: 'remove', value: 'fr' },
+                  { actor: 'gnap_interact_api test', via: 'test' });
 
     // --- 5. the binding ------------------------------------------------------
     r = await send(jar, one.api, 'action=allow', {

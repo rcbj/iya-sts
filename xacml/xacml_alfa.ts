@@ -115,6 +115,7 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import ownMembers = require('../common/own_members');
 import model = require('./xacml_model');
 import datatypes = require('./xacml_datatypes');
 import functions = require('./xacml_functions');
@@ -301,7 +302,8 @@ class AlfaLanguage {
       return letter.toUpperCase();
     });
     log.debug("Leaving AlfaLanguage.algorithmNameOf().");
-    return ALGORITHM_NAMES[camel] ? camel : null;
+    // An own member only (2026-11-12): `constructor` names no algorithm.
+    return ownMembers.read(ALGORITHM_NAMES, camel) ? camel : null;
   }
 
   /**
@@ -316,7 +318,7 @@ class AlfaLanguage {
   algorithmUriOf(name: string, forPolicySet?: boolean): string | null {
     const { log } = this.deps;
     log.debug("Entering AlfaLanguage.algorithmUriOf().");
-    const pair = ALGORITHM_NAMES[name];
+    const pair = ownMembers.read(ALGORITHM_NAMES, name);
     if (!pair) {
       log.debug("Leaving AlfaLanguage.algorithmUriOf().");
       return null;
@@ -421,7 +423,7 @@ class AlfaLanguage {
       // for the whole document and turn a higher-order argument into a bag. It
       // is vanishingly rare and costs one comparison to make impossible.
       while (order.some(function (one) { return one.name === name; }) ||
-             self.functionByShortName[name]) {
+             ownMembers.read(self.functionByShortName, name)) {
         name = base + n;
         n += 1;
       }
@@ -878,7 +880,8 @@ class AlfaLanguage {
     const declarations = attributes.order.map(function (one) {
       const row = datatypes.typeOf(one.dataType);
       return '    attribute ' + one.name + ' {\n' +
-        '        category = ' + (CATEGORY_URIS[one.category] ||
+        '        category = ' + (ownMembers.read(CATEGORY_URIS,
+                                             one.category) ||
                                  self.quote(one.category)) + '\n' +
         '        id = ' + self.quote(one.attributeId) + '\n' +
         '        type = ' + (row ? row.name : 'string') + '\n' +
@@ -1091,7 +1094,7 @@ class AlfaLanguage {
         if (key === 'category') {
           const token = next();
           declared.category = token.kind === 'string' ? token.value
-            : CATEGORY_NAMES[token.value];
+            : ownMembers.read(CATEGORY_NAMES, token.value);
           if (!declared.category) {
             throw model.syntaxError(
               'Unknown category "' + token.value + '" at line ' + token.line +
@@ -1123,13 +1126,15 @@ class AlfaLanguage {
           'The attribute "' + name + '" must declare all three of category, ' +
           'id and type.');
       }
-      attributes[name] = declared;
+      ownMembers.put(attributes, name, declared);
       log.debug('Leaving attributeDeclaration(). name=' + name);
     }
 
     function designatorFor(name, token) {
       log.debug("Entering designatorFor().");
-      const declared = attributes[name];
+      // Own members only (2026-11-12): an undeclared `toString` is refused
+      // as undeclared, not read as Function.
+      const declared = ownMembers.read(attributes, name);
       if (!declared) {
         // THE MOST USEFUL REFUSAL IN THIS FILE. See point 3 in the header: a
         // typo in an attribute name is otherwise a policy that quietly matches
@@ -1163,11 +1168,11 @@ class AlfaLanguage {
     // most useful one in this file.
     function nameReference(name, token) {
       log.debug("Entering nameReference().");
-      if (attributes[name]) {
+      if (ownMembers.read(attributes, name)) {
         log.debug("Leaving nameReference().");
         return designatorFor(name, token);
       }
-      const uri = self.functionByShortName[name];
+      const uri = ownMembers.read(self.functionByShortName, name);
       if (uri) {
         log.debug('nameReference(): "' + name + '" is the function ' + uri +
                   '.');
@@ -1236,7 +1241,8 @@ class AlfaLanguage {
             }
           }
           expect(')');
-          const uri = self.functionByShortName[token.value];
+          const uri = ownMembers.read(self.functionByShortName,
+                                      token.value);
           if (!uri) {
             throw model.syntaxError(
               'There is no function called "' + token.value + '" at line ' +
@@ -1410,7 +1416,7 @@ class AlfaLanguage {
       // own argument order, value first, because that is what the function
       // declares.
       if (token.kind === 'word' && is('(', 1) &&
-          self.functionByShortName[token.value]) {
+          ownMembers.read(self.functionByShortName, token.value)) {
         const call = primary();
         if (call.kind !== 'apply' || call.args.length !== 2) {
           throw model.syntaxError(
@@ -1613,7 +1619,7 @@ class AlfaLanguage {
           next();
           const id = expectWord();
           expect('=');
-          policy.variables[id] = expression();
+          ownMembers.put(policy.variables, id, expression());
           continue;
         }
         const token = peek();

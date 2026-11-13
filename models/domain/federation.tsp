@@ -139,6 +139,9 @@ model FederationRelationship {
   @fromAttr(#{attr: "fedDiscovery"})
   `discovery`?: string;
 
+  @fromAttr(#{attr: "fedFapi"})
+  `fapi`?: string;
+
   @fromAttr(#{attr: "fedInitiateLogin"})
   `initiateLogin`?: string;
 

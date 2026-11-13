@@ -527,6 +527,7 @@ Scope: `admin:read`.
 | `relationships[].fedEncryptionKey[]` | string |  |  |
 | `relationships[].fedEncryptionKeyType` | string |  |  |
 | `relationships[].fedEndSessionUrl` | string |  |  |
+| `relationships[].fedFapi` | string |  |  |
 | `relationships[].fedFirstSeen` | string |  |  |
 | `relationships[].fedHomeRealmDomain` | list |  |  |
 | `relationships[].fedHomeRealmDomain[]` | string |  |  |

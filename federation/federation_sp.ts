@@ -158,6 +158,7 @@
 import certificateTrust = require('../common/certificate_trust');
 import zlib = require('zlib');
 import AtprotoClient = require('./atproto_client');
+import FapiClient = require('./fapi_client');
 import xmldom = require('../common/xml_parser');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
@@ -879,6 +880,20 @@ class FederationSp {
     const record = contexts.get(stsCrypto.credentialDigest(String(handle)));
     log.debug("Leaving FederationSp.heldContext().");
     return record ? Object.assign({ handle: String(handle) }, record) : null;
+  }
+
+  // `putContext()` and `heldContext()` both copy. A FAPI nonce learned after
+  // the context was stored (#931) is written onto the map entry, which is
+  // what `takeContext()` later returns.
+  private rememberFapi(handle, fields) {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering FederationSp.rememberFapi().");
+    const held = contexts.get(
+      stsCrypto.credentialDigest(String(handle || '')));
+    if (held && fields) {
+      Object.assign(held, fields);
+    }
+    log.debug("Leaving FederationSp.rememberFapi(). " + !!held);
   }
 
   private enabled() {
@@ -3144,9 +3159,12 @@ class FederationSp {
         federation.categoryOf(record) !== 'consumer' ||
         (record.fedProtocol !== 'oidc' && record.fedProtocol !== 'oauth2') ||
         // BLUESKY'S REQUEST IS A DIAL (#746), and this door answers an address
-        // at once, with no dial in it.
+        // at once, with no dial in it. A FAPI PROFILE IS THE SAME (#931): a
+        // 2.x profile pushes before the browser moves, and 1-advanced signs a
+        // request object this door does not build.
         consumerProviders.adapts(record, 'atproto-oauth') ||
-        String(record.fedTrustAnchor || '').trim()) {
+        String(record.fedTrustAnchor || '').trim() ||
+        FapiClient.profileOf(record)) {
       log.debug("Leaving FederationSp.beginConnect(). Not connectable.");
       return { ok: false, code: 'STS-FED-0184',
                why: 'That provider cannot be connected here now.' };
@@ -4894,6 +4912,351 @@ class FederationSp {
     return url;
   }
 
+  // One response header, the first value when Node handed back an array.
+  private oneHeader(headers, name): string {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.oneHeader().");
+    const value = headers && headers[name];
+    const text = Array.isArray(value) ? value[0] : value;
+    log.debug("Leaving FederationSp.oneHeader().");
+    return String(text || '');
+  }
+
+  // ---------------------------------------------------------------------------
+  // A FAPI 2 PUSHED AUTHORIZATION REQUEST (#931, RFC 9126). The browser is
+  // sent only client_id and request_uri. Message signing puts a PS256
+  // request object in the push and not on that URL. DPoP, where the profile
+  // uses it, is proved for the push and retried once on use_dpop_nonce.
+  // The nonce the partner returns is written onto the stored context.
+  // Signing and proof failures are answered here (STS-FED-0245, 0247); this
+  // does not throw into the login endpoint's request-object catch.
+  // ---------------------------------------------------------------------------
+  private async fapiParRedirect(res, base, record, stored, handle) {
+    const { fedHttp, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.fapiParRedirect().");
+    const profile = FapiClient.profileOf(record);
+    // An assignment inside try is not narrowed afterwards, so the value is
+    // typed as possibly missing and refused the same way a throw is.
+    let built: URLSearchParams | null = null;
+    try {
+      built = this.authorizationParams(base, record, stored);
+    } catch (e) {
+      log.debug("Caught in FederationSp.fapiParRedirect(): " +
+                ((e && e.message) || e));
+      errorCodes.mark(res, 'STS-FED-0245');
+      log.debug("Leaving FederationSp.fapiParRedirect(). Not signed.");
+      return this.refuse(res, record, 500, 'The FAPI request could not be ' +
+                         'signed', String((e && e.message) || e));
+    }
+    if (!built) {
+      errorCodes.mark(res, 'STS-FED-0245');
+      log.debug("Leaving FederationSp.fapiParRedirect(). Not signed.");
+      return this.refuse(res, record, 500, 'The FAPI request could not be ' +
+                         'signed', 'the authorization parameters were not ' +
+                         'built');
+    }
+    const params = built;
+    const form: any = {};
+    params.forEach(function (value, name) {
+      form[name] = value;
+    });
+    try {
+      if (FapiClient.usesJarm(profile)) {
+        // Signed from the parameters as they are now, before `request`
+        // exists, so the object does not contain itself.
+        form.request = FapiClient.requestObject(record, params);
+      }
+      form.client_assertion = FapiClient.clientAssertion(record);
+    } catch (e) {
+      log.debug("Caught in FederationSp.fapiParRedirect(): " +
+                ((e && e.message) || e));
+      errorCodes.mark(res, 'STS-FED-0245');
+      log.debug("Leaving FederationSp.fapiParRedirect(). Not signed.");
+      return this.refuse(res, record, 500, 'The FAPI request could not be ' +
+                         'signed', String((e && e.message) || e));
+    }
+    form.client_id = String(record.fedClientId || '');
+    form.client_assertion_type = FapiClient.CLIENT_ASSERTION_TYPE;
+    const parUrl = String(record.fedParUrl || '');
+    const key = stored && stored.fapiKey;
+    const send = (nonce) => {
+      const headers: any = {};
+      if (FapiClient.usesDpop(profile)) {
+        if (!key || !key.pem) {
+          return Promise.resolve({ ok: false, status: 0, json: null,
+                                   headers: {}, errorCode: 'STS-FED-0247',
+                                   why: 'this sign-in holds no DPoP key' });
+        }
+        try {
+          headers.DPoP = FapiClient.proof(key, 'POST', parUrl,
+                                         String(nonce || ''));
+        } catch (e) {
+          log.debug("Caught in FederationSp.fapiParRedirect(): " +
+                    ((e && e.message) || e));
+          return Promise.resolve({ ok: false, status: 0, json: null,
+                                   headers: {}, errorCode: 'STS-FED-0247',
+                                   why: 'the DPoP proof could not be signed: ' +
+                                        String((e && e.message) || e) });
+        }
+      }
+      return fedHttp.fetchPublished(parUrl, {
+        method: 'POST', accept: 'application/json',
+        contentType: 'application/x-www-form-urlencoded',
+        headers: headers, body: new URLSearchParams(form).toString()
+      }).then((answer) => {
+        let json = null;
+        try {
+          json = answer.body && answer.body.length
+            ? JSON.parse(answer.body.toString('utf8')) : null;
+        } catch (e) {
+          log.debug("Caught in FederationSp.fapiParRedirect(): " +
+                    ((e && e.message) || e));
+          json = null;
+        }
+        const published: any = answer;
+        const got = this.oneHeader(published.headers, 'dpop-nonce');
+        return { ok: answer.ok, status: answer.status, json: json,
+                 headers: { 'dpop-nonce': got || String(nonce || '') },
+                 errorCode: answer.ok ? '' : 'STS-FED-0244',
+                 why: answer.why || '' };
+      });
+    };
+    const answer = await FapiClient.withNonce(send, '');
+    const nonce = this.oneHeader(answer.headers, 'dpop-nonce');
+    if (nonce) {
+      this.rememberFapi(handle, { fapiNonce: nonce });
+    }
+    const requestUri = answer.json && answer.json.request_uri;
+    if (!answer.ok || !requestUri) {
+      const code = answer.errorCode === 'STS-FED-0247' ? 'STS-FED-0247'
+                                                       : 'STS-FED-0244';
+      errorCodes.mark(res, code);
+      log.debug("Leaving FederationSp.fapiParRedirect(). Not pushed.");
+      return this.refuse(res, record, code === 'STS-FED-0247' ? 500 : 502,
+        code === 'STS-FED-0247' ? 'The DPoP proof could not be made'
+                                : 'The authorization request could not be ' +
+                                  'pushed',
+        answer.why || 'the partner answered no request_uri');
+    }
+    const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
+    const url = String(record.fedSsoUrl) + joiner + new URLSearchParams({
+      client_id: String(record.fedClientId || ''),
+      request_uri: String(requestUri)
+    }).toString();
+    res.redirect(302, url);
+    log.debug("Leaving FederationSp.fapiParRedirect().");
+    return undefined;
+  }
+
+  // The token or refresh request a FAPI profile makes: private_key_jwt, and
+  // DPoP where the profile sender-constrains. A signing or proof failure is
+  // a FetchResult (STS-FED-0245, 0247), never a throw — redeemCode()'s catch
+  // would record that throw as STS-FED-0042.
+  private fapiTokenRequest(record, form, key, nonce): Promise<any> {
+    const { fedHttp, log } = this.deps;
+    log.debug("Entering FederationSp.fapiTokenRequest().");
+    const profile = FapiClient.profileOf(record);
+    let assertion = '';
+    try {
+      assertion = FapiClient.clientAssertion(record);
+    } catch (e) {
+      log.debug("Caught in FederationSp.fapiTokenRequest(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving FederationSp.fapiTokenRequest(). Not signed.");
+      return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+        url: String(record.fedTokenUrl || ''), headers: {},
+        errorCode: 'STS-FED-0245',
+        why: 'the private_key_jwt could not be signed: ' +
+             String((e && e.message) || e) });
+    }
+    form.client_id = String(record.fedClientId || '');
+    form.client_assertion_type = FapiClient.CLIENT_ASSERTION_TYPE;
+    form.client_assertion = assertion;
+    if (!FapiClient.usesDpop(profile)) {
+      log.debug("Leaving FederationSp.fapiTokenRequest().");
+      return fedHttp.fetchJson(record, 'fedTokenUrl',
+                               { method: 'POST', form: form });
+    }
+    if (!key || !key.pem) {
+      log.debug("Leaving FederationSp.fapiTokenRequest(). No key.");
+      return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+        url: String(record.fedTokenUrl || ''), headers: {},
+        errorCode: 'STS-FED-0247',
+        why: 'this sign-in holds no DPoP key' });
+    }
+    const url = String(record.fedTokenUrl || '');
+    log.debug("Leaving FederationSp.fapiTokenRequest().");
+    return FapiClient.withNonce((n) => {
+      let proof = '';
+      try {
+        proof = FapiClient.proof(key, 'POST', url, String(n || ''));
+      } catch (e) {
+        log.debug("Caught in FederationSp.fapiTokenRequest(): " +
+                  ((e && e.message) || e));
+        return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+          url: url, headers: {}, errorCode: 'STS-FED-0247',
+          why: 'the DPoP proof could not be signed: ' +
+               String((e && e.message) || e) });
+      }
+      return fedHttp.fetchJson(record, 'fedTokenUrl', {
+        method: 'POST', form: form, headers: { DPoP: proof }
+      }).then((answer) => {
+        const got = this.oneHeader(answer.headers, 'dpop-nonce');
+        const headers = Object.assign({}, answer.headers || {}, {
+          'dpop-nonce': got || String(n || '') });
+        return Object.assign({}, answer, { headers: headers });
+      });
+    }, String(nonce || ''));
+  }
+
+  // UserInfo for one sign-in. A FAPI 2 profile presents the access token
+  // as `Authorization: DPoP` with a proof that hashes it (`ath`). A profile
+  // that does not use DPoP keeps the bearer request. A missing DPoP key is
+  // a failed answer (STS-FED-0247), not a bearer request: the token is
+  // sender-constrained and a bearer presentation would be the wrong one.
+  // UserInfo staying optional is the caller's decision.
+  private userinfoFetch(record, accessToken, key, nonce): Promise<any> {
+    const { fedHttp, log } = this.deps;
+    log.debug("Entering FederationSp.userinfoFetch().");
+    const profile = FapiClient.profileOf(record);
+    if (!FapiClient.usesDpop(profile)) {
+      log.debug("Leaving FederationSp.userinfoFetch().");
+      return fedHttp.fetchJson(record, 'fedUserinfoUrl',
+        { method: 'GET', bearer: accessToken }).then((answer) => {
+          return { answer: answer, nonce: String(nonce || '') };
+        });
+    }
+    const url = String(record.fedUserinfoUrl || '');
+    if (!key || !key.pem) {
+      log.debug("Leaving FederationSp.userinfoFetch(). No key.");
+      return Promise.resolve({ nonce: String(nonce || ''), answer: {
+        ok: false, status: 0, json: null, text: '', url: url, headers: {},
+        errorCode: 'STS-FED-0247',
+        why: 'this sign-in holds no DPoP key' } });
+    }
+    log.debug("Leaving FederationSp.userinfoFetch().");
+    return FapiClient.withNonce((n) => {
+      let proof = '';
+      try {
+        proof = FapiClient.proof(key, 'GET', url, String(n || ''),
+                                 String(accessToken || ''));
+      } catch (e) {
+        log.debug("Caught in FederationSp.userinfoFetch(): " +
+                  ((e && e.message) || e));
+        return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+          url: url, headers: {}, errorCode: 'STS-FED-0247',
+          why: 'the DPoP proof could not be signed: ' +
+               String((e && e.message) || e) });
+      }
+      // fetchJson()'s `bearer` would overwrite Authorization with Bearer.
+      // The DPoP scheme is set here instead.
+      return fedHttp.fetchJson(record, 'fedUserinfoUrl', {
+        method: 'GET',
+        headers: { Authorization: 'DPoP ' + String(accessToken || ''),
+                   DPoP: proof }
+      }).then((answer) => {
+        const got = this.oneHeader(answer.headers, 'dpop-nonce');
+        const headers = Object.assign({}, answer.headers || {}, {
+          'dpop-nonce': got || String(n || '') });
+        return Object.assign({}, answer, { headers: headers });
+      });
+    }, String(nonce || '')).then((answer) => {
+      const next = this.oneHeader(answer.headers, 'dpop-nonce') ||
+                   String(nonce || '');
+      return { answer: answer, nonce: next };
+    });
+  }
+
+  // `state` from a JARM response, unread except as the handle that names a
+  // cell. The signature is checked after the request is on the cell that
+  // holds the flow: the discovered JWKS lives on that cell's context.
+  private jarmState(token): string {
+    const { log, jsonFromB64u } = this.deps;
+    log.debug("Entering FederationSp.jarmState().");
+    let state = '';
+    try {
+      const part = String(token || '').split('.')[1] || '';
+      const claims = jsonFromB64u(part) || {};
+      state = String(claims.state || '');
+    } catch (e) {
+      log.debug("Caught in FederationSp.jarmState(): " +
+                ((e && e.message) || e));
+      state = '';
+    }
+    log.debug("Leaving FederationSp.jarmState(). " +
+              (state ? 'named' : 'none'));
+    return state;
+  }
+
+  // A FAPI 2 message-signing response (#931): `response` is a JWT. It is
+  // verified before the code inside it is redeemed, then the claims the
+  // existing callback already understands are what consume() sees. The
+  // route wrappers pass only (req, res), so the third argument is this
+  // re-entry and not Express's next.
+  private openJarm(req, res, record, params) {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.openJarm().");
+    const state = this.jarmState(params.response);
+    if (cellPlacement.relayIfElsewhere(req, res, state,
+        'a federation partner\'s JARM response')) {
+      log.debug("Leaving FederationSp.openJarm(). Relayed.");
+      return undefined;
+    }
+    const held = state ? this.heldContext(state) : null;
+    const forKeys = held && held.discovered
+      ? Object.assign({}, record, held.discovered) : record;
+    return this.keysFor(forKeys).then((keySet) => {
+      if (!keySet.ok) {
+        errorCodes.mark(res, 'STS-FED-0246');
+        log.debug("Leaving FederationSp.openJarm(). No keys.");
+        return this.refuse(res, record, 401, 'The signed response could ' +
+                           'not be checked', String(keySet.why || ''));
+      }
+      const peer = String((forKeys.fedPeer || record.fedPeer) || '').trim();
+      const verified = this.verifyForeignJwt(String(params.response),
+        forKeys, keySet.keys, {
+          audience: String(record.fedClientId || '') || undefined,
+          issuer: peer || undefined
+        });
+      if (!verified.ok) {
+        errorCodes.mark(res, 'STS-FED-0246');
+        log.debug("Leaving FederationSp.openJarm(). Not verified.");
+        return this.refuse(res, record, 401, 'The signed response did not ' +
+                           'verify', String(verified.why || ''));
+      }
+      const problem = FapiClient.jarmProblem(verified.payload);
+      if (problem) {
+        errorCodes.mark(res, 'STS-FED-0246');
+        log.debug("Leaving FederationSp.openJarm(). " + problem);
+        return this.refuse(res, record, 401, 'The signed response cannot ' +
+                           'be used', problem);
+      }
+      const claims = verified.payload || {};
+      const merged: any = Object.assign({}, params);
+      ['code', 'state', 'error', 'error_description', 'iss'].forEach(
+        function (name) {
+          if (claims[name] !== undefined && claims[name] !== null &&
+              claims[name] !== '') {
+            merged[name] = String(claims[name]);
+          }
+        });
+      delete merged.response;
+      log.debug("Leaving FederationSp.openJarm(). Opened.");
+      return this.consume(req, res, merged);
+    }).catch((e) => {
+      log.debug("Caught in FederationSp.openJarm(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-FED-0042') + 'federation: ' +
+                record.fedId + ' threw while opening a JARM response: ' +
+                (e && e.stack ? e.stack : e));
+      errorCodes.mark(res, 'STS-FED-0042');
+      log.debug("Leaving FederationSp.openJarm(). Threw.");
+      return this.refuse(res, record, 500, 'This service failed while ' +
+                         'reading the response',
+                         String((e && e.message) || e));
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // DISCOURSE: DISCOURSECONNECT (#746), the `discourse-connect` adapter.
   //
@@ -5351,9 +5714,13 @@ class FederationSp {
   private authorizationParams(base, record, context) {
     const { federation, log } = this.deps;
     log.debug("Entering FederationSp.authorizationParams().");
-    const responseType = federation.responseTypeOf(record);
-    const parts = federation.responseTypeParts(record);
-    const mode = String(record.fedResponseMode || '');
+    // A FAPI PROFILE (#931) forces the response type, the mode and `openid`
+    // in the scope. Everything else — the client id, the peer, the keys —
+    // stays the relationship's.
+    const shaped = FapiClient.shapedRecord(record);
+    const responseType = federation.responseTypeOf(shaped);
+    const parts = federation.responseTypeParts(shaped);
+    const mode = String(shaped.fedResponseMode || '');
     const params = new URLSearchParams();
     if (context && context.reauthAskedAt) {
       params.set('prompt', 'login');
@@ -5362,7 +5729,7 @@ class FederationSp {
     params.set('client_id', String(record.fedClientId || ''));
     params.set('redirect_uri', this.acsUrl(base, record));
     params.set('state', context.handle);
-    if (record.fedScope) params.set('scope', String(record.fedScope));
+    if (shaped.fedScope) params.set('scope', String(shaped.fedScope));
     if (record.fedProtocol === 'oidc') {
       params.set('nonce', context.nonce);
       if (parts.idToken || parts.token) {
@@ -5392,6 +5759,11 @@ class FederationSp {
         params.set('response_mode', 'form_post');
       }
     }
+    // JARM (#931): the profile's shaped record names `jwt`, which is not a
+    // value an operator stores on fedResponseMode.
+    if (mode === 'jwt') {
+      params.set('response_mode', 'jwt');
+    }
     // A LOGIN HINT FROM A PARTNER THAT STARTED THE SIGN-IN (#930, OpenID
     // Connect Core 1.0 section 4), passed back to it as it came.
     if (context.loginHint) {
@@ -5402,9 +5774,11 @@ class FederationSp {
     // reference. The parameters stay on the query too — Core 6.1 requires
     // response_type, client_id and scope there, and the rest are the same
     // values. An OP found through an OpenID Federation signs its own
-    // (oidfed_rp.ts) and is left to it.
+    // (oidfed_rp.ts) and is left to it. A FAPI profile signs its own too
+    // (#931): 1-advanced by value here, message signing inside the push.
+    const profile = FapiClient.profileOf(record);
     const by = String(record.fedRequestObject || '');
-    if (record.fedProtocol === 'oidc' && (by === 'request' ||
+    if (!profile && record.fedProtocol === 'oidc' && (by === 'request' ||
         by === 'request_uri') && !String(record.fedTrustAnchor || '').trim()) {
       const jwt = this.requestObjectJwt(record, params);
       if (by === 'request') {
@@ -5415,6 +5789,12 @@ class FederationSp {
         params.set('request_uri', base + federation.PATHS.requestObject +
                    '/' + encodeURIComponent(record.fedId) + '/' + handle);
       }
+    }
+    if (FapiClient.sendsRequestByValue(profile)) {
+      // 1-advanced signs here (#931). Message signing signs inside the
+      // push, so that JWT never rides on the browser URL. The parameters
+      // stay on the query as well (OpenID Connect Core 1.0 section 6.1).
+      params.set('request', FapiClient.requestObject(record, params));
     }
     // THE TIKTOK ADAPTER (#565): its authorization endpoint calls the client
     // id `client_key`, and reads nothing else.
@@ -5718,6 +6098,24 @@ class FederationSp {
       return;
     }
 
+    // A FAPI 2 PROFILE (#931) reads its pushed-authorization endpoint from
+    // the partner's discovery document. Discovery is not turned on for it:
+    // an operator who left fedDiscovery off is told, rather than silently
+    // started as an ordinary client.
+    const fapiProfile = FapiClient.profileOf(record);
+    if (FapiClient.needsDiscovery(fapiProfile) &&
+        !federation.discovers(record)) {
+      errorCodes.mark(res, 'STS-FED-0243');
+      log.debug("Leaving the federation login endpoint. FAPI without " +
+                "discovery.");
+      return this.refuse(res, record, 502, 'This FAPI profile needs the ' +
+                         'partner\'s discovery document',
+                         'fedFapi is ' + fapiProfile + ' and fedDiscovery ' +
+                         'is off. The pushed authorization request endpoint ' +
+                         'is read from that document, so the sign-in is not ' +
+                         'started.');
+    }
+
     // A PARTNER READ FROM ITS DISCOVERY DOCUMENT (#930): the endpoints of
     // THIS sign-in are what the document says now, kept on the context so
     // the response is redeemed and verified against the same ones.
@@ -5750,19 +6148,43 @@ class FederationSp {
           }
           current = registered.record;
         }
+        const shaped = Object.assign({}, current, got.endpoints);
+        const profile = FapiClient.profileOf(shaped);
+        if (FapiClient.usesPar(profile) &&
+            !String(shaped.fedParUrl || '').trim()) {
+          errorCodes.mark(res, 'STS-FED-0243');
+          log.debug("Leaving the federation login endpoint. No PAR " +
+                    "endpoint.");
+          return this.refuse(res, record, 502, 'The partner publishes no ' +
+                             'pushed authorization request endpoint',
+                             'fedFapi is ' + profile + ' and the discovery ' +
+                             'document names no ' +
+                             'pushed_authorization_request_endpoint.');
+        }
+        if (FapiClient.usesDpop(profile)) {
+          contextRecord.fapiKey = FapiClient.newKey();
+        }
         contextRecord.discovered = got.endpoints;
         const handle = this.putContext(contextRecord);
+        if (FapiClient.usesPar(profile)) {
+          log.debug("Leaving the federation login endpoint. A pushed " +
+                    "FAPI request.");
+          return this.fapiParRedirect(res, base, shaped,
+                                      this.heldContext(handle), handle);
+        }
         let url = '';
         try {
-          url = this.authorizationRequestUrl(base,
-            Object.assign({}, current, got.endpoints),
-            this.heldContext(handle));
+          url = this.authorizationRequestUrl(base, shaped,
+                                              this.heldContext(handle));
         } catch (e) {
           log.debug("Caught in the federation login endpoint: " +
                     ((e && e.message) || e));
-          errorCodes.mark(res, 'STS-FED-0214');
-          return this.refuse(res, record, 500, 'The Request Object could ' +
-                             'not be signed', String((e && e.message) || e));
+          const code = profile ? 'STS-FED-0245' : 'STS-FED-0214';
+          errorCodes.mark(res, code);
+          return this.refuse(res, record, 500, profile
+            ? 'The FAPI request could not be signed'
+            : 'The Request Object could not be signed',
+            String((e && e.message) || e));
         }
         res.redirect(302, url);
         log.debug("Leaving the federation login endpoint. A discovered " +
@@ -5804,9 +6226,13 @@ class FederationSp {
     } catch (e) {
       log.debug("Caught in the federation login endpoint: " +
                 ((e && e.message) || e));
-      errorCodes.mark(res, 'STS-FED-0214');
-      return this.refuse(res, record, 500, 'The Request Object could not be ' +
-                         'signed', String((e && e.message) || e));
+      const code = FapiClient.profileOf(record) ? 'STS-FED-0245'
+                                                : 'STS-FED-0214';
+      errorCodes.mark(res, code);
+      return this.refuse(res, record, 500, FapiClient.profileOf(record)
+        ? 'The FAPI request could not be signed'
+        : 'The Request Object could not be signed',
+        String((e && e.message) || e));
     }
     res.redirect(302, url);
     log.debug("Leaving the federation login endpoint. " + record.fedProtocol +
@@ -5861,7 +6287,12 @@ class FederationSp {
         fedJwksUri: String(doc.jwks_uri || ''),
         // Where fedRegister registers this service (#930); dialled through
         // fetchPublished(), never as an attribute.
-        fedRegistrationUrl: String(doc.registration_endpoint || '')
+        fedRegistrationUrl: String(doc.registration_endpoint || ''),
+        // Where a FAPI 2 profile pushes (#931). Not a directory attribute
+        // and not in DISCOVERED_FIELDS: it lives on this sign-in's
+        // context, and the push is fetchPublished(), the same door as
+        // registration.
+        fedParUrl: String(doc.pushed_authorization_request_endpoint || '')
       };
       if (issuer) {
         endpoints.fedPeer = issuer;
@@ -5920,6 +6351,8 @@ class FederationSp {
       fedId: record.fedId, sessionId: String(session.id),
       token: held.token, iss: held.iss, sub: held.sub,
       endpoints: held.endpoints || null, refreshes: 0,
+      dpopKey: String(held.dpopKey || ''),
+      dpopNonce: String(held.dpopNonce || ''),
       due: Date.now() + after * 1000 });
     log.debug("Leaving FederationSp.holdPartnerRefresh(). Due in " + after +
               "s.");
@@ -6019,29 +6452,69 @@ class FederationSp {
                                 'the held refresh token will not open');
     }
     const form: any = { grant_type: 'refresh_token', refresh_token: token };
-    const options: any = { method: 'POST', form: form };
-    let authenticated: Promise<any> = Promise.resolve(null);
-    if (record.fedTokenAuth === 'private_key_jwt' &&
-        this.deps.oidfedRp().isFederated(stored)) {
-      form.client_id = String(record.fedClientId || '');
-      form.client_assertion_type =
-        'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
-      authenticated = this.deps.oidfedRp().clientAssertion(record)
-        .then(function (assertion) {
-          form.client_assertion = assertion;
-        });
-    } else if (federation.clientSecretOf(record) &&
-               record.fedTokenAuth === 'client_secret_post') {
-      form.client_id = String(record.fedClientId || '');
-      form.client_secret = federation.clientSecretOf(record);
-    } else if (federation.clientSecretOf(record)) {
-      options.basic = { user: record.fedClientId,
-                        pass: federation.clientSecretOf(record) };
+    const profile = FapiClient.profileOf(record);
+    let dpopKey = null;
+    let answer;
+    if (profile) {
+      // A FAPI profile authenticates with private_key_jwt whatever
+      // fedTokenAuth says, and a 2.x profile proves the same DPoP key the
+      // sign-in used (#931). The key stays sealed; a new nonce is stored.
+      if (FapiClient.usesDpop(profile)) {
+        const opened = entry.dpopKey
+          ? federation.openPartnerToken(String(entry.dpopKey)) : '';
+        if (!opened) {
+          log.debug("Leaving FederationSp.refreshOne(). No DPoP key.");
+          return this.endForRefresh(session, record, entry, 'STS-FED-0247',
+            'the DPoP key held for this session will not open');
+        }
+        try {
+          dpopKey = JSON.parse(opened);
+        } catch (e) {
+          log.debug("Caught in FederationSp.refreshOne(): " +
+                    ((e && e.message) || e));
+          log.debug("Leaving FederationSp.refreshOne(). The DPoP key.");
+          return this.endForRefresh(session, record, entry, 'STS-FED-0247',
+            'the DPoP key held for this session is not a key');
+        }
+        if (!dpopKey || !dpopKey.pem) {
+          log.debug("Leaving FederationSp.refreshOne(). No DPoP key.");
+          return this.endForRefresh(session, record, entry, 'STS-FED-0247',
+            'the DPoP key held for this session has no private key');
+        }
+      }
+      answer = await this.fapiTokenRequest(record, form, dpopKey,
+                                           String(entry.dpopNonce || ''));
+      if (!answer.ok && (answer.errorCode === 'STS-FED-0245' ||
+                         answer.errorCode === 'STS-FED-0247')) {
+        log.debug("Leaving FederationSp.refreshOne(). Not signed.");
+        return this.endForRefresh(session, record, entry, answer.errorCode,
+                                  String(answer.why || ''));
+      }
     } else {
-      form.client_id = String(record.fedClientId || '');
+      const options: any = { method: 'POST', form: form };
+      let authenticated: Promise<any> = Promise.resolve(null);
+      if (record.fedTokenAuth === 'private_key_jwt' &&
+          this.deps.oidfedRp().isFederated(stored)) {
+        form.client_id = String(record.fedClientId || '');
+        form.client_assertion_type =
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
+        authenticated = this.deps.oidfedRp().clientAssertion(record)
+          .then(function (assertion) {
+            form.client_assertion = assertion;
+          });
+      } else if (federation.clientSecretOf(record) &&
+                 record.fedTokenAuth === 'client_secret_post') {
+        form.client_id = String(record.fedClientId || '');
+        form.client_secret = federation.clientSecretOf(record);
+      } else if (federation.clientSecretOf(record)) {
+        options.basic = { user: record.fedClientId,
+                          pass: federation.clientSecretOf(record) };
+      } else {
+        form.client_id = String(record.fedClientId || '');
+      }
+      await authenticated;
+      answer = await fedHttp.fetchJson(record, 'fedTokenUrl', options);
     }
-    await authenticated;
-    const answer = await fedHttp.fetchJson(record, 'fedTokenUrl', options);
     if (!answer.ok || !answer.json) {
       if (answer.status >= 400 && answer.status < 500) {
         // The partner's ANSWER: it will not refresh for this session.
@@ -6083,10 +6556,22 @@ class FederationSp {
                         verified.why);
       }
     }
+    let dpopNonce = this.oneHeader(answer.headers, 'dpop-nonce') ||
+                    String(entry.dpopNonce || '');
     const access = String(tokens.access_token || '');
     if (access && String(record.fedUserinfoUrl || '').trim()) {
-      const info = await fedHttp.fetchJson(record, 'fedUserinfoUrl',
-        { method: 'GET', bearer: access });
+      let info;
+      if (FapiClient.usesDpop(profile)) {
+        const fetched = await this.userinfoFetch(record, access, dpopKey,
+                                                 dpopNonce);
+        if (fetched.nonce) {
+          dpopNonce = fetched.nonce;
+        }
+        info = fetched.answer;
+      } else {
+        info = await fedHttp.fetchJson(record, 'fedUserinfoUrl',
+          { method: 'GET', bearer: access });
+      }
       const claims = info.ok ? await this.userinfoClaims(record, info) : null;
       if (claims && String(claims.sub || '') !== entry.sub) {
         log.debug("Leaving FederationSp.refreshOne(). UserInfo's sub.");
@@ -6100,6 +6585,7 @@ class FederationSp {
     partnerRefresh.set(String(entry.sessionId), Object.assign({}, entry, {
       token: next && next.ok ? next.value : entry.token,
       refreshes: Number(entry.refreshes || 0) + 1,
+      dpopNonce: dpopNonce,
       due: Date.now() + federation.refreshAfterSeconds(stored,
                                                        tokens.expires_in) *
            1000 }));
@@ -6307,7 +6793,13 @@ class FederationSp {
                     'itself there (fedRegister). Register it by hand and ' +
                     'set fedClientId, or turn fedRegister off.' };
     }
-    const parts = federation.responseTypeParts(record);
+    // A FAPI profile (#931) registers what it will actually send:
+    // private_key_jwt under PS256, the response type the profile forces,
+    // and PAR, DPoP or JARM where that profile uses them. The ordinary
+    // request-object block is that profile's own registration.
+    const profile = FapiClient.profileOf(record);
+    const shaped = profile ? FapiClient.shapedRecord(record) : record;
+    const parts = federation.responseTypeParts(shaped);
     const grants = (parts.code ? ['authorization_code'] : [])
       .concat(parts.idToken || parts.token ? ['implicit'] : [])
       .concat(federation.refreshesTokens(record) ? ['refresh_token'] : []);
@@ -6316,10 +6808,10 @@ class FederationSp {
       application_type: 'web',
       client_name: 'iya-sts ' + String(record.fedName || record.fedId),
       redirect_uris: [this.acsUrl(base, record)],
-      response_types: [federation.responseTypeOf(record)],
+      response_types: [federation.responseTypeOf(shaped)],
       grant_types: grants,
-      token_endpoint_auth_method: String(record.fedTokenAuth ||
-                                         'client_secret_basic'),
+      token_endpoint_auth_method: profile ? 'private_key_jwt'
+        : String(record.fedTokenAuth || 'client_secret_basic'),
       post_logout_redirect_uris: [this.sloUrl(base, record)],
       backchannel_logout_uri: base + federation.PATHS.backchannelLogout +
                               '/' + id,
@@ -6340,19 +6832,47 @@ class FederationSp {
       metadata.initiate_login_uri = base + federation.PATHS.initiateLogin +
                                     '/' + id;
     }
-    const by = String(record.fedRequestObject || '');
-    if (by === 'request' || by === 'request_uri') {
-      const alg = String(record.fedRequestObjectSigningAlg || 'RS256');
-      metadata.request_object_signing_alg = alg;
-      if (alg !== 'none') {
-        try {
-          metadata.jwks = { keys: [this.requestObjectJwk(alg)] };
-        } catch (e) {
-          log.debug("Caught in FederationSp.ensureRegistered(): " +
-                    ((e && e.message) || e));
-          return { ok: false, errorCode: 'STS-FED-0214',
-                   why: 'This realm holds no key for ' + alg + ' to sign ' +
-                        'Request Objects with: ' + ((e && e.message) || e) };
+    if (profile) {
+      metadata.token_endpoint_auth_signing_alg = 'PS256';
+      try {
+        // The same RSA key signs private_key_jwt for every profile, and
+        // the request object for the two that send one.
+        metadata.jwks = { keys: [this.requestObjectJwk('PS256')] };
+      } catch (e) {
+        log.debug("Caught in FederationSp.ensureRegistered(): " +
+                  ((e && e.message) || e));
+        return { ok: false, errorCode: 'STS-FED-0245',
+                 why: 'This realm holds no PS256 key to authenticate to ' +
+                      'the partner with: ' + ((e && e.message) || e) };
+      }
+      if (FapiClient.sendsRequestByValue(profile) ||
+          FapiClient.usesJarm(profile)) {
+        metadata.request_object_signing_alg = 'PS256';
+      }
+      if (FapiClient.usesDpop(profile)) {
+        metadata.dpop_bound_access_tokens = true;
+      }
+      if (FapiClient.usesJarm(profile)) {
+        metadata.authorization_signed_response_alg = 'PS256';
+      }
+      if (FapiClient.usesPar(profile)) {
+        metadata.require_pushed_authorization_requests = true;
+      }
+    } else {
+      const by = String(record.fedRequestObject || '');
+      if (by === 'request' || by === 'request_uri') {
+        const alg = String(record.fedRequestObjectSigningAlg || 'RS256');
+        metadata.request_object_signing_alg = alg;
+        if (alg !== 'none') {
+          try {
+            metadata.jwks = { keys: [this.requestObjectJwk(alg)] };
+          } catch (e) {
+            log.debug("Caught in FederationSp.ensureRegistered(): " +
+                      ((e && e.message) || e));
+            return { ok: false, errorCode: 'STS-FED-0214',
+                     why: 'This realm holds no key for ' + alg + ' to sign ' +
+                          'Request Objects with: ' + ((e && e.message) || e) };
+          }
         }
       }
     }
@@ -6760,6 +7280,13 @@ class FederationSp {
   private awaitsFragment(req, record) {
     const { federation, log } = this.deps;
     log.debug("Entering FederationSp.awaitsFragment().");
+    // JARM arrives as a query or a body parameter named `response`, never
+    // as a fragment this page has to read (#931). The profile wins over a
+    // stored fedResponseMode of `fragment`.
+    if (FapiClient.usesJarm(FapiClient.profileOf(record))) {
+      log.debug("Leaving FederationSp.awaitsFragment(). JARM.");
+      return false;
+    }
     const parts = federation.responseTypeParts(record);
     const answer = req.method === 'GET' &&
       Object.keys(req.query || {}).length === 0 &&
@@ -7991,6 +8518,13 @@ class FederationSp {
     if (context.discovered && federation.discovers(record)) {
       record = Object.assign({}, record, context.discovered);
     }
+    if (FapiClient.profileOf(record)) {
+      // The profile's response type and mode (#931), not the stored ones.
+      // 1-advanced's answer carries a front-channel ID Token that a stored
+      // `code` would not look for, and it is checked before the code is
+      // spent.
+      record = FapiClient.shapedRecord(record);
+    }
     // A tenant-templated issuer is only known from the token, checked there.
     if (params.iss !== undefined &&
         String(record.fedPeer || '').indexOf('{tenantid}') < 0 &&
@@ -8111,7 +8645,13 @@ class FederationSp {
     };
     const options: any = { method: 'POST', form: form };
     let authenticated: Promise<any> = Promise.resolve(null);
-    if (record.fedTokenAuth === 'private_key_jwt') {
+    // A FAPI profile (#931) authenticates with private_key_jwt, and a 2.x
+    // profile adds DPoP. That replaces the secret and the federation-OP
+    // assertion below; those stay for a relationship with no profile.
+    const profile = FapiClient.profileOf(record);
+    if (profile) {
+      authenticated = Promise.resolve(null);
+    } else if (record.fedTokenAuth === 'private_key_jwt') {
       // An OP discovered through a federation (#134): this realm registered
       // automatically, with nothing provisioned, and authenticates with the
       // key its Entity Configuration publishes (RFC 7523, Connect 1.1 12.1).
@@ -8159,14 +8699,30 @@ class FederationSp {
     }
     log.debug('redeemCode(): redeeming the code at the partner.');
     log.debug("Leaving FederationSp.redeemCode().");
-    return authenticated.then(function () {
-      return fedHttp.fetchJson(record, 'fedTokenUrl', options);
-    }).then((answer) => {
+    const sent = profile
+      ? this.fapiTokenRequest(record, form, context && context.fapiKey,
+                             context && context.fapiNonce)
+      : authenticated.then(function () {
+          return fedHttp.fetchJson(record, 'fedTokenUrl', options);
+        });
+    return sent.then((answer) => {
+      const nextNonce = this.oneHeader(answer && answer.headers,
+                                       'dpop-nonce');
+      if (nextNonce && context) {
+        context.fapiNonce = nextNonce;
+      }
       if (!answer.ok || !answer.json) {
         log.debug("Leaving FederationSp.redeemCode(). The token " +
                   'request failed.');
-        errorCodes.mark(res, answer.errorCode || 'STS-FED-0056');
-        return this.refuse(res, record, 502, 'The code could not be redeemed',
+        const failed = answer.errorCode || 'STS-FED-0056';
+        const signing = failed === 'STS-FED-0245' ||
+                        failed === 'STS-FED-0247';
+        errorCodes.mark(res, failed);
+        return this.refuse(res, record, signing ? 500 : 502,
+          signing ? (failed === 'STS-FED-0247'
+            ? 'The DPoP proof could not be made'
+            : 'The FAPI request could not be signed')
+                  : 'The code could not be redeemed',
           'The token request to ' + (answer.url || 'the partner') + ' ' +
               'failed: ' +
           answer.why +
@@ -8519,7 +9075,7 @@ class FederationSp {
   // ---------------------------------------------------------------------------
   private completeOidc(req, res, record, context, verified, accessToken,
                        tokens?: any) {
-    const { fedHttp, errorCodes, audit, log, federation } = this.deps;
+    const { errorCodes, audit, log, federation } = this.deps;
     log.debug("Entering FederationSp.completeOidc().");
     const payload = verified.payload;
     const idToken = verified.token;
@@ -8533,8 +9089,25 @@ class FederationSp {
     const partnerRefresh = sealedRefresh && sealedRefresh.ok
       ? { token: sealedRefresh.value, expiresIn: Number(tokens.expires_in) ||
           0, iss: String(payload.iss || ''), sub: String(payload.sub || ''),
-          endpoints: context.discovered || null }
+          endpoints: context.discovered || null,
+          dpopKey: '', dpopNonce: '' }
       : null;
+    // THE DPoP KEY (#931), sealed with the refresh token and nowhere else.
+    // A seal that fails leaves the key unset: the next refresh ends the
+    // session (STS-FED-0247) rather than presenting a bearer token. The
+    // sign-in's own UserInfo still uses the key on the context.
+    if (partnerRefresh &&
+        FapiClient.usesDpop(FapiClient.profileOf(record)) &&
+        context && context.fapiKey && context.fapiKey.pem) {
+      const sealedKey = federation.sealPartnerToken(JSON.stringify({
+        pem: String(context.fapiKey.pem),
+        jwk: context.fapiKey.jwk || {}
+      }));
+      if (sealedKey && sealedKey.ok) {
+        partnerRefresh.dpopKey = sealedKey.value;
+      }
+      partnerRefresh.dpopNonce = String(context.fapiNonce || '');
+    }
     const bag = {};
     Object.keys(payload).forEach((name) => {
       // The protocol's own members are not attributes about a person and must
@@ -8632,22 +9205,27 @@ class FederationSp {
     }
     log.debug('completeOidc(): asking the partner\'s UserInfo endpoint as ' +
               'well.');
-    return fedHttp.fetchJson(record, 'fedUserinfoUrl',
-                             { method: 'GET', bearer: accessToken })
-                  .then((fetched) => {
-      // A SIGNED OR ENCRYPTED UserInfo response (#930, Core 5.3.2) is a JWT
-      // rather than JSON: verified against the partner's keys, and its
-      // claims taken as the JSON answer's would be.
-      return (fetched.ok ? this.userinfoClaims(record, fetched)
-                         : Promise.resolve(null)).then((claims) => {
-        return Object.assign({}, fetched, {
-          json: claims,
-          ok: !!claims && fetched.ok,
-          why: fetched.ok && !claims
-            ? 'its answer is neither JSON nor a JWT that verifies against ' +
-              'the partner\'s keys' : fetched.why });
-      });
-    }).then((answer) => {
+    return this.userinfoFetch(record, accessToken,
+                              context && context.fapiKey,
+                              context && context.fapiNonce)
+      .then((fetched) => {
+        if (partnerRefresh && fetched.nonce) {
+          partnerRefresh.dpopNonce = fetched.nonce;
+        }
+        const answer = fetched.answer;
+        // A SIGNED OR ENCRYPTED UserInfo response (#930, Core 5.3.2) is a JWT
+        // rather than JSON: verified against the partner's keys, and its
+        // claims taken as the JSON answer's would be.
+        return (answer.ok ? this.userinfoClaims(record, answer)
+                          : Promise.resolve(null)).then((claims) => {
+          return Object.assign({}, answer, {
+            json: claims,
+            ok: !!claims && answer.ok,
+            why: answer.ok && !claims
+              ? 'its answer is neither JSON nor a JWT that verifies against ' +
+                'the partner\'s keys' : answer.why });
+        });
+      }).then((answer) => {
       if (!answer.ok || !answer.json) {
         // NOT a failure of the sign-in. The ID Token has already verified and
         // named the person; UserInfo adds attributes. Failing the whole
@@ -8997,7 +9575,7 @@ class FederationSp {
   // by POST — and which one it is depends on the relationship rather than on
   // the method.
   // ---------------------------------------------------------------------------
-  private consume(req, res) {
+  private consume(req, res, opened?) {
     const { federation, errorCodes, log, xmlEscape } = this.deps;
     log.debug("Entering the federation assertion consumer service. id=" +
               req.params.id);
@@ -9053,11 +9631,25 @@ class FederationSp {
     // A FRAGMENT-ENCODED RESPONSE (#930) reaches this server as a GET with
     // nothing on it: the browser keeps the fragment. A relationship that
     // chose the fragment mode is answered with the page that posts it here.
-    if (this.awaitsFragment(req, record)) {
+    if (!opened && this.awaitsFragment(req, record)) {
       log.debug("Leaving FederationSp.consume(). The fragment page.");
       return this.fragmentPage(req, res, record);
     }
-    const params = this.paramsOf(req);
+    // JARM (#931), before the cell relay below reads `state`. A
+    // message-signing response may carry only `response`; the state that
+    // names the cell is inside the JWT. openJarm() relays on that state,
+    // verifies, and re-enters with the claims as parameters. The route
+    // wrappers pass only (req, res), so `opened` is never Express's next.
+    if (!opened && FapiClient.usesJarm(FapiClient.profileOf(record))) {
+      // paramsOf() builds a plain object; the query and form names are data.
+      const raw: any = this.paramsOf(req);
+      if (raw.response) {
+        log.debug("Leaving FederationSp.consume(). Opening the JARM " +
+                  "response.");
+        return this.openJarm(req, res, record, raw);
+      }
+    }
+    const params = opened || this.paramsOf(req);
     // THE FLOW'S CELL (#98 D10), before the response is verified or anything
     // in it spent: a partner's answer names the context this service stored
     // when the flow began — RelayState, SAML 1.1's fedctx, wctx or state —

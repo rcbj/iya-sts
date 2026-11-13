@@ -193,6 +193,7 @@ Scope: `admin:read`.
 | `fields.fedEncryptionKey` | string |  |  |
 | `fields.fedEncryptionKeyType` | string |  |  |
 | `fields.fedEndSessionUrl` | string |  |  |
+| `fields.fedFapi` | string |  |  |
 | `fields.fedFirstSeen` | string |  |  |
 | `fields.fedHomeRealmDomain` | list |  |  |
 | `fields.fedHomeRealmDomain[]` | string |  |  |
@@ -716,6 +717,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -828,6 +830,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -1040,6 +1043,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -1152,6 +1156,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -1332,6 +1337,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -1444,6 +1450,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -1581,6 +1588,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -1693,6 +1701,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -1879,6 +1888,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -1991,6 +2001,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -2128,6 +2139,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -2240,6 +2252,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -2338,7 +2351,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `field` | one of `fedName`, `fedPeer`, `fedLocalEntityId`, `fedEnabled`, `fedSsoUrl`, `fedTokenUrl`, `fedUserinfoUrl`, `fedJwksUri`, `fedEmailsUrl`, `fedJwks`, `fedTrustAnchor`, `fedSigningCertificate`, `fedClientId`, `fedClientSecret`, `fedResponseMode`, `fedTeamId`, `fedKeyId`, `fedClientSigningKey`, `fedTokenAuth`, `fedScope`, `fedResponseType`, `fedIdTokenSignedResponseAlg`, `fedUserinfoSignedResponseAlg`, `fedRefreshTokens`, `fedRefreshEverySeconds`, `fedRegister`, `fedRegisteredIssuer`, `fedRequestObject`, `fedRequestObjectSigningAlg`, `fedWebFinger`, `fedDiscovery`, `fedInitiateLogin`, `fedBinding`, `fedSignRequest`, `fedUsernameSource`, `fedSubjectClaim`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedProvisionGroups`, `fedProvisionCap`, `fedProvisionIdleMinutes`, `fedSubjectPolicy`, `fedSubjectPattern`, `fedMayAssertAdministrators`, `fedSignalEmailMatch`, `fedSignalsEnabled`, `fedSignalsIssuer`, `fedSignalsDelivery`, `fedSignalsTokenUrl`, `fedSignalsClientId`, `fedSignalsClientSecret`, `fedSignalsScope`, `fedSignalsBearer`, `fedSloUrl`, `fedSloBinding`, `fedEndSessionUrl`, `fedAcceptSignout`, `fedRequireSignedLogout`, `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm`, `fedAllowUnencrypted`, `fedAllowUnsolicited`, `fedApplication`, `fedAuthnMechanism`, `fedAuthnRelationship` | yes | The attribute name, e.g. `fedSsoUrl`, `fedSigningCertificate`, `fedClientId`. |
+| `field` | one of `fedName`, `fedPeer`, `fedLocalEntityId`, `fedEnabled`, `fedSsoUrl`, `fedTokenUrl`, `fedUserinfoUrl`, `fedJwksUri`, `fedEmailsUrl`, `fedJwks`, `fedTrustAnchor`, `fedSigningCertificate`, `fedClientId`, `fedClientSecret`, `fedResponseMode`, `fedTeamId`, `fedKeyId`, `fedClientSigningKey`, `fedTokenAuth`, `fedScope`, `fedResponseType`, `fedIdTokenSignedResponseAlg`, `fedUserinfoSignedResponseAlg`, `fedRefreshTokens`, `fedRefreshEverySeconds`, `fedRegister`, `fedRegisteredIssuer`, `fedRequestObject`, `fedRequestObjectSigningAlg`, `fedWebFinger`, `fedDiscovery`, `fedFapi`, `fedInitiateLogin`, `fedBinding`, `fedSignRequest`, `fedUsernameSource`, `fedSubjectClaim`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedProvisionGroups`, `fedProvisionCap`, `fedProvisionIdleMinutes`, `fedSubjectPolicy`, `fedSubjectPattern`, `fedMayAssertAdministrators`, `fedSignalEmailMatch`, `fedSignalsEnabled`, `fedSignalsIssuer`, `fedSignalsDelivery`, `fedSignalsTokenUrl`, `fedSignalsClientId`, `fedSignalsClientSecret`, `fedSignalsScope`, `fedSignalsBearer`, `fedSloUrl`, `fedSloBinding`, `fedEndSessionUrl`, `fedAcceptSignout`, `fedRequireSignedLogout`, `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm`, `fedAllowUnencrypted`, `fedAllowUnsolicited`, `fedApplication`, `fedAuthnMechanism`, `fedAuthnRelationship` | yes | The attribute name, e.g. `fedSsoUrl`, `fedSigningCertificate`, `fedClientId`. |
 | `id` | string | yes | The relationship. |
 | `value` | string | yes | The new value. An empty string clears it. `fedSigningCertificate` is normalised — PEM armour and whitespace are stripped, because what the schema holds is the base64 DER a ds:X509Certificate carries. |
 
@@ -2385,6 +2398,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |
@@ -2497,6 +2511,7 @@ Scope: `admin:write`.
 | `relationship.fedEnabled` | string |  |  |
 | `relationship.fedEncryptionKeyType` | string |  |  |
 | `relationship.fedEndSessionUrl` | string |  |  |
+| `relationship.fedFapi` | string |  |  |
 | `relationship.fedFirstSeen` | string |  |  |
 | `relationship.fedHomeRealmDomain` | list |  |  |
 | `relationship.fedHomeRealmDomain[]` | string |  |  |

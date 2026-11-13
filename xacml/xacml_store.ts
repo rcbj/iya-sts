@@ -86,6 +86,7 @@ import ModelTables = require('../common/model_tables');
 import DomainClasses = require('../common/domain_classes');
 import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
+import ownMembers = require('../common/own_members');
 // The error-code registry (a leaf). A refused write's code is marked on the
 // RESULT as a non-enumerable property, so the console and `/admin-api` can mark
 // their response with it and no serialisation of the result carries it out.
@@ -781,7 +782,10 @@ class XacmlStore {
         return;
       }
       try {
-        map[row.id] = self.parseDocument(row.document);
+        // An own member, `__proto__` included (2026-11-12): the PDP reads a
+        // reference through `common/own_members.ts`, and an assignment of
+        // `__proto__` would make the policy the map's PROTOTYPE instead.
+        ownMembers.put(map, row.id, self.parseDocument(row.document));
       } catch (error) {
         log.debug('Caught in XacmlStore.repository(): ' +
                   ((error && error.message) || error));

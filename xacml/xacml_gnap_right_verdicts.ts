@@ -59,6 +59,7 @@
 
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
+import ownMembers = require('../common/own_members');
 import model = require('./xacml_model');
 import pdp = require('./xacml_pdp');
 import xacmlRequest = require('./xacml_request');
@@ -172,15 +173,18 @@ class GnapRightVerdicts {
           verdict = value;
         } else if (a.attributeId === GR.CODE) {
           code = value;
-        } else if (DROPS[a.attributeId]) {
-          const into = out.drop[DROPS[a.attributeId]];
+        } else if (ownMembers.read(DROPS, a.attributeId)) {
+          const into = out.drop[ownMembers.read(DROPS, a.attributeId)];
           if (into.indexOf(value) < 0) {
             into.push(value);
           }
         } else if (a.attributeId === GR.INTERACTION) {
           // A word this reader does not know asks for the person: never
           // fewer interactions on a value nobody can read.
-          const wanted = asking[value] === undefined ? 'always' : value;
+          // An own member only (2026-11-12): `constructor` is a word this
+          // reader does not know, and asks for the person.
+          const wanted = ownMembers.read(asking, value) === undefined
+            ? 'always' : value;
           if (!out.interaction ||
               asking[wanted] > asking[out.interaction]) {
             out.interaction = wanted;
