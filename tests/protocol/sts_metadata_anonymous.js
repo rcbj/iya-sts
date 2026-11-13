@@ -754,8 +754,13 @@ const DOCUMENTS = [
       if (!/sp:UsernameToken/.test(text)) {
         bad.push("no UsernameToken alternative");
       }
-      if (/SAML 1\.2/.test(text)) {
-        bad.push("advertises SAML 1.2, which this service does not speak");
+      // The document DENIES SAML 1.2 in a sentence. A substring ban would
+      // fail on that sentence. WssSamlV12 and AQ-RES are the advertisements.
+      if (!/There is no SAML 1\.2\./.test(text)) {
+        bad.push("does not say there is no SAML 1.2");
+      }
+      if (/WssSamlV12|AQ-RES/.test(text)) {
+        bad.push("advertises SAML 1.2 or AQ-RES");
       }
       if (/AlgorithmSuite|Basic256/.test(text)) {
         bad.push("names an algorithm suite");
