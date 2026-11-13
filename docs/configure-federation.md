@@ -326,7 +326,9 @@ api applications/create '{"identifier":"fs-code","name":"federation fs-code",
 This flow needs the outbound calls: `federation.outbound` on, an `https`
 partner, and its certificate trusted (`federation.outboundCaFile` for a
 private CA). `fedTokenAuth` chooses `client_secret_basic` (the default) or
-`client_secret_post`.
+`client_secret_post` — or, for a FAPI 1.0 Advanced relationship
+(`fedFapi` `1-advanced`), `tls_client_auth` with its TLS client certificate
+([federation](federation.md#the-1-advanced-client-certificate)).
 
 The `/oauth2/...` paths above are this service's own, for an iya-sts
 partner. For any other partner, take them from its discovery document.

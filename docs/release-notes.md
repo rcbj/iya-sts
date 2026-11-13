@@ -103,6 +103,61 @@ A 1.1.0 image started first still starts: an account that may not alter
 the table logs `STS-STORE-0172`, and one that may builds the index in
 place in the background (`STS-STORE-0173` if that fails).
 
+### Behaviour changes: a deleted object leaves nothing behind
+
+1.1.0 makes a delete complete. An application, person or group created
+again under a deleted one's identifier, username or DN inherits nothing
+from it. Each of these changes what 1.0.0 did:
+
+* **Over LDAP, a group may not list a member that does not exist.** An
+  add or modify that names a `member`, `uniqueMember` or `memberUid` with
+  no entry behind it is refused with result code 19
+  (`constraintViolation`). 1.0.0 accepted it. A script that adds a group's
+  members before their entries must create the entries first. A dangling
+  member that a 1.0.0 directory already holds is kept, and the console
+  still reports it.
+* **A delete takes the deleted entry's references with it.** A deleted
+  person, group or application is taken out of every group that listed
+  it and every role it was a member of. A deleted application no longer
+  confers any role, and a deleted person or group is no longer an owner
+  of any role, group, application or service account. 1.0.0 left these
+  references in place, so whatever was next created under the same name
+  or DN got them. Each removal is written to the audit log.
+* **Deleting an application deletes the roles it owns.** A role made for
+  one application (`<role>@<application>`, its `roleApplication` naming
+  that application) is deleted with it, as the console's Delete role
+  deletes one, with a `roles.delete` audit row for each. Its members and
+  permissions go with it. A role owned by another application, and a
+  realm-wide role, are not touched. In 1.0.0 these roles stayed, and an
+  application registered again under the same identifier found them
+  waiting, members included. If you still need such a role, create it
+  again once the new application exists.
+
+None of these changes the stored data or needs a migration step. They
+apply to deletes made after the 1.1.0 image starts. References a 1.0.0
+service left behind before the upgrade stay until you remove them on the
+console or through `/admin-api`.
+
+### AuthZEN ignores members it does not define
+
+In 1.0.0, an [AuthZEN](authzen.md) request carrying a member that AuthZEN
+1.0 does not define was refused with 400. In 1.1.0 it is accepted, and the
+member is ignored, as AuthZEN 1.0 section 10.1.1 requires ("receivers MUST
+ignore unknown fields"). This covers every request under `/access/v1`:
+an evaluation, an evaluations batch, the three searches and an access
+request. It applies at the top level and inside `subject`, `action`,
+`resource`, `page` and `options`. An Action Search's `action`, which the
+search does not define, is ignored too.
+
+Nothing else about a request changes. A defined member is still checked
+for type and presence. A property inside `properties` or `context` still
+needs a conversion rule. BULK's `items` on an access request is still
+refused. A request that worked in 1.0.0 gets the same answer.
+
+`STS-AUTHZEN-0009` is retired. Other APIs still refuse members they do not
+declare. The remote PEP's AuthZEN endpoint in the `xacml-pep` container
+follows the same rule.
+
 ## 1.0.0
 
 1.0.0 is the first release of iya-sts. Every build before it was a

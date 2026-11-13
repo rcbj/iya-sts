@@ -5239,6 +5239,14 @@
     "en": "f8e11f4044147d5e",
     "text": "当关系的加密密钥被轮换时，被替换的密钥仍可解密的时长——这样尚未获取新元数据或 JWKS 的合作方，或已在浏览器中的响应，就不会被拒绝。超过此时长后，旧密钥不再解密任何内容，调度作业 federation.encryption-key-retire 会将其从条目中移除。设为 0 则在轮换时即终止旧密钥。只保留刚被替换的密钥：在窗口内再次轮换会丢弃更旧的那个。"
   },
+  "federation.clientCertificateRenewDays|label": {
+    "en": "918bb1aa7c690001",
+    "text": "在 FAPI 客户端证书到期前多少天续期"
+  },
+  "federation.clientCertificateRenewDays|description": {
+    "en": "c9ce3366a9d4ba59",
+    "text": "FAPI 1.0 Advanced 联合关系向合作方出示由本领域 TLS Client 签发 CA 签发的 TLS 客户端证书（RFC 8705），合作方将其访问令牌绑定到该证书。计划任务 federation.client-certificate-renew 在当前证书到期前这么多天以相同主体签发新证书。注册了主体 DN（tls_client_auth）的合作方无需任何操作；固定了证书本身的合作方必须获得新证书，关系页面会显示它。"
+  },
   "saml.clockSkewS|label": {
     "en": "34ba47c6439a7089",
     "text": "断言时钟偏差（秒）"

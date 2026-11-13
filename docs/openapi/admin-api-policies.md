@@ -3461,7 +3461,7 @@ Scope: `admin:write`.
 
 **Export this realm's policies as a signed JSON document**
 
-Every kind on Directory → Policies, and of each only what this realm STORES: its own `default` profile and its named policies, each as the body its save takes (#1713). What the realm inherits is left out. The document is a JWS in the flattened JSON serialization, signed by a fresh key of `pki.policyExportAlgorithm` (RS256 by default) that this realm's Policy Export Signing CA certifies; the protected header carries `typ` policy-export+json and the whole chain, leaf to the service Root, in `x5c`. The private key is not kept. Refused when the realm has no certificate authority branch or the signer cannot be made (STS-ADMIN-0924).
+Every kind on Directory → Policies, and of each only what this realm STORES: its own `default` profile and its named policies, each as the body its save takes (#1713). What the realm inherits is left out. The document is a JWS in the flattened JSON serialization, signed by a fresh key of `pki.policyExportAlgorithm` (RS256 by default) that this realm's Policy Export Signing CA certifies; the protected header carries `typ` policy-export+json and the whole chain, leaf to the service Root, in `x5c`. The private key is not kept. Refused when the realm has no certificate authority branch or the signer cannot be made (STS-ADMIN-0925).
 
 **Mirrors** `POST /admin/policies` on the admin console.
 
@@ -3558,7 +3558,7 @@ An empty object.
 
 **Import a policy export into this realm**
 
-Inspects it first, as `inspect` does. A signer of this realm, or one this realm's signer truststore already holds, is trusted. Another realm's is refused with `needsTrust` (STS-ADMIN-0928) until the import is posted again with `trustSigner` true and `issuerFingerprint` naming the Issuing CA it was shown (another is STS-ADMIN-0929); that yes adds the chain's CA certificates to this realm's signer truststore for policy-signer alone (a refusal there is STS-ADMIN-0930). Each profile is then written through its kind's own save, so it is checked as a console save is; a profile its kind refuses is named with the kind's code and the others are written (STS-ADMIN-0931).
+Inspects it first, as `inspect` does. A signer of this realm, or one this realm's signer truststore already holds, is trusted. Another realm's is refused with `needsTrust` (STS-ADMIN-0929) until the import is posted again with `trustSigner` true and `issuerFingerprint` naming the Issuing CA it was shown (another is STS-ADMIN-0930); that yes adds the chain's CA certificates to this realm's signer truststore for policy-signer alone (a refusal there is STS-ADMIN-0931). Each profile is then written through its kind's own save, so it is checked as a console save is; a profile its kind refuses is named with the kind's code and the others are written (STS-ADMIN-0932).
 
 **Mirrors** `POST /admin/policies` on the admin console.
 
@@ -3659,7 +3659,7 @@ Scope: `admin:write`.
 
 **Verify a policy export and say who signed it, writing nothing**
 
-Checks the document's signature with the key in its `x5c` (STS-ADMIN-0926) and holds the chain to the validation door, purpose policy-signer, forced to the full paranoid checks while `pki.paranoidPolicySigner` is on (STS-ADMIN-0927). Answers `origin`: `own` when the chain's Issuing CA is this realm's Policy Export Signing CA under this service's Root, `trusted` when this realm's signer truststore holds that Issuing CA and its Root for policy-signer, and `foreign` otherwise, with the chain and the Issuing CA's fingerprint to ask an administrator about. A document that is not a policy export is refused (STS-ADMIN-0925), and one naming a kind of policy this service does not have (STS-ADMIN-0932).
+Checks the document's signature with the key in its `x5c` (STS-ADMIN-0927) and holds the chain to the validation door, purpose policy-signer, forced to the full paranoid checks while `pki.paranoidPolicySigner` is on (STS-ADMIN-0928). Answers `origin`: `own` when the chain's Issuing CA is this realm's Policy Export Signing CA under this service's Root, `trusted` when this realm's signer truststore holds that Issuing CA and its Root for policy-signer, and `foreign` otherwise, with the chain and the Issuing CA's fingerprint to ask an administrator about. A document that is not a policy export is refused (STS-ADMIN-0926), and one naming a kind of policy this service does not have (STS-ADMIN-0933).
 
 **Mirrors** `POST /admin/policies` on the admin console.
 

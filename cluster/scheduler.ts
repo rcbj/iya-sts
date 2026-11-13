@@ -719,6 +719,9 @@ class Scheduler {
   // -------------------------------------------------------------------------
   private readonly finishedSlots = new Set<string>();
   private readonly slotAsked = new Set<string>();
+  // The current slots this tick's read could not answer (#883's review):
+  // held back for this tick only, neither run nor taken as finished.
+  private readonly unknownSlots = new Set<string>();
   private readonly heldFinished = new Set<string>();
   private readonly latestRun = new Map<string, Json>();
   // -------------------------------------------------------------------------
@@ -1966,11 +1969,15 @@ class Scheduler {
   // page's last run after a restart; the tick still runs only the current
   // one. A cron row has no expiry and stays restored, so it is not asked.
   // -------------------------------------------------------------------------
-  private slotIdsAt(at: number): Map<string, string[]> {
+  // Each realm's ids come as ONE GROUP PER JOB (the current slot, and the
+  // one before it), so a read that fails can be asked again job by job and
+  // hold back only the job whose rows the store cannot answer (#883's
+  // review).
+  private slotIdsAt(at: number): Map<string, string[][]> {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.slotIdsAt().");
-    const byRealm = new Map<string, string[]>();
+    const byRealm = new Map<string, string[][]>();
     this.clusterJobs().forEach(function (job: JobSpec): void {
       if (job.cron || job.manualOnly || self.serviceOffReason(job)) {
         return;
@@ -1984,15 +1991,16 @@ class Scheduler {
         if (self.ownOffReason(job, realmId)) {
           return;
         }
-        let ids = byRealm.get(realmId);
-        if (!ids) {
-          ids = [];
-          byRealm.set(realmId, ids);
+        let groups = byRealm.get(realmId);
+        if (!groups) {
+          groups = [];
+          byRealm.set(realmId, groups);
         }
-        ids.push(self.runIdFor(job, realmId, n));
+        const ids = [self.runIdFor(job, realmId, n)];
         if (n > 0) {
           ids.push(self.runIdFor(job, realmId, n - 1));
         }
+        groups.push(ids);
       });
     });
     log.debug("Leaving Scheduler.slotIdsAt(). " + byRealm.size +
@@ -2002,13 +2010,15 @@ class Scheduler {
 
   // Drop slot ids the clock has moved past. `latestRun` is one row per job
   // and realm and is not pruned here.
-  private pruneSlotMemory(needed: Map<string, string[]>): void {
+  private pruneSlotMemory(needed: Map<string, string[][]>): void {
     const { log } = this.deps;
     log.debug("Entering Scheduler.pruneSlotMemory().");
     const keep = new Set<string>();
-    needed.forEach(function (ids: string[]): void {
-      ids.forEach(function (id: string): void {
-        keep.add(id);
+    needed.forEach(function (groups: string[][]): void {
+      groups.forEach(function (ids: string[]): void {
+        ids.forEach(function (id: string): void {
+          keep.add(id);
+        });
       });
     });
     const finished = this.finishedSlots;
@@ -2044,10 +2054,36 @@ class Scheduler {
     log.debug("Leaving Scheduler.admitRecalled().");
   }
 
+  // -------------------------------------------------------------------------
+  // WHAT THE STORE SAYS OF THE CURRENT SLOTS, ONE JOB'S FAILURE ITS OWN
+  // (#883's review, 2026-11-13). Two things changed:
+  //
+  //   * AN ABSENCE IS REMEMBERED WHATEVER SAID IT. An id the store answered
+  //     with no row was remembered in `slotAsked`; an id asked of NO store
+  //     (the reader answers null: development, a store with no minted
+  //     persistence) was not, so every tick asked again, in every realm.
+  //     Both are now remembered for the slot and forgotten with it
+  //     (`pruneSlotMemory()`, the invalidation `finishedSlots` has).
+  //     Remembering asks nothing of the due loop, which reads the map and
+  //     `finishedSlots` and never `slotAsked`: with no store the map is the
+  //     only copy, as before.
+  //   * A READ THAT FAILS HOLDS BACK ITS OWN JOBS, NOT THE TICK. The read
+  //     is one batch per realm, and a rejection used to fail the whole tick
+  //     (STS-SCHED-0013): one row the store could not answer stopped every
+  //     job in every realm, manual runs included. Now that realm's ids are
+  //     asked again ONE JOB AT A TIME; a job whose read still fails is held
+  //     back this tick (`unknownSlots`, which the due loop skips, so its
+  //     slot is neither run twice nor taken as finished) and asked about
+  //     again at the next; the rest run. Two job reads failing in a row is
+  //     an outage rather than a row, so the rest of the tick asks nothing
+  //     more and holds back every job it has not heard about. One
+  //     STS-SCHED-0023 line a tick says what was held back.
+  // -------------------------------------------------------------------------
   private async recallFinishedSlots(at: number): Promise<void> {
-    const { log } = this.deps;
+    const { log, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.recallFinishedSlots().");
+    this.unknownSlots.clear();
     const needed = this.slotIdsAt(at);
     this.pruneSlotMemory(needed);
     const read = this.deps.readRuns;
@@ -2057,48 +2093,138 @@ class Scheduler {
       log.debug("Leaving Scheduler.recallFinishedSlots(). No reader.");
       return;
     }
+    const heldBack: string[] = [];
+    let firstWhy = '';
+    let outage = false;
     const realmIds = Array.from(needed.keys());
     for (let i = 0; i < realmIds.length; i++) {
       const realmId = realmIds[i];
-      const ids = needed.get(realmId) || [];
       const map = this.storeOf(realmId);
+      const groups = (needed.get(realmId) || [])
+        .map(function (ids: string[]): string[] {
+          return ids.filter(function (id: string): boolean {
+            return !(map.has(id) || self.finishedSlots.has(id) ||
+                     self.slotAsked.has(id));
+          });
+        })
+        .filter(function (ids: string[]): boolean {
+          return ids.length > 0;
+        });
+      if (!groups.length) {
+        continue;
+      }
+      if (outage) {
+        groups.forEach(function (ids: string[]): void {
+          self.holdBackSlot(ids, heldBack);
+        });
+        continue;
+      }
       const ask: string[] = [];
-      ids.forEach(function (id: string): void {
-        if (map.has(id) || self.finishedSlots.has(id) ||
-            self.slotAsked.has(id)) {
-          return;
-        }
-        ask.push(id);
+      groups.forEach(function (ids: string[]): void {
+        ask.push.apply(ask, ids);
       });
-      if (!ask.length) {
+      try {
+        this.learnSlots(realmId, ask, await read(realmId, ask));
+        continue;
+      } catch (e) {
+        log.debug("Caught in Scheduler.recallFinishedSlots(): " +
+                  (((e as Json) && (e as Json).message) || e));
+        firstWhy = firstWhy || this.sentenceOf(e);
+      }
+      // The realm's batch failed: one job at a time. A batch of one job
+      // was that job's read already.
+      if (groups.length === 1) {
+        this.holdBackSlot(groups[0], heldBack);
         continue;
       }
-      // A rejection fails the tick (STS-SCHED-0013). Marking the ids
-      // finished would skip the work; marking them absent would run it
-      // twice. Null is no store: leave them unmarked and ask again.
-      const got = await read(realmId, ask);
-      if (got == null) {
-        continue;
-      }
-      if (!(got instanceof Map)) {
-        throw new Error('scheduler: the slot read for realm ' + realmId +
-                        ' did not answer a map');
-      }
-      ask.forEach(function (id: string): void {
-        const row = got.get(id);
-        if (!row) {
-          self.slotAsked.add(id);
-          return;
+      let failedInARow = 0;
+      for (let g = 0; g < groups.length; g++) {
+        if (failedInARow >= 2) {
+          this.holdBackSlot(groups[g], heldBack);
+          continue;
         }
-        if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0) {
-          self.finishedSlots.add(id);
-          self.noteLatest(realmId, row);
-          return;
+        try {
+          this.learnSlots(realmId, groups[g],
+                          await read(realmId, groups[g]));
+          failedInARow = 0;
+        } catch (e) {
+          log.debug("Caught in Scheduler.recallFinishedSlots(): " +
+                    (((e as Json) && (e as Json).message) || e));
+          firstWhy = firstWhy || this.sentenceOf(e);
+          failedInARow++;
+          this.holdBackSlot(groups[g], heldBack);
         }
-        self.admitRecalled(realmId, id, row);
-      });
+      }
+      if (failedInARow >= 2) {
+        outage = true;
+      }
+    }
+    if (heldBack.length) {
+      log.error(errorCodes.tag('STS-SCHED-0023') + 'scheduler: the store ' +
+                'could not say whether ' + heldBack.length + ' run(s) of ' +
+                'the current slot had already run (' + firstWhy + '), so ' +
+                'they were held back this tick and are asked about again ' +
+                'at the next; every other run went on. Held back: ' +
+                heldBack.slice(0, 10).join(', ') +
+                (heldBack.length > 10 ? ', and more' : '') + '.');
     }
     log.debug("Leaving Scheduler.recallFinishedSlots().");
+  }
+
+  // What one read answered about some slot ids. Null is no store: an
+  // absence all the same, remembered for the slot (#883's review).
+  private learnSlots(realmId: string, ask: string[],
+                     got: Map<string, Json> | null): void {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.learnSlots(). " + realmId);
+    if (got == null) {
+      ask.forEach(function (id: string): void {
+        self.slotAsked.add(id);
+      });
+      log.debug("Leaving Scheduler.learnSlots(). No store.");
+      return;
+    }
+    if (!(got instanceof Map)) {
+      log.debug("Leaving Scheduler.learnSlots(). Not a map.");
+      throw new Error('the slot read for realm ' + realmId +
+                      ' did not answer a map');
+    }
+    ask.forEach(function (id: string): void {
+      const row = got.get(id);
+      if (!row) {
+        self.slotAsked.add(id);
+        return;
+      }
+      if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0) {
+        self.finishedSlots.add(id);
+        self.noteLatest(realmId, row);
+        return;
+      }
+      self.admitRecalled(realmId, id, row);
+    });
+    log.debug("Leaving Scheduler.learnSlots().");
+  }
+
+  // One job's current slot held back for this tick. The previous slot's id
+  // only feeds the page, so it is neither held nor named.
+  private holdBackSlot(ids: string[], heldBack: string[]): void {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.holdBackSlot().");
+    if (ids.length) {
+      this.unknownSlots.add(ids[0]);
+      heldBack.push(ids[0]);
+    }
+    log.debug("Leaving Scheduler.holdBackSlot().");
+  }
+
+  // An error as the end of a sentence.
+  private sentenceOf(e: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.sentenceOf().");
+    log.debug("Leaving Scheduler.sentenceOf().");
+    return String(((e as Json) && (e as Json).message) || e)
+      .replace(/\.+$/, '');
   }
 
   // A finished interval body this process wrote, once the flush has it.
@@ -2189,9 +2315,9 @@ class Scheduler {
     // THE CURRENT SLOT, LEARNT WITHOUT HOLDING THE HISTORY (#883). A start
     // does not restore a finished interval run, so the row that says this
     // slot already ran is not in the map. One read per realm covers the
-    // current slot and the one before it. A failed read fails the tick:
-    // treating it as finished would skip the work, and as absent would run
-    // it twice.
+    // current slot and the one before it. A read that fails holds back
+    // only the jobs it could not answer (STS-SCHED-0023): treating them as
+    // finished would skip the work, and as absent would run it twice.
     await this.recallFinishedSlots(at);
     this.releaseFinishedHistory();
     const self = this;
@@ -2246,7 +2372,8 @@ class Scheduler {
         const runId = this.runIdFor(job, realmId, slot.slot);
         const row = this.storeOf(realmId).get(runId);
         if ((row && FINAL.indexOf(row.state) >= 0) ||
-            (!row && this.finishedSlots.has(runId))) {
+            (!row && this.finishedSlots.has(runId)) ||
+            (!row && this.unknownSlots.has(runId))) {
           continue;
         }
         scheduled.push({ job: job, realm: realmId, row: row || {
@@ -4460,6 +4587,7 @@ class Scheduler {
     this.processSlots.clear();
     this.finishedSlots.clear();
     this.slotAsked.clear();
+    this.unknownSlots.clear();
     this.heldFinished.clear();
     this.latestRun.clear();
     this.ticking = null;

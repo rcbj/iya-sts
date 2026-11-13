@@ -41,12 +41,9 @@
 //        * the AuthZEN API, `/access/v1` (#563).
 //      The GNAP demonstration resource server, `/gnap/rs/resource`, was the
 //      fourth until #593 deleted it.
-//      The embedded debugger's api is not in this list because it needs no
-//      place in it: it is an APPLICATION, `sts-debugger-api`, seeded and
-//      registered at startup (`appRegisteredBy: startup`) while the debugger
-//      is embedded, under the permission base `urn:sts:debugger-api:` — so
-//      it is found by the second rule, and is no target at all while the
-//      debugger is not embedded.
+//      The embedded debugger's api is not in this list and is no target at
+//      all: since #1717 it accepts no access token — its gate is the
+//      debugger's sign-in session — so nothing is issued addressed to it.
 //   2. A REGISTERED APPLICATION, found by any of the names an access token
 //      addresses one by (`applications.audienceNamesEntry()`'s four, which
 //      `accessTokenPlan()` and RFC 9701's "intended for" read): its

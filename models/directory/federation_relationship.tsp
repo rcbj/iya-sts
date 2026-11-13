@@ -345,8 +345,8 @@ model FederationRelationship {
     kind: "single",
     role: "service-provider",
     from: "this register",
-    allowed: #["client_secret_basic", "client_secret_post"],
-    what: "HOW THIS SERVICE AUTHENTICATES AT THE PARTNER'S TOKEN ENDPOINT: client_secret_basic (the default, which RFC 6749 section 2.3.1 says a server MUST support) or client_secret_post, for a partner that reads the secret only from the body. With no fedClientSecret this service is a public client and neither applies."
+    allowed: #["client_secret_basic", "client_secret_post", "tls_client_auth"],
+    what: "HOW THIS SERVICE AUTHENTICATES AT THE PARTNER'S TOKEN ENDPOINT: client_secret_basic (the default, which RFC 6749 section 2.3.1 says a server MUST support) or client_secret_post, for a partner that reads the secret only from the body. With no fedClientSecret this service is a public client and neither applies. tls_client_auth (RFC 8705 section 2.1) authenticates with the relationship's TLS client certificate (fedClientCertificate) and sends no assertion and no secret; it is for fedFapi 1-advanced alone, and a relationship naming it without that profile is not ready."
   })
   fedTokenAuth?: string;
   @attr(#{
@@ -456,7 +456,7 @@ model FederationRelationship {
     role: "service-provider",
     from: "this register",
     allowed: #["1-advanced", "2-security", "2-message-signing"],
-    what: "OPENID CONNECT ONLY. The FAPI client profile used when this service signs a person in at the partner (#931). Empty, the default, is today's OpenID Connect relying party. 1-advanced (FAPI 1.0 Advanced) forces response type code id_token, PKCE S256, a PS256 request object by value and private_key_jwt, and does not use DPoP or mutual TLS. 2-security (FAPI 2.0 Security Profile) forces discovery, a pushed authorization request, response type code, PKCE S256, private_key_jwt and DPoP. 2-message-signing adds a PS256 request object inside that push and a signed authorization response (JARM). A profile forces private_key_jwt whatever fedTokenAuth says. This service does not act as a CIBA client and does not authenticate to the partner with a client certificate."
+    what: "OPENID CONNECT ONLY. The FAPI client profile used when this service signs a person in at the partner (#931). Empty, the default, is today's OpenID Connect relying party. 1-advanced (FAPI 1.0 Advanced) forces response type code id_token, PKCE S256 and a PS256 request object by value, presents the relationship's TLS client certificate (fedClientCertificate) to the token and UserInfo endpoints so the partner can bind its access tokens to it (RFC 8705), authenticates with private_key_jwt or, where fedTokenAuth is tls_client_auth, with that certificate, and does not use DPoP. 2-security (FAPI 2.0 Security Profile) forces discovery, a pushed authorization request, response type code, PKCE S256, private_key_jwt and DPoP. 2-message-signing adds a PS256 request object inside that push and a signed authorization response (JARM). A 2.x profile forces private_key_jwt whatever fedTokenAuth says. This service does not act as a CIBA client, and only 1-advanced presents a client certificate."
   })
   fedFapi?: string;
   @attr(#{
@@ -785,6 +785,14 @@ model FederationRelationship {
     what: "THE KEY TABLE: one JSON row per key this relationship decrypts with — its kid, its key type, `current` or `previous`, its certificate and chain under this realm's Intermediate, and the private key, SEALED under the key-encryption key wherever keys persist. A `previous` row is kept until its retiresAt and then removed by the scheduler job federation.encryption-key-retire. Written only by create, rotate and that job; WITHHELD from every LDAP search in product and from every page and /admin-api reply, which publish the public half. The key type is a column so a hybrid post-quantum key can be a row beside the classical one once one is registered."
   })
   fedEncryptionKey?: string[];
+  @attr(#{
+    kind: "single",
+    role: "service-provider",
+    from: "this register",
+    sensitive: true,
+    what: "OPENID CONNECT, fedFapi 1-advanced ONLY (#931). THE TLS CLIENT CERTIFICATE this service presents when it dials the partner's token and UserInfo endpoints: one JSON row holding a clientAuth certificate from this realm's TLS Client Issuing CA (subject CN=federation <id> client, a urn:sts:federation: subjectAltName), its chain, its x5t#S256, its validity, and the private key, SEALED under the key-encryption key wherever keys persist. It authenticates the client where fedTokenAuth is tls_client_auth (RFC 8705 section 2.1) and is what the partner binds its access tokens to (cnf.x5t#S256, section 3). Issued when fedFapi becomes 1-advanced, at the first sign-in that has none, or by the scheduler job federation.client-certificate-renew, which also renews it federation.clientCertificateRenewDays before it expires, with the same subject. Written only by those; WITHHELD from every LDAP search in product and from every page and /admin-api reply, which publish the public half to register at the partner."
+  })
+  fedClientCertificate?: string;
   @attr(#{
     editable: "set",
     kind: "single",

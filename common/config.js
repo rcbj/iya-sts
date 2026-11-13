@@ -10618,6 +10618,21 @@ const SETTINGS = [
                  'entry. 0 ends the old key at the rotation. Only the key ' +
                  'just replaced is kept: a second rotation inside the ' +
                  'window drops the older one.' },
+  { key: 'federation.clientCertificateRenewDays', group: 'Federation',
+    label: 'Renew a FAPI client certificate this many days before it ' +
+           'expires',
+    env: 'STS_FEDERATION_CLIENT_CERTIFICATE_RENEW_DAYS', type: 'int',
+    dflt: 30, min: 1, max: 3650, runtime: true,
+    description: 'A FAPI 1.0 Advanced federation relationship presents a ' +
+                 'TLS client certificate from this realm\'s TLS Client ' +
+                 'Issuing CA to the partner (RFC 8705), and the partner ' +
+                 'binds its access tokens to it. The scheduler job ' +
+                 'federation.client-certificate-renew issues a new one, ' +
+                 'with the same subject, this many days before the current ' +
+                 'one expires. A partner that registered the subject DN ' +
+                 '(tls_client_auth) needs nothing; one that pinned the ' +
+                 'certificate itself must be given the new one, which the ' +
+                 'relationship\'s page shows.' },
 
   // --- SAML ----------------------------------------------------------------
   // ---------------------------------------------------------------------

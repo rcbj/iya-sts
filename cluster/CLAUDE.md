@@ -892,8 +892,20 @@ two hundred on the page) and does not cache those rows into the map;
 a job that has been off for many slots may show none until it runs again,
 because that one row is not restored. A tick learns the current interval slot
 and the one before it from one batch read per realm per slot generation
-(`readMany`); a failed read fails the tick (`STS-SCHED-0013`) rather than
-treating the slot as finished or as absent. Rows written before #338 still
+(`readMany`). **An absence is remembered for the slot whoever said it**
+(#883's review, 2026-11-13): an id the store has no row for, and since then
+an id a reader with no store answered null for, which until then was asked
+again every tick in every realm; both are forgotten with the slot, as a
+finished one is. **A read that fails holds back only the jobs it could not
+answer**: until #883's review a rejection failed the whole tick
+(`STS-SCHED-0013`), so one row the store could not open stopped every job
+in every realm, manual runs included. Now the realm's batch is asked again
+one job at a time; a job whose read still fails is held back for that tick
+(`unknownSlots`, neither run nor taken as finished) and asked about at the
+next, and the rest run. Two job reads failing in a row is an outage, so the
+tick asks nothing more and holds back every job it has not heard about. One
+`STS-SCHED-0023` line a tick names what was held back. `tests/scheduler.js`
+section P. Rows written before #338 still
 come back once — a keyed digest has no prefix a query can filter on — and the
 history walk deletes them from the rows it holds. Startup was not
 re-measured on 8081.
@@ -1146,11 +1158,12 @@ row's body runs on a request worker except those marked **front**:
 | `cluster.node-snapshot` | per-process, quiet; every 15 s, joined front processes of a cluster whose store is shared — writes the node's Worker Pools and Node Health views to `sts_node_snapshots` (#332) | `cluster/node_snapshots.ts` |
 | `cluster.node-snapshot-purge` | cluster, service; hourly, off with no cluster store — deletes the row of a node that is not a live member once its snapshot is older than `cluster.nodeSnapshotRetentionHours` (24); never a live member's, nothing while membership cannot be read (#332) | `cluster/node_snapshots.ts` |
 | `cluster.claims-purge` | cluster, service; a minute, registered at the first claim against a database | `cluster/cluster_claims.js` (P5) |
-| `oauth2.access-token-block-reap` | cluster, service; a minute, registered from `service_state.start()` in every process (before the scheduler starts), off with no shared claims table — releases access-token status-list blocks whose stable origin no longer holds a live origin claim, or whose node membership has left or expired (#884). A start also releases that process's own origin once, which this job never does | `oauth-oidc/access_token_status.ts` |
+| `oauth2.access-token-block-reap` | cluster, service; a minute, registered from `service_state.start()` in every process (before the scheduler starts), off with no shared claims table — releases access-token status-list blocks whose stable origin no longer holds a live origin claim — one lapsed for more than `ORIGIN_LAPSE_GRACE_MS` (90 s, #884's review), so a late renewal keeps its block — or whose node membership has left or expired (#884). A start also releases that process's own origin once, which this job never does | `oauth-oidc/access_token_status.ts` |
 | `cluster.rate-window-purge` | cluster, service; a minute, registered at the first shared count | `cluster/cluster_counters.js` (P5) |
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
 | `ldap.connection-mirror-maintenance` | per-process, quiet; registered in every process when wired, off in one holding no mirrored connections | `ldap/ldap_cluster_connections.ts` (P5) |
 | `federation.encryption-key-retire` | cluster, realm; five minutes, off while `federation.enabled` is off — removes the encryption key a relationship's rotation replaced once `federation.encryptionKeyGraceS` has passed (it stopped decrypting at that instant already) | `federation/federation_encryption.ts` (#168) |
+| `federation.client-certificate-renew` | cluster, realm; hourly, off while `federation.enabled` is off — issues a TLS client certificate to each FAPI 1.0 Advanced relationship that holds none, and renews one `federation.clientCertificateRenewDays` before it expires, with the same subject | `federation/federation_client_certificate.ts` (#931) |
 | `federation.provision-idle` | cluster, realm; five minutes, off while `federation.enabled` is off — disables a person whose only sign-in path is one relationship once `federationLastSeen` is older than that relationship's `fedProvisionIdleMinutes`; empty or `0` leaves everybody; the entry and the link are kept. It runs in every cell and is not a global job | `federation/federation_provision.ts` (#358), `federation/CLAUDE.md` |
 | `federation.partner-refresh` | cluster, realm; fifteen seconds, off while `federation.enabled` is off — for an OpenID Connect relationship with `fedRefreshTokens` on, refreshes the partner's tokens of each session holding one once it is due (`fedRefreshEverySeconds`, else the access token's expiry, else an hour), holds the answer to Core section 12.2, and ends the session when the partner refuses or the answer does not name the person; it reads only `federation_sp.partnerRefresh`, never the sessions | `federation/federation_sp.ts` (#930), `federation/CLAUDE.md` |
 | `tls.ticket-key-rotate` | cluster, service; `tls.sessionTicketRotationS`, off outside active-active — replaces the TLS session-ticket key every node's LDAPS listener shares (not the main port's or the debugger's: they ask for client certificates), deleting the old one | `tls/session_tickets.ts`, `tls/CLAUDE.md` |

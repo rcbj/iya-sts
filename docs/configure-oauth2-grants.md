@@ -348,8 +348,7 @@ They are:
 * Shared Signals' `ssf.read` and `ssf.manage`, and the names in
   `ssf.authScopeRead` and `ssf.authScopeWrite` (by default the same two);
 * `account:manage`, `device:compliance`, `grant_management_query`,
-  `grant_management_revoke`, `vc-api:issue`, `vc-api:verify` and the embedded
-  debugger's `urn:sts:debugger-api:debugger`.
+  `grant_management_revoke`, `vc-api:issue` and `vc-api:verify`.
 
 **For Shared Signals, write includes read** (#334). A client that declares
 `ssf.manage` may also be issued `ssf.read`, and a token carrying

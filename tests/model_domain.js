@@ -94,6 +94,20 @@ function refusals(t, checkDomains) {
     'a field with no source is refused');
   t.check(/may not have/.test(one(field({ type: 'unknown' }), {})),
     'a type a concept may not have is refused');
+  // A record's `first` (#1579's review) reads a list an older build stored
+  // as one value; on a field that is itself a list it means nothing.
+  const recordConcept = function (heldField) {
+    return checkDomains([{ name: 'C', area: 'Area', record: 'r',
+      fields: [heldField], invariants: [] }], directory({})).join(';');
+  };
+  const allowed = recordConcept({ name: 'f', optional: true, type: 'string',
+    held: { key: 'k', transform: 'first' } });
+  t.check(!/transform/.test(allowed),
+    'a record field of one string may say transform: first', allowed);
+  t.check(/transform: "first"/.test(recordConcept({ name: 'f',
+    optional: true, type: 'string', array: true,
+    held: { key: 'k', transform: 'first' } })),
+  'a record field that is a list may not');
   log.debug("Leaving refusals().");
 }
 

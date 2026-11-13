@@ -33,6 +33,13 @@
 //      gnap-token or gnap-grant session audienced to the resource server
 //      that owns the stream and refuses every other, and a revocation with
 //      no resource owner is emitted with the session alone.
+//   3v-3ac. ONE COMMIT PER RESPONSE (#884's review): a new block's first
+//      index waits for its commit and a proven block's later ones hand the
+//      check to the response's commit; no response or a stale origin
+//      waits; a dropped row refuses its response and the next token takes
+//      a fresh block; a restart skips the committed indexes; the barrier
+//      runs the check and refuses 503; the reap job's grace keeps a briefly
+//      lapsed holder's block, and the driver's statement applies it.
 //   7. THE PACKED LIST (#885): the compressed bytes are reused until an
 //      invalid bit changes or the earliest one expires. Half the ttl
 //      re-signs from those bytes. A bit restored from another process is
@@ -692,6 +699,385 @@ function childMain() {
            'oauth2.access-token-status-block', '', 'abc', 'res') ===
          'fence:claim:oauth2.access-token-status-block::abc:res',
          '3u. a block claim\'s fence lock is named from the claim');
+
+    // 3v–3ab (#884's review, 2026-11-13): ONE COMMIT PER RESPONSE. The
+    // first index of a new block waits for its commit; a later index of
+    // that proven block is handed to the response's own commit instead,
+    // unless there is no response to ride on or this process's origin is
+    // not known to be live. A check that finds its row dropped retires the
+    // block, and the next token takes a fresh one without an error.
+    function deferringStatus(over) {
+      const o = over || {};
+      const rows = o.rows || new Map();
+      const state = {
+        rows: rows, settles: [], deferred: [], claims: 0, held: true,
+        fresh: true, loseNext: false, blocks: []
+      };
+      const inst = new Cls(Object.assign(Cls.defaultDeps(), {
+        entries: {
+          get: function (k) {
+            return rows.get(k);
+          },
+          set: function (k, v) {
+            rows.set(k, v);
+          },
+          delete: function (k) {
+            rows.delete(k);
+          }
+        },
+        clusterClaims: { claim: function (spec) {
+          if (o.onlyBlock !== undefined &&
+              String(spec.value) !== String(o.onlyBlock)) {
+            return Promise.resolve({ ok: false, reason: 'used' });
+          }
+          state.claims += 1;
+          state.blocks.push(Number(spec.value));
+          return Promise.resolve({
+            ok: true, fenced: true, lockName: 'lock-' + state.claims,
+            handle: { key: 'kd' + state.claims }
+          });
+        } },
+        liveInBlock: o.liveInBlock || function () {
+          return Promise.resolve([]);
+        },
+        settlePublished: function (row) {
+          state.settles.push(row.idx);
+          if (state.loseNext) {
+            state.loseNext = false;
+            return Promise.resolve({ lost: true });
+          }
+          if (o.store) {
+            o.store.add(row.idx);
+          }
+          return Promise.resolve({ committed: true });
+        },
+        deferSettle: function (check) {
+          if (!state.held) {
+            return false;
+          }
+          state.deferred.push(check);
+          return true;
+        },
+        originFresh: function () {
+          return state.fresh;
+        }
+      }));
+      return { inst: inst, state: state };
+    }
+    function issue(inst, jti) {
+      return w.inRealm(function () {
+        return inst.allocate({ jti: jti, kind: 'oauth',
+                               expiresAt: Date.now() + 60000,
+                               base: w.base });
+      });
+    }
+
+    const d1 = deferringStatus();
+    const firstRef = await issue(d1.inst, 'def-0');
+    const settlesAfterFirst = d1.state.settles.length;
+    const laterRefs = [];
+    for (let i = 1; i <= 5; i++) {
+      laterRefs.push(await issue(d1.inst, 'def-' + i));
+    }
+    note(settlesAfterFirst === 1 && d1.state.deferred.length === 0 + 5 &&
+         d1.state.settles.length === 1 && d1.state.claims === 1 &&
+         laterRefs.every(function (one) {
+           return Math.floor(one.idx / 1024) === Math.floor(firstRef.idx /
+                                                            1024);
+         }),
+         '3v. a new block\'s first index waits for its commit; five more ' +
+         'from that proven block wait for none, each handing its check to ' +
+         'the response',
+         JSON.stringify({ firstWaits: settlesAfterFirst,
+                          deferred: d1.state.deferred.length,
+                          waits: d1.state.settles.length,
+                          claims: d1.state.claims }));
+    const reasons = await Promise.all(d1.state.deferred.map(function (fn) {
+      return fn({ committed: true });
+    }));
+    note(reasons.every(function (r) {
+      return !r;
+    }) && d1.state.settles.length === 6 && laterRefs.every(function (one) {
+      return d1.state.rows.has(String(one.idx));
+    }),
+         '3v-ii. at the response\'s commit each deferred index is checked, ' +
+         'passes, and keeps its entry', JSON.stringify(reasons));
+
+    const d2 = deferringStatus();
+    d2.state.held = false;
+    for (let i = 0; i < 4; i++) {
+      await issue(d2.inst, 'nohold-' + i);
+    }
+    note(d2.state.settles.length === 4 && d2.state.deferred.length === 0,
+         '3w. with no response to ride on, every index waits for its ' +
+         'commit, as before', JSON.stringify({
+           waits: d2.state.settles.length }));
+
+    const d3 = deferringStatus();
+    await issue(d3.inst, 'stale-0');
+    d3.state.fresh = false;
+    await issue(d3.inst, 'stale-1');
+    await issue(d3.inst, 'stale-2');
+    note(d3.state.settles.length === 3 && d3.state.deferred.length === 0,
+         '3x. while this process\'s origin claim is not known to be live, ' +
+         'even a proven block waits for each commit',
+         JSON.stringify({ waits: d3.state.settles.length,
+                          deferred: d3.state.deferred.length }));
+
+    const d4 = deferringStatus();
+    await issue(d4.inst, 'lose-0');
+    const doomed = await issue(d4.inst, 'lose-1');
+    d4.state.loseNext = true;
+    const refusal = await d4.state.deferred[0]({ committed: true });
+    const afterLoss = await issue(d4.inst, 'lose-2');
+    note(typeof refusal === 'string' && /fence/.test(refusal) &&
+         !d4.state.rows.has(String(doomed.idx)) && d4.state.claims === 2 &&
+         Math.floor(afterLoss.idx / 1024) === d4.state.blocks[1] &&
+         d4.state.rows.has(String(afterLoss.idx)),
+         '3y. a deferred index whose fence was lost refuses its response ' +
+         'and is undone; the block is given up, and the next token takes ' +
+         'a fresh block and is issued without an error',
+         JSON.stringify({ refusal: refusal, claims: d4.state.claims,
+                          next: afterLoss && afterLoss.idx }));
+    const notSent = deferringStatus();
+    await issue(notSent.inst, 'gone-0');
+    const goneRef = await issue(notSent.inst, 'gone-1');
+    const goneWaits = notSent.state.settles.length;
+    await notSent.state.deferred[0]({ committed: false });
+    note(!notSent.state.rows.has(String(goneRef.idx)) &&
+         notSent.state.settles.length === goneWaits,
+         '3y-ii. a response whose own commit failed, or that closed ' +
+         'unsent, waits for nothing more and undoes its index',
+         JSON.stringify({ waits: notSent.state.settles.length }));
+
+    // A RESTART STILL DOES NOT REUSE A HELD BLOCK'S INDEXES: the rows the
+    // first life's responses committed are in the store, and the next
+    // lessee of that block reads them and skips them.
+    const stored = new Set();
+    const lifeOne = deferringStatus({ store: stored });
+    const oneRefs = [];
+    for (let i = 0; i < 6; i++) {
+      oneRefs.push(await issue(lifeOne.inst, 'life1-' + i));
+    }
+    await Promise.all(lifeOne.state.deferred.map(function (fn) {
+      return fn({ committed: true });
+    }));
+    const heldBlock = lifeOne.state.blocks[0];
+    // And every other index of the block but eight was committed by an
+    // earlier response of that life, so the next lessee has exactly eight
+    // free: an index chosen without reading the store would land on a
+    // committed one almost every time.
+    const committedByLifeOne = stored.size;
+    const freeLeft = [];
+    for (let i = 0; i < 1024; i++) {
+      const idx = heldBlock * 1024 + i;
+      if (stored.has(idx)) {
+        continue;
+      }
+      if (freeLeft.length < 8) {
+        freeLeft.push(idx);
+      } else {
+        stored.add(idx);
+      }
+    }
+    const lifeTwo = deferringStatus({
+      onlyBlock: heldBlock,
+      liveInBlock: function (realmId, block) {
+        return Promise.resolve(Array.from(stored).filter(function (idx) {
+          return Math.floor(idx / 1024) === block;
+        }));
+      }
+    });
+    // The block is drawn at random; the second life is pointed at the one
+    // the first held, which is what a restart that released it may draw.
+    const cryptoMod = require(ROOT + '/common/crypto');
+    const realRandomInt = cryptoMod.randomInt;
+    const twoRefs = [];
+    try {
+      cryptoMod.randomInt = function (lo, hi) {
+        return hi === 16777216 / 1024 ? heldBlock
+          : realRandomInt.apply(cryptoMod, arguments);
+      };
+      for (let i = 0; i < 6; i++) {
+        twoRefs.push(await issue(lifeTwo.inst, 'life2-' + i));
+      }
+    } finally {
+      cryptoMod.randomInt = realRandomInt;
+    }
+    const firstLife = new Set(oneRefs.map(function (one) {
+      return one.idx;
+    }));
+    note(committedByLifeOne === 6 && lifeTwo.state.blocks[0] === heldBlock &&
+         twoRefs.every(function (one) {
+           return !firstLife.has(one.idx) && freeLeft.indexOf(one.idx) >= 0;
+         }),
+         '3z. a restarted process leasing the same block skips every index ' +
+         'its previous life\'s responses committed',
+         JSON.stringify({ block: heldBlock, stored: committedByLifeOne,
+                          got: twoRefs.map(function (one) {
+                            return one.idx;
+                          }) }));
+
+    // 3aa: THE BARRIER'S HALF, over a real HTTP response: a check handed to
+    // the held response runs after its commit; '' lets it go, a reason
+    // refuses it 503 STS-CLUSTER-0166; outside a held response nothing
+    // takes the check.
+    const barrier = require(ROOT + '/cluster/cluster_barrier');
+    const persistenceMod = require(ROOT + '/persistence/persistence');
+    const http = require('http');
+    const outside = barrier.deferUntilCommitted(function () {
+      return Promise.resolve(null);
+    });
+    let checksRan = 0;
+    const server = http.createServer(function (req, res) {
+      const refuse = /refuse/.test(req.url);
+      barrier.holdUntilCommitted(res, persistenceMod.writeGeneration(), req);
+      barrier.heldResponse.run(res, function () {
+        const took = barrier.deferUntilCommitted(function (state) {
+          checksRan += 1;
+          return Promise.resolve(refuse || !state.committed
+            ? 'refused by the test' : null);
+        });
+        res.setHeader('Content-Type', 'text/plain');
+        res.end(took ? 'token' : 'not taken');
+      });
+    });
+    await new Promise(function (resolve) {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const port = server.address().port;
+    async function get(path) {
+      const answer = await fetch('http://127.0.0.1:' + port + path);
+      return { status: answer.status, body: await answer.text() };
+    }
+    const passed = await get('/pass');
+    const refused = await get('/refuse');
+    server.close();
+    note(outside === false && passed.status === 200 &&
+         passed.body === 'token' && refused.status === 503 &&
+         !/token/.test(refused.body) && checksRan === 2,
+         '3aa. a check handed to a held response runs after its commit: ' +
+         'passing lets the answer go, refusing answers 503 without the ' +
+         'body; outside a held response nothing takes a check',
+         JSON.stringify({ outside: outside, passed: passed,
+                          refused: refused.status, ran: checksRan }));
+
+    // 3ab: THE REAP JOB'S GRACE. A live process whose origin claim lapsed
+    // for a few seconds keeps its block; one lapsed past the grace loses
+    // it. The fake store answers liveOriginKeys(grace) the way the driver
+    // does: a claim whose expiry is after now minus the grace is live.
+    const nowMs = Date.now();
+    const origins = [
+      { key: 'n:lapsed:protocol-0', expiresAt: nowMs - 10 * 1000 },
+      { key: 'n:dead:protocol-0', expiresAt: nowMs - 200 * 1000 },
+      { key: 'n:live:protocol-0', expiresAt: nowMs + 20 * 1000 }
+    ];
+    const askedGrace = [];
+    const releasedRows = [];
+    const fakeStore = {
+      claimsOfScope: function () {
+        return Promise.resolve(origins.map(function (one, i) {
+          return { scope: BLOCK, realm: '', key: 'blk' + i,
+                   reservation: 'r' + i, origin: one.key + '@node-x' };
+        }));
+      },
+      goneNodeIds: function () {
+        return Promise.resolve([]);
+      },
+      liveOriginKeys: function (graceMs) {
+        askedGrace.push(graceMs);
+        const floor = Date.now() - (Number(graceMs) || 0);
+        return Promise.resolve(origins.filter(function (one) {
+          return one.expiresAt > floor;
+        }).map(function (one) {
+          return one.key;
+        }));
+      },
+      releaseClaimFences: function () {
+        return Promise.resolve(0);
+      },
+      releaseClaims: function (list) {
+        list.forEach(function (one) {
+          releasedRows.push(one.origin);
+        });
+        return Promise.resolve(list.length);
+      }
+    };
+    const realClusterStore = persistenceMod.clusterStore;
+    let reaped = -1;
+    try {
+      persistenceMod.clusterStore = function () {
+        return fakeStore;
+      };
+      reaped = await clusterClaimsMod.releaseAbandoned(BLOCK, {
+        bareOwn: false, ownOrigin: 'n:self:front', selfNode: 'node-self'
+      });
+    } finally {
+      persistenceMod.clusterStore = realClusterStore;
+    }
+    note(askedGrace[0] === clusterClaimsMod.ORIGIN_LAPSE_GRACE_MS &&
+         clusterClaimsMod.ORIGIN_LAPSE_GRACE_MS >= 60 * 1000 &&
+         reaped === 1 && releasedRows.length === 1 &&
+         releasedRows[0] === 'n:dead:protocol-0@node-x',
+         '3ab. the reap job counts an origin claim lapsed for less than ' +
+         'its grace as live: a holder whose renewal was late keeps its ' +
+         'block, and one gone past the grace loses it',
+         JSON.stringify({ grace: askedGrace, released: releasedRows }));
+
+    // 3ac: and the driver's statement says the same: with a grace, the
+    // origin claim's expiry is compared with now minus that grace.
+    const storeDouble = require(ROOT + '/tests/tools/store_double');
+    const graceSeen = [];
+    function GraceClient() {}
+    GraceClient.prototype.query = function (sql, params) {
+      graceSeen.push({ sql: String(sql), params: params || [] });
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    };
+    GraceClient.prototype.on = function () {};
+    GraceClient.prototype.release = function () {};
+    GraceClient.prototype.removeListener = function () {};
+    GraceClient.prototype.connect = function () {
+      return Promise.resolve();
+    };
+    GraceClient.prototype.end = function () {
+      return Promise.resolve();
+    };
+    function GracePool() {}
+    GracePool.prototype.on = function () {};
+    GracePool.prototype.connect = function () {
+      return Promise.resolve(new GraceClient());
+    };
+    GracePool.prototype.query = GraceClient.prototype.query;
+    GracePool.prototype.end = function () {
+      return Promise.resolve();
+    };
+    const postgresDriver = require(ROOT + '/persistence/persistence_postgres');
+    const restoreLayer = storeDouble.install({ Pool: GracePool,
+                                               Client: GraceClient });
+    let graceDriver = null;
+    try {
+      graceDriver = postgresDriver.create({
+        url: 'postgres://sts_app@localhost:5432/sts',
+        log: { debug: function () {}, info: function () {},
+               warn: function () {}, error: function () {} } });
+    } finally {
+      restoreLayer();
+    }
+    await graceDriver.liveOriginKeys(90000);
+    await graceDriver.liveOriginKeys();
+    const withGrace = graceSeen.find(function (one) {
+      return /liveOriginKeys/.test(one.sql);
+    });
+    const bare = graceSeen.filter(function (one) {
+      return /liveOriginKeys/.test(one.sql);
+    })[1];
+    note(withGrace && /-/.test(withGrace.sql) &&
+         withGrace.params.indexOf(90000) >= 0 && bare &&
+         bare.params.indexOf(90000) < 0,
+         '3ac. the driver compares an origin claim\'s expiry with now less ' +
+         'the grace, and with now when none is asked',
+         JSON.stringify({ grace: withGrace && withGrace.sql.slice(0, 160),
+                          params: withGrace && withGrace.params }));
 
     // ==================================================================
     // 4. GNAP: BOTH JWT FORMATS, AND THE GRANT ENGINE'S REVOCATION

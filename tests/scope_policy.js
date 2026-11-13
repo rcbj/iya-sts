@@ -16,8 +16,7 @@
 //      their SETTINGS, not their default spelling), the Shared Signals
 //      scopes (the settings PLUS ssf.read and ssf.manage, which stay
 //      protected when a setting is renamed; ssf:read and ssf:write are not
-//      Shared Signals scopes, #334),
-//      the debugger permission — are refused to a client that does not
+//      Shared Signals scopes, #334) — are refused to a client that does not
 //      declare them, IN BOTH MODES, and allowed to one that does; and the
 //      seeded clients declare what they use. sts-report declares the two
 //      report scopes in every realm, and no resource application defines
@@ -32,8 +31,8 @@
 //   D. DELEGATED PERMISSIONS ARE ENFORCED IN PRODUCT whatever
 //      `oauth2.delegatedPermissionsEnforced` says, and in development only
 //      when it is on.
-//   E. The debugger permission is spelt the same here as in
-//      `debugger/debugger_access.ts`.
+//   E. The embedded debugger's retired permission (#1717) is protected no
+//      more: nothing issues it and nothing reads it.
 //   F. FOR THIS SERVICE'S THREE APIS A DELEGATED PERMISSION GRANT IS THE
 //      DECLARATION (#1141): an admin, owner, account or report word listed
 //      in oauthAllowedScope no
@@ -58,7 +57,6 @@ require('../ldap/ldap_server');
 const audit = require('../common/audit');
 const scopePolicy = require('../common/scope_policy');
 const oauth2 = require('../oauth-oidc/oauth2');
-const debuggerAccess = require('../debugger/debugger_access');
 const realms = require('../common/realms');
 
 const log = require('bunyan').createLogger({ name: 'scope_policy',
@@ -137,9 +135,6 @@ function claimA(t) {
               null, m + ': and scim:write, which it declares, is allowed');
       t.equal(codeOf(scopePolicy.refusal('ssf.manage', '')), 'STS-OAUTH-0577',
               m + ': a request naming no client cannot have ssf.manage');
-      t.equal(codeOf(scopePolicy.refusal(debuggerAccess.PERMISSION_ID,
-                                         'sp-bare')),
-              'STS-OAUTH-0577', m + ': nor the debugger permission');
     } finally {
       config.clearOverride('global.mode');
     }
@@ -412,9 +407,11 @@ async function run(t) {
   await claimC(t);
   claimD(t);
   claimF(t);
-  t.log.info('=== E. one spelling ===');
-  t.equal(scopePolicy.DEBUGGER_PERMISSION, debuggerAccess.PERMISSION_ID,
-          'the debugger permission is spelt as debugger_access.ts spells it');
+  t.log.info('=== E. the retired debugger permission ===');
+  t.check(scopePolicy.protectedScopes()
+            .indexOf('urn:sts:debugger-api:debugger') < 0,
+          'the embedded debugger\'s retired api permission is not a ' +
+          'protected scope (#1717)');
   log.debug("Leaving run().");
 }
 

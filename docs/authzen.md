@@ -147,7 +147,11 @@ something else:
 | `""` or `[]` | sent as an empty value or an empty bag, and listed in `urn:sts:xacml:authzen:supplied` |
 
 A member that AuthZEN 1.0 does not define, at the top level or inside
-`subject`, `action` or `resource`, is also refused with 400.
+`subject`, `action`, `resource`, `page` or `options`, is ignored, as AuthZEN
+1.0 section 10.1.1 requires. It is not read and decides nothing. The same
+applies to an Action Search's `action`. Until 1.1.0 such a member was
+refused with 400. The table above is about `properties` and `context`,
+which a conversion rule must still declare.
 
 ### Applications with their own policy
 

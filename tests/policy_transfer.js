@@ -256,16 +256,16 @@ async function run(t) {
       t.equal(!out.ok && errorCodes.codeOf(out), code, 'C. ' + what);
       log.debug('Leaving refusedWith().');
     };
-    await refusedWith('not json', 'STS-ADMIN-0925', 'not JSON');
-    await refusedWith('{"a":1}', 'STS-ADMIN-0925', 'not a JWS');
+    await refusedWith('not json', 'STS-ADMIN-0926', 'not JSON');
+    await refusedWith('{"a":1}', 'STS-ADMIN-0926', 'not a JWS');
     const altered = Object.assign({}, doc, {
       payload: Buffer.from(JSON.stringify(Object.assign({}, payload,
         { realm: 'somebody-else' }))).toString('base64url') });
-    await refusedWith(altered, 'STS-ADMIN-0926', 'a payload altered after ' +
+    await refusedWith(altered, 'STS-ADMIN-0927', 'a payload altered after ' +
                       'it was signed');
     const noChain = Object.assign({}, header, { x5c: [header.x5c[0]] });
     await refusedWith(Object.assign({}, doc, { protected: Buffer.from(
-      JSON.stringify(noChain)).toString('base64url') }), 'STS-ADMIN-0925',
+      JSON.stringify(noChain)).toString('base64url') }), 'STS-ADMIN-0926',
                       'a header without the chain');
 
     // D. ANOTHER REALM IS ASKED.
@@ -273,7 +273,7 @@ async function run(t) {
     const asked = await inRealm(B, function () {
       return transfer.importPolicies(doc, {});
     });
-    t.equal(errorCodes.codeOf(asked), 'STS-ADMIN-0928',
+    t.equal(errorCodes.codeOf(asked), 'STS-ADMIN-0929',
             'D. realm B refuses until it is answered');
     t.check(asked.needsTrust && asked.inspection.origin === 'foreign' &&
             asked.inspection.chain.length === 4 &&
@@ -289,7 +289,7 @@ async function run(t) {
       return transfer.importPolicies(doc, { trustSigner: true,
         issuerFingerprint: 'AB'.repeat(32) });
     });
-    t.equal(errorCodes.codeOf(wrong), 'STS-ADMIN-0929',
+    t.equal(errorCodes.codeOf(wrong), 'STS-ADMIN-0930',
             'D. a yes about another chain is no yes');
     t.equal(inRealm(B, function () {
       return signers.list().length;
@@ -361,7 +361,7 @@ async function run(t) {
     const afterRevoke = await inRealm(A, function () {
       return transfer.inspect(doc);
     });
-    t.equal(errorCodes.codeOf(afterRevoke), 'STS-ADMIN-0927',
+    t.equal(errorCodes.codeOf(afterRevoke), 'STS-ADMIN-0928',
             'F. and its export is refused by the door');
     t.check(afterRevoke.verdict && afterRevoke.verdict.checks.revocation ===
             'failed', 'F. for its revocation',
@@ -416,7 +416,7 @@ async function run(t) {
             'H. import, with the yes', JSON.stringify(intoB.errors));
     const unknown = await adminActions.policyTransferAction(
       { action: 'delete' }, {});
-    t.equal(errorCodes.codeOf(unknown), 'STS-ADMIN-0933',
+    t.equal(errorCodes.codeOf(unknown), 'STS-ADMIN-0934',
             'H. an unknown action is refused');
     // A REALM'S AUDIT LOG IS ITS OWN: the export is D's, the trust and the
     // import are B's.

@@ -96,8 +96,31 @@ async function buildCheck(t) {
       field(a, 'evaluations', 'options.evaluations_semantic').default = 'x';
     });
   refused('a forbidden member with nothing to say',
-    /search-action\.action may not be sent and says nothing/, function (a) {
-      delete field(a, 'search-action', 'action').refusal;
+    /access-request\.items may not be sent and says nothing/, function (a) {
+      delete field(a, 'access-request', 'items').refusal;
+    });
+  refused('an ignored member that is also refused',
+    /search-action\.action is ignored and is required, refused or read/,
+    function (a) {
+      field(a, 'search-action', 'action').refusal = 'no';
+    });
+  refused('an ignored member on a field of another kind',
+    /evaluation\.subject\.type is string and takes ignored/, function (a) {
+      field(a, 'evaluation', 'subject.type').ignored = true;
+    });
+  refused('a request that ignores unknown members and has a stray sentence',
+    /evaluation ignores unknown members and has a stray sentence/,
+    function (a) {
+      a.requests[0].stray = 'An access evaluation request has no member.';
+    });
+  refused('an unknownMembers that is neither',
+    /evaluation's unknownMembers is neither refused nor ignored/,
+    function (a) {
+      a.requests[0].unknownMembers = 'dropped';
+    });
+  refused('a request that refuses unknown members with no stray code',
+    /the request evaluation has no stray code/, function (a) {
+      a.requests[0].unknownMembers = 'refused';
     });
   refused('requireOne naming a member not declared',
     /requires one of nobody/, function (a) {
@@ -108,8 +131,14 @@ async function buildCheck(t) {
       field(a, 'evaluation', 'action.name').cite = '';
     });
   refused('a request without a code of each kind',
-    /the request evaluation has no stray code/, function (a) {
-      a.requests[0].codes.stray = 'oops';
+    /the request evaluation has no absent code/, function (a) {
+      a.requests[0].codes.absent = 'oops';
+    });
+  refused('a forbidden member with no code and no stray code',
+    /the request access-request has no stray code/, function (a) {
+      delete a.requests.filter(function (one) {
+        return one.id === 'access-request';
+      })[0].codes.stray;
     });
   refused('a request declared twice', /request evaluation is declared twice/,
     function (a) {
@@ -190,10 +219,103 @@ function readers(t) {
     const r = read(id, body);
     return r ? r.code + ' ' + r.message : '';
   };
-  t.check(said('evaluation', Object.assign({}, good, { x: 1 })) ===
-            'STS-AUTHZEN-0009 An access evaluation request has no member ' +
-            '"x"; it takes subject, action, resource and context.',
-          'B. evaluation: a stray member, its sentence the model\'s');
+  // AUTHZEN 1.0 SECTION 10.1.1 (#936): "receivers MUST ignore unknown
+  // fields present in request or response bodies", on every request this
+  // API reads and at every depth. STS-AUTHZEN-0009, which refused one, is
+  // retired.
+  const generated = ModelTables.file('authzen.json');
+  t.check(generated.requests.length === 6 &&
+          generated.requests.every(function (one) {
+            return one.unknownMembers === 'ignored' &&
+              one.stray === undefined &&
+              one.paths.every(function (at) {
+                return at.indexOf('/access/v1/') === 0;
+              });
+          }),
+          'B. every AuthZEN request records unknown members as ignored, and ' +
+          'carries no stray sentence',
+          JSON.stringify(generated.requests.map(function (one) {
+            return [one.id, one.unknownMembers];
+          })));
+  t.check(JSON.stringify(generated).indexOf('STS-AUTHZEN-0009') < 0,
+          'B. the retired STS-AUTHZEN-0009 is in no request of the model');
+  t.check(read('evaluation', Object.assign({}, good,
+                                           { x: 1, futureField: { n: 1 } }))
+            === null,
+          'B. evaluation: an unknown top-level member is ignored');
+  t.check(read('evaluation', {
+    subject: { type: 'user', id: 'a', customAttr: 'x', more: { k: 'v' } },
+    action: { name: 'r', id: 'x' },
+    resource: { type: 'd', id: 'x', owner: 'o' },
+    context: { anything: 1 } }) === null,
+          'B. evaluation: an unknown member of each entity is ignored');
+  t.check(said('evaluation', { x: 1 }).indexOf('STS-AUTHZEN-0002') === 0,
+          'B. evaluation: an unknown member beside a missing entity: the ' +
+          'missing entity is what is refused');
+  t.check(said('evaluation', Object.assign({}, good, {
+    subject: { type: 'user', id: 7, extra: 1 } })) ===
+            'STS-AUTHZEN-0003 subject.id must be a string of at most 1024 ' +
+            'characters.',
+          'B. evaluation: a defined member is still held to its type beside ' +
+          'an ignored one');
+  t.check(read('evaluations', { foo: 'bar', futureField: { nested: true },
+                                options: { evaluations_semantic:
+                                           'execute_all', extra: 1 } })
+            === null,
+          'B. evaluations: unknown members at the top and in options are ' +
+          'ignored');
+  t.check(read('search-subject', { subject: { type: 'user', extra: 1 },
+                                   page: { limit: 10, customAttr: 'x' },
+                                   foo: 'bar' }) === null,
+          'B. search-subject: unknown members of page and the searched ' +
+          'entity are ignored');
+  t.check(read('search-action', { action: { name: 'read' } }) === null &&
+          read('search-action', { action: 'anything' }) === null,
+          'B. search-action: an action member is ignored, whatever it is ' +
+          '(section 8.6.1 does not list it)');
+  t.check(said('access-request', { subject: {}, resource: {}, action: {},
+                                   colour: 1 }) === '',
+          'B. access-request: an unknown member is ignored');
+  // IGNORED MEANS NOT READ: neither signed into a denial's binding nor
+  // compared with it, and not in a search page token's fingerprint.
+  const { AccessRequests } = require('../authzen/authzen_access_request');
+  const plainSubject = { type: 'user', id: 'a', properties: { p: 1 } };
+  t.check(JSON.stringify(AccessRequests.bound('subject',
+            Object.assign({ futureField: 1 }, plainSubject))) ===
+            JSON.stringify(plainSubject) &&
+          JSON.stringify(AccessRequests.bound('action',
+            { name: 'r', id: 'x' })) === JSON.stringify({ name: 'r' }),
+          'B. access-request: an ignored entity member is not in what a ' +
+          'binding signs or compares');
+  const { AuthzenSearch } = require('../authzen/authzen_search');
+  const plainSearch = { subject: { type: 'user', id: 'a' },
+                        action: { name: 'read' },
+                        resource: { type: 'd' },
+                        context: { c: 1 }, page: { limit: 5 } };
+  const known = AuthzenSearch.known('resource', Object.assign({
+    foo: 'bar' }, JSON.parse(JSON.stringify(plainSearch)), {
+    subject: { type: 'user', id: 'a', extra: 1 },
+    page: { limit: 5, customAttr: 'x' } }));
+  t.check(JSON.stringify(known) === JSON.stringify(plainSearch),
+          'B. search: what a page token fingerprints leaves every ignored ' +
+          'member out, and is the request itself when there is none',
+          JSON.stringify(known));
+  // And read() fingerprints through it, so a continued page's token is not
+  // refused for an ignored member that changed between pages.
+  const searcher = new AuthzenSearch({ crypto: require('../common/crypto') });
+  const first = searcher.read('resource', JSON.parse(JSON.stringify(
+    plainSearch)));
+  const again = searcher.read('resource', Object.assign(JSON.parse(
+    JSON.stringify(plainSearch)), { foo: 'bar', page: { limit: 5,
+                                                         customAttr: 1 } }));
+  t.check(!!first.fingerprint && first.fingerprint === again.fingerprint,
+          'B. search: an ignored member leaves the page fingerprint as it ' +
+          'is', JSON.stringify([first, again]));
+  t.check(JSON.stringify(AuthzenSearch.known('action', {
+    subject: { type: 'user', id: 'a' }, action: { name: 'read' },
+    resource: { type: 'd', id: 'x' } })) === JSON.stringify({
+    subject: { type: 'user', id: 'a' }, resource: { type: 'd', id: 'x' } }),
+          'B. search-action: the ignored action is not fingerprinted');
   t.check(said('evaluation', { action: good.action,
                                resource: good.resource }) ===
             'STS-AUTHZEN-0002 The request has no subject, which AuthZEN ' +
@@ -219,11 +341,11 @@ function readers(t) {
           'B. evaluations: the semantic is compared as String(value)');
   t.check(said('search-action', { page: 'x', action: {} })
             .indexOf('STS-AUTHZEN-0042') === 0,
-          'B. search-action: page is read before the forbidden action');
+          'B. search-action: page is still refused beside the ignored action');
   t.check(said('access-request', { items: [], colour: 1 })
             .indexOf('STS-AUTHZEN-0071 This service does not implement') === 0,
-          'B. access-request: a forbidden member is refused before a stray ' +
-          'one');
+          'B. access-request: BULK\'s items, a member a profile defines, is ' +
+          'still refused beside an ignored one');
   t.check(said('access-request', { subject: {}, resource: {}, action: {} }) ===
             '',
           'B. access-request: denial is deferred to its own place');

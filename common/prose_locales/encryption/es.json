@@ -199,6 +199,14 @@
     "en": "3d4cea483bdd4763",
     "text": "NO SE PERSISTEN EN ABSOLUTO, en ningún modo, así que no hay nada en reposo que sellar. Las tres están nombradas en el `NOT_YET` de `common/mode.js` en lugar de dejarse por descubrir, porque *no guardado* y *no protegido* se leen igual desde fuera y no son lo mismo."
   },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "La clave privada del certificado de cliente TLS de una relación de federación FAPI 1.0 Advanced (#931): lo que este servicio presenta a los extremos de tokens y UserInfo del socio, en `fedClientCertificate`"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "Quien la tenga puede autenticarse ante ese socio como este servicio (`tls_client_auth`) y presentar los tokens de acceso que el socio vinculó al certificado. Sellada en reposo allí donde las claves persisten, y retenida —incluido el texto cifrado— de toda búsqueda LDAP, página y respuesta de `/admin-api`, que solo llevan el certificado."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Qué cifra este servicio EN REPOSO, con qué clave, con qué algoritmo y cuánto de ello ha ocurrido en este proceso."

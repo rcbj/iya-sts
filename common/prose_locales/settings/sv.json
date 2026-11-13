@@ -5239,6 +5239,14 @@
     "en": "f8e11f4044147d5e",
     "text": "När en relations krypteringsnyckel roteras: hur länge den nyckel den ersätter fortfarande DEKRYPTERAR — så att en partner som ännu inte har hämtat den nya metadatan eller JWKS, eller ett svar som redan finns i en webbläsare, inte avvisas. Därefter dekrypterar den gamla nyckeln ingenting, och schemaläggarjobbet federation.encryption-key-retire tar bort den från posten. 0 avslutar den gamla nyckeln vid rotationen. Endast den nyss ersatta nyckeln behålls: en andra rotation inom fönstret släpper den äldre."
   },
+  "federation.clientCertificateRenewDays|label": {
+    "en": "918bb1aa7c690001",
+    "text": "Förnya ett FAPI-klientcertifikat så här många dagar innan det löper ut"
+  },
+  "federation.clientCertificateRenewDays|description": {
+    "en": "c9ce3366a9d4ba59",
+    "text": "En FAPI 1.0 Advanced-federationsrelation visar upp ett TLS-klientcertifikat från denna sfärs TLS Client Issuing CA för partnern (RFC 8705), och partnern binder sina åtkomsttoken till det. Det schemalagda jobbet federation.client-certificate-renew utfärdar ett nytt, med samma subjekt, så här många dagar innan det nuvarande löper ut. En partner som registrerat subjekt-DN:et (tls_client_auth) behöver inget; en som fäst själva certifikatet måste få det nya, som relationens sida visar."
+  },
   "saml.clockSkewS|label": {
     "en": "34ba47c6439a7089",
     "text": "Klockavvikelse för intyg (s)"

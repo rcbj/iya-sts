@@ -6,33 +6,37 @@
 // File: debugger_access.js
 //
 // ===========================================================================
-// WHO MAY BE GRANTED THE EMBEDDED DEBUGGER'S PERMISSION, AND WHAT ITS API MAY
-// DIAL (2026-09-13).
+// WHO MAY USE THE EMBEDDED DEBUGGER, AND WHAT ITS API MAY DIAL (2026-09-13;
+// rewritten for #1717, 2026-11-13).
 //
 // Five claims:
 //
-//   A. the permission, the client id and the resource identifier are ONE
-//      spelling in the three files that write them — `debugger_access.js`,
-//      `common/applications.js`'s seed and `common/oidc_rp.ts`'s surface — and
-//      the seeded entries define and grant it;
-//   B. `narrowScope()` takes the permission off for somebody who is not a
-//      console administrator, for an application, for an unauthenticated
-//      subject and in any realm but the default one, and leaves every other
-//      scope value exactly as it was;
-//   C. the POLICY CANNOT WIDEN IT: with no XACML decider loaded —
-//      `access_gate.js` then answers "allowed" to everything — a subject
-//      holding neither console role is still refused;
-//   D. `oauth2.js` asks it at both places a scope is granted: the authorization
-//      endpoint and `tokenSet()`, which every grant mints through;
+//   A. ONE APPLICATION: the client id is one spelling in `debugger_access.ts`,
+//      `common/applications.js`'s seed and `common/oidc_rp.ts`'s surface; the
+//      seeded entry is a confidential client asking for the OpenID Connect
+//      scopes and nothing of a debugger api; and no entry defines the retired
+//      permission;
+//   B. RETIREMENT: an install seeded before #1717 has its seeded
+//      `sts-debugger-api` row deleted and the seeded client's grant of the
+//      permission taken off — and a row an operator made by hand is left
+//      alone;
+//   C. `isAdministrator()`, which the gate asks on every request, refuses the
+//      empty roster (even though the console is open then), a person holding
+//      no role, an application and an unauthenticated subject — and the
+//      POLICY CANNOT WIDEN IT: there is no XACML decider loaded here, so
+//      `access_gate.js` answers "allowed" to everything, and a subject holding
+//      neither console role is refused anyway;
+//   D. nothing narrows a debugger permission at issuance any more: `oauth2.ts`
+//      no longer requires this module, and the scope policy protects no such
+//      scope;
 //   E. in product mode the api child's allow-list is this service's own
 //      addresses plus `debugger.allowedDestinations`, and an entry that is not
 //      a CIDR range is left out and reported rather than widened.
 //
 // ---------------------------------------------------------------------------
-// WHY IN PROCESS. B and C are about a SCOPE BEING ABSENT from a grant, for a
-// roster and a mode a running stack cannot be put into without editing its
-// directory; D is a property of the source; E needs product mode and a
-// setting that is restart-only.
+// WHY IN PROCESS. B and C need registry rows and a roster a running stack
+// cannot be put into without editing its directory; D is a property of the
+// source; E needs product mode and a setting that is restart-only.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -48,6 +52,7 @@ require('../ldap/ldap_server');
 const adminRbac = require('../admin-ui/admin_rbac');
 const oidcRp = require('../common/oidc_rp');
 const access = require('../debugger/debugger_access');
+const scopePolicy = require('../common/scope_policy');
 const apiProcess = require('../debugger/debugger_api_process');
 
 const log = require('bunyan').createLogger({ name: 'debugger_access',
@@ -77,48 +82,109 @@ function inDefault(fn) {
 
 async function run(t) {
   log.debug("Entering run().");
-  const id = access.PERMISSION_ID;
+  const retired = 'urn:sts:debugger-api:debugger';
 
   // -------------------------------------------------------------------------
-  t.log.info('=== A. one spelling, and the seeded entries ===');
-  t.equal(id, 'urn:sts:debugger-api:debugger', 'the permission identifier');
+  t.log.info('=== A. one application ===');
   const appsSource = fs.readFileSync(path.join(__dirname, '..', 'common',
                                                'applications.js'), 'utf8');
-  t.check(appsSource.indexOf("'" + id + "'") >= 0 &&
-          appsSource.indexOf("'" + access.PERMISSION_BASE + "'") >= 0 &&
-          appsSource.indexOf("'" + access.UI_CLIENT_ID + "'") >= 0 &&
-          appsSource.indexOf("'" + access.API_IDENTIFIER + "'") >= 0,
-          'common/applications.js seeds the same permission, base, client ' +
-          'and resource the debugger checks');
+  t.check(appsSource.indexOf("identifier: '" + access.UI_CLIENT_ID + "'") >=
+            0,
+          'common/applications.js seeds the client the debugger checks');
   const surface = oidcRp.surfaceOf('debugger');
   t.equal(surface.clientId, access.UI_CLIENT_ID,
           'the oidc_rp surface signs in as the seeded client');
-  t.check(surface.scopes.indexOf(id) >= 0,
-          'and asks for the permission', JSON.stringify(surface.scopes));
+  t.equal(JSON.stringify(surface.scopes),
+          JSON.stringify(['openid', 'profile', 'email', 'offline_access']),
+          'and asks for the OpenID Connect scopes and no debugger api ' +
+          'permission');
   inDefault(function () {
-    const found = applications.forPermission(id);
-    t.check(found && found.identifier === access.API_IDENTIFIER &&
-            found.baseUri === access.PERMISSION_BASE,
-            'the seeded api entry DEFINES the permission, under a URN base ' +
-            'that becomes the token\'s audience',
-            JSON.stringify(found && { identifier: found.identifier,
-                                      baseUri: found.baseUri }));
-    t.check(applications.holdsPermission(access.UI_CLIENT_ID, id),
-            'and the seeded UI entry is GRANTED it — the application-to-' +
-            'permission mapping');
+    t.check(!applications.forPermission(retired),
+            'no entry defines the retired debugger api permission');
     const ui = applications.clientConfigOf(access.UI_CLIENT_ID);
     t.check(ui && ui.registered &&
             (ui.redirect_uris || []).some(function (uri) {
               return /\/_sts\/callback$/.test(uri);
             }),
-            'with its sign-in callback on the debugger listener',
+            'the client\'s sign-in callback is on the debugger listener',
             JSON.stringify(ui && ui.redirect_uris));
+    t.equal(ui && ui.token_endpoint_auth_method, 'private_key_jwt',
+            'and it is a CONFIDENTIAL client, so its tokens stay on this ' +
+            'service');
+    t.check(!applications.get(access.RETIRED_API_IDENTIFIER),
+            'and there is no separate debugger api application');
   });
 
   // -------------------------------------------------------------------------
-  t.log.info('=== B and C. narrowing, with an empty and a real roster ===');
-  const scope = 'openid profile ' + id + ' email';
-  const narrowed = 'openid profile email';
+  t.log.info('=== B. an install seeded before #1717 ===');
+  inDefault(function () {
+    applications.deleteApplication(access.UI_CLIENT_ID, { actor: 'test' });
+    // THE TWO ROWS AS THEY WERE SEEDED, by the seed's own writer.
+    applications.seedInternalApplication({
+      identifier: access.RETIRED_API_IDENTIFIER,
+      name: 'Protocol debugger api', kinds: ['oauth2-client'],
+      protocols: ['OAuth 2.0'], realmScope: 'default',
+      description: 'seeded at startup (test)',
+      attributes: { oauthPermissionBaseUri: 'urn:sts:debugger-api:',
+                    oauthPermission: ['debugger|Use the debugger'] },
+      registration: { client_id: access.RETIRED_API_IDENTIFIER,
+                      client_name: 'Protocol debugger api',
+                      redirect_uris: [], grant_types: [],
+                      response_types: [], scope: '',
+                      token_endpoint_auth_method: 'client_secret_basic' } });
+    applications.seedInternalApplication({
+      identifier: access.UI_CLIENT_ID,
+      name: 'Protocol debugger',
+      kinds: ['oauth2-client', 'oidc-relying-party'],
+      protocols: ['OAuth 2.0 / OIDC'], realmScope: 'default',
+      description: 'seeded at startup (test)',
+      attributes: { oauthDelegatedPermission: [retired],
+                    oauthGlobalConsent: ['openid', 'profile', 'email',
+                                         'offline_access', retired] },
+      registration: { client_id: access.UI_CLIENT_ID,
+                      client_name: 'Protocol debugger',
+                      redirect_uris: ['https://localhost:8444/_sts/callback'],
+                      grant_types: ['authorization_code', 'refresh_token'],
+                      response_types: ['code'],
+                      scope: 'openid profile email offline_access ' + retired,
+                      token_endpoint_auth_method: 'private_key_jwt' } });
+    t.check(!!applications.forPermission(retired) &&
+            applications.holdsPermission(access.UI_CLIENT_ID, retired),
+            'the precondition: the old api row defines the permission and ' +
+            'the client holds it');
+    const changed = applications.retireDebuggerApiApplication();
+    t.equal(changed, 2, 'both seeded rows are changed');
+    t.check(!applications.get(access.RETIRED_API_IDENTIFIER) &&
+            !applications.forPermission(retired),
+            'the seeded api row is gone, and the permission with it');
+    t.check(!applications.holdsPermission(access.UI_CLIENT_ID, retired),
+            'and the client no longer holds a grant of it');
+    const ui = applications.clientConfigOf(access.UI_CLIENT_ID);
+    t.check(ui && String(ui.scope || '').indexOf(retired) < 0,
+            'nor declares it', JSON.stringify(ui && ui.scope));
+    t.equal(applications.retireDebuggerApiApplication(), 0,
+            'and a second start finds nothing to do');
+    // A ROW AN OPERATOR MADE under the old name is theirs.
+    const made = applications.createApplication({
+      identifier: access.RETIRED_API_IDENTIFIER, name: 'Hand made',
+      kind: 'oauth2-client', protocols: ['oauth2'],
+      fields: { oauthPermissionBaseUri: 'urn:sts:debugger-api:' } });
+    t.check(made && made.ok !== false, 'an operator makes a row by hand',
+            JSON.stringify(made && made.errors));
+    applications.retireDebuggerApiApplication();
+    t.check(!!applications.get(access.RETIRED_API_IDENTIFIER),
+            'and the retirement leaves it alone');
+    applications.deleteApplication(access.RETIRED_API_IDENTIFIER,
+                                   { actor: 'test' });
+    // Back to what this install seeds now.
+    applications.deleteApplication(access.UI_CLIENT_ID, { actor: 'test' });
+    applications.seedInternalApplications({ scope: 'default' });
+    t.check(!!applications.get(access.UI_CLIENT_ID),
+            'the current seed is restored');
+  });
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== C. isAdministrator(), with an empty and a real roster ===');
   // THE EMPTY ROSTER FIRST, with the console's rule ON: everybody who signs in
   // then holds both console roles, and the debugger must refuse them anyway —
   // rcbj, 2026-09-13. Asserted against the console's own answer, so the
@@ -136,11 +202,6 @@ async function run(t) {
               'and the DEBUGGER refuses her with the empty-roster code — ' +
               'nobody is an administrator of it until somebody is in a group',
               JSON.stringify(answer));
-      t.equal(access.narrowScope(scope, { kind: 'user', name: 'carol',
-                                          authenticated: true }, {}),
-              narrowed,
-              'so the authorization server leaves the permission off her ' +
-              'token');
     });
   });
   await withSettings({ 'admin.openWhenEmpty': 'false' }, async function () {
@@ -148,12 +209,11 @@ async function run(t) {
       t.check(adminRbac.rosterEmpty(),
               'the roster starts empty, which is what makes the next ' +
               'refusal about roles and not about a grant somebody left');
-      t.equal(access.narrowScope(scope, { kind: 'user', name: 'bob',
-                                          authenticated: true }, {}),
-              narrowed,
-              'C: a person holding no console role loses the permission — ' +
-              'and this process has NO XACML decider, so the policy layer ' +
-              'would have said yes to anything');
+      t.check(!access.isAdministrator({ kind: 'user', name: 'bob',
+                                        authenticated: true }).allowed,
+              'a person holding no console role is refused — and this ' +
+              'process has NO XACML decider, so the policy layer would have ' +
+              'said yes to anything');
     });
     const granted = inDefault(function () {
       return adminRbac.grant('alice', 'read', { via: 'test', actor: 'test' });
@@ -162,45 +222,20 @@ async function run(t) {
             'alice is granted Admin Read', JSON.stringify(granted));
     try {
       inDefault(function () {
-        t.equal(access.narrowScope(scope, { kind: 'user', name: 'alice',
-                                            authenticated: true }, {}),
-                scope,
-                'B: a console administrator keeps the whole scope, in its ' +
-                'order');
-        t.equal(access.narrowScope(scope, { kind: 'user', name: 'bob',
-                                            authenticated: true }, {}),
-                narrowed,
-                'and somebody else still loses it once a roster exists');
-        t.equal(access.narrowScope(scope, { kind: 'application',
-                                            name: 'alice',
-                                            authenticated: true }, {}),
-                narrowed,
-                'an APPLICATION loses it even under an administrator\'s ' +
+        t.check(access.isAdministrator({ kind: 'user', name: 'alice',
+                                         authenticated: true }).allowed,
+                'a console administrator is allowed');
+        t.check(!access.isAdministrator({ kind: 'user', name: 'bob',
+                                          authenticated: true }).allowed,
+                'and somebody else is still refused once a roster exists');
+        t.check(!access.isAdministrator({ kind: 'application',
+                                          name: 'alice',
+                                          authenticated: true }).allowed,
+                'an APPLICATION is refused even under an administrator\'s ' +
                 'name — people only');
-        t.equal(access.narrowScope(scope, { kind: 'user', name: 'alice',
-                                            authenticated: false }, {}),
-                narrowed,
-                'an administrator who did not authenticate loses it');
-        t.equal(access.narrowScope('openid profile', { kind: 'user',
-                                                       name: 'bob' }, {}),
-                'openid profile',
-                'a scope that does not name the permission is untouched');
-        t.check(access.isAdministrator({ kind: 'user', name: 'alice' })
-                  .allowed,
-                'isAdministrator() agrees for the gate');
-      });
-      // AN AMBIENT REALM AND NOT A CREATED ONE: creating a realm fires
-      // `pki.js`'s watcher, which builds the service Root in the background,
-      // and a later file in this process (tests/pki.js) builds its own Root
-      // and asserts on its subject. The rule reads `realms.currentId()` and
-      // nothing else, so an ambient record is the whole of what it needs.
-      realms.run({ id: 'dbgtest', name: 'dbgtest' }, function () {
-        t.equal(access.narrowScope(scope, { kind: 'user', name: 'alice',
-                                            authenticated: true }, {}),
-                narrowed,
-                'in any realm but the default one the permission is taken ' +
-                'off — a person there who shares an administrator\'s name ' +
-                'is somebody else');
+        t.check(!access.isAdministrator({ kind: 'user', name: 'alice',
+                                          authenticated: false }).allowed,
+                'an administrator who did not authenticate is refused');
       });
     } finally {
       inDefault(function () {
@@ -210,25 +245,15 @@ async function run(t) {
   });
 
   // -------------------------------------------------------------------------
-  t.log.info('=== D. oauth2.js asks at both grant points ===');
+  t.log.info('=== D. nothing narrows a debugger permission at issuance ===');
   const oauthSource = fs.readFileSync(path.join(__dirname, '..', 'oauth-oidc',
                                                 'oauth2.ts'), 'utf8');
-  const tokenSetBody = oauthSource.slice(oauthSource.indexOf(
-    'async tokenSet('), oauthSource.indexOf(
-    'async tokenSet(') + 16000);
-  t.check(/debuggerAccess\.narrowScope\(\s*opts\.scope/.test(tokenSetBody) &&
-          tokenSetBody.indexOf('debuggerAccess.narrowScope') <
-            tokenSetBody.indexOf('accessTokenPlan('),
-          'tokenSet() narrows opts.scope before the access token plan reads ' +
-          'it, so no grant mints the permission for somebody who may not ' +
-          'hold it');
-  const responseBody = oauthSource.slice(oauthSource.indexOf(
-    'async issueAuthorizationResponse('), oauthSource.indexOf(
-    'async issueAuthorizationResponse(') + 3000);
-  // `let` since #302, which narrows the admin scopes after it.
-  t.check(/\b(?:const|let) scope = debuggerAccess\.narrowScope\(/
-            .test(responseBody),
-          'and the authorization endpoint narrows before a code carries it');
+  t.check(oauthSource.indexOf('debugger_access') < 0 &&
+          oauthSource.indexOf('debuggerAccess') < 0,
+          'oauth2.ts no longer requires debugger_access: the debugger is ' +
+          'decided at its gate, not by what a token carries');
+  t.check(scopePolicy.protectedScopes().indexOf(retired) < 0,
+          'and the scope policy protects no debugger api permission');
 
   // -------------------------------------------------------------------------
   t.log.info('=== E. the api child\'s allow-list ===');
@@ -263,8 +288,9 @@ async function run(t) {
 
 module.exports = {
   name: 'debugger_access',
-  describe: 'the embedded debugger\'s permission: one spelling, issued to ' +
-            'console administrators only whatever the policy layer says, ' +
-            'narrowed at both grant points, and the api child\'s allow-list',
+  describe: 'the embedded debugger is one confidential client, the retired ' +
+            'api row is removed from an old install, only console ' +
+            'administrators pass whatever the policy layer says, and the ' +
+            'api child\'s allow-list',
   run: run
 };

@@ -201,6 +201,9 @@ class DomainMap {
           derived: !!field.derived,
           secret: !!(field.held && field.held.secret),
           path: field.held ? String(field.held.key).split('.') : [],
+          // A list an older build stored for a one-value field (#1579's
+          // review): `IssuedToken.clientId` on a v1.0.0 token row.
+          first: !!(field.held && field.held.transform === 'first'),
           type: field.type,
           wanted: field.type === 'integer' ? 'number' : field.type,
           array: !!field.array,
@@ -319,6 +322,15 @@ class DomainMap {
           break;
         }
         value = value[step.path[k]];
+      }
+      // THE READ-SIDE UPGRADE (#1579's review): a field marked `first` held
+      // as a list — a row a v1.0.0 build persisted, before the writer filed
+      // one string — is read as its first member that fits, so the row is
+      // not read as holding nothing. Nothing is rewritten in the store.
+      if (step.first && Array.isArray(value)) {
+        value = value.find(function (one: unknown) {
+          return DomainMap.fitsRecord(step, one);
+        });
       }
       if (step.array) {
         if (Array.isArray(value)) {

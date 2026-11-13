@@ -57,5 +57,12 @@
   "checks.result": "Resultado",
   "checks.detail": "Detalle",
   "checks.passed": "superada",
-  "checks.failed": "FALLIDA"
+  "checks.failed": "FALLIDA",
+  "withheld.title": "No se realizó la autenticación mutua",
+  "withheld.heading": "No se realizó la autenticación mutua",
+  "withheld.body": "El ticket se aceptó y el AP-REP se retuvo, porque se pidió <code>?mutual=off</code>. Nada ha demostrado qué servidor respondió, y no se inició ninguna sesión.",
+  "withheld.principal": "El ticket nombraba <code>{principal}</code>.",
+  "mutualClosed.title": "Ese control de prueba está cerrado",
+  "mutualClosed.heading": "Ese control de prueba está cerrado",
+  "mutualClosed.body": "Retener el AP-REP (<code>?mutual=off</code>) solo está abierto en desarrollo. El ticket no se aceptó y no se inició ninguna sesión."
 }

@@ -1096,6 +1096,9 @@ function normalise(record) {
     ['epoch', /\b1[789]\d{8}\b/g],
     // How long the process has been up, which a refusal of a code says.
     ['uptime', /up \d+ second\(s\)/g],
+    // An error page's incident ID, a process-wide count of the incidents
+    // before it: any earlier refusal anywhere in the run moves it.
+    ['incident', /(?<=Incident ID<\/dt><dd><code>)\d+/g],
     // A dynamically registered client's id.
     ['client', /sts-client-[A-Za-z0-9_-]+/g],
     // A sign-in transaction's handle, in a redirect's text body.

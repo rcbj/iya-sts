@@ -314,7 +314,7 @@ class PolicyTransfer {
     const alg = String(config.value('pki.policyExportAlgorithm') || 'RS256');
     if (!ALGORITHMS[alg]) {
       log.debug("Leaving PolicyTransfer.exportPolicies(). Algorithm.");
-      return this.refuse('STS-ADMIN-0924', '"' + alg + '" is not an ' +
+      return this.refuse('STS-ADMIN-0925', '"' + alg + '" is not an ' +
         'algorithm a policy export is signed with; they are ' +
         Object.keys(ALGORITHMS).join(', ') + '.');
     }
@@ -322,7 +322,7 @@ class PolicyTransfer {
     const root = pki.serviceRoot();
     if (!branch.ok || !root) {
       log.debug("Leaving PolicyTransfer.exportPolicies(). No branch.");
-      return this.refuse('STS-ADMIN-0924', 'This realm has no certificate ' +
+      return this.refuse('STS-ADMIN-0925', 'This realm has no certificate ' +
         'authority to sign an export under: ' +
         ((branch.errors || []).join(' ') || 'there is no service Root') +
         '. Build one on /admin/pki first.');
@@ -334,7 +334,7 @@ class PolicyTransfer {
       log.debug("Caught in PolicyTransfer.exportPolicies(): " +
                 ((e && e.message) || e));
       log.debug("Leaving PolicyTransfer.exportPolicies(). No key.");
-      return this.refuse('STS-ADMIN-0924', 'A ' + alg + ' signing key ' +
+      return this.refuse('STS-ADMIN-0925', 'A ' + alg + ' signing key ' +
         'could not be made: ' + ((e && e.message) || e));
     }
     const label = realmId || 'default';
@@ -349,7 +349,7 @@ class PolicyTransfer {
     });
     if (!made.ok) {
       log.debug("Leaving PolicyTransfer.exportPolicies(). Not certified.");
-      return this.refuse('STS-ADMIN-0924', 'The export signer could not be ' +
+      return this.refuse('STS-ADMIN-0925', 'The export signer could not be ' +
         'certified: ' + (made.errors || []).join(' '));
     }
     const chain = [made.record.certificatePem]
@@ -416,7 +416,7 @@ class PolicyTransfer {
     if (typeof input === 'string') {
       if (Buffer.byteLength(input, 'utf8') > MAX_DOCUMENT_BYTES) {
         log.debug("Leaving PolicyTransfer.readDocument(). Too large.");
-        return this.refuse('STS-ADMIN-0925', 'That is larger than a policy ' +
+        return this.refuse('STS-ADMIN-0926', 'That is larger than a policy ' +
           'export can be (' + MAX_DOCUMENT_BYTES + ' bytes).');
       }
       try {
@@ -425,7 +425,7 @@ class PolicyTransfer {
         log.debug("Caught in PolicyTransfer.readDocument(): " +
                   ((e && e.message) || e));
         log.debug("Leaving PolicyTransfer.readDocument(). Not JSON.");
-        return this.refuse('STS-ADMIN-0925', 'That is not JSON, so it is ' +
+        return this.refuse('STS-ADMIN-0926', 'That is not JSON, so it is ' +
           'not a policy export.');
       }
     }
@@ -435,7 +435,7 @@ class PolicyTransfer {
         typeof doc.payload !== 'string' || !part.test(doc.payload) ||
         typeof doc.signature !== 'string' || !part.test(doc.signature)) {
       log.debug("Leaving PolicyTransfer.readDocument(). Not a JWS.");
-      return this.refuse('STS-ADMIN-0925', 'That is not a policy export: ' +
+      return this.refuse('STS-ADMIN-0926', 'That is not a policy export: ' +
         'one is a JWS in the flattened JSON serialization, with protected, ' +
         'payload and signature members.');
     }
@@ -465,7 +465,7 @@ class PolicyTransfer {
           return typeof one === 'string' && /^[A-Za-z0-9+/=]+$/.test(one);
         })) {
       log.debug("Leaving PolicyTransfer.headerOf(). Not ours.");
-      return this.refuse('STS-ADMIN-0925', 'The document\'s protected ' +
+      return this.refuse('STS-ADMIN-0926', 'The document\'s protected ' +
         'header is not a policy export\'s: it names typ "' + TYP + '", an ' +
         'algorithm one is signed with (' + Object.keys(ALGORITHMS)
         .join(', ') + ') and the signer\'s whole chain in x5c.');
@@ -550,7 +550,7 @@ class PolicyTransfer {
     if (!payload || payload.format !== FORMAT ||
         payload.version !== VERSION || !Array.isArray(payload.kinds)) {
       log.debug("Leaving PolicyTransfer.claimsOf(). Not a format we read.");
-      return this.refuse('STS-ADMIN-0925', 'The signed content is not a ' +
+      return this.refuse('STS-ADMIN-0926', 'The signed content is not a ' +
         'policy export of version ' + VERSION + ' (format "' + FORMAT +
         '").');
     }
@@ -562,7 +562,7 @@ class PolicyTransfer {
     });
     if (unknown.length) {
       log.debug("Leaving PolicyTransfer.claimsOf(). Unknown kinds.");
-      return this.refuse('STS-ADMIN-0932', 'The export names a kind of ' +
+      return this.refuse('STS-ADMIN-0933', 'The export names a kind of ' +
         'policy this service does not have, or carries one unreadably: ' +
         unknown.join(', ') + '. Nothing was imported.');
     }
@@ -604,7 +604,7 @@ class PolicyTransfer {
       log.debug("Caught in PolicyTransfer.inspect(): " +
                 ((e && e.message) || e));
       log.debug("Leaving PolicyTransfer.inspect(). Unreadable chain.");
-      return this.refuse('STS-ADMIN-0926', 'A certificate in the ' +
+      return this.refuse('STS-ADMIN-0927', 'A certificate in the ' +
         'document\'s x5c is not an X.509 certificate.');
     }
     let verified: Json = null;
@@ -615,7 +615,7 @@ class PolicyTransfer {
       log.debug("Caught in PolicyTransfer.inspect(): " +
                 ((e && e.message) || e));
       log.debug("Leaving PolicyTransfer.inspect(). Signature.");
-      return this.refuse('STS-ADMIN-0926', 'The document\'s signature does ' +
+      return this.refuse('STS-ADMIN-0927', 'The document\'s signature does ' +
         'not verify with the key in its x5c: it was altered after it was ' +
         'signed, or it was never signed by that certificate.');
     }
@@ -657,7 +657,7 @@ class PolicyTransfer {
     };
     if (!verdict.ok) {
       log.debug("Leaving PolicyTransfer.inspect(). The door refused.");
-      return this.refuse('STS-ADMIN-0927', 'The signer\'s certificate chain ' +
+      return this.refuse('STS-ADMIN-0928', 'The signer\'s certificate chain ' +
         'was refused: ' + (verdict.why || verdict.code || 'it did not ' +
         'pass validation') + '. Nothing was imported.',
         Object.assign(answer, { ok: false }));
@@ -759,7 +759,7 @@ class PolicyTransfer {
       const yes = opts.trustSigner === true || opts.trustSigner === 'true';
       if (!yes) {
         log.debug("Leaving PolicyTransfer.importPolicies(). Not asked.");
-        return this.refuse('STS-ADMIN-0928', 'This export was signed by ' +
+        return this.refuse('STS-ADMIN-0929', 'This export was signed by ' +
           'another realm ("' + seen.realm + '", ' + seen.signer.subject +
           '). Nothing was imported: confirm that its chain is to be ' +
           'trusted for policy imports in this realm, and it is added to ' +
@@ -768,7 +768,7 @@ class PolicyTransfer {
       }
       if (wanted !== seen.issuerFingerprint) {
         log.debug("Leaving PolicyTransfer.importPolicies(). Another chain.");
-        return this.refuse('STS-ADMIN-0929', 'The confirmation names ' +
+        return this.refuse('STS-ADMIN-0930', 'The confirmation names ' +
           'another Issuing CA than this export\'s (' +
           seen.issuerFingerprint + '), so it is not an answer about this ' +
           'chain. Nothing was imported.',
@@ -777,7 +777,7 @@ class PolicyTransfer {
       const added = await this.trustChain(chainPems, String(opts.actor || ''));
       if ((added.refused || []).length) {
         log.debug("Leaving PolicyTransfer.importPolicies(). Store refused.");
-        return this.refuse('STS-ADMIN-0930', 'The signer\'s chain could not ' +
+        return this.refuse('STS-ADMIN-0931', 'The signer\'s chain could not ' +
           'be added to the signer truststore: ' + added.refused
           .map(function (one: Json) {
             return (one.subject ? one.subject + ': ' : '') + one.why;
@@ -788,7 +788,7 @@ class PolicyTransfer {
       const again = await this.inspect(input);
       if (!again.ok || again.origin !== 'trusted') {
         log.debug("Leaving PolicyTransfer.importPolicies(). Not trusted.");
-        return this.refuse('STS-ADMIN-0927', 'The signer\'s chain was ' +
+        return this.refuse('STS-ADMIN-0928', 'The signer\'s chain was ' +
           'added to the signer truststore and still did not validate ' +
           'through it: ' + ((again.errors || []).join(' ') || again.origin) +
           '. Nothing was imported.', { trustAdded: trustAdded });
@@ -827,7 +827,7 @@ class PolicyTransfer {
       return this.deps.errorCodes.mark(Object.assign(answer, {
         errors: refused.map(function (one: Json) {
           return one.kind + ' "' + one.name + '": ' + one.errors.join(' ');
-        }) }), 'STS-ADMIN-0931');
+        }) }), 'STS-ADMIN-0932');
     }
     log.debug("Leaving PolicyTransfer.importPolicies().");
     return answer;

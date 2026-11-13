@@ -2263,6 +2263,14 @@ const CODES = [
       'waits behind it (#770). Logged once per wait; one that repeats for a ' +
       'node lifetime names a write that does not finish.',
     spec: '' },
+  { code: 'STS-CLUSTER-0166',
+    summary: 'A response\'s writes committed, and a check deferred onto ' +
+      'that commit refused it, so it was answered 503 with Retry-After ' +
+      'instead of its success (#884\'s review). The one check today is an ' +
+      'access-token status index published without its own commit wait, ' +
+      'whose row the flush dropped because the block claim\'s fence was ' +
+      'gone: the token in the discarded body is not delivered.',
+    spec: 'RFC 9110 section 15.6.4' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -2798,6 +2806,12 @@ const CODES = [
   // ===== KEYS ==============================================================
   { code: 'STS-SCHED-0022',
     summary: 'The clock of this node differs from the database clock.' },
+  { code: 'STS-SCHED-0023',
+    summary: 'The store could not say whether some runs of the current ' +
+      'slot had already run (#883\'s review): those runs were held back ' +
+      'for this tick, neither run nor taken as finished, and are asked ' +
+      'about again at the next; every other run in the tick went on.',
+    spec: '' },
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
       'ignored.',
@@ -11694,6 +11708,15 @@ const CODES = [
       'block claim\'s fence was lost before its status row committed ' +
       '(#884). The access token is not minted on that index.',
     spec: 'none (recorded only)' },
+  { code: 'STS-OAUTH-1010',
+    summary: 'An access-token status index handed out without waiting for ' +
+      'its own commit (#884\'s review: a block already proven durable, ' +
+      'this process\'s origin claim fresh) was found, at the response\'s ' +
+      'commit, not to have been written: its block claim\'s fence was ' +
+      'gone, or the write failed. The response carrying the token is ' +
+      'refused (STS-CLUSTER-0166), and the block is handed out from no ' +
+      'more.',
+    spec: 'none (recorded; the response is the 503 STS-CLUSTER-0166 names)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -14026,6 +14049,15 @@ const CODES = [
       'token_type is not DPoP (RFC 9449 section 5). At sign-in the ' +
       'sign-in is refused; at a refresh the session is ended.',
     spec: 'HTTP 502' },
+  { code: 'STS-FED-0252',
+    summary: 'A FAPI 1.0 Advanced relationship\'s TLS client certificate ' +
+      '(RFC 8705) could not be issued, sealed, written or opened — when ' +
+      'fedFapi became 1-advanced, by the scheduler job ' +
+      'federation.client-certificate-renew, or at a token, refresh or ' +
+      'UserInfo request that needed it. Nothing is dialled without it: ' +
+      'at a sign-in the sign-in is refused, at a refresh the session is ' +
+      'ended.',
+    spec: 'HTTP 500 at a sign-in; console: the message; job: logged' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -18921,6 +18953,14 @@ const CODES = [
       'of a sign-in key. A published DID takes a key that is not ' +
       'enrolled for sign-in.',
     spec: 'HTTP 400 refusal at /authn-api/wallet' },
+  { code: 'STS-VC-0179',
+    summary: 'A key was refused as a person\'s self-issued sign-in ' +
+      'subject (did:jwk, did:key or JWK thumbprint) because a version of ' +
+      'a DID this realm publishes for that person names it (#775, the ' +
+      'reverse of STS-VC-0178). The public document and the sign-in key ' +
+      'would have been one key.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet, or at ' +
+      '/admin-api/users/enrol-self-issued-subject' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -23274,8 +23314,11 @@ const CODES = [
     spec: 'HTTP 400, an error message' },
   { code: 'STS-AUTHZEN-0009',
     summary: 'An AuthZEN request, or its subject, action or resource, ' +
-      'carried a member AuthZEN 1.0 does not define.',
-    spec: 'HTTP 400, an error message' },
+      'carried a member AuthZEN 1.0 does not define. Retired by #936 ' +
+      '(2026-11-13): AuthZEN 1.0 section 10.1.1 has a receiver ignore an ' +
+      'unknown member, so every /access/v1 request now accepts and ignores ' +
+      'one, and an Action Search\'s action with it.',
+    spec: '', retired: true },
   { code: 'STS-AUTHZEN-0010',
     summary: 'An AuthZEN attribute catalogue row was refused: not a JSON ' +
       'object, an unknown member, or an object, property path, attributeId, ' +
@@ -25451,6 +25494,12 @@ const CODES = [
       '(entriesNamingOwner()).',
     spec: '' },
   { code: 'STS-ADMIN-0924',
+    summary: 'A role a deleted application owned (its roleApplication named ' +
+      'the application) could not be deleted with it, so an application ' +
+      'registered later under that identifier finds the role already there ' +
+      '(roles.forgetApplicationRoles()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0925',
     summary: 'A policy export could not be signed (#1713): ' +
       'pki.policyExportAlgorithm names no algorithm an export is signed ' +
       'with, the realm has no certificate authority branch or service ' +
@@ -25458,7 +25507,7 @@ const CODES = [
       'Export Signing CA would not certify it. Nothing was exported.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-ADMIN-0925',
+  { code: 'STS-ADMIN-0926',
     summary: 'A document offered as a policy export is not one (#1713): ' +
       'not JSON, larger than 2 MiB, not a JWS in the flattened JSON ' +
       'serialization, a protected header without typ ' +
@@ -25467,14 +25516,14 @@ const CODES = [
       'version. Nothing was imported.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-ADMIN-0926',
+  { code: 'STS-ADMIN-0927',
     summary: 'A policy export\'s signature does not verify with the key in ' +
       'its x5c, or a certificate there is not X.509 (#1713): it was ' +
       'altered after it was signed, or never signed by that certificate. ' +
       'Nothing was imported.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-ADMIN-0927',
+  { code: 'STS-ADMIN-0928',
     summary: 'A policy export\'s signer chain was refused by the ' +
       'validation door for policy-signer (#1713), forced to the full ' +
       'paranoid checks while pki.paranoidPolicySigner is on; the answer ' +
@@ -25483,7 +25532,7 @@ const CODES = [
       'Nothing was imported.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-ADMIN-0928',
+  { code: 'STS-ADMIN-0929',
     summary: 'A policy export was signed by another realm, of this service ' +
       'or another, whose chain this realm\'s signer truststore does not ' +
       'hold, and the import did not confirm it is to be trusted ' +
@@ -25491,13 +25540,13 @@ const CODES = [
       'ask an administrator about. Nothing was imported.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-ADMIN-0929',
+  { code: 'STS-ADMIN-0930',
     summary: 'A policy import confirmed trust in a chain whose Issuing CA ' +
       'fingerprint is not the export\'s (#1713), so the confirmation is ' +
       'not an answer about this signer. Nothing was imported or trusted.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-ADMIN-0930',
+  { code: 'STS-ADMIN-0931',
     summary: 'An administrator confirmed trust in another realm\'s policy ' +
       'export signer and the signer truststore refused part of its chain ' +
       '(the admission rule, or a full store), so nothing was imported ' +
@@ -25505,19 +25554,19 @@ const CODES = [
       'until it is removed on /admin/pki/trust.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-ADMIN-0931',
+  { code: 'STS-ADMIN-0932',
     summary: 'A verified policy export was imported and one or more of its ' +
       'profiles was refused by its kind\'s own save (#1713); each is named ' +
       'with that kind\'s code. The others were written.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-ADMIN-0932',
+  { code: 'STS-ADMIN-0933',
     summary: 'A policy export names a kind of policy this service does not ' +
       'have, or carries one without a list of profiles (#1713). Nothing ' +
       'was imported.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-ADMIN-0933',
+  { code: 'STS-ADMIN-0934',
     summary: 'A policy transfer action was asked for that is not export, ' +
       'inspect or import (#1713).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
@@ -27686,44 +27735,41 @@ const CODES = [
       '(#825).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
-    summary: 'The debugger permission was asked for by somebody who may ' +
-      'not hold it — not a person, not signed in, not in the ' +
-      'default realm, or not a console administrator — and was left ' +
-      'off the token.',
-    spec: 'none — the token is issued without that scope (RFC 6749 ' +
-      'section 3.3)' },
+    summary: 'The debugger was refused to a subject that is not a person, ' +
+      'is not named, or did not authenticate.',
+    spec: 'HTTP 403 page or JSON' },
   { code: 'STS-DBG-0002',
-    summary: 'A request to the debugger carried no debugger session and no ' +
-      'bearer token, and was not a page a browser could be sent to ' +
-      'sign in from.',
-    spec: 'HTTP 401 with WWW-Authenticate: Bearer' },
+    summary: 'A request to the debugger carried no debugger session, and ' +
+      'was not a page a browser could be sent to sign in from. The ' +
+      'debugger accepts no access token (#1717).',
+    spec: 'HTTP 401' },
   { code: 'STS-DBG-0003',
     summary: 'A debugger access token did not verify against the default ' +
       'realm\'s signing key, or could not be read.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0004',
     summary: 'A debugger access token had expired.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0005',
     summary: 'A token presented to the debugger was not a JWT access token ' +
       '(typ at+jwt).',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0006',
     summary: 'A debugger access token was issued by somebody other than ' +
       'this service\'s default authorization server.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0007',
     summary: 'A debugger access token was addressed to a different ' +
       'audience.',
-    spec: 'HTTP 403 insufficient_scope' },
+    spec: 'HTTP 403 insufficient_scope', retired: true },
   { code: 'STS-DBG-0008',
     summary: 'A debugger access token did not carry the debugger ' +
       'permission.',
-    spec: 'HTTP 403 insufficient_scope' },
+    spec: 'HTTP 403 insufficient_scope', retired: true },
   { code: 'STS-DBG-0009',
-    summary: 'The access policy refused the debugger to the token\'s ' +
-      'subject — ordinarily because they no longer hold a console ' +
-      'role.',
+    summary: 'The debugger was refused to the signed-in person — they hold ' +
+      'no console role (perhaps no longer), or the access policy ' +
+      'refused them.',
     spec: 'HTTP 403 page or JSON' },
   { code: 'STS-DBG-0010',
     summary: 'The debugger\'s api process is not running, so an /api call ' +
@@ -27783,31 +27829,29 @@ const CODES = [
       'build its report.',
     spec: 'HTTP 500 page or JSON' },
   { code: 'STS-DBG-0024',
-    summary: 'The debugger permission was refused because neither console ' +
-      'role group has a member: the empty-roster rule that opens the ' +
-      'console to everybody does not open the debugger.',
-    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
-      'debugger' },
+    summary: 'The debugger was refused because neither console role group ' +
+      'has a member: the empty-roster rule that opens the console to ' +
+      'everybody does not open the debugger.',
+    spec: 'HTTP 403 at the debugger' },
   { code: 'STS-DBG-0030',
     summary: 'A certificate-bound access token (RFC 8705 cnf x5t#S256) was ' +
       'presented to the debugger on a connection without that certificate.',
-    spec: 'invalid_token (HTTP 401)' },
+    spec: 'invalid_token (HTTP 401)', retired: true },
   // #34 (2026-09-15), the DPoP half of the row above.
   { code: 'STS-DBG-0031',
     summary: 'A DPoP-bound access token (cnf.jkt) was presented to the ' +
       'debugger as a Bearer token.',
-    spec: 'invalid_token (HTTP 401)' },
+    spec: 'invalid_token (HTTP 401)', retired: true },
   { code: 'STS-DBG-0032',
     summary: 'A DPoP proof presented to the debugger did not verify, and the ' +
       'proof check reported no code of its own.',
-    spec: 'invalid_dpop_proof (HTTP 401)' },
+    spec: 'invalid_dpop_proof (HTTP 401)', retired: true },
   { code: 'STS-DBG-0033',
-    summary: 'Product mode: the debugger permission was refused to the ' +
-      'bootstrap administrator because it has not yet claimed the console ' +
-      'with its password; until it has, its roles are honoured at the ' +
-      'console alone, from a password sign-in (#103).',
-    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
-      'debugger' },
+    summary: 'Product mode: the debugger was refused to the bootstrap ' +
+      'administrator because it has not yet claimed the console with its ' +
+      'password; until it has, its roles are honoured at the console ' +
+      'alone, from a password sign-in (#103).',
+    spec: 'HTTP 403 at the debugger' },
   // #956. Recorded, never sent. The public token is named in `spec`.
   { code: 'STS-REPORT-0001',
     summary: 'A report query named a source the catalog does not publish.',

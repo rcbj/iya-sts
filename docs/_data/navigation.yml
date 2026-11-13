@@ -195,6 +195,7 @@
     - { title: Caches, url: /caches.html }
     - { title: How the cluster works, url: /cluster-concepts.html }
     - { title: A cluster in AWS, url: /aws-cluster.html }
+    - { title: A CDN in front of a cloud deployment, url: /cdn.html }
     - { title: Several regions (cells), url: /cells.html }
     - { title: How cells work, url: /cells-concepts.html }
 

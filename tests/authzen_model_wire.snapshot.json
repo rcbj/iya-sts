@@ -820,7 +820,7 @@
    "step": "evaluation: a stray top member",
    "method": "POST",
    "path": "/realm/azwire/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -832,10 +832,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An access evaluation request has no member \"extra\"; it takes subject, action, resource and context."
-    }
+    "decision": true
    }
   },
   {
@@ -843,7 +840,7 @@
    "step": "evaluation: a stray top member, long",
    "method": "POST",
    "path": "/realm/azwire/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -855,10 +852,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An access evaluation request has no member \"mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm\"; it takes subject, action, resource and context."
-    }
+    "decision": true
    }
   },
   {
@@ -1004,7 +998,7 @@
    "step": "evaluation: a stray subject member",
    "method": "POST",
    "path": "/realm/azwire/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -1016,10 +1010,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "subject has no member \"name\"; it takes type, id, properties."
-    }
+    "decision": true
    }
   },
   {
@@ -1027,7 +1018,7 @@
    "step": "evaluation: a stray action member",
    "method": "POST",
    "path": "/realm/azwire/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -1039,10 +1030,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "action has no member \"id\"; it takes name, properties."
-    }
+    "decision": true
    }
   },
   {
@@ -1050,7 +1038,7 @@
    "step": "evaluation: a stray resource member",
    "method": "POST",
    "path": "/realm/azwire/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -1062,9 +1050,64 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "resource has no member \"owner\"; it takes type, id, properties."
+    "decision": false,
+    "context": {
+     "evaluation_id": "<eval>",
+     "evaluated_at": "<time>",
+     "reason": "approval_required",
+     "access_request": {
+      "expires_at": "<time>",
+      "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "binding_token": {
+       "jwt": {
+        "header": {
+         "alg": "RS256",
+         "typ": "JWT",
+         "kid": "<kid>",
+         "x5u": "https://<port>/pki/chain/azwire/<digest>.pem"
+        },
+        "claims": {
+         "aud": "https://<port>/realm/azwire/access/v1/access-requests",
+         "sub": "azalice",
+         "jti": "<jti>",
+         "typ": "authzen-access-request-denial",
+         "denial_expires_at": "<time>",
+         "evaluation_id": "<eval>",
+         "subject": {
+          "type": "user",
+          "id": "azalice"
+         },
+         "resource": {
+          "type": "d",
+          "id": "x"
+         },
+         "action": {
+          "name": "read"
+         },
+         "context": {},
+         "binding_context_members": [],
+         "caller": "uid=azpep,ou=users,dc=azwire,dc=example,dc=com",
+         "application": "todo-app",
+         "terms": {
+          "roles": [],
+          "groups": [
+           "azwapprovers"
+          ],
+          "owners": false,
+          "maxSeconds": 3600,
+          "emergency": true,
+          "contextMembers": [],
+          "template": "",
+          "reason": ""
+         },
+         "iat": "<epoch>",
+         "exp": "<epoch>",
+         "iss": "https://<port>/realm/azwire"
+        },
+        "signed": true
+       }
+      }
+     }
     }
    }
   },
@@ -2062,13 +2105,7 @@
       }
      },
      {
-      "decision": false,
-      "context": {
-       "error": {
-        "status": 400,
-        "message": "An access evaluation request has no member \"colour\"; it takes subject, action, resource and context."
-       }
-      }
+      "decision": true
      },
      {
       "decision": false,
@@ -2357,7 +2394,7 @@
    "step": "batch, a stray member",
    "method": "POST",
    "path": "/realm/azwire/access/v1/evaluations",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -2369,10 +2406,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An access evaluations request has no member \"items\"; it takes subject, action, resource, context, evaluations, options."
-    }
+    "decision": true
    }
   },
   {
@@ -2775,7 +2809,7 @@
    "step": "search action, an action sent",
    "method": "POST",
    "path": "/realm/azwire/access/v1/search/action",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -2787,10 +2821,16 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An Action Search request carries no action member (section 8.6)."
-    }
+    "page": {
+     "next_token": "",
+     "count": 1,
+     "total": 1
+    },
+    "results": [
+     {
+      "name": "inspect"
+     }
+    ]
    }
   },
   {
@@ -2821,7 +2861,7 @@
    "step": "search: page a stray member",
    "method": "POST",
    "path": "/realm/azwire/access/v1/search/resource",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -2833,10 +2873,65 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "page is an object with token (a string from a previous next_token), limit (a non-negative integer) and properties (an object), each optional."
-    }
+    "page": {
+     "next_token": "",
+     "count": 13,
+     "total": 13
+    },
+    "results": [
+     {
+      "type": "application",
+      "id": "sts-account-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-admin-console"
+     },
+     {
+      "type": "application",
+      "id": "sts-api-client"
+     },
+     {
+      "type": "application",
+      "id": "sts-authzen-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-management-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-report"
+     },
+     {
+      "type": "application",
+      "id": "sts-report-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-resource"
+     },
+     {
+      "type": "application",
+      "id": "sts-uma-protection-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-user-portal"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-a"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-b"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-c"
+     }
+    ]
    }
   },
   {
@@ -2959,7 +3054,7 @@
    "step": "search, a stray member",
    "method": "POST",
    "path": "/realm/azwire/access/v1/search/resource",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -2971,10 +3066,65 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An access evaluation request has no member \"colour\"; it takes subject, action, resource and context."
-    }
+    "page": {
+     "next_token": "",
+     "count": 13,
+     "total": 13
+    },
+    "results": [
+     {
+      "type": "application",
+      "id": "sts-account-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-admin-console"
+     },
+     {
+      "type": "application",
+      "id": "sts-api-client"
+     },
+     {
+      "type": "application",
+      "id": "sts-authzen-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-management-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-report"
+     },
+     {
+      "type": "application",
+      "id": "sts-report-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-resource"
+     },
+     {
+      "type": "application",
+      "id": "sts-uma-protection-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-user-portal"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-a"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-b"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-c"
+     }
+    ]
    }
   },
   {
@@ -3185,7 +3335,7 @@
   },
   {
    "mode": "development",
-   "step": "submission: a stray member",
+   "step": "submission: a stray member beside no denial",
    "method": "POST",
    "path": "/realm/azwire/access/v1/access-requests",
    "status": 400,
@@ -3200,10 +3350,10 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "type": "about:blank",
-    "title": "Bad request",
+    "type": "urn:openid:authzen:access-request:error:not_requestable",
+    "title": "Access is not requestable",
     "status": 400,
-    "detail": "An access request has no member \"colour\"; it takes subject, resource, action, context, denial, requested_access, client, callback."
+    "detail": "The request carries no denial with the binding_token of a requestable denial, so it is not based on one."
    }
   },
   {
@@ -5261,7 +5411,7 @@
    "step": "evaluation: a stray top member",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -5274,10 +5424,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An access evaluation request has no member \"extra\"; it takes subject, action, resource and context."
-    }
+    "decision": true
    }
   },
   {
@@ -5285,7 +5432,7 @@
    "step": "evaluation: a stray top member, long",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -5298,10 +5445,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An access evaluation request has no member \"mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm\"; it takes subject, action, resource and context."
-    }
+    "decision": true
    }
   },
   {
@@ -5453,7 +5597,7 @@
    "step": "evaluation: a stray subject member",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -5466,10 +5610,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "subject has no member \"name\"; it takes type, id, properties."
-    }
+    "decision": true
    }
   },
   {
@@ -5477,7 +5618,7 @@
    "step": "evaluation: a stray action member",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -5490,10 +5631,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "action has no member \"id\"; it takes name, properties."
-    }
+    "decision": true
    }
   },
   {
@@ -5501,7 +5639,7 @@
    "step": "evaluation: a stray resource member",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/evaluation",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -5514,9 +5652,64 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "resource has no member \"owner\"; it takes type, id, properties."
+    "decision": false,
+    "context": {
+     "evaluation_id": "<eval>",
+     "evaluated_at": "<time>",
+     "reason": "approval_required",
+     "access_request": {
+      "expires_at": "<time>",
+      "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "binding_token": {
+       "jwt": {
+        "header": {
+         "alg": "RS256",
+         "typ": "JWT",
+         "kid": "<kid>",
+         "x5u": "https://<port>/pki/chain/azwirep/<digest>.pem"
+        },
+        "claims": {
+         "aud": "https://<port>/realm/azwirep/access/v1/access-requests",
+         "sub": "azalice",
+         "jti": "<jti>",
+         "typ": "authzen-access-request-denial",
+         "denial_expires_at": "<time>",
+         "evaluation_id": "<eval>",
+         "subject": {
+          "type": "user",
+          "id": "azalice"
+         },
+         "resource": {
+          "type": "d",
+          "id": "x"
+         },
+         "action": {
+          "name": "read"
+         },
+         "context": {},
+         "binding_context_members": [],
+         "caller": "uid=azpep,ou=users,dc=azwirep,dc=example,dc=com",
+         "application": "todo-app",
+         "terms": {
+          "roles": [],
+          "groups": [
+           "azwapprovers"
+          ],
+          "owners": false,
+          "maxSeconds": 3600,
+          "emergency": true,
+          "contextMembers": [],
+          "template": "",
+          "reason": ""
+         },
+         "iat": "<epoch>",
+         "exp": "<epoch>",
+         "iss": "https://<port>/realm/azwirep"
+        },
+        "signed": true
+       }
+      }
+     }
     }
    }
   },
@@ -6556,13 +6749,7 @@
       }
      },
      {
-      "decision": false,
-      "context": {
-       "error": {
-        "status": 400,
-        "message": "An access evaluation request has no member \"colour\"; it takes subject, action, resource and context."
-       }
-      }
+      "decision": true
      },
      {
       "decision": false,
@@ -6862,7 +7049,7 @@
    "step": "batch, a stray member",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/evaluations",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -6875,10 +7062,7 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An access evaluations request has no member \"items\"; it takes subject, action, resource, context, evaluations, options."
-    }
+    "decision": true
    }
   },
   {
@@ -7295,7 +7479,7 @@
    "step": "search action, an action sent",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/search/action",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7308,10 +7492,16 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An Action Search request carries no action member (section 8.6)."
-    }
+    "page": {
+     "next_token": "",
+     "count": 1,
+     "total": 1
+    },
+    "results": [
+     {
+      "name": "inspect"
+     }
+    ]
    }
   },
   {
@@ -7343,7 +7533,7 @@
    "step": "search: page a stray member",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/search/resource",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7356,10 +7546,65 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "page is an object with token (a string from a previous next_token), limit (a non-negative integer) and properties (an object), each optional."
-    }
+    "page": {
+     "next_token": "",
+     "count": 13,
+     "total": 13
+    },
+    "results": [
+     {
+      "type": "application",
+      "id": "sts-account-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-admin-console"
+     },
+     {
+      "type": "application",
+      "id": "sts-api-client"
+     },
+     {
+      "type": "application",
+      "id": "sts-authzen-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-management-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-report"
+     },
+     {
+      "type": "application",
+      "id": "sts-report-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-resource"
+     },
+     {
+      "type": "application",
+      "id": "sts-uma-protection-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-user-portal"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-a"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-b"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-c"
+     }
+    ]
    }
   },
   {
@@ -7487,7 +7732,7 @@
    "step": "search, a stray member",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/search/resource",
-   "status": 400,
+   "status": 200,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7500,10 +7745,65 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "error": {
-     "status": 400,
-     "message": "An access evaluation request has no member \"colour\"; it takes subject, action, resource and context."
-    }
+    "page": {
+     "next_token": "",
+     "count": 13,
+     "total": 13
+    },
+    "results": [
+     {
+      "type": "application",
+      "id": "sts-account-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-admin-console"
+     },
+     {
+      "type": "application",
+      "id": "sts-api-client"
+     },
+     {
+      "type": "application",
+      "id": "sts-authzen-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-management-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-report"
+     },
+     {
+      "type": "application",
+      "id": "sts-report-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-resource"
+     },
+     {
+      "type": "application",
+      "id": "sts-uma-protection-api"
+     },
+     {
+      "type": "application",
+      "id": "sts-user-portal"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-a"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-b"
+     },
+     {
+      "type": "application",
+      "id": "wire-app-c"
+     }
+    ]
    }
   },
   {
@@ -7720,7 +8020,7 @@
   },
   {
    "mode": "product",
-   "step": "submission: a stray member",
+   "step": "submission: a stray member beside no denial",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/access-requests",
    "status": 400,
@@ -7736,10 +8036,10 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "type": "about:blank",
-    "title": "Bad request",
+    "type": "urn:openid:authzen:access-request:error:not_requestable",
+    "title": "Access is not requestable",
     "status": 400,
-    "detail": "An access request has no member \"colour\"; it takes subject, resource, action, context, denial, requested_access, client, callback."
+    "detail": "The request carries no denial with the binding_token of a requestable denial, so it is not based on one."
    }
   },
   {

@@ -170,3 +170,9 @@ variable "bootstrap_admin_username" {
   default     = ""
   sensitive   = true
 }
+
+variable "direct_hostname" {
+  description = "Unread here: the CDN is the cells' (deploy/aws/environment/cloudfront.tf). Declared because a multi-cloud environment's cells file carries it."
+  type        = string
+  default     = ""
+}

@@ -95,6 +95,14 @@
     "en": "af65a7bf379c0b71",
     "text": "从 devices.androidStatusUrl 下载 Google 的 Android 密钥证明状态列表，并将其加载为风险数据集 android.attestation-status：哪些证明证书已被吊销或暂停。每天一次（devices.androidStatusRefreshS）；与当前生效列表相同的列表不加载任何内容。"
   },
+  "sched.jobs.federation.client-certificate-renew.title": {
+    "en": "f37b7eff9973c660",
+    "text": "联合客户端证书续期"
+  },
+  "sched.jobs.federation.client-certificate-renew.describe": {
+    "en": "655fd604e686a4d3",
+    "text": "为每个尚无证书的 FAPI 1.0 Advanced 联合关系签发 TLS 客户端证书，并为证书将在 federation.clientCertificateRenewDays 内到期的每个关系以相同主体签发新证书。"
+  },
   "sched.jobs.federation.encryption-key-retire.title": {
     "en": "0c323ec372941184",
     "text": "联合加密密钥退役"

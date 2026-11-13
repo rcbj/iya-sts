@@ -73,6 +73,20 @@ Scope: `admin:read`.
 | `category` | string |  |  |
 | `categoryCounts` | map |  |  |
 | `categoryCounts.{key}` | number |  |  |
+| `clientCertificate` | object |  |  |
+| `clientCertificate.certificatePem` | string |  |  |
+| `clientCertificate.chainPem` | list |  |  |
+| `clientCertificate.chainPem[]` | string |  |  |
+| `clientCertificate.held` | boolean |  |  |
+| `clientCertificate.notAfter` | string |  |  |
+| `clientCertificate.notBefore` | string |  |  |
+| `clientCertificate.renewDays` | number |  |  |
+| `clientCertificate.renewsAt` | string |  |  |
+| `clientCertificate.sealed` | boolean |  |  |
+| `clientCertificate.serialHex` | string |  |  |
+| `clientCertificate.subject` | string |  |  |
+| `clientCertificate.tokenAuth` | string |  |  |
+| `clientCertificate.x5tS256` | string |  |  |
 | `consumerProviders` | object |  |  |
 | `consumerProviders.catalogue` | list |  |  |
 | `consumerProviders.catalogue[].adapters` | list |  |  |
@@ -183,6 +197,7 @@ Scope: `admin:read`.
 | `fields.fedAuthorizeParams[]` | string |  |  |
 | `fields.fedAutocreateUsers` | string |  |  |
 | `fields.fedBinding` | string |  |  |
+| `fields.fedClientCertificate` | string |  |  |
 | `fields.fedClientId` | string |  |  |
 | `fields.fedClientSecret` | string |  |  |
 | `fields.fedClientSigningKey` | string |  |  |
@@ -710,6 +725,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -823,6 +839,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -1036,6 +1053,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -1149,6 +1167,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -1330,6 +1349,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -1443,6 +1463,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -1581,6 +1602,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -1694,6 +1716,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -1881,6 +1904,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -1994,6 +2018,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -2132,6 +2157,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -2245,6 +2271,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -2391,6 +2418,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |
@@ -2504,6 +2532,7 @@ Scope: `admin:write`.
 | `relationship.fedAuthorizeParams[]` | string |  |  |
 | `relationship.fedAutocreateUsers` | string |  |  |
 | `relationship.fedBinding` | string |  |  |
+| `relationship.fedClientCertificate` | string |  |  |
 | `relationship.fedClientId` | string |  |  |
 | `relationship.fedContentEncryptionAlgorithm` | string |  |  |
 | `relationship.fedDiscovery` | string |  |  |

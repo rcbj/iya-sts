@@ -413,6 +413,43 @@ function childMain() {
          subjectRow(ALICE, A.did).preferred === true,
          '3f. the pin follows the new version, and the preferred mark stays',
          JSON.stringify(subjectRow(ALICE, A.did)));
+    // #775 THE OTHER WAY ROUND (the review, 2026-11-13): a key a published
+    // version names is not enrolled as a sign-in subject — the current
+    // version's (k2) and a rotated-out one's (k1), whose version stays
+    // resolvable — over the wallet's enrolment round trip, by value from
+    // the console's act, and as a bare thumbprint. Another key still is.
+    const subjectsBefore = (w.inRealm(function () {
+      return siop.list(ALICE);
+    }) || []).length;
+    const enrolCurrent = await roundTrip(alice.who, k2, didJwkOf(k2),
+      didJwkOf(k2) + '#0', { enrol: '1' });
+    note(!enrolCurrent.ok && enrolCurrent.code === 'STS-VC-0179',
+         '3fa. the current version\'s key, proved by its did:jwk for ' +
+         'sign-in, is refused, STS-VC-0179', enrolCurrent.code);
+    const enrolOld = await w.inRealm(function () {
+      return siop.enrol(ALICE, didJwkOf(k1), 'old', SELF,
+                        { proof: 'wallet' });
+    });
+    const byValue = await w.inRealm(function () {
+      return siop.enrolByValue(ALICE, thumb(k2), 'typed', 'pd-admin');
+    });
+    note(!enrolOld.ok && enrolOld.code === 'STS-VC-0179' &&
+         !byValue.ok && byValue.code === 'STS-VC-0179',
+         '3fb. so is version 1\'s rotated-out key, and the current key ' +
+         'enrolled by value as a thumbprint',
+         JSON.stringify([enrolOld, byValue]));
+    const other = w.holderKey('ES256');
+    const enrolOther = await roundTrip(alice.who, other, didJwkOf(other),
+      didJwkOf(other) + '#0', { enrol: '1' });
+    const subjectsAfter = (w.inRealm(function () {
+      return siop.list(ALICE);
+    }) || []).length;
+    note(enrolOther.ok && subjectsAfter === subjectsBefore + 1,
+         '3fc. (a control: a key no version names is enrolled)',
+         enrolOther.code + ' ' + subjectsBefore + '->' + subjectsAfter);
+    await w.inRealm(function () {
+      return siop.remove(ALICE, didJwkOf(other), SELF);
+    });
     const oldKeyIn = await roundTrip(w.browser(), k1, A.did,
                                      A.did + '#' + thumb(k1));
     const newKeyWho = w.browser();

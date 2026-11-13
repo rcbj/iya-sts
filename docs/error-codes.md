@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5470** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5466** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -54,9 +54,9 @@ is an ordinary outcome.
 * [Service core (`STS-CORE`)](#sts-core) — 108
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 52
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 33
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 22
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 23
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 263
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
@@ -64,11 +64,11 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 757
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 758
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
-* [Federation (`STS-FED`)](#sts-fed) — 226
+* [Federation (`STS-FED`)](#sts-fed) — 227
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 167
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 165
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 166
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 141
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 282
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 283
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -490,6 +490,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0163` | A spend against a shared budget could not be refunded: the store could not be asked (#432 phase 5). | — |
 | `STS-CLUSTER-0164` | The flush that was to give back a directory create's claims (its DN and username) failed, so they stay held until they expire (two minutes): the release is a statement of the transaction that writes the entry, or follows that flush on one node, and goes back with it (#628). A create of one of those names before then waits and is refused as in progress (STS-LDAP-0092). | — |
 | `STS-CLUSTER-0165` | Taking over a lease is waiting for writes the previous holder still has in flight under it: the ask is bounded by the heartbeat's own bound, rolls back when the bound runs out, and is made again on the next heartbeat, so this node's own renewal never waits behind it (#770). Logged once per wait; one that repeats for a node lifetime names a write that does not finish. | — |
+| `STS-CLUSTER-0166` | A response's writes committed, and a check deferred onto that commit refused it, so it was answered 503 with Retry-After instead of its success (#884's review). The one check today is an access-token status index published without its own commit wait, whose row the flush dropped because the block claim's fence was gone: the token in the discarded body is not delivered. | RFC 9110 section 15.6.4 |
 
 ## STS-CELL
 
@@ -618,6 +619,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0020` | A cluster job is not registered in the request worker its run was handed to (#408), so it ran on the front process's thread, and every later run of it in this process does too; register it at its owner's load, or give it an onFront reason. | — |
 | `STS-SCHED-0021` | A cluster run's body on a request worker stopped owning its run because the leader had not renewed its grant in time (#1305): the leader's thread did not run, or its renewals did not arrive. The body stops at its next step; the leader, or the attempt that takes the run over, decides the run. | — |
 | `STS-SCHED-0022` | The clock of this node differs from the database clock. | — |
+| `STS-SCHED-0023` | The store could not say whether some runs of the current slot had already run (#883's review): those runs were held back for this tick, neither run nor taken as finished, and are asked about again at the next; every other run in the tick went on. | — |
 
 ## STS-KEYS
 
@@ -2540,6 +2542,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1007` | A dynamic client registration, an RFC 7592 update or an OpenID Federation automatic registration carried a member of a JSON type models/oauth/oauth_members.tsp's RegistrationRequest does not allow (grant_types as a string, client_name as a number, an array holding a non-string) that no more specific refusal tested (rcbj on #1579). Until 2026-11-11 it was recorded under STS-OAUTH-1005 and accepted. | invalid_client_metadata (HTTP 400), RFC 7591 section 3.2.2 |
 | `STS-OAUTH-1008` | Releasing access-token status-list block leases held by a stopped process failed (#884). The leases stay until they expire, so a restarted process keeps wasting blocks until then. | none (recorded only) |
 | `STS-OAUTH-1009` | An access-token status index was not published because the block claim's fence was lost before its status row committed (#884). The access token is not minted on that index. | none (recorded only) |
+| `STS-OAUTH-1010` | An access-token status index handed out without waiting for its own commit (#884's review: a block already proven durable, this process's origin claim fresh) was found, at the response's commit, not to have been written: its block claim's fence was gone, or the write failed. The response carrying the token is refused (STS-CLUSTER-0166), and the block is handed out from no more. | none (recorded; the response is the 503 STS-CLUSTER-0166 names) |
 
 ## STS-SAML
 
@@ -3028,6 +3031,7 @@ Raised from: federation/.
 | `STS-FED-0249` | A FAPI 2 partner's authorization response names no issuer (RFC 9207), which FAPI 2.0 Security Profile section 5.3.2.2 has the client verify. | HTTP 401 |
 | `STS-FED-0250` | A FAPI partner's JARM response JWT carries no exp, which JARM section 4.4 has the client check. | HTTP 401 |
 | `STS-FED-0251` | A FAPI 2 partner's token response is not DPoP-bound: its token_type is not DPoP (RFC 9449 section 5). At sign-in the sign-in is refused; at a refresh the session is ended. | HTTP 502 |
+| `STS-FED-0252` | A FAPI 1.0 Advanced relationship's TLS client certificate (RFC 8705) could not be issued, sealed, written or opened — when fedFapi became 1-advanced, by the scheduler job federation.client-certificate-renew, or at a token, refresh or UserInfo request that needed it. Nothing is dialled without it: at a sign-in the sign-in is refused, at a refresh the session is ended. | HTTP 500 at a sign-in; console: the message; job: logged |
 
 ## STS-OIDFED
 
@@ -4140,6 +4144,7 @@ Raised from: oid4vc/.
 | `STS-VC-0176` | A person's published DID already has the most versions one DID keeps (50), so it takes no more key changes (#1291). | HTTP 400 refusal at /account-api or /authn-api/wallet |
 | `STS-VC-0177` | The DID document of a person re-homed to another cell could not be fetched from that cell over the inter-cell channel (#1291). | HTTP 503 {error: temporarily_unavailable} at /users/{rid}/did.json |
 | `STS-VC-0178` | A key a wallet proved for a person's published DID was refused because it is already enrolled for that person as a sign-in key (#775). The document would have been a public copy of a sign-in key. A published DID takes a key that is not enrolled for sign-in. | HTTP 400 refusal at /authn-api/wallet |
+| `STS-VC-0179` | A key was refused as a person's self-issued sign-in subject (did:jwk, did:key or JWK thumbprint) because a version of a DID this realm publishes for that person names it (#775, the reverse of STS-VC-0178). The public document and the sign-in key would have been one key. | HTTP 400 refusal at /authn-api/wallet, or at /admin-api/users/enrol-self-issued-subject |
 
 ## STS-SSF
 
@@ -5098,7 +5103,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0006` | An AuthZEN property's value did not fit its catalogue row's datatype: a JSON type that may not reach it (a number for a string, a fraction for an integer), or a string that does not parse at it. | HTTP 400, an error message |
 | `STS-AUTHZEN-0007` | An AuthZEN property sent an array for a catalogue row whose multiplicity is single, or a bag with too many values. | HTTP 400, an error message |
 | `STS-AUTHZEN-0008` | An AuthZEN property sent an object where its catalogue row takes a value, an object or array inside a bag, or objects nested too deeply. | HTTP 400, an error message |
-| `STS-AUTHZEN-0009` | An AuthZEN request, or its subject, action or resource, carried a member AuthZEN 1.0 does not define. | HTTP 400, an error message |
+| `STS-AUTHZEN-0009` *(retired)* | An AuthZEN request, or its subject, action or resource, carried a member AuthZEN 1.0 does not define. Retired by #936 (2026-11-13): AuthZEN 1.0 section 10.1.1 has a receiver ignore an unknown member, so every /access/v1 request now accepts and ignores one, and an Action Search's action with it. | — |
 | `STS-AUTHZEN-0010` | An AuthZEN attribute catalogue row was refused: not a JSON object, an unknown member, or an object, property path, attributeId, category, dataType or multiplicity that is not one the catalogue takes. | the write is refused |
 | `STS-AUTHZEN-0011` | An AuthZEN attribute catalogue row was refused because it maps onto a reserved identifier — this service's own urn:sts:xacml: namespace, XACML's subject-id, resource-id or action-id, a current-time attribute, or context.application. A request-supplied attribute suppresses the PIP, so such a row would let a caller forge a trusted fact. | the write is refused |
 | `STS-AUTHZEN-0012` | An AuthZEN attribute catalogue row was refused because it sends a subject property under a bare directory attribute name, which the PIP reads off the subject's directory entry; for a subject this realm resolves the directory is authoritative. | the write is refused |
@@ -5589,16 +5594,17 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0921` | A deleted application's identifier could not be taken off the clients conferring a role, so whatever is next registered under that identifier still confers it (roles.forgetConferrer()). | — |
 | `STS-ADMIN-0922` | A deleted or renamed person or group could not be taken off, or moved on, the owners of a role, group, application or service account that named its DN, so that object still names the old DN (roles.forgetOwner(), applications.forgetOwner(), the directory's forgetOwnerReferences() and moveOwnerReferences()). | — |
 | `STS-ADMIN-0923` | The store named as many entries as one question answers for a deleted or renamed DN held in an owner attribute, so some groups or service accounts may still name it as an owner (entriesNamingOwner()). | — |
-| `STS-ADMIN-0924` | A policy export could not be signed (#1713): pki.policyExportAlgorithm names no algorithm an export is signed with, the realm has no certificate authority branch or service Root, the signing key could not be made, or the realm's Policy Export Signing CA would not certify it. Nothing was exported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0925` | A document offered as a policy export is not one (#1713): not JSON, larger than 2 MiB, not a JWS in the flattened JSON serialization, a protected header without typ policy-export+json, an algorithm an export is signed with or the signer's chain in x5c, or signed content of another format or version. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0926` | A policy export's signature does not verify with the key in its x5c, or a certificate there is not X.509 (#1713): it was altered after it was signed, or never signed by that certificate. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0927` | A policy export's signer chain was refused by the validation door for policy-signer (#1713), forced to the full paranoid checks while pki.paranoidPolicySigner is on; the answer carries the verdict and its own STS-PKI code. Or a chain just added to the signer truststore still did not validate through it. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0928` | A policy export was signed by another realm, of this service or another, whose chain this realm's signer truststore does not hold, and the import did not confirm it is to be trusted (trustSigner). The answer carries needsTrust and the chain to ask an administrator about. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0929` | A policy import confirmed trust in a chain whose Issuing CA fingerprint is not the export's (#1713), so the confirmation is not an answer about this signer. Nothing was imported or trusted. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0930` | An administrator confirmed trust in another realm's policy export signer and the signer truststore refused part of its chain (the admission rule, or a full store), so nothing was imported (#1713). What was added before the refusal is named, and stays until it is removed on /admin/pki/trust. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0931` | A verified policy export was imported and one or more of its profiles was refused by its kind's own save (#1713); each is named with that kind's code. The others were written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0932` | A policy export names a kind of policy this service does not have, or carries one without a list of profiles (#1713). Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0933` | A policy transfer action was asked for that is not export, inspect or import (#1713). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0924` | A role a deleted application owned (its roleApplication named the application) could not be deleted with it, so an application registered later under that identifier finds the role already there (roles.forgetApplicationRoles()). | — |
+| `STS-ADMIN-0925` | A policy export could not be signed (#1713): pki.policyExportAlgorithm names no algorithm an export is signed with, the realm has no certificate authority branch or service Root, the signing key could not be made, or the realm's Policy Export Signing CA would not certify it. Nothing was exported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0926` | A document offered as a policy export is not one (#1713): not JSON, larger than 2 MiB, not a JWS in the flattened JSON serialization, a protected header without typ policy-export+json, an algorithm an export is signed with or the signer's chain in x5c, or signed content of another format or version. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0927` | A policy export's signature does not verify with the key in its x5c, or a certificate there is not X.509 (#1713): it was altered after it was signed, or never signed by that certificate. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0928` | A policy export's signer chain was refused by the validation door for policy-signer (#1713), forced to the full paranoid checks while pki.paranoidPolicySigner is on; the answer carries the verdict and its own STS-PKI code. Or a chain just added to the signer truststore still did not validate through it. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0929` | A policy export was signed by another realm, of this service or another, whose chain this realm's signer truststore does not hold, and the import did not confirm it is to be trusted (trustSigner). The answer carries needsTrust and the chain to ask an administrator about. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0930` | A policy import confirmed trust in a chain whose Issuing CA fingerprint is not the export's (#1713), so the confirmation is not an answer about this signer. Nothing was imported or trusted. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0931` | An administrator confirmed trust in another realm's policy export signer and the signer truststore refused part of its chain (the admission rule, or a full store), so nothing was imported (#1713). What was added before the refusal is named, and stays until it is removed on /admin/pki/trust. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0932` | A verified policy export was imported and one or more of its profiles was refused by its kind's own save (#1713); each is named with that kind's code. The others were written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0933` | A policy export names a kind of policy this service does not have, or carries one without a list of profiles (#1713). Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0934` | A policy transfer action was asked for that is not export, inspect or import (#1713). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 
@@ -6112,15 +6118,15 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-DBG-0001` | The debugger permission was asked for by somebody who may not hold it — not a person, not signed in, not in the default realm, or not a console administrator — and was left off the token. | none — the token is issued without that scope (RFC 6749 section 3.3) |
-| `STS-DBG-0002` | A request to the debugger carried no debugger session and no bearer token, and was not a page a browser could be sent to sign in from. | HTTP 401 with WWW-Authenticate: Bearer |
-| `STS-DBG-0003` | A debugger access token did not verify against the default realm's signing key, or could not be read. | HTTP 401 invalid_token |
-| `STS-DBG-0004` | A debugger access token had expired. | HTTP 401 invalid_token |
-| `STS-DBG-0005` | A token presented to the debugger was not a JWT access token (typ at+jwt). | HTTP 401 invalid_token |
-| `STS-DBG-0006` | A debugger access token was issued by somebody other than this service's default authorization server. | HTTP 401 invalid_token |
-| `STS-DBG-0007` | A debugger access token was addressed to a different audience. | HTTP 403 insufficient_scope |
-| `STS-DBG-0008` | A debugger access token did not carry the debugger permission. | HTTP 403 insufficient_scope |
-| `STS-DBG-0009` | The access policy refused the debugger to the token's subject — ordinarily because they no longer hold a console role. | HTTP 403 page or JSON |
+| `STS-DBG-0001` | The debugger was refused to a subject that is not a person, is not named, or did not authenticate. | HTTP 403 page or JSON |
+| `STS-DBG-0002` | A request to the debugger carried no debugger session, and was not a page a browser could be sent to sign in from. The debugger accepts no access token (#1717). | HTTP 401 |
+| `STS-DBG-0003` *(retired)* | A debugger access token did not verify against the default realm's signing key, or could not be read. | HTTP 401 invalid_token |
+| `STS-DBG-0004` *(retired)* | A debugger access token had expired. | HTTP 401 invalid_token |
+| `STS-DBG-0005` *(retired)* | A token presented to the debugger was not a JWT access token (typ at+jwt). | HTTP 401 invalid_token |
+| `STS-DBG-0006` *(retired)* | A debugger access token was issued by somebody other than this service's default authorization server. | HTTP 401 invalid_token |
+| `STS-DBG-0007` *(retired)* | A debugger access token was addressed to a different audience. | HTTP 403 insufficient_scope |
+| `STS-DBG-0008` *(retired)* | A debugger access token did not carry the debugger permission. | HTTP 403 insufficient_scope |
+| `STS-DBG-0009` | The debugger was refused to the signed-in person — they hold no console role (perhaps no longer), or the access policy refused them. | HTTP 403 page or JSON |
 | `STS-DBG-0010` | The debugger's api process is not running, so an /api call could not be forwarded. | HTTP 502 |
 | `STS-DBG-0011` | Forwarding an /api call to the debugger's api process failed or timed out. | HTTP 502 or 504 |
 | `STS-DBG-0012` | An /api request body was larger than debugger.maxRequestBytes. | HTTP 413 |
@@ -6135,11 +6141,11 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 | `STS-DBG-0021` | A sign-out from the debugger did not carry the session's CSRF token. | HTTP 403 page |
 | `STS-DBG-0022` | A method other than GET or HEAD was sent to the debugger's static pages. | HTTP 405 |
 | `STS-DBG-0023` | The /admin/debugger page or GET /admin-api/debugger could not build its report. | HTTP 500 page or JSON |
-| `STS-DBG-0024` | The debugger permission was refused because neither console role group has a member: the empty-roster rule that opens the console to everybody does not open the debugger. | none at issuance (the scope is left off); HTTP 403 at the debugger |
-| `STS-DBG-0030` | A certificate-bound access token (RFC 8705 cnf x5t#S256) was presented to the debugger on a connection without that certificate. | invalid_token (HTTP 401) |
-| `STS-DBG-0031` | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
-| `STS-DBG-0032` | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
-| `STS-DBG-0033` | Product mode: the debugger permission was refused to the bootstrap administrator because it has not yet claimed the console with its password; until it has, its roles are honoured at the console alone, from a password sign-in (#103). | none at issuance (the scope is left off); HTTP 403 at the debugger |
+| `STS-DBG-0024` | The debugger was refused because neither console role group has a member: the empty-roster rule that opens the console to everybody does not open the debugger. | HTTP 403 at the debugger |
+| `STS-DBG-0030` *(retired)* | A certificate-bound access token (RFC 8705 cnf x5t#S256) was presented to the debugger on a connection without that certificate. | invalid_token (HTTP 401) |
+| `STS-DBG-0031` *(retired)* | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
+| `STS-DBG-0032` *(retired)* | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
+| `STS-DBG-0033` | Product mode: the debugger was refused to the bootstrap administrator because it has not yet claimed the console with its password; until it has, its roles are honoured at the console alone, from a password sign-in (#103). | HTTP 403 at the debugger |
 
 ## STS-REPORT
 
