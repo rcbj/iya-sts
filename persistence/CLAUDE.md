@@ -3796,7 +3796,7 @@ it is backwards compatibility from 1.0.0 on.** `sts_sessions_subject_band`
 with a plain `CREATE INDEX` inside its one transaction — a `SHARE` lock that
 held every session write for the build, minutes at a million sessions,
 while the start waited — and `sts_app`, which does not own the table, was
-refused `STS-STORE-0029`: the 1.0.1 image did not start on a 1.0.0 store
+refused `STS-STORE-0029`: the 1.1.0 image did not start on a 1.0.0 store
 until the owner had run `postgres/upgrade-1.0.0.sql`.
 
 Each is a COST and never a wrong answer — every statement that reads it asks

@@ -13,7 +13,7 @@
 // release 1.0.0. The driver's open() built a missing one with a plain CREATE
 // INDEX inside its own transaction — a SHARE lock holding every session write
 // for the build — and the least-privileged role, which does not own the
-// table, was refused (STS-STORE-0029), so the 1.0.1 image did not start on a
+// table, was refused (STS-STORE-0029), so the 1.1.0 image did not start on a
 // 1.0.0 store until the owner had run the upgrade script. Now
 // (`persistence/online_indexes.js`):
 //
