@@ -442,6 +442,21 @@ function holding(t) {
   t.check(/next is not one of/.test(GnapModel.undeclared('gnap-api-answer',
     { ok: true, next: 'elsewhere' }).join()),
           'D. a value outside the model\'s list is a gap');
+  // A view drawn for a signed-in person carries their own language as
+  // `authn.preferredLanguageOf()` answers it, `{ value, populated }` — the
+  // shape `/authn-api` models. Declared a string until 2026-11-12, so every
+  // such view was recorded under STS-GNAP-0910.
+  t.check(GnapModel.undeclared('gnap-api-answer',
+    { ok: true, view: { kind: 'code' }, csrf: 'c',
+      preferredLanguage: { value: 'fr-CA', populated: false } })
+    .length === 0,
+          'D. a view carrying the person\'s own language is the model\'s');
+  t.check(/preferredLanguage\.other is not a member of gnap-api-language/
+    .test(GnapModel.undeclared('gnap-api-answer', { ok: true,
+      preferredLanguage: { value: 'fr', other: 1 } }).join()) &&
+          /preferredLanguage is not object/.test(GnapModel.undeclared(
+            'gnap-api-answer', { ok: true, preferredLanguage: 'fr' }).join()),
+          'D. the language is held to its own closed set');
   const before = GnapModel.gaps().length;
   t.check(GnapModel.holdError('made_up_code', 'model_gnap') === true &&
           GnapModel.holdError('too_fast', 'model_gnap') === false &&
