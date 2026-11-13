@@ -736,7 +736,8 @@ const DOCUMENTS = [
     } },
   { family: "WS-Trust", spec: "WS-Trust 1.3", path: "/sts/metadata",
     type: WSDL_TYPE, json: false, badCredential: "ignored",
-    // THE WSDL (#958). SOAP WS-MetadataExchange is still not served. The
+    // THE WSDL (#958): a port type per trust version. WS-MetadataExchange
+    // is POST /sts/mex, a SOAP request rather than a document. The
     // certificate stays at /sts/cert; this document names that address and
     // does not carry the key.
     must: function (text) {
@@ -767,6 +768,45 @@ const DOCUMENTS = [
       }
       if (!/location="[^"]*\/sts"/.test(text)) {
         bad.push("the RST address is not /sts");
+      }
+      ["TrustMay2004", "TrustFeb2005", "Trust13", "Trust14"]
+        .forEach(function (name) {
+          if (text.indexOf('<wsdl:portType name="' + name + '">') < 0) {
+            bad.push("no port type " + name);
+          }
+        });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "WS-Trust", spec: "WS-Trust 1.3",
+    path: "/sts/metadata/capabilities", type: XML_TYPE, json: false,
+    badCredential: "ignored",
+    // THE TOKEN CAPABILITY EXTENSION (#958): every credential, every issued
+    // type and each pair, built from the running settings.
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<iya:TokenCapabilities[^>]*urn:iya-sts:metadata:token-capabilities:1/
+        .test(text)) {
+        bad.push("no iya:TokenCapabilities in version 1");
+      }
+      ["InputToken", "OutputToken", "Combination"].forEach(function (name) {
+        if (text.indexOf("<iya:" + name + " ") < 0) {
+          bad.push("no " + name);
+        }
+      });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "WS-Trust", spec: "WS-Trust 1.3",
+    path: "/sts/metadata/capabilities.xsd", type: XML_TYPE, json: false,
+    badCredential: "ignored",
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<xsd:schema[^>]*targetNamespace="urn:iya-sts:metadata:token-capabilities:1"/
+        .test(text)) {
+        bad.push("not the capability schema");
       }
       log.debug("Leaving must().");
       return bad;

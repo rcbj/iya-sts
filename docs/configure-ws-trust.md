@@ -76,8 +76,10 @@ the 2005/02 and 2004/04 namespaces, over SOAP 1.1 (`text/xml`) or SOAP 1.2
 (`application/soap+xml`). The answer is in the namespace and SOAP version the
 request used. `GET /sts` describes the endpoint and names the issuer every
 token carries: the realm's OAuth 2.0 issuer. `GET /sts/metadata` is the
-WSDL, with WS-SecurityPolicy for the credentials the running service
-accepts. `GET /sts/cert` is the certificate a relying party verifies an
+WSDL, a port type for each version and WS-SecurityPolicy for the
+credentials the running service accepts. `GET /sts/metadata/capabilities`
+says which credential can be exchanged for which token type, and
+`POST /sts/mex` serves both over WS-MetadataExchange. `GET /sts/cert` is the certificate a relying party verifies an
 assertion with.
 
 ## Register the relying party

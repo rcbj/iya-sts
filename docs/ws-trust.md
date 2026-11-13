@@ -24,7 +24,10 @@ the request used.
 |---|---|
 | `POST /sts` | the `RequestSecurityToken` endpoint, SOAP 1.1 or SOAP 1.2 |
 | `GET /sts` | what the endpoint is, and the issuer every token it issues names: the realm's OAuth 2.0 issuer (#523) |
-| `GET /sts/metadata` | WSDL 1.1 with WS-SecurityPolicy, describing the four versions, the four operations and every credential the running service accepts |
+| `GET /sts/metadata` | WSDL 1.1 with WS-SecurityPolicy: a port type for each of the four versions, with the operations and actions each defines, and every credential the running service accepts |
+| `GET /sts/metadata/capabilities` | the token capability document: every credential, every issued token type and each pair as supported, conditional or unsupported |
+| `GET /sts/metadata/capabilities.xsd` | the XML Schema of that document |
+| `POST /sts/mex` | WS-MetadataExchange (2004/09): the three documents above as one `mex:Metadata` |
 | `GET /sts/cert` | the signing certificate, the key a relying party verifies an assertion with |
 
 In a trust realm every path is under `/realm/{id}`. The full, current list is
@@ -39,28 +42,36 @@ content type: `text/xml` is SOAP 1.1) and the response uses the same one.
 service. It is WSDL 1.1, `Content-Type: application/wsdl+xml`, with
 `Cache-Control: no-store` because the address is the request's own base. The
 document is not signed and does not carry the signing certificate; that stays
-at `GET /sts/cert`. SOAP WS-MetadataExchange is not served, and `GET /sts`
-stays the plain-text description it has always been.
+at `GET /sts/cert`. `GET /sts` stays the plain-text description it has
+always been.
 
-Both ports, SOAP 1.1 and SOAP 1.2, give the RequestSecurityToken address as
-`{base}/sts`. The document's own URL is not that address. `soapAction` is
-empty: the service dispatches on `wst:RequestType`, not on SOAPAction or
-`wsa:Action`.
+**Each version is a contract of its own.** The document has a port type per
+version. Its messages are that version's own `RequestSecurityToken`,
+`RequestSecurityTokenResponse` and (except May 2004)
+`RequestSecurityTokenResponseCollection`, declared in a schema per trust
+namespace. Its operations are the ones that version defines. Each input and
+output carries the `wsam:Action` WS-Trust gives it, and an output's is the
+action this service writes on the answer:
 
-The versions the documentation names are the four the service speaks:
+| Port type | Namespace | Operations | Issue answers |
+|---|---|---|---|
+| `TrustMay2004` | `http://schemas.xmlsoap.org/ws/2004/04/trust` | Issue, Renew, Validate (May 2004 has no Cancel, which is refused as `wst:InvalidRequest`) | one `RequestSecurityTokenResponse`, action `…/RSTR/Issue` |
+| `TrustFeb2005` | `http://schemas.xmlsoap.org/ws/2005/02/trust` | Issue, Renew, Validate, Cancel | a collection, action `…/RSTRC/IssueFinal` |
+| `Trust13` | `http://docs.oasis-open.org/ws-sx/ws-trust/200512` | Issue, Renew, Validate, Cancel | a collection, action `…/RSTRC/IssueFinal` |
+| `Trust14` | 1.3's namespace, with `ActAs` in `http://docs.oasis-open.org/ws-sx/ws-trust/200802` | Issue, Renew, Validate, Cancel | a collection, action `…/RSTRC/IssueFinal` |
 
-* WS-Trust 1.3, and 1.4 for everything 1.3 defines,
-  `http://docs.oasis-open.org/ws-sx/ws-trust/200512` (no trailing slash);
-* ActAs only, `http://docs.oasis-open.org/ws-sx/ws-trust/200802`;
-* February 2005, `http://schemas.xmlsoap.org/ws/2005/02/trust`;
-* the May 2004 member submission,
-  `http://schemas.xmlsoap.org/ws/2004/04/trust`. An Issue in that namespace
-  is one `RequestSecurityTokenResponse`, and Cancel is refused as
-  `wst:InvalidRequest`.
+Renew, Validate and Cancel answer `…/RSTR/RenewFinal`, `…/RSTR/ValidateFinal`
+and `…/RSTR/CancelFinal` in the request's namespace. An input's action is
+`{namespace}/RST/{operation}`.
 
-The operations are Issue, Renew, Validate and Cancel. A request type that is
-none of those is answered as Issue. Key Exchange Token and BatchIssue are
-not implemented.
+Each version has a SOAP 1.1 and a SOAP 1.2 binding and port, eight ports in
+all, and every one gives the RequestSecurityToken address as `{base}/sts`:
+the service reads the version from the request's own namespace. The
+document's own URL is not that address. A SOAP 1.1 binding's `soapAction` is
+the input action, but the service dispatches on `wst:RequestType`, not on
+SOAPAction or `wsa:Action`, so a client may send either or neither. A request
+type that is none of the four is answered as Issue. Key Exchange Token and
+BatchIssue are not implemented.
 
 The credentials are one `wsp:ExactlyOne`. An alternative is present only
 while the running service accepts it, in the order the endpoint looks:
@@ -109,6 +120,108 @@ elements in one request are refused.
 
 No alternative names an algorithm suite. The policy says which token is
 accepted, not which suite the listener promises.
+
+### Which credential gets which token: the capability document
+
+WS-SecurityPolicy can list what is accepted and what is issued, but it cannot
+say which credential can be exchanged for which token type. So
+`GET /sts/metadata/capabilities` answers that as an IYA-STS extension, not a
+WS-* standard: `application/xml`, `Cache-Control: no-store`, namespace
+`urn:iya-sts:metadata:token-capabilities:1`, validated by the schema at
+`GET /sts/metadata/capabilities.xsd`. The WSDL names both in an optional
+`iya:TokenCapabilitiesReference` element, which a WSDL tool that does not
+know it ignores. The document is built from the same settings the endpoint
+runs with, so it changes when they do.
+
+```xml
+<iya:TokenCapabilities xmlns:iya="urn:iya-sts:metadata:token-capabilities:1"
+    version="1" endpoint="https://sts.example/sts" issuer="https://sts.example">
+  <iya:InputTokens>
+    <iya:InputToken id="username-token" enabled="true">
+      <iya:Name>WS-Security UsernameToken</iya:Name>
+      <iya:TokenType>http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#UsernameToken</iya:TokenType>
+      <iya:PolicyAssertion>sp:UsernameToken/sp:WssUsernameToken11</iya:PolicyAssertion>
+      <iya:Condition kind="subject">A person or service account …</iya:Condition>
+    </iya:InputToken>
+    …
+  </iya:InputTokens>
+  <iya:OutputTokens>
+    <iya:OutputToken id="kerberos" enabled="true" default="false">
+      …
+      <iya:ProofKey>SymmetricKey</iya:ProofKey>
+      <iya:Operations>Issue Validate</iya:Operations>
+      <iya:Condition kind="setting" setting="wstrust.issueKerberos">…</iya:Condition>
+      <iya:Condition kind="transport">Over TLS …</iya:Condition>
+      <iya:Condition kind="target">The AppliesTo is …</iya:Condition>
+    </iya:OutputToken>
+    …
+  </iya:OutputTokens>
+  <iya:Combinations>
+    <iya:Combination input="username-token" output="saml2" support="supported"/>
+    <iya:Combination input="username-token" output="kerberos" support="conditional">
+      <iya:Condition kind="transport">…</iya:Condition>
+      <iya:Condition kind="target">…</iya:Condition>
+    </iya:Combination>
+    …
+  </iya:Combinations>
+  <iya:DelegationTokens><iya:Token ref="saml2"/> …</iya:DelegationTokens>
+</iya:TokenCapabilities>
+```
+
+* **The credentials** (`InputToken`) are `x509-signature`, `username-token`,
+  `saml2`, `saml11`, `jwt`, `kerberos`, `tls-client-certificate` and `none`,
+  in the order the endpoint reads them. **The issued types** (`OutputToken`)
+  are `saml2` (the default), `saml11`, `jwt` and `kerberos`. Each row carries
+  its standard token type URIs; the `id` is only this document's name for the
+  row. `enabled="false"` is a row the running settings turn off.
+* **Every pair is written out** in `Combinations`, as `supported`,
+  `conditional` (with the conditions that decide it) or `unsupported` (with
+  the setting that turns it off). Today SAML 2.0, SAML 1.1 and JWT are
+  supported from every enabled credential, and Kerberos is conditional from
+  every one on TLS and a Kerberos AppliesTo, because the token issued depends
+  on who the requester is and not on which credential proved it. Do not
+  infer the matrix: read it. The issuance policy decides every issuance and is
+  not a condition of a pair, so a supported pair can still be refused for a
+  particular person or AppliesTo.
+* **`DelegationTokens`** are the token types accepted inside `OnBehalfOf` or
+  `ActAs`.
+* **A condition's `kind`** is `setting`, `mode`, `issuer`, `subject`,
+  `signature`, `carrier`, `target`, `transport` or `precedence`.
+
+**Versioning.** The version is in the namespace (`:1`) and on the root's
+`version`. A later version 1 document may add elements, attributes and
+condition kinds, and nothing else. A client ignores an element or attribute
+it does not know (the schema has an extension point in every element). It
+treats a pair carrying a condition `kind` it does not know as conditional,
+because it cannot check that condition. A change of meaning gets a new
+namespace.
+
+### WS-MetadataExchange
+
+`POST /sts/mex` answers WS-MetadataExchange as the 2004/09 submission
+defines it, which is what WS-Trust clients send (WCF's `svcutil`, Metro,
+CXF):
+
+* a WS-Transfer **Get**, action
+  `http://schemas.xmlsoap.org/ws/2004/09/transfer/Get` with an empty Body, is
+  answered with action `…/transfer/GetResponse` and every section;
+* a **GetMetadata**, action
+  `http://schemas.xmlsoap.org/ws/2004/09/mex/GetMetadata/Request`, is answered
+  with action `…/GetMetadata/Response` and the sections its `mex:Dialect` and
+  `mex:Identifier` select. A dialect this service has nothing in gets an
+  empty `mex:Metadata`, not a fault.
+
+The answer is in the request's SOAP version and WS-Addressing namespace (1.0
+or the 2004/08 submission), with `wsa:RelatesTo` naming the request's
+`wsa:MessageID`. The `mex:Metadata` holds three embedded sections: the WSDL
+(dialect `http://schemas.xmlsoap.org/wsdl/`), the token capability document
+(dialect and identifier its namespace) and its schema (dialect
+`http://www.w3.org/2001/XMLSchema`). A body that is not a SOAP envelope, or
+an action that is neither request, is a SOAP Client (SOAP 1.2: Sender)
+fault. WS-MEX is an address of its own: a Get sent to `POST /sts` is answered
+as `/sts` always answered it. Not implemented: a `MetadataReference` or
+`Location` section, and the namespace of the W3C WS-MetadataExchange 1.1
+Recommendation.
 
 ### The four operations
 
@@ -656,7 +769,8 @@ changed on `/admin/wstrust` or with `POST /admin-api/config/set`.
 * `GET /admin-api/wstrust` returns the same settings; the full API is in
   `/admin-api/openapi.json`.
 * `GET /sts` describes the endpoint live, in plain text. `GET /sts/metadata`
-  is the WSDL, with the credentials the running service accepts. Failures
+  is the WSDL, `GET /sts/metadata/capabilities` the credential and token-type
+  pairs, and `POST /sts/mex` both over WS-MetadataExchange. Failures
   are recorded under `STS-WSTRUST-NNNN` codes — see
   [Error codes](error-codes.md).
 

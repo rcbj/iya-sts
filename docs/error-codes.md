@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5445** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5447** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 435
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 757
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 71
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 222
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -2744,6 +2744,8 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0069` | A WS-Security signature's KeyInfo names a Kerberos token that the security header does not carry, by Reference or by its #Kerberosv5APREQSHA1 key identifier (#658). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0070` | A UsernameToken was refused without being checked: too many recent failures for that identity (#1448). | SOAP FailedAuthentication |
 | `STS-WSTRUST-0071` | A SOAP envelope /sts built — an RSTR, an RSTR collection or a Fault — does not match its model in models/ws/ (#1579): its root, an attribute, a fixed value, or a child element or its order, the SAML assertion inside held to models/saml/. The envelope is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the envelope is unchanged) |
+| `STS-WSTRUST-0072` | A request to POST /sts/mex (WS-MetadataExchange, #958) was not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not well-formed, or a root that is not soap:Envelope. | SOAP 1.1 Client fault, HTTP 500 (SOAP 1.1 section 6.2) |
+| `STS-WSTRUST-0073` | A request to POST /sts/mex (#958) carried a wsa:Action that is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata (2004/09), or none, so there is no metadata request to answer. | SOAP Client (SOAP 1.2: Sender) fault, HTTP 500 |
 
 ## STS-WSFED
 

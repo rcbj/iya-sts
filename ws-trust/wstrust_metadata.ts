@@ -13,7 +13,9 @@
 // and every credential this STS actually accepts. `GET /sts` stays the plain
 // text it has always been: `tests/ws_model_wire.js` records that body, and a
 // query on it would be a different document pretending to be the same one.
-// SOAP WS-MetadataExchange is not served. The document is not signed and
+// WS-MetadataExchange is `wstrust_mex.ts`, at `POST /sts/mex`, and the
+// credential/token-type pairs are `wstrust_capabilities.ts`'s document,
+// which this one names. The document is not signed and
 // carries no certificate; `GET /sts/cert` is the certificate, and a copy
 // embedded here would be yesterday's key after a development restart.
 //
@@ -34,8 +36,21 @@
 // empty alternative, which is development's missing credential and is absent
 // whenever `mode.verifiesCredentials()` is true.
 //
-// The RST address in both ports is `{base}/sts`. This document's own URL is
-// not an RST address.
+// EACH TRUST VERSION IS A CONTRACT OF ITS OWN. A port type per version
+// (TrustMay2004, TrustFeb2005, Trust13, Trust14), its messages that
+// version's own elements in a schema per namespace, its operations the ones
+// it defines (May 2004 has no Cancel), each input and output naming its
+// wsam:Action: WS-Trust's `{ns}/RST/{op}` in, and out the action
+// `wstrust.ts` writes, read from the model's `wst.action`. The schemas
+// declare the elements open (`xsd:any`): the children are the model's, and
+// a second, weaker statement of them here would drift. 1.4 is 1.3's
+// messages, because WS-Trust 1.4 keeps 1.3's namespace, with ActAs in 1.4's.
+// Until 2026-11-12 the document had one port type over `xsd:anyType` in a
+// private namespace, with the versions named only in prose, which no WSDL
+// tool could read a version from.
+//
+// The RST address in all eight ports is `{base}/sts`: the endpoint reads
+// the version from the request. This document's own URL is not one.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -46,6 +61,7 @@ import IssuerNames = require('../common/issuer_names');
 import Krb5Tokens = require('../kerberos/krb5_tokens');
 import SamlModel = require('../saml/saml_model');
 import WsModel = require('./ws_model');
+import WsTrustCapabilities = require('./wstrust_capabilities');
 
 const { log } = helpers;
 
@@ -61,12 +77,25 @@ const TNS = 'urn:iya-sts:ws-trust:metadata';
 const SP_NS = 'http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200802';
 const INCLUDE = SP_NS + '/IncludeToken/AlwaysToRecipient';
 const TRANSPORT = 'http://schemas.xmlsoap.org/soap/http';
+// WS-Addressing 1.0 Metadata: the wsam:Action on a WSDL input or output.
+const WSAM_NS = 'http://www.w3.org/2007/05/addressing/metadata';
+// The token capability extension's namespace (`wstrust_capabilities.ts`).
+const CAP_NS = 'urn:iya-sts:metadata:token-capabilities:1';
 
 type Flags = {
   acceptKerberos: boolean;
   issueKerberos: boolean;
   acceptClientCertificate: boolean;
   verifiesCredentials: boolean;
+};
+
+type TrustVersion = {
+  name: string;
+  prefix: string;
+  ns: string;
+  title: string;
+  operations: string[];
+  collection: boolean;
 };
 
 type Terms = {
@@ -104,6 +133,9 @@ type Terms = {
  * `document` with the flags it wants to see.
  */
 class WsTrustMetadata {
+  /** The WSDL's target namespace, and its WS-MEX section's identifier. */
+  static readonly NAMESPACE = TNS;
+
   /**
    * The WSDL for one base URL, one issuer and one set of flags.
    *
@@ -120,14 +152,22 @@ class WsTrustMetadata {
       this.open(terms) +
       '<wsdl:documentation>' + Html.esc(this.description(
         root, issuer, flags, terms)) + '</wsdl:documentation>' +
+      // The capability extension (#958), named here so a client reading
+      // only the WSDL finds it. Optional, so a WSDL 1.1 tool that does not
+      // know it must ignore it (WSDL 1.1 section 2.1.3).
+      '<iya:TokenCapabilitiesReference wsdl:required="false" ' +
+      'location="' + Html.esc(root + '/sts/metadata/capabilities') +
+      '" schemaLocation="' + Html.esc(root +
+        '/sts/metadata/capabilities.xsd') + '" metadataExchange="' +
+      Html.esc(root + '/sts/mex') + '"/>' +
       this.policy('RequesterAuthentication',
                   this.requester(flags, terms)) +
       this.policy('IssuedTokenTypes', this.issued(flags, terms)) +
-      this.types() +
-      this.portType() +
-      this.binding('Soap11', 'soap') +
-      this.binding('Soap12', 'soap12') +
-      this.service(root) +
+      this.types(terms) +
+      this.messages(terms) +
+      this.portTypes(terms) +
+      this.bindings(terms) +
+      this.service(root, terms) +
       '</wsdl:definitions>\n';
     log.debug("Leaving WsTrustMetadata.document().");
     return xml;
@@ -150,6 +190,39 @@ class WsTrustMetadata {
     res.set('Cache-Control', 'no-store');
     res.send(body);
     log.debug("Leaving WsTrustMetadata.send().");
+  }
+
+  /**
+   * Answers `GET /sts/metadata/capabilities`: the token capability document
+   * for the request's base and the live flags.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
+  static sendCapabilities(req, res): void {
+    log.debug("Entering WsTrustMetadata.sendCapabilities().");
+    const base = helpers.baseUrlOf(req);
+    res.status(200);
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    res.set('Cache-Control', 'no-store');
+    res.send(WsTrustCapabilities.document(base, IssuerNames.issuer(base),
+                                          this.liveFlags()));
+    log.debug("Leaving WsTrustMetadata.sendCapabilities().");
+  }
+
+  /**
+   * Answers `GET /sts/metadata/capabilities.xsd`, the extension's schema.
+   *
+   * @param req - the request
+   * @param res - the response
+   */
+  static sendCapabilitySchema(req, res): void {
+    log.debug("Entering WsTrustMetadata.sendCapabilitySchema().");
+    res.status(200);
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    res.set('Cache-Control', 'no-store');
+    res.send(WsTrustCapabilities.schema());
+    log.debug("Leaving WsTrustMetadata.sendCapabilitySchema().");
   }
 
   /**
@@ -230,7 +303,12 @@ class WsTrustMetadata {
       'xmlns:wsdl="' + WSDL_NS + '" xmlns:xsd="' + XSD_NS + '" ' +
       'xmlns:soap="' + SOAP_NS + '" xmlns:soap12="' + SOAP12_NS + '" ' +
       'xmlns:wsp="' + Html.esc(terms.policy) + '" xmlns:sp="' + SP_NS +
-      '" xmlns:wst="' + Html.esc(terms.trust13) + '" xmlns:wsu="' +
+      '" xmlns:wst="' + Html.esc(terms.trust13) + '" xmlns:wst2005="' +
+      Html.esc(terms.trust2005) + '" xmlns:wst2004="' +
+      Html.esc(terms.trust2004) + '" xmlns:wst14="' +
+      Html.esc(terms.trust14) + '" xmlns:wsam="' + WSAM_NS +
+      '" xmlns:iya="' + CAP_NS +
+      '" xmlns:wsu="' +
       Html.esc(terms.utility) + '" xmlns:tns="' + TNS + '">';
     log.debug("Leaving WsTrustMetadata.open().");
     return out;
@@ -263,9 +341,16 @@ class WsTrustMetadata {
     const sentences = [
       'This document is the WSDL 1.1 description of the WS-Trust security ' +
         'token service at ' + address + ', with WS-SecurityPolicy embedded.',
-      'It is not a SOAP WS-MetadataExchange response, it is not signed, ' +
-        'and it does not carry the signing certificate. That certificate ' +
-        'is at ' + base + '/sts/cert.',
+      'It is not signed and it does not carry the signing certificate. ' +
+        'That certificate is at ' + base + '/sts/cert.',
+      'WS-MetadataExchange (2004/09) answers at ' + base + '/sts/mex, ' +
+        'with this document, the token capability document and its ' +
+        'schema as three sections. The token capability document, at ' +
+        base + '/sts/metadata/capabilities, is an IYA-STS extension ' +
+        '(namespace ' + CAP_NS + ', schema ' + base +
+        '/sts/metadata/capabilities.xsd) listing every credential, every ' +
+        'issued type, and each pair as supported, conditional or ' +
+        'unsupported.',
       'The service speaks four trust versions. WS-Trust 1.3, and 1.4 for ' +
         'everything 1.3 defines, use ' + terms.trust13 + '.',
       'ActAs alone uses the 1.4 namespace ' + terms.trust14 + '.',
@@ -281,12 +366,22 @@ class WsTrustMetadata {
         'those is answered as Issue. An Issue in 1.3 and 2005/02 is ' +
         'answered as a RequestSecurityTokenResponseCollection, action ' +
         issueFinal + '.',
-      'The service does not dispatch on SOAPAction or wsa:Action, so ' +
-        'every soap:operation has an empty soapAction. Key Exchange Token ' +
-        'and BatchIssue are not implemented.',
-      'Both ports answer at ' + address + ' over SOAP 1.1 (' +
-        terms.soap11 + ') and SOAP 1.2 (' + terms.soap12 + '). The ' +
-        'address of this document is not an RST address.',
+      'Each version has a port type of its own, in its own namespace, ' +
+        'with the operations that version defines: TrustMay2004 has ' +
+        'Issue, Renew and Validate; TrustFeb2005, Trust13 and Trust14 ' +
+        'have Issue, Renew, Validate and Cancel. Trust14 is Trust13\'s ' +
+        'messages, because WS-Trust 1.4 keeps the 1.3 namespace, with ' +
+        'ActAs in the 1.4 namespace.',
+      'Each input and output names the wsa:Action WS-Trust gives it, and ' +
+        'each output\'s is the one this service writes. Each SOAP 1.1 ' +
+        'binding carries the input action as its soapAction. The service ' +
+        'does not dispatch on SOAPAction or wsa:Action: a client may send ' +
+        'either or neither. Key Exchange Token and BatchIssue are not ' +
+        'implemented.',
+      'Every port, eight of them (each version over SOAP 1.1, ' +
+        terms.soap11 + ', and SOAP 1.2, ' + terms.soap12 + '), answers ' +
+        'at ' + address + '. The address of this document is not an RST ' +
+        'address.',
       'Every operation authenticates the requester first. A credential ' +
         'is read from wsse:Security (' + terms.secext + '), never from ' +
         'inside OnBehalfOf, ActAs, RenewTarget, ValidateTarget or ' +
@@ -510,91 +605,252 @@ class WsTrustMetadata {
   }
 
   /**
-   * The messages. The response element is untyped on purpose: 2004/04 Issue
-   * answers one RSTR and every other Issue answers a collection, and the
-   * service's writer is the schema.
+   * The four trust versions as the contract describes them: the port type's
+   * name, the namespace its messages are in, the operations it defines and
+   * what an Issue is answered with. 2004/04 has no Cancel and answers an
+   * Issue with one RSTR (#188); every other answers a collection. 1.4 keeps
+   * 1.3's namespace for everything 1.3 defines.
    *
-   * @returns the types, messages and portType pieces through the messages
+   * @param terms - the model's values
+   * @returns the versions, oldest first
    */
-  private static types(): string {
+  private static versions(terms: Terms): TrustVersion[] {
+    log.debug("Entering WsTrustMetadata.versions().");
+    const all = ['Issue', 'Renew', 'Validate', 'Cancel'];
+    const out = [
+      { name: 'TrustMay2004', prefix: 'wst2004', ns: terms.trust2004,
+        title: 'WS-Trust May 2004 (member submission)',
+        operations: ['Issue', 'Renew', 'Validate'], collection: false },
+      { name: 'TrustFeb2005', prefix: 'wst2005', ns: terms.trust2005,
+        title: 'WS-Trust February 2005', operations: all,
+        collection: true },
+      { name: 'Trust13', prefix: 'wst', ns: terms.trust13,
+        title: 'WS-Trust 1.3 (OASIS Standard)', operations: all,
+        collection: true },
+      { name: 'Trust14', prefix: 'wst', ns: terms.trust13,
+        title: 'WS-Trust 1.4 (OASIS Standard): 1.3\'s messages, ActAs in ' +
+               terms.trust14, operations: all, collection: true }
+    ];
+    log.debug("Leaving WsTrustMetadata.versions().");
+    return out;
+  }
+
+  /**
+   * The request's action, as WS-Trust names it: the version's namespace,
+   * `/RST/` and the operation. The service reads `wst:RequestType`, not
+   * this, so it is what a client sends rather than what it must send.
+   *
+   * @param version - the version
+   * @param operation - Issue, Renew, Validate or Cancel
+   * @returns the action URI
+   */
+  private static inputAction(version: TrustVersion,
+                             operation: string): string {
+    log.debug("Entering WsTrustMetadata.inputAction().");
+    const out = version.ns + '/RST/' + operation;
+    log.debug("Leaving WsTrustMetadata.inputAction().");
+    return out;
+  }
+
+  /**
+   * The answer's action, as `wstrust.ts` writes it: the model's `wst.action`
+   * term relative to the version's namespace.
+   *
+   * @param version - the version
+   * @param operation - Issue, Renew, Validate or Cancel
+   * @returns the action URI
+   */
+  private static outputAction(version: TrustVersion,
+                              operation: string): string {
+    log.debug("Entering WsTrustMetadata.outputAction().");
+    let term = operation.toLowerCase() + 'Final';
+    if (operation === 'Issue') {
+      term = version.collection ? 'issueFinal' : 'issue';
+    }
+    const out = WsModel.relative('wst.action', term, version.ns);
+    log.debug("Leaving WsTrustMetadata.outputAction().");
+    return out;
+  }
+
+  /**
+   * One open element: the version's own name, whose children the service's
+   * writer and reader define (`models/ws/wstrust.tsp`), so a schema here
+   * would be a second, weaker statement of them.
+   *
+   * @param name - the element's local name
+   * @returns the element declaration
+   */
+  private static openElement(name: string): string {
+    log.debug("Entering WsTrustMetadata.openElement().");
+    const out = '<xsd:element name="' + name + '"><xsd:complexType>' +
+      '<xsd:sequence><xsd:any namespace="##any" processContents="lax" ' +
+      'minOccurs="0" maxOccurs="unbounded"/></xsd:sequence>' +
+      '<xsd:anyAttribute namespace="##other" processContents="lax"/>' +
+      '</xsd:complexType></xsd:element>';
+    log.debug("Leaving WsTrustMetadata.openElement().");
+    return out;
+  }
+
+  /**
+   * A schema per trust namespace, declaring the elements the messages carry
+   * in that namespace, and the 1.4 namespace's ActAs.
+   *
+   * @param terms - the model's values
+   * @returns the wsdl:types
+   */
+  private static types(terms: Terms): string {
     log.debug("Entering WsTrustMetadata.types().");
-    const out = '<wsdl:types><xsd:schema targetNamespace="' + TNS + '">' +
-      '<xsd:element name="RequestSecurityToken" type="xsd:anyType"/>' +
-      '<xsd:element name="TrustResponse" type="xsd:anyType"/>' +
-      '</xsd:schema></wsdl:types>' +
-      '<wsdl:message name="RstIn"><wsdl:part name="body" ' +
-      'element="tns:RequestSecurityToken"/></wsdl:message>' +
-      '<wsdl:message name="TrustOut"><wsdl:part name="body" ' +
-      'element="tns:TrustResponse"/></wsdl:message>';
+    const schema = (ns: string, names: string[]): string => {
+      return '<xsd:schema targetNamespace="' + Html.esc(ns) + '" ' +
+        'elementFormDefault="qualified">' +
+        names.map((one) => this.openElement(one)).join('') +
+        '</xsd:schema>';
+    };
+    const rst = 'RequestSecurityToken';
+    const rstr = 'RequestSecurityTokenResponse';
+    const rstrc = 'RequestSecurityTokenResponseCollection';
+    const out = '<wsdl:types>' +
+      schema(terms.trust2004, [rst, rstr]) +
+      schema(terms.trust2005, [rst, rstr, rstrc]) +
+      schema(terms.trust13, [rst, rstr, rstrc]) +
+      schema(terms.trust14, ['ActAs']) +
+      '</wsdl:types>';
     log.debug("Leaving WsTrustMetadata.types().");
     return out;
   }
 
   /**
-   * Issue, Renew, Validate and Cancel. Each one's output points at the
-   * issued-type policy.
+   * The messages, one set per namespace (1.4 shares 1.3's).
    *
-   * @returns the portType
+   * @param terms - the model's values
+   * @returns the wsdl:message elements
    */
-  private static portType(): string {
-    log.debug("Entering WsTrustMetadata.portType().");
-    const names = ['Issue', 'Renew', 'Validate', 'Cancel'];
-    let ops = '';
-    names.forEach((name) => {
-      ops += '<wsdl:operation name="' + name + '">' +
-        '<wsdl:input message="tns:RstIn"/>' +
-        '<wsdl:output message="tns:TrustOut"/>' +
-        '</wsdl:operation>';
+  private static messages(terms: Terms): string {
+    log.debug("Entering WsTrustMetadata.messages().");
+    let out = '';
+    this.versions(terms).filter((one) => {
+      return one.name !== 'Trust14';
+    }).forEach((one) => {
+      const message = (suffix: string, element: string): string => {
+        return '<wsdl:message name="' + one.name + suffix + '">' +
+          '<wsdl:part name="body" element="' + one.prefix + ':' + element +
+          '"/></wsdl:message>';
+      };
+      out += message('RST', 'RequestSecurityToken') +
+        message('RSTR', 'RequestSecurityTokenResponse');
+      if (one.collection) {
+        out += message('RSTRC', 'RequestSecurityTokenResponseCollection');
+      }
     });
-    const out = '<wsdl:portType name="SecurityTokenService">' + ops +
-      '</wsdl:portType>';
-    log.debug("Leaving WsTrustMetadata.portType().");
+    log.debug("Leaving WsTrustMetadata.messages().");
     return out;
   }
 
   /**
-   * One SOAP binding. soapAction is empty because the STS dispatches on
-   * RequestType.
+   * The message names a version's operation reads and answers.
    *
-   * @param name - Soap11 or Soap12
-   * @param prefix - the WSDL SOAP prefix
-   * @returns the binding
+   * @param version - the version
+   * @param operation - the operation
+   * @returns the input and output message QNames
    */
-  private static binding(name: string, prefix: string): string {
-    log.debug("Entering WsTrustMetadata.binding().");
-    const names = ['Issue', 'Renew', 'Validate', 'Cancel'];
-    let ops = '';
-    names.forEach((one) => {
-      ops += '<wsdl:operation name="' + one + '">' +
-        '<' + prefix + ':operation soapAction=""/>' +
-        '<wsdl:input><' + prefix + ':body use="literal"/></wsdl:input>' +
-        '<wsdl:output><wsp:PolicyReference URI="#IssuedTokenTypes"/>' +
-        '<' + prefix + ':body use="literal"/></wsdl:output>' +
-        '</wsdl:operation>';
-    });
-    const out = '<wsdl:binding name="' + name + '" ' +
-      'type="tns:SecurityTokenService">' +
-      '<wsp:PolicyReference URI="#RequesterAuthentication"/>' +
-      '<' + prefix + ':binding style="document" transport="' + TRANSPORT +
-      '"/>' + ops + '</wsdl:binding>';
-    log.debug("Leaving WsTrustMetadata.binding().");
+  private static messagesOf(version: TrustVersion,
+                            operation: string): { input: string;
+                                                  output: string } {
+    log.debug("Entering WsTrustMetadata.messagesOf().");
+    const base = version.name === 'Trust14' ? 'Trust13' : version.name;
+    const output = operation === 'Issue' && version.collection
+      ? base + 'RSTRC' : base + 'RSTR';
+    const out = { input: 'tns:' + base + 'RST', output: 'tns:' + output };
+    log.debug("Leaving WsTrustMetadata.messagesOf().");
     return out;
   }
 
   /**
-   * The two ports, both at `{base}/sts`.
+   * A port type per version, each operation's input and output naming its
+   * action.
+   *
+   * @param terms - the model's values
+   * @returns the portType elements
+   */
+  private static portTypes(terms: Terms): string {
+    log.debug("Entering WsTrustMetadata.portTypes().");
+    let out = '';
+    this.versions(terms).forEach((version) => {
+      let ops = '';
+      version.operations.forEach((name) => {
+        const pair = this.messagesOf(version, name);
+        ops += '<wsdl:operation name="' + name + '">' +
+          '<wsdl:input message="' + pair.input + '" wsam:Action="' +
+          Html.esc(this.inputAction(version, name)) + '"/>' +
+          '<wsdl:output message="' + pair.output + '" wsam:Action="' +
+          Html.esc(this.outputAction(version, name)) + '"/>' +
+          '</wsdl:operation>';
+      });
+      out += '<wsdl:portType name="' + version.name + '">' +
+        '<wsdl:documentation>' + Html.esc(version.title) +
+        '</wsdl:documentation>' + ops + '</wsdl:portType>';
+    });
+    log.debug("Leaving WsTrustMetadata.portTypes().");
+    return out;
+  }
+
+  /**
+   * Two SOAP bindings per version. SOAP 1.1's soapAction and SOAP 1.2's
+   * action parameter carry the input action; the service reads neither.
+   *
+   * @param terms - the model's values
+   * @returns the binding elements
+   */
+  private static bindings(terms: Terms): string {
+    log.debug("Entering WsTrustMetadata.bindings().");
+    let out = '';
+    this.versions(terms).forEach((version) => {
+      [['Soap11', 'soap'], ['Soap12', 'soap12']].forEach((pair) => {
+        const prefix = pair[1];
+        let ops = '';
+        version.operations.forEach((name) => {
+          ops += '<wsdl:operation name="' + name + '">' +
+            '<' + prefix + ':operation soapAction="' +
+            Html.esc(this.inputAction(version, name)) + '" ' +
+            'style="document"/>' +
+            '<wsdl:input><' + prefix + ':body use="literal"/>' +
+            '</wsdl:input>' +
+            '<wsdl:output><wsp:PolicyReference URI="#IssuedTokenTypes"/>' +
+            '<' + prefix + ':body use="literal"/></wsdl:output>' +
+            '</wsdl:operation>';
+        });
+        out += '<wsdl:binding name="' + version.name + pair[0] + '" ' +
+          'type="tns:' + version.name + '">' +
+          '<wsp:PolicyReference URI="#RequesterAuthentication"/>' +
+          '<' + prefix + ':binding style="document" transport="' +
+          TRANSPORT + '"/>' + ops + '</wsdl:binding>';
+      });
+    });
+    log.debug("Leaving WsTrustMetadata.bindings().");
+    return out;
+  }
+
+  /**
+   * Eight ports, every one at `{base}/sts`: the endpoint reads the version
+   * from the request's own namespace.
    *
    * @param base - the realm's base URL
+   * @param terms - the model's values
    * @returns the service
    */
-  private static service(base: string): string {
+  private static service(base: string, terms: Terms): string {
     log.debug("Entering WsTrustMetadata.service().");
     const location = Html.esc(base + '/sts');
-    const out = '<wsdl:service name="SecurityTokenService">' +
-      '<wsdl:port name="Soap11" binding="tns:Soap11">' +
-      '<soap:address location="' + location + '"/></wsdl:port>' +
-      '<wsdl:port name="Soap12" binding="tns:Soap12">' +
-      '<soap12:address location="' + location + '"/></wsdl:port>' +
+    let ports = '';
+    this.versions(terms).forEach((version) => {
+      ports += '<wsdl:port name="' + version.name + 'Soap11" binding="tns:' +
+        version.name + 'Soap11"><soap:address location="' + location +
+        '"/></wsdl:port>' +
+        '<wsdl:port name="' + version.name + 'Soap12" binding="tns:' +
+        version.name + 'Soap12"><soap12:address location="' + location +
+        '"/></wsdl:port>';
+    });
+    const out = '<wsdl:service name="SecurityTokenService">' + ports +
       '</wsdl:service>';
     log.debug("Leaving WsTrustMetadata.service().");
     return out;

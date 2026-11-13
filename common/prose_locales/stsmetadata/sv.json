@@ -252,8 +252,12 @@
     "text": "partial: de delar som en responder är skyldig. Okrypterad HTTP (avsnitt 5) — respondern svarar på `pki.httpPort` såväl som på TLS-huvudporten, och certifikat namnger den okrypterade; GET med den base64-kodade förfrågan tillagd; inga bråkdelssekunder i någon GeneralizedTime (avsnitt 2.2.4); responder-ID:t efter nyckelhash (avsnitt 2.2.2); `unauthorized` för en förfrågan den inte är auktoritativ för (avsnitt 2.2.3); och cachehuvudena i avsnitt 6.2 — max-age inte senare än nextUpdate, Last-Modified, Expires och en stark ETag, aldrig no-cache eller no-store på ett auktoritativt svar. INTE GJORT: svar signeras på begäran snarare än att FÖRPRODUCERAS (avsnitt 2.2.1 rekommenderar förproduktion för stora volymer), och ett svar på en förfrågan som bär en nonce markeras som privat i stället för att betjänas från en cache."
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "5c31b63d05af8ac9",
-    "text": "partial: Issue, Renew, Validate och Cancel över SOAP 1.1 och 1.2. GET /sts/metadata är WSDL 1.1 med autentiseringsuppgifterna som WS-SecurityPolicy; SOAP WS-MetadataExchange tjänas inte. En WS-Security-signatur över Body och Timestamp är en autentiseringsuppgift (#521), verifierad i produktläge. OnBehalfOf och ActAs avgörs av utfärdandepolicyn (#186, reglerna som tokenutbytet och Kerberos S4U delar) — OnBehalfOf begär personifiering och ActAs delegering, posternas delegeringssemantik måste tillåta det, AppliesTo måste vara en registrerad applikation som delegeringsrelationerna tillåter, och en person som begärande kräver delegation.actorRole — och nekas med ett wst:RequestFailed-fel (avsnitt 11) i produktläge; båda elementen samtidigt ger wst:InvalidRequest; utvecklingsläge registrerar vad som skulle ha nekats. I PRODUKTläge (2026-09-12) kräver varje operation en autentiseringsuppgift — en UsernameToken verifierad mot katalogen, ett SAML 2.0- eller SAML 1.1-intyg eller en JWT som den här STS:en utfärdat, en WS-Security-signatur, eller en Kerberos-biljett för den här tjänstens eget SPN — och en OnBehalfOf/ActAs kräver den begärandes egen autentiseringsuppgift och en token som den här STS:en utfärdat inuti den; utvecklingsläge accepterar ingen, som det alltid har gjort. I båda lägena begränsas en begärd wst:Lifetime (wstrust.maxTokenLifetimeMin) och det utfärdade intygets AuthnContext namnger autentiseringsuppgiften snarare än ett lösenord. En beställare vars wsse:Security inte bär någon autentiseringsuppgift autentiseras, i båda lägena, med TLS-klientcertifikatet på anslutningen när denna sfär har utfärdat det till en person eller ett program (#1046), eller när det kommer från en extern certifikatutfärdare och är lagrat i userCertificate på exakt en av deras poster (#1061)."
+    "en": "34e462a3c1215584",
+    "text": "partial: Issue, Renew, Validate och Cancel över SOAP 1.1 och 1.2. GET /sts/metadata är WSDL 1.1, en port type per trust-version, med autentiseringsuppgifterna som WS-SecurityPolicy; paren av autentiseringsuppgift/tokentyp är ett IYA-STS-tillägg på /sts/metadata/capabilities; WS-MetadataExchange svarar på /sts/mex. En WS-Security-signatur över Body och Timestamp är en autentiseringsuppgift (#521), verifierad i produktläge. OnBehalfOf och ActAs avgörs av utfärdandepolicyn (#186, reglerna som tokenutbytet och Kerberos S4U delar) — OnBehalfOf begär personifiering och ActAs delegering, posternas delegeringssemantik måste tillåta det, AppliesTo måste vara en registrerad applikation som delegeringsrelationerna tillåter, och en person som begärande kräver delegation.actorRole — och nekas med ett wst:RequestFailed-fel (avsnitt 11) i produktläge; båda elementen samtidigt ger wst:InvalidRequest; utvecklingsläge registrerar vad som skulle ha nekats. I PRODUKTläge (2026-09-12) kräver varje operation en autentiseringsuppgift — en UsernameToken verifierad mot katalogen, ett SAML 2.0- eller SAML 1.1-intyg eller en JWT som den här STS:en utfärdat, en WS-Security-signatur, eller en Kerberos-biljett för den här tjänstens eget SPN — och en OnBehalfOf/ActAs kräver den begärandes egen autentiseringsuppgift och en token som den här STS:en utfärdat inuti den; utvecklingsläge accepterar ingen, som det alltid har gjort. I båda lägena begränsas en begärd wst:Lifetime (wstrust.maxTokenLifetimeMin) och det utfärdade intygets AuthnContext namnger autentiseringsuppgiften snarare än ett lösenord. En beställare vars wsse:Security inte bär någon autentiseringsuppgift autentiseras, i båda lägena, med TLS-klientcertifikatet på anslutningen när denna sfär har utfärdat det till en person eller ett program (#1046), eller när det kommer från en extern certifikatutfärdare och är lagrat i userCertificate på exakt en av deras poster (#1061)."
+  },
+  "stsmetadata.specs.ws-mex.coverage": {
+    "en": "252983aa08edd8d9",
+    "text": "partial: POST /sts/mex besvarar en WS-Transfer Get och en GetMetadata (avgränsad av Dialect och Identifier) i begärans SOAP-version och WS-Addressing-namnrymd, med WSDL:en, tokenförmågedokumentet och dess schema inbäddade som sektioner. Inte gjort: en MetadataReference- eller Location-sektion, namnrymden i W3C-rekommendationen WS-MetadataExchange 1.1, och metadata i en EPR."
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
@@ -2460,8 +2464,20 @@
     "text": "POST ett SOAP RequestSecurityToken; fördelar på wst:RequestType (Issue, Renew, Validate, Cancel) och returnerar ett RSTR. GET beskriver slutpunkten. Lägg till ?encrypt=1 för att få det utfärdade intyget returnerat som en EncryptedAssertion."
   },
   "stsmetadata.endpoints./sts/metadata.what": {
-    "en": "2d6d8310a37af24d",
-    "text": "WSDL 1.1 med WS-SecurityPolicy för alla fyra trust-versioner och Issue, Renew, Validate och Cancel. Autentiseringsuppgifterna är en UsernameToken, ett SAML 2.0- eller SAML 1.1-intyg, en JWT, en X.509-signatur, en Kerberos-biljett när wstrust.acceptKerberos är på, och ett TLS-klientcertifikat när wstrust.acceptClientCertificate är på. RST-adressen är /sts. SOAP WS-MetadataExchange tjänas inte. Serveras med Cache-Control: no-store."
+    "en": "8ffa0771ab14417f",
+    "text": "WSDL 1.1 med WS-SecurityPolicy. Varje trust-version (maj 2004, februari 2005, 1.3 och 1.4) har en egen port type med de operationer den definierar, där varje indata och utdata namnger sin wsa:Action, och en SOAP 1.1- och en SOAP 1.2-port på /sts. Autentiseringsuppgifterna är en UsernameToken, ett SAML 2.0- eller SAML 1.1-intyg, en JWT, en X.509-signatur, en Kerberos-biljett när wstrust.acceptKerberos är på, och ett TLS-klientcertifikat när wstrust.acceptClientCertificate är på. Serveras med Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.what": {
+    "en": "58631087b8e5323a",
+    "text": "Ett IYA-STS-tillägg (urn:iya-sts:metadata:token-capabilities:1): varje autentiseringsuppgift som /sts accepterar, varje tokentyp den utfärdar, och varje par som stödd, villkorad eller ej stödd med sina villkor, byggt från de gällande inställningarna. Serveras med Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.xsd.what": {
+    "en": "c38652777c26f595",
+    "text": "XML-schemat för tokenförmågedokumentet."
+  },
+  "stsmetadata.endpoints./sts/mex.what": {
+    "en": "5940ecbdab434650",
+    "text": "Skicka med POST en WS-Transfer Get eller en WS-MetadataExchange GetMetadata (2004/09), SOAP 1.1 eller 1.2; svaret är en mex:Metadata som innehåller WSDL:en, tokenförmågedokumentet och dess schema som tre sektioner."
   },
   "stsmetadata.endpoints./sts/cert.what": {
     "en": "bb1a31c1486e5138",
@@ -3856,8 +3872,8 @@
     "text": "1.2 Web (Passive) Requestor Profile: /wsfed som fördelar efter wa, inloggningsskärmen, signerad federationsmetadata på AD FS-sökvägen och wsignout1.0."
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "3d88db91fab2cd5f",
-    "text": "RST/RSTR över SOAP på /sts, i alla fyra versionerna (1.0 till 1.4), som utfärdar endera SAML-dialekten med påståendet signerat och eventuellt krypterat till den begärandes certifikat, en JWT eller en Kerberos-biljett."
+    "en": "2e317d1cfa752dc2",
+    "text": "RST/RSTR över SOAP på /sts, i alla fyra versionerna (1.0 till 1.4), som utfärdar endera SAML-dialekten med påståendet signerat och eventuellt krypterat till den begärandes certifikat, en JWT eller en Kerberos-biljett, beskrivet av en WSDL med en port type per version och publicerat över WS-MetadataExchange."
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

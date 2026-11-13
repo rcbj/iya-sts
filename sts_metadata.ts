@@ -1427,8 +1427,11 @@ const SPECS: Spec[] = [
     where: 'OASIS ws-sx',
     url: 'https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html',
     coverage: 'partial: Issue, Renew, Validate and Cancel over SOAP 1.1 and ' +
-              '1.2. GET /sts/metadata is WSDL 1.1 with the credentials as ' +
-              'WS-SecurityPolicy; SOAP WS-MetadataExchange is not served. ' +
+              '1.2. GET /sts/metadata is WSDL 1.1, a port type per trust ' +
+              'version, with the credentials as WS-SecurityPolicy; the ' +
+              'credential/token-type pairs are an IYA-STS extension at ' +
+              '/sts/metadata/capabilities; WS-MetadataExchange answers at ' +
+              '/sts/mex. ' +
               'A WS-Security signature over the Body and the Timestamp is ' +
               'a credential (#521), verified in product. OnBehalfOf and ' +
               'ActAs ' +
@@ -1458,6 +1461,16 @@ const SPECS: Spec[] = [
               'an application (#1046), or where it is from an outside ' +
               'certificate authority and stored in userCertificate on ' +
               'exactly one of their entries (#1061).' },
+  { id: 'ws-mex', name: 'WS-MetadataExchange (2004/09)',
+    where: 'W3C member submission',
+    url: 'https://www.w3.org/Submission/2008/SUBM-WS-MetadataExchange-20080813/',
+    coverage: 'partial: POST /sts/mex answers a WS-Transfer Get and a ' +
+              'GetMetadata (narrowed by Dialect and Identifier) in the ' +
+              'request\'s SOAP version and WS-Addressing namespace, with ' +
+              'the WSDL, the token capability document and its schema ' +
+              'embedded as sections. Not done: a MetadataReference or ' +
+              'Location section, the W3C WS-MetadataExchange 1.1 ' +
+              'Recommendation\'s namespace, and metadata in an EPR.' },
   { id: 'wss-kerberos', name: 'WS-Security Kerberos Token Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss-m/wss/v1.1.1/os/wss-KerberosTokenProfile-v1.1.1-os.html',
@@ -7658,14 +7671,33 @@ const ENDPOINTS: EndpointEntry[] = [
           'assertion returned as an EncryptedAssertion.' },
   { path: '/sts/metadata', group: 'WS-Trust', name: 'WS-Trust metadata',
     specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'saml2', 'xmldsig'],
-    what: 'WSDL 1.1 with WS-SecurityPolicy for all four trust versions ' +
-          'and Issue, Renew, Validate and Cancel. The credentials are a ' +
-          'UsernameToken, a SAML 2.0 or SAML 1.1 assertion, a JWT, an ' +
-          'X.509 signature, a Kerberos token when wstrust.acceptKerberos ' +
-          'is on, and a TLS client certificate when ' +
-          'wstrust.acceptClientCertificate is on. The RST address is ' +
-          '/sts. SOAP WS-MetadataExchange is not served. Served with ' +
+    what: 'WSDL 1.1 with WS-SecurityPolicy. Each trust version (May 2004, ' +
+          'February 2005, 1.3 and 1.4) has a port type of its own with ' +
+          'the operations it defines, each input and output naming its ' +
+          'wsa:Action, and a SOAP 1.1 and a SOAP 1.2 port at /sts. The ' +
+          'credentials are a UsernameToken, a SAML 2.0 or SAML 1.1 ' +
+          'assertion, a JWT, an X.509 signature, a Kerberos token when ' +
+          'wstrust.acceptKerberos is on, and a TLS client certificate when ' +
+          'wstrust.acceptClientCertificate is on. Served with ' +
           'Cache-Control: no-store.' },
+  { path: '/sts/metadata/capabilities', group: 'WS-Trust',
+    name: 'WS-Trust token capabilities',
+    specs: ['ws-trust'],
+    what: 'An IYA-STS extension (urn:iya-sts:metadata:token-capabilities:1' +
+          '): every credential /sts accepts, every token type it issues, ' +
+          'and each pair as supported, conditional or unsupported with ' +
+          'its conditions, built from the running settings. Served with ' +
+          'Cache-Control: no-store.' },
+  { path: '/sts/metadata/capabilities.xsd', group: 'WS-Trust',
+    name: 'WS-Trust token capabilities schema',
+    specs: ['ws-trust'],
+    what: 'The XML Schema of the token capability document.' },
+  { path: '/sts/mex', group: 'WS-Trust', name: 'WS-MetadataExchange',
+    specs: ['ws-trust', 'ws-mex'],
+    what: 'POST a WS-Transfer Get or a WS-MetadataExchange GetMetadata ' +
+          '(2004/09), SOAP 1.1 or 1.2; the answer is a mex:Metadata ' +
+          'holding the WSDL, the token capability document and its ' +
+          'schema as three sections.' },
   { path: '/sts/cert', group: 'WS-Trust', name: 'STS certificate',
     specs: ['ws-trust'], what: 'The PEM certificate whose key signs the ' +
                                'assertions, so a relying party can verify ' +
@@ -10494,11 +10526,13 @@ const PROTOCOLS: Protocol[] = [
           'dispatching on wa, the sign-in screen, signed federation ' +
           'metadata at the AD FS path, and wsignout1.0.' },
   { name: 'WS-Trust', groups: ['WS-Trust'],
-    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'xmldsig'],
+    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'xmldsig',
+            'ws-mex'],
     what: 'RST / RSTR over SOAP at /sts, in all four versions (1.0 through ' +
           '1.4), issuing either SAML dialect with the assertion signed and ' +
           'optionally encrypted to the requestor\'s certificate, a JWT, ' +
-          'or a Kerberos ticket.' },
+          'or a Kerberos ticket, described by a WSDL with a port type per ' +
+          'version and published over WS-MetadataExchange.' },
   { name: 'Kerberos', groups: ['Kerberos'],
     specs: ['rfc4120', 'rfc3961', 'ms-pac', 'ms-kkdcp'],
     what: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four ' +

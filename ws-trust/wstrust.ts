@@ -177,6 +177,9 @@ import WsModel = require('./ws_model');
 // URIs a WSDL quotes are not written in this one: tests/model_ws.js fails
 // when this file quotes one.
 import WsTrustMetadata = require('./wstrust_metadata');
+// WS-MetadataExchange at POST /sts/mex (#958), a leaf over the same
+// documents.
+import WsTrustMex = require('./wstrust_mex');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -378,8 +381,8 @@ class WsTrust {
   // THE ROUTES, in the order this module has always registered them.
   // -------------------------------------------------------------------------
   /**
-   * Registers `GET /sts/cert`, `GET /sts/metadata`, `GET /sts` and
-   * `POST /sts`.
+   * Registers `GET /sts/cert`, `GET /sts/metadata` and its capability
+   * document and schema, `POST /sts/mex`, `GET /sts` and `POST /sts`.
    *
    * @param app - the shared express app
    */
@@ -394,6 +397,18 @@ class WsTrust {
     // Express matches this path exactly, so it does not take GET /sts.
     app.get('/sts/metadata', (req, res) => {
       return WsTrustMetadata.send(req, res);
+    });
+    // The token capability extension and its schema (#958).
+    app.get('/sts/metadata/capabilities', (req, res) => {
+      return WsTrustMetadata.sendCapabilities(req, res);
+    });
+    app.get('/sts/metadata/capabilities.xsd', (req, res) => {
+      return WsTrustMetadata.sendCapabilitySchema(req, res);
+    });
+    // WS-MetadataExchange (#958): an address of its own, so POST /sts
+    // answers exactly as it always did.
+    app.post('/sts/mex', (req, res) => {
+      return WsTrustMex.send(req, res);
     });
     // GET /sts
     app.get('/sts', (req, res) => {

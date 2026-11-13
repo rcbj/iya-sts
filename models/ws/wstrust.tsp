@@ -27,8 +27,10 @@
 //   and changes nothing.
 //
 // What `/sts` publishes, stated rather than left to be discovered:
-// `GET /sts/metadata` is WSDL 1.1 with WS-SecurityPolicy embedded (#958).
-// SOAP WS-MetadataExchange is still not served. `GET /sts` answers a
+// `GET /sts/metadata` is WSDL 1.1 with WS-SecurityPolicy embedded, a port
+// type per trust version (#958); `GET /sts/metadata/capabilities` is the
+// token capability extension and `POST /sts/mex` WS-MetadataExchange (both
+// in ws-trust/). `GET /sts` answers a
 // description in plain text and `GET /sts/cert` the signing certificate.
 // No KET, BatchIssue or other request type has an
 // answer of its own: the code reads the request type's LAST SEGMENT, and one
