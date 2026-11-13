@@ -218,6 +218,44 @@ certificate**, for the shared name and the cell's own (`<cell>.<name>`,
 cells are applied one after another, not at once, because they share one
 `_acme-challenge` TXT record set.
 
+## Azure Front Door in front of the load balancer (#1341)
+
+**rcbj's decision (2026-11-13): a CDN on every pattern.** `cdn_enabled`, with
+`direct_hostname` in `envs/testidp.tfvars` or in a cells file, adds
+`environment/frontdoor.tf` (Front Door Standard), whose header argues it:
+
+* `public_hostname` → a CNAME to the Front Door endpoint (validated by
+  `_dnsauth.<name>`); `direct_hostname` → the load balancer's A record
+  (single region) or Traffic Manager's CNAME (`global/routing.tf`), and it is
+  Front Door's origin, with the public name as the origin Host.
+* **One profile per environment**: the single region's, or the PRIMARY cell's
+  in `full`. The origin secret is the global stack's `edge-secret`, written
+  into every cell's vault; a single region makes its own.
+* The route caches nothing; two rules turn on caching (HonorOrigin) and
+  compression for `*.js`, `*.css` and `/web/`. `link_to_default_domain =
+  false`, so only the public name is served — Front Door reserves
+  `X-Forwarded-Host`/`-Proto` and sets them itself, so no rule can.
+* The WAF matches `SocketAddr`, never `RemoteAddr` (which reads
+  X-Forwarded-For). No Front Door health probe: it would come from the edge
+  ranges without the secret, and there is one origin.
+* Nodes: `STS_TRUST_PROXY`, `STS_TRUSTED_PROXIES` and `STS_EDGE_PROXIES` from
+  the `AzureFrontDoor.Backend` service tag, `STS_EDGE_SECRET` from the vault;
+  the NSG admits that tag on 8081 (`front-door`, 145); the public name is
+  `--add-host`ed to the load balancer, so self-calls stay off the edge.
+* **The foundation must be re-applied first**: the deployer's role gains
+  `Microsoft.Cdn/*`.
+
+**PROVEN OFFLINE ONLY**: `fmt -check`, `init -backend=false`, `validate` in
+`environment/`, `global/` and `foundation/`, and `terraform test`
+(`environment/tests/frontdoor.tftest.hcl`, five runs; `global/tests` gains
+one). No `plan` ran: Azure was never applied. Two stale assertions the run
+exposed were fixed: six published ports, not seven (389 unpublished
+2026-11-10), and eight shared secrets per vault. **First apply, look at**:
+the service-tag data source's `service = "AzureFrontDoor.Backend"`; whether
+Front Door overwrites a caller's `X-Forwarded-Host` on the custom domain;
+whether an error on a static path without Cache-Control is cached; the
+managed certificate's validation.
+
 ## The service image runs as uid 10001 (#254, 2026-10-06)
 
 **The image's `USER` is `sts`, 10001:10001, and no longer root** (the root

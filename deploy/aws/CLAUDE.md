@@ -820,7 +820,50 @@ apply. **The tag is 12 characters**: a shorter one names no image, and because a
 deployment replaces every task at once, that took `testidp` down for about twenty
 minutes on 2026-11-05. A workflow deploy that changes only the allowlist touches
 the WAF IP set and not the distribution, so it should not meet this refusal; one
-that changes the distribution may. **Every other pattern is #1341.**
+that changes the distribution may. **Every other pattern is #1341**, below.
+
+### CloudFront in front of the cells (#1341, rcbj 2026-11-13)
+
+**rcbj's decision: a CDN on every pattern.** A multi-cell environment
+(`testidpna`, `globalidp`, and #97's `testidpmc`) has ONE distribution, and
+`envs/testidpna.tfvars` and `envs/globalidp.tfvars` turn it on
+(`cloudfront_enabled`, `direct_hostname`). `cloudfront.tf`'s header argues it:
+
+* **The primary cell holds it, in `full`**: the distribution, its us-east-1
+  certificate, the web ACL and the cache policy (`local.cloudfront_here`).
+  `full` because the origin secret is now the global tier's `edge-secret`
+  (`global/secrets.tf`, made whether or not CloudFront is on), replicated into
+  every cell's region; the primary reads its value from the global state
+  (`local.global_edge_secret`, apart from `local.global` because a sensitive
+  attribute there would mark everything read through it), every cell's nodes
+  read the replica. A `base` primary makes no distribution and no public record.
+* **The tree moves to the direct name** (`dns_cells.tf`): pins, latency sets
+  and the direct name's own `*` default (`direct_default`). The public name
+  keeps one record, `default`, whose alias changes IN PLACE from the latency
+  set to the distribution, because a simple record cannot share a name with
+  another cell's not-yet-removed pins. The origin is the direct name, resolved
+  from the edge, so a pin sees the edge's country — the service is
+  authoritative on residency (#98, section 6).
+* **Every cell** admits the edges (`nlb_cloudfront`), believes them
+  (`STS_TRUST_PROXY`, `STS_EDGE_PROXIES`) and writes the direct name in its
+  inside zone (`direct_inside`); the outside `direct` CNAME is single-cell only.
+* **Multi-cloud**: with CloudFront on, the AWS primary writes the public
+  `default` even in a multi-cloud environment, and `deploy/multicloud/
+  interconnect` writes its tree at the direct name.
+* **Turning it on in an existing environment is one orchestrated apply**:
+  `global/` (the secret) runs before the cells' `full`. Between the primary's
+  `full` and the other cells', their pins still stand at the public name and
+  answer as before.
+
+**PROVEN OFFLINE ONLY**: `terraform fmt -check`, `init -backend=false`,
+`validate` in `environment/` and `global/`, and `environment/tests/
+render.tftest.hcl` (three new runs: the primary in `full` and in `base`, and a
+non-primary cell; 23 pass) and `global/tests` (3 pass). **No `terraform plan`
+ran**: the AWS session on the machine had expired (2026-11-13), and nothing
+was applied. The first `testidpna` apply is its test; look first at the
+default record's in-place alias change, and at CloudFront's origin TLS to a
+cell (Host is forwarded, so every cell's certificate must name the public name,
+which it does).
 
 ## Sizing a node: every process is a whole copy (#340, 2026-09-29)
 

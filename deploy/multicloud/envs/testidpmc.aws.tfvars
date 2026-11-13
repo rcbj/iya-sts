@@ -18,6 +18,11 @@
 public_hostname  = "test-idp.iyasec.io"
 public_zone_name = "iyasec.io"
 
+# ONE CLOUDFRONT DISTRIBUTION IN FRONT OF ALL SIX CELLS (#1341), the primary
+# cell's; its origin is the interconnect's tree at direct_hostname, which is
+# in the cells file (deploy/aws/environment/cloudfront.tf).
+cloudfront_enabled = true
+
 extra_environment = {
   STS_DOMAIN                       = "iyasec.io"
   KRB5_REALM                       = "IYASEC.IO"

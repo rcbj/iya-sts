@@ -1070,8 +1070,9 @@ appconfig file.
   moved the other, `/spnego/protected`, to the development companion, where
   MIT Kerberos's acceptor plays it with a keytab of its own. The diagnostic
   knobs stayed off the door that mints sessions, except one: in development,
-  `?mutual=off` withholds the AP-REP and starts no session (#896). Product
-  refuses that query before the ticket is accepted.
+  `?mutual=off` withholds the AP-REP and starts no session (#896), and says
+  so in the page's language. Product refuses that query before the ticket
+  is accepted.
 * **A sign-out is enforced at the TGS exchange.** Kerberos has no logout and no
   revocation; the TGS exchange is the one moment a KDC is back in the loop,
   which is also where disabling an Active Directory account bites.

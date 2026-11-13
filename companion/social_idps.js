@@ -740,6 +740,23 @@ function pkceOk(grant, verifier) {
 }
 
 /**
+ * Whether a token request names the `redirect_uri` its code was issued to,
+ * compared whole (RFC 6749 section 4.1.3: required, and identical, when the
+ * authorization request carried one; every dummy's did).
+ *
+ * @param {object} grant - the code's record
+ * @param {object} form - the token request's body
+ * @returns {boolean} true when they are the same string
+ */
+function redirectMatches(grant, form) {
+  log.debug("Entering redirectMatches().");
+  const asked = String((form || {}).redirect_uri || "");
+  const ok = !!grant.redirect && asked === String(grant.redirect);
+  log.debug("Leaving redirectMatches(). " + ok);
+  return ok;
+}
+
+/**
  * A 302. util.redirect() is 303, for the companion's own forms.
  *
  * @param {object} res - the response
@@ -795,8 +812,9 @@ class SocialIdps {
     this.publicUrl = util.stripTrailingSlashes(opts.publicUrl ||
       "http://localhost:9700");
     // Codes, access tokens, pushed requests and Steam nonces. Capped on
-    // insert. A code is single-use; a nonce is not deleted when a check
-    // fails, so a retry of the same assertion can still be confirmed.
+    // insert. A code is single-use, and so is a nonce: one that checks is
+    // deleted, so a replayed assertion is refused. One whose check fails
+    // is kept, so a retry of the same assertion can still be confirmed.
     this.codes = new Map();
     this.tokens = new Map();
     this.pars = new Map();
@@ -1468,7 +1486,10 @@ class SocialIdps {
   /**
    * Redeems a code. An unknown code is invalid_grant before any client
    * check (a probe with no session posts one). A wrong secret leaves the
-   * code in place. A wrong verifier spends it.
+   * code in place. A `redirect_uri` that is not the one the authorization
+   * request named (RFC 6749 section 4.1.3), or a wrong verifier, spends it
+   * (#1689's review: a negative fixture must refuse what a provider
+   * would).
    *
    * @param {object} req - the request
    * @param {object} res - the response
@@ -1494,6 +1515,12 @@ class SocialIdps {
     if (!this.clientOk(row, form, req.headers)) {
       oauthError(res, 401, "invalid_client");
       log.debug("Leaving SocialIdps.token(). Client.");
+      return;
+    }
+    if (!redirectMatches(grant, form)) {
+      this.codes.delete(code);
+      oauthError(res, 400, "invalid_grant");
+      log.debug("Leaving SocialIdps.token(). Redirect.");
       return;
     }
     if (!pkceOk(grant, form.code_verifier || "")) {
@@ -1711,8 +1738,10 @@ class SocialIdps {
   }
 
   /**
-   * check_authentication. Confirms a nonce this process issued and does
-   * not forget it when the check fails.
+   * check_authentication. Confirms a nonce this process issued, ONCE: a
+   * nonce that checked is forgotten, so a replayed assertion is not valid
+   * (OpenID 2.0 section 11.4.2.1, #1689's review). A failed check does not
+   * forget it.
    *
    * @param {object} res - the response
    * @param {object} form - the body
@@ -1724,6 +1753,9 @@ class SocialIdps {
     const endpoint = this.publicUrl + "/social/steam/login";
     const ok = this.nonces.has(nonce) && claimed === STEAM_CLAIMED &&
                String((form || {})["openid.op_endpoint"] || "") === endpoint;
+    if (ok) {
+      this.nonces.delete(nonce);
+    }
     res.writeHead(200, {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-store"
@@ -1969,7 +2001,8 @@ class SocialIdps {
 
   /**
    * The token request. DPoP is checked before the code is spent, so the
-   * nonce retry still has the code.
+   * nonce retry still has the code. A `redirect_uri` that is not the
+   * pushed request's spends it, as a wrong verifier does.
    *
    * @param {object} req - the request
    * @param {object} res - the response
@@ -1987,6 +2020,12 @@ class SocialIdps {
     if (!grant || grant.id !== "bluesky") {
       oauthError(res, 400, "invalid_grant");
       log.debug("Leaving SocialIdps.blueskyToken(). No code.");
+      return;
+    }
+    if (!redirectMatches(grant, form)) {
+      this.codes.delete(code);
+      oauthError(res, 400, "invalid_grant");
+      log.debug("Leaving SocialIdps.blueskyToken(). Redirect.");
       return;
     }
     if (!pkceOk(grant, form.code_verifier || "")) {

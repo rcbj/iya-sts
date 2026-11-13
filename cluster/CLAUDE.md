@@ -892,8 +892,20 @@ two hundred on the page) and does not cache those rows into the map;
 a job that has been off for many slots may show none until it runs again,
 because that one row is not restored. A tick learns the current interval slot
 and the one before it from one batch read per realm per slot generation
-(`readMany`); a failed read fails the tick (`STS-SCHED-0013`) rather than
-treating the slot as finished or as absent. Rows written before #338 still
+(`readMany`). **An absence is remembered for the slot whoever said it**
+(#883's review, 2026-11-13): an id the store has no row for, and since then
+an id a reader with no store answered null for, which until then was asked
+again every tick in every realm; both are forgotten with the slot, as a
+finished one is. **A read that fails holds back only the jobs it could not
+answer**: until #883's review a rejection failed the whole tick
+(`STS-SCHED-0013`), so one row the store could not open stopped every job
+in every realm, manual runs included. Now the realm's batch is asked again
+one job at a time; a job whose read still fails is held back for that tick
+(`unknownSlots`, neither run nor taken as finished) and asked about at the
+next, and the rest run. Two job reads failing in a row is an outage, so the
+tick asks nothing more and holds back every job it has not heard about. One
+`STS-SCHED-0023` line a tick names what was held back. `tests/scheduler.js`
+section P. Rows written before #338 still
 come back once — a keyed digest has no prefix a query can filter on — and the
 history walk deletes them from the rows it holds. Startup was not
 re-measured on 8081.

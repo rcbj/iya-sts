@@ -64,10 +64,25 @@
 # an environment are applied and destroyed together (entrypoint.sh); a cell
 # destroyed on its own takes the record with it, and the others' next renewal
 # would need it written again by an apply.
+#
+# BEHIND CLOUDFRONT THE TREE MOVES TO THE DIRECT NAME (#1341, cloudfront.tf):
+#
+#   <name>                    GEOLOCATION default (*) only → the distribution
+#   <direct name>             the tree above, every record of it
+#   <j>.cells.<direct name>   and cells.<direct name>, the latency sets
+#
+# The public name keeps ONE record, the `default` one, whose alias changes
+# from the latency set to the distribution IN PLACE: a simple record cannot
+# share a name with routing records, so replacing the set by a plain alias
+# would be refused while another cell's pins still stood (the cells are
+# applied one after another). The pins leave the public name with each cell's
+# next apply, and a geolocation set holding only `*` answers everybody.
 # ---------------------------------------------------------------------------
 locals {
-  cells_dns    = local.multi && local.public_name
-  latency_name = "cells.${var.public_hostname}"
+  cells_dns = local.multi && local.public_name
+  # Where the tree is: the public name, or the direct name behind CloudFront.
+  tree_name    = local.cloudfront ? var.direct_hostname : var.public_hostname
+  latency_name = "cells.${local.tree_name}"
   # EACH CELL'S OWN CONSOLE NAME (#361, rcbj 2026-09-30): `<cell>.<public
   # name>`, aimed at this cell's load balancer alone and on this cell's
   # certificate, so an administrator can open a given region's console from
@@ -79,7 +94,7 @@ locals {
   # the one that writes the jurisdiction's pinned countries: the first of
   # its cells by id, a choice every cell can make from the cells file alone.
   jurisdiction      = local.multi ? local.this_cell.jurisdiction : ""
-  jurisdiction_name = "${local.jurisdiction}.cells.${var.public_hostname}"
+  jurisdiction_name = "${local.jurisdiction}.cells.${local.tree_name}"
   jurisdiction_cells = local.multi ? sort([
     for id, c in var.cells : id if c.jurisdiction == local.jurisdiction
   ]) : []
@@ -175,7 +190,7 @@ resource "aws_route53_record" "jurisdiction_latency" {
 resource "aws_route53_record" "pinned" {
   for_each       = local.multi_cloud ? toset([]) : local.pinned_places
   zone_id        = data.aws_route53_zone.public[0].zone_id
-  name           = var.public_hostname
+  name           = local.tree_name
   type           = "A"
   set_identifier = "${local.jurisdiction}-${each.value}"
 
@@ -196,10 +211,39 @@ resource "aws_route53_record" "pinned" {
   depends_on = [aws_route53_record.jurisdiction_latency]
 }
 
+# THE PUBLIC NAME'S DEFAULT: the latency set, or the distribution behind
+# CloudFront (the header), which exists from the primary's `full` phase on.
+# IN A MULTI-CLOUD ENVIRONMENT THIS CELL WRITES IT ONLY BEHIND CLOUDFRONT:
+# the interconnect's tree is then at the direct name, and the distribution is
+# this stack's (deploy/multicloud/interconnect/routing.tf).
 resource "aws_route53_record" "default" {
-  count          = local.cells_dns && local.is_primary && !local.multi_cloud ? 1 : 0
+  count          = local.cells_dns && local.is_primary && (local.cloudfront ? local.full : !local.multi_cloud) ? 1 : 0
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = var.public_hostname
+  type           = "A"
+  set_identifier = "default"
+
+  geolocation_routing_policy {
+    country = "*"
+  }
+
+  alias {
+    name                   = local.cloudfront ? one(aws_cloudfront_distribution.main[*].domain_name) : local.latency_name
+    zone_id                = local.cloudfront ? one(aws_cloudfront_distribution.main[*].hosted_zone_id) : data.aws_route53_zone.public[0].zone_id
+    evaluate_target_health = !local.cloudfront
+  }
+
+  # AFTER this cell's latency record (#311): Route 53 refuses an alias to a
+  # name that has no record yet ("that target was not found"), and the first
+  # testidpna apply created this one first.
+  depends_on = [aws_route53_record.latency]
+}
+
+# THE DIRECT NAME'S DEFAULT, behind CloudFront: what the public name's was.
+resource "aws_route53_record" "direct_default" {
+  count          = local.cells_dns && local.is_primary && local.cloudfront && !local.multi_cloud ? 1 : 0
+  zone_id        = data.aws_route53_zone.public[0].zone_id
+  name           = var.direct_hostname
   type           = "A"
   set_identifier = "default"
 
@@ -213,9 +257,6 @@ resource "aws_route53_record" "default" {
     evaluate_target_health = true
   }
 
-  # AFTER this cell's latency record (#311): Route 53 refuses an alias to a
-  # name that has no record yet ("that target was not found"), and the first
-  # testidpna apply created this one first.
   depends_on = [aws_route53_record.latency]
 }
 

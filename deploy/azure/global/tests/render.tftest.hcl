@@ -93,7 +93,7 @@ run "testidpna" {
     error_message = "each cell's global endpoint at .12 of its private subnet"
   }
   assert {
-    condition     = length(azurerm_key_vault_secret.global) == 13 && contains(keys(azurerm_key_vault_secret.global), "zwus2-global-db-master-password") && !contains(keys(azurerm_key_vault_secret.global), "zcnc-global-db-master-password")
+    condition     = length(azurerm_key_vault_secret.global) == 17 && contains(keys(azurerm_key_vault_secret.global), "zwus2-global-db-master-password") && !contains(keys(azurerm_key_vault_secret.global), "zcnc-global-db-master-password")
     error_message = jsonencode(keys(azurerm_key_vault_secret.global))
   }
   assert {
@@ -131,12 +131,30 @@ run "globalidp" {
     error_message = "the EU 27 and IS, LI, NO pinned to eu"
   }
   assert {
-    condition     = length(azurerm_key_vault_secret.global) == 19 && length(azurerm_network_security_rule.cells_self) == 3
-    error_message = "six shared secrets in each of three vaults and the master in one; a self rule per cell"
+    condition     = length(azurerm_key_vault_secret.global) == 25 && length(azurerm_network_security_rule.cells_self) == 3
+    error_message = "eight shared secrets (the bootstrap name since 2026-11-10, the edge secret since #1341) in each of three vaults and the master in one; a self rule per cell"
   }
   assert {
     condition     = azurerm_key_vault_secret.global_vault.name == "global-db-app-password" && azurerm_key_vault_secret.global_vault.value == azurerm_key_vault_secret.global["zsea-global-db-app-password"].value && data.azurerm_key_vault.global.name == "msglobalidpg-${substr(sha1("00000000-0000-0000-0000-000000000001/iya-sts/globalidp/global"), 0, 4)}"
     error_message = "a copy of the global database password in the environment's global vault, where the service looks with the Key Vault KEK"
+  }
+}
+
+# BEHIND FRONT DOOR (#1341): Traffic Manager answers the direct name, which
+# is the primary cell's Front Door origin, and every vault gets the origin
+# secret.
+run "testidpna_behind_front_door" {
+  variables {
+    environment     = "testidpna"
+    public_hostname = jsondecode(file("../environment/envs/testidpna.cells.tfvars.json")).public_hostname
+    direct_hostname = jsondecode(file("../environment/envs/testidpna.cells.tfvars.json")).direct_hostname
+    primary_cell    = jsondecode(file("../environment/envs/testidpna.cells.tfvars.json")).primary_cell
+    cells           = jsondecode(file("../environment/envs/testidpna.cells.tfvars.json")).cells
+    jurisdictions   = jsondecode(file("../environment/envs/testidpna.cells.tfvars.json")).jurisdictions
+  }
+  assert {
+    condition     = azurerm_dns_cname_record.public[0].name == "direct.na-idp" && contains(keys(azurerm_key_vault_secret.global), "zcnc-edge-secret")
+    error_message = "Traffic Manager is at the direct name, and every cell holds the origin secret."
   }
 }
 
