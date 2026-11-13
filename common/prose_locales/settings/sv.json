@@ -3672,8 +3672,8 @@
     "text": "Standardnyckelalgoritm för CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "d0667a437e4fd5f6",
-    "text": "Vilken nyckelalgoritm en ny certifikatutfärdare byggs med när formuläret inte anger någon: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 eller ed25519, eller ett av postkvant-id:na (ML-DSA, SLH-DSA, kompositerna och ML-KEM — som inte kan signera, så den är en subjektnyckel och aldrig en utfärdares). RSA är standard eftersom det LÖV som hierarkin finns till för att utfärda signerar ett klientintyg som någon annans OAuth-bibliotek måste verifiera, och RS256 är den enda algoritm som varje sådant bibliotek har: rsa-2048 i utvecklingsläge, rsa-3072 i produktläge (ASVS 5.0.0 11.2.3). Listan läses från common/crypto_impl/key_material.js — modulen som genererar nyckeln — så ett värde den inte känner till avvisas vid bygget med listan bredvid."
+    "en": "cc69afa5c623e756",
+    "text": "Vilken nyckelalgoritm en ny certifikatutfärdare byggs med när formuläret inte anger någon: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 eller ed25519, eller ML-DSA eller SLH-DSA. ML-KEM kan inte signera, så den är en subjektnyckel och aldrig en utfärdares. Ett sammansatt ML-DSA-id godtas men används inte för ett CA-certifikat: OpenSSL kan inte läsa en sammansatt nyckel i en TLS-lyssnares kedja, så roten, processgrenen och varje domängren byggs med en klassisk nyckel i stället (STS-PKI-0273, STS-PKI-0275). RSA är standard eftersom det LÖV som hierarkin finns till för att utfärda signerar ett klientintyg som någon annans OAuth-bibliotek måste verifiera, och RS256 är den enda algoritm som varje sådant bibliotek har: rsa-2048 i utvecklingsläge, rsa-3072 i produktläge (ASVS 5.0.0 11.2.3). Listan läses från common/crypto_impl/key_material.js — modulen som genererar nyckeln — så ett värde den inte känner till avvisas vid bygget med listan bredvid."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",

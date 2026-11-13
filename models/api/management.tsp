@@ -7869,7 +7869,8 @@ namespace IyaSts.Api.Management {
     `kind`?: string;
     `family`?: string;
     `signs`?: boolean;
-    `slow`?: boolean
+    `slow`?: boolean;
+    `tlsUsable`?: boolean
   })[];
   
 

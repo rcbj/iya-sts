@@ -1236,7 +1236,7 @@ class PkiAuthoring {
    */
   keyAlgorithms(pqModeId: unknown) {
     const self = this;
-    const { log, keyMaterial } = this.deps;
+    const { log, keyMaterial, pki } = this.deps;
     log.debug('Entering PkiAuthoring.keyAlgorithms(). mode=' + pqModeId);
     const mode = self.pqModeFor(pqModeId);
     const out = keyMaterial.keyAlgIds().filter(function (id) {
@@ -1255,7 +1255,12 @@ class PkiAuthoring {
                // rather than offering a signature menu that cannot work.
                signs: desc.kind !== 'pqc' || desc.use !== 'kem',
                slow: desc.kind === 'pqc' &&
-                     SLOW_FAMILIES.indexOf(desc.family) >= 0 };
+                     SLOW_FAMILIES.indexOf(desc.family) >= 0,
+               // A composite ML-DSA key, which no TLS peer can be shown
+               // (`pki.js`'s `listenerUnreadableKeyAlg()`): the workbench
+               // still offers it, for what this service verifies itself,
+               // and says so beside it (2026-11-12).
+               tlsUsable: !pki.listenerUnreadableKeyAlg(id) };
     });
     log.debug('Leaving PkiAuthoring.keyAlgorithms(). ' +
               out.length + ' of them.');

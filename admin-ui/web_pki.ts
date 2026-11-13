@@ -152,10 +152,21 @@ class PkiPage {
     }).join('');
   }
 
-  static algorithmOptions(json: Json, selected: Json) {
-    return json.keyAlgorithms.map(function (one) {
+  // `forCa` is a build form's menu: every certificate authority here is on
+  // a TLS or gRPC listener chain, and a composite ML-DSA key cannot be (the
+  // service refuses it, STS-PKI-0272 and 0274), so the menu offers none —
+  // except the one already selected, so a stored value still draws. A
+  // leaf's menu offers them all, a composite marked as no TLS peer's key:
+  // a leaf can sign what this service verifies itself (2026-11-12).
+  static algorithmOptions(json: Json, selected: Json, t?: Json,
+                          forCa?: boolean) {
+    return json.keyAlgorithms.filter(function (one) {
+      return !forCa || one.tlsUsable !== false || one.id === selected;
+    }).map(function (one) {
       return '<option value="' + esc(one.id) + '"' +
         (one.id === selected ? ' selected' : '') + '>' + esc(one.label) +
+        (t && one.tlsUsable === false
+          ? esc(t.text('consolePki.notForTls')) : '') +
         '</option>';
     }).join('');
   }
@@ -603,6 +614,8 @@ class PkiPage {
       return { value: one.id, group: one.family,
                label: one.label +
                       (one.slow ? t.text('consolePki.slowToGenerate') : '') +
+                      (one.tlsUsable === false
+                        ? t.text('consolePki.notForTls') : '') +
                       (one.signs ? '' : t.text('consolePki.cannotSign')) };
     });
     const slow = wb.keyAlgorithms.filter(function (one) { return one.slow; });
@@ -1088,7 +1101,7 @@ class PkiPage {
       '<label' + kit.tip(t.text('consolePki.branchKeyAlgTip')) + '>' +
       t.html('consolePki.keyAlgorithm') + ' <select name="keyAlg">' +
       self.algorithmOptions(json, scope.keyAlg ||
-                            json.pageDefaults.keyAlgorithm) +
+                            json.pageDefaults.keyAlgorithm, t, true) +
                             '</select></label> ' +
       self.alternativeField(json, scope.altKeyAlg, t) +
       '<button type="submit"' +
@@ -1199,7 +1212,7 @@ class PkiPage {
       '<label>' + t.html('consolePki.keyAlgorithm') +
       ' <select name="keyAlg">' +
       self.algorithmOptions(json, (tree.root && tree.root.keyAlg) ||
-                            json.pageDefaults.keyAlgorithm) +
+                            json.pageDefaults.keyAlgorithm, t, true) +
                             '</select></label> ' +
       self.alternativeField(json, tree.root &&
                             (tree.root.altKeyAlg ||
@@ -1590,7 +1603,8 @@ class PkiPage {
       '<input type="hidden" name="action" value="build">' +
       '<label>' + t.html('consolePki.keyAlgorithm') +
       ' <select name="keyAlg">' +
-        self.algorithmOptions(json, keyAlg) + '</select></label> ' +
+        self.algorithmOptions(json, keyAlg, t, true) +
+        '</select></label> ' +
       '<label>' + t.html('consolePki.signatureAlgorithm') +
       ' <select name="signatureAlg">' +
         self.signatureOptions(json, keyAlg, t) + '</select></label> ' +
@@ -1650,7 +1664,7 @@ class PkiPage {
         ' <select name="leafKeyAlg">' +
           '<option value="">' +
           t.html('consolePki.issuingCaAlg', { alg: chain.keyAlg }) +
-          '</option>' + self.algorithmOptions(json, '') +
+          '</option>' + self.algorithmOptions(json, '', t) +
           '</select></label> ' +
         '<label>' + t.html('consolePki.days') +
         ' <input name="days" size="5" value="' +
@@ -1712,7 +1726,7 @@ class PkiPage {
         ' <select name="leafKeyAlg">' +
           '<option value="">' +
           t.html('consolePki.issuingCaAlg', { alg: chain.keyAlg }) +
-          '</option>' + self.algorithmOptions(json, '') +
+          '</option>' + self.algorithmOptions(json, '', t) +
           '</select></label> ' +
         '<label>' + t.html('consolePki.days') +
         ' <input name="days" size="5" value="' +

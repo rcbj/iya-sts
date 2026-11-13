@@ -2445,7 +2445,8 @@ namespace IyaSts.Api.Console {
     `family`?: string;
     `kind`?: string;
     `signs`?: boolean;
-    `slow`?: boolean
+    `slow`?: boolean;
+    `tlsUsable`?: boolean
   })[];
   
 

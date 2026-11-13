@@ -3672,8 +3672,8 @@
     "text": "Algoritmo de clave predeterminado de la CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "d0667a437e4fd5f6",
-    "text": "Con qué algoritmo de clave se construye una nueva autoridad de certificación cuando el formulario no indica ninguno: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o uno de los identificadores poscuánticos (ML-DSA, SLH-DSA, los compuestos y ML-KEM — que no puede firmar, así que es una clave de sujeto y nunca la de una autoridad). RSA es el predeterminado porque la HOJA que esta jerarquía existe para emitir firma una aserción de cliente que la biblioteca OAuth de otra persona tiene que verificar, y RS256 es el único algoritmo que tienen todas esas bibliotecas: rsa-2048 en modo desarrollo, rsa-3072 en modo producto (ASVS 5.0.0 11.2.3). La lista se lee de common/crypto_impl/key_material.js — el módulo que genera la clave — así que un valor que no conoce se rechaza al construir, con la lista al lado."
+    "en": "cc69afa5c623e756",
+    "text": "Con qué algoritmo de clave se construye una nueva autoridad de certificación cuando el formulario no indica ninguno: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o ML-DSA o SLH-DSA. ML-KEM no puede firmar, así que es una clave de sujeto y nunca la de una autoridad. Un identificador ML-DSA compuesto se acepta y no se usa para un certificado de CA: OpenSSL no puede leer una clave compuesta en la cadena de un listener TLS, así que la raíz, la rama del proceso y la rama de cada dominio se construyen con una clave clásica en su lugar (STS-PKI-0273, STS-PKI-0275). RSA es el predeterminado porque la HOJA que esta jerarquía existe para emitir firma una aserción de cliente que la biblioteca OAuth de otra persona tiene que verificar, y RS256 es el único algoritmo que tienen todas esas bibliotecas: rsa-2048 en modo desarrollo, rsa-3072 en modo producto (ASVS 5.0.0 11.2.3). La lista se lee de common/crypto_impl/key_material.js — el módulo que genera la clave — así que un valor que no conoce se rechaza al construir, con la lista al lado."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",

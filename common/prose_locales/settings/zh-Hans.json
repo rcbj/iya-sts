@@ -3672,8 +3672,8 @@
     "text": "默认 CA 密钥算法"
   },
   "pki.keyAlgorithm|description": {
-    "en": "d0667a437e4fd5f6",
-    "text": "当表单未指明时，新证书颁发机构所使用的密钥算法：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或某个后量子 id（ML-DSA、SLH-DSA、复合算法以及 ML-KEM——后者不能签名，因此只能作为主体密钥，而绝不能作为颁发机构的密钥）。默认值为 RSA，因为此层级结构所要签发的叶证书会签署客户端断言，而该断言须由别人的 OAuth 库验证，RS256 是每个此类库都支持的唯一算法：开发模式下为 rsa-2048，产品模式下为 rsa-3072（ASVS 5.0.0 11.2.3）。该列表读取自 common/crypto_impl/key_material.js——即生成密钥的模块——因此它不认识的值会在构建时被拒绝，并附上该列表。"
+    "en": "cc69afa5c623e756",
+    "text": "当表单未指明时，新证书颁发机构所使用的密钥算法：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或 ML-DSA、SLH-DSA。ML-KEM 不能签名，因此只能作为主体密钥，而绝不能作为颁发机构的密钥。复合 ML-DSA id 会被接受，但不会用于 CA 证书：OpenSSL 无法读取 TLS 监听器证书链上的复合密钥，因此根 CA、进程分支和每个领域分支都会改用经典密钥构建（STS-PKI-0273、STS-PKI-0275）。默认值为 RSA，因为此层级结构所要签发的叶证书会签署客户端断言，而该断言须由别人的 OAuth 库验证，RS256 是每个此类库都支持的唯一算法：开发模式下为 rsa-2048，产品模式下为 rsa-3072（ASVS 5.0.0 11.2.3）。该列表读取自 common/crypto_impl/key_material.js——即生成密钥的模块——因此它不认识的值会在构建时被拒绝，并附上该列表。"
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",

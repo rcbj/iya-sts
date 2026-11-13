@@ -7709,10 +7709,14 @@ const SETTINGS = [
     runtime: true,
     description: 'Which key algorithm a new certificate authority is built ' +
                  'with when the form names none: rsa-2048, rsa-3072, ' +
-                 'rsa-4096, ec-p256, ec-p384, ec-p521 or ed25519, or one of ' +
-                 'the post-quantum ids (ML-DSA, SLH-DSA, the composites and ' +
-                 'ML-KEM — which cannot sign, so it is a subject key and ' +
-                 'never an authority\'s). RSA is the default because the ' +
+                 'rsa-4096, ec-p256, ec-p384, ec-p521 or ed25519, or ML-DSA ' +
+                 'or SLH-DSA. ML-KEM cannot sign, so it is a subject key ' +
+                 'and never an authority\'s. A composite ML-DSA id is ' +
+                 'accepted and not used for a CA certificate: OpenSSL ' +
+                 'cannot read a composite key on a TLS listener\'s chain, ' +
+                 'so the Root, the process branch and each realm\'s branch ' +
+                 'are built with a classical key instead (STS-PKI-0273, ' +
+                 'STS-PKI-0275). RSA is the default because the ' +
                  'LEAF this hierarchy exists to issue signs a client ' +
                  'assertion that somebody else\'s OAuth library has to ' +
                  'verify, and RS256 is the one algorithm every such library ' +
