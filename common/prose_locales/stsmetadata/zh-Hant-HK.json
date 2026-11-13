@@ -159,10 +159,6 @@
     "en": "df4a48ab6e7784a2",
     "text": "partial：第 13 節的 Web（被動）請求者設定檔——帶有 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 與 wreq 的 wsignin1.0、以表單 POST 傳送的登入回應，以及帶有前端通道清除請求的 wsignout1.0/wsignoutcleanup1.0；作為聯盟依賴方（#167）時，夥伴的清除請求（依規格未簽署）只有在該人於具備真正按鈕的頁面上確認後才會結束工作階段，而此處的登出會向夥伴送出 wsignout1.0。已簽署的聯盟元數據（第 3.1 節）位於 AD FS 路徑。「未」實作的部分，每一項都明確指名而非保持沉默：超出 /sts 已能回應範圍的主動（SOAP）請求者設定檔、wresultptr、都回應 501 的屬性服務（wattr1.0）與假名服務（wpseudo1.0）、wreqptr（拒絕——從查詢參數中解參照 URL 是伺服器端請求偽造）、此設定檔中的權杖加密（被動請求不攜帶接收者證書），以及任何授權或原則強制執行。wreply 在開發模式下照原樣使用，在「產品」模式下必須是已註冊的 wsfedReplyUrl（2026-09-12）。超出規格（規格沒有這種請求）的部分：位於 /wsfed/initiate/{rp} 的由身分識別提供者發起的登入（#712），在依賴方選擇加入之前為關閉，且只 POST 至其已註冊的 wsfedReplyUrl。"
   },
-  "stsmetadata.specs.rfc6749.coverage": {
-    "en": "56137411ddc592b3",
-    "text": "partial：authorization_code、implicit、password、client_credentials 與 refresh_token。客戶端驗證會被接受但不驗證——「除了」在 RFC 9700 模式下，在此註冊為機密客戶端者必須出示本服務簽發給它的 client_secret（第 2.5 節，本服務中任何地方唯一會檢查的認證資料）。該模式也會直接拒絕 password 授權類型；拒絕 implicit 授權的存取權杖——即每一種從授權端點簽發存取權杖的回應類型——除非管理員為該領域豁免 RFC 9700 第 2.1.2 節，且即便如此也只對已啟用該類型的應用程式生效（#1295、#1296）；並輪替重新整理權杖。第 3.3 節：範圍與客戶端綁定（#110）——本服務自己的受保護範圍（admin:*、SCIM 與 Shared Signals 範圍、偵錯工具權限）在每種模式下都只簽發給 oauthAllowedScope 宣告了它們的客戶端，而在產品模式下每個範圍都受限於該清單或一組有文件記載的預設集合；超出範圍的請求為 invalid_scope。"
-  },
   "stsmetadata.specs.rfc7009.coverage": {
     "en": "33e4093318a039b6",
     "text": "full：產品模式下的第 2.1 節——機密客戶端需經驗證，公開客戶端指名其已註冊的 client_id，且客戶端只能撤銷自己的權杖（否則為 invalid_grant）；開發模式只驗證有出示認證資料的呼叫端。存取權杖與重新整理權杖可撤銷，其他任何東西為 unsupported_token_type；未知的 token_type_hint 會被忽略；撤銷重新整理權杖會連帶撤銷其整個授權，包括存取權杖；已撤銷的權杖在內省時會回報為非作用中（#102）。"

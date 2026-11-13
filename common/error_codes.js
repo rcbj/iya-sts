@@ -12773,7 +12773,8 @@ const CODES = [
     summary: 'A request to POST /sts/mex (WS-MetadataExchange, #958) was ' +
       'not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not ' +
       'well-formed, or a root that is not soap:Envelope.',
-    spec: 'SOAP 1.1 Client fault, HTTP 500 (SOAP 1.1 section 6.2)' },
+    spec: 'SOAP 1.1 Client fault, HTTP 400, as POST /sts answers a body ' +
+      'that is not XML (STS-WSTRUST-0001)' },
   { code: 'STS-WSTRUST-0073',
     summary: 'A request to POST /sts/mex (#958) carried a wsa:Action that ' +
       'is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata ' +

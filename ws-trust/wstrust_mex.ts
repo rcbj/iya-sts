@@ -118,8 +118,14 @@ class WsTrustMex {
       ? String(root.namespaceURI || '') : '';
     if (envNs !== soap11 && envNs !== soap12) {
       log.debug("Leaving WsTrustMex.answer(). Not a SOAP envelope.");
+      // NOT AN ENVELOPE IS 400, AS `POST /sts` ANSWERS ONE (STS-WSTRUST-0001):
+      // SOAP 1.1 section 6.2's 500 is for a fault about a message, and this
+      // is not a SOAP message at all. A 500 also reads as an uncaught throw
+      // to every probe of this service (tests/protocol/sts_route_inputs.js,
+      // run 22). A well-formed envelope this endpoint refuses keeps SOAP's
+      // 500.
       return this.fault(soap11, '', 'Client', 'The request is not a SOAP ' +
-                        '1.1 or SOAP 1.2 envelope.', 'STS-WSTRUST-0072');
+                        '1.1 or SOAP 1.2 envelope.', 'STS-WSTRUST-0072', 400);
     }
     const header = this.child(root, envNs, 'Header');
     const body = this.child(root, envNs, 'Body');
@@ -195,10 +201,12 @@ class WsTrustMex {
    * @param who - Client or Server
    * @param why - the reason
    * @param code - the error code, recorded and not sent
+   * @param [status] - the HTTP status: SOAP's 500 unless told otherwise
    * @returns the answer
    */
   private static fault(envNs: string, wsaNs: string, who: string,
-                       why: string, code: string): { status: number;
+                       why: string, code: string,
+                       status?: number): { status: number;
                          type: string; body: string; errorCode: string } {
     log.debug("Entering WsTrustMex.fault().");
     const soap11 = WsModel.term('soap.namespace', 'soap11');
@@ -211,7 +219,7 @@ class WsTrustMex {
         Html.esc(why) + '</soap:Text></soap:Reason></soap:Fault>';
     const headers = wsaNs
       ? '<wsa:Action>' + Html.esc(wsaNs) + '/fault</wsa:Action>' : '';
-    const out = { status: 500, type: this.typeOf(envNs, soap11),
+    const out = { status: status || 500, type: this.typeOf(envNs, soap11),
                   body: this.envelope(envNs, wsaNs, headers, body),
                   errorCode: code };
     log.debug("Leaving WsTrustMex.fault().");
