@@ -379,7 +379,10 @@ class AccessRequests {
   /**
    * A subject, resource or action as the binding compares it: the object
    * whole, less `subject.properties.act` (the profile's exclusion, so an
-   * actor normalised to `client.actor` compares the same).
+   * actor normalised to `client.actor` compares the same), and less any
+   * member the evaluation's model does not name. AuthZEN 1.0 section
+   * 10.1.1 has those IGNORED (#936), so one may neither be signed into a
+   * denial nor make a submission differ from it.
    *
    * @param name - subject, resource or action
    * @param value - the object
@@ -392,6 +395,15 @@ class AccessRequests {
       return value === undefined ? null : value;
     }
     const out = JSON.parse(JSON.stringify(value));
+    const named = authzenModel.fieldOf('evaluation', name).fields
+      .map(function (one: Json) {
+        return one.name;
+      });
+    Object.keys(out).forEach(function (key: string) {
+      if (named.indexOf(key) < 0) {
+        delete out[key];
+      }
+    });
     if (name === 'subject' && isObject(out.properties)) {
       delete out.properties.act;
       if (!Object.keys(out.properties).length) {

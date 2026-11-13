@@ -239,10 +239,12 @@ function theShape(t) {
   t.equal(codeOf(request({ context: { application: 5 } })),
           'STS-AUTHZEN-0003', 'R8. a context.application that is not a ' +
           'string');
-  t.equal(codeOf(request({ evaluations: [] })), 'STS-AUTHZEN-0009',
-          'R9. a member a single evaluation does not define is refused ' +
-          '(STS-AUTHZEN-0009)');
-  t.equal(codeOf(request({ subject: { name: 'x' } })), 'STS-AUTHZEN-0009',
+  // AuthZEN 1.0 section 10.1.1: a receiver MUST ignore an unknown member
+  // (#936). STS-AUTHZEN-0009, which refused one, is retired.
+  t.equal(codeOf(request({ evaluations: [] })), '',
+          'R9. a member a single evaluation does not define is ignored');
+  t.equal(codeOf(request({ subject: { type: 'user', id: 'alice',
+                                      name: 'x' } })), '',
           'R10. and one of subject\'s');
   const read = map.read(request({ context: { application: 'portal' } }),
                         rows());

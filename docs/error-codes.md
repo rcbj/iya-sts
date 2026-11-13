@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5456** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5455** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -5102,7 +5102,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0006` | An AuthZEN property's value did not fit its catalogue row's datatype: a JSON type that may not reach it (a number for a string, a fraction for an integer), or a string that does not parse at it. | HTTP 400, an error message |
 | `STS-AUTHZEN-0007` | An AuthZEN property sent an array for a catalogue row whose multiplicity is single, or a bag with too many values. | HTTP 400, an error message |
 | `STS-AUTHZEN-0008` | An AuthZEN property sent an object where its catalogue row takes a value, an object or array inside a bag, or objects nested too deeply. | HTTP 400, an error message |
-| `STS-AUTHZEN-0009` | An AuthZEN request, or its subject, action or resource, carried a member AuthZEN 1.0 does not define. | HTTP 400, an error message |
+| `STS-AUTHZEN-0009` *(retired)* | An AuthZEN request, or its subject, action or resource, carried a member AuthZEN 1.0 does not define. Retired by #936 (2026-11-13): AuthZEN 1.0 section 10.1.1 has a receiver ignore an unknown member, so every /access/v1 request now accepts and ignores one, and an Action Search's action with it. | — |
 | `STS-AUTHZEN-0010` | An AuthZEN attribute catalogue row was refused: not a JSON object, an unknown member, or an object, property path, attributeId, category, dataType or multiplicity that is not one the catalogue takes. | the write is refused |
 | `STS-AUTHZEN-0011` | An AuthZEN attribute catalogue row was refused because it maps onto a reserved identifier — this service's own urn:sts:xacml: namespace, XACML's subject-id, resource-id or action-id, a current-time attribute, or context.application. A request-supplied attribute suppresses the PIP, so such a row would let a caller forge a trusted fact. | the write is refused |
 | `STS-AUTHZEN-0012` | An AuthZEN attribute catalogue row was refused because it sends a subject property under a bare directory attribute name, which the PIP reads off the subject's directory entry; for a subject this realm resolves the directory is authoritative. | the write is refused |

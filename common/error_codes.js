@@ -23308,8 +23308,11 @@ const CODES = [
     spec: 'HTTP 400, an error message' },
   { code: 'STS-AUTHZEN-0009',
     summary: 'An AuthZEN request, or its subject, action or resource, ' +
-      'carried a member AuthZEN 1.0 does not define.',
-    spec: 'HTTP 400, an error message' },
+      'carried a member AuthZEN 1.0 does not define. Retired by #936 ' +
+      '(2026-11-13): AuthZEN 1.0 section 10.1.1 has a receiver ignore an ' +
+      'unknown member, so every /access/v1 request now accepts and ignores ' +
+      'one, and an Action Search\'s action with it.',
+    spec: '', retired: true },
   { code: 'STS-AUTHZEN-0010',
     summary: 'An AuthZEN attribute catalogue row was refused: not a JSON ' +
       'object, an unknown member, or an object, property path, attributeId, ' +

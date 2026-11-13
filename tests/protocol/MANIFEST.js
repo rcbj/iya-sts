@@ -1531,6 +1531,18 @@ const JOBS = [
   { file: 'sts_oid4vp_conformance.js',   browser: false,
     conformance: true, timeoutMs: 7200000,
     lane: 'conformance-b' },
+  // AuthZEN Authorization API 1.0 (#936, rcbj's decision of 2026-11-13):
+  // the six PDP plans, the suite the PEP, in a throwaway realm whose
+  // `authzen.callerAuthentication` is `bearer`, every plan at
+  // pdp_auth_type=api_key with static metadata. The mtls variant is
+  // opt-in in the job (CONFORMANCE_PLANS=mtls-*): release-v5.3.1 aborts
+  // it before the PDP is called. No browser, no classical twin (the
+  // suite verifies nothing the realm signs). Six plans of plain JSON
+  // requests, a few minutes together, so `conformance-b`, whose jobs stay
+  // well under the OpenID Connect lane; an hour's watchdog.
+  { file: 'sts_authzen_conformance.js',  browser: false,
+    conformance: true, timeoutMs: 3600000,
+    lane: 'conformance-b' },
   // THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24): four independent
   // SAML service providers, each a second container under the `saml-peers`
   // compose profile (tests/saml-peers/), each driven by a job of its own

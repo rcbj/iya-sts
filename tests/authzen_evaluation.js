@@ -633,13 +633,20 @@ async function childBody() {
           'S6. Action Search answers the policy\'s actions the subject is ' +
           'permitted (read, write; not delete, nor approve whose ' +
           'obligation was not declared)', brief(r));
-  since = marks.length;
+  // AuthZEN 1.0 sections 8.6.1 and 10.1.1 (#936): an Action Search's
+  // `action` is an unknown member, ignored, and the answer is S6's.
   r = await request(port, 'POST', SEARCH + 'action', pepCred, {
     subject: { type: 'user', id: 'azalice' }, action: { name: 'read' },
-    resource: { type: 'document', id: 'doc-1' },
-    context: { application: 'todo-app' } });
-  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0009'),
-          'S7. an Action Search carrying action is refused', brief(r));
+    resource: { type: 'document', id: 'doc-1',
+                properties: { classification: 'internal' } },
+    context: { application: 'todo-app' }, futureField: { nested: true } });
+  const ignoredNames = ((r.json && r.json.results) || []).map(function (one) {
+    return one.name;
+  });
+  t.check(r.status === 200 &&
+          ignoredNames.join() === names.join(),
+          'S7. an Action Search carrying action, and an unknown member, ' +
+          'ignores both and answers what S6 answered', brief(r));
   const paged = { subject: { type: 'user', id: 'azalice' },
                   action: { name: 'inspect' },
                   resource: { type: 'application' },
