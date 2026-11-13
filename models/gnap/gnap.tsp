@@ -855,8 +855,26 @@ model GnapApiAnswer {
   @member(#{ cite: "this service's own (#578): English sentences", own: true })
   errors?: string[];
 
+  // The person's own language, as `authn.preferredLanguageOf()` answers it
+  // and `/authn-api` models it (`WithValuePopulated`): an object, never a
+  // bare tag. It was declared a string until 2026-11-12, so every view
+  // drawn for a signed-in person with a language was recorded under
+  // STS-GNAP-0910; what is sent did not change.
   @member(#{ cite: "this service's own (#539)", own: true })
-  preferredLanguage?: string;
+  preferredLanguage?: GnapApiLanguage;
+}
+
+/**
+ * `/gnap-api`'s `preferredLanguage` (#539): a signed-in person's own
+ * language, the shape `WebI18n.load()` takes as `own`.
+ */
+@members(#{ id: "gnap-api-language", cite: "this service's own (#539)", members: "closed" })
+model GnapApiLanguage {
+  @member(#{ cite: "this service's own (#539): RFC 2798's preferredLanguage, a language tag", own: true })
+  value: string;
+
+  @member(#{ cite: "this service's own (#539): whether the locale policy populated the value when the entry was created, which ranks it below the browser's language", own: true })
+  populated?: boolean;
 }
 
 // ---------------------------------------------------------------------------
