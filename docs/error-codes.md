@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5448** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5449** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -54,7 +54,7 @@ is an ordinary outcome.
 * [Service core (`STS-CORE`)](#sts-core) — 108
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 110
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 33
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 22
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
@@ -486,6 +486,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0162` | The store every node shares could not be asked to spend against a budget (a GNAP right's limits); the operation was refused (#432 phase 5). | — |
 | `STS-CLUSTER-0163` | A spend against a shared budget could not be refunded: the store could not be asked (#432 phase 5). | — |
 | `STS-CLUSTER-0164` | The flush that was to give back a directory create's claims (its DN and username) failed, so they stay held until they expire (two minutes): the release is a statement of the transaction that writes the entry, or follows that flush on one node, and goes back with it (#628). A create of one of those names before then waits and is refused as in progress (STS-LDAP-0092). | — |
+| `STS-CLUSTER-0165` | Taking over a lease is waiting for writes the previous holder still has in flight under it: the ask is bounded by the heartbeat's own bound, rolls back when the bound runs out, and is made again on the next heartbeat, so this node's own renewal never waits behind it (#770). Logged once per wait; one that repeats for a node lifetime names a write that does not finish. | — |
 
 ## STS-CELL
 
