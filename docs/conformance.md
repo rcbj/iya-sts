@@ -54,6 +54,7 @@ Every suite below passed in the full runs of 2026-09-26 and 2026-09-27.
 | Shared Signals, CAEP | the same suite | OpenID Foundation | SSF transmitter and CAEP interop transmitter, by push and by poll |
 | OpenID Federation | the same suite | OpenID Foundation | Leaf and Trust Anchor entity plans, automatic registration into a federation the suite plays, and this service as the relying party of a federation the suite plays (#933; a suite run is outstanding) |
 | OpenID4VCI, OpenID4VP | the same suite | OpenID Foundation | issuer (wallet- and issuer-initiated, pre-authorized, HAIP) and verifier (`direct_post`, `direct_post.jwt`, x509 client identifiers, HAIP with SD-JWT VC and ISO mdoc) |
+| AuthZEN | the same suite | OpenID Foundation | the six PDP plans (evaluation, evaluations, the three searches) with API-key client authentication; mutual TLS is not runnable on this release ([AuthZEN](#authzen)) |
 | Verifiable Credentials | [W3C VC test suites](#w3c-verifiable-credentials-and-did-suites) | W3C VC Working Group | VC Data Model 2.0, Data Integrity EdDSA, Data Integrity ECDSA (incl. `ecdsa-sd-2023`), Bitstring Status List, VC-JOSE-COSE |
 | DIDs | [did-test-suite](#w3c-verifiable-credentials-and-did-suites) | W3C DID Working Group | DID Core: did:web, did:key, did:jwk, resolution and dereferencing |
 | XACML 3.0 | [OASIS conformance tests](#xacml-30) (via AT&T and AuthzForce) | OASIS XACML TC | **454 of 455** mandatory cases |
@@ -95,6 +96,7 @@ the End-User for the OpenID4VP verifier.
 | `sts_oidfed_conformance` | the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor; the plan in which the suite runs a federation that a realm's OP joins, registering the RP automatically; the plan in which this service is the relying party of a federation the suite plays (the OpenID Provider and the Trust Anchor), registering automatically |
 | `sts_oid4vci_conformance` | the issuer plan (SD-JWT VC) wallet-initiated, issuer-initiated and pre-authorized with a transaction code; the HAIP issuer plan (`attest_jwt_client_auth`) |
 | `sts_oid4vp_conformance` | the verifier plan for SD-JWT VC by `direct_post` and `direct_post.jwt`, with the `redirect_uri`, `x509_san_dns` and `x509_hash` client identifier prefixes; the HAIP verifier plan (`oid4vp-1final-verifier-haip-test-plan`: `x509_hash`, a signed request by reference, encrypted `direct_post.jwt`) for SD-JWT VC and for an ISO mdoc, the realm trusting the suite's mdoc IACA root |
+| `sts_authzen_conformance` | the six AuthZEN 1.0 PDP plans (evaluation, evaluations, evaluations comprehensive, and the subject, resource and action searches), the suite as the Policy Enforcement Point, against a realm whose callers authenticate with an access token (`authzen.callerAuthentication` `bearer`); see [AuthZEN](#authzen) |
 
 **The OpenID Federation relying-party plan is scheduled, and a suite run
 against it is outstanding.** `sts_oidfed_conformance` creates
@@ -180,9 +182,43 @@ the realm's JWKS carries post-quantum keys the suite cannot parse. The OpenID Co
 fragments are random rather than hashes. The default stays the stricter
 check.
 
+## AuthZEN
+
+`sts_authzen_conformance` runs the six AuthZEN PDP plans with the
+`api_key` client authentication variant and static PDP metadata. The suite
+sends its API key as `Authorization: Bearer`; the job gives it an OAuth
+access token from a `client_credentials` grant, carrying `authzen:evaluate`
+and audienced to the realm's `/access/v1`, in a realm configured with
+[`authzen.callerAuthentication`](authzen.md) set to `bearer`. Mutual TLS is
+still the service's default; only that realm is set otherwise.
+
+Two limits of the suite (`release-v5.3.1`) decide the variants:
+
+* **Mutual TLS cannot run.** Every module of the `mtls` variant stops while
+  the suite configures it, before it calls the PDP. The job keeps those
+  plans, but runs them only when they are named
+  (`CONFORMANCE_PLANS='mtls-*'`).
+* **The API key needs static metadata.** With discovery, the suite replaces
+  its PDP configuration with the fetched metadata document and loses the
+  key, so every module stops before calling the PDP. The job gives the suite
+  the endpoints from the realm's metadata instead. The metadata document
+  and its `signed_metadata` are tested by the repository's own jobs.
+
+One module is argued from the suite's source rather than passed:
+`authzen-pdp-evaluation-invalid-credentials-returns-401` stops before it
+sends a request, because it needs a client object that no AuthZEN test of
+that release creates. The missing-credentials module beside it checks the
+same 401.
+
+**An open finding:** AuthZEN 1.0 section 10.1.1 says a receiver MUST ignore
+unknown fields, and iya-sts refuses a request member AuthZEN 1.0 does not
+define (`STS-AUTHZEN-0009`). The plans' `*-unknown-*-fields-ignored` modules
+are expected to fail on it until that is decided.
+
 ## Not run, and why
 
-* The Brazil, panva and superseded-draft plans, and AuthZEN.
+* The Brazil, panva and superseded-draft plans.
+* AuthZEN's mutual-TLS variant: see [AuthZEN](#authzen).
 * FAPI 1.0 Baseline: the suite no longer publishes a plan for it, so the
   repository's own `sts_fapi_baseline.js` is Baseline's only check.
 * FAPI 2.0 Message Signing's `plain_response` variant: section 5.4.1 has the

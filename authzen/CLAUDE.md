@@ -50,9 +50,34 @@ evaluation decided by an application's own fine-grained policy (#564).
 the same questions over HTTP in a throwaway realm, and carries the **AuthZEN
 interop "Todo" scenario** — its five people, five actions and owner rule
 written in ALFA as the realm's root policy — through mutual TLS, the default
-door. The bearer door is held in process only: issuing a client a delegated
-permission grant and a token over the network is a second stack's worth of
-setup for checks the report API's jobs already drive.
+door. The bearer door is held in process by `tests/authzen_evaluation.js`,
+and over HTTP only by the conformance job below, which registers its own
+`client_credentials` client in a realm of its own.
+
+**THE OPENID FOUNDATION'S AUTHZEN PDP PLANS RUN AT `api_key` (#936, rcbj's
+decision of 2026-11-13).** `tests/protocol/sts_authzen_conformance.js`
+(`conformance: true`, lane `conformance-b`) runs the six plans with the suite
+as the PEP, in a throwaway realm with `authzen.callerAuthentication`
+`bearer`; the suite's API key (`pdp.api_key`, sent as `Authorization:
+Bearer`) is a `client_credentials` token carrying `authzen:evaluate`,
+audienced to the realm's `/access/v1`, its client in `authzen-peps`. **The
+service's default door stays `mtls`**; nothing here changed it. Two things
+about suite release-v5.3.1 decide the variants, both read in its source:
+
+* **`mtls` never reaches the PDP**: `SupportMTLSEndpointAliases` requires an
+  environment object `server` that `configure()` maps only afterwards. The
+  job keeps those plans as `mtls-*`, run only when `CONFORMANCE_PLANS` names
+  them.
+* **`api_key` needs `pdp_server_metadata=static`**: discovery replaces the
+  `pdp` object, and the key with it, by the fetched document. The job copies
+  the realm's metadata endpoints into the static configuration;
+  `sts_authzen.js` holds the metadata and `signed_metadata`.
+
+**An open finding, not ledgered**: the plans' `*-unknown-*-fields-ignored`
+modules expect 200 under section 10.1.1 ("receivers MUST ignore unknown
+fields"), which *Unknown members of the request itself are refused too*
+(`0009`, below) contradicts. They fail until rcbj decides between ignoring
+unknown members and arguing the difference.
 
 ## The mapping, in one table
 

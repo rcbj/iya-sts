@@ -7,66 +7,92 @@
 //
 // ---------------------------------------------------------------------------
 // THE OPENID FOUNDATION'S CONFORMANCE SUITE: AUTHZEN PDP (#936). The six
-// certification plans, the discovery plan when release-v5.3.1 contains it,
-// one static-metadata evaluation, and one api_key evaluation. The suite is
-// the PEP. This service is the PDP, in a throwaway realm whose catalogue
-// and root policy this file wrote. No browser.
+// certification plans, and the discovery plan when release-v5.3.1 contains
+// it. The suite is the PEP. This service is the PDP, in a throwaway realm
+// whose catalogue and root policy this file wrote. No browser.
+//
+// EVERY PLAN THAT RUNS BY DEFAULT IS THE api_key VARIANT (rcbj's decision
+// on #936, 2026-11-13), on a realm whose `authzen.callerAuthentication` is
+// `bearer`. mTLS stays the service's default caller authentication; only
+// this throwaway realm is set otherwise.
 //
 //   eval, evals, evals-comp, search-subject, search-resource, search-action
-//     pdp_auth_type=mtls, pdp_server_metadata=discovery,
-//     authzen_support=properties, on the mutual-TLS realm.
+//     pdp_auth_type=api_key, pdp_server_metadata=static,
+//     authzen_support=properties, on the bearer realm.
 //   discovery
 //     authzen-pdp-discovery-test-plan, no variant. The same realm. A 404,
 //     or any other status whose body says the plan is unknown and does not
 //     reject a variant key, skips this plan only. Any other body fails the
 //     job. The image is not bumped.
-//   eval-static
-//     the evaluation plan with pdp_server_metadata=static.
-//   eval-apikey
-//     the evaluation plan with pdp_auth_type=api_key, on a second realm
-//     whose door is bearer. The token is minted immediately before that
-//     plan, and only when the plan is selected.
+//   mtls-eval, mtls-evals, mtls-evals-comp, mtls-search-subject,
+//   mtls-search-resource, mtls-search-action
+//     the same plans at pdp_auth_type=mtls, pdp_server_metadata=discovery,
+//     on a mutual-TLS realm. OPT-IN: they run only when CONFORMANCE_PLANS
+//     names them (a key, or `mtls-*`), never by default. See below.
 //
-// The mutual-TLS caller is a person, az-pep, holding a certificate from
-// tests/tools/pep-credential.js, stored on the entry and placed in
-// authzen-peps, scoped to the one application "records". The bearer caller
-// is the registered application itself: its group member is the entry DN,
-// and its only application name is its own client id. alice and bob are
-// the subject ids the policy names.
+// WHY THE api_key PLANS ARE STATIC (read in release-v5.3.1's source, and
+// master has the same code). The api_key credential is the configuration's
+// `pdp.api_key`, and AddApiKeyAuthenticationParametersToAuthzenApiRequest
+// reads it from the environment object "pdp", sending it as
+// `Authorization: Bearer <api_key>`. With pdp_server_metadata=discovery,
+// GetPDPDynamicServerConfiguration REPLACES "pdp" with the fetched metadata
+// document, so the key is gone and every module stops at that condition
+// ("'PDP API Key' field is missing") before the PDP is called. With
+// static, GetPDPStaticServerConfiguration puts the configuration's own
+// `pdp` object in the environment, the key with it, so this file copies
+// every endpoint the realm's metadata names into `pdp` (STATIC_ENDPOINTS).
+// The metadata and its signed_metadata are still read here (readMetadata)
+// and are sts_authzen.js's to assert; the suite's discovery checks wait for
+// a suite that keeps the key, or for the mtls plans to be runnable.
 //
-// NO CLASSICAL TWIN IN THIS FILE. signed_metadata stays on (RS256).
-// pdp.jwks is the one public JWK whose kid matches that JWT, with no alg
-// filter, so the realm's post-quantum keys are not what the suite is
-// given. oauth2.signedMetadataCertificateHeader stays x5u until a result
-// names x5u or /pki/chain; this file then sets it to none on the throwaway
-// realm and runs the selected plans once more. Twins are added only after
-// that re-run still names AKP, OKP, an unknown key type, or
-// WarnOnUnusableJwksKeys. This file does not call withClassicalTwins.
+// The bearer caller is a registered application: dynamic registration,
+// client_credentials, `authzen:evaluate`, audience the realm's
+// /access/v1. Its group member is the entry DN, and its only application
+// name is its own client id. A token is minted immediately before each
+// plan, under a two-hour access-token lifetime. alice and bob are the
+// subject ids the policy names.
 //
-// THE LEDGERS START EMPTY. Resource search of type record
-// (RESOURCE_TYPES) and a closed request that refuses an unknown member
-// (STS-AUTHZEN-0009) are permanent differences, ledgered from the printed
-// module id after a run. They are not written here in advance, and a line
-// for either is not a certification claim. A wrong fixture decision, a
-// missing alice or bob, a missing read or write, a batch-order failure,
-// an authentication failure, and a Content-Type the suite will not accept
-// as a ledger line are fixed, not ledgered.
+// THE mtls PLANS CANNOT RUN ON release-v5.3.1, and current master has the
+// same order. setupMtls() installs SupportMTLSEndpointAliases.
+// AbstractAuthzenPDPTest.configure calls that sequence, then
+// env.mapKey("server", "pdp"). The sequence's one condition,
+// AddMTLSEndpointAliasesToEnvironment, is @PreEnvironment(required =
+// "server") and throws before evaluate, so configuration aborts and the
+// PDP is never called. That is why they are opt-in rather than deleted:
+// the realm, the PEP certificate (az-pep, from tests/tools/pep-credential.js,
+// stored on the entry, in authzen-peps, scoped to "records") and the
+// variant are kept for the day a suite maps "server" before the sequence.
+// The anchor it trusts is removed when the job ends, pass or fail.
 //
-// release-v5.3.1's mtls variant never reaches the PDP, and current
-// master has the same order. setupMtls() installs
-// SupportMTLSEndpointAliases. AbstractAuthzenPDPTest.configure calls
-// that sequence, then env.mapKey("server", "pdp"). The sequence's one
-// condition, AddMTLSEndpointAliasesToEnvironment, is
-// @PreEnvironment(required = "server") and throws before evaluate.
-// GetPDPDynamicServerConfiguration stores the fetched metadata as
-// "pdp". configure() stores the published JSON as "config" and does
-// not copy a top-level "server" member into the environment, so this
-// file cannot satisfy the check by adding one. Later conditions read
-// the endpoint from the "pdp" object, so the alias step is not what
-// places the URL. It only aborts configuration. That failure is not a
-// ledger line. The manifest row stays out until a suite that maps
-// "server" onto "pdp" before the sequence can be run. This file does
-// not bump the image.
+// NO CLASSICAL TWIN IN THIS FILE. The static plans verify nothing this
+// realm signs, so its post-quantum keys are never in front of the suite.
+// For the opt-in discovery plans, signed_metadata stays on (RS256) and
+// pdp.jwks is the one public JWK whose kid matches that JWT;
+// oauth2.signedMetadataCertificateHeader stays x5u until a result names x5u
+// or /pki/chain, and this file then sets it to none on the throwaway realms
+// and runs the selected plans once more.
+//
+// THE LEDGER. One failure is argued from the suite's source rather than
+// from a run (KNOWN_FAILURES): authzen-pdp-evaluation-invalid-credentials-
+// returns-401 corrupts the credentials with CorruptAuthzenClientCredentials,
+// which is @PreEnvironment(required = {"client", "pdp"}); nothing in the
+// AuthZEN tests puts a "client" object in the environment (the api_key
+// variant needs none), so the condition fails before evaluate and the
+// request is never sent. The missing-credentials module beside it asks the
+// same door the same question and must pass.
+//
+// NOT LEDGERED, AND EXPECTED TO FAIL UNTIL rcbj DECIDES: the four
+// evaluation modules `*-unknown-*-fields-ignored` (and any other module
+// sending a member AuthZEN 1.0 does not define) expect 200, because section
+// 10.1.1 says "receivers MUST ignore unknown fields"; this PDP refuses an
+// undefined member 400 (STS-AUTHZEN-0009, authzen/CLAUDE.md, *The value
+// rules*). That is a difference from a MUST, so it is reported rather than
+// argued here. Resource search of type record (RESOURCE_TYPES) is the
+// other difference expected, ledgered from the printed module id after a
+// run if the suite judges it. A wrong fixture decision, a missing alice or
+// bob, a missing read or write, a batch-order failure, an authentication
+// failure, and a Content-Type the suite will not accept are fixed, not
+// ledgered.
 //
 // OWNED HERE (local: true). sts_authzen.js stays the Todo job.
 // ---------------------------------------------------------------------------
@@ -106,36 +132,37 @@ const PEP = "az-pep";
 const APPLICATION = "records";
 const POLICY_NAME = "authzen-certification";
 
+// The default: api_key, and static metadata so the key reaches the
+// request (the header says why discovery loses it).
+const API_KEY_VARIANT = {
+  pdp_auth_type: "api_key",
+  pdp_server_metadata: "static",
+  authzen_support: "properties"
+};
+// Opt-in only: release-v5.3.1 aborts every mtls module in configure().
 const MTLS_VARIANT = {
   pdp_auth_type: "mtls",
   pdp_server_metadata: "discovery",
   authzen_support: "properties"
 };
-const PLANS = [
-  { key: "eval", name: "authzen-pdp-evaluation-test-plan",
-    door: "mtls", variant: MTLS_VARIANT },
-  { key: "evals", name: "authzen-pdp-evaluations-test-plan",
-    door: "mtls", variant: MTLS_VARIANT },
-  { key: "evals-comp",
-    name: "authzen-pdp-evaluations-comprehensive-test-plan",
-    door: "mtls", variant: MTLS_VARIANT },
-  { key: "search-subject", name: "authzen-pdp-subject-search-test-plan",
-    door: "mtls", variant: MTLS_VARIANT },
-  { key: "search-resource", name: "authzen-pdp-resource-search-test-plan",
-    door: "mtls", variant: MTLS_VARIANT },
-  { key: "search-action", name: "authzen-pdp-action-search-test-plan",
-    door: "mtls", variant: MTLS_VARIANT },
-  { key: "discovery", name: DISCOVERY_NAME, door: "mtls",
-    discovery: true, variant: null },
-  { key: "eval-static", name: "authzen-pdp-evaluation-test-plan",
-    door: "mtls", staticMetadata: true,
-    variant: { pdp_auth_type: "mtls", pdp_server_metadata: "static",
-               authzen_support: "properties" } },
-  { key: "eval-apikey", name: "authzen-pdp-evaluation-test-plan",
-    door: "bearer", apiKey: true,
-    variant: { pdp_auth_type: "api_key", pdp_server_metadata: "discovery",
-               authzen_support: "properties" } }
+const PLAN_NAMES = [
+  ["eval", "authzen-pdp-evaluation-test-plan"],
+  ["evals", "authzen-pdp-evaluations-test-plan"],
+  ["evals-comp", "authzen-pdp-evaluations-comprehensive-test-plan"],
+  ["search-subject", "authzen-pdp-subject-search-test-plan"],
+  ["search-resource", "authzen-pdp-resource-search-test-plan"],
+  ["search-action", "authzen-pdp-action-search-test-plan"]
 ];
+const PLANS = PLAN_NAMES.map(function (pair) {
+  return { key: pair[0], name: pair[1], door: "bearer", apiKey: true,
+           staticMetadata: true, variant: API_KEY_VARIANT };
+}).concat([
+  { key: "discovery", name: DISCOVERY_NAME, door: "bearer", apiKey: true,
+    discovery: true, variant: null }
+]).concat(PLAN_NAMES.map(function (pair) {
+  return { key: "mtls-" + pair[0], name: pair[1], door: "mtls",
+           optIn: true, variant: MTLS_VARIANT };
+}));
 
 // The variant keys a discovery rejection is about. A value counts only
 // when the body is also rejecting something, and not when the value is
@@ -235,8 +262,21 @@ const CERT_POLICY = [
 const EXPECTED = {};
 // Conditions whose WARNING is kept, and why (none yet).
 const KNOWN_WARNINGS = {};
-// Conditions whose FAILURE is argued (none yet).
+// Conditions whose FAILURE is argued. Read in release-v5.3.1's source, not
+// yet seen in a run: CorruptAuthzenClientCredentials is @PreEnvironment
+// (required = {"client", "pdp"}), and no AuthZEN test puts "client" in the
+// environment, so the invalid-credentials module stops there and never
+// sends its request. The message is the suite's own pre-environment
+// failure for that object, and nothing else from the condition is argued.
+const INVALID_CREDENTIALS = "authzen-pdp-evaluation-invalid-credentials-" +
+  "returns-401";
 const KNOWN_FAILURES = {};
+KNOWN_FAILURES["*/" + INVALID_CREDENTIALS +
+               "/CorruptAuthzenClientCredentials"] = {
+  why: "the suite's precondition needs an environment object \"client\" " +
+       "that no AuthZEN test of release-v5.3.1 creates for api_key",
+  msg: /couldn't find (required )?object in environment[^:]*: client\b/
+};
 
 const addedAnchors = [];
 let checks = 0;
@@ -294,7 +334,7 @@ function rejectsVariant(body) {
   text = text.split(DISCOVERY_NAME).join(" ");
   text = text.replace(/mtls\.(cert|key|ca)/gi, " ");
   text = text.replace(/configuration\.mtls/gi, " ");
-  text = text.replace(/client\.api_key/gi, " ");
+  text = text.replace(/(client|pdp)\.api_key/gi, " ");
   const lower = text.toLowerCase();
   let hit = false;
   if (REJECTION.test(lower)) {
@@ -331,10 +371,21 @@ function sawCertificateFetch(lines) {
   return saw;
 }
 
+// A plan runs when the run selects it. An opt-in plan (`optIn`) is
+// selected only when CONFORMANCE_PLANS names it, by its key or a prefix:
+// with no CONFORMANCE_PLANS every other plan runs and it does not.
+function runs(plan) {
+  log.debug("Entering runs(). " + plan.key);
+  const named = String(process.env.CONFORMANCE_PLANS || "").trim() !== "";
+  const yes = oidf.selected(plan.key) && (!plan.optIn || named);
+  log.debug("Leaving runs(). " + yes);
+  return yes;
+}
+
 function wants(door) {
   log.debug("Entering wants(). " + door);
   const yes = PLANS.some(function (plan) {
-    return plan.door === door && oidf.selected(plan.key);
+    return plan.door === door && runs(plan);
   });
   log.debug("Leaving wants(). " + yes);
   return yes;
@@ -604,7 +655,10 @@ function configurationFor(plan, prepared, doc, jwk, token) {
                  ca: prepared.anchorPem };
   }
   if (token) {
-    out.client = { api_key: token };
+    // `pdp.api_key`: the variant's configuration field, which
+    // AddApiKeyAuthenticationParametersToAuthzenApiRequest reads from the
+    // environment's "pdp" object and sends as `Authorization: Bearer`.
+    pdp.api_key = token;
   }
   log.debug("Leaving configurationFor().");
   return out;
@@ -673,7 +727,7 @@ async function runAll(mtls, bearer) {
   const unexpected = [];
   for (let i = 0; i < PLANS.length; i++) {
     const plan = PLANS[i];
-    if (!oidf.selected(plan.key)) {
+    if (!runs(plan)) {
       continue;
     }
     const prepared = plan.door === "bearer" ? bearer : mtls;
@@ -753,7 +807,15 @@ new Command()
                                            "needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+// The PEP anchor an opt-in mtls plan trusted is removed, pass or fail
+// (tests/CLAUDE.md, a client-certificate trust anchor is process-wide). The
+// api_key plans add none, so by default there is nothing to remove.
+test().then(function () {
+  return credentials.settleAnchors(root, addedAnchors, null);
+}, function (e) {
+  log.debug("Caught in test(): " + ((e && e.message) || e));
+  return credentials.settleAnchors(root, addedAnchors, e);
+}).catch(function (e) {
   log.error(redact((e && e.stack) || (e && e.message) || e));
   process.exit(1);
 });
