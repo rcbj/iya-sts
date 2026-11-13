@@ -4147,6 +4147,22 @@
     "en": "03950106a2822b70",
     "text": "Cas d’usage `fido-mds` : le signataire d’un BLOB FIDO MDS3 importé. Déjà complet ; le mode paranoïaque passe par la porte pour que les contrôles soient le même code. Le contournement audité overrideSignature de l’administrateur est inchangé. Ancres : risk.mdsTrustAnchors, la racine GlobalSign Root R3, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
   },
+  "pki.paranoidPolicySigner|label": {
+    "en": "38aa0042d4360db7",
+    "text": "Paranoïaque : le signataire d’un export de politiques"
+  },
+  "pki.paranoidPolicySigner|description": {
+    "en": "c64cd02e7a525d75",
+    "text": "Cas d’usage `policy-signer` : le certificat avec lequel un export de politiques depuis Directory → Policies est signé, et la chaîne dans son x5c, lorsqu’il est inspecté ou importé (#1713). Activé, les vérifications complètes s’appliquent dans CHAQUE mode, y compris le pki.paranoid principal : validité, keyUsage, le chemin et la révocation de chaque maillon. Ancres : la racine du service pour les exports propres à ce domaine, le magasin de confiance des signataires pour ceux d’un autre domaine. Désactivé, le réglage principal décide, comme pour toute autre ligne ; désactivé en mode produit, c’est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust."
+  },
+  "pki.policyExportAlgorithm|label": {
+    "en": "86a4a3a6f65c98bb",
+    "text": "Algorithme de signature des exports de politiques"
+  },
+  "pki.policyExportAlgorithm|description": {
+    "en": "ef8edd8df33cb131",
+    "text": "L’algorithme JWS avec lequel un export de politiques depuis Directory → Policies est signé (#1713). Chaque export est signé par une clé neuve de cet algorithme, certifiée par la Policy Export Signing CA de ce domaine, et le document porte ce certificat et toute sa chaîne dans le x5c. RS256 par défaut : l’algorithme de la clé de signature JOSE propre au domaine. Une clé RSA fait 3072 bits. Un changement s’applique à l’export suivant ; un export déjà fait garde l’algorithme avec lequel il a été signé."
+  },
   "pki.signerTrustAnchorsFile|label": {
     "en": "9d4fabbc6c6918f1",
     "text": "Magasin de confiance des signataires : un fichier PEM d’ancres et d’intermédiaires"

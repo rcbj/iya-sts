@@ -67,6 +67,10 @@
     "en": "4aacf430b5a390f0",
     "text": "Ang mga certificate na ipinapanlagda ng isang tao o isang application sa isang WS-Trust request (isang WS-Security 1.1 signature sa SOAP Body at Timestamp): digitalSignature lamang, ang urn:sts:person: o urn:sts:application: na pangalan ng may-hawak, at isang private key na iniabot nang isang beses bilang PKCS#12. Inilalabas ng isang administrator mula sa console o /admin-api. Pinapatunayan ng certificate mula sa authority na ito ang may-hawak nito bilang requester ng isang nilagdaang RST, sa realm na ito; hindi ito nagagawa ng TLS client certificate mula sa serbisyong ito, at wala namang pinapapasok ang isang ito sa TLS."
   },
+  "pki.useCases.policy-signing.what": {
+    "en": "9dd7e80fa0d8f1eb",
+    "text": "Ang mga sertipiko kung saan nilalagdaan ang isang export ng mga patakaran mula sa Directory → Policies (#1713): isang bagong susi bawat export, digitalSignature lamang, ang sertipiko nito at ang buong kadenang ito sa x5c ng export. Ang realm na nag-i-import ng export ay agad itong pinagkakatiwalaan kapag sarili nitong awtoridad ito, at nagtatanong muna sa isang administrator bago pagkatiwalaan ang sa ibang realm, at idinaragdag ang kadena ng realm na iyon sa truststore ng mga lumalagda nito para sa gamit na ito at wala nang iba."
+  },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",
     "text": "Isang naka-register na OAuth client o relying party. Isinusulat ang key pair nito sa sarili nitong entry sa ou=applications."

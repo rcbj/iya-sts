@@ -293,6 +293,7 @@
   "endpoints.route./admin-api/roles/preview.name": "Would this be issued?",
   "endpoints.route./admin-api/roles/:action.name": "Make and change roles",
   "endpoints.route./admin-api/policies/:action.name": "Change a policy",
+  "endpoints.route./admin-api/policies/transfer/:action.name": "Export and import policies",
   "endpoints.route./admin-api/consent/:action.name": "Grant and revoke consent",
   "endpoints.route./admin-api/used-assertions.name": "Used assertions",
   "endpoints.route./admin-api/error-codes.name": "Error codes",

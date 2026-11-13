@@ -715,6 +715,18 @@
     "en": "3919c9c6efb6ee77",
     "text": "Se modificó un perfil de política de contraseñas"
   },
+  "audit.actions.admin.policies.export.label": {
+    "en": "b4c871ea9e88127c",
+    "text": "Se exportaron las políticas de un dominio, firmadas"
+  },
+  "audit.actions.admin.policies.import.label": {
+    "en": "18769044ecea4c1c",
+    "text": "Se importó una exportación de políticas firmada"
+  },
+  "audit.actions.admin.policies.trust-signer.label": {
+    "en": "ba7acd0fc8b6667f",
+    "text": "Se confió en el firmante de exportaciones de políticas de otro dominio"
+  },
   "audit.actions.admin.authn-policy.change.label": {
     "en": "be6362a1a19bae26",
     "text": "Se modificó un perfil de política de autenticación"

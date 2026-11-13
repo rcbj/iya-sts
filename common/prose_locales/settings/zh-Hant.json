@@ -4147,6 +4147,22 @@
     "en": "03950106a2822b70",
     "text": "使用情境 `fido-mds`：已匯入 FIDO MDS3 BLOB 的簽署者。先前已完整；偏執模式透過該門查詢，使檢查成為同一份程式碼。管理員可稽核的 overrideSignature 略過維持不變。信任錨：risk.mdsTrustAnchors、GlobalSign Root R3、簽署者信任存放區。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
   },
+  "pki.paranoidPolicySigner|label": {
+    "en": "38aa0042d4360db7",
+    "text": "偏執：原則匯出的簽署者"
+  },
+  "pki.paranoidPolicySigner|description": {
+    "en": "c64cd02e7a525d75",
+    "text": "用例 `policy-signer`：從 Directory → Policies 進行的原則匯出所用的簽署憑證，以及其 x5c 中的鏈，在檢查或匯入時（#1713）。開啟時，完整檢查在每種模式下都適用，包括總開關 pki.paranoid：有效期、keyUsage、每一環的路徑和撤銷。信任錨：本領域自己的匯出用服務根憑證，另一領域的用簽署者信任庫。關閉時由總開關決定，與其他各列相同；在產品模式下關閉會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.policyExportAlgorithm|label": {
+    "en": "86a4a3a6f65c98bb",
+    "text": "原則匯出的簽署演算法"
+  },
+  "pki.policyExportAlgorithm|description": {
+    "en": "ef8edd8df33cb131",
+    "text": "從 Directory → Policies 進行的原則匯出所用的 JWS 演算法（#1713）。每次匯出都由該演算法的一把新金鑰簽署，由本領域的 Policy Export Signing CA 認證，文件在 x5c 中攜帶該憑證及其整條鏈。預設 RS256：領域自身 JOSE 簽署金鑰的演算法。RSA 金鑰為 3072 位元。變更適用於下一次匯出；已完成的匯出保留其簽署時的演算法。"
+  },
   "pki.signerTrustAnchorsFile|label": {
     "en": "9d4fabbc6c6918f1",
     "text": "簽署者信任存放區：含信任錨與中繼憑證的 PEM 檔案"
