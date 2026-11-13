@@ -2,14 +2,15 @@
 
 **The embedded identity protocol debugger (2026-09-13).** The parent project's
 browser client and api, served by this process as a feature of it: a listener of
-its own, a sign-in through this service's authorization server, and an api
-behind an access token only a console administrator is issued.
+its own, a sign-in through this service's authorization server as one
+confidential client, and a gate that admits a console administrator's session
+and reads NOTHING ELSE the request carries (#1717, 2026-11-13).
 
 | File | What it is |
 |---|---|
 | `debugger_server.ts` | The listener's own express app: security headers, the sign-in callback, the landing paths, THE GATE, the forwarder to `/api`, the static site. A socket owner — bound from `server.js`'s `listen()`. |
 | `debugger_api_process.ts` | The api as a forked child on a unix socket: the environment it is given, the allow-list, start, restart with backoff, give up, stop. |
-| `debugger_access.ts` | Who may use it: `narrowScope()` at issuance and `isAdministrator()` at the gate. A library (rule 3). |
+| `debugger_access.ts` | Who may use it: `isAdministrator()`, asked by the gate on every request. A library (rule 3). |
 | `debugger_admin.ts` | `/admin/debugger`, and the view `GET /admin-api/debugger` answers (rule 7). |
 | `web_debugger.ts` | The page's renderer since #446: a `web_` module a browser can load, drawing `/admin/debugger` from that view alone (`admin-ui/CLAUDE.md`, *The static console's renderers*). `debugger_admin.ts` calls it with the view passed through JSON until the console's cutover. |
 | `embedded/` | **Not source.** The debugger project's embedded build output, gitignored and dockerignored — see *Where the built tree comes from*. |
@@ -36,8 +37,9 @@ any of them is a change of design rather than a refactor.
 3. **The gate is always on.** No setting, no mode. The api dials what its
    caller names — token endpoints, KDCs, directories, TLS handshakes, gRPC.
 4. **People only, console administrators only** — rcbj chose this over the
-   recommended "administrators and declared applications". No
-   `client_credentials` token ever carries the permission.
+   recommended "administrators and declared applications". Since #1717 there
+   is no token a machine client could hold at all: the gate is a person's
+   sign-in session.
 5. **The parent repo was edited** on `feature/embed-in-mock-sts`, additively:
    its standalone deployment is unchanged.
 6. **The image takes the built tree from an image** (`COPY --from`), not a
@@ -48,6 +50,17 @@ any of them is a change of design rather than a refactor.
 8. **In product the api may dial ONLY this service** — rcbj chose this over
    the recommended "public addresses and this service". Plus
    `debugger.allowedDestinations`.
+
+**And a ninth, rcbj's in #1717 (2026-11-13):** the login and the tokens it
+produces MUST NOT interfere with debugger operations, so nothing the browser
+sends to `/api` may be read, consumed or removed by the gate except this
+service's own session cookie — and the UI and its api are one application. He
+suggested an OIDC confidential client in the api layer with a session of its
+own; the confidential client and the server-side session already existed HERE
+(`oidc_rp`'s `debugger` surface), and the question being decided — console
+role membership, re-asked per request — is only answerable in this process, so
+the sign-in stayed here and the token path was removed instead. The issue
+records the reasoning.
 
 ## The contract with the debugger project
 
@@ -109,110 +122,79 @@ of what was stashed — which is the test `/admin/signals/receive`'s exemption
 set, and a sixth landing needs that argument made again. **`isLanding()` matches
 method AND path**, so reading an inbox or deleting one is gated.
 
-**The token is verified in `/admin-api`'s order** (RFC 9068 section 4): the
-DEFAULT realm's key, expiry, `typ at+jwt`, issuer (this service's default
-authorization server at the request's authorization base or the pinned one),
-audience `urn:sts:debugger-api:`, scope `debugger` — then
-`isAdministrator()` AGAIN, so a role revoked after the token was minted stops
-working before it expires. The session path verifies the session's own access
-token the same way.
+**The credential is the session and nothing else (#1717, 2026-11-13).** The
+gate reads this surface's relying-party session from its cookie (`oidc_rp`'s
+`sessionFor()`, after `renewal()` has kept its tokens current or ended it) and
+asks `isAdministrator()` for the session's person on EVERY request, so a role
+revoked after somebody signed in stops working at their next request. It does
+not read `Authorization`, `DPoP` or a client certificate, and it holds no
+opinion about the access token the session keeps: that token is this client's
+own and never leaves this process.
 
-**Forwarding drops Cookie and Authorization** (the api must not hold an
-administrator's session or token), adds `X-Forwarded-Proto`/`-Host`/`-Prefix:
-/api`, drops the api's `Set-Cookie` and CORS headers, and rewrites a `Location`
-naming the child's configured origin to the one this request arrived at — so a
-SAML landing redirects to the host the browser is using.
+**Why there is no access-token path any more.** Until #1717 the gate took an
+access token for the debugger api's permission, on the session or on the
+request's own `Authorization` header, and the forwarder stripped that header.
+But the debugger sends `Authorization` to its api AS ITS WORK — `/api/userinfo`
+forwards a UserInfo Bearer token, `/api/introspection` Basic client
+credentials, SCIM and GNAP their own — so the gate read the debugger's traffic
+as its own credential (refusing Basic as a malformed token, refusing an IdP's
+Bearer token as not ours) and what got through reached the api without the
+header the operation needed. `dpop.proofClaims()` on this app reserved the
+`jti` of every DPoP proof passing through, so a proof the debugger sent to THIS
+service's token endpoint arrived there as a replay. All three are gone: no
+token path, no proof reservation, nothing stripped but cookies. The
+sender-constraint settings (`oauth2.accessTokenRequireDpop`,
+`oauth2.accessTokenRequireMtls`) went with the token path — they constrain a
+token PRESENTED, and nothing is presented here now.
 
-## The listener ASKS for a client certificate, and the gate reads both schemes (#34, 2026-09-15)
+**Forwarding drops Cookie** (the api must not hold an administrator's session)
+and **passes `Authorization` and `DPoP` through untouched**, adds
+`X-Forwarded-Proto`/`-Host`/`-Prefix: /api`, drops the api's `Set-Cookie` and
+CORS headers, and rewrites a `Location` naming the child's configured origin to
+the one this request arrived at — so a SAML landing redirects to the host the
+browser is using.
 
-Four changes, and only the third is one of #34's settings.
+## The listener ASKS for a client certificate (#34, 2026-09-15)
 
-**The listener asks for a client certificate and requires none.**
 `https.createServer()` gets `requestCert: true` with `rejectUnauthorized:
 false` over `tlsServer.clientTruststoreOptions()` — exactly the posture the main
-port takes (and 8443 took, until it was deleted on 2026-09-16 for being a second
-socket with it), so the handshake succeeds either way and what a certificate
-is worth is decided per request against the truststore. It was added because
-`oauth2.accessTokenRequireMtls` covers this listener, and **a listener that
-never asks makes a certificate-bound token impossible to present here rather
-than merely unusual** — which would have been an exemption dressed up as a
-refusal. `trustClientCertificatesOn()` was already registered for the leaf
-`build-root` replaces; it now keeps the ANCHORS current too.
+port takes, so the handshake succeeds either way. It was added so a
+certificate-bound access token could be presented here; since #1717 no token
+is, and the request is kept only because the listener's TLS is the main port's
+and tlsfuzzer holds it to that (#212): `clientTruststoreOptions()` carries
+`tls_server.js`'s whole `protocolOptions()` — the floor, the ciphers and the
+groups, the signature algorithms, the renegotiation refusal, and through
+`trustClientCertificatesOn()` the guard that closes a client certificate whose
+EC key is on a curve other than P-256/P-384/P-521 (`tls/CLAUDE.md`). No test
+stack binds this listener, so `tests/tlsfuzzer_debugger.js` binds it over TLS
+in process, with a stand-in site and the api child's start stubbed, and runs
+the stack job's plan against it.
 
-**The listener's TLS is the main port's, and tlsfuzzer holds it (#212).**
-`clientTruststoreOptions()` carries `tls_server.js`'s whole `protocolOptions()`:
-- the floor, the ciphers and the groups;
-- the signature algorithms;
-- the renegotiation refusal;
-- through `trustClientCertificatesOn()`, the guard that closes a client
-  certificate whose EC key is on a curve other than P-256/P-384/P-521
-  (`tls/CLAUDE.md`).
+**The debugger client is CONFIGURED, not exempted.** `sts-debugger-ui` is not
+on `sender_constraints.js`'s `MTLS_EXEMPT_CLIENTS` — that list is the two
+hosted surfaces, which redeem over a loopback call from this process to itself
+— and an operator who makes a realm strict is expected to make its client match
+rather than to discover a hole shaped like a debugger.
 
-No test stack binds this listener, so `tests/tlsfuzzer_debugger.js` binds it
-over TLS in process, with a stand-in site and the api child's start stubbed,
-and runs the stack job's plan against it.
+## One application (#1717)
 
-**A DPoP-bound token presented as a Bearer token is refused, in every mode.**
-The gate had been given RFC 8705's `cnf["x5t#S256"]` check (`STS-DBG-0030`) and
-never RFC 9449's, so a token carrying `cnf.jkt` — a token whose whole point is
-that holding it is not enough — was accepted here as a bearer token. It is
-`STS-DBG-0031` now, and a proof that fails with no code of its own is
-`STS-DBG-0032`. This is not one of the settings: it is about honouring a
-constraint the TOKEN already carries, so it runs whatever they say. **The same
-hole `/admin-api` carried, closed the same way** — `mgmt-api/CLAUDE.md`, and
-`oauth-oidc/CLAUDE.md` 3ao.
+**The UI and its api are one client, `sts-debugger-ui`**, seeded in the default
+realm of every install (#541), confidential (`private_key_jwt`), asking for
+`openid profile email offline_access` with global consent. Until #1717 there
+were two — `sts-debugger-api`, a resource server defining
+`urn:sts:debugger-api:debugger`, and the client holding a grant of it — and
+`narrowScope()` took the permission off any grant to a non-administrator at
+issuance. With no token path there is nothing for a permission to admit to, so
+the resource row, the permission, `narrowScope()` and the scope policy's
+protection of it are gone. The id stayed `sts-debugger-ui` so registrations,
+grants and sessions an install already holds survive.
+`applications.retireDebuggerApiApplication()`, run by the default realm's seed,
+deletes a SEEDED `sts-debugger-api` row and takes the permission off a SEEDED
+client's grant, consent and declaration; a row an operator made or edited by
+hand under either name is left alone. The nine error codes only the token path
+emitted (`STS-DBG-0003`..`0008`, `0030`..`0032`) are retired, not reused.
 
-**`presentedTokenOf()` reads `Bearer` AND `DPoP`.** `bearerOf()` matched
-`Bearer` alone, so a client doing the stricter thing was told it had presented
-no token at all, which is the least useful answer available. `bearerOf()` is
-kept as a wrapper over it; the scheme is carried beside the token because
-refusing a BOUND token sent as Bearer is a different refusal from a token that
-does not verify.
-
-**`oauth2.accessTokenRequireDpop` and `oauth2.accessTokenRequireMtls` are
-honoured here**, through the same `senderConstraints.accessTokenRefusal()` every
-other surface asks, so an operator who turns one on cannot find that one door
-out of nine kept its own opinion. The refusal's own code (one of
-`STS-OAUTH-0527..0531`) is carried on the verdict and marked by `refuse()`.
-
-**`dpop.proofClaims()` runs on this app**, registered below `inDefaultRealm`
-(the reservation is per realm and this listener's realm is the default one) and
-above the gate (which is what verifies the proof). It is the same middleware
-`oauth2.js` registers on the main app: the proof's `jti` is reserved on arrival
-and given back unless the proof was accepted, so a proof replayed against a
-second node is refused there too.
-
-**The session path is deliberately exempt from all of it.**
-`verifyAccessToken()` takes `presented`, true only when the token came in on
-THIS request's
-`Authorization` header; the relying party's own session holds an access token
-that nobody sent, and **a token nobody sent cannot prove possession of anything
-on a request it was not part of**. Requiring it to would turn the two settings
-into "the debugger's sign-in stops working", which is not what either of them
-says. The session's token is still verified in `/admin-api`'s order, and
-`isAdministrator()` is still asked again.
-
-**And the debugger client is CONFIGURED, not exempted.** `sts-debugger-ui` is
-not on `sender_constraints.js`'s `MTLS_EXEMPT_CLIENTS` — that list is the two
-hosted surfaces, which redeem over a loopback call from this process to itself —
-and because #34's own sixth decision was that the embedded debugger is an
-ordinary client of this authorization server: an operator who makes a realm
-strict is expected to make its client match rather than to discover a hole
-shaped like a debugger.
-
-## Why the permission's base is a URN
-
-`applications.js` joins a resource's `oauthPermissionBaseUri` and a name into the
-scope a client asks for, and that base becomes the token's `aud`. An ADDRESS
-base would make the permission depend on the host name the debugger was reached
-by — `localhost` and `127.0.0.1` would be two permissions and one would match
-nothing. `urn:sts:debugger-api:` is the same everywhere. It is written out in
-THREE files — `debugger_access.ts`, `common/applications.js`'s seed and
-`common/oidc_rp.ts`'s surface — because the latter two are libraries every module
-reads and must not require a feature directory; `tests/debugger_access.js`
-compares them.
-
-## Who may hold it — `debugger_access.ts`
+## Who may use it — `debugger_access.ts`
 
 **Administrator means a MEMBER of what the console means**: `admin_rbac.rolesOf()`
 in the DEFAULT realm, either role — **and the empty-roster rule is NOT honoured**
@@ -229,9 +211,8 @@ the "not an administrator" page says which state it is and where to grant a role
 never opens the window — **and product adds one more refusal the console makes
 too**: until the bootstrap administrator has claimed the console with its
 password, its roles are honoured at the console alone, from a password session.
-This module sees a name (at issuance) or a token's claims (at the gate) and
-never the session, so it refuses that account the permission until the claim
-(`STS-DBG-0033`, `claimPending` from `rolesOf()`), and the page says to sign in
+This module is handed the session's user name and not how it signed in, so it
+refuses that account the debugger until the claim (`STS-DBG-0033`, `claimPending` from `rolesOf()`), and the page says to sign in
 to `/admin` with the password first. A partner asserting `admin` is the case it
 stops. `tests/console_bootstrap_product.js` holds it.
 `tests/debugger_access.js` asserts it against the console's own answer (open,
@@ -243,16 +224,16 @@ decider is loaded or `xacml.enforceAccess` is off, and a relay must not open
 because a policy subsystem was switched off. `tests/debugger_access.js` section C
 runs with no decider for exactly that reason.
 
-**`narrowScope()` is asked at the two places a scope is granted** —
-`issueAuthorizationResponse()` before a code carries it, and `tokenSet()`, which
-every grant mints through, as the backstop. TAKEN OFF, not refused (RFC 6749
-section 3.3); the debugger's gate then draws "the debugger is for
-administrators" rather than an error from a flow the person did nothing wrong
-in. In any realm but the default one it is taken off whoever asks — a person in
-`acme` who shares an administrator's name is somebody else.
+**Anybody may complete the sign-in; only an administrator gets past the gate.**
+Nothing is narrowed at issuance any more (#1717): a non-administrator who signs
+in through `sts-debugger-ui` holds an ID Token and a session that admit them to
+nothing, and the gate draws "the debugger is for administrators", with a
+sign-out, rather than an error from a flow the person did nothing wrong in. The
+session is the default realm's, so a person in `acme` who shares an
+administrator's name is somebody else.
 
-**The seeded entries carry `oauthGlobalConsent` for the permission**, the
-console's reason: a question with one sensible answer in front of every sign-in.
+**The seeded entry carries `oauthGlobalConsent` for its scopes**, the console's
+reason: a question with one sensible answer in front of every sign-in.
 
 ## `oidc_rp.js` grew a surface that is not on this origin
 
@@ -308,7 +289,10 @@ costs the rest of the service nothing.
 
 ## What was verified, and how
 
-* In process: `tests/debugger_access.js` and `tests/debugger_server.js`.
+* In process: `tests/debugger_access.js` and `tests/debugger_server.js` — the
+  latter, since #1717, with real relying-party sessions, an `Authorization`
+  header that opens nothing, and `Authorization` and `DPoP` reaching the
+  stand-in api unchanged.
 * **By hand, against an isolated `node server.js` with a real embedded tree
   (2026-09-13)**: a console administrator signed in through the real sign-in
   screen and landed on the debugger; `/api/healthcheck`, `/api/tls/limits` and a
@@ -319,9 +303,9 @@ costs the rest of the service nothing.
   `/api`; sign-out ended both sessions and `/api` answered 401. The socket
   directory was gone after the process stopped. The vendored `sts_metadata.js`
   and `admin_api.js` jobs passed against that instance.
-* **That run found the gate's audience case**: when the permission is taken off,
-  the token's AUDIENCE changes first, so `STS-DBG-0007` — not only `0008` — is
-  what "signed in and not an administrator" arrives as.
+* (That 2026-09-13 run predates #1717; its token-path findings — the
+  permission taken off a `client_credentials` grant, the audience case — are
+  about code that no longer exists.)
 * **The image**: built with `--build-arg DEBUGGER_IMAGE=` the debugger project's
   embedded image, run with its ports moved, and the listener and api child
   started under node 24.16.0.

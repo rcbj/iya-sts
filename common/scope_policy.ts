@@ -28,8 +28,8 @@
 //     Shared Signals scopes (`ssf.authScopeRead`, `ssf.authScopeWrite`, and
 //     the fixed names `ssf.read` and `ssf.manage` —
 //     `common/ssf_scopes.ts`, #334; renaming a setting adds a name and
-//     unprotects neither, which is the opposite of SCIM), the
-//     embedded debugger's permission, Grant Management's two (#142), the
+//     unprotects neither, which is the opposite of SCIM), Grant
+//     Management's two (#142), the
 //     VC-API test endpoints' two (#194) and the device compliance feed's
 //     `device:compliance` (#164). Issued ONLY to a client whose
 //     `oauthAllowedScope` lists them — except the management, account and
@@ -75,10 +75,12 @@
 // declared vocabulary per application, whatever protocol it asks in.
 //
 // A LIBRARY (rule 3): it registers nothing, and everything it requires is a
-// library `oauth2.ts` already requires. The debugger's permission identifier
-// is written out rather than required from `debugger/debugger_access.ts`, for
+// library `oauth2.ts` already requires. A feature's scope names are written
+// out here rather than required from the feature's directory, for
 // `applications.js`'s reason — a feature directory is not a dependency of
-// `common/` — and `tests/scope_policy.js` compares the two.
+// `common/` — and `tests/scope_policy.js` compares them. (The embedded
+// debugger's permission, `urn:sts:debugger-api:debugger`, was the first; it
+// was retired with the separate debugger api application by #1717.)
 // ===========================================================================
 
 import helpers = require('./helpers');
@@ -122,7 +124,7 @@ const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write',
 // `/report-api`'s two (#956). Protected like the admin scopes: issued only
 // to a client that declares them, in both modes, and the API asks again on
 // every call. `sts-report` is seeded declaring both. Written out rather
-// than required from `report/`, for the debugger permission's reason below.
+// than required from `report/`, for the reason the header gives.
 /**
  * The report API's scopes: `report:use` and `report:admin`.
  */
@@ -161,23 +163,23 @@ const OWNER_SCOPES = Object.freeze(['owner:read', 'owner:write']);
 // this service's own resource server, so its scopes are protected like the
 // rest — a client must declare them, and the API asks again on every call.
 // Written out rather than required from `oauth-oidc/grant_management.ts`,
-// for the debugger permission's reason below.
+// for the reason the header gives.
 const GRANT_MANAGEMENT_SCOPES = Object.freeze(['grant_management_query',
                                                'grant_management_revoke']);
 
 // The VC-API test endpoints' two (#194, `oid4vc/vc_api.ts`): an endpoint
 // that signs any document its caller writes with a realm's key is this
 // service's own resource server, and a development-only one is still no
-// reason to let any client mint the key to it. Written out for the
-// debugger permission's reason below; `tests/scope_policy.js` compares.
+// reason to let any client mint the key to it. Written out for the reason
+// the header gives; `tests/scope_policy.js` compares.
 const VC_API_SCOPES = Object.freeze(['vc-api:issue', 'vc-api:verify']);
 
 // THE ACCOUNT API'S (#568): `/account-api`, the user portal's only door, is
 // this service's own resource server, and its one scope is protected like
 // the rest — a client must declare it, in both modes, and the API asks again
 // on every call. Only the seeded `sts-user-portal` declares it. Written out
-// rather than required from `account-api/account_api.ts`, for the debugger
-// permission's reason below.
+// rather than required from `account-api/account_api.ts`, for the reason
+// the header gives.
 /**
  * The account API's one scope, protected like the rest.
  */
@@ -192,12 +194,6 @@ const ACCOUNT_SCOPE = 'account:manage';
  * The device compliance feed's one scope, protected like the rest.
  */
 const DEVICE_COMPLIANCE_SCOPE = 'device:compliance';
-
-// `debugger/debugger_access.ts`'s PERMISSION_ID. See the header.
-/**
- * The embedded debugger's permission, a protected scope.
- */
-const DEBUGGER_PERMISSION = 'urn:sts:debugger-api:debugger';
 
 // OPENID CONNECT NATIVE SSO's scope (#130): granted, in every mode, only to
 // a client `applications.nativeSsoOf()` enables — the flag and a group —
@@ -258,10 +254,6 @@ class ScopePolicy {
    * The module's `ADMIN_SCOPES`.
    */
   static readonly ADMIN_SCOPES = ADMIN_SCOPES;
-  /**
-   * The module's `DEBUGGER_PERMISSION`.
-   */
-  static readonly DEBUGGER_PERMISSION = DEBUGGER_PERMISSION;
   /**
    * The module's `DEVICE_COMPLIANCE_SCOPE`.
    */
@@ -349,7 +341,7 @@ class ScopePolicy {
     const names = ADMIN_SCOPES.slice(0).concat(REPORT_SCOPES);
     [String(config.value('scim.scopeRead') || 'scim:read'),
      String(config.value('scim.scopeWrite') || 'scim:write'),
-     DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE,
+     DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE,
      AUTHZEN_SCOPE, UMA_PROTECTION_SCOPE]
       .concat(ssfScopes.published(), GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES,
               OWNER_SCOPES)
@@ -901,7 +893,6 @@ export = {
   REPORT_SCOPES: REPORT_SCOPES,
   UMA_PROTECTION_SCOPE: UMA_PROTECTION_SCOPE,
   OWNER_SCOPES: OWNER_SCOPES,
-  DEBUGGER_PERMISSION: DEBUGGER_PERMISSION,
   DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,
   PROTECTED_CODE: PROTECTED_CODE,
   UNDECLARED_CODE: UNDECLARED_CODE,

@@ -99,13 +99,11 @@ class DebuggerPage {
                              : t.text('consoleDebugger.none'),
                t.text('consoleDebugger.tile.ranges')) +
       '</div>';
-    // Split around the three values and the link (#539): a parameter is
-    // escaped, so a value drawn as markup by `code()` sits between messages.
+    // Split around the value and the link (#539): a parameter is escaped,
+    // so a value drawn as markup by `code()` sits between messages.
     const what = kit.note(
       t.html('consoleDebugger.what.a') + code(json.clientId) +
-      t.html('consoleDebugger.what.b') + code(json.audience) +
-      t.html('consoleDebugger.what.c') + code(json.permission) +
-      t.html('consoleDebugger.what.d') + '<a href="/admin/rbac">' +
+      t.html('consoleDebugger.what.b') + '<a href="/admin/rbac">' +
       t.html('consoleDebugger.what.link') + '</a>' +
       t.html('consoleDebugger.what.e'));
     const problems = [json.startProblem, json.listenError, api.lastError]
@@ -131,10 +129,6 @@ class DebuggerPage {
                code(json.uiDirectory)) +
       this.row(t.text('consoleDebugger.listener.client'),
                code(json.clientId)) +
-      this.row(t.text('consoleDebugger.listener.resource'),
-               code(json.resource)) +
-      this.row(t.text('consoleDebugger.listener.permission'),
-               code(json.permission)) +
       '</table>';
     // The last exit's wording is inside <code> and stays as written (#539).
     const process = '<h2>' + t.html('consoleDebugger.api.heading') +

@@ -12,10 +12,10 @@
 // rcbj asked for the parent project's debugger — its browser client and its
 // api — to be a feature of this service, in this container, signed in to
 // through this service's own authorization server like `/admin` and
-// `/portal`, with its api behind an access token carrying a permission only a
-// console administrator is issued. Eight decisions were put to him before
-// anything was written and each took the recommended answer; they are the
-// design and `debugger/CLAUDE.md` argues them. The four that shape this file:
+// `/portal`, and usable by console administrators only. Eight decisions
+// were put to him before anything was written and each took the recommended
+// answer; they are the design and `debugger/CLAUDE.md` argues them. The
+// four that shape this file:
 //
 //   1. **A LISTENER OF ITS OWN, ON AN ORIGIN OF ITS OWN** (`debugger.port`).
 //      The debugger's pages carry inline scripts on nearly every control and
@@ -53,18 +53,22 @@
 //     `/admin/signals/receive` exemption makes, and it passes the same test:
 //     the check moved (to the gated page that reads what was stashed) rather
 //     than went away;
-//   * THE GATE: a bearer token, or this surface's relying-party session and
-//     the access token it holds. Either is verified here — signature, `typ`,
-//     issuer, audience, the permission, and whether the subject is STILL a
-//     console administrator;
+//   * THE GATE: this surface's relying-party session, named by its cookie,
+//     and whether the person it belongs to is STILL a console administrator —
+//     asked on every request. NOTHING ELSE the request carries is read: since
+//     #1717 (2026-11-13) there is no access-token path, because the debugger
+//     sends `Authorization` (and `DPoP`) to its own api as the work it does —
+//     a UserInfo Bearer token, introspection's Basic credentials, SCIM's and
+//     GNAP's own — and a gate that read that header as its credential refused
+//     the debugger's own calls, and the forwarder then stripped it;
 //   * `/api/*` forwarded, `/_sts/*` this surface's own account and sign-out
 //     pages, and everything else the debugger's built static site.
 //
-// A browser with no session is sent through the authorization code flow and
-// comes back to the page it asked for; an API caller with none gets 401. A
-// signed-in person who is not an administrator gets a page saying so — the
-// authorization server will have left the permission off their token, and
-// that is the one refusal here a person meets in the ordinary course.
+// A browser with no session is sent through the authorization code flow — as
+// a CONFIDENTIAL client, `private_key_jwt`, whose tokens never leave this
+// process — and comes back to the page it asked for; a call with none gets
+// 401. A signed-in person who is not an administrator gets a page saying so,
+// which is the one refusal here a person meets in the ordinary course.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS NOT ON `/admin/sts-metadata`'S ROUTE WALK, AND WHY THAT IS STATED.
@@ -103,7 +107,6 @@ const { log, PORT } = helpers;
 import config = require('../common/config');
 import mode = require('../common/mode');
 import realms = require('../common/realms');
-import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
 // The PROXY protocol v2 reader (2026-09-14, #46), a LIBRARY, installed in
@@ -117,16 +120,6 @@ import audit = require('../common/audit');
 import websecurity = require('../common/websecurity');
 import oidcRp = require('../common/oidc_rp');
 import authn = require('../authn/authn');
-import jwtAccessToken = require('../oauth-oidc/jwt_access_token');
-// Opaque access tokens (#501). Called directly, the way the gate reads a
-// JWT: the debugger looks a handle up in the default realm only.
-import opaqueAccessToken = require('../oauth-oidc/opaque_access_token');
-// RFC 8705 section 3.1's resource-server check (2026-09-13); a library.
-import mtls = require('../oauth-oidc/mtls');
-// RFC 9449's binding check, and #34's two settings (2026-09-15). Both are
-// libraries this process has already loaded through oauth2.js.
-import dpop = require('../oauth-oidc/dpop');
-import senderConstraints = require('../oauth-oidc/sender_constraints');
 import tlsServer = require('../tls/tls_server');
 import access = require('./debugger_access');
 import apiProcess = require('./debugger_api_process');
@@ -201,16 +194,11 @@ interface DebuggerServerDeps {
   config: typeof config;
   mode: typeof mode;
   realms: typeof realms;
-  stsCrypto: typeof stsCrypto;
   errorCodes: typeof errorCodes;
   proxyProtocol: typeof proxyProtocol;
   websecurity: typeof websecurity;
   oidcRp: typeof oidcRp;
   authn: typeof authn;
-  jwtAccessToken: typeof jwtAccessToken;
-  mtls: typeof mtls;
-  dpop: typeof dpop;
-  senderConstraints: typeof senderConstraints;
   tlsServer: typeof tlsServer;
   access: typeof access;
   apiProcess: typeof apiProcess;
@@ -223,8 +211,8 @@ type RouteApp = typeof app;
  *
  * It serves the debugger's static UI and forwards `/api` to the api child
  * process on an express app and port of its own. Every request but the
- * landing paths needs an access token carrying the debugger permission,
- * which only a console administrator is issued.
+ * landing paths needs this surface's sign-in session, for a person who is a
+ * console administrator; nothing else the request carries is read.
  */
 class DebuggerServer {
   /**
@@ -260,16 +248,11 @@ class DebuggerServer {
       config: config,
       mode: mode,
       realms: realms,
-      stsCrypto: stsCrypto,
       errorCodes: errorCodes,
       proxyProtocol: proxyProtocol,
       websecurity: websecurity,
       oidcRp: oidcRp,
       authn: authn,
-      jwtAccessToken: jwtAccessToken,
-      mtls: mtls,
-      dpop: dpop,
-      senderConstraints: senderConstraints,
       tlsServer: tlsServer,
       access: access,
       apiProcess: apiProcess
@@ -475,279 +458,41 @@ class DebuggerServer {
   }
 
   // ---------------------------------------------------------------------------
-  // THE TOKEN, VERIFIED. RFC 9068 section 4's order, as `/admin-api`'s gate
-  // makes it: the signature against the DEFAULT realm's key (the debugger's
-  // permission exists there only), the expiry, the `typ`, the issuer, the
-  // audience, then the permission and the subject.
-  //
-  // Answers `{ ok, claims, username }` or `{ ok: false, status, code, error,
-  // why }`.
+  // THE SESSION'S VERDICT (#1717, 2026-11-13). The relying-party session is
+  // the credential, and `oidc_rp.ts` has already decided it is current —
+  // signed in, unexpired, its sign-on session still there (`renewal()`). What
+  // is left is who it belongs to, asked AGAIN on every request so a console
+  // role revoked after the person signed in stops working now rather than
+  // when the session runs out. The access token the session holds is not
+  // consulted: it is this client's own, the debugger's api never sees it, and
+  // there is no separate api for it to be addressed to any more.
   // ---------------------------------------------------------------------------
-  // `opts.presented` is true when the token came in on THIS request's
-  // Authorization header, and false when it is the one held inside the relying
-  // party's own session (#34, 2026-09-15). The difference decides the sender
-  // constraints below: a token nobody sent cannot prove possession of anything
-  // on a request it was not part of, and requiring it to would turn the two new
-  // settings into "the debugger's sign-in stops working", which is not what
-  // either of them says. `opts.scheme` is how a presented one was sent.
   /**
-   * Verifies an access token for the debugger in RFC 9068 section 4's order,
-   * then its sender constraints, the permission and the subject.
+   * Decides whether a relying-party session's person may use the debugger
+   * now.
    *
-   * The signature is checked against the default realm's keys, and the
-   * subject must still be a console administrator.
-   * @param token - the access token
+   * @param session - the relying-party session
    * @param req - the express request
-   * @param opts - optional; `presented` is true when the token came on this
-   *   request's Authorization header, and `scheme` says how it was sent
-   * @returns `{ ok: true, claims, username }` or `{ ok: false, status, code,
-   *   error, why }`
+   * @returns `{ ok: true, username }` or `{ ok: false, status, code, error,
+   *   why }`
    */
-  verifyAccessToken(token, req, opts?) {
-    const { log, realms, helpers, stsCrypto, jwtAccessToken, access, mtls, dpop,
-            senderConstraints } = this.deps;
-    log.debug("Entering DebuggerServer.verifyAccessToken().");
-    const o = opts || {};
-    let claims = null;
-    try {
-      // Any generation of the DEFAULT realm's key (#42).
-      claims = realms.run(realms.get(realms.DEFAULT_ID), function () {
-        return helpers.verifyOwnJws(String(token));
-      });
-    } catch (e) {
-      log.debug("Caught in DebuggerServer.verifyAccessToken(): " +
-                ((e && e.message) || e));
-      claims = null;
-    }
-    // #501: the debugger's tokens are the default realm's, as the JWT
-    // above is. Expired falls through to the exp check. Revoked is refused
-    // here. A miss is counted only while that realm issues opaque tokens.
-    let opaqueAccess = false;
-    if (!claims && String(token).indexOf('.') < 0) {
-      const found = realms.run(realms.get(realms.DEFAULT_ID), function () {
-        return opaqueAccessToken.lookup(String(token));
-      });
-      if (found.kind === 'active' ||
-          (found.kind === 'inactive' && found.why === 'expired')) {
-        claims = found.claims;
-        opaqueAccess = true;
-      } else if (found.kind === 'inactive' && found.why === 'revoked') {
-        log.debug("Leaving DebuggerServer.verifyAccessToken(). Revoked " +
-                  "handle.");
-        return { ok: false, status: 401, code: 'STS-OAUTH-0982',
-                 error: 'invalid_token',
-                 why: 'That access token has been revoked.' };
-      } else if (found.kind === 'unknown') {
-        const issues = realms.run(realms.get(realms.DEFAULT_ID),
-          function () {
-            return opaqueAccessToken.issuesOpaque();
-          });
-        if (issues) {
-          const limited = realms.run(realms.get(realms.DEFAULT_ID),
-            function () {
-              return opaqueAccessToken.noteMiss(req);
-            });
-          if (limited) {
-            log.debug("Leaving DebuggerServer.verifyAccessToken(). Too " +
-                      "many unknown handles.");
-            return { ok: false, status: 429, code: 'STS-OAUTH-0983',
-                     error: 'invalid_token', retryAfterS: limited.retryAfterS,
-                     why: 'Too many attempts. Wait ' + limited.retryAfterS +
-                          ' seconds and try again.' };
-          }
-          log.debug("Leaving DebuggerServer.verifyAccessToken(). Unknown " +
-                    "handle.");
-          return { ok: false, status: 401, code: 'STS-OAUTH-0980',
-                   error: 'invalid_token',
-                   why: 'That access token is not valid.' };
-        }
-      }
-    }
-    if (!claims) {
-      log.debug("Leaving DebuggerServer.verifyAccessToken(). Did not verify.");
-      return { ok: false, status: 401, code: 'STS-DBG-0003',
-               error: 'invalid_token',
-               why: 'That access token was not issued by this service, or ' +
-                    'its signature does not verify.' };
-    }
-    const now = Math.floor(Date.now() / 1000);
-    if (claims.exp && Number(claims.exp) <= now) {
-      log.debug("Leaving DebuggerServer.verifyAccessToken(). Expired.");
-      return { ok: false, status: 401, code: 'STS-DBG-0004',
-               error: 'invalid_token',
-               why: 'That access token expired at ' +
-                    new Date(Number(claims.exp) * 1000).toISOString() + '.' };
-    }
-    // An opaque handle has no JOSE header (#501). Issuer and audience
-    // below still run.
-    if (!opaqueAccess) {
-      const typ = jwtAccessToken.typOf(token);
-      if (!jwtAccessToken.isAccessTokenType(typ)) {
-        log.debug("Leaving DebuggerServer.verifyAccessToken(). Not an " +
-                  "access token.");
-        return { ok: false, status: 401, code: 'STS-DBG-0005',
-                 error: 'invalid_token',
-                 why: 'RFC 9068 section 4: a JWT access token\'s typ is ' +
-                      '"at+jwt", and this one\'s is ' +
-                      (typ ? '"' + typ + '"' : 'absent') +
-                      '. An ID Token is not an access token.' };
-      }
-    }
-    const bases = [this.authorizationBaseOf(req)];
-    const pinned = helpers.pinnedBaseUrl();
-    if (pinned && bases.indexOf(pinned) < 0) {
-      bases.push(pinned);
-    }
-    const issuerOk = realms.run(realms.get(realms.DEFAULT_ID), function () {
-      return bases.some(function (base) {
-        return jwtAccessToken.isHostedIssuer(claims.iss, base);
-      });
-    });
-    if (!issuerOk) {
-      log.debug("Leaving DebuggerServer.verifyAccessToken(). Wrong issuer.");
-      return { ok: false, status: 401, code: 'STS-DBG-0006',
-               error: 'invalid_token',
-               why: 'That access token names the issuer ' +
-                    JSON.stringify(claims.iss || null) + ', and the debugger ' +
-                    'accepts tokens from this service\'s default ' +
-                    'authorization server at ' + bases.join(' or ') + '.' };
-    }
-    const audiences = Array.isArray(claims.aud) ? claims.aud.map(String)
-      : (claims.aud === undefined || claims.aud === null
-        ? [] : [String(claims.aud)]);
-    if (audiences.indexOf(access.PERMISSION_BASE) < 0) {
-      log.debug("Leaving DebuggerServer.verifyAccessToken(). Wrong audience.");
-      return { ok: false, status: 403, code: 'STS-DBG-0007',
-               error: 'insufficient_scope',
-               why: 'That access token is addressed to ' +
-                    JSON.stringify(claims.aud || null) + ' and not to the ' +
-                    'debugger api (' + access.PERMISSION_BASE + '). Ask for ' +
-                    'the scope ' + access.PERMISSION_ID + '.' };
-    }
-    // RFC 8705 SECTION 3.1 (2026-09-13): a certificate-bound token only on a
-    // connection made with its certificate, as at `/admin-api`. This listener
-    // asks for a certificate and requires none (since #34, 2026-09-15), and a
-    // bound token presented without its certificate is refused rather than
-    // accepted as a bearer token — which is what the binding exists to prevent.
-    const certificateProblem = mtls.checkBinding(claims, req, true);
-    if (certificateProblem) {
-      log.debug("Leaving DebuggerServer.verifyAccessToken(). The certificate " +
-                "binding failed.");
-      return { ok: false, status: 401, code: 'STS-DBG-0030',
-               error: 'invalid_token', why: certificateProblem.description };
-    }
-    // RFC 9449 SECTION 7 AND #34's TWO SETTINGS (2026-09-15), for a token this
-    // request PRESENTED. The binding check above was written for RFC 8705 and
-    // the DPoP one was never written, so a bound token was accepted here as a
-    // bearer token — the same hole `/admin-api` carried, closed the same way.
-    if (o.presented) {
-      const boundJkt = dpop.jktOf(claims);
-      let proofOk = false;
-      if (boundJkt) {
-        if (String(o.scheme || '') !== 'dpop') {
-          log.debug("Leaving DebuggerServer.verifyAccessToken(). Bound, " +
-                    "presented as Bearer.");
-          return { ok: false, status: 401, code: 'STS-DBG-0031',
-                   error: 'invalid_token',
-                   why:
-                     'That access token is DPoP-bound (it carries cnf.jkt), ' +
-                        'so it must be sent as "Authorization: DPoP <token>" ' +
-                        'with a DPoP proof rather than as a Bearer token.' };
-        }
-        const checked = dpop.verifyProof(req.headers['dpop'], {
-          htm: req.method, htu: dpop.htuOf(req), accessToken: String(token),
-          expectedJkt: boundJkt, req: req
-        });
-        if (!checked.ok) {
-          log.debug("Leaving DebuggerServer.verifyAccessToken(). The DPoP " +
-                    "proof failed.");
-          return { ok: false, status: 401,
-                   code: checked.errorCode || 'STS-DBG-0032',
-                   error: 'invalid_dpop_proof', why: checked.description };
-        }
-        proofOk = true;
-      }
-      const required = senderConstraints.accessTokenRefusal({
-        where: 'the debugger api',
-        boundJkt: boundJkt,
-        proofOk: proofOk,
-        boundThumbprint: mtls.boundThumbprintOf(claims),
-        certificate: !!mtls.peerCertificate(req),
-        certificateMatches: !!mtls.boundThumbprintOf(claims) &&
-                            mtls.peerVerified(req) &&
-                            mtls.presentedThumbprint(req) ===
-                              mtls.boundThumbprintOf(claims),
-        mtlsAvailable: mtls.available()
-      });
-      if (required) {
-        log.debug("Leaving DebuggerServer.verifyAccessToken(). A required " +
-                  "sender constraint was not met.");
-        // error-code: none — `code` IS the code, one of STS-OAUTH-0527 to 0531,
-        // and the gate's refuse() marks whatever this verdict carries.
-        return { ok: false, status: 401, code: required.errorCode,
-                 error: required.error, why: required.description };
-      }
-    }
-    const scopes = String(claims.scope || '').split(/\s+/);
-    if (scopes.indexOf(access.PERMISSION_NAME) < 0) {
-      log.debug("Leaving DebuggerServer.verifyAccessToken(). No permission.");
-      return { ok: false, status: 403, code: 'STS-DBG-0008',
-               error: 'insufficient_scope',
-               why: 'That access token does not carry the debugger ' +
-                    'permission. It is issued to console administrators ' +
-                    'only, so the authorization server leaves it off for ' +
-                    'anybody else.' };
-    }
-    const username = String(claims.username || claims.preferred_username ||
-                            claims.sub || '');
+  sessionVerdict(session, req) {
+    const { log, access } = this.deps;
+    log.debug("Entering DebuggerServer.sessionVerdict().");
+    const username = String((session && session.user &&
+                             session.user.username) || '');
     const answer = access.isAdministrator({ kind: 'user', name: username,
                                             authenticated: true,
+                                            sessionId: session && session.id,
                                             path: req.originalUrl });
     if (!answer.allowed) {
-      log.debug("Leaving DebuggerServer.verifyAccessToken(). Not an " +
-                "administrator now.");
+      log.debug("Leaving DebuggerServer.sessionVerdict(). Not an " +
+                "administrator.");
       return { ok: false, status: 403, code: answer.code || 'STS-DBG-0009',
                error: 'access_denied', why: answer.why + '.' };
     }
-    log.debug("Leaving DebuggerServer.verifyAccessToken(). Accepted.");
-    return { ok: true, claims: claims, username: username };
-  }
-
-  // BOTH SCHEMES SINCE #34 (2026-09-15), for `/admin-api`'s reason: a
-  // DPoP-bound token sent the way RFC 9449 says to send it counted as no token
-  // at all here, and the client doing the stricter thing got the least helpful
-  // answer.
-  /**
-   * Returns the access token on a request's Authorization header.
-   *
-   * @param req - the express request
-   * @returns the token, or an empty string
-   */
-  bearerOf(req) {
-    const { log } = this.deps;
-    log.debug("Entering DebuggerServer.bearerOf().");
-    log.debug("Leaving DebuggerServer.bearerOf().");
-    return this.presentedTokenOf(req).token;
-  }
-
-  /**
-   * Reads a Bearer or DPoP access token from the Authorization header.
-   *
-   * @param req - the express request
-   * @returns `{ token, scheme }`, both empty when none is presented
-   */
-  presentedTokenOf(req) {
-    const { log } = this.deps;
-    log.debug("Entering DebuggerServer.presentedTokenOf().");
-    const header = String(req.headers.authorization || '');
-    const match = /^(Bearer|DPoP)\s+([A-Za-z0-9._~+/=-]+)\s*$/i.exec(header);
-    if (!match) {
-      log.debug("Leaving DebuggerServer.presentedTokenOf(). Nothing " +
-                "presented.");
-      return { token: '', scheme: '' };
-    }
-    log.debug("Leaving DebuggerServer.presentedTokenOf(). " + match[1]);
-    return { token: match[2], scheme: match[1].toLowerCase() };
+    log.debug("Leaving DebuggerServer.sessionVerdict(). Allowed.");
+    return { ok: true, username: username };
   }
 
   /**
@@ -851,7 +596,8 @@ class DebuggerServer {
   /**
    * Forwards an `/api` request to the api child over its unix socket.
    *
-   * Hop-by-hop headers, cookies and Authorization are not forwarded; the
+   * Hop-by-hop headers and cookies are not forwarded — `Authorization` and
+   * `DPoP` are, untouched, because they are the debugger's own (#1717); the
    * body is bounded by `debugger.maxRequestBytes` and the call by
    * `debugger.proxyTimeoutS`. A child that is not ready is answered 502.
    * @param req - the express request
@@ -902,9 +648,13 @@ class DebuggerServer {
       // An HTTP/2 request's pseudo-headers (`:path` and the rest, #407) are
       // no HTTP/1.1 field name: node's client throws on one; `:authority`
       // is in `host` by now.
+      // `Authorization` and `DPoP` GO THROUGH (#1717): the debugger sends
+      // them to its api as the request it is debugging — a UserInfo Bearer
+      // token, introspection's Basic credentials, SCIM's and GNAP's own.
+      // The cookie does not: it carries this service's sessions, which the
+      // api must never hold.
       if (HOP_BY_HOP.indexOf(lower) >= 0 || lower === 'cookie' ||
-          lower === 'authorization' || lower.indexOf('x-forwarded-') === 0 ||
-          lower.charAt(0) === ':') {
+          lower.indexOf('x-forwarded-') === 0 || lower.charAt(0) === ':') {
         return;
       }
       headers[name] = asked[name];
@@ -1180,9 +930,6 @@ class DebuggerServer {
                      null,
       uiDirectory: this.uiDirectory(),
       clientId: access.UI_CLIENT_ID,
-      resource: access.API_IDENTIFIER,
-      permission: access.PERMISSION_ID,
-      audience: access.PERMISSION_BASE,
       api: apiProcess.status()
     };
   }
@@ -1193,13 +940,13 @@ class DebuggerServer {
   // route order is unchanged (rule 1).
   /**
    * Registers the listener's middleware and routes: the default realm, the
-   * DPoP reservation, the gate, the sign-in and sign-out, the `/api` forward
+   * gate, the sign-in and sign-out, the `/api` forward
    * and the static UI.
    *
    * @param app - the listener's own express app
    */
   registerRoutes(app: RouteApp): void {
-    const { log, realms, dpop, authn, oidcRp, errorCodes, express, access,
+    const { log, realms, authn, oidcRp, errorCodes, express, access,
             apiProcess, websecurity, config, tlsServer, path, fs } = this.deps;
     const self = this;
     log.debug("Entering DebuggerServer.registerRoutes().");
@@ -1222,14 +969,13 @@ class DebuggerServer {
     // main port's by the same wire names (#1441).
     app.use(require('../common/cookie_wire').middleware());
 
-    // THE CROSS-NODE `jti` RESERVATION FOR A DPoP PROOF (#34, 2026-09-15), the
-    // same middleware `oauth2.js` registers above every route on the main app.
-    // It reserves the proof's `jti` on arrival and gives it back unless the
-    // proof was accepted, so a proof replayed against a second node is refused
-    // there too. Below `inDefaultRealm` because the reservation is per realm
-    // and this listener's realm is the default one; above the gate, which is
-    // what verifies the proof.
-    app.use(dpop.proofClaims());
+    // NO DPoP `jti` RESERVATION HERE (#1717, 2026-11-13). `dpop.proofClaims()`
+    // was registered on this app for the gate's access-token path (#34), and
+    // it reserved the `jti` of every DPoP proof arriving — including the
+    // proofs the DEBUGGER sends through its api to the server it is testing,
+    // which is very often this service. That server then saw its own proof as
+    // a replay. The gate reads no token now, so it verifies no proof and
+    // reserves none.
 
     // THE HEADERS. `frame-ancestors 'none'` for RFC 9700 section 4.14, which is
     // the one CSP clause no page here may drop. The script policy allows the
@@ -1319,30 +1065,8 @@ class DebuggerServer {
         next();
         return;
       }
-      const presentation = self.presentedTokenOf(req);
-      const presented = presentation.token;
-      if (presented) {
-        const verdict = self.verifyAccessToken(presented, req,
-                                               { presented: true,
-                                                 scheme: presentation.scheme });
-        if (!verdict.ok) {
-          if (verdict.retryAfterS) {
-            res.set('Retry-After', String(verdict.retryAfterS));
-          }
-          // error-code: none — refuse() marks the code verifyAccessToken chose.
-          self.refuse(req, res, verdict.status, verdict.code, verdict.error,
-                      verdict.why,
-                      'Bearer error="' + verdict.error + '", scope="' +
-                      access.PERMISSION_ID + '"');
-          log.debug("Leaving the debugger gate. Bearer refused.");
-          return;
-        }
-        req.debuggerUser = verdict.username;
-        req.debuggerSession = null;
-        log.debug("Leaving the debugger gate. Bearer accepted.");
-        next();
-        return;
-      }
+      // NOT `Authorization`, NOT `DPoP`, NOT a client certificate (#1717):
+      // those belong to the debugger's own calls and pass through untouched.
       const session = oidcRp.sessionFor(req, SURFACE);
       if (!session) {
         if (!self.wantsJson(req) &&
@@ -1373,99 +1097,63 @@ class DebuggerServer {
           log.debug("Leaving the debugger gate. Sent to sign in.");
           return;
         }
+        // NO `WWW-Authenticate`: there is no scheme a caller could answer
+        // with, only a browser sign-in, and the header would name one.
         self.refuse(req, res, 401, 'STS-DBG-0002', 'unauthorized',
                     'The debugger needs a signed-in console administrator: ' +
-                    'open it in a browser, or send an access token carrying ' +
-                    access.PERMISSION_ID + ' as Authorization: Bearer.',
-                    'Bearer scope="' + access.PERMISSION_ID + '"');
+                    'open it in a browser and sign in. It accepts no access ' +
+                    'token, and the Authorization header is passed to the ' +
+                    'debugger\'s api as part of the call rather than read.');
         log.debug("Leaving the debugger gate. No session.");
         return;
       }
-      const tokens = session.rpTokens || {};
-      const verdict = self.verifyAccessToken(tokens.accessToken || '', req);
+      const verdict = self.sessionVerdict(session, req);
       if (!verdict.ok) {
-        // THE AUDIENCE IS ONE OF THEM. The session's token was asked for with
-        // the permission, so a token addressed anywhere else is the
-        // authorization server having taken the permission off (and with it the
-        // only audience the request named) — the same answer as a missing
-        // scope.
-        if (verdict.code === 'STS-DBG-0007' ||
-            verdict.code === 'STS-DBG-0008' ||
-            verdict.code === 'STS-DBG-0009' ||
-            verdict.code === 'STS-DBG-0024' ||
-            verdict.code === 'STS-DBG-0033') {
-          // SIGNED IN AND NOT AN ADMINISTRATOR: the one refusal a person meets
-          // here in the ordinary course, drawn as a page that says who they are
-          // and how to leave rather than as a token error.
-          //
-          // THE TOKEN'S FAILURE IS NOT THE REASON, so the person is asked about
-          // directly. A permission taken off at issuance changes the token's
-          // audience first, so what verifyAccessToken() reports is "wrong
-          // audience" (0007) whether the cause was an empty roster (0024) or a
-          // person holding no role (0009) — and those two need different pages.
-          const reason = access.isAdministrator({
-            kind: 'user', name: session.user.username, authenticated: true,
-            path: req.originalUrl });
-          const why = reason.allowed ? verdict : reason;
-          errorCodes.mark(res, why.code || verdict.code);
-          if (self.wantsJson(req)) {
-            // error-code: none — marked two lines up with the reason's code.
-            res.status(403).set('Cache-Control', 'no-store')
-               .json({ error: 'access_denied', error_description: why.why });
-          } else {
-            // error-code: none — marked above with verdict.code.
-            self.sendPage(res, 403, 'The debugger is for administrators',
-                          (why.code === 'STS-DBG-0024'
-                            ? '<p><strong>Nobody is an administrator ' +
-                              'yet.</strong> While neither console role ' +
-                              'group has a member the admin console opens to ' +
-                              'everybody so that the first role can be ' +
-                              'granted; the debugger does not. Grant ' +
-                              'somebody Admin Read or Admin Write on ' +
-                              '<code>/admin/rbac</code>, then sign in ' +
-                              'again.</p>'
-                            : '') +
-                          (why.code === 'STS-DBG-0033'
-                            ? '<p><strong>The console has not been claimed ' +
-                              'yet.</strong> This is the bootstrap ' +
-                              'administrator, and in product mode its roles ' +
-                              'open the admin console alone, from a ' +
-                              'password sign-in, until it has signed in to ' +
-                              '<code>/admin</code> with its password once. ' +
-                              'Do that, then sign in here again.</p>'
-                            : '') +
-                          '<p>You are signed in as <code>' +
-                          self.esc(session.user.username) +
-                          '</code>. The identity ' +
-                          'protocol debugger is available to console ' +
-                          'administrators — members of the ' +
-                          'Admin Read or Admin Write group — ' +
-                          (reason.allowed
-                            ? 'and this account IS one now, but its token ' +
-                              'was issued before it ' +
-                              'was, without the debugger ' +
-                              'permission. Sign out and sign in again.</p>'
-                            : 'and this account is neither, so the ' +
-                              'authorization server issued its token without ' +
-                              'the debugger permission.</p>') +
-                          '<p class="muted">' + self.esc(why.why) + '</p>' +
-                          self.signOutForm(session));
-          }
-          log.debug("Leaving the debugger gate. Not an administrator.");
-          return;
+        // SIGNED IN AND NOT AN ADMINISTRATOR: the one refusal a person meets
+        // here in the ordinary course, drawn as a page that says who they are
+        // and how to leave rather than as an error.
+        errorCodes.mark(res, verdict.code);
+        if (self.wantsJson(req)) {
+          // error-code: none — marked two lines up with the verdict's code.
+          res.status(403).set('Cache-Control', 'no-store')
+             .json({ error: 'access_denied', error_description: verdict.why });
+        } else {
+          // error-code: none — marked above with verdict.code.
+          self.sendPage(res, 403, 'The debugger is for administrators',
+                        (verdict.code === 'STS-DBG-0024'
+                          ? '<p><strong>Nobody is an administrator ' +
+                            'yet.</strong> While neither console role ' +
+                            'group has a member the admin console opens to ' +
+                            'everybody so that the first role can be ' +
+                            'granted; the debugger does not. Grant ' +
+                            'somebody Admin Read or Admin Write on ' +
+                            '<code>/admin/rbac</code>, then sign in ' +
+                            'again.</p>'
+                          : '') +
+                        (verdict.code === 'STS-DBG-0033'
+                          ? '<p><strong>The console has not been claimed ' +
+                            'yet.</strong> This is the bootstrap ' +
+                            'administrator, and in product mode its roles ' +
+                            'open the admin console alone, from a ' +
+                            'password sign-in, until it has signed in to ' +
+                            '<code>/admin</code> with its password once. ' +
+                            'Do that, then sign in here again.</p>'
+                          : '') +
+                        '<p>You are signed in as <code>' +
+                        self.esc(session.user.username) +
+                        '</code>. The identity ' +
+                        'protocol debugger is available to console ' +
+                        'administrators — members of the ' +
+                        'Admin Read or Admin Write group — and this account ' +
+                        'is not one now.</p>' +
+                        '<p class="muted">' + self.esc(verdict.why) + '</p>' +
+                        self.signOutForm(session));
         }
-        if (verdict.retryAfterS) {
-          res.set('Retry-After', String(verdict.retryAfterS));
-        }
-        // error-code: none — refuse() marks the code verifyAccessToken chose.
-        self.refuse(req, res, verdict.status, verdict.code, verdict.error,
-                    verdict.why);
-        log.debug("Leaving the debugger gate. The session's token refused.");
+        log.debug("Leaving the debugger gate. Not an administrator.");
         return;
       }
       req.debuggerUser = verdict.username;
       req.debuggerSession = session;
-      req.debuggerToken = tokens.accessToken;
       log.debug("Leaving the debugger gate. Session accepted.");
       next();
     });
@@ -1477,11 +1165,11 @@ class DebuggerServer {
       self.sendPage(res, 200, 'Identity protocol debugger',
         '<p>Signed in as <code>' + self.esc(req.debuggerUser) +
         '</code> through this service\'s authorization server, as the client ' +
-        '<code>' + self.esc(access.UI_CLIENT_ID) + '</code>. The api at ' +
-        '<code>/api</code> is reached with an access token carrying ' +
-        '<code>' + self.esc(access.PERMISSION_ID) +
-        '</code>, which is issued to ' +
-        'console administrators only.</p>' +
+        '<code>' + self.esc(access.UI_CLIENT_ID) + '</code>, a confidential ' +
+        'client whose tokens stay on this service. This session is what ' +
+        'admits you to the debugger and its api at <code>/api</code>, for ' +
+        'as long as you are a console administrator; nothing the debugger ' +
+        'sends to its api is read on the way.</p>' +
         '<p>The api process is <strong>' + self.esc(status.state) +
         '</strong>' +
         (status.allowList
@@ -1491,10 +1179,7 @@ class DebuggerServer {
             '<code>debugger.allowedDestinations</code>.'
           : ', with no allow-list (development mode).') + '</p>' +
         '<p><a class="btn" href="/">Open the debugger</a></p>' +
-        (session ? self.signOutForm(session) :
-         '<p class="muted">This request ' +
-          'presented a bearer token, so there is no session to sign out ' +
-          'of.</p>'));
+        self.signOutForm(session));
       log.debug("Leaving GET " + ACCOUNT_PATH + ".");
     });
 
@@ -1729,7 +1414,7 @@ export = {
   status: slot.forward('status'),
   // For tests/debugger_server.js, which drives the app in process.
   app: app,
-  verifyAccessToken: slot.forward('verifyAccessToken'),
+  sessionVerdict: slot.forward('sessionVerdict'),
   checkAnchor: slot.forward('checkAnchor'),
   isLanding: slot.forward('isLanding'),
   authorizationBaseOf: slot.forward('authorizationBaseOf'),
