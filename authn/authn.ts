@@ -128,6 +128,9 @@ import mechanismLib = require('../common/authn_mechanisms');
 // leaf, for the same reason.
 import mfaLib = require('../common/mfa_mechanisms');
 import stats = require('../common/admin_stats');
+// Where a session's end is SAID, so a refresh grant waits for it (the
+// review of #879). A leaf over `helpers`.
+import RevokingWrites = require('../common/revoking_writes');
 // The federation register, for the buttons at the foot of the sign-in screen.
 // A plain require in the ordinary direction and it passes rule 3e's test both
 // ways round: that module registers no route, so nothing about requiring it
@@ -9012,6 +9015,13 @@ class Authn {
     const { realms, log, stats, bcp } = this.deps;
     const self = this;
     log.debug("Entering Authn.dropSession(). id=" + (id || '(none)'));
+    // SAID FIRST, whatever the read below finds: a refresh token issued on
+    // this session must not be redeemed on a worker that has not yet seen
+    // it end (the review of #879). Saying it for a session that turns out
+    // to be gone costs a refresh one wait, and nothing else.
+    if (id) {
+      RevokingWrites.note('a session ended (' + String(via || '') + ')');
+    }
     // WHO ENDED IT, SAID BY THE CALLER (#242). See initiatorOf().
     const entity = this.initiatorOf(initiatingEntity, via);
     // The read decides. A failure is not absence: nothing is deleted and

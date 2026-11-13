@@ -177,6 +177,9 @@ const validation = require('../common/validation');
 const clusterClaims = require('../cluster/cluster_claims');
 const capabilities = require('../cluster/cluster_capabilities');
 const errorCodes = require('../common/error_codes');
+// Where a family's revocation is SAID, so the next refresh of any of its
+// members waits for it (the review of #879). A leaf over `helpers.js`.
+const RevokingWrites = require('../common/revoking_writes');
 
 // ---------------------------------------------------------------------------
 // THE TABLE.
@@ -3787,6 +3790,10 @@ function revokeFamily(familyId, clientId) {
     log.debug("Leaving revokeFamily(). No family.");
     return Promise.resolve(false);
   }
+  // Said BEFORE the claim, while the request that revokes is still being
+  // answered: a member of this family refreshed on another worker waits for
+  // this answer's ticket (the review of #879).
+  RevokingWrites.note('refresh family ' + familyId + ' revoked');
   log.debug("Leaving revokeFamily(). Claiming the mark.");
   return clusterClaims.claim({
     scope: 'oauth.refresh-family-revoked', value: String(familyId),

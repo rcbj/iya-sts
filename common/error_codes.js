@@ -1530,6 +1530,15 @@ const CODES = [
       'four times the limit is it reported as failed (STS-WORKER-0017) and ' +
       'replaced.',
     spec: '' },
+  { code: 'STS-WORKER-0052',
+    summary: 'A request worker revoked something a refresh token rests on ' +
+      '(a session, a token, a refresh family, a grant or an account) after ' +
+      'the answer\'s headers had gone, so the front process could not file ' +
+      'it for the refresh grant\'s wait before the client saw the answer ' +
+      '(the review of #879). The revocation stands; a refresh routed to a ' +
+      'worker that has not applied it may be answered until the workers ' +
+      'converge. Logged at the first and every hundredth.',
+    spec: 'Nothing: the request is answered as it was' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },

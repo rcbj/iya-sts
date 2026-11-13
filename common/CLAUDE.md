@@ -2214,9 +2214,11 @@ each mode guarantees, exactly:
   `POST /oauth2/token` 43 → 70 ms p50 waiting once the barrier went per
   session.
 * **`session`, a refresh grant** (2026-11-11, #879): the same small form,
-  naming one `refresh_token` of at most 12 KiB, waits for `rt:<token>`
-  whether or not this process has seen that token, and for keyless writes,
-  and not for another browser or another token. A 200 JSON token response
+  naming one `refresh_token` of at most 12 KiB, waits for its key
+  (`rt:` and the token's SHA-256 through `crypto.credentialDigest()`, never
+  the token — the review of #879) whether or not this process has seen that
+  token, for keyless writes and for REVOKE_KEY (below), and not for another
+  browser or another token. A 200 JSON token response
   of a declared length of at most 64 KiB files its ticket under the
   `refresh_token` it names, before those bytes are sent. A response this
   process could not read is filed under the keyless key, so the next
@@ -2228,6 +2230,28 @@ each mode guarantees, exactly:
   browser and the next refresh of a different token do not wait for it.
   `stats().sessionBarrier.refreshKeyed` counts them. 8081 was not
   re-measured.
+* **`session`, the writes a refresh must not answer ahead of** (2026-11-13,
+  the review of #879, which found the gap #879 opened): #879's module
+  comment said a sign-out reached the refresh grant "when the workers
+  converge", so in product a refresh routed to a lagging worker was issued
+  new tokens from a session just signed out. Now one key, `REVOKE_KEY`,
+  holds every write that ends what a refresh token rests on, and every
+  token request keyed by its token, its code or a browser's cookie waits
+  for it; an ordinary browser request does not, so #879's and #820's gains
+  for unrelated browser writes stand. A ticket is filed there by its PATH
+  at dispatch (`revokingRequest()`: any sign-out door, writes to
+  `/oauth2/revoke`, `/oauth2/grants`, `/admin-api`, `/account-api`,
+  `/scim`, `/ssf`, any DELETE — the backstop) and by its ANSWER: the
+  funnels — `admin_stats.revoke()` (not a token superseded on rotation),
+  `oauth2_bcp.revokeFamily()`, `authn.dropSession()`,
+  `account_state.setDisabled()`, `grant_management.revoke()` — call
+  `revoking_writes.ts`'s `note()`, which in a worker sets
+  `x-sts-pool-revoking` on the answer in flight
+  (`RequestWorker.markRevokingAnswer()`), and the pool files the ticket
+  before forwarding a byte and strips the header. A revocation after the
+  headers went is `STS-WORKER-0052`; a cluster job's revocation has no
+  answer to ride (an expiry is read as ended anyway).
+  `tests/request_ryw_session.js` R16 and `tests/revoking_writes.js`.
 * **`session`, a request with no key, or whose pool pin the route did not
   honour** — today's global wait, unchanged. That is every other back
   channel, apart from a refresh grant this process could read. A pin not

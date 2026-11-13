@@ -90,6 +90,9 @@ const errorCodes = require('./error_codes');
 const stsCrypto = require('./crypto');
 // Which attributes a claim may carry out (#94). A leaf.
 const SourcedAttributes = require('./sourced_attributes');
+// Where a revocation is SAID, so a refresh grant waits for it (the review of
+// #879). A leaf over `helpers.js`, which this file already requires.
+const RevokingWrites = require('./revoking_writes');
 // THE FEDERATION RELEASE FILTER, and it is a plain require in the ordinary
 // direction rather than a hook. Rule 3e's test both ways round: that module
 // registers no route, and it requires only helpers.js, config.js, realms.js,
@@ -1301,6 +1304,13 @@ function revoke(jti, via, how, expSec) {
   // register's readers ask both (`tokenStateOf()`, and `tokenList()`'s
   // `revoked` for the console). Every other revocation still writes it.
   const superseded = !!(how && how.superseded);
+  // ENDED, NOT SUPERSEDED: a refresh grant must not answer ahead of it (the
+  // review of #879). A token rotated on use ends nothing — its successor
+  // carries the grant on — and is every refresh's own write, so marking it
+  // would make each refresh wait for every other.
+  if (!superseded) {
+    RevokingWrites.note('a token revoked (' + (via || 'unstated') + ')');
+  }
   if (record && !superseded) {
     record.revoked = true;
     record.revokedAt = record.revokedAt || Date.now();
