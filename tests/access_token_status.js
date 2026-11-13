@@ -886,9 +886,15 @@ function childMain() {
       baseUrlOf: function () {
         return 'https://sts.example';
       },
-      realms: { currentId: function () {
-        return 'ats-packed-test';
-      } },
+      // `listJwt()` asks `realmBaseOf()`, which reads the prefix too.
+      realms: {
+        currentId: function () {
+          return 'ats-packed-test';
+        },
+        currentPrefix: function () {
+          return '/realm/ats-packed-test';
+        }
+      },
       entries: { onDemandLive: function () {
         return true;
       } },
