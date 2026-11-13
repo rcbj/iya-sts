@@ -583,6 +583,46 @@ function checkMatchTypeFollowsFunction(t) {
   log.debug("Leaving checkMatchTypeFollowsFunction().");
 }
 
+// A literal that is not a value of its datatype is refused at the edit,
+// for a Match and for a plain value, and the policy is left as it was. It
+// used to be stored, and only a decision said so, as a syntax-error status
+// that a deny-unless-permit policy turns into a plain Deny.
+function checkIllTypedLiteralsRefused(t) {
+  log.debug("Entering checkIllTypedLiteralsRefused().");
+  const policy = templates.build('rbac', {}, { name: 'literals' }).policy;
+  const path = 'rules.0.target.anyOf.0.allOf.0.matches.0';
+  const before = JSON.stringify(policy);
+  const refused = editor.applyEdit(policy, path, 'edit-match', {
+    matchId: F1 + 'integer-equal', value: 'notanint'
+  });
+  t.check(!refused.ok && /not a valid integer/.test(refused.why || ''),
+          'an integer Match with a non-integer literal is refused',
+          refused.why || '');
+  t.equal(JSON.stringify(policy), before,
+          'the refused Match edit left the policy untouched');
+  const accepted = editor.applyEdit(policy, path, 'edit-match', {
+    matchId: F1 + 'integer-equal', value: '42'
+  });
+  t.check(accepted.ok, 'a valid integer literal is accepted',
+          accepted.why || '');
+  const added = editor.applyEdit(policy, 'rules.0', 'add-condition', {});
+  t.check(added.ok, 'a condition can be added to hold a plain value',
+          added.why || '');
+  const valuePath = 'rules.0.condition.args.0';
+  const located = editor.nodeAt(policy, valuePath);
+  t.equal(located && located.node && located.node.kind, 'value',
+          'the new condition\'s first argument is a plain value');
+  const beforeValue = JSON.stringify(policy);
+  const badValue = editor.applyEdit(policy, valuePath, 'edit-value', {
+    lexical: 'soon', type: 'http://www.w3.org/2001/XMLSchema#dateTime'
+  });
+  t.check(!badValue.ok, 'an edit-value that is not a dateTime is refused',
+          badValue.why || '');
+  t.equal(JSON.stringify(policy), beforeValue,
+          'the refused value edit left the policy untouched');
+  log.debug("Leaving checkIllTypedLiteralsRefused().");
+}
+
 // ---------------------------------------------------------------------------
 // THE PAP'S ACTIONS, AGAINST THE REAL STORE.
 // ---------------------------------------------------------------------------
@@ -1162,6 +1202,7 @@ function run(t) {
   checkMenuAndApiAgree(t);
   checkEdits(t);
   checkMatchTypeFollowsFunction(t);
+  checkIllTypedLiteralsRefused(t);
   checkPolicySets(t);
   checkVariables(t);
   checkSelectorsAndFunctions(t);
