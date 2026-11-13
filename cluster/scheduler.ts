@@ -2329,7 +2329,8 @@ class Scheduler {
     // and for ninety seconds nothing else on that node could reach the store
     // — LDAPS timed out, a provider command was never delivered. So a tick
     // lines up everything due — a person's Run now first, then scheduled
-    // runs oldest-due first — and starts only as many as there is room for.
+    // runs whose slot ends first (below) — and starts only as many as there
+    // is room for.
     // The rest are not claimed, so they are still due at the next tick, and
     // a run that ends asks for that tick at once.
     const line: Json[] = [];
@@ -2376,7 +2377,8 @@ class Scheduler {
             (!row && this.unknownSlots.has(runId))) {
           continue;
         }
-        scheduled.push({ job: job, realm: realmId, row: row || {
+        scheduled.push({ job: job, realm: realmId,
+                         endsAt: slot.nextAt, row: row || {
           runId: runId, kind: 'run', jobId: job.id, realm: realmId,
           slot: slot.slot, dueAt: slot.startsAt, trigger: 'schedule',
           params: null, requestedBy: '', state: 'queued', attempt: 0,
@@ -2384,7 +2386,35 @@ class Scheduler {
         } });
       }
     }
+    // THE RUN WHOSE SLOT ENDS FIRST GOES FIRST (2026-11-13), then the
+    // lower `nice`, then the older. It was oldest-due first, and that
+    // starved every job with a short interval as soon as the line was
+    // longer than the cap could clear: a realm job every two seconds in
+    // eighty realms (`report.drain`) is forty runs a second, the memory
+    // mode runs them inline under a cap of two, and on a loaded machine
+    // the line never emptied. Each of those runs was due from the start of
+    // ITS slot, at or before the start of `ssf.internal-poll`'s one-second
+    // slot, so the poll was always behind them; its slot ended unrun, the
+    // next began behind the next two seconds' runs, and a run 23 broadcast
+    // went undelivered for thirty seconds (`sts_broadcast_announcement`).
+    // A run not started before its slot ends is never started (only the
+    // current slot is due), so the slot's end is the deadline the order is
+    // for: an hourly job waiting a few seconds loses nothing, a one-second
+    // job waiting one loses its run. Under a line the cap can never clear
+    // something still waits, but it is the run with the most time left.
     scheduled.sort(function (a: Json, b: Json): number {
+      const endA = a.endsAt === null || a.endsAt === undefined ? Infinity
+        : Number(a.endsAt);
+      const endB = b.endsAt === null || b.endsAt === undefined ? Infinity
+        : Number(b.endsAt);
+      if (endA !== endB) {
+        return endA < endB ? -1 : 1;
+      }
+      const niceA = Number(a.job.nice) || 0;
+      const niceB = Number(b.job.nice) || 0;
+      if (niceA !== niceB) {
+        return niceA - niceB;
+      }
       return (Number(a.row.dueAt) || 0) - (Number(b.row.dueAt) || 0);
     });
     const cap = this.maxConcurrentRuns();
