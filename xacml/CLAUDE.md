@@ -253,6 +253,18 @@ useful refusal in the parser, because a typo in an attribute name is otherwise
 a policy that quietly matches nothing and looks exactly like one that is
 working and denying you.
 
+A designator's **MustBePresent and Issuer** are not a dialect choice: ALFA
+writes them after the short name where the attribute is used, as Axiomatics'
+reference spells them — `role[mustbepresent]`, `role[issuer="..."]`,
+`role[mustbepresent issuer="..."]`. Until 2026-11-13 the emitter dropped both
+and the parser built every designator optional with no issuer, so a round
+trip turned a missing attribute's Indeterminate into NotApplicable and let an
+attribute from any issuer match; and `operatorFor()` took the first matching
+suffix, so `-greater-than-or-equal` and `-less-than-or-equal` were written as
+`==`. Through ALFA and back, 59 of the 447 OASIS mandatory policies that load
+decided differently; none do now. `tests/xacml_alfa.js`
+`checkOperatorsAndQualifiers()` holds both.
+
 ## The console
 
 ```
