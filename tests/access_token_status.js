@@ -886,9 +886,17 @@ function childMain() {
       baseUrlOf: function () {
         return 'https://sts.example';
       },
-      realms: { currentId: function () {
-        return 'ats-packed-test';
-      } },
+      // Both members the list's URI reads: realmBaseOf() appends the
+      // ambient realm's path prefix, and this stand-in's realm is the
+      // default one, whose prefix is empty.
+      realms: {
+        currentId: function () {
+          return 'ats-packed-test';
+        },
+        currentPrefix: function () {
+          return '';
+        }
+      },
       entries: { onDemandLive: function () {
         return true;
       } },
