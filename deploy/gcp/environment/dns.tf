@@ -28,5 +28,7 @@ resource "google_dns_record_set" "public" {
   name         = "${var.public_hostname}."
   type         = "A"
   ttl          = 300
-  rrdatas      = [google_compute_address.lb.address]
+  # Behind Cloud CDN, the global load balancer's address (cdn.tf, which
+  # writes the direct name at the passthrough one).
+  rrdatas = [local.cdn_here ? google_compute_global_address.cdn[0].address : google_compute_address.lb.address]
 }

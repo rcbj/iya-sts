@@ -2806,6 +2806,12 @@ const CODES = [
   // ===== KEYS ==============================================================
   { code: 'STS-SCHED-0022',
     summary: 'The clock of this node differs from the database clock.' },
+  { code: 'STS-SCHED-0023',
+    summary: 'The store could not say whether some runs of the current ' +
+      'slot had already run (#883\'s review): those runs were held back ' +
+      'for this tick, neither run nor taken as finished, and are asked ' +
+      'about again at the next; every other run in the tick went on.',
+    spec: '' },
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
       'ignored.',
@@ -25472,6 +25478,12 @@ const CODES = [
       'service accounts may still name it as an owner ' +
       '(entriesNamingOwner()).',
     spec: '' },
+  { code: 'STS-ADMIN-0924',
+    summary: 'A role a deleted application owned (its roleApplication named ' +
+      'the application) could not be deleted with it, so an application ' +
+      'registered later under that identifier finds the role already there ' +
+      '(roles.forgetApplicationRoles()).',
+    spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -27636,44 +27648,41 @@ const CODES = [
       '(#825).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
-    summary: 'The debugger permission was asked for by somebody who may ' +
-      'not hold it — not a person, not signed in, not in the ' +
-      'default realm, or not a console administrator — and was left ' +
-      'off the token.',
-    spec: 'none — the token is issued without that scope (RFC 6749 ' +
-      'section 3.3)' },
+    summary: 'The debugger was refused to a subject that is not a person, ' +
+      'is not named, or did not authenticate.',
+    spec: 'HTTP 403 page or JSON' },
   { code: 'STS-DBG-0002',
-    summary: 'A request to the debugger carried no debugger session and no ' +
-      'bearer token, and was not a page a browser could be sent to ' +
-      'sign in from.',
-    spec: 'HTTP 401 with WWW-Authenticate: Bearer' },
+    summary: 'A request to the debugger carried no debugger session, and ' +
+      'was not a page a browser could be sent to sign in from. The ' +
+      'debugger accepts no access token (#1717).',
+    spec: 'HTTP 401' },
   { code: 'STS-DBG-0003',
     summary: 'A debugger access token did not verify against the default ' +
       'realm\'s signing key, or could not be read.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0004',
     summary: 'A debugger access token had expired.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0005',
     summary: 'A token presented to the debugger was not a JWT access token ' +
       '(typ at+jwt).',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0006',
     summary: 'A debugger access token was issued by somebody other than ' +
       'this service\'s default authorization server.',
-    spec: 'HTTP 401 invalid_token' },
+    spec: 'HTTP 401 invalid_token', retired: true },
   { code: 'STS-DBG-0007',
     summary: 'A debugger access token was addressed to a different ' +
       'audience.',
-    spec: 'HTTP 403 insufficient_scope' },
+    spec: 'HTTP 403 insufficient_scope', retired: true },
   { code: 'STS-DBG-0008',
     summary: 'A debugger access token did not carry the debugger ' +
       'permission.',
-    spec: 'HTTP 403 insufficient_scope' },
+    spec: 'HTTP 403 insufficient_scope', retired: true },
   { code: 'STS-DBG-0009',
-    summary: 'The access policy refused the debugger to the token\'s ' +
-      'subject — ordinarily because they no longer hold a console ' +
-      'role.',
+    summary: 'The debugger was refused to the signed-in person — they hold ' +
+      'no console role (perhaps no longer), or the access policy ' +
+      'refused them.',
     spec: 'HTTP 403 page or JSON' },
   { code: 'STS-DBG-0010',
     summary: 'The debugger\'s api process is not running, so an /api call ' +
@@ -27733,31 +27742,29 @@ const CODES = [
       'build its report.',
     spec: 'HTTP 500 page or JSON' },
   { code: 'STS-DBG-0024',
-    summary: 'The debugger permission was refused because neither console ' +
-      'role group has a member: the empty-roster rule that opens the ' +
-      'console to everybody does not open the debugger.',
-    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
-      'debugger' },
+    summary: 'The debugger was refused because neither console role group ' +
+      'has a member: the empty-roster rule that opens the console to ' +
+      'everybody does not open the debugger.',
+    spec: 'HTTP 403 at the debugger' },
   { code: 'STS-DBG-0030',
     summary: 'A certificate-bound access token (RFC 8705 cnf x5t#S256) was ' +
       'presented to the debugger on a connection without that certificate.',
-    spec: 'invalid_token (HTTP 401)' },
+    spec: 'invalid_token (HTTP 401)', retired: true },
   // #34 (2026-09-15), the DPoP half of the row above.
   { code: 'STS-DBG-0031',
     summary: 'A DPoP-bound access token (cnf.jkt) was presented to the ' +
       'debugger as a Bearer token.',
-    spec: 'invalid_token (HTTP 401)' },
+    spec: 'invalid_token (HTTP 401)', retired: true },
   { code: 'STS-DBG-0032',
     summary: 'A DPoP proof presented to the debugger did not verify, and the ' +
       'proof check reported no code of its own.',
-    spec: 'invalid_dpop_proof (HTTP 401)' },
+    spec: 'invalid_dpop_proof (HTTP 401)', retired: true },
   { code: 'STS-DBG-0033',
-    summary: 'Product mode: the debugger permission was refused to the ' +
-      'bootstrap administrator because it has not yet claimed the console ' +
-      'with its password; until it has, its roles are honoured at the ' +
-      'console alone, from a password sign-in (#103).',
-    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
-      'debugger' },
+    summary: 'Product mode: the debugger was refused to the bootstrap ' +
+      'administrator because it has not yet claimed the console with its ' +
+      'password; until it has, its roles are honoured at the console ' +
+      'alone, from a password sign-in (#103).',
+    spec: 'HTTP 403 at the debugger' },
   // #956. Recorded, never sent. The public token is named in `spec`.
   { code: 'STS-REPORT-0001',
     summary: 'A report query named a source the catalog does not publish.',

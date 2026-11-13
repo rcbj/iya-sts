@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5461** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5454** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 22
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 23
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 262
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 272
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 273
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -619,6 +619,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0020` | A cluster job is not registered in the request worker its run was handed to (#408), so it ran on the front process's thread, and every later run of it in this process does too; register it at its owner's load, or give it an onFront reason. | — |
 | `STS-SCHED-0021` | A cluster run's body on a request worker stopped owning its run because the leader had not renewed its grant in time (#1305): the leader's thread did not run, or its renewals did not arrive. The body stops at its next step; the leader, or the attempt that takes the run over, decides the run. | — |
 | `STS-SCHED-0022` | The clock of this node differs from the database clock. | — |
+| `STS-SCHED-0023` | The store could not say whether some runs of the current slot had already run (#883's review): those runs were held back for this tick, neither run nor taken as finished, and are asked about again at the next; every other run in the tick went on. | — |
 
 ## STS-KEYS
 
@@ -5591,6 +5592,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0921` | A deleted application's identifier could not be taken off the clients conferring a role, so whatever is next registered under that identifier still confers it (roles.forgetConferrer()). | — |
 | `STS-ADMIN-0922` | A deleted or renamed person or group could not be taken off, or moved on, the owners of a role, group, application or service account that named its DN, so that object still names the old DN (roles.forgetOwner(), applications.forgetOwner(), the directory's forgetOwnerReferences() and moveOwnerReferences()). | — |
 | `STS-ADMIN-0923` | The store named as many entries as one question answers for a deleted or renamed DN held in an owner attribute, so some groups or service accounts may still name it as an owner (entriesNamingOwner()). | — |
+| `STS-ADMIN-0924` | A role a deleted application owned (its roleApplication named the application) could not be deleted with it, so an application registered later under that identifier finds the role already there (roles.forgetApplicationRoles()). | — |
 
 ## STS-API
 
@@ -6104,15 +6106,15 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-DBG-0001` | The debugger permission was asked for by somebody who may not hold it — not a person, not signed in, not in the default realm, or not a console administrator — and was left off the token. | none — the token is issued without that scope (RFC 6749 section 3.3) |
-| `STS-DBG-0002` | A request to the debugger carried no debugger session and no bearer token, and was not a page a browser could be sent to sign in from. | HTTP 401 with WWW-Authenticate: Bearer |
-| `STS-DBG-0003` | A debugger access token did not verify against the default realm's signing key, or could not be read. | HTTP 401 invalid_token |
-| `STS-DBG-0004` | A debugger access token had expired. | HTTP 401 invalid_token |
-| `STS-DBG-0005` | A token presented to the debugger was not a JWT access token (typ at+jwt). | HTTP 401 invalid_token |
-| `STS-DBG-0006` | A debugger access token was issued by somebody other than this service's default authorization server. | HTTP 401 invalid_token |
-| `STS-DBG-0007` | A debugger access token was addressed to a different audience. | HTTP 403 insufficient_scope |
-| `STS-DBG-0008` | A debugger access token did not carry the debugger permission. | HTTP 403 insufficient_scope |
-| `STS-DBG-0009` | The access policy refused the debugger to the token's subject — ordinarily because they no longer hold a console role. | HTTP 403 page or JSON |
+| `STS-DBG-0001` | The debugger was refused to a subject that is not a person, is not named, or did not authenticate. | HTTP 403 page or JSON |
+| `STS-DBG-0002` | A request to the debugger carried no debugger session, and was not a page a browser could be sent to sign in from. The debugger accepts no access token (#1717). | HTTP 401 |
+| `STS-DBG-0003` *(retired)* | A debugger access token did not verify against the default realm's signing key, or could not be read. | HTTP 401 invalid_token |
+| `STS-DBG-0004` *(retired)* | A debugger access token had expired. | HTTP 401 invalid_token |
+| `STS-DBG-0005` *(retired)* | A token presented to the debugger was not a JWT access token (typ at+jwt). | HTTP 401 invalid_token |
+| `STS-DBG-0006` *(retired)* | A debugger access token was issued by somebody other than this service's default authorization server. | HTTP 401 invalid_token |
+| `STS-DBG-0007` *(retired)* | A debugger access token was addressed to a different audience. | HTTP 403 insufficient_scope |
+| `STS-DBG-0008` *(retired)* | A debugger access token did not carry the debugger permission. | HTTP 403 insufficient_scope |
+| `STS-DBG-0009` | The debugger was refused to the signed-in person — they hold no console role (perhaps no longer), or the access policy refused them. | HTTP 403 page or JSON |
 | `STS-DBG-0010` | The debugger's api process is not running, so an /api call could not be forwarded. | HTTP 502 |
 | `STS-DBG-0011` | Forwarding an /api call to the debugger's api process failed or timed out. | HTTP 502 or 504 |
 | `STS-DBG-0012` | An /api request body was larger than debugger.maxRequestBytes. | HTTP 413 |
@@ -6127,11 +6129,11 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 | `STS-DBG-0021` | A sign-out from the debugger did not carry the session's CSRF token. | HTTP 403 page |
 | `STS-DBG-0022` | A method other than GET or HEAD was sent to the debugger's static pages. | HTTP 405 |
 | `STS-DBG-0023` | The /admin/debugger page or GET /admin-api/debugger could not build its report. | HTTP 500 page or JSON |
-| `STS-DBG-0024` | The debugger permission was refused because neither console role group has a member: the empty-roster rule that opens the console to everybody does not open the debugger. | none at issuance (the scope is left off); HTTP 403 at the debugger |
-| `STS-DBG-0030` | A certificate-bound access token (RFC 8705 cnf x5t#S256) was presented to the debugger on a connection without that certificate. | invalid_token (HTTP 401) |
-| `STS-DBG-0031` | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
-| `STS-DBG-0032` | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
-| `STS-DBG-0033` | Product mode: the debugger permission was refused to the bootstrap administrator because it has not yet claimed the console with its password; until it has, its roles are honoured at the console alone, from a password sign-in (#103). | none at issuance (the scope is left off); HTTP 403 at the debugger |
+| `STS-DBG-0024` | The debugger was refused because neither console role group has a member: the empty-roster rule that opens the console to everybody does not open the debugger. | HTTP 403 at the debugger |
+| `STS-DBG-0030` *(retired)* | A certificate-bound access token (RFC 8705 cnf x5t#S256) was presented to the debugger on a connection without that certificate. | invalid_token (HTTP 401) |
+| `STS-DBG-0031` *(retired)* | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
+| `STS-DBG-0032` *(retired)* | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
+| `STS-DBG-0033` | Product mode: the debugger was refused to the bootstrap administrator because it has not yet claimed the console with its password; until it has, its roles are honoured at the console alone, from a password sign-in (#103). | HTTP 403 at the debugger |
 
 ## STS-REPORT
 

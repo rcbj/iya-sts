@@ -2451,6 +2451,26 @@ mode.
   (`STS-ADMIN-0923`). A device's `owner` is its holder, not an authority, and
   is left to the device register. `tests/deleted_references.js` holds both.
 
+  **AND AN APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of 2026-11-13
+  on #1612).** A role made for one application (#310: `<role>@<app>`,
+  `roleApplication` naming it) outlived the application, so one registered
+  again under that identifier found `reader@<id>` waiting, members and
+  permissions included. `noteApplicationRemoved()` — which every door that
+  deletes an application reaches: the console's Forget and `/admin-api`
+  (`applicationsAction()`), the registry's delete (the outbound SCIM client
+  calls it) and the LDAP delete handler — now calls
+  `roles.forgetApplicationRoles()` FIRST, so `forgetMember()` and
+  `forgetConferrer()` do not rewrite a role about to go. It deletes each
+  through `roles.remove()`, the call the console's delete-role makes (the
+  directory's `deleteRole()`, whose `noteRoleChange()` tells the members'
+  token holders), off the kept `ou=roles` listing and compared without case;
+  this file writes the `roles.delete` row the console writes, actor empty,
+  channel `internal`. A role remove() refuses is logged `STS-ADMIN-0924` and
+  kept. Unlike the console it does not report applications that still
+  REQUIRE the role (`appRequiredRole`), because finding them would read every
+  application's view. Only `roleApplication` decides: a realm-wide role whose
+  NAME merely ends in `@<id>` (writable only over the socket) is kept.
+
 ---
 
 ## The connection IS the session, so a logout closes it

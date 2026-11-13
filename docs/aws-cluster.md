@@ -196,6 +196,13 @@ Client certificates do not pass through CloudFront, so certificate sign-in and
 RFC 8705 mutual TLS at the public name stop working. CloudFront also limits a
 URL to 8,192 bytes and an origin's first byte to 60 seconds.
 
+**A multi-cell environment** (`testidpna`, `globalidp`) has one distribution,
+made by the primary cell once the global tier exists. The cells' Route 53 tree
+moves from the public name to `direct_hostname`, which is the distribution's
+origin. Turning it on is two settings in `envs/<env>.tfvars`; both environments
+have it on. It has been checked offline only. The CDN on every other cloud is
+described in [A CDN in front of a cloud deployment](cdn.md).
+
 ## Several regions: cells
 
 An environment can also be built in several AWS regions at once, as

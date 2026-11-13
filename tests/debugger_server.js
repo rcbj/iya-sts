@@ -14,21 +14,24 @@
 //
 //   A. a browser with no session is sent to THIS service's authorization
 //      endpoint as `sts-debugger-ui`, with its callback on the debugger's
-//      origin; an api caller with none gets 401 and a Bearer challenge;
+//      origin and no debugger api permission asked for; an api caller with
+//      none gets 401 and NO challenge — and an access token on
+//      `Authorization`, even one shaped exactly as the retired permission's
+//      was, opens nothing (#1717): the gate does not read that header;
 //   B. the four landing paths are not gated — a SAML response POSTed to
 //      `/api/samlacs` reaches the forwarder — and the api paths beside them
 //      are;
-//   C. a bearer token is refused for each of its failures (typ, audience,
-//      permission, expiry) and for a subject who holds no console role even
-//      when the token carries the permission — a role revoked after a token
-//      was minted;
-//   D. an administrator's token opens the static site, with the service's own
-//      base substituted for the placeholder, and a path outside the site or a
-//      method other than GET is refused;
-//   E. `/api/*` is forwarded with the prefix STRIPPED, Cookie and
-//      Authorization DROPPED, `X-Forwarded-Prefix: /api` added, and a
-//      `Location` naming the child's configured origin rewritten to the one
-//      the request arrived at.
+//   C. a session is refused while the roster is empty, for a person holding
+//      no console role, and the moment a role is revoked from somebody already
+//      signed in — the gate asks on every request;
+//   D. an administrator's session opens the static site, with the service's
+//      own base substituted for the placeholder, and a path outside the site
+//      or a method other than GET is refused;
+//   E. `/api/*` is forwarded with the prefix STRIPPED, Cookie DROPPED,
+//      `Authorization` and `DPoP` passed through UNTOUCHED (#1717 — they are
+//      the debugger's own), `X-Forwarded-Prefix: /api` added, and a `Location`
+//      naming the child's configured origin rewritten to the one the request
+//      arrived at.
 //
 // WHY IN PROCESS: the parent suite runs against stacks with no debugger in
 // them, and D and E need a built site and an api process this file can stand
@@ -57,6 +60,7 @@ const realms = require('../common/realms');
 const helpers = require('../common/helpers');
 require('../ldap/ldap_server');
 const adminRbac = require('../admin-ui/admin_rbac');
+const authn = require('../authn/authn');
 const access = require('../debugger/debugger_access');
 const apiProcess = require('../debugger/debugger_api_process');
 const debuggerServer = require('../debugger/debugger_server');
@@ -96,22 +100,57 @@ function inDefault(fn) {
 }
 
 // An access token signed with the default realm's key, shaped as the
-// authorization server shapes one, with whatever this test wants wrong.
-function tokenFor(port, overrides, header) {
-  log.debug("Entering tokenFor().");
+// authorization server shaped one for the RETIRED debugger api permission —
+// which the gate accepted on `Authorization` until #1717 and must now ignore.
+function retiredToken(port) {
+  log.debug("Entering retiredToken().");
   const now = Math.floor(Date.now() / 1000);
-  const payload = Object.assign({
+  const payload = {
     iss: debuggerServer.authorizationBaseOf({
       headers: { host: '127.0.0.1:' + port } }),
-    sub: 'alice', username: 'alice', aud: access.PERMISSION_BASE,
-    scope: access.PERMISSION_NAME, iat: now, exp: now + 300,
+    sub: 'alice', username: 'alice', aud: 'urn:sts:debugger-api:',
+    scope: 'debugger', iat: now, exp: now + 300,
     jti: 'test-' + require('crypto').randomBytes(8).toString('hex')
-  }, overrides || {});
-  log.debug("Leaving tokenFor().");
+  };
+  log.debug("Leaving retiredToken().");
   return inDefault(function () {
-    return helpers.signJwt(payload, null,
-                           { header: header || { typ: 'at+jwt' } });
+    return helpers.signJwt(payload, null, { header: { typ: 'at+jwt' } });
   });
+}
+
+// The debugger surface's relying-party session for `username`, as the code
+// flow's callback makes one, and the `name=value` pair of the cookie it set.
+function sessionCookieFor(username) {
+  log.debug("Entering sessionCookieFor().");
+  const headers = [];
+  const res = {
+    getHeader: function () {
+      log.debug("Entering getHeader().");
+      log.debug("Leaving getHeader().");
+      return headers.slice();
+    },
+    setHeader: function (name, value) {
+      log.debug("Entering setHeader().");
+      headers.length = 0;
+      [].concat(value).forEach(function (v) {
+        headers.push(v);
+      });
+      log.debug("Leaving setHeader().");
+    },
+    req: null
+  };
+  inDefault(function () {
+    return authn.startRelyingPartySession({
+      res: res, username: username, claims: {}, via: 'Protocol debugger',
+      surface: 'debugger', label: 'Protocol debugger',
+      clientId: access.UI_CLIENT_ID, cookie: 'sts_debugger'
+    });
+  });
+  const line = headers.filter(function (one) {
+    return /sts_debugger=/.test(String(one));
+  })[0] || headers[0] || '';
+  log.debug("Leaving sessionCookieFor().");
+  return String(line).split(';')[0];
 }
 
 async function run(t) {
@@ -157,21 +196,46 @@ async function run(t) {
             to.slice(0, 100));
     t.check(to.indexOf('client_id=' + access.UI_CLIENT_ID) > 0 &&
             to.indexOf(encodeURIComponent('http://' + host +
-                                          '/_sts/callback')) > 0 &&
-            to.indexOf(encodeURIComponent(access.PERMISSION_ID)) > 0,
+                                          '/_sts/callback')) > 0,
             'as the debugger client, back to the debugger origin\'s ' +
-            'callback, asking for the permission', to);
+            'callback', to);
+    t.check(to.indexOf('debugger-api') < 0,
+            'asking for no separate debugger api permission — the UI and ' +
+            'its api are one client (#1717)', to);
     t.check(/frame-ancestors 'none'/.test(
               String(home.headers['content-security-policy'])),
             'and every answer carries frame-ancestors \'none\'');
     const anon = await request(port, { method: 'GET', path: '/api/healthcheck',
                                        headers: { host: host } });
-    t.equal(anon.status, 401, 'an api call with no credential is 401');
-    t.check(/^Bearer /.test(String(anon.headers['www-authenticate'])),
-            'with a Bearer challenge naming the permission',
+    t.equal(anon.status, 401, 'an api call with no session is 401');
+    t.check(!anon.headers['www-authenticate'],
+            'with NO challenge: there is no scheme a caller could answer',
             anon.headers['www-authenticate']);
     t.check(anon.body.indexOf('STS-DBG') < 0,
             'and no error code in what the client reads');
+    // THE INTERFERENCE #1717 REMOVED: the gate used to take this header as
+    // its own credential. An administrator's token in the retired shape,
+    // which it would have accepted, now opens nothing — and neither does a
+    // Basic header, which it used to refuse as a malformed token.
+    const granted0 = inDefault(function () {
+      return adminRbac.grant('alice', 'read', { via: 'test', actor: 'test' });
+    });
+    granted = !granted0 || granted0.ok !== false;
+    const viaHeader = await request(port, { method: 'GET',
+      path: '/api/healthcheck',
+      headers: { host: host, accept: 'application/json',
+                 authorization: 'Bearer ' + retiredToken(port) } });
+    t.equal(viaHeader.status, 401,
+            'an access token on Authorization opens nothing — even one an ' +
+            'administrator was issued for the retired permission');
+    const viaBasic = await request(port, { method: 'GET',
+      path: '/api/healthcheck',
+      headers: { host: host, accept: 'application/json',
+                 authorization: 'Basic ' +
+                   Buffer.from('client:secret').toString('base64') } });
+    t.equal(viaBasic.status, 401,
+            'and a Basic header is not read either: 401 for want of a ' +
+            'session, the same answer as no header at all');
 
     // -----------------------------------------------------------------------
     t.log.info('=== B. landing paths ===');
@@ -207,15 +271,29 @@ async function run(t) {
             'and a form_post in the fragment, re-encoded');
 
     // -----------------------------------------------------------------------
-    t.log.info('=== C. bearer refusals ===');
-    // THE EMPTY ROSTER, with the console's rule on: a token carrying the
-    // permission for somebody the console would let in is still refused,
-    // because nobody is a member of either group yet.
+    t.log.info('=== C. session refusals ===');
+    const aliceCookie = sessionCookieFor('alice');
+    t.check(/^[^=]+=.+/.test(aliceCookie), 'alice has a debugger session',
+            aliceCookie);
+    async function asked(cookie, what) {
+      log.debug("Entering asked().");
+      const answer = await request(port, { method: 'GET', path: '/index.html',
+        headers: { host: host, cookie: cookie, accept: 'application/json' } });
+      log.debug("Leaving asked(). " + what);
+      return answer;
+    }
+    // THE EMPTY ROSTER, with the console's rule on: nobody is a member of
+    // either group, so the console is open to everybody and the debugger is
+    // still shut.
+    if (granted) {
+      inDefault(function () {
+        adminRbac.revoke('alice', 'read', { via: 'test', actor: 'test' });
+      });
+      granted = false;
+    }
     config.setOverride('admin.openWhenEmpty', 'true');
     try {
-      const open = await request(port, { method: 'GET', path: '/index.html',
-        headers: { host: host, authorization: 'Bearer ' + tokenFor(port, {}),
-                   accept: 'application/json' } });
+      const open = await asked(aliceCookie, 'empty roster');
       t.equal(open.status, 403,
               'while neither console role group has a member the debugger ' +
               'refuses everybody, although the console is open to them');
@@ -227,59 +305,52 @@ async function run(t) {
     });
     granted = !grant || grant.ok !== false;
     t.check(granted, 'alice is a console administrator', JSON.stringify(grant));
-    async function asked(token, what) {
-      log.debug("Entering asked().");
-      const answer = await request(port, { method: 'GET', path: '/index.html',
-        headers: { host: host, authorization: 'Bearer ' + token,
-                   accept: 'application/json' } });
-      log.debug("Leaving asked(). " + what);
-      return answer;
-    }
-    const idToken = await asked(tokenFor(port, {}, { typ: 'JWT' }), 'typ');
-    t.equal(idToken.status, 401, 'a token whose typ is not at+jwt is refused');
-    const elsewhere = await asked(tokenFor(port,
-                                           { aud: 'https://other.example/' }),
-                                  'aud');
-    t.equal(elsewhere.status, 403, 'a token for another audience is refused');
-    const noScope = await asked(tokenFor(port, { scope: 'openid' }), 'scope');
-    t.equal(noScope.status, 403,
-            'a token without the debugger permission is refused');
-    const expired = await asked(tokenFor(port, { exp: 1000, iat: 900 }),
-                                'exp');
-    t.equal(expired.status, 401, 'an expired token is refused');
-    const bob = await asked(tokenFor(port, { sub: 'bob', username: 'bob' }),
-                            'bob');
+    const allowed = await asked(aliceCookie, 'alice');
+    t.equal(allowed.status, 200, 'and her session opens the debugger');
+    const bobCookie = sessionCookieFor('bob');
+    const bob = await asked(bobCookie, 'bob');
     t.equal(bob.status, 403,
-            'a token CARRYING the permission for somebody holding no console ' +
-            'role is refused — the gate asks again, so a revoked role stops ' +
-            'working before the token runs out');
-    const forged = await asked(tokenFor(port, {}).slice(0, -4) + 'AAAA',
-                               'signature');
-    t.equal(forged.status, 401, 'a token whose signature fails is refused');
+            'a session for somebody holding no console role is refused');
+    const bobPage = await request(port, { method: 'GET', path: '/index.html',
+      headers: { host: host, cookie: bobCookie, accept: 'text/html' } });
+    t.check(bobPage.status === 403 &&
+            bobPage.body.indexOf('for administrators') >= 0 &&
+            bobPage.body.indexOf('Sign out') >= 0,
+            'drawn as a page that says so, with a way to sign out',
+            String(bobPage.status));
+    inDefault(function () {
+      adminRbac.revoke('alice', 'read', { via: 'test', actor: 'test' });
+    });
+    const revoked = await asked(aliceCookie, 'revoked');
+    t.equal(revoked.status, 403,
+            'a role revoked from somebody ALREADY signed in stops working ' +
+            'at their next request — the gate asks every time');
+    const regrant = inDefault(function () {
+      return adminRbac.grant('alice', 'read', { via: 'test', actor: 'test' });
+    });
+    granted = !regrant || regrant.ok !== false;
 
-    // -----------------------------------------------------------------------
     t.log.info('=== D. the static site ===');
-    const good = tokenFor(port, {});
     const page = await request(port, { method: 'GET', path: '/',
-      headers: { host: host, authorization: 'Bearer ' + good } });
+      headers: { host: host, cookie: aliceCookie } });
     const base = debuggerServer.authorizationBaseOf({ headers: { host: host } });
-    t.equal(page.status, 200, 'an administrator\'s token opens the site');
+    t.equal(page.status, 200, 'an administrator\'s session opens the site');
     t.equal(page.body, '<html><body>STS=' + base + '</body></html>',
             'with this service\'s own base put where the placeholder was');
     const script = await request(port, { method: 'GET', path: '/app.js',
-      headers: { host: host, authorization: 'Bearer ' + good } });
+      headers: { host: host, cookie: aliceCookie } });
     t.check(script.body.indexOf(base) > 0 &&
             script.body.indexOf('__STS_EMBED') < 0 &&
             /javascript/.test(String(script.headers['content-type'])),
             'in a bundle too', script.body);
     const outside = await request(port, { method: 'GET',
       path: '/%2e%2e/secret.txt',
-      headers: { host: host, authorization: 'Bearer ' + good } });
+      headers: { host: host, cookie: aliceCookie } });
     t.check(outside.status === 404 && outside.body.indexOf('outside') < 0,
             'a path that climbs out of the site is not served',
             String(outside.status));
     const put = await request(port, { method: 'PUT', path: '/index.html',
-      headers: { host: host, authorization: 'Bearer ' + good } });
+      headers: { host: host, cookie: aliceCookie } });
     t.equal(put.status, 405, 'and the site is read with GET only');
 
     // -----------------------------------------------------------------------
@@ -294,16 +365,35 @@ async function run(t) {
       return { state: 'running', uiUrl: 'http://child.invalid:1',
                allowList: false, allowedRanges: [] };
     };
+    // What the debugger's UserInfo call sends: an IdP's access token, which
+    // this service did not issue and the gate must not judge.
+    const idpBearer = 'Bearer eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0.';
+    const proof = 'eyJ0eXAiOiJkcG9wK2p3dCJ9.e30.sig';
     const fwd = await request(port, { method: 'GET',
       path: '/api/ssf/limits?x=1',
-      headers: { host: host, authorization: 'Bearer ' + good,
-                 cookie: 'sts_debugger=abc; sts_mock_session=def' } });
+      headers: { host: host, authorization: idpBearer, dpop: proof,
+                 cookie: aliceCookie + '; sts_mock_session=def' } });
     const last = seen[seen.length - 1] || { headers: {} };
-    t.equal(fwd.status, 200, 'an administrator\'s api call is forwarded');
+    t.equal(fwd.status, 200,
+            'an administrator\'s api call is forwarded, whatever ' +
+            'Authorization it carries');
     t.equal(last.url, '/ssf/limits?x=1', 'with the /api prefix stripped');
-    t.check(!last.headers.cookie && !last.headers.authorization,
-            'and with NO cookie and NO authorization reaching the api',
+    t.check(!last.headers.cookie,
+            'with NO cookie reaching the api',
             JSON.stringify(Object.keys(last.headers)));
+    t.equal(last.headers.authorization, idpBearer,
+            'and the Authorization header the debugger sent reaching it ' +
+            'UNTOUCHED (#1717)');
+    t.equal(last.headers.dpop, proof,
+            'and its DPoP proof likewise, unreserved and unread');
+    const basic = 'Basic ' + Buffer.from('rp:pw').toString('base64');
+    await request(port, { method: 'POST', path: '/api/introspection',
+      headers: { host: host, authorization: basic, cookie: aliceCookie,
+                 'content-type': 'application/json' } }, '{}');
+    t.equal((seen[seen.length - 1] || { headers: {} }).headers.authorization,
+            basic,
+            'introspection\'s Basic client credentials reach the api too — ' +
+            'the gate used to refuse them as a malformed token');
     t.check(last.headers['x-forwarded-prefix'] === '/api' &&
             last.headers['x-forwarded-host'] === host,
             'but the forwarded prefix and host it builds addresses from',
@@ -341,7 +431,8 @@ async function run(t) {
 module.exports = {
   name: 'debugger_server',
   describe: 'the embedded debugger\'s gate: sign-in redirect, ungated ' +
-            'landings, bearer refusals including a revoked role, the ' +
-            'substituted static site and the forwarder\'s header hygiene',
+            'landings, Authorization never read, session refusals including ' +
+            'a revoked role, the substituted static site and the ' +
+            'forwarder passing Authorization and DPoP through',
   run: run
 };

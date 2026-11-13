@@ -21,7 +21,9 @@
 # ---------------------------------------------------------------------------
 locals {
   # A record's name is relative to its zone.
-  dns_record = local.public_name ? trimsuffix(local.multi ? local.cell_console_host : var.public_hostname, ".${var.dns_zone_name}") : ""
+  # Behind Front Door a single-region environment's A record is the DIRECT
+  # name, and the public name a CNAME to the endpoint (frontdoor.tf).
+  dns_record = local.public_name ? trimsuffix(local.multi ? local.cell_console_host : (local.cdn ? var.direct_hostname : var.public_hostname), ".${var.dns_zone_name}") : ""
 }
 
 resource "azurerm_dns_a_record" "public" {

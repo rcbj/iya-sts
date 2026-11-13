@@ -835,8 +835,7 @@ console and through `/admin-api/applications/add` and `remove`.
   Shared Signals scopes (`ssf.authScopeRead`, `ssf.authScopeWrite`, and always
   `ssf.read` and `ssf.manage`; write includes read, so listing a write
   scope authorizes the read scope, and listing only a read scope does not
-  authorize a write scope) and the
-  embedded debugger's permission. A client that does not list one is refused
+  authorize a write scope). A client that does not list one is refused
   `invalid_scope` (`STS-OAUTH-0577`). `/admin-api`, SCIM and Shared Signals ask
   again on every call, so withdrawing a declaration cuts off tokens already
   issued. A dynamic registration may not declare one
