@@ -60,7 +60,11 @@
 //      holds back only the job it could not answer (STS-SCHED-0023, the
 //      tick not failed) and is asked again at the next tick; an outage
 //      stops the asking after two job reads; and an absence a reader with
-//      no store answers is remembered for the slot (#883, its review).
+//      no store answers is remembered for the slot (#883, its review);
+//   Q. the run whose slot ends first goes first: a realm job every two
+//      seconds in forty-one realms that the cap can never clear does not
+//      starve a service job every second, and an hourly job still runs in
+//      every realm inside its slot (2026-11-13, `ssf.internal-poll`).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -1456,6 +1460,76 @@ async function run(t) {
             'three ticks, and the slot runs once (the map decides)',
             JSON.stringify({ calls: none.calls.length, ran: ranNone }));
   }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== Q. the run whose slot ends first goes first ===');
+  {
+    // What starved `ssf.internal-poll` (2026-11-13): a realm job every two
+    // seconds (`report.drain`) in forty-one realms, each run taking 120 ms,
+    // under a cap of two — about seventeen runs a second for some twenty a
+    // second due, so the line never empties. Beside it a service job every
+    // second, nice 0, as the poll is. Oldest-due first, each of the realm
+    // job's runs was due from the start of its slot, at or before the
+    // start of the poll's, and the poll's slot ended unrun every time.
+    const realmIds = ['default'];
+    for (let i = 0; i < 40; i++) {
+      realmIds.push('r' + i);
+    }
+    const w = kit.world({ clustered: false, realmIds: realmIds,
+                          settings: { 'scheduler.maxConcurrentRuns': 2 } });
+    const node = w.node('solo');
+    let drains = 0;
+    let polls = 0;
+    let drainEveryMs = 2000;
+    const slots = new Set();
+    node.scheduler.register(baseJob({ id: 'test.drain', scope: 'realm',
+      nice: 10, everyMs: function () { return drainEveryMs; },
+      run: function () {
+        return new Promise(function (resolve) {
+          node.scheduler.deps.setTimer(function () {
+            drains++;
+            resolve('drained');
+          }, 120);
+        });
+      } }));
+    node.scheduler.register(baseJob({ id: 'test.poll', nice: 0,
+      everyMs: function () { return 1000; },
+      run: function (ctx) {
+        polls++;
+        slots.add(Math.floor(ctx.nowMs() / 1000));
+        return 'polled';
+      } }));
+    // An hourly job in every realm, due since the hour began: it waits
+    // behind both, and runs once the line has room.
+    let hourly = 0;
+    node.scheduler.register(baseJob({ id: 'test.hourly', scope: 'realm',
+      everyMs: function () { return HOUR; },
+      run: function () {
+        hourly++;
+        return 'ok';
+      } }));
+    node.scheduler.start('front');
+    await w.advance(30000);
+    t.check(drains > 300,
+            'Q1. the line is longer than the cap clears: the realm job runs ' +
+            'flat out', JSON.stringify({ drains: drains }));
+    t.check(polls >= 25 && slots.size >= 25,
+            'Q2. and the job every second still runs in nearly every one of ' +
+            'its thirty slots, ahead of runs whose slot ends later',
+            JSON.stringify({ polls: polls, slots: slots.size,
+                             drains: drains }));
+    // The flood stops (its interval set to 0, which is off), and the hourly
+    // job, which waited behind it, runs in the next minute.
+    const hourlyDuringFlood = hourly;
+    drainEveryMs = 0;
+    await w.advance(60000);
+    t.check(hourlyDuringFlood < realmIds.length &&
+            hourly === realmIds.length,
+            'Q3. and the hourly job, whose slot ends last, waited behind ' +
+            'them and runs once in every realm when the line has room',
+            JSON.stringify({ duringFlood: hourlyDuringFlood, hourly: hourly,
+                             realms: realmIds.length }));
+  }
   log.debug('Leaving run().');
 }
 
@@ -1465,6 +1539,7 @@ module.exports = {
             'once per slot by the database clock, cron, the run lifecycle, ' +
             'off states, manual runs, the report, per-process jobs, the ' +
             'bounded run history, removed realms, a tick that reads no ' +
-            'history, a finished interval slot read once and not held (#883)',
+            'history, a finished interval slot read once and not held (#883), ' +
+            'the line ordered by the end of each run\'s slot',
   run: run
 };

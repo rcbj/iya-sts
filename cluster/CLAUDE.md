@@ -706,7 +706,8 @@ since, twice the node's request workers and at least four), so for ninety
 seconds
 nothing else on that node reached the store: LDAPS timed out and a provider
 command was never delivered. Now each tick lines up everything due, a
-person's Run now first and then scheduled runs oldest-due first. It starts
+person's Run now first and then the scheduled runs whose slot ends first
+(*The run whose slot ends first goes first*, below). It starts
 at most `scheduler.maxConcurrentRuns`. **Its default is 0 since 2026-11-10
 (rcbj): two runs, or one fewer than the node's protocol request worker threads
 when that is more** (the floor was one for a day, which starved the partner
@@ -718,6 +719,27 @@ still due at the next tick, and a run that ends asks for that tick at once.
 setting says (`maxConcurrentRuns()`), so the scheduler cannot take every
 connection from the requests. `tests/scheduler.js` section M holds it; the
 mutant that drops the tick after a run ends fails three assertions.
+
+**THE RUN WHOSE SLOT ENDS FIRST GOES FIRST (2026-11-13).** The line was
+oldest-due first, and that starved every job with a short interval once the
+line was longer than the cap could clear. `report.drain` is a realm job every
+two seconds: eighty realms are forty runs a second, the memory mode runs them
+inline under a cap of two, and on a loaded machine the line never emptied.
+Each of those runs was due from the start of its own slot, at or before the
+start of `ssf.internal-poll`'s one-second slot, so the poll was always behind
+them, its slot ended unrun, and the next began behind the next two seconds'
+runs: run 23's memory mode did not deliver a broadcast for thirty seconds
+(`sts_broadcast_announcement`), and a development-mode memory service given
+170 realms on an idle machine ran the poll twice and then not again. Only the current slot is ever
+due, so a slot's END is the deadline, and the line is ordered by it, then by
+the lower `nice`, then by the older due time: an hourly job waiting a few
+seconds loses nothing, a one-second job waiting one loses its run. A line
+the cap can never clear still leaves something waiting; it is the run with
+the most time left. `tests/scheduler.js` section Q holds it, with the
+oldest-due order as its mutant. **What it does not change** is the load:
+`report.drain`, `report.retention` and `report.schedule` are realm jobs on
+the front (`report/CLAUDE.md`), so their cost grows with the realms whether
+or not anything is queued in them.
 
 **A TICK READS THE PENDING ROWS, NOT THE HISTORY (#623).** Finding the
 queued manual runs read every row of `scheduler.runs` in every realm, and
