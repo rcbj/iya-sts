@@ -455,6 +455,15 @@ model FederationRelationship {
     kind: "single",
     role: "service-provider",
     from: "this register",
+    allowed: #["1-advanced", "2-security", "2-message-signing"],
+    what: "OPENID CONNECT ONLY. The FAPI client profile used when this service signs a person in at the partner (#931). Empty, the default, is today's OpenID Connect relying party. 1-advanced (FAPI 1.0 Advanced) forces response type code id_token, PKCE S256, a PS256 request object by value and private_key_jwt, and does not use DPoP or mutual TLS. 2-security (FAPI 2.0 Security Profile) forces discovery, a pushed authorization request, response type code, PKCE S256, private_key_jwt and DPoP. 2-message-signing adds a PS256 request object inside that push and a signed authorization response (JARM). A profile forces private_key_jwt whatever fedTokenAuth says. This service does not act as a CIBA client and does not authenticate to the partner with a client certificate."
+  })
+  fedFapi?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    role: "service-provider",
+    from: "this register",
     what: "OPENID CONNECT ONLY. TRUE answers this relationship's login initiation endpoint, /federation/initiate-login/{id}, which the partner registers as initiate_login_uri (OpenID Connect Core 1.0 section 4): a sign-in the PARTNER starts, naming itself in iss, which must be fedPeer. A login_hint is passed on, and a target_link_uri is followed only to a path on this service. FALSE, the default, refuses it: a page anywhere could otherwise start a sign-in in a person's browser."
   })
   fedInitiateLogin?: string;

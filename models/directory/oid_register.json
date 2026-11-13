@@ -104,6 +104,7 @@
   "fedEncryptionKey": 100,
   "fedEncryptionKeyType": 101,
   "fedEndSessionUrl": 102,
+  "fedFapi": 749,
   "fedFirstSeen": 103,
   "fedHomeRealmDomain": 104,
   "fedId": 105,

@@ -264,6 +264,48 @@ One thing the plans test is not done, by design:
 * **Session Management.** This service does not poll the partner's
   `check_session_iframe`. Back-Channel Logout tells it the same thing.
 
+### FAPI client profiles
+
+`fedFapi` holds an inbound OpenID Connect relationship to a FAPI profile the
+partner enforces. The usual partner is a bank, or another financial OpenID
+Provider, that refuses a code-flow client with a client secret. The person
+still starts at this service. After the partner answers, this service's own
+applications see only this service.
+
+Empty, the default, is the relying party above. The three values:
+
+* **`1-advanced`** (FAPI 1.0 Advanced). `code id_token`, PKCE S256, a PS256
+  request object by value, and `private_key_jwt`. The endpoints may be
+  written by hand. This profile's certification sender constraint is a
+  client certificate. This service authenticates with `private_key_jwt` and
+  sends no DPoP proof.
+* **`2-security`** (FAPI 2.0 Security Profile). Needs `fedDiscovery`. The
+  authorization request is pushed to the endpoint the discovery document
+  names, and the browser is sent only `client_id` and `request_uri`. `code`,
+  PKCE S256, `private_key_jwt`, and a DPoP-bound access token. A relationship
+  with discovery off, or a document that names no pushed-authorization
+  endpoint, is refused at the sign-in (`STS-FED-0243`).
+* **`2-message-signing`**. The same as `2-security`, plus a PS256 request
+  object inside the push and a signed authorization response (JARM), checked
+  before the code is redeemed (`STS-FED-0246`).
+
+A profile forces `private_key_jwt` whatever `fedTokenAuth` says. The DPoP
+key for a `2-security` or `2-message-signing` sign-in is kept for that
+sign-in, and sealed with the partner's refresh token when
+`fedRefreshTokens` is on.
+
+Two things these profiles are sometimes asked to do are not done:
+
+* **A CIBA client.** Nothing here asks a partner to authenticate a person
+  who is not in a browser at that partner. `POST /oauth2/bc-authorize` is
+  this service as the authorization server.
+* **A client certificate at the partner.** Client authentication is
+  `private_key_jwt`. The access token's sender constraint, where a profile
+  uses one, is DPoP.
+
+How the OpenID Foundation's FAPI client plans would be run, and which of
+them this leaves out, is [conformance](conformance.md#not-run-and-why).
+
 ### The request context
 
 The request context — the request id, `nonce`, PKCE verifier and where the
@@ -874,6 +916,7 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedUserinfoSignedResponseAlg` | SP (OIDC) | the algorithm a signed UserInfo answer must use |
 | `fedIdTokenSignedResponseAlg` | SP (OIDC) | the one algorithm the partner signs ID Tokens and Logout Tokens with (what was registered as `id_token_signed_response_alg`); a token under another is refused even when a partner key verifies it. **Empty is a warning**: any algorithm of the key's family is accepted |
 | `fedDiscovery`, `fedInitiateLogin` | SP (OIDC) | read the endpoints from the partner's discovery document; answer a sign-in the partner starts. Both `FALSE` by default |
+| `fedFapi` | SP (OIDC) | empty (today's relying party), `1-advanced`, `2-security` or `2-message-signing` — see [FAPI client profiles](#fapi-client-profiles) |
 | `fedBinding`, `fedSignRequest` | SP | the outbound SAML binding; whether the `AuthnRequest` is signed |
 | `fedSloUrl`, `fedSloBinding` | SP | the partner's SAML `SingleLogoutService`, and the binding (`HTTP-Redirect`, the default, or `HTTP-POST`) this service's `LogoutRequest` and `LogoutResponse` go on |
 | `fedEndSessionUrl` | SP | the partner's OpenID Connect `end_session_endpoint`; the ID Token is kept for `id_token_hint` only while this is set |
