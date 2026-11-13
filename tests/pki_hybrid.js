@@ -32,6 +32,7 @@
 delete process.env.CONFIG_FILE;
 
 const nodeCrypto = require('crypto');
+const tls = require('tls');
 const config = require('../common/config');
 const pki = require('../common/pki');
 const keystore = require('../common/keystore');
@@ -121,6 +122,7 @@ async function run(t) {
     await aClassicalBranchStillVerifies(t);
     await anAlgorithmThatCannotSignIsRefused(t);
     await aProcessBranchPastTheListenerLimitIsRefused(t);
+    await aListenerChainKeyOpenSslCannotReadIsRefused(t);
   } finally {
     [REALM, CLASSICAL, REFUSED].forEach(function (id) {
       pki.clearChain(id);
@@ -384,6 +386,101 @@ async function aProcessBranchPastTheListenerLimitIsRefused(t) {
   t.equal(after.keyAlg, before.keyAlg,
           'the process branch\'s signing key is unchanged');
   log.debug("Leaving aProcessBranchPastTheListenerLimitIsRefused().");
+}
+
+// The PEM bundle a listener would present for a leaf under the process
+// branch, with the Root after it (#1064), loaded the way `setSecureContext()`
+// loads it. Answers the error's message, or '' when OpenSSL took it.
+async function listenerContextProblem() {
+  log.debug("Entering listenerContextProblem().");
+  const pair = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const issued = await pki.issueUnder(pki.PROCESS_SCOPE, 'tls', {
+    publicKeyPem: pair.publicKey.export({ type: 'spki', format: 'pem' }),
+    subject: 'CN=pki-hybrid listener', profile: 'tls-server' });
+  if (!issued.ok) {
+    log.debug("Leaving listenerContextProblem(). No leaf.");
+    return 'no leaf: ' + (issued.errors || []).join(' ');
+  }
+  const bundle = issued.chainPem.concat([pki.serviceRoot().certificatePem])
+    .map(function (pem) {
+      return /\n$/.test(pem) ? pem : pem + '\n';
+    }).join('');
+  try {
+    tls.createSecureContext({
+      key: pair.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+      cert: bundle });
+  } catch (e) {
+    log.debug("Caught in listenerContextProblem(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving listenerContextProblem(). Refused.");
+    return String((e && e.message) || e);
+  }
+  log.debug("Leaving listenerContextProblem(). Loaded.");
+  return '';
+}
+
+async function aListenerChainKeyOpenSslCannotReadIsRefused(t) {
+  log.debug("Entering aListenerChainKeyOpenSslCannotReadIsRefused().");
+  t.log.info('=== 8. a composite ML-DSA key is refused for the Root and ' +
+             'the process branch, which the listeners load (fuzz, ' +
+             '2026-11-12) ===');
+  const composite = 'mldsa65-ecdsa-p256-sha512';
+  t.check(pki.listenerUnreadableKeyAlg(composite) &&
+          pki.listenerUnreadableKeyAlg('mldsa87-rsa4096-pss-sha512') &&
+          !pki.listenerUnreadableKeyAlg('ml-dsa-65') &&
+          !pki.listenerUnreadableKeyAlg('slh-dsa-shake-128f') &&
+          !pki.listenerUnreadableKeyAlg('ec-p256'),
+          'composites are the keys OpenSSL cannot read; ML-DSA, SLH-DSA ' +
+          'and EC are not');
+  const before = pki.describeScope(pki.PROCESS_SCOPE);
+  const branch = await pki.buildScope(pki.PROCESS_SCOPE, {
+    keyAlg: composite, altKeyAlg: 'none' });
+  t.equal(errorCodes.codeOf(branch), 'STS-PKI-0272',
+          'a composite process branch is refused as STS-PKI-0272');
+  t.check(branch && !/STS-/.test((branch.errors || []).join(' ')),
+          'and the sentence names no error code',
+          (branch && branch.errors || []).join(' '));
+  const after = pki.describeScope(pki.PROCESS_SCOPE);
+  t.equal(after.built, before.built, 'and nothing was stored');
+  const rootBefore = pki.serviceRoot();
+  const root = await pki.buildRoot({ keyAlg: composite, altKeyAlg: 'none' });
+  t.equal(errorCodes.codeOf(root), 'STS-PKI-0272',
+          'a composite Root is refused as STS-PKI-0272');
+  t.check(pki.serviceRoot() === rootBefore, 'and the Root is unchanged');
+  // A realm's branch keeps the choice: its keys are verified by relying
+  // parties, not loaded by this service's OpenSSL.
+  const realm = await pki.buildChain(REFUSED, { keyAlg: composite,
+                                                altKeyAlg: 'none' });
+  t.check(realm && realm.ok, 'a realm branch may still be composite',
+          JSON.stringify(realm && realm.errors));
+  pki.clearChain(REFUSED);
+  // THE SETTING NAMING ONE: the build is not refused (the startup build reads
+  // it), it is made classical, and OpenSSL loads what it made.
+  const pure = await pki.buildScope(pki.PROCESS_SCOPE, {
+    keyAlg: 'ml-dsa-65', altKeyAlg: 'none' });
+  t.check(pure && pure.ok, 'an ML-DSA-65 process branch is built',
+          JSON.stringify(pure && pure.errors));
+  t.equal(await listenerContextProblem(), '',
+          'and OpenSSL loads the listener chain it makes');
+  const set = config.setOverride('pki.keyAlgorithm', composite);
+  try {
+    t.check(set && set.ok !== false, 'pki.keyAlgorithm is set to a ' +
+            'composite for this section', JSON.stringify(set));
+    const fallback = await pki.buildScope(pki.PROCESS_SCOPE, {
+      altKeyAlg: 'none' });
+    t.check(fallback && fallback.ok, 'a process build naming no key with ' +
+            'the setting composite is not refused',
+            JSON.stringify(fallback && fallback.errors));
+    t.check(!pki.listenerUnreadableKeyAlg(
+              pki.describeScope(pki.PROCESS_SCOPE).keyAlg),
+            'it was built with a key OpenSSL reads',
+            pki.describeScope(pki.PROCESS_SCOPE).keyAlg);
+    t.equal(await listenerContextProblem(), '',
+            'and OpenSSL loads the listener chain it makes');
+  } finally {
+    config.clearOverride('pki.keyAlgorithm');
+  }
+  log.debug("Leaving aListenerChainKeyOpenSslCannotReadIsRefused().");
 }
 
 module.exports = {

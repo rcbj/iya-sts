@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5435** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5438** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,12 +58,12 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 22
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 258
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 260
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 434
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 435
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 757
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 71
@@ -1076,6 +1076,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0269` | A signing key pair was asked for a subject key that has no JWK this service can publish: a composite ML-DSA key, whose X.509 bytes are not the JOSE composite, or a key-establishment algorithm asked to sign. The certificate was not recorded (#1418). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0270` | A process-scope certificate authority was asked for a signing key or an alternative key whose signatures would make the TLS listener certificate list larger than a stock TLS client accepts (OpenSSL SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). Nothing was stored, and the listener certificate was left as it is (#1421, #1432). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0271` | A certificate was asked to be validated for a realm that does not exist, one removed a moment ago included; refused rather than judged by the policy of whichever realm was ambient (#1147). | the caller's own refusal |
+| `STS-PKI-0272` | The service Root or the process branch was asked for a composite ML-DSA signing key. Both are on the TLS listeners' chain, and OpenSSL cannot read a composite key, so every listener would have refused the new certificate (STS-TLS-0011) and kept serving the old one. Refused before any key is made; nothing is stored. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0273` | pki.keyAlgorithm names a composite ML-DSA key, which the TLS listeners cannot load, so the service Root or the process branch being built without a named algorithm used the classical default instead. Realm branches still take the setting. | none: a log line; the build goes on |
 
 ## STS-ENROLL
 
@@ -1763,6 +1765,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0553` | A /authn-api request named a query parameter its operation does not declare, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0554` | A query parameter of a /authn-api request held a value its declared type does not, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0555` | A /authn-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0556` | An administrator's passkey enrolment was begun or finished for a person named with a control character, a NUL or half of a surrogate pair. No directory name holds one, the pending record is keyed by the two names joined with a newline, and PostgreSQL cannot store a NUL, so it was refused before the pending record was touched (STS-STORE-0063). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-OAUTH
 

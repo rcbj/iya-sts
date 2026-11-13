@@ -10963,6 +10963,17 @@ class Credentials {
   abandonAdminKeyEnrolment(admin, username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.abandonAdminKeyEnrolment().");
+    // A NAME WITH A CONTROL CHARACTER WAS NEVER A KEY HERE: the begin
+    // requires a directory entry, and no entry's name holds one. A delete of
+    // it is still journalled, and a NUL in a journalled key is a row
+    // PostgreSQL cannot hold (STS-STORE-0063, the fuzz run on 7fc43a1de),
+    // so it is not asked. The door refuses it first (STS-AUTHN-0556).
+    if (/[\u0000-\u001f\u007f]/.test(String(admin || '') +
+                                     String(username || ''))) {
+      log.debug("Leaving Credentials.abandonAdminKeyEnrolment(). No " +
+                "record can be held under that name.");
+      return;
+    }
     pendingAdminKeys.delete(adminEnrolmentKey(admin, username));
     log.debug("Leaving Credentials.abandonAdminKeyEnrolment().");
   }

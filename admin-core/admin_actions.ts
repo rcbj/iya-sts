@@ -4939,6 +4939,19 @@ class AdminActions {
         return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
           'the person the passkey is for, in `user`.'] });
       }
+      // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD
+      // (the fuzz run on 7fc43a1de): it is keyed by the administrator and
+      // the person joined with a newline, and a finish spends it before
+      // anything else — so a NUL here was journalled into a store PostgreSQL
+      // cannot hold (STS-STORE-0063), and a newline could name another
+      // administrator's record.
+      if (/[\u0000-\u001f\u007f]/.test(who) || config.unstorableText(who)) {
+        log.debug("Leaving AdminActions.usersAction(). A name no person " +
+                  "holds.");
+        return this.refused('STS-AUTHN-0556', { ok: false, errors: ['The ' +
+          'person\'s name holds a control character or text that cannot ' +
+          'be stored, so no person has it. Nothing was started or spent.'] });
+      }
       const authn = require('../authn/authn');
       const webauthnPolicy = require('../authn/webauthn_policy');
       const passkeyPolicy = require('../common/passkey_policy');
@@ -5041,6 +5054,19 @@ class AdminActions {
         log.debug("Leaving AdminActions.usersAction(). No person named.");
         return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
           'the person the passkey is for, in `user`.'] });
+      }
+      // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD
+      // (the fuzz run on 7fc43a1de): it is keyed by the administrator and
+      // the person joined with a newline, and a finish spends it before
+      // anything else — so a NUL here was journalled into a store PostgreSQL
+      // cannot hold (STS-STORE-0063), and a newline could name another
+      // administrator's record.
+      if (/[\u0000-\u001f\u007f]/.test(who) || config.unstorableText(who)) {
+        log.debug("Leaving AdminActions.usersAction(). A name no person " +
+                  "holds.");
+        return this.refused('STS-AUTHN-0556', { ok: false, errors: ['The ' +
+          'person\'s name holds a control character or text that cannot ' +
+          'be stored, so no person has it. Nothing was started or spent.'] });
       }
       const admin = context && (context as any).admin;
       let posted: any = null;
