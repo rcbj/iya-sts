@@ -2449,7 +2449,9 @@ login endpoint, creation from the profile, the list's category, a newcomer's
 own entry with a namesake left alone, and any-existing refused. The first
 file's section N holds rcbj's #729 decisions 2-4, and its A11 decision 1.
 Its sections O and P drive #746's providers the same way, with Steam's,
-Discourse's and Bluesky's refusals.
+Discourse's and Bluesky's refusals. `tests/social_idp_signins.js` signs in
+through a dummy of each named provider that `companion/social_idps.js`
+serves, one assertion each.
 **Not covered yet:** a consumer provider on an application's chooser beside
 an enterprise partner, the details form after Apple's second authorization
 (the mechanism is the generic one N drives), and any profile against its

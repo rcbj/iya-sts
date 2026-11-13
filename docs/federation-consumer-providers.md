@@ -44,6 +44,17 @@ covers:
 catalogue. **None has yet been run against its live provider.** Doing so needs
 an application registered at each provider, with its credentials.
 
+A development companion serves a dummy of each named provider at
+`/social/{id}`, so a relationship can be pointed at it without an account
+at the provider. The addresses on that page are the companion's public URL;
+a service in another container dials the companion by that address, not
+localhost. The two generic profiles are not served.
+[The companion dummy of each provider](#the-companion-dummy-of-each-provider)
+links the document each dummy was written from.
+`tests/social_idp_signins.js` signs in through each dummy. That is a
+different server from the one the *Tested* column describes, and it is not
+a run against the live provider.
+
 The *Tested* column says how each profile is exercised by
 `tests/federation_consumer_providers.js` and
 `tests/protocol/sts_federation_consumer.js`:
@@ -107,6 +118,69 @@ The *Tested* column says how each profile is exercised by
 
 The [feasibility record](#feasibility-of-the-platforms-requested) at the end
 of this page has what each provider's own documentation says.
+
+## The companion dummy of each provider
+
+Each named provider has a dummy at `/social/{id}` on the development
+companion. The dummy was written from that provider's profile, and the
+link is the document that profile records. A code-grant dummy answers
+the [authorization code grant](https://www.rfc-editor.org/rfc/rfc6749)
+and checks [PKCE](https://www.rfc-editor.org/rfc/rfc7636) (S256). The
+client secret is HTTP Basic or a form field, as the profile names. An
+OpenID Connect dummy signs an ID Token as
+[OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
+describes, and echoes the nonce. Every token answer is JSON.
+
+LinkedIn, Yahoo, Slack, Twitch and Salesforce publish a user-info
+address. Their dummies answer that call with the subject alone. The ID
+Token already carries the profile, and a user-info subject that differs
+from it is refused.
+
+The dummy signs one fixed person in. The two generic profiles are not
+in this list. The rows are in catalogue order, which is the order of
+`/social`.
+
+| Provider | Dummy | Document the dummy follows |
+|---|---|---|
+| Google (`google`) | `/social/google` | [OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect). Code grant, HTTP Basic, ID Token. |
+| Discord (`discord`) | `/social/discord` | [OAuth 2.0](https://discord.com/developers/docs/topics/oauth2). Code grant, HTTP Basic, `/users/@me`. |
+| GitHub (`github`) | `/social/github` | [Building OAuth Apps](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps). Code grant, secret in the body, `/user`, and the primary address on `/user/emails`. |
+| Microsoft, personal accounts (`microsoft`) | `/social/microsoft` | [OpenID Connect](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc). Code grant, secret in the body, ID Token, the `consumers` authority. |
+| Microsoft, allowed tenants (`microsoft-any`) | `/social/microsoft-any` | [Multi-tenant applications](https://learn.microsoft.com/en-us/entra/identity-platform/howto-convert-app-to-be-multi-tenant). Code grant, secret in the body, ID Token. The issuer and `tid` are the personal-account tenant. Leave the profile's issuer template. |
+| LinkedIn (`linkedin`) | `/social/linkedin` | [Sign In with LinkedIn using OpenID Connect](https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/sign-in-with-linkedin-v2). Code grant, secret in the body, ID Token. |
+| Yahoo (`yahoo`) | `/social/yahoo` | [OpenID Connect](https://developer.yahoo.com/oauth2/guide/openid_connect/). Code grant, HTTP Basic, ID Token. |
+| Slack (`slack`) | `/social/slack` | [Sign in with Slack](https://api.slack.com/authentication/sign-in-with-slack). Code grant, secret in the body, ID Token. |
+| Twitch (`twitch`) | `/social/twitch` | [Getting OIDC tokens](https://dev.twitch.tv/docs/authentication/getting-tokens-oidc/). Code grant, secret in the body, ID Token. |
+| Salesforce (`salesforce`) | `/social/salesforce` | [OpenID Connect discovery](https://help.salesforce.com/s/articleView?id=xcloud.remoteaccess_oidc_discovery_endpoint.htm&type=5). Code grant, secret in the body, ID Token. |
+| Facebook (`facebook`) | `/social/facebook` | [Manual login flow](https://developers.facebook.com/docs/facebook-login/guides/advanced/manual-flow). Code grant, secret in the body, Graph `/me`. |
+| Amazon (`amazon`) | `/social/amazon` | [Obtain a customer profile](https://developer.amazon.com/docs/login-with-amazon/obtain-customer-profile.html). Code grant, secret in the body, `/user/profile`. |
+| Spotify (`spotify`) | `/social/spotify` | [Authorization](https://developer.spotify.com/documentation/web-api/concepts/authorization). Code grant, HTTP Basic, `/v1/me`. |
+| X (`x`) | `/social/x` | [OAuth 2.0 authorization code](https://docs.x.com/resources/fundamentals/authentication/oauth-2-0/authorization-code). Code grant, HTTP Basic, `/2/users/me`. |
+| TikTok (`tiktok`) | `/social/tiktok` | [Login Kit for Web](https://developers.tiktok.com/doc/login-kit-web/). Code grant with `client_key`. The person is the token response's `open_id`. |
+| Apple (`apple`) | `/social/apple` | [Sign in with Apple REST API](https://developer.apple.com/documentation/sign_in_with_apple/sign_in_with_apple_rest_api). `form_post`, an ES256 client secret whose audience is `https://appleid.apple.com`, an ID Token, and the name on the `user` form field. |
+| GitLab.com (`gitlab`) | `/social/gitlab` | [OpenID Connect provider](https://docs.gitlab.com/integration/openid_connect_provider/). Code grant, HTTP Basic, ID Token and UserInfo. |
+| GitLab, self-managed (`gitlab-self-managed`) | `/social/gitlab-self-managed` | [The same document](https://docs.gitlab.com/integration/openid_connect_provider/). The same shape, on the instance's own addresses. |
+| Bitbucket (`bitbucket`) | `/social/bitbucket` | [OAuth 2.0](https://developer.atlassian.com/cloud/bitbucket/oauth-2/). Code grant, HTTP Basic, `/2.0/user`, and the primary address on `/2.0/user/emails`. |
+| Patreon (`patreon`) | `/social/patreon` | [Patreon API](https://docs.patreon.com/). Code grant, secret in the body, APIv2 `/identity`. |
+| Roblox (`roblox`) | `/social/roblox` | [OAuth 2.0](https://create.roblox.com/docs/cloud/auth/oauth2-overview). Code grant, HTTP Basic, an ES256 ID Token. The issuer ends in a slash. |
+| Battle.net (`battlenet`) | `/social/battlenet` | [Using OAuth](https://community.developer.battle.net/documentation/guides/using-oauth). Code grant, HTTP Basic, ID Token and UserInfo. |
+| Epic Games (`epic`) | `/social/epic` | [Authentication](https://dev.epicgames.com/docs/web-api-ref/authentication). Code grant, HTTP Basic, ID Token and UserInfo. |
+| PayPal (`paypal`) | `/social/paypal` | [Log in with PayPal](https://developer.paypal.com/docs/log-in-with-paypal/). Code grant, HTTP Basic, the identity API. |
+| Dropbox (`dropbox`) | `/social/dropbox` | [OpenID Connect guide](https://developers.dropbox.com/oidc-guide). Code grant, HTTP Basic, ID Token. No user-info call. |
+| Box (`box`) | `/social/box` | [OAuth 2.0](https://developer.box.com/guides/authentication/oauth2/). Code grant, secret in the body, `/2.0/users/me`. |
+| Steam (`steam`) | `/social/steam` | [Steam authentication](https://partner.steamgames.com/doc/features/auth) and [OpenID Authentication 2.0](https://openid.net/specs/openid-authentication-2_0.html). `check_authentication`. A Web API key reads GetPlayerSummaries. |
+| Codeberg (`codeberg`) | `/social/codeberg` | [Forgejo as an OAuth 2.0 provider](https://forgejo.org/docs/latest/user/oauth2-provider/). Code grant, secret in the body, ID Token and UserInfo. |
+| A Gitea or Forgejo instance (`gitea`) | `/social/gitea` | [OAuth2 provider](https://docs.gitea.com/development/oauth2-provider). The same shape, on the instance's own addresses. |
+| Hugging Face (`huggingface`) | `/social/huggingface` | [OAuth](https://huggingface.co/docs/hub/oauth). Code grant, HTTP Basic, ID Token and UserInfo. |
+| Asana (`asana`) | `/social/asana` | [OpenID Connect](https://developers.asana.com/docs/openid-connect). Code grant, secret in the body, ID Token and UserInfo. |
+| Atlassian (`atlassian`) | `/social/atlassian` | [OAuth 2.0 (3LO)](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/). Code grant, secret in the body, `/me`. |
+| Replit (`replit`) | `/social/replit` | [OpenID Connect discovery](https://replit.com/oidc/.well-known/openid-configuration). Code grant, HTTP Basic, ID Token and UserInfo. |
+| A Mastodon instance (`mastodon`) | `/social/mastodon` | [OAuth](https://docs.joinmastodon.org/methods/oauth/). Code grant, secret in the body, `/oauth/userinfo`. |
+| SourceForge (`sourceforge`) | `/social/sourceforge` | [Allura API](https://sourceforge.net/p/forge/documentation/Allura%20API/). Code grant, secret in the body, `/rest/user`. |
+| Stack Overflow (`stackoverflow`) | `/social/stackoverflow` | [Authentication](https://api.stackexchange.com/docs/authentication) and [compressed responses](https://api.stackexchange.com/docs/compression). Code grant, secret in the body. The profile request carries the token on the query, and the answer is gzip with no content-encoding. |
+| OSChina (`oschina`) | `/social/oschina` | [OpenAPI](https://www.oschina.net/openapi/docs). Code grant, secret in the body. The profile request carries the token on the query. |
+| A Discourse instance (`discourse`) | `/social/discourse` | [DiscourseConnect](https://meta.discourse.org/t/use-discourse-as-an-identity-provider-sso-discourseconnect/32974). HMAC-SHA256 of the raw base64 `sso` payload. No token endpoint. |
+| Bluesky (`bluesky`) | `/social/bluesky` | [AT Protocol OAuth](https://atproto.com/specs/oauth), with [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126) pushed authorization and [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449) DPoP. The DID document names the data server, and that server names the issuer. |
 
 ## How it works
 
