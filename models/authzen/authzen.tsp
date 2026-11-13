@@ -21,6 +21,20 @@
 // said. A change here is a change to what a PEP sees, and owes that
 // snapshot.
 //
+// UNKNOWN MEMBERS ARE IGNORED, AT EVERY DEPTH, ON EVERY REQUEST HERE
+// (rcbj's decision on #936, 2026-11-13). AuthZEN Authorization API 1.0
+// section 10.1.1: "To ensure forward compatibility, receivers MUST ignore
+// unknown fields present in request or response bodies." Every `@request`
+// below says `unknownMembers: "ignored"`, so a member no field names (at
+// the top, in an entity, in `page`, in `options`) is accepted and never
+// read, and the Action Search's `action`, which section 8.6.1 does not
+// list, is declared `ignored`. Until then each was refused with
+// STS-AUTHZEN-0009, which is retired. A member that IS defined keeps every
+// check it had: a wrong type, a missing entity, an unknown semantic, a
+// member a profile defines and this service does not implement (BULK's
+// `items`). Every other API this service serves still refuses a member it
+// does not declare; this is AuthZEN's rule, not a general one.
+//
 // What needs state stays in the code and reads the generated shape:
 // the catalogue's rows (which properties and context members a realm
 // declares, and the value rules they impose, `xacml_attribute_rows.ts`),
@@ -47,10 +61,13 @@ const SENTENCES = #{
   notOneOf: "{path} must be one of {values}."
 };
 
-/** The codes of the evaluation family's shape refusals. */
+/**
+ * The codes of the evaluation family's shape refusals. No `stray`: nothing
+ * in the family refuses a member it does not take (section 10.1.1), so
+ * STS-AUTHZEN-0009, which did, is retired.
+ */
 const EVALUATION_CODES = #{
   notObject: "STS-AUTHZEN-0001",
-  stray: "STS-AUTHZEN-0009",
   absent: "STS-AUTHZEN-0002",
   type: "STS-AUTHZEN-0003"
 };
@@ -145,7 +162,7 @@ model Context {
   paths: #["/access/v1/evaluation"],
   methods: #["POST"],
   notObject: "An access evaluation request is a JSON object with subject, action, resource and optionally context.",
-  stray: "An access evaluation request has no member \"{member}\"; it takes {membersAnd}.",
+  unknownMembers: "ignored",
   codes: EVALUATION_CODES,
   sentences: SENTENCES
 })
@@ -184,7 +201,7 @@ model EvaluationsOptions {
   paths: #["/access/v1/evaluations"],
   methods: #["POST"],
   notObject: "An access evaluations request is a JSON object.",
-  stray: "An access evaluations request has no member \"{member}\"; it takes {members}.",
+  unknownMembers: "ignored",
   codes: EVALUATION_CODES,
   sentences: SENTENCES
 })
@@ -244,6 +261,7 @@ const PAGE_REFUSAL = "page is an object with token (a string from a previous nex
   paths: #["/access/v1/search/subject"],
   methods: #["POST"],
   notObject: "A search request is a JSON object.",
+  unknownMembers: "ignored",
   codes: EVALUATION_CODES,
   sentences: SENTENCES
 })
@@ -265,6 +283,7 @@ model SubjectSearchRequest {
   paths: #["/access/v1/search/resource"],
   methods: #["POST"],
   notObject: "A search request is a JSON object.",
+  unknownMembers: "ignored",
   codes: EVALUATION_CODES,
   sentences: SENTENCES
 })
@@ -286,6 +305,7 @@ model ResourceSearchRequest {
   paths: #["/access/v1/search/action"],
   methods: #["POST"],
   notObject: "A search request is a JSON object.",
+  unknownMembers: "ignored",
   codes: EVALUATION_CODES,
   sentences: SENTENCES
 })
@@ -294,10 +314,14 @@ model ActionSearchRequest {
             cite: "AuthZEN Authorization API 1.0 section 8.2" })
   page?: Page;
 
-  @field(#{ code: "STS-AUTHZEN-0009",
-            refusal: "An Action Search request carries no action member (section 8.6).",
-            cite: "AuthZEN Authorization API 1.0 section 8.6" })
-  action?: never;
+  /**
+   * Section 8.6.1 does not list `action`, so a PEP sending one is sending
+   * an unknown member, and section 10.1.1 has the PDP ignore it: the
+   * actions searched are this service's candidates whatever it says.
+   */
+  @field(#{ ignored: true,
+            cite: "AuthZEN Authorization API 1.0 sections 8.6.1 and 10.1.1" })
+  action?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -360,7 +384,7 @@ model Callback {
   paths: #["/access/v1/access-requests"],
   methods: #["POST"],
   notObject: "An access request is a JSON object with subject, resource, action and denial.",
-  stray: "An access request has no member \"{member}\"; it takes {members}.",
+  unknownMembers: "ignored",
   codes: #{
     notObject: "STS-AUTHZEN-0071",
     stray: "STS-AUTHZEN-0071",

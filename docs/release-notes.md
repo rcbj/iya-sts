@@ -103,6 +103,26 @@ A 1.1.0 image started first still starts: an account that may not alter
 the table logs `STS-STORE-0172`, and one that may builds the index in
 place in the background (`STS-STORE-0173` if that fails).
 
+### AuthZEN ignores members it does not define
+
+In 1.0.0, an [AuthZEN](authzen.md) request carrying a member that AuthZEN
+1.0 does not define was refused with 400. In 1.1.0 it is accepted, and the
+member is ignored, as AuthZEN 1.0 section 10.1.1 requires ("receivers MUST
+ignore unknown fields"). This covers every request under `/access/v1`:
+an evaluation, an evaluations batch, the three searches and an access
+request. It applies at the top level and inside `subject`, `action`,
+`resource`, `page` and `options`. An Action Search's `action`, which the
+search does not define, is ignored too.
+
+Nothing else about a request changes. A defined member is still checked
+for type and presence. A property inside `properties` or `context` still
+needs a conversion rule. BULK's `items` on an access request is still
+refused. A request that worked in 1.0.0 gets the same answer.
+
+`STS-AUTHZEN-0009` is retired. Other APIs still refuse members they do not
+declare. The remote PEP's AuthZEN endpoint in the `xacml-pep` container
+follows the same rule.
+
 ## 1.0.0
 
 1.0.0 is the first release of iya-sts. Every build before it was a

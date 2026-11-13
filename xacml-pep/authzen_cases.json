@@ -465,7 +465,7 @@
       "code": "STS-AUTHZEN-0003"
     },
     {
-      "what": "R9. a member a single evaluation does not define",
+      "what": "R9. a member a single evaluation does not define is ignored (AuthZEN 1.0 section 10.1.1; STS-AUTHZEN-0009 retired, #936)",
       "body": {
         "subject": {
           "type": "user",
@@ -480,10 +480,18 @@
         },
         "evaluations": []
       },
-      "code": "STS-AUTHZEN-0009"
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id"
+      ],
+      "attributes": []
     },
     {
-      "what": "R10. and one of subject's",
+      "what": "R10. and one of subject's is ignored too",
       "body": {
         "subject": {
           "type": "user",
@@ -498,7 +506,15 @@
           "id": "doc-1"
         }
       },
-      "code": "STS-AUTHZEN-0009"
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id"
+      ],
+      "attributes": []
     },
     {
       "what": "R11. context.application is the application and sends no attribute",
@@ -530,11 +546,11 @@
       "attributes": []
     },
     {
-      "what": "R12. the unknown member is found before the missing one",
+      "what": "R12. an unknown member is ignored, so the missing subject is what is refused",
       "body": {
         "x": 1
       },
-      "code": "STS-AUTHZEN-0009"
+      "code": "STS-AUTHZEN-0002"
     },
     {
       "what": "V1. an undeclared property",

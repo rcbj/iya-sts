@@ -194,10 +194,83 @@ class AuthzenSearch {
       body[kind] = Object.assign({}, body[kind], { id: PLACEHOLDER });
     }
     // THE FINGERPRINT IS OF EVERYTHING BUT THE TOKEN: the entities and the
-    // limit a continued request must not change (section 8.2).
-    const fingerprint = self.fingerprintOf(kind, given);
+    // limit a continued request must not change (section 8.2). Everything
+    // the model names, that is: an ignored member (section 10.1.1, #936)
+    // is left out, so changing one between pages changes nothing.
+    const fingerprint = self.fingerprintOf(kind, AuthzenSearch.known(kind,
+      JSON.parse(JSON.stringify(given))));
     log.debug("Leaving AuthzenSearch.read().");
     return { body: body, page: page, fingerprint: fingerprint };
+  }
+
+  /**
+   * A search request less every member the model does not name (AuthZEN
+   * 1.0 section 10.1.1: they are IGNORED, #936), so an ignored member can
+   * neither change a page token's fingerprint nor be refused by it. Kept:
+   * the evaluation's members (`context` whole, being open; each entity's
+   * own declared members), and `page`'s. Left out: an Action Search's
+   * `action`, which its model declares `ignored`. A request naming nothing
+   * unknown is unchanged, so its digest is the one it always had.
+   *
+   * @param kind - the search
+   * @param given - a copy of the request, which this edits
+   * @returns the copy
+   */
+  static known(kind: string, given: any): any {
+    log.debug("Entering AuthzenSearch.known(). " + kind);
+    if (!isObject(given)) {
+      log.debug("Leaving AuthzenSearch.known(). Not an object.");
+      return given;
+    }
+    const namesOf = function (fields: any[]): string[] {
+      return (fields || []).map(function (one: any) {
+        return one.name;
+      });
+    };
+    const top: any[] = authzenModel.request('evaluation').fields;
+    const searched: any[] = authzenModel.request('search-' + kind).fields;
+    const ignored = searched.filter(function (one: any) {
+      return one.ignored === true;
+    }).map(function (one: any) {
+      return one.name;
+    });
+    const out: any = {};
+    top.forEach(function (field: any) {
+      const name = field.name;
+      if (ignored.indexOf(name) >= 0 ||
+          !Object.prototype.hasOwnProperty.call(given, name)) {
+        return;
+      }
+      const value = given[name];
+      if (field.open === true || !isObject(value)) {
+        out[name] = value;
+        return;
+      }
+      const keep = namesOf(field.fields);
+      out[name] = {};
+      Object.keys(value).forEach(function (key: string) {
+        if (keep.indexOf(key) >= 0) {
+          out[name][key] = value[key];
+        }
+      });
+    });
+    if (Object.prototype.hasOwnProperty.call(given, 'page')) {
+      const page = given.page;
+      if (isObject(page)) {
+        const keep = namesOf(authzenModel.fieldOf('search-' + kind,
+                                                  'page').fields);
+        out.page = {};
+        Object.keys(page).forEach(function (key: string) {
+          if (keep.indexOf(key) >= 0) {
+            out.page[key] = page[key];
+          }
+        });
+      } else {
+        out.page = page;
+      }
+    }
+    log.debug("Leaving AuthzenSearch.known().");
+    return out;
   }
 
   /**

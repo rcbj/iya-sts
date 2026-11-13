@@ -73,11 +73,12 @@ about suite release-v5.3.1 decide the variants, both read in its source:
   the realm's metadata endpoints into the static configuration;
   `sts_authzen.js` holds the metadata and `signed_metadata`.
 
-**An open finding, not ledgered**: the plans' `*-unknown-*-fields-ignored`
-modules expect 200 under section 10.1.1 ("receivers MUST ignore unknown
-fields"), which *Unknown members of the request itself are refused too*
-(`0009`, below) contradicts. They fail until rcbj decides between ignoring
-unknown members and arguing the difference.
+**What the plans found, fixed rather than ledgered**: the
+`*-unknown-*-fields-ignored` modules, and the Action Search's
+`extra-action-ignored`, expect 200 under section 10.1.1 ("receivers MUST
+ignore unknown fields"), and this API refused such a member with `0009`.
+rcbj decided to follow the specification (2026-11-13): *Unknown members are
+IGNORED*, below.
 
 ## The mapping, in one table
 
@@ -169,9 +170,26 @@ KIND, and this directory maps each kind to the code it always had
 category, `context.application`, the request's shape and the codes.
 `tests/fga_map.js` S holds the two refusing by one function.
 
-**Unknown members of the request itself are refused too** (`0009`): a member
-AuthZEN 1.0 does not define is either a newer version's or a mistake, and
-silently dropping either would decide a question the caller did not ask.
+**Unknown members are IGNORED, at every depth (#936, rcbj's decision of
+2026-11-13).** AuthZEN 1.0 section 10.1.1: "receivers MUST ignore unknown
+fields present in request or response bodies". So a member no field of the
+model names, at the top, in `subject`, `action`, `resource`, `page` or
+`options`, on every `/access/v1` request (the evaluation, the batch, the
+three searches and the access request submission), is accepted and never
+read, and the Action Search's `action`, which section 8.6.1 does not list,
+is declared `ignored`. **What it does not loosen**: a member that IS
+defined keeps every check (its type, its presence, its values); a property
+under `properties` or a member of `context` is still read against the
+catalogue and refused when no row declares it (`0004`), because there the
+caller is naming an attribute for the policy, which section 10.1.1 does not
+speak to; and BULK's `items` on a submission is still refused (`0071`), a
+member a profile defines and this service does not implement. **It is this
+API's rule alone**: every other API this service serves still refuses a
+member it does not declare. Until #936 this API refused one with `0009`, on
+the argument that dropping it might decide a question the caller did not
+ask; the specification decides otherwise, and `0009` is retired. The edge
+PDP (`rust/bins/xacml-pep`) ignores them too, held by
+`xacml-pep/authzen_cases.json` R9, R10 and R12.
 
 ## The result (decision 8)
 
@@ -731,15 +749,18 @@ values), `unknown` (read by somebody else) or `never` (a member the request
 must not carry) — and whether it must be present; `@field` says the bounds,
 the error code and the sentence a refusal carries. `@request` gives the
 request's own sentences (a body that is not an object, a member it does not
-take) and the codes of each kind. **Every sentence is the one the
+take) and the codes of each kind, and since #936 `unknownMembers:
+"ignored"`, which every request here carries: a member no field names is
+accepted and not read, at every depth, and the request has no `stray`
+sentence (`checkAuthzen()` refuses one). **Every sentence is the one the
 hand-written reader sent, word for word**, and `tests/authzen_model_wire.js`
 holds 326 recorded answers to it, in a development and a product realm with
 each switch turned.
 
 * **The pass, in `authzen_model.ts`'s `read()`**: the body an object, the
-  leading members it must not carry (BULK's `items`), then the first member
-  it does not take (unless the request is open, as a search is — what it does
-  not name is read as an evaluation next), then every field. A field with a
+  leading members it must not carry (BULK's `items`), then (only on a
+  request whose `unknownMembers` is `refused`, which none here is since
+  #936) the first member it does not take, then every field. A field with a
   `refusal` answers it for everything it holds, at the request's type code
   unless it names its own (`context.approval`, `page`, a search's entity).
 * **Deferred fields are read where the code reads them**, with `field(id,
@@ -777,8 +798,9 @@ own, and every recorded answer to its member set.
 
 ## Error codes
 
-`STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0009 are
-the request's shape and values, 0010–0012 the catalogue's writes, 0013–0014
+`STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0008 are
+the request's shape and values (0009, a member AuthZEN 1.0 does not define,
+is retired by #936), 0010–0012 the catalogue's writes, 0013–0014
 the API being off, 0015–0023 the caller's authentication, 0024–0027 its
 admission and scope, 0028–0029 the result, 0030–0034 the tab's acts, 0035
 the metadata path, 0036–0039 the batch, 0046 an application's fine-grained

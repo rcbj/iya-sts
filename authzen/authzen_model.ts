@@ -16,8 +16,10 @@
 //
 //   * `read(id, body)` is a request's SHAPE PASS, BUILT FROM THE MODEL: the
 //     body an object, the members it may not carry, the members it does not
-//     take, then every field in the order it is declared — its kind, its
-//     bounds, the object's own members — and the first refusal, with the
+//     take (none, on a request whose `unknownMembers` is `ignored`: AuthZEN
+//     1.0 section 10.1.1 has a receiver ignore them, at every depth, and
+//     every request here says so since #936), then every field in the
+//     order it is declared — its kind, its bounds, the object's own members — and the first refusal, with the
 //     code and the sentence the model gives it. `field(id, path, value)`
 //     reads one field a request checks at its own place between checks
 //     that need state (`deferred`), and `item(id, name, value)` one item of
@@ -262,9 +264,13 @@ class AuthzenModel {
         log.debug("Leaving AuthzenModel.check(). None of requireOne.");
         return refuse('type', 'notObject');
       }
+      // An object's unknown members are refused unless it is open or its
+      // request ignores them (AuthZEN 1.0 section 10.1.1).
+      const ignores = field.open === true ||
+        request.unknownMembers === 'ignored';
       const inner = AuthzenModel.readMembers(request, field.fields || [],
                                          given, path, handed,
-                                         field.open === true ? null : '');
+                                         ignores ? null : '');
       log.debug("Leaving AuthzenModel.check(). An object.");
       return inner;
     }
@@ -389,7 +395,8 @@ class AuthzenModel {
                message: request.notObject };
     }
     const out = AuthzenModel.readMembers(request, request.fields, body as Json,
-      '', {}, request.stray === undefined ? null : request.stray);
+      '', {}, request.stray === undefined ||
+        request.unknownMembers === 'ignored' ? null : request.stray);
     log.debug("Leaving AuthzenModel.read(). " + (out ? out.code : 'Fits.'));
     return out;
   }

@@ -210,10 +210,11 @@ sends a request, because it needs a client object that no AuthZEN test of
 that release creates. The missing-credentials module beside it checks the
 same 401.
 
-**An open finding:** AuthZEN 1.0 section 10.1.1 says a receiver MUST ignore
-unknown fields, and iya-sts refuses a request member AuthZEN 1.0 does not
-define (`STS-AUTHZEN-0009`). The plans' `*-unknown-*-fields-ignored` modules
-are expected to fail on it until that is decided.
+**What the plans found:** AuthZEN 1.0 section 10.1.1 says a receiver MUST
+ignore unknown fields, and iya-sts refused a request member AuthZEN 1.0 does
+not define. Since 1.1.0 every AuthZEN request ignores one, as the
+`*-unknown-*-fields-ignored` modules expect
+([release notes](release-notes.md#authzen-ignores-members-it-does-not-define)).
 
 ## Not run, and why
 

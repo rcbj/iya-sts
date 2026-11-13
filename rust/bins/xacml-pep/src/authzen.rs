@@ -74,16 +74,6 @@ pub const SEMANTICS: [&str; 3] = [
     "permit_on_first_permit",
 ];
 
-/// The members a batch request may carry.
-const BATCH_MEMBERS: [&str; 6] = [
-    "subject",
-    "action",
-    "resource",
-    "context",
-    "evaluations",
-    "options",
-];
-
 /// An answer the handler writes: status, body, and whether it is written
 /// indented (the service writes its errors and its metadata indented and
 /// its decisions compact).
@@ -752,21 +742,8 @@ impl Pep {
                 "An access evaluations request is a JSON object.",
             );
         };
-        if let Some(stray) = crate::authzen_catalogue::js_keys(given)
-            .into_iter()
-            .find(|key| !BATCH_MEMBERS.contains(&key.as_str()))
-        {
-            return Reply::error(
-                400,
-                "STS-AUTHZEN-0009",
-                &format!(
-                    "An access evaluations request has no member \"{}\"; it \
-                     takes {}.",
-                    crate::authzen_catalogue::js_slice(stray, 64),
-                    BATCH_MEMBERS.join(", ")
-                ),
-            );
-        }
+        // A member AuthZEN 1.0 does not define is ignored (section 10.1.1;
+        // #936). It was refused with STS-AUTHZEN-0009, which is retired.
         let items = match given.get("evaluations") {
             None => Vec::new(),
             Some(Value::Array(items)) => items.clone(),

@@ -41,7 +41,10 @@
 // `AUTHZEN_WIRE_PRINT=1 node tests/authzen_model_wire.js` prints the
 // snapshot instead of comparing it; that is how the file was written, from
 // the image of the tree before the switch, and how it is rewritten when the
-// wire is MEANT to change.
+// wire is MEANT to change. It was rewritten once, for #936 (2026-11-13):
+// a member AuthZEN 1.0 does not define is ignored (section 10.1.1), so the
+// stray-member steps answer as the same request without the member does,
+// and STS-AUTHZEN-0009 is gone from it.
 //
 // A CHILD PROCESS, as tests/oauth_model_wire.js runs one: the protocol stack
 // and a listener are loaded once, fresh, and nothing leaks into the runner.
@@ -660,8 +663,13 @@ function childMain() {
                  { subject: { type: 'user', id: 'azalice' },
                    resource: { type: 'application', id: 'wire-app-a' },
                    context: { application: 'todo-app' } });
+      // Ignored since #936 (AuthZEN 1.0 sections 8.6.1 and 10.1.1): the
+      // answer is the one above.
       await step('search action, an action sent', 'POST', SEARCH + 'action',
-                 pep, searchBase);
+                 pep, { subject: { type: 'user', id: 'azalice' },
+                        action: { name: 'read' },
+                        resource: { type: 'application', id: 'wire-app-a' },
+                        context: { application: 'todo-app' } });
       const PAGES = [
         ['page a string', 'x'],
         ['page a stray member', { size: 1 }],
@@ -721,7 +729,11 @@ function childMain() {
         ['not an object', '[]'],
         ['not JSON', '{'],
         ['bulk', { items: [] }],
-        ['a stray member', submission(denied, { colour: 1 })],
+        // Ignored since #936 (AuthZEN 1.0 section 10.1.1), so the refusal
+        // is the missing denial's: a stray member alone would be accepted
+        // and spend the denial the steps below submit.
+        ['a stray member beside no denial', submission(denied, {
+          colour: 1, denial: undefined })],
         ['no subject', submission(denied, { subject: undefined })],
         ['resource a string', submission(denied, { resource: 'x' })],
         ['no denial', submission(denied, { denial: undefined })],

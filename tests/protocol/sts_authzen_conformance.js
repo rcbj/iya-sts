@@ -81,15 +81,15 @@
 // request is never sent. The missing-credentials module beside it asks the
 // same door the same question and must pass.
 //
-// NOT LEDGERED, AND EXPECTED TO FAIL UNTIL rcbj DECIDES: the four
-// evaluation modules `*-unknown-*-fields-ignored` (and any other module
-// sending a member AuthZEN 1.0 does not define) expect 200, because section
-// 10.1.1 says "receivers MUST ignore unknown fields"; this PDP refuses an
-// undefined member 400 (STS-AUTHZEN-0009, authzen/CLAUDE.md, *The value
-// rules*). That is a difference from a MUST, so it is reported rather than
-// argued here. Resource search of type record (RESOURCE_TYPES) is the
-// other difference expected, ledgered from the printed module id after a
-// run if the suite judges it. A wrong fixture decision, a missing alice or
+// FIXED, NOT LEDGERED: the `*-unknown-*-fields-ignored` modules and the
+// Action Search's `extra-action-ignored` expect 200, because section
+// 10.1.1 says "receivers MUST ignore unknown fields". This PDP refused such
+// a member 400 (STS-AUTHZEN-0009) until rcbj decided, on 2026-11-13, to
+// follow the specification; every /access/v1 request now ignores one and
+// 0009 is retired (authzen/CLAUDE.md, *Unknown members are IGNORED*).
+// Resource search of type record (RESOURCE_TYPES) is the one difference
+// still expected, ledgered from the printed module id after a run if the
+// suite judges it. A wrong fixture decision, a missing alice or
 // bob, a missing read or write, a batch-order failure, an authentication
 // failure, and a Content-Type the suite will not accept are fixed, not
 // ledgered.
