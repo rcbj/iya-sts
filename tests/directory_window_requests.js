@@ -1388,15 +1388,22 @@ function inChild(t, minimum) {
   env.LDAP_WORKER_DIRECTORY = 'postgres-lru';
   env.STS_PERSISTENCE_MODE = 'postgres';
   env.LDAP_WORKER_CACHE_ENTRIES = '100';
+  // NINE MINUTES, NOT THREE (run 22, 2026-11-13): under the full suite's
+  // load (a load average near 70) the child was killed at 180s having
+  // asserted nothing, status null. It holds no timing assertion, so the
+  // bound is only for a child that hangs; tests/tools/run-report.js gives
+  // this file a watchdog above it, so the child's own timeout reports first.
   const child = childProcess.spawnSync(process.execPath, [__filename],
     { cwd: path.join(__dirname, '..'), env: env, encoding: 'utf8',
-      timeout: 180000 });
+      timeout: 540000 });
   let result = null;
   try {
     result = JSON.parse(fs.readFileSync(outFile, 'utf8'));
   } catch (e) {
     log.debug('Caught in inChild(): ' + ((e && e.message) || e));
     t.bad('the windowed child reported nothing', 'status ' + child.status +
+          (child.signal ? ', killed by ' + child.signal +
+            (child.error ? ' (' + child.error.message + ')' : '') : '') +
           ': ' + String(child.stderr || '').slice(-2000));
     log.debug('Leaving inChild().');
     return;

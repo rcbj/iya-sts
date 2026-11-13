@@ -1553,7 +1553,9 @@ const UNIT_WATCHDOG_MS = {
   x509_limbo: 2700000,
   nist_pkits: 600000,
   acvp_pqc: 600000,
-  wycheproof: 600000
+  wycheproof: 600000,
+  // Its child's own bound is 540s (run 22: 180s was not enough under load).
+  directory_window_requests: 720000
 };
 
 // ---------------------------------------------------------------------------
