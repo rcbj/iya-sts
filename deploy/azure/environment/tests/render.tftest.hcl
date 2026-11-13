@@ -132,8 +132,8 @@ run "dev" {
     error_message = "three nodes: node-a and two others"
   }
   assert {
-    condition     = length(azurerm_lb_rule.published) == 7 && azurerm_lb_rule.published["https"].backend_port == 8081 && azurerm_lb_rule.published["pki"].frontend_port == 80
-    error_message = "the seven published ports, 443 to 8081"
+    condition     = length(azurerm_lb_rule.published) == 6 && azurerm_lb_rule.published["https"].backend_port == 8081 && azurerm_lb_rule.published["pki"].frontend_port == 80
+    error_message = "the six published ports (no plain 389 since 2026-11-10), 443 to 8081"
   }
   assert {
     condition     = length(azurerm_dns_a_record.public) == 0 && local.public_base_url == "https://20.1.2.3"

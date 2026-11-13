@@ -28,6 +28,14 @@
 public_hostname  = "test-idp.iyasec.io"
 public_zone_name = "iyasec.io"
 
+# CLOUDFRONT IN FRONT OF THE CELLS (rcbj, 2026-11-13, #1341): one
+# distribution, the primary cell's; the cells' geolocation and latency tree
+# moves to direct_hostname, which is the distribution's origin and still the
+# name for a client certificate, Kerberos, LDAP, SPIFFE and revocation
+# (environment/cloudfront.tf, dns_cells.tf). Written and checked offline only.
+cloudfront_enabled = true
+direct_hostname    = "direct.test-idp.iyasec.io"
+
 extra_environment = {
   STS_DOMAIN              = "iyasec.io"
   KRB5_REALM              = "IYASEC.IO"
