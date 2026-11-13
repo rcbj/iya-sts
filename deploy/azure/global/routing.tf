@@ -142,9 +142,12 @@ data "azurerm_dns_zone" "public" {
   resource_group_name = "${var.name}-foundation"
 }
 
+# BEHIND FRONT DOOR (#1341) THIS IS THE DIRECT NAME: the primary cell's
+# profile answers the public name (../environment/frontdoor.tf), and its
+# origin is this name, so an edge reaches the nearest healthy cell.
 resource "azurerm_dns_cname_record" "public" {
   count               = local.public_name ? 1 : 0
-  name                = trimsuffix(var.public_hostname, ".${var.dns_zone_name}")
+  name                = trimsuffix(var.direct_hostname != "" ? var.direct_hostname : var.public_hostname, ".${var.dns_zone_name}")
   zone_name           = data.azurerm_dns_zone.public[0].name
   resource_group_name = data.azurerm_dns_zone.public[0].resource_group_name
   ttl                 = 60
@@ -153,8 +156,8 @@ resource "azurerm_dns_cname_record" "public" {
 
   lifecycle {
     precondition {
-      condition     = endswith(var.public_hostname, ".${var.dns_zone_name}")
-      error_message = "public_hostname must be a name inside dns_zone_name."
+      condition     = endswith(var.public_hostname, ".${var.dns_zone_name}") && (var.direct_hostname == "" || endswith(var.direct_hostname, ".${var.dns_zone_name}"))
+      error_message = "public_hostname (and direct_hostname, when set) must be a name inside dns_zone_name."
     }
   }
 }

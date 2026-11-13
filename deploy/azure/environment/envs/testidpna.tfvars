@@ -54,3 +54,8 @@ tags = {
   Stack     = "iya-sts-environment"
   Lifecycle = "long-lived"
 }
+
+# AZURE FRONT DOOR IN FRONT OF THE CELLS (rcbj, 2026-11-13, #1341): one
+# profile, the primary cell's; Traffic Manager moves to direct_hostname (in
+# the cells file), which is its origin (environment/frontdoor.tf).
+cdn_enabled = true

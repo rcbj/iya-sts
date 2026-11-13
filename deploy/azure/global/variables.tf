@@ -93,6 +93,12 @@ variable "state_resource_group" {
   default     = "iya-sts-terraform-state"
 }
 
+variable "direct_hostname" {
+  description = "The direct name (#1341), from the cells file. SET, the primary cell's Front Door profile answers the public name and the Traffic Manager CNAME is written here instead: Front Door's origin, and the name for a client certificate, Kerberos, LDAP, SPIFFE and revocation (routing.tf)."
+  type        = string
+  default     = ""
+}
+
 variable "public_hostname" {
   description = "The environment's one public name (e.g. `na-idp.azure.iyasec.io`), from the cells file, which every stack of the environment reads. Empty: no Traffic Manager and no name."
   type        = string
