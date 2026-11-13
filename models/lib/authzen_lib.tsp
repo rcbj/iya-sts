@@ -60,10 +60,14 @@ model Sentences {
   notOneOf: string;
 }
 
-/** The error codes of each kind of refusal of one request. */
+/**
+ * The error codes of each kind of refusal of one request. `stray` is the
+ * code of a member the request does not take, and of a `never` field with
+ * no code of its own; a request that refuses neither has none.
+ */
 model Codes {
   notObject: string;
-  stray: string;
+  stray?: string;
   absent: string;
   type: string;
 }
@@ -92,6 +96,16 @@ model RequestOptions {
    * members are taken off).
    */
   stray?: string;
+
+  /**
+   * What a member no field of this request names is, at the top and in
+   * every object it holds: `refused` (the default) with `stray`'s sentence
+   * or the kind's, or `ignored` — accepted and never read, as AuthZEN
+   * Authorization API 1.0 section 10.1.1 requires of a receiver ("receivers
+   * MUST ignore unknown fields present in request or response bodies").
+   * An `ignored` request takes no `stray` sentence.
+   */
+  unknownMembers?: "refused" | "ignored";
 
   codes: Codes;
 
@@ -151,6 +165,14 @@ model FieldOptions {
 
   /** An object field whose members it does not name are allowed. */
   open?: boolean;
+
+  /**
+   * A member the specification's request does not define, named here
+   * because a reader might otherwise expect it, and IGNORED: accepted with
+   * any value and never read (AuthZEN 1.0 section 10.1.1). Its type is
+   * `unknown`.
+   */
+  ignored?: boolean;
 
   /**
    * Declared and not read by the shape pass: the service reads it at its

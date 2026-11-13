@@ -64,6 +64,16 @@
 //      (0250); a 2.x token response, or refresh, whose token_type is not
 //      DPoP is refused or ends the session (0251), and `dpop` in lower
 //      case is accepted. None of these redeems a code.
+//      1-advanced over mutual TLS (rcbj's decision of 2026-11-13, 10ad-
+//      10al), against the partner on a listener that asks for a client
+//      certificate and binds the token it issues to it: the relationship's
+//      clientAuth certificate is presented at the token endpoint and at
+//      UserInfo, which answers the bound token only over it; tls_client_auth
+//      sends the client_id and nothing else, and is not ready without
+//      1-advanced; a certificate whose key will not open is STS-FED-0252
+//      with nothing dialled; the renewal job keeps the subject; a
+//      registration says tls_client_auth with the subject DN, and the
+//      discovery document's mtls_endpoint_aliases are dialled.
 // The conformance suite's relying-party plans drive the same code over the
 // wire (`tests/protocol/sts_oidcc_rp_conformance.js`); this pins each
 // refusal's code and that nothing is dialled after it.
@@ -121,7 +131,7 @@ function childMain() {
     jwk.kid = 'frp-1';
     jwk.use = 'sig';
     jwk.alg = 'RS256';
-    const op = { calls: [], scenario: {}, byToken: {} };
+    const op = { calls: [], scenario: {}, byToken: {}, bound: {} };
     const sign = function (claims) {
       const input = b64u({ alg: 'RS256', kid: 'frp-1', typ: 'JWT' }) + '.' +
                     b64u(claims);
@@ -136,9 +146,17 @@ function childMain() {
       });
       req.on('end', function () {
         const url = new URL(req.url, 'http://x');
+        // THE CLIENT CERTIFICATE PRESENTED (#931): its x5t#S256 on the
+        // mutual-TLS listener, '' on the others and when none was sent.
+        const peer = req.socket &&
+          typeof req.socket.getPeerCertificate === 'function'
+          ? req.socket.getPeerCertificate() : null;
+        const cert = peer && peer.raw
+          ? nodeCrypto.createHash('sha256').update(peer.raw)
+              .digest('base64url') : '';
         op.calls.push({ path: url.pathname, body: body,
                         auth: String(req.headers.authorization || ''),
-                        dpop: String(req.headers.dpop || '') });
+                        dpop: String(req.headers.dpop || ''), cert: cert });
         const send = function (status, json) {
           res.writeHead(status, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(json));
@@ -208,13 +226,31 @@ function childMain() {
                             refresh_token: rt,
                             id_token: sign(how.claims()) });
           }
-          return send(200, { access_token: 'at-back',
+          // A CERTIFICATE-BOUND TOKEN (RFC 8705 section 3, #931): a token
+          // requested over mutual TLS is bound to that certificate, and
+          // UserInfo answers it only over the same one.
+          let issued = 'at-back';
+          if (s.bindMtls && cert) {
+            op.boundCount = (op.boundCount || 0) + 1;
+            issued = 'at-mtls-' + op.boundCount;
+            op.bound[issued] = cert;
+          }
+          return send(200, { access_token: issued,
                              token_type: s.tokenType || boundType,
                              refresh_token: s.rt || 'rt-none',
                              id_token: sign(s.backClaims()) });
         }
         if (/\/userinfo$/.test(url.pathname)) {
           op.bearer = String(req.headers.authorization || '');
+          const presented = op.bearer.replace(/^(Bearer|DPoP) /, '');
+          if (op.bound[presented] !== undefined &&
+              op.bound[presented] !== cert) {
+            op.boundRefused = (op.boundRefused || 0) + 1;
+            return send(401, { error: 'invalid_token' });
+          }
+          if (op.bound[presented] !== undefined) {
+            op.boundAnswered = (op.boundAnswered || 0) + 1;
+          }
           return send(200, Object.assign({ sub: 'frp-person' },
                                          s.userinfo || {}));
         }
@@ -247,6 +283,19 @@ function childMain() {
       tlsPartner.listen(0, '127.0.0.1', r);
     });
     const tlsHost = '127.0.0.1:' + tlsPartner.address().port;
+    // AND OVER MUTUAL TLS (#931): the same partner asking for a client
+    // certificate, as a FAPI 1.0 Advanced authorization server's token and
+    // UserInfo endpoints do. It verifies nothing about the chain itself:
+    // what it records is which certificate came, which is the claim.
+    const mtlsPartner = require('https').createServer(
+      { key: tlsPair.privatePem, cert: tlsCert.pem, requestCert: true,
+        rejectUnauthorized: false },
+      partner.listeners('request')[0]);
+    await new Promise(function (r) {
+      mtlsPartner.listen(0, '127.0.0.1', r);
+    });
+    const mtlsBase = 'https://127.0.0.1:' + mtlsPartner.address().port +
+                     '/op/';
 
     // --- the service ---------------------------------------------------------
     const server = http.createServer(app);
@@ -1436,10 +1485,174 @@ function childMain() {
          '(STS-FED-0251) and UserInfo is not asked',
          bearerRefresh + ' ' + (coded('STS-FED-0251') - before));
 
+    // --- 10ad-10ak. 1-advanced over mutual TLS (#931, rcbj 2026-11-13) ----
+    const fedClientCert = require(ROOT_DIR +
+                                  '/federation/federation_client_certificate');
+    const mtlsSignIn = async function (id, extraScenario) {
+      const jar = {};
+      const begun = await begin(id, jar);
+      op.calls = [];
+      op.scenario = Object.assign({ bindMtls: true,
+        backClaims: function () {
+          return claims(begun);
+        } }, extraScenario || {});
+      const resp = await call('POST', '/federation/acs/' + id, {
+        state: begun.params.get('state'), code: 'c-mtls',
+        id_token: sign(claims(begun, { c_hash: halfHash('c-mtls'),
+          s_hash: halfHash(begun.params.get('state')) }))
+      }, jar);
+      return {
+        r: resp,
+        token: op.calls.filter(function (c) {
+          return /\/token$/.test(c.path);
+        })[0] || { body: '', cert: '', dpop: '' },
+        userinfo: op.calls.filter(function (c) {
+          return /\/userinfo$/.test(c.path);
+        })[0] || { cert: '', auth: '' }
+      };
+    };
+    const MTLS = make('frp-fapi1-mtls-' + stamp, { fedFapi: '1-advanced',
+      fedTokenUrl: mtlsBase + 'token', fedUserinfoUrl: mtlsBase + 'userinfo' });
+    op.boundAnswered = 0;
+    got = await mtlsSignIn(MTLS);
+    const mtlsView = fedClientCert.viewOf(federation.get(MTLS)) || {};
+    const mtlsForm = new URLSearchParams(got.token.body);
+    note(MTLS === 'frp-fapi1-mtls-' + stamp && got.r.status < 400 &&
+         mtlsView.held && got.token.cert &&
+         got.token.cert === mtlsView.x5tS256 &&
+         mtlsForm.get('client_assertion') && !got.token.dpop,
+         '10ad. 1-advanced presents the relationship\'s client certificate ' +
+         'at the token endpoint, beside private_key_jwt and no DPoP',
+         got.r.status + ' presented=' + got.token.cert + ' held=' +
+         mtlsView.x5tS256);
+    note(got.userinfo.cert === mtlsView.x5tS256 &&
+         op.boundAnswered === 1 && !op.boundRefused,
+         '10ae. UserInfo is asked over the same certificate, so the ' +
+         'certificate-bound token is answered',
+         'userinfo cert=' + got.userinfo.cert + ' answered=' +
+         op.boundAnswered + ' refused=' + (op.boundRefused || 0));
+    const mtlsPem = mtlsView.certificatePem || '';
+    let mtlsParsed = null;
+    try {
+      mtlsParsed = new nodeCrypto.X509Certificate(mtlsPem);
+    } catch (e) {
+      // No certificate published is what the note below reports.
+      note(false, '10af-. the published certificate parses',
+           String((e && e.message) || e));
+      mtlsParsed = null;
+    }
+    note(!!mtlsParsed &&
+         /(^|,)CN=federation frp-fapi1-mtls-/.test(mtlsView.subject) &&
+         mtlsParsed.fingerprint256.replace(/:/g, '').toLowerCase() ===
+           Buffer.from(mtlsView.x5tS256, 'base64url').toString('hex') &&
+         (mtlsView.chainPem || []).length >= 2 &&
+         (mtlsParsed.keyUsage || []).indexOf('1.3.6.1.5.5.7.3.2') >= 0 &&
+         JSON.stringify(mtlsView).indexOf('PRIVATE KEY') < 0,
+         '10af. the certificate is a clientAuth leaf under the realm\'s ' +
+         'chain, its x5t#S256 and subject published and no private key',
+         mtlsView.subject + ' ' + JSON.stringify(
+           mtlsParsed ? mtlsParsed.keyUsage : null) + ' ' +
+         (JSON.stringify(mtlsView).indexOf('PRIVATE KEY') < 0));
+    // tls_client_auth: the certificate authenticates, nothing else does.
+    federation.update(MTLS, { field: 'fedTokenAuth',
+                              value: 'tls_client_auth' });
+    got = await mtlsSignIn(MTLS);
+    const tcaForm = new URLSearchParams(got.token.body);
+    note(federation.readinessOf(federation.get(MTLS)).ready &&
+         got.r.status < 400 && got.token.cert === mtlsView.x5tS256 &&
+         tcaForm.get('client_id') === 'frp-client' &&
+         !tcaForm.get('client_assertion') && !tcaForm.get('client_secret') &&
+         !/^Basic /.test(got.token.auth || ''),
+         '10ag. tls_client_auth sends the client_id over the certificate and ' +
+         'no assertion, secret or Basic header',
+         got.r.status + ' ' + got.token.body.slice(0, 160));
+    const TCA = make('frp-tca-plain-' + stamp, {
+      fedTokenAuth: 'tls_client_auth' });
+    note(!federation.readinessOf(federation.get(TCA)).ready &&
+         federation.readinessOf(federation.get(TCA)).missing.some(
+           function (m) {
+             return /^fedFapi=1-advanced/.test(m);
+           }),
+         '10ah. tls_client_auth without 1-advanced is not ready',
+         JSON.stringify(federation.readinessOf(federation.get(TCA))));
+    // A certificate whose key will not open refuses the sign-in.
+    const heldRow = federation.clientCertificateOf(federation.get(MTLS));
+    federation.writeClientCertificate(MTLS, Object.assign({}, heldRow,
+      { sealed: true, privateKey: 'not-a-sealed-value' }), 'a test');
+    before = coded('STS-FED-0252');
+    got = await mtlsSignIn(MTLS);
+    note(got.r.status === 500 && coded('STS-FED-0252') === before + 1 &&
+         !op.calls.some(function (c) {
+           return /\/token$/.test(c.path);
+         }),
+         '10ai. a client certificate that will not open refuses the ' +
+         'sign-in (STS-FED-0252) and nothing is dialled',
+         got.r.status + ' ' + (coded('STS-FED-0252') - before));
+    // The job renews within federation.clientCertificateRenewDays, same
+    // subject, new serial; and a relationship with none gets one.
+    federation.writeClientCertificate(MTLS, heldRow, 'a test');
+    const renewed = await fedClientCert.renewDue(
+      new Date(heldRow.notAfter).getTime() - 86400000);
+    const afterRow = federation.clientCertificateOf(federation.get(MTLS)) ||
+                     {};
+    note(renewed.issued >= 1 && afterRow.serialHex &&
+         afterRow.serialHex !== heldRow.serialHex &&
+         afterRow.subject === heldRow.subject &&
+         !fedClientCert.due(federation.get(MTLS)),
+         '10aj. the renewal job issues a new certificate with the same ' +
+         'subject inside federation.clientCertificateRenewDays',
+         JSON.stringify(renewed) + ' ' + heldRow.serialHex + ' -> ' +
+         afterRow.serialHex);
+    // Discovery's mtls_endpoint_aliases, and a registration that says
+    // tls_client_auth with the certificate's subject.
+    const ALIAS = make('frp-fapi1-alias-' + stamp, { fedFapi: '1-advanced',
+      fedDiscovery: 'TRUE', fedRegister: 'TRUE', fedClientId: null,
+      fedClientSecret: null, fedTokenAuth: 'tls_client_auth',
+      fedSsoUrl: null, fedTokenUrl: null, fedJwksUri: null,
+      fedUserinfoUrl: null });
+    op.registered = null;
+    op.scenario = { issuer: opBase, base: opBase, discovery: {
+      mtls_endpoint_aliases: { token_endpoint: mtlsBase + 'token',
+                               userinfo_endpoint: mtlsBase + 'userinfo' } } };
+    const aliasJar = {};
+    started = await begin(ALIAS, aliasJar);
+    const aliasReg = op.registered || {};
+    const aliasView = fedClientCert.viewOf(federation.get(ALIAS)) || {};
+    op.calls = [];
+    op.scenario.bindMtls = true;
+    op.scenario.backClaims = function () {
+      return Object.assign(claims(started), { aud: aliasReg.client_id ||
+        federation.get(ALIAS).fedClientId });
+    };
+    r = await call('POST', '/federation/acs/' + ALIAS, {
+      state: started.params.get('state'), code: 'c-alias',
+      id_token: sign(Object.assign(claims(started, {
+        c_hash: halfHash('c-alias'),
+        s_hash: halfHash(started.params.get('state')) }),
+        { aud: federation.get(ALIAS).fedClientId }))
+    }, aliasJar);
+    const aliasToken = op.calls.filter(function (c) {
+      return /\/token$/.test(c.path);
+    })[0] || { cert: '' };
+    note(aliasReg.token_endpoint_auth_method === 'tls_client_auth' &&
+         aliasReg.tls_client_auth_subject_dn === aliasView.subject &&
+         aliasReg.tls_client_certificate_bound_access_tokens === true &&
+         !aliasReg.token_endpoint_auth_signing_alg,
+         '10ak. 1-advanced registers tls_client_auth with the certificate\'s ' +
+         'subject DN and certificate-bound access tokens',
+         JSON.stringify(aliasReg).slice(0, 400));
+    note(r.status < 400 && aliasToken.cert &&
+         aliasToken.cert === aliasView.x5tS256,
+         '10al. the token request goes to the discovery document\'s ' +
+         'mtls_endpoint_aliases with the client certificate',
+         r.status + ' cert=' + aliasToken.cert + ' ' +
+         String(r.text || '').slice(0, 200));
+
     fs.writeFileSync(OUT, JSON.stringify(findings));
     server.close();
     partner.close();
     tlsPartner.close();
+    mtlsPartner.close();
     process.exit(0);
   })().catch(function (e) {
     findings.push({ ok: false, what: 'the child process threw',

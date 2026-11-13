@@ -3031,6 +3031,130 @@ async function issueEncryptionKeyPair(realmId, opts) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A FEDERATION RELATIONSHIP'S TLS CLIENT CERTIFICATE (#931, rcbj's decision
+// of 2026-11-13): what this service presents when it dials a FAPI 1.0
+// Advanced partner, for RFC 8705's `tls_client_auth` and for the
+// certificate-bound access token the partner issues (`cnf.x5t#S256`).
+//
+// It is a leaf of the realm's `tls-client` Issuing CA, through `certify()`,
+// so it is in the register (OCSP answers `good`, the CRL can carry it, a
+// rebuilt branch supersedes it) and names that authority's CRL and
+// responder — a partner that checks revocation has somewhere to ask. It is
+// NOT an identity at this service: its one subjectAltName is a
+// `urn:sts:federation:` URI, which `tls_client_certificates.js`'s gate does
+// not read as a person or an application, and its register slot
+// (`federation:<id>:<random>`) is not one that module lists. The subject is
+// fixed for a relationship (`CN=federation <id> client`, the realm's O and
+// C), so a renewal keeps the DN a partner registered as
+// `tls_client_auth_subject_dn`.
+//
+// THE PRIVATE KEY IS RETURNED AND NOT KEPT, as every leaf here: the caller
+// seals it onto the relationship (`federation/federation_client_certificate
+// .ts`). Earlier certificates of the same relationship that have EXPIRED
+// are forgotten first, as `tls_client_certificates.issue()` forgets a
+// person's; one that is superseded but still valid keeps its record, so
+// the responder still answers for it until it ends.
+// ---------------------------------------------------------------------------
+/**
+ * The key algorithms a federation relationship's client certificate is
+ * issued with.
+ */
+const FEDERATION_CLIENT_KEY_ALGS = ['rsa-2048', 'rsa-3072', 'ec-p256'];
+
+/**
+ * Generates and certifies a federation relationship's TLS client key pair
+ * (clientAuth) from the realm's `tls-client` Issuing CA.
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param opts - `identifier` (the relationship id), `keyAlg` (one of
+ *   `FEDERATION_CLIENT_KEY_ALGS`, `rsa-2048` by default) and `days`
+ * @returns a promise of `{ ok: true, issued }` — the certificate, its chain,
+ *   the private key, the serial, the validity and the subject — or
+ *   `{ ok: false, errors }` marked with its code
+ */
+async function issueFederationClientKeyPair(realmId, opts) {
+  log.debug('Entering issueFederationClientKeyPair().');
+  const scope = realmIdOf(realmId);
+  const options = opts || {};
+  const identifier = String(options.identifier || '');
+  if (!identifier || identifier.length > 128 ||
+      /[\s:,=+<>#;"\\]/.test(identifier)) {
+    log.debug('Leaving issueFederationClientKeyPair(). No identifier.');
+    return errorCodes.mark({ ok: false,
+             errors: ['A client certificate is issued to a federation ' +
+                      'relationship, named by its id.'] }, 'STS-PKI-0010');
+  }
+  const keyAlg = String(options.keyAlg || 'rsa-2048');
+  if (FEDERATION_CLIENT_KEY_ALGS.indexOf(keyAlg) < 0 ||
+      !keyMaterial.keyAlg(keyAlg)) {
+    log.debug('Leaving issueFederationClientKeyPair(). Unknown key type.');
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + keyAlg + '" is not a key type a federation ' +
+                      'client certificate is issued with. It may be ' +
+                      FEDERATION_CLIENT_KEY_ALGS.join(', ') + '.'] },
+                           'STS-PKI-0192');
+  }
+  const branch = await ensureScope(scope);
+  if (!branch || !branch.ok) {
+    log.debug('Leaving issueFederationClientKeyPair(). No branch.');
+    return branch || errorCodes.mark({ ok: false,
+             errors: ['This realm has no certificate authority.'] },
+                                     'STS-PKI-0009');
+  }
+  const prefix = 'federation:' + identifier + ':';
+  const now = Date.now();
+  certificatesFor(scope, 'tls-client').forEach(function (one) {
+    if (String(one.slot || '').indexOf(prefix) === 0 &&
+        new Date(one.notAfter).getTime() < now) {
+      forgetCertificate(scope, 'tls-client', one.slot);
+    }
+  });
+  const pair = await keyMaterial.generateKeyPair(keyAlg);
+  const keyDesc = keyMaterial.keyAlg(keyAlg);
+  const made = await certify(scope, 'tls-client', {
+    slot: prefix + stsCrypto.randomBytes(6).toString('hex'),
+    label: 'Federation client certificate (' + identifier + ')',
+    commonName: 'federation ' + identifier + ' client',
+    keyAlg: keyAlg,
+    publicKeyPem: pair.publicPem,
+    profile: 'tls-client',
+    days: options.days,
+    keyUsage: keyDesc.kind === 'rsa' ? ['digitalSignature', 'keyEncipherment']
+                                     : ['digitalSignature'],
+    extensions: {
+      extKeyUsage: { present: true, critical: false, usages: ['clientAuth'] },
+      subjectAltName: { present: true, critical: false,
+        names: [{ kind: 'uri', value: 'urn:sts:federation:' + identifier }] }
+    }
+  });
+  if (!made.ok) {
+    log.debug('Leaving issueFederationClientKeyPair(). certify() refused.');
+    return made;
+  }
+  log.info('pki: a ' + keyDesc.label + ' TLS client certificate was issued ' +
+           'to the federation relationship ' + identifier + ' in "' +
+           scope + '", serial ' + made.record.serialHex + ', expires ' +
+           made.record.notAfter + '. The private key was handed to the ' +
+           'caller and is not kept.');
+  log.debug('Leaving issueFederationClientKeyPair().');
+  return {
+    ok: true,
+    issued: {
+      scope: scope,
+      slot: made.record.slot,
+      keyAlg: keyAlg,
+      serialHex: made.record.serialHex,
+      subject: made.record.subject,
+      notBefore: made.record.notBefore,
+      notAfter: made.record.notAfter,
+      certificatePem: made.record.certificatePem,
+      chainPem: (made.record.chainPem || []).slice(),
+      privateKeyPem: pair.privatePem
+    }
+  };
+}
+
 /**
  * Generates and certifies a signing key pair for an application or a
  * person, and records the issuance.
@@ -14770,6 +14894,8 @@ module.exports = {
   trustAnchorsFor: trustAnchorsFor,
   issueSigningKeyPair: issueSigningKeyPair,
   issueEncryptionKeyPair: issueEncryptionKeyPair,
+  FEDERATION_CLIENT_KEY_ALGS: FEDERATION_CLIENT_KEY_ALGS,
+  issueFederationClientKeyPair: issueFederationClientKeyPair,
   ENCRYPTION_KEY_ALGS: ENCRYPTION_KEY_ALGS,
   registerCertificate: registerCertificate,
   verifyLeaf: verifyLeaf,

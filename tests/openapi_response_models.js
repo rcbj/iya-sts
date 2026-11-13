@@ -20,7 +20,9 @@
 //
 // That a RUNNING service's answers meet the real models is not asserted here:
 // every protocol job drives those answers, and one that does not match answers
-// 500 and fails that job.
+// 500 and fails that job. The exceptions are records built here from the code
+// that writes them (a finished GNAP grant, the read barrier's counters), held
+// to every model of them, because a member added there reached a stack first.
 // ===========================================================================
 
 const path = require('path');
@@ -564,6 +566,10 @@ function buildDocuments(out) {
   } }, finalized, 'a note', 'issued');
   fs.writeFileSync(out, JSON.stringify({
     finalization: finalized.finalization,
+    // What the read barrier reports on `/admin-api/cluster` and
+    // `/admin-api/persistence`, from the module itself (run 22: a counter
+    // added there and not to the model answered both 500).
+    barrier: require('../cluster/cluster_barrier').report(),
     admin: spec.buildSpec(adminApi.ROUTES, { authRequired: true }),
     // The two as `/admin-api/openapi.json` and its console twin serve them, for
     // the published pages (`tests/tools/openapi_pages.js`).
@@ -635,6 +641,48 @@ function aFinishedGrantMeetsEveryModel(t, docs) {
     });
   });
   log.debug("Leaving aFinishedGrantMeetsEveryModel().");
+}
+
+// THE READ BARRIER'S COUNTERS MEET EVERY MODEL OF THEM. Run 22 (2026-11-13):
+// #884's review added `checkRefusals` to `cluster_barrier.js`'s report and not
+// to the model, so `GET /admin-api/cluster` answered 500 (STS-API-0139) and
+// nothing in process asked. The report is the module's own, every member
+// present, so a member the model lacks is caught here rather than by a stack.
+function theBarrierReportMeetsEveryModel(t, docs) {
+  log.debug("Entering theBarrierReportMeetsEveryModel().");
+  const Ajv = require('ajv');
+  const ajv = new Ajv({ strict: false, allErrors: true });
+  const sites = [];
+  const walk = function (node, seen) {
+    if (!node || typeof node !== 'object' || seen.has(node)) {
+      return;
+    }
+    seen.add(node);
+    if (node.properties && node.properties.barrier &&
+        node.properties.barrier.properties &&
+        node.properties.barrier.properties.heldForCommit) {
+      sites.push(node.properties.barrier);
+    }
+    Object.keys(node).forEach(function (k) {
+      walk(node[k], seen);
+    });
+  };
+  const doc = docs.admin;
+  walk({ paths: doc.paths, components: doc.components }, new Set());
+  t.check(sites.length > 0, 'admin models the read barrier\'s counters', '');
+  t.check(Object.keys(docs.barrier).length > 10,
+          'the barrier reports its counters (' +
+          Object.keys(docs.barrier).join(', ') + ')', '');
+  sites.forEach(function (schema) {
+    const validate = ajv.compile({ allOf: [schema],
+                                   components: doc.components });
+    t.check(validate(docs.barrier),
+            'the barrier\'s report meets its model',
+            JSON.stringify(validate.errors || []));
+    t.check(!validate(Object.assign({ notAMember: 1 }, docs.barrier)),
+            'and the model is closed', '');
+  });
+  log.debug("Leaving theBarrierReportMeetsEveryModel().");
 }
 
 // AN ERROR CODE IS AN OPERATOR'S NAME, RECORDED AND NEVER SENT, with the one
@@ -762,8 +810,10 @@ function ruleOverDocuments(t) {
   log.debug("Entering ruleOverDocuments().");
   const docs = documents();
   aFinishedGrantMeetsEveryModel(t, docs);
+  theBarrierReportMeetsEveryModel(t, docs);
   codesOnlyWhereDrawn(t, docs);
   delete docs.finalization;
+  delete docs.barrier;
   let total = 0;
   Object.keys(docs).forEach(function (api) {
     const rows = rowsOf(api, docs[api]);

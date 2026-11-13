@@ -253,6 +253,9 @@ model FederationRelationship {
   @fromAttr(#{attr: "fedEncryptionKey", secret: true})
   `encryptionKey`?: string[];
 
+  @fromAttr(#{attr: "fedClientCertificate", secret: true})
+  `clientCertificate`?: string;
+
   @fromAttr(#{attr: "fedAllowUnsolicited"})
   `allowUnsolicited`?: string;
 

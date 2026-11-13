@@ -516,6 +516,7 @@ Scope: `admin:read`.
 | `relationships[].fedAuthorizeParams[]` | string |  |  |
 | `relationships[].fedAutocreateUsers` | string |  |  |
 | `relationships[].fedBinding` | string |  |  |
+| `relationships[].fedClientCertificate` | string |  |  |
 | `relationships[].fedClientId` | string |  |  |
 | `relationships[].fedClientSecret` | string |  |  |
 | `relationships[].fedClientSigningKey` | string |  |  |

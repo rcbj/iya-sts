@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
-* [Federation (`STS-FED`)](#sts-fed) — 226
+* [Federation (`STS-FED`)](#sts-fed) — 227
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 167
@@ -3030,6 +3030,7 @@ Raised from: federation/.
 | `STS-FED-0249` | A FAPI 2 partner's authorization response names no issuer (RFC 9207), which FAPI 2.0 Security Profile section 5.3.2.2 has the client verify. | HTTP 401 |
 | `STS-FED-0250` | A FAPI partner's JARM response JWT carries no exp, which JARM section 4.4 has the client check. | HTTP 401 |
 | `STS-FED-0251` | A FAPI 2 partner's token response is not DPoP-bound: its token_type is not DPoP (RFC 9449 section 5). At sign-in the sign-in is refused; at a refresh the session is ended. | HTTP 502 |
+| `STS-FED-0252` | A FAPI 1.0 Advanced relationship's TLS client certificate (RFC 8705) could not be issued, sealed, written or opened — when fedFapi became 1-advanced, by the scheduler job federation.client-certificate-renew, or at a token, refresh or UserInfo request that needed it. Nothing is dialled without it: at a sign-in the sign-in is refused, at a refresh the session is ended. | HTTP 500 at a sign-in; console: the message; job: logged |
 
 ## STS-OIDFED
 
@@ -5101,7 +5102,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0006` | An AuthZEN property's value did not fit its catalogue row's datatype: a JSON type that may not reach it (a number for a string, a fraction for an integer), or a string that does not parse at it. | HTTP 400, an error message |
 | `STS-AUTHZEN-0007` | An AuthZEN property sent an array for a catalogue row whose multiplicity is single, or a bag with too many values. | HTTP 400, an error message |
 | `STS-AUTHZEN-0008` | An AuthZEN property sent an object where its catalogue row takes a value, an object or array inside a bag, or objects nested too deeply. | HTTP 400, an error message |
-| `STS-AUTHZEN-0009` | An AuthZEN request, or its subject, action or resource, carried a member AuthZEN 1.0 does not define. | HTTP 400, an error message |
+| `STS-AUTHZEN-0009` *(retired)* | An AuthZEN request, or its subject, action or resource, carried a member AuthZEN 1.0 does not define. Retired by #936 (2026-11-13): AuthZEN 1.0 section 10.1.1 has a receiver ignore an unknown member, so every /access/v1 request now accepts and ignores one, and an Action Search's action with it. | — |
 | `STS-AUTHZEN-0010` | An AuthZEN attribute catalogue row was refused: not a JSON object, an unknown member, or an object, property path, attributeId, category, dataType or multiplicity that is not one the catalogue takes. | the write is refused |
 | `STS-AUTHZEN-0011` | An AuthZEN attribute catalogue row was refused because it maps onto a reserved identifier — this service's own urn:sts:xacml: namespace, XACML's subject-id, resource-id or action-id, a current-time attribute, or context.application. A request-supplied attribute suppresses the PIP, so such a row would let a caller forge a trusted fact. | the write is refused |
 | `STS-AUTHZEN-0012` | An AuthZEN attribute catalogue row was refused because it sends a subject property under a bare directory attribute name, which the PIP reads off the subject's directory entry; for a subject this realm resolves the directory is authoritative. | the write is refused |

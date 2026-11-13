@@ -1571,6 +1571,9 @@ class SocialIdps {
     const alg = row.alg;
     const kid = alg === "ES256" ? "companion-ec" : "companion-rsa";
     const key = alg === "ES256" ? this.ec.privateKey : this.rsa.privateKey;
+    // certificate-header: none — a dummy social provider's ID token is
+    // verified against the companion's own JWKS, the way the real provider
+    // it stands in for publishes keys with no certificate.
     const token = signJwt({ alg: alg, typ: "JWT", kid: kid }, payload,
                            key, alg);
     log.debug("Leaving SocialIdps.idToken().");

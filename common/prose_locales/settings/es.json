@@ -5239,6 +5239,14 @@
     "en": "f8e11f4044147d5e",
     "text": "Cuando se rota la clave de cifrado de una relación, cuánto tiempo sigue DESCIFRANDO la clave a la que reemplaza — para no rechazar a un socio que aún no ha obtenido los nuevos metadatos o el nuevo JWKS, ni una respuesta que ya está en un navegador. Pasado ese tiempo la clave antigua no descifra nada, y el trabajo del planificador federation.encryption-key-retire la elimina de la entrada. 0 termina la clave antigua en la rotación. Solo se conserva la clave recién reemplazada: una segunda rotación dentro de la ventana descarta la más antigua."
   },
+  "federation.clientCertificateRenewDays|label": {
+    "en": "918bb1aa7c690001",
+    "text": "Renovar un certificado de cliente FAPI esta cantidad de días antes de que caduque"
+  },
+  "federation.clientCertificateRenewDays|description": {
+    "en": "c9ce3366a9d4ba59",
+    "text": "Una relación de federación FAPI 1.0 Advanced presenta al socio un certificado de cliente TLS de la CA emisora TLS Client de este dominio (RFC 8705), y el socio vincula a él sus tokens de acceso. La tarea programada federation.client-certificate-renew emite uno nuevo, con el mismo sujeto, esta cantidad de días antes de que caduque el actual. Un socio que registró el DN del sujeto (tls_client_auth) no necesita nada; uno que fijó el propio certificado debe recibir el nuevo, que muestra la página de la relación."
+  },
   "saml.clockSkewS|label": {
     "en": "34ba47c6439a7089",
     "text": "Desfase de reloj de las aserciones (s)"

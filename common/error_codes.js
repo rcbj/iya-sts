@@ -14043,6 +14043,15 @@ const CODES = [
       'token_type is not DPoP (RFC 9449 section 5). At sign-in the ' +
       'sign-in is refused; at a refresh the session is ended.',
     spec: 'HTTP 502' },
+  { code: 'STS-FED-0252',
+    summary: 'A FAPI 1.0 Advanced relationship\'s TLS client certificate ' +
+      '(RFC 8705) could not be issued, sealed, written or opened — when ' +
+      'fedFapi became 1-advanced, by the scheduler job ' +
+      'federation.client-certificate-renew, or at a token, refresh or ' +
+      'UserInfo request that needed it. Nothing is dialled without it: ' +
+      'at a sign-in the sign-in is refused, at a refresh the session is ' +
+      'ended.',
+    spec: 'HTTP 500 at a sign-in; console: the message; job: logged' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -23299,8 +23308,11 @@ const CODES = [
     spec: 'HTTP 400, an error message' },
   { code: 'STS-AUTHZEN-0009',
     summary: 'An AuthZEN request, or its subject, action or resource, ' +
-      'carried a member AuthZEN 1.0 does not define.',
-    spec: 'HTTP 400, an error message' },
+      'carried a member AuthZEN 1.0 does not define. Retired by #936 ' +
+      '(2026-11-13): AuthZEN 1.0 section 10.1.1 has a receiver ignore an ' +
+      'unknown member, so every /access/v1 request now accepts and ignores ' +
+      'one, and an Action Search\'s action with it.',
+    spec: '', retired: true },
   { code: 'STS-AUTHZEN-0010',
     summary: 'An AuthZEN attribute catalogue row was refused: not a JSON ' +
       'object, an unknown member, or an object, property path, attributeId, ' +

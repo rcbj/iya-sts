@@ -268,8 +268,8 @@
     "text": "EXTRA PARAMETRAR I AUKTORISERINGSBEGÄRAN, en per värde, skrivna `<name>=<value>`, för en leverantör som behöver en (Twitchs `claims`, för att få en adress). Endast OpenID Connect och OAuth 2.0. De parametrar denna tjänst själv sätter — response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request och request_uri — vägras här, eftersom en av dem ändrad här skulle göra en kontroll denna tjänst gör ogjord."
   },
   "fed.schema.attributes.fedTokenAuth.what": {
-    "en": "d86b5d2b605f0f05",
-    "text": "HUR DENNA TJÄNST AUTENTISERAR SIG VID PARTNERNS TOKENSLUTPUNKT: client_secret_basic (standardvärdet, som RFC 6749 avsnitt 2.3.1 säger att en server MÅSTE stödja) eller client_secret_post, för en partner som bara läser hemligheten från meddelandekroppen. Utan fedClientSecret är denna tjänst en publik klient och inget av dem gäller."
+    "en": "df266a3a67c1b2b5",
+    "text": "HUR DENNA TJÄNST AUTENTISERAR SIG VID PARTNERNS TOKENSLUTPUNKT: client_secret_basic (standardvärdet, som RFC 6749 avsnitt 2.3.1 säger att en server MÅSTE stödja) eller client_secret_post, för en partner som bara läser hemligheten från meddelandekroppen. Utan fedClientSecret är denna tjänst en publik klient och inget av dem gäller. tls_client_auth (RFC 8705 avsnitt 2.1) autentiserar med relationens TLS-klientcertifikat (fedClientCertificate) och skickar varken försäkran eller hemlighet; det är endast för fedFapi 1-advanced, och en relation som anger det utan den profilen är inte redo."
   },
   "fed.schema.attributes.fedScope.what": {
     "en": "7f9479e6e589a23f",
@@ -320,8 +320,8 @@
     "text": "ENDAST OPENID CONNECT. TRUE läser partnerns slutpunkter och dess jwks_uri från dess upptäcktsdokument, {fedPeer}/.well-known/openid-configuration, i början av varje inloggning (OpenID Connect Discovery 1.0 avsnitt 4), vars issuer måste vara exakt fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl och fedJwksUri läses då inte. Adressen härleds från fedPeer, som en administratör har konfigurerat, och aldrig från en begäran. FALSE, standardvärdet: slutpunkterna konfigureras för hand."
   },
   "fed.schema.attributes.fedFapi.what": {
-    "en": "7e9a016e6c9185c9",
-    "text": "ENDAST OPENID CONNECT. Den FAPI-klientprofil som används när den här tjänsten loggar in en person hos partnern (#931). Tomt, standardvärdet, är dagens OpenID Connect-förlitande part. 1-advanced (FAPI 1.0 Advanced) tvingar svarstypen code id_token, PKCE S256, ett PS256-begäransobjekt som värde och private_key_jwt, och använder varken DPoP eller ömsesidig TLS. 2-security (FAPI 2.0 Security Profile) tvingar discovery, en pushad auktoriseringsbegäran, svarstypen code, PKCE S256, private_key_jwt och DPoP. 2-message-signing lägger till ett PS256-begäransobjekt i den pushade begäran och ett signerat auktoriseringssvar (JARM). En profil tvingar private_key_jwt oavsett vad fedTokenAuth anger. Den här tjänsten fungerar inte som CIBA-klient och autentiserar sig inte mot partnern med ett klientcertifikat."
+    "en": "f2b7f8d0b97ba58f",
+    "text": "ENDAST OPENID CONNECT. Den FAPI-klientprofil som används när den här tjänsten loggar in en person hos partnern (#931). Tomt, standardvärdet, är dagens OpenID Connect-förlitande part. 1-advanced (FAPI 1.0 Advanced) tvingar svarstypen code id_token, PKCE S256 och ett PS256-begäransobjekt som värde, visar upp relationens TLS-klientcertifikat (fedClientCertificate) för token- och UserInfo-slutpunkterna så att partnern kan binda sina åtkomsttoken till det (RFC 8705), autentiserar med private_key_jwt eller, där fedTokenAuth är tls_client_auth, med det certifikatet, och använder inte DPoP. 2-security (FAPI 2.0 Security Profile) tvingar discovery, en pushad auktoriseringsbegäran, svarstypen code, PKCE S256, private_key_jwt och DPoP. 2-message-signing lägger till ett PS256-begäransobjekt i den pushade begäran och ett signerat auktoriseringssvar (JARM). En 2.x-profil tvingar private_key_jwt oavsett vad fedTokenAuth anger. Den här tjänsten fungerar inte som CIBA-klient, och bara 1-advanced visar upp ett klientcertifikat."
   },
   "fed.schema.attributes.fedInitiateLogin.what": {
     "en": "f4c27cf4c2c9aa2c",
@@ -470,6 +470,10 @@
   "fed.schema.attributes.fedEncryptionKey.what": {
     "en": "b4d2ac940c13b9f8",
     "text": "NYCKELTABELLEN: en JSON-rad per nyckel som den här relationen dekrypterar med — dess kid, dess nyckeltyp, `current` eller `previous`, dess certifikat och kedja under den här sfärens Intermediate, och den privata nyckeln, FÖRSEGLAD under nyckelkrypteringsnyckeln överallt där nycklar är beständiga. En `previous`-rad behålls till dess retiresAt och tas sedan bort av schemaläggarjobbet federation.encryption-key-retire. Skrivs bara av skapande, rotation och det jobbet; UNDANHÅLLEN från varje LDAP-sökning i produktläge och från varje sida och svar från /admin-api, som publicerar den publika halvan. Nyckeltypen är en kolumn så att en hybrid postkvantnyckel kan vara en rad bredvid den klassiska när en sådan registreras."
+  },
+  "fed.schema.attributes.fedClientCertificate.what": {
+    "en": "c8d1bb6c418a58bb",
+    "text": "OPENID CONNECT, ENDAST fedFapi 1-advanced (#931). DET TLS-KLIENTCERTIFIKAT som denna tjänst visar upp när den anropar partnerns token- och UserInfo-slutpunkter: en JSON-rad med ett clientAuth-certifikat från denna sfärs TLS Client Issuing CA (subjekt CN=federation <id> client, ett subjectAltName urn:sts:federation:), dess kedja, dess x5t#S256, dess giltighet och den privata nyckeln, FÖRSEGLAD under nyckelkrypteringsnyckeln överallt där nycklar sparas. Den autentiserar klienten där fedTokenAuth är tls_client_auth (RFC 8705 avsnitt 2.1) och är det som partnern binder sina åtkomsttoken till (cnf.x5t#S256, avsnitt 3). Utfärdas när fedFapi blir 1-advanced, vid den första inloggningen som saknar ett, eller av det schemalagda jobbet federation.client-certificate-renew, som också förnyar det federation.clientCertificateRenewDays innan det löper ut, med samma subjekt. Skrivs bara av dessa; UNDANHÅLLS från varje LDAP-sökning i produktion och från varje sida och /admin-api-svar, som publicerar den publika halvan att registrera hos partnern."
   },
   "fed.schema.attributes.fedAllowUnsolicited.what": {
     "en": "5b2a044dd3f46597",

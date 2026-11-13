@@ -5239,6 +5239,14 @@
     "en": "f8e11f4044147d5e",
     "text": "Lorsque la clé de chiffrement d’une relation est renouvelée, durée pendant laquelle la clé qu’elle remplace DÉCHIFFRE encore — afin qu’un partenaire qui n’a pas encore récupéré les nouvelles métadonnées ou le nouveau JWKS, ou une réponse déjà dans un navigateur, ne soit pas refusé. Au-delà, l’ancienne clé ne déchiffre plus rien, et la tâche planifiée federation.encryption-key-retire la retire de l’entrée. 0 met fin à l’ancienne clé lors du renouvellement. Seule la clé tout juste remplacée est conservée : un second renouvellement dans la fenêtre supprime la plus ancienne."
   },
+  "federation.clientCertificateRenewDays|label": {
+    "en": "918bb1aa7c690001",
+    "text": "Renouveler un certificat client FAPI ce nombre de jours avant son expiration"
+  },
+  "federation.clientCertificateRenewDays|description": {
+    "en": "c9ce3366a9d4ba59",
+    "text": "Une relation de fédération FAPI 1.0 Advanced présente au partenaire un certificat client TLS émis par l'AC émettrice TLS Client de ce domaine (RFC 8705), et le partenaire y lie ses jetons d'accès. La tâche planifiée federation.client-certificate-renew en émet un nouveau, avec le même sujet, ce nombre de jours avant l'expiration de l'actuel. Un partenaire qui a enregistré le DN du sujet (tls_client_auth) n'a besoin de rien ; un partenaire qui a épinglé le certificat lui-même doit recevoir le nouveau, que la page de la relation affiche."
+  },
   "saml.clockSkewS|label": {
     "en": "34ba47c6439a7089",
     "text": "Décalage d’horloge des assertions (s)"

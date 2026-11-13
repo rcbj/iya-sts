@@ -1478,6 +1478,18 @@ const JOBS = [
   // federation relying party. No classical twin (its header says why).
   { file: 'sts_oidcc_rp_conformance.js', browser: true,
     conformance: true, timeoutMs: 7200000, lane: 'conformance-rp' },
+  // THE SAME SUITE AS A FAPI AUTHORIZATION SERVER (#931, 2026-11-13): its
+  // three FAPI client plans — FAPI 1.0 Advanced (with private_key_jwt and
+  // with tls_client_auth, both over the relationship's TLS client
+  // certificate), FAPI 2.0 Security Profile and Message Signing — against
+  // an inbound OpenID Connect federation relationship held to `fedFapi`,
+  // each also as its classical twin. A lane of its own,
+  // `conformance-fapi-client`, so `conformance-rp` does not grow. A
+  // two-hour watchdog until the first run sizes it. `local: true`: this
+  // repository's federation FAPI client.
+  { file: 'sts_fapi_client_conformance.js', browser: true,
+    conformance: true, timeoutMs: 7200000,
+    lane: 'conformance-fapi-client' },
   // Shared Signals (#187): the transmitter and CAEP interop plans, push and
   // poll, the CAEP events emitted by the job as the module asks for them.
   { file: 'sts_ssf_oidf_conformance.js', browser: false,
@@ -1518,6 +1530,18 @@ const JOBS = [
   // half minutes (2026-11-02), well inside the two hours here.
   { file: 'sts_oid4vp_conformance.js',   browser: false,
     conformance: true, timeoutMs: 7200000,
+    lane: 'conformance-b' },
+  // AuthZEN Authorization API 1.0 (#936, rcbj's decision of 2026-11-13):
+  // the six PDP plans, the suite the PEP, in a throwaway realm whose
+  // `authzen.callerAuthentication` is `bearer`, every plan at
+  // pdp_auth_type=api_key with static metadata. The mtls variant is
+  // opt-in in the job (CONFORMANCE_PLANS=mtls-*): release-v5.3.1 aborts
+  // it before the PDP is called. No browser, no classical twin (the
+  // suite verifies nothing the realm signs). Six plans of plain JSON
+  // requests, a few minutes together, so `conformance-b`, whose jobs stay
+  // well under the OpenID Connect lane; an hour's watchdog.
+  { file: 'sts_authzen_conformance.js',  browser: false,
+    conformance: true, timeoutMs: 3600000,
     lane: 'conformance-b' },
   // THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24): four independent
   // SAML service providers, each a second container under the `saml-peers`

@@ -15,7 +15,9 @@
 // reader could not be built from faithfully — an option on a kind of field
 // it does not apply to, a sentence naming a placeholder nobody fills, a
 // default that is not one of the values, a forbidden member with nothing to
-// say, a name declared twice, a missing citation — and the problem stops
+// say, an ignored member that is also refused, a request that ignores
+// unknown members and still has a stray sentence, a name declared twice,
+// a missing citation — and the problem stops
 // the image build.
 //
 // This is an ES module because the TypeSpec compiler loads a library with
@@ -53,7 +55,8 @@ const KIND_OPTIONS = {
   maxLength: ['string'], nonEmpty: ['string'], maxItems: ['array'],
   itemMaxLength: ['array'], itemRefusal: ['array'], minimum: ['integer'],
   requireOne: ['object'],
-  open: ['object'], coerce: ['values'], default: ['values']
+  open: ['object'], coerce: ['values'], default: ['values'],
+  ignored: ['any']
 };
 
 export const $decorators = {
@@ -183,7 +186,7 @@ function fieldOf(program, property) {
                 cite: options.cite || '' };
   ['code', 'refusal', 'absent', 'maxLength', 'nonEmpty', 'maxItems',
    'itemMaxLength', 'itemRefusal', 'minimum', 'requireOne', 'coerce',
-   'default', 'open',
+   'default', 'open', 'ignored',
    'deferred'].forEach(function (key) {
     if (options[key] !== undefined) {
       out[key] = options[key];
@@ -232,6 +235,9 @@ export function readAuthzen(program) {
     if (options.stray !== undefined) {
       out.stray = options.stray;
     }
+    // AuthZEN 1.0 section 10.1.1: what a request does with a member no
+    // field names, recorded on every request so a reader never guesses.
+    out.unknownMembers = options.unknownMembers || 'refused';
     requests.push(out);
   });
   const members = [];
@@ -326,6 +332,10 @@ function fieldProblems(at, field, problems) {
   if (field.kind === 'never' && !field.refusal) {
     problems.push(at + ' may not be sent and says nothing when it is');
   }
+  if (field.ignored === true && (field.required || field.refusal ||
+      field.code || field.deferred)) {
+    problems.push(at + ' is ignored and is required, refused or read');
+  }
   if (field.kind === 'array' && field.itemMaxLength !== undefined &&
       field.items !== 'string') {
     problems.push(at + '\'s items are not strings and take itemMaxLength');
@@ -356,6 +366,23 @@ function fieldProblems(at, field, problems) {
 }
 
 /**
+ * Whether any of these fields, at any depth, must not be sent and names no
+ * code of its own, so the request's `stray` code is what refuses it.
+ *
+ * @param fields - from `readAuthzen()`
+ * @returns true when there is one
+ */
+function uncodedNever(fields) {
+  log.debug("Entering uncodedNever().");
+  const found = (fields || []).some(function (field) {
+    return (field.kind === 'never' && !field.code) ||
+      uncodedNever(field.fields);
+  });
+  log.debug("Leaving uncodedNever(). " + found);
+  return found;
+}
+
+/**
  * Holds the model to what a reader and a check can be built from.
  *
  * @param authzen - from `readAuthzen()`
@@ -383,7 +410,22 @@ export function checkAuthzen(authzen) {
                       ' is not absolute');
       }
     });
-    ['notObject', 'stray', 'absent', 'type'].forEach(function (key) {
+    if (['refused', 'ignored'].indexOf(request.unknownMembers) < 0) {
+      problems.push('the request ' + request.id + '\'s unknownMembers is ' +
+                    'neither refused nor ignored');
+    }
+    if (request.unknownMembers === 'ignored' && request.stray !== undefined) {
+      problems.push('the request ' + request.id + ' ignores unknown ' +
+                    'members and has a stray sentence');
+    }
+    // The stray code is owed only where something can be refused with it:
+    // a member no field names, or a `never` field naming no code itself.
+    const kinds = ['notObject', 'absent', 'type'];
+    if (request.unknownMembers !== 'ignored' ||
+        uncodedNever(request.fields)) {
+      kinds.splice(1, 0, 'stray');
+    }
+    kinds.forEach(function (key) {
       if (!/^STS-AUTHZEN-\d{4}$/.test(String(request.codes[key] || ''))) {
         problems.push('the request ' + request.id + ' has no ' + key +
                       ' code');

@@ -275,10 +275,11 @@ applications see only this service.
 Empty, the default, is the relying party above. The three values:
 
 * **`1-advanced`** (FAPI 1.0 Advanced). `code id_token`, PKCE S256, a PS256
-  request object by value, and `private_key_jwt`. The endpoints may be
-  written by hand. This profile's certification sender constraint is a
-  client certificate. This service authenticates with `private_key_jwt` and
-  sends no DPoP proof.
+  request object by value, and `private_key_jwt` — or `tls_client_auth`
+  where `fedTokenAuth` says so. The endpoints may be written by hand. The
+  access token is bound to the relationship's TLS client certificate
+  (RFC 8705), which this service presents at the partner's token and
+  UserInfo endpoints. No DPoP proof is sent.
 * **`2-security`** (FAPI 2.0 Security Profile). Needs `fedDiscovery`. The
   authorization request is pushed to the endpoint the discovery document
   names, and the browser is sent only `client_id` and `request_uri`. `code`,
@@ -298,22 +299,44 @@ signed response), and its token response must say `token_type` `DPoP`
 carry `exp` (`STS-FED-0250`). A relationship with no profile is not asked
 any of these.
 
-A profile forces `private_key_jwt` whatever `fedTokenAuth` says. The DPoP
+A `2-security` or `2-message-signing` profile forces `private_key_jwt`
+whatever `fedTokenAuth` says; `1-advanced` takes `tls_client_auth` as well.
+The DPoP
 key for a `2-security` or `2-message-signing` sign-in is kept for that
 sign-in, and sealed with the partner's refresh token when
 `fedRefreshTokens` is on.
 
-Two things these profiles are sometimes asked to do are not done:
+#### The `1-advanced` client certificate
 
-* **A CIBA client.** Nothing here asks a partner to authenticate a person
-  who is not in a browser at that partner. `POST /oauth2/bc-authorize` is
-  this service as the authorization server.
-* **A client certificate at the partner.** Client authentication is
-  `private_key_jwt`. The access token's sender constraint, where a profile
-  uses one, is DPoP.
+A `1-advanced` relationship holds a TLS client certificate issued by the
+realm's TLS Client Issuing CA (`clientAuth`, subject
+`CN=federation <id> client`). It is issued when `fedFapi` is set to
+`1-advanced`, and otherwise at the first sign-in that needs it. Register it
+at the partner before the first sign-in: the relationship's console page
+(*TLS client certificate*) and `GET /admin-api/federation?relationship=<id>`
+(`clientCertificate`) show the certificate and its chain, the subject DN a
+partner registers as `tls_client_auth_subject_dn`, and the `x5t#S256` a
+bound access token carries. The private key is sealed and never shown.
 
-How the OpenID Foundation's FAPI client plans would be run, and which of
-them this leaves out, is [conformance](conformance.md#not-run-and-why).
+The scheduler job `federation.client-certificate-renew` issues a new
+certificate, with the same subject, `federation.clientCertificateRenewDays`
+(30) days before the current one expires. A partner that registered the
+subject DN needs nothing; one that pinned the certificate must be given the
+new one. Where the partner's discovery document names
+`mtls_endpoint_aliases`, those token and UserInfo addresses are used. A
+certificate that cannot be issued or opened refuses the sign-in
+(`STS-FED-0252`) rather than calling the partner without it.
+
+`fedTokenAuth` `tls_client_auth` authenticates with the certificate and
+sends no assertion; a relationship naming it without `1-advanced` is not
+ready.
+
+This service is not a **CIBA client**: nothing here asks a partner to
+authenticate a person who is not in a browser at that partner.
+`POST /oauth2/bc-authorize` is this service as the authorization server.
+
+The OpenID Foundation's FAPI client plans run in
+[`sts_fapi_client_conformance`](conformance.md#the-openid-foundation-conformance-suite).
 
 ### The request context
 
@@ -886,6 +909,7 @@ this*.
 | `federation.jwtAlgorithms` | `STS_FEDERATION_JWT_ALGORITHMS` | `RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512` | yes | The JWS algorithms a partner's ID Token or JWT access token may use; it only narrows, never admitting `none` or an HMAC. |
 | `federation.spNameIdFormat` | `STS_FEDERATION_SP_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified` | yes | The `<md:NameIDFormat>` published in `/federation/metadata/{id}`. |
 | `federation.encryptionKeyGraceS` | `STS_FEDERATION_ENCRYPTION_KEY_GRACE_S` | `86400` | yes | How long a relationship's encryption key still decrypts after a rotation replaced it; `0` ends it at the rotation (#168). |
+| `federation.clientCertificateRenewDays` | `STS_FEDERATION_CLIENT_CERTIFICATE_RENEW_DAYS` | `30` | yes | How many days before a `1-advanced` relationship's TLS client certificate expires a new one is issued, with the same subject (#931). |
 | `federation.maxPartnerAuthAgeS` | `STS_FEDERATION_MAX_PARTNER_AUTH_AGE_S` | `0` | yes | Refuses a federated sign-in whose partner says the person authenticated longer ago than this many seconds, by `auth_time` or `AuthnInstant`. While it is set, a partner that does not say when is refused. `0`, the default, does not ask. |
 | `federation.allowAssertionWithoutAudience` | `STS_FEDERATION_ALLOW_ASSERTION_WITHOUT_AUDIENCE` | `false` | yes | Product mode only. On, a partner's SAML 1.1 or WS-Federation assertion with no audience restriction is accepted with a warning, for a partner that cannot send one; off, the default, it is refused. |
 | `federation.allowUntypedLogoutToken` | `STS_FEDERATION_ALLOW_UNTYPED_LOGOUT_TOKEN` | `false` | yes | Product mode only. On, a partner's Logout Token typed `jwt` or carrying no type is accepted as well as one typed `logout+jwt`. The OpenID specification only recommends the type. |
