@@ -663,6 +663,56 @@ database because somebody typed a name at a logout screen. That is the opposite
 of `findOrCreateUser()`'s rule, which creates a CLIENT because an AS-REQ named
 one, and `/logout` reports the absence rather than a success it did not have.
 
+## A REQUESTED RENEW-TILL (#897)
+
+Until #897 an AS-REQ's `rtime`, and a TGS-REQ's, were not read. `RENEWABLE`
+set renew-till to `kdcTime(krb5.renewLifetimeSeconds)` — seven days, whatever
+the client asked — and a service ticket copied the presented ticket's
+renew-till. A client that asked for three hours renewable was given seven
+days, which is why a test that renewal stops at renew-till had to forge a
+ticket: no request could produce a short one.
+
+`decideRenewTill()` in `krb5_kdc.js` is the rule for a ticket being issued.
+A renewal does not call it. RFC 4120 section 3.1.3's earliest-of is, here,
+the requested instant when one was sent, starttime plus
+`krb5.renewLifetimeSeconds` (this service has no per-principal maximum
+renewable life), and on a TGS exchange the presented ticket's own
+renew-till. A ticket that is not renewable cannot buy one that is.
+
+**The choices that are MIT krb5's `kdc_get_ticket_renewtime`, said here so
+they are not rediscovered as bugs.** An explicit `RENEWABLE` with an `rtime`
+at or before endtime still sets the flag and that renew-till: the renewal
+then cannot extend the ticket (the existing `STS-KRB-0045` once that instant
+has passed). `RENEWABLE-OK` (option 27, unread until now) sets the flag only
+when the requested `till` was shortened to the endtime being issued and the
+capped renew-till is strictly later than that endtime; renew-till is then
+the requested endtime, still under the caps above. No `rtime` with
+`RENEWABLE` is the realm maximum, which is what MIT's "infinity, then the
+cap" becomes with one realm maximum. No new error code: a short or past
+`rtime` is issued, not refused.
+
+**One choice is NOT MIT's.** MIT clears an inherited `RENEWABLE` flag, so a
+service ticket is renewable only when the TGS-REQ asks or qualifies for
+`RENEWABLE-OK`, and only when the TGT is renewable. This KDC still inherits
+the flag from a renewable TGT when the TGS-REQ does not repeat the option.
+`tests/kerberos_person_keys.js` obtains a service ticket with an empty
+`kdcOptions` list and then renews it; dropping the flag would make that
+renewal `STS-KRB-0043`. A present `rtime` is still honoured on that
+inherited ticket, and it still cannot pass the TGT's renew-till.
+`RENEWABLE-OK` on a TGS exchange therefore adds nothing the inherited flag
+did not already add, and it cannot make a service ticket renewable when the
+TGT is not.
+
+A renewal copies renew-till and ignores any `rtime` on the RENEW request,
+longer or shorter. Anonymous tickets (`answerAnonymousAsReq()`) and
+`mintTicket()` stay non-renewable. The sign-out horizon stays the setting
+plus the skew, not the ticket's own renew-till.
+
+The in-process guard is `tests/kerberos_renew_till.js`. The wire half is an
+interop client (`kinit -r`); the protocol jobs that already send
+`rtime` of now plus 24 hours take a 24-hour renew-till instead of seven
+days, and their renewals are inside that window.
+
 
 ## The SPNEGO sign-in has both halves of its test, and they are in different repositories on purpose
 

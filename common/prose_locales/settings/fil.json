@@ -6980,8 +6980,8 @@
     "text": "Renewable na tagal (s)"
   },
   "krb5.renewLifetimeSeconds|description": {
-    "en": "c5e760b09dd1a975",
-    "text": "Gaano kalayo umaabot ang renew-till para sa ticket na na-issue na renewable. Pitong araw ang default ng Active Directory."
+    "en": "5e2fb0a8cf795055",
+    "text": "Ang pinakamahabang renew-till ng tiket na inisyu bilang renewable, sinusukat mula sa simula nito. Pinaiikli ito ng hiniling na rtime, at kapag walang rtime ay kinukuha ng tiket ang maximum na ito. Ang rtime na nasa o bago ang endtime ng tiket ay minamarkahan pa rin itong renewable, gaya ng ginagawa ng MIT krb5. Itinatakda ng RENEWABLE-OK ang flag lamang kapag pinaikli ang hiniling na endtime at ang resultang renew-till ay mas huli kaysa sa inisyung endtime. Pitong araw ang default ng Active Directory."
   },
   "krb5.logonServer|label": {
     "en": "430185046b3ddca6",
