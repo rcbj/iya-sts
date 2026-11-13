@@ -509,6 +509,28 @@ far end — which for authorization means a decision nobody can reproduce. It is
 also what makes ALFA cheap when it lands: a parser and an emitter, not a second
 policy system.
 
+## A NAME A POLICY OR A CALLER CHOSE IS AN OWN MEMBER, OR IT IS ABSENT (2026-11-12)
+
+Every table this directory looks a chosen name up in — the function library,
+the combiners, the datatypes and their short names, the legacy datatype
+aliases, a policy's variables, the repository a reference resolves through,
+ALFA's categories, algorithms, function names and declared attributes, the
+row grammar's categories and datatypes, GNAP's drop and interaction words —
+is a plain object, and `table[name]` follows the prototype chain. So
+`constructor`, `toString` or `__proto__` answered a function or
+`Object.prototype` where an unknown name answers nothing: an FGA or AuthZEN
+row accepted `category: "constructor"`, a JSON request's `DataType:
+"toString"` escaped its refusal, a VariableId `toString` was "defined twice",
+a reference to `constructor` was a cycle, a FunctionId `toString` "takes 0
+arguments", an interaction word `constructor` stopped asking for the person.
+**Every such read goes through `common/own_members.ts`** (`read()`, `has()`),
+and every write into a map read that way through its `put()`, so a name
+called `__proto__` is a member rather than the map's prototype (a
+VariableId `__proto__` was refused before and is a variable now; a policy
+id `__proto__` in `XacmlStore.repository()` resolves as it did).
+`XacmlEditor.ownStep()` (#1664) is that file's `has()`. An own member
+answers what it answered before. `tests/own_members.js`.
+
 ## Where it stands against the conformance suite
 
 **454 of 455 mandatory cases**, with the one exception recorded in

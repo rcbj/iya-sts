@@ -78,6 +78,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import ownMembers = require('../common/own_members');
 import model = require('../xacml/xacml_model');
 import datatypes = require('../xacml/xacml_datatypes');
 import xacmlRequest = require('../xacml/xacml_request');
@@ -561,15 +562,20 @@ class AuthzenMap {
         if (!name) {
           return;
         }
-        if (properties[name] === undefined) {
-          properties[name] = rule.arrays.indexOf(name) >= 0 ? [value]
-                                                           : value;
+        // An own member (2026-11-12): an assignment named `…:constructor`
+        // is a property of that name, not one appended to Object, and
+        // `…:__proto__` is a property rather than the object's prototype.
+        const held = ownMembers.read(properties, name);
+        if (held === undefined) {
+          ownMembers.put(properties, name,
+                         rule.arrays.indexOf(name) >= 0 ? [value] : value);
         } else {
-          properties[name] = [].concat(properties[name], [value]);
+          ownMembers.put(properties, name, [].concat(held, [value]));
         }
       });
       const missing = rule.required.filter(function (name: string) {
-        return properties[name] === undefined || properties[name] === '';
+        const held = ownMembers.read(properties, name);
+        return held === undefined || held === '';
       });
       if (missing.length) {
         problems.push(xacmlId + ' is a ' + type + ' obligation without ' +
