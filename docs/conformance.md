@@ -51,6 +51,7 @@ Every suite below passed in the full runs of 2026-09-26 and 2026-09-27.
 | OpenID Connect, OAuth 2.0 | [OpenID conformance suite](#the-openid-foundation-conformance-suite), `release-v5.3.1` | OpenID Foundation | 9 OP certification profiles, `oidcc-test-plan` × 5 client authentications × 3 response modes, 4 logout plans, Identity Assurance |
 | OpenID Connect, relying party | the same suite | OpenID Foundation | the relying-party plans (Basic, Implicit, Hybrid, Config, Dynamic, the three form_post plans, third-party-initiated login, logout, refresh tokens) against a [federation relationship](federation.md), added 2026-11-02 |
 | FAPI | the same suite | OpenID Foundation | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced, FAPI-CIBA, with their variants |
+| FAPI, client | the same suite | OpenID Foundation | the FAPI 1.0 Advanced, FAPI 2.0 Security Profile and FAPI 2.0 Message Signing client plans against a [federation relationship](federation.md#fapi-client-profiles) held to a FAPI profile, added 2026-11-13 (#931) |
 | Shared Signals, CAEP | the same suite | OpenID Foundation | SSF transmitter and CAEP interop transmitter, by push and by poll |
 | OpenID Federation | the same suite | OpenID Foundation | Leaf and Trust Anchor entity plans, automatic registration into a federation the suite plays, and this service as the relying party of a federation the suite plays (#933; a suite run is outstanding) |
 | OpenID4VCI, OpenID4VP | the same suite | OpenID Foundation | issuer (wallet- and issuer-initiated, pre-authorized, HAIP) and verifier (`direct_post`, `direct_post.jwt`, x509 client identifiers, HAIP with SD-JWT VC and ISO mdoc) |
@@ -91,6 +92,7 @@ the End-User for the OpenID4VP verifier.
 | `sts_oidcc_conformance` | the nine OP certification profiles (Basic with dynamic and static clients, Implicit, Hybrid, Config, Dynamic, the three form_post profiles, 3rd-party-initiated login); `oidcc-test-plan` once per client authentication (`client_secret_basic`, `client_secret_post`, `client_secret_jwt`, `private_key_jwt`, mutual TLS) across query, fragment and form_post; RP-Initiated, Front-Channel, Back-Channel and Session Management logout; Identity Assurance (`ekyc-test-plan-oidccore`) |
 | `sts_oidcc_rp_conformance` | the relying-party plans, with iya-sts as the relying party of an inbound OpenID Connect [federation relationship](federation.md) and the suite as the OpenID Provider: Basic, Implicit and Hybrid (every response type), Config (the endpoints read from the provider's discovery document), Dynamic, the three form_post plans, third-party-initiated login, logout (RP-Initiated, Back-Channel and Front-Channel, OP- and RP-initiated) and refresh tokens |
 | `sts_fapi_conformance` | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing (with Grant Management), FAPI 1.0 Advanced (with PAR and JARM), FAPI-CIBA (poll and ping), with mutual TLS as both client authentication and sender constraint |
+| `sts_fapi_client_conformance` | the FAPI client plans, with iya-sts as the client of an inbound OpenID Connect [federation relationship](federation.md#fapi-client-profiles) held to a FAPI profile: FAPI 1.0 Advanced (`private_key_jwt`, and `tls_client_auth`, both over the relationship's TLS client certificate), FAPI 2.0 Security Profile and FAPI 2.0 Message Signing (DPoP), each with its classical twin |
 | `sts_ssf_oidf_conformance` | the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll |
 | `sts_ssf_receiver_conformance` | the SSF receiver plan and the CAEP interop receiver plan, each by push and by poll, against a realm receiving through a signals-only federation relationship; the job also checks that the suite's CAEP `session-revoked` ended the person's sessions |
 | `sts_oidfed_conformance` | the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor; the plan in which the suite runs a federation that a realm's OP joins, registering the RP automatically; the plan in which this service is the relying party of a federation the suite plays (the OpenID Provider and the Trust Anchor), registering automatically |
@@ -225,22 +227,11 @@ not define. Since 1.1.0 every AuthZEN request ignores one, as the
 * FAPI 2.0 Message Signing's `plain_response` variant: section 5.4.1 has the
   authorization server require JARM.
 * Push-mode FAPI-CIBA: the suite publishes no plan for it.
-* The FAPI **client** plans
-  (`fapi1-advanced-final-client-test-plan`,
-  `fapi2-security-profile-final-client-test-plan`,
-  `fapi2-message-signing-final-client-test-plan`). The client role is built
-  ([federation](federation.md#fapi-client-profiles), `fedFapi`). A job
-  modeled on `sts_oidcc_rp_conformance.js` would run them, the suite as the
-  authorization server and one throwaway realm per plan. It is not in the
-  manifest: it has not been run, and `./run-tests.sh` would schedule a job
-  that cannot yet pass. The wiring is `tests/CLAUDE.md`'s *HOW THE FAPI
-  CLIENT PLANS WOULD RUN*. The variants that job would create are
-  `private_key_jwt` with a
-  request object by value and a plain `code id_token` response
-  (`1-advanced`), `private_key_jwt` with DPoP (`2-security`), and
-  `private_key_jwt` with DPoP, a signed request inside the push and JARM
-  (`2-message-signing`). The suite's mutual-TLS variants, and FAPI 1.0
-  Advanced's `by_reference` and `pushed` variants, are not those.
+* FAPI 1.0 Advanced's client plan with `pushed` or `by_reference` request
+  objects or a JARM response, and the FAPI 2.0 client plans' mutual-TLS
+  sender constraint: `1-advanced` sends its request object by value on a
+  plain hybrid response, and the 2.x profiles bind with DPoP. The client
+  plans that do run are in `sts_fapi_client_conformance`, above.
 * `fapi-ciba-id1-client-test-plan`. This service has no CIBA client role.
   `POST /oauth2/bc-authorize` is the authorization server, which
   `sts_fapi_conformance` already runs (`fapi-ciba-id1-test-plan`).

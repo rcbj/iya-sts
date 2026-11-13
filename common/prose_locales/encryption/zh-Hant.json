@@ -199,6 +199,14 @@
     "en": "3d4cea483bdd4763",
     "text": "在任何模式下都「完全不持久保存」，因此沒有靜態內容需要密封。三者都在 `common/mode.js` 的 `NOT_YET` 中指名，而不是留待被人發現，因為*未儲存*與*未受保護*從外部看起來一樣，卻不是同一件事。"
   },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "FAPI 1.0 Advanced 聯合關係的 TLS 用戶端憑證私密金鑰（#931）——本服務向合作夥伴權杖端點與 UserInfo 端點出示的內容，儲存在 `fedClientCertificate` 中"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "持有它的人可以以本服務的身分向該合作夥伴驗證（`tls_client_auth`），並出示合作夥伴繫結至該憑證的存取權杖。凡是金鑰會持久保存之處都以密封方式靜態儲存，且不出現在任何 LDAP 搜尋、頁面與 `/admin-api` 回應中（包括密文），它們只攜帶憑證。"
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "本服務對哪些內容進行「靜態」加密、使用哪把金鑰、哪種演算法，以及在此程序中已發生了多少次。"

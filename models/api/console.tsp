@@ -690,6 +690,7 @@ namespace IyaSts.Api.Console {
     `signalArrivals`?: (WithRelationshipJtiViaEtc15)[];
     `outboundSignals`?: NullableObject63;
     `encryption`?: NullableObject64;
+    `clientCertificate`?: NullableFederationClientCertificate;
     `links`?: (WithUsernameDnLinkEtc5)[];
     `linksPaging`?: WithPagePagesPerPageEtc8;
     `setFields`?: (WithNameKindRoleEtc9)[];

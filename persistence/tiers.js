@@ -514,6 +514,7 @@ const GLOBAL_JOBS = [
   'krb5.krbtgt-rotate', 'krb5.krbtgt-rotate-now',
   'oidfed.key-rotate', 'oidfed.key-rotate-now', 'oidfed.collection-crawl',
   'oidfed.registrations-expire', 'federation.encryption-key-retire',
+  'federation.client-certificate-renew',
   'spiffe.authority-rotation', 'spiffe.sigstore-tuf-refresh',
   'oauth2.client-secret-expiry', 'oauth2.used-assertion-purge',
   'saml2.sp-metadata-refresh', 'ssf.stream-maintenance', 'ssf.foreign-poll',

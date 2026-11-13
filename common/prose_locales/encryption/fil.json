@@ -199,6 +199,14 @@
     "en": "3d4cea483bdd4763",
     "text": "HINDI NAGPE-PERSIST KAHIT KAUNTI, sa alinmang mode, kaya walang anumang at rest na ise-seal. Pinangalanan ang tatlo sa `NOT_YET` ng `common/mode.js` sa halip na hayaang matuklasan, dahil pareho ang basa mula sa labas ng *hindi naka-store* at *hindi protektado* at hindi sila parehong bagay."
   },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "Ang private key ng TLS client certificate ng isang FAPI 1.0 Advanced na federation relationship (#931) — ang ipinapakita ng serbisyong ito sa token at UserInfo endpoint ng partner, sa `fedClientCertificate`"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "Sinumang may hawak nito ay makapag-a-authenticate sa partner na iyon bilang serbisyong ito (`tls_client_auth`) at makapagpapakita ng mga access token na itinali ng partner sa certificate. Naka-seal kapag nakaimbak saanman nagpe-persist ang mga key, at itinatago — kasama ang ciphertext — sa bawat LDAP search, page at sagot ng `/admin-api`, na certificate lamang ang dala."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Ang ine-encrypt ng serbisyong ito AT REST, gamit ang aling key, sa ilalim ng aling algorithm, at gaano karami na nito ang nangyari sa process na ito."

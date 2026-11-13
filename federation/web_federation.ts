@@ -760,6 +760,9 @@ class FederationPage {
             '</table>' +
             (json.encryption ? FederationPage.federationEncryptionSection(row,
                                  json.encryption, carryBack, t) : '') +
+            (json.clientCertificate
+              ? FederationPage.federationClientCertificateSection(
+                  json.clientCertificate, t) : '') +
             kit.note('<a class="btn" href="' + kit.esc(login) +
                       '">' + t.html('consoleFederation.startSignIn') +
             '</a> ' + (row.usable ? '' : '<span class="sub">' +
@@ -1127,6 +1130,57 @@ class FederationPage {
       t.html('consoleFederation.rotateNote',
              { seconds: String(encryption.graceS) }) +
       '</span></div></form>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE TLS CLIENT CERTIFICATE A FAPI 1.0 ADVANCED RELATIONSHIP PRESENTS
+  // (#931): what the administrator registers at the partner — the
+  // certificate, or its subject DN for tls_client_auth — and the x5t#S256 a
+  // bound token carries. `GET /admin-api/federation?relationship=` answers
+  // the same member (`clientCertificate`, rule 7). Never the private key.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a FAPI 1.0 Advanced relationship's TLS client certificate.
+   *
+   * @param cert - the relationship's `clientCertificate` view
+   * @param t - the page's translator
+   * @returns the section as HTML
+   */
+  static federationClientCertificateSection(cert, t) {
+    const head = '<h2 id="client-certificate">' +
+      t.html('consoleFederation.headingClientCertificate') + '</h2>' +
+      kit.note(t.html('consoleFederation.clientCertificateNote',
+                      { days: String(cert.renewDays) }));
+    if (!cert.held) {
+      return head + kit.note(t.html('consoleFederation.clientCertificateNone'));
+    }
+    return head + '<table>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateTokenAuth') +
+      '</td><td><code>' + kit.esc(cert.tokenAuth === 'tls_client_auth'
+        ? 'tls_client_auth' : 'private_key_jwt') + '</code></td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateSubject') +
+      '</td><td class="who"><code>' + kit.esc(cert.subject) +
+      '</code></td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateThumbprint') +
+      '</td><td class="who"><code>' + kit.esc(cert.x5tS256) +
+      '</code></td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateValid') +
+      '</td><td>' + kit.esc(cert.notBefore) + ' – ' +
+      kit.esc(cert.notAfter) + '</td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificateRenews') +
+      '</td><td>' + kit.esc(cert.renewsAt) + '</td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.thAtRest') + '</td><td>' +
+      (cert.sealed ? t.html('consoleFederation.sealed')
+                   : t.html('consoleFederation.inClear')) + '</td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.clientCertificatePem') +
+      '</td><td class="who"><pre>' + kit.esc(cert.certificatePem) +
+      '</pre></td></tr>' +
+      ((cert.chainPem || []).length
+        ? '<tr><td>' + t.html('consoleFederation.clientCertificateChain') +
+          '</td><td class="who"><pre>' +
+          kit.esc((cert.chainPem || []).join('')) + '</pre></td></tr>'
+        : '') +
+      '</table>';
   }
 
   /**

@@ -95,6 +95,14 @@
     "en": "af65a7bf379c0b71",
     "text": "Laddar ned Googles statuslista för Android-nyckelattestering från devices.androidStatusUrl och läser in den som riskdatamängden android.attestation-status: vilka attesteringscertifikat som är återkallade eller spärrade. Dagligen (devices.androidStatusRefreshS); en lista som är identisk med den aktiva läser inte in något."
   },
+  "sched.jobs.federation.client-certificate-renew.title": {
+    "en": "f37b7eff9973c660",
+    "text": "Förnyelse av federationens klientcertifikat"
+  },
+  "sched.jobs.federation.client-certificate-renew.describe": {
+    "en": "655fd604e686a4d3",
+    "text": "Utfärdar ett TLS-klientcertifikat till varje FAPI 1.0 Advanced-federationsrelation som saknar ett, och ett nytt med samma subjekt till varje relation vars certifikat löper ut inom federation.clientCertificateRenewDays."
+  },
   "sched.jobs.federation.encryption-key-retire.title": {
     "en": "0c323ec372941184",
     "text": "Pensionering av federationskrypteringsnycklar"

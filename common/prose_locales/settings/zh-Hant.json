@@ -5239,6 +5239,14 @@
     "en": "f8e11f4044147d5e",
     "text": "輪替關係的加密金鑰時，被取代的金鑰仍可「解密」多久——讓尚未擷取新中繼資料或 JWKS 的夥伴，或已在瀏覽器中的回應，不會被拒絕。超過此時間後舊金鑰不再解密任何內容，排程器工作 federation.encryption-key-retire 會將其從項目中移除。0 表示在輪替時即結束舊金鑰。只保留剛被取代的金鑰：在時段內第二次輪替會捨棄較舊的那把。"
   },
+  "federation.clientCertificateRenewDays|label": {
+    "en": "918bb1aa7c690001",
+    "text": "在 FAPI 用戶端憑證到期前多少天續期"
+  },
+  "federation.clientCertificateRenewDays|description": {
+    "en": "c9ce3366a9d4ba59",
+    "text": "FAPI 1.0 Advanced 聯合關係向合作夥伴出示由本領域 TLS Client 簽發 CA 簽發的 TLS 用戶端憑證（RFC 8705），合作夥伴將其存取權杖繫結至該憑證。排程工作 federation.client-certificate-renew 在目前憑證到期前這麼多天以相同主體簽發新憑證。註冊了主體 DN（tls_client_auth）的合作夥伴無需任何操作；釘選了憑證本身的合作夥伴必須取得新憑證，關係頁面會顯示它。"
+  },
   "saml.clockSkewS|label": {
     "en": "34ba47c6439a7089",
     "text": "斷言時鐘偏差（秒）"

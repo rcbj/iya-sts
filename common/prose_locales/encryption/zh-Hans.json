@@ -199,6 +199,14 @@
     "en": "3d4cea483bdd4763",
     "text": "在两种模式下都完全不持久化，因此没有任何静态内容需要封存。三者都在 `common/mode.js` 的 `NOT_YET` 中列出，而不是留待被发现，因为“未存储”和“未保护”从外部看起来一样，但并不是同一回事。"
   },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "FAPI 1.0 Advanced 联合关系的 TLS 客户端证书私钥（#931）——本服务向合作方令牌端点和 UserInfo 端点出示的内容，保存在 `fedClientCertificate` 中"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "持有它的人可以以本服务的身份向该合作方认证（`tls_client_auth`），并出示合作方绑定到该证书的访问令牌。凡是密钥会持久保存的地方都以密封方式静态存储，且不出现在任何 LDAP 搜索、页面和 `/admin-api` 响应中（包括密文），它们只携带证书。"
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "本服务对哪些内容进行静态加密、使用哪个密钥、采用哪种算法，以及在此进程中已发生了多少次。"

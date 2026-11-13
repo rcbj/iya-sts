@@ -268,8 +268,8 @@
     "text": "PARÁMETROS ADICIONALES DE LA SOLICITUD DE AUTORIZACIÓN, uno por valor, escritos `<name>=<value>`, para un proveedor que los necesite (el `claims` de Twitch, para que se le envíe una dirección). Solo OpenID Connect y OAuth 2.0. Los parámetros que este servicio fija por sí mismo —response_type, client_id, redirect_uri, state, scope, nonce, code_challenge, code_challenge_method, response_mode, request y request_uri— se rechazan aquí, porque cambiar uno de ellos aquí desharía una comprobación que hace este servicio."
   },
   "fed.schema.attributes.fedTokenAuth.what": {
-    "en": "d86b5d2b605f0f05",
-    "text": "CÓMO SE AUTENTICA ESTE SERVICIO EN EL EXTREMO DE TOKENS DEL SOCIO: client_secret_basic (el predeterminado, que la sección 2.3.1 de RFC 6749 dice que un servidor DEBE admitir) o client_secret_post, para un socio que lee el secreto solo del cuerpo. Sin fedClientSecret este servicio es un cliente público y ninguno se aplica."
+    "en": "df266a3a67c1b2b5",
+    "text": "CÓMO SE AUTENTICA ESTE SERVICIO EN EL EXTREMO DE TOKENS DEL SOCIO: client_secret_basic (el predeterminado, que la sección 2.3.1 de RFC 6749 dice que un servidor DEBE admitir) o client_secret_post, para un socio que lee el secreto solo del cuerpo. Sin fedClientSecret este servicio es un cliente público y ninguno se aplica. tls_client_auth (RFC 8705 sección 2.1) se autentica con el certificado de cliente TLS de la relación (fedClientCertificate) y no envía ni aserción ni secreto; es solo para fedFapi 1-advanced, y una relación que lo nombra sin ese perfil no está lista."
   },
   "fed.schema.attributes.fedScope.what": {
     "en": "7f9479e6e589a23f",
@@ -320,8 +320,8 @@
     "text": "SOLO OPENID CONNECT. TRUE lee los puntos de conexión del socio y su jwks_uri de su documento de descubrimiento, {fedPeer}/.well-known/openid-configuration, al comienzo de cada inicio de sesión (OpenID Connect Discovery 1.0 sección 4), cuyo issuer debe ser exactamente fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl y fedJwksUri no se leen entonces. La dirección se deriva de fedPeer, que configuró un administrador, y nunca de una solicitud. FALSE, el valor predeterminado: los puntos de conexión se configuran a mano."
   },
   "fed.schema.attributes.fedFapi.what": {
-    "en": "7e9a016e6c9185c9",
-    "text": "SOLO OPENID CONNECT. El perfil de cliente FAPI que se usa cuando este servicio inicia la sesión de una persona en el socio (#931). Vacío, el valor predeterminado, es la parte de confianza de OpenID Connect actual. 1-advanced (FAPI 1.0 Advanced) impone el tipo de respuesta code id_token, PKCE S256, un objeto de solicitud PS256 por valor y private_key_jwt, y no usa DPoP ni TLS mutuo. 2-security (FAPI 2.0 Security Profile) impone el descubrimiento, una solicitud de autorización enviada (push), el tipo de respuesta code, PKCE S256, private_key_jwt y DPoP. 2-message-signing añade un objeto de solicitud PS256 dentro de esa solicitud enviada y una respuesta de autorización firmada (JARM). Un perfil impone private_key_jwt, diga lo que diga fedTokenAuth. Este servicio no actúa como cliente CIBA ni se autentica ante el socio con un certificado de cliente."
+    "en": "f2b7f8d0b97ba58f",
+    "text": "SOLO OPENID CONNECT. El perfil de cliente FAPI que se usa cuando este servicio inicia la sesión de una persona en el socio (#931). Vacío, el valor predeterminado, es la parte de confianza de OpenID Connect actual. 1-advanced (FAPI 1.0 Advanced) impone el tipo de respuesta code id_token, PKCE S256 y un objeto de solicitud PS256 por valor, presenta el certificado de cliente TLS de la relación (fedClientCertificate) a los extremos de tokens y UserInfo para que el socio pueda vincular a él sus tokens de acceso (RFC 8705), se autentica con private_key_jwt o, cuando fedTokenAuth es tls_client_auth, con ese certificado, y no usa DPoP. 2-security (FAPI 2.0 Security Profile) impone el descubrimiento, una solicitud de autorización enviada (push), el tipo de respuesta code, PKCE S256, private_key_jwt y DPoP. 2-message-signing añade un objeto de solicitud PS256 dentro de esa solicitud enviada y una respuesta de autorización firmada (JARM). Un perfil 2.x impone private_key_jwt, diga lo que diga fedTokenAuth. Este servicio no actúa como cliente CIBA, y solo 1-advanced presenta un certificado de cliente."
   },
   "fed.schema.attributes.fedInitiateLogin.what": {
     "en": "f4c27cf4c2c9aa2c",
@@ -470,6 +470,10 @@
   "fed.schema.attributes.fedEncryptionKey.what": {
     "en": "b4d2ac940c13b9f8",
     "text": "LA TABLA DE CLAVES: una fila JSON por cada clave con la que esta relación descifra — su kid, su tipo de clave, `current` o `previous`, su certificado y su cadena bajo el Intermediate de este dominio, y la clave privada, SELLADA con la clave de cifrado de claves dondequiera que las claves persistan. Una fila `previous` se conserva hasta su retiresAt y luego la quita la tarea programada federation.encryption-key-retire. Solo la escriben la creación, la rotación y esa tarea; se OCULTA en toda búsqueda LDAP en producto y en toda página y respuesta de /admin-api, que publican la mitad pública. El tipo de clave es una columna para que una clave poscuántica híbrida pueda ser una fila junto a la clásica una vez que se registre una."
+  },
+  "fed.schema.attributes.fedClientCertificate.what": {
+    "en": "c8d1bb6c418a58bb",
+    "text": "OPENID CONNECT, SOLO fedFapi 1-advanced (#931). EL CERTIFICADO DE CLIENTE TLS que este servicio presenta cuando se conecta a los extremos de tokens y UserInfo del socio: una fila JSON con un certificado clientAuth de la CA emisora TLS Client de este dominio (sujeto CN=federation <id> client, un subjectAltName urn:sts:federation:), su cadena, su x5t#S256, su validez y la clave privada, SELLADA bajo la clave de cifrado de claves allí donde las claves persisten. Autentica al cliente cuando fedTokenAuth es tls_client_auth (RFC 8705 sección 2.1) y es aquello a lo que el socio vincula sus tokens de acceso (cnf.x5t#S256, sección 3). Se emite cuando fedFapi pasa a 1-advanced, en el primer inicio de sesión que no tiene uno, o mediante la tarea programada federation.client-certificate-renew, que además lo renueva federation.clientCertificateRenewDays antes de que caduque, con el mismo sujeto. Solo lo escriben ellos; se RETIENE de toda búsqueda LDAP en producción y de toda página y respuesta de /admin-api, que publican la mitad pública para registrarla en el socio."
   },
   "fed.schema.attributes.fedAllowUnsolicited.what": {
     "en": "5b2a044dd3f46597",

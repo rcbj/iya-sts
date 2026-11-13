@@ -5239,6 +5239,14 @@
     "en": "f8e11f4044147d5e",
     "text": "Kapag nire-rotate ang encryption key ng isang relationship, gaano katagal NAGDE-DECRYPT pa ang key na pinapalitan nito — para hindi matanggihan ang partner na hindi pa nakakakuha ng bagong metadata o JWKS, o ang response na nasa browser na. Lampas dito, walang dine-decrypt ang lumang key, at inaalis ito sa entry ng scheduler job na federation.encryption-key-retire. Tinatapos ng 0 ang lumang key sa rotation. Ang kapapalit lang na key ang itinatago: ang pangalawang rotation sa loob ng window ay nagtatanggal sa mas luma."
   },
+  "federation.clientCertificateRenewDays|label": {
+    "en": "918bb1aa7c690001",
+    "text": "I-renew ang FAPI client certificate ganitong dami ng araw bago ito mag-expire"
+  },
+  "federation.clientCertificateRenewDays|description": {
+    "en": "c9ce3366a9d4ba59",
+    "text": "Ang isang FAPI 1.0 Advanced na federation relationship ay nagpapakita sa partner ng TLS client certificate mula sa TLS Client Issuing CA ng realm na ito (RFC 8705), at itinatali ng partner dito ang mga access token nito. Naglalabas ang naka-iskedyul na trabahong federation.client-certificate-renew ng bago, na may parehong subject, ganitong dami ng araw bago mag-expire ang kasalukuyan. Walang kailangan ang partner na nagrehistro ng subject DN (tls_client_auth); ang partner na nag-pin ng mismong certificate ay dapat bigyan ng bago, na ipinapakita ng page ng relasyon."
+  },
   "saml.clockSkewS|label": {
     "en": "34ba47c6439a7089",
     "text": "Clock skew ng assertion (s)"

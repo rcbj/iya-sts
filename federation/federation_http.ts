@@ -300,6 +300,10 @@ interface FetchOptions {
   bearer?: string;
   basic?: { user: unknown; pass: unknown };
   headers?: Record<string, any>;
+  // A FAPI 1.0 Advanced relationship's TLS client certificate (#931):
+  // `cert` (the leaf and its chain) and `key`, PEM, presented on an https
+  // request and ignored on a plain one.
+  clientCertificate?: { cert: string; key: string };
 }
 
 interface FederationHttpDeps {
@@ -2090,6 +2094,15 @@ class FederationHttp {
         };
         if (secure) {
           this.applyTls(requestOptions, policy);
+          // RFC 8705 (#931): the relationship's client certificate, which
+          // the partner may authenticate the client with and binds its
+          // access tokens to. Never on plain http, where there is no
+          // handshake to present it in.
+          if (opts.clientCertificate && opts.clientCertificate.cert &&
+              opts.clientCertificate.key) {
+            requestOptions.cert = String(opts.clientCertificate.cert);
+            requestOptions.key = String(opts.clientCertificate.key);
+          }
         }
         request = transport.request(requestOptions, function (response) {
           const status = response.statusCode || 0;

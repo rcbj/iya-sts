@@ -385,6 +385,7 @@ declare namespace IyaDomain {
     contentEncryptionAlgorithm?: string;
     allowUnencrypted?: string;
     encryptionKey?: string[];
+    clientCertificate?: string;
     allowUnsolicited?: string;
     application?: string;
     authnMechanism?: string;
