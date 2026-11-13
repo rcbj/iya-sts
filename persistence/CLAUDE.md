@@ -2884,6 +2884,21 @@ It is used when:
   of ours, or fails the write as before;
 * or the compare-and-set missed twice.
 
+**UNDER A CLAIM FENCE THE SAME RULE HOLDS, ON THE FENCED CONNECTION
+(2026-11-12).** A flush that publishes an access-token status index (#884)
+runs `MINTED_FLUSH` inside the transaction that share-locks the block
+claim's fence (`flushMintedOn()`), and until this date a compare-and-set
+miss there THREW: the transaction rolled back and the request whose rows
+were in it was answered 503 (STS-STORE-0021, STS-STORE-0066). It needs no
+second node: `admin_stats.tokenHolders` is a merging store each request
+worker writes blindly at its first token for a holder, so the fuzz stage's
+four concurrent `client_credentials` grants on one node met it. A miss is
+now sent again with the bodies it answered, and after two misses the rows
+are locked and read (`flushMintedLocked()`, the transaction's own half) —
+all on the connection that holds the fence, never a second one. Only a
+fence that did not hold still throws. `tests/minted_flush_one_statement.js`
+section G.
+
 **Measured on postgres 18** (scratch schemas beside 8081's, since dropped):
 * the same 2,200 random flushes through the old driver and the new gave
   identical tables (`sts_minted`, `sts_minted_index`, `sts_sessions`,

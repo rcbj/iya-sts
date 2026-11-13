@@ -5084,30 +5084,42 @@ function create(options) {
     log.debug("Entering flushMintedInTransaction().");
     log.debug("Leaving flushMintedInTransaction().");
     return withTransaction(function (client) {
-      // Only a merging row needs its body before the write; every other
-      // row is locked by MINTED_FLUSH itself, in the same order.
-      const locked = !plan.merging.length ? Promise.resolve(null)
-        : client.query(
-          'SELECT handle, realm, key, body FROM sts_minted WHERE ' +
-          '(handle, realm, key) IN (SELECT h, r, k FROM ' +
-          'unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k)) ' +
-          'ORDER BY handle, realm, key FOR UPDATE',
-          [plan.touched.map(function (row) { return String(row.handle); }),
-           plan.touched.map(function (row) { return String(row.realm); }),
-           plan.touched.map(function (row) { return String(row.key); })]);
-      return locked.then(function (r) {
-        const stored = new Map();
-        ((r && r.rows) || []).forEach(function (found) {
-          stored.set(mintedIdOf(found), found.body);
-        });
-        const resolved = resolveMerges(plan, stored);
-        return client.query(mintedFlushQuery(
-          mintedFlushWrites(plan, resolved, processId)))
-          .then(function (answer) {
-            return settleMintedFlush(client, plan, resolved,
-                                     mintedFlushAnswer(answer));
-          });
+      return flushMintedLocked(client, plan);
+    });
+  }
+
+  // The read-then-write half of the transaction above, on a connection
+  // that is already inside one: the merging rows locked and read in order,
+  // merged with what was read, and MINTED_FLUSH sent with no
+  // compare-and-set, since nothing can change a row this transaction holds.
+  // `flushMintedOn()` ends here too, on the connection that holds the claim
+  // fences (2026-11-12).
+  function flushMintedLocked(client, plan) {
+    log.debug("Entering flushMintedLocked().");
+    // Only a merging row needs its body before the write; every other
+    // row is locked by MINTED_FLUSH itself, in the same order.
+    const locked = !plan.merging.length ? Promise.resolve(null)
+      : client.query(
+        'SELECT handle, realm, key, body FROM sts_minted WHERE ' +
+        '(handle, realm, key) IN (SELECT h, r, k FROM ' +
+        'unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k)) ' +
+        'ORDER BY handle, realm, key FOR UPDATE',
+        [plan.touched.map(function (row) { return String(row.handle); }),
+         plan.touched.map(function (row) { return String(row.realm); }),
+         plan.touched.map(function (row) { return String(row.key); })]);
+    log.debug("Leaving flushMintedLocked().");
+    return locked.then(function (r) {
+      const stored = new Map();
+      ((r && r.rows) || []).forEach(function (found) {
+        stored.set(mintedIdOf(found), found.body);
       });
+      const resolved = resolveMerges(plan, stored);
+      return client.query(mintedFlushQuery(
+        mintedFlushWrites(plan, resolved, processId)))
+        .then(function (answer) {
+          return settleMintedFlush(client, plan, resolved,
+                                   mintedFlushAnswer(answer));
+        });
     });
   }
 
@@ -5246,9 +5258,10 @@ function create(options) {
   }
 
   // MINTED_FLUSH on a connection that already holds the claim-fence share
-  // locks. A fence that did not hold, or a compare-and-set that missed,
-  // throws: the outer transaction rolls back. Writing the batch again on
-  // another connection would publish a status row without those locks.
+  // locks. A fence that did not hold throws: the outer transaction rolls
+  // back. A compare-and-set that missed is tried again on THIS connection
+  // (below); writing the batch again on another connection would publish a
+  // status row without those locks.
   async function flushMintedOn(client, plan) {
     log.debug("Entering flushMintedOn().");
     if (mintedStatements) {
@@ -5262,37 +5275,62 @@ function create(options) {
       return settleMintedFlush(client, plan, out.resolved,
                                { unwritten: out.unwritten });
     }
-    const expected = new Map();
+    // A COMPARE-AND-SET THAT MISSES IS NOT A FAILURE HERE EITHER
+    // (2026-11-12). Until then a miss threw, the transaction rolled back,
+    // and the request whose rows were in the batch was answered 503
+    // (STS-STORE-0021, STS-STORE-0066) — on a single node, with nothing
+    // wrong: a merging row (`admin_stats.tokenHolders`, written blindly by
+    // every process at its first token for a holder) written by a sibling
+    // request worker since this process last read it. The fuzz stage hit
+    // it on four concurrent client_credentials grants. A miss is answered
+    // with the stored bodies, so the statement is sent again with them, as
+    // `flushMinted()` does; its first try locked the rows that exist, so
+    // the second matches unless a row was inserted meanwhile, and after
+    // MINTED_CAS_ATTEMPTS the rows are locked and read on this connection
+    // and written with no compare-and-set — still under these fences.
+    let expected = new Map();
     plan.merging.forEach(function (row) {
       const id = mintedIdOf(row);
       if (mintedBodies.has(id)) {
         expected.set(id, mintedBodies.get(id));
       }
     });
-    const resolved = resolveMerges(plan, expected);
-    const named = Object.assign(mintedFlushWrites(plan, resolved, processId),
-                                flushFence());
-    named.cas_h = plan.merging.map(function (row) {
-      return String(row.handle);
-    });
-    named.cas_r = plan.merging.map(function (row) {
-      return String(row.realm);
-    });
-    named.cas_k = plan.merging.map(function (row) {
-      return String(row.key);
-    });
-    named.cas_body = plan.merging.map(function (row) {
-      const body = expected.get(mintedIdOf(row));
-      return body === undefined ? null : body;
-    });
-    const answer = mintedFlushAnswer(await client.query(
-      mintedFlushQuery(named)));
-    if (!answer.known || !answer.fenceOk || !answer.go) {
-      log.debug("Leaving flushMintedOn(). The flush did not commit.");
-      throw new Error('a minted flush under a claim fence did not commit');
+    for (let attempt = 0; attempt < MINTED_CAS_ATTEMPTS; attempt++) {
+      const resolved = resolveMerges(plan, expected);
+      const named = Object.assign(mintedFlushWrites(plan, resolved,
+                                                    processId),
+                                  flushFence());
+      const wanted = expected;
+      named.cas_h = plan.merging.map(function (row) {
+        return String(row.handle);
+      });
+      named.cas_r = plan.merging.map(function (row) {
+        return String(row.realm);
+      });
+      named.cas_k = plan.merging.map(function (row) {
+        return String(row.key);
+      });
+      named.cas_body = plan.merging.map(function (row) {
+        const body = wanted.get(mintedIdOf(row));
+        return body === undefined ? null : body;
+      });
+      const answer = mintedFlushAnswer(await client.query(
+        mintedFlushQuery(named)));
+      if (!answer.known || !answer.fenceOk) {
+        log.debug("Leaving flushMintedOn(). The fence did not hold.");
+        throw new Error('a minted flush under a claim fence did not ' +
+                        'commit: the fence did not hold');
+      }
+      if (answer.go) {
+        log.debug("Leaving flushMintedOn(). Attempt " + (attempt + 1) +
+                  ".");
+        return settleMintedFlush(client, plan, resolved, answer);
+      }
+      expected = answer.current || new Map();
     }
-    log.debug("Leaving flushMintedOn().");
-    return settleMintedFlush(client, plan, resolved, answer);
+    log.debug("Leaving flushMintedOn(). The stored rows kept moving; " +
+              "locked and read.");
+    return flushMintedLocked(client, plan);
   }
 
   function transactionOnce(fn) {
