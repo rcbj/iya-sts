@@ -6845,6 +6845,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'deletes the stored entry and puts the built-in defaults back. ' +
           'Either applies to the NEXT password set in the realm and to ' +
           'nothing already stored.' },
+  { path: '/admin-api/policies/transfer', group: 'Management API',
+    name: 'Policy transfer view',
+    specs: ['openapi', 'rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The read beside export, inspect and import (#1713): ' +
+          'pki.policyExportAlgorithm in force, whether ' +
+          'pki.paranoidPolicySigner is on, this realm\'s Policy Export ' +
+          'Signing Issuing CA (subject, validity, its chain up to but not ' +
+          'including the service Root, and the SHA-256 fingerprint and ' +
+          'x5t#S256 another realm names to trust its exports; null until ' +
+          'the first export builds it), and the signer truststore\'s ' +
+          'entries for policy-signer: the other realms it has trusted. ' +
+          'Certificates only, never a private key.' },
   { path: '/admin-api/policies/transfer/:action', group: 'Management API',
     name: 'Export and import policies',
     specs: ['openapi', 'rfc7515', 'rfc5280'],

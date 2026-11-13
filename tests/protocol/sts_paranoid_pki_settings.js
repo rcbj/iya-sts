@@ -123,8 +123,10 @@ async function viewOf(id) {
 async function theRowsAnswerTheirSwitch() {
   log.debug("Entering theRowsAnswerTheirSwitch().");
   const before = await viewOf(REALM);
-  check("twenty-three use cases, each with its setting", function () {
-    assert.strictEqual(before.rows.length, 23);
+  // Twenty-four since #1713 added `policy-signer` (pki.paranoidPolicySigner);
+  // tests/paranoid_settings.js holds the table to config.js both ways.
+  check("twenty-four use cases, each with its setting", function () {
+    assert.strictEqual(before.rows.length, 24);
     before.rows.forEach(function (row) {
       assert.ok(/^pki\.paranoid[A-Z]/.test(row.setting), row.setting);
       assert.strictEqual(row.on, true, row.setting + " defaults on");

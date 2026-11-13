@@ -1175,6 +1175,10 @@
     "en": "a5461fc6541725a3",
     "text": "更改策略"
   },
+  "endpoints.route./admin-api/policies/transfer.name": {
+    "en": "d0e1c015c9f2a694",
+    "text": "策略传输视图"
+  },
   "endpoints.route./admin-api/policies/transfer/:action.name": {
     "en": "bc0714219f3243c3",
     "text": "导出和导入策略"

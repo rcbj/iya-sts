@@ -208,5 +208,16 @@
   "transfer.verdictRefused": "該憑證鏈被 PKI 驗證拒絕，因此無法匯入任何內容。",
   "transfer.question": "是否在此領域信任此簽署者用於原則匯入？選擇「是」會將上面的三個憑證授權單位新增到此領域的簽署者信任庫中（僅用於原則匯入），並匯入該文件。發行 CA 的指紋為 {fingerprint}。",
   "transfer.trustAndImport": "是：信任此憑證鏈並匯入",
-  "transfer.importTrusted": "匯入"
+  "transfer.importTrusted": "匯入",
+  "transfer.view.signerHeading": "本領域的匯出簽署者",
+  "transfer.view.algorithm": "簽章演算法（pki.policyExportAlgorithm）",
+  "transfer.view.paranoid": "對匯出簽署者的完整嚴格驗證（pki.paranoidPolicySigner）",
+  "transfer.view.issuingCa": "原則匯出簽章發行 CA",
+  "transfer.view.noIssuingCa": "本領域尚無原則匯出簽章發行 CA。第一次匯出會建立它。",
+  "transfer.view.validity": "有效期間",
+  "transfer.view.fingerprintNote": "其他領域的管理員填入此指紋，即可信任本領域的匯出。",
+  "transfer.view.trustedHeading": "本領域信任的其他領域",
+  "transfer.view.noneTrusted": "本領域不信任任何其他領域的原則匯出。",
+  "transfer.view.kind": "類型",
+  "transfer.view.addedBy": "新增者"
 }

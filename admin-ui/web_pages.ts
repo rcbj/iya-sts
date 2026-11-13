@@ -809,6 +809,10 @@ const PAGES: WebPage[] = [
     fixed: { rows: 'shown' }, render: PkiPage.render },
   { path: '/admin/policies', title: 'Policies',
     operation: '/admin-api/policies',
+    // THE EXPORT AND IMPORT TAB'S READ (#1713): this realm's export signer
+    // and the signers it trusts, from `GET /admin-api/policies/transfer`,
+    // asked on every view of the page.
+    compose: { transfer: '/admin-api/policies/transfer' },
     render: function (view: Json, ctx?: Json): string {
       return PoliciesPage.body(ctx || WebKit.context(), view);
     } },

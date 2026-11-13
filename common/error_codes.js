@@ -25578,6 +25578,11 @@ const CODES = [
       'refused when it was consumed; nothing on the entry changed.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-ADMIN-0936',
+    summary: 'The policy transfer view (GET /admin-api/policies/transfer: ' +
+      'the export algorithm, the realm\'s Policy Export Signing CA and the ' +
+      'signers it trusts) could not be built, #1713.',
+    spec: '/admin-api HTTP 500 with {ok:false, errors}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

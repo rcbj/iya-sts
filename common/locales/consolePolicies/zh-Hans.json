@@ -208,5 +208,16 @@
   "transfer.verdictRefused": "该证书链被 PKI 验证拒绝，因此无法导入任何内容。",
   "transfer.question": "是否在此领域信任此签名者用于策略导入？选择“是”会将上面的三个证书颁发机构添加到此领域的签名者信任库中（仅用于策略导入），并导入该文档。颁发 CA 的指纹为 {fingerprint}。",
   "transfer.trustAndImport": "是：信任此证书链并导入",
-  "transfer.importTrusted": "导入"
+  "transfer.importTrusted": "导入",
+  "transfer.view.signerHeading": "本领域的导出签名者",
+  "transfer.view.algorithm": "签名算法（pki.policyExportAlgorithm）",
+  "transfer.view.paranoid": "对导出签名者的完整严格验证（pki.paranoidPolicySigner）",
+  "transfer.view.issuingCa": "策略导出签名颁发 CA",
+  "transfer.view.noIssuingCa": "本领域尚无策略导出签名颁发 CA。第一次导出会创建它。",
+  "transfer.view.validity": "有效期",
+  "transfer.view.fingerprintNote": "其他领域的管理员填写此指纹，即可信任本领域的导出。",
+  "transfer.view.trustedHeading": "本领域信任的其他领域",
+  "transfer.view.noneTrusted": "本领域不信任任何其他领域的策略导出。",
+  "transfer.view.kind": "类型",
+  "transfer.view.addedBy": "添加者"
 }

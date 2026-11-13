@@ -33,6 +33,11 @@
 //      exports and verifies, with that `alg` in the header.
 //   H. THE ACTION LAYER answers export, inspect and import, refuses an
 //      unknown action, and audits the export, the trust and the import.
+//   I. THE CONSOLE draws the tab and asks the question.
+//   J. THE VIEW (`GET /admin-api/policies/transfer`): the algorithm in force,
+//      the paranoid row, the realm's Policy Export Signing CA (the certificate
+//      an export carries in x5c, its fingerprint and x5t#S256), the signers a
+//      yes added, no private key, and an answer that meets its closed model.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -50,6 +55,7 @@ const passwordPolicy = require('../common/password_policy');
 const authnPolicy = require('../common/authn_policy');
 const transfer = require('../admin-core/policy_transfer');
 const adminActions = require('../admin-core/admin_actions');
+const adminViews = require('../admin-core/admin_views');
 
 const log = require('bunyan').createLogger({ name: 'policy_transfer',
   level: process.env.LOG_LEVEL || 'info' });
@@ -294,6 +300,9 @@ async function run(t) {
     t.equal(inRealm(B, function () {
       return signers.list().length;
     }), 0, 'D. and trusts nothing');
+    const bBefore = inRealm(B, function () {
+      return transfer.view();
+    });
     const colons = asked.inspection.issuerFingerprint.match(/../g).join(':')
       .toLowerCase();
     const yes = await inRealm(B, function () {
@@ -306,6 +315,9 @@ async function run(t) {
             'D. and adds the chain\'s three CAs to the signer truststore');
     const held = inRealm(B, function () {
       return signers.list();
+    });
+    const bAfterYes = inRealm(B, function () {
+      return adminViews.policyTransferJson();
     });
     t.check(held.length === 3 && held.every(function (row) {
       return row.purposes.length === 1 && row.purposes[0] === 'policy-signer';
@@ -475,6 +487,135 @@ async function run(t) {
     t.check(!/name="trustSigner"/.test(refusedDrawn) &&
             refusedDrawn.indexOf('refused by PKI validation') >= 0,
             'I. a refused chain is shown refused, with nothing to answer',
+            '');
+
+    // J. THE VIEW: `GET /admin-api/policies/transfer`, the read beside the
+    // three acts.
+    t.log.info('J. the transfer view');
+    const viewA = inRealm(A, function () {
+      return adminViews.policyTransferJson();
+    });
+    t.equal(viewA.realm, A, 'J. the view is about the realm it is read in');
+    t.equal(viewA.algorithm, 'RS256',
+            'J. it names the algorithm in force, RS256 by default');
+    t.check(viewA.algorithms.indexOf('ML-DSA-65') !== -1 &&
+            viewA.algorithms.indexOf('RS256') !== -1,
+            'J. and every algorithm the setting may take',
+            viewA.algorithms.join(','));
+    t.equal(viewA.paranoidPolicySigner, true,
+            'J. pki.paranoidPolicySigner is on by default');
+    const ca = viewA.issuingCa;
+    t.check(!!ca, 'J. realm A\'s Policy Export Signing CA is answered', '');
+    t.equal(fingerprintOf(ca.certificatePem), fingerprintOf(chain[1]),
+            'J. it is the certificate the export carries second in x5c');
+    t.equal(ca.fingerprint256, fingerprintOf(chain[1]),
+            'J. its fingerprint256 is that certificate\'s SHA-256, in the ' +
+            'signer truststore\'s spelling');
+    t.equal(ca.fingerprint256, asked.inspection.issuerFingerprint,
+            'J. and the fingerprint an inspection asks another realm about');
+    t.equal(ca['x5t#S256'], stsCrypto.certificateThumbprint(chain[1]),
+            'J. x5t#S256 is the base64url SHA-256 of the same DER');
+    t.check(ca.chainPem.length === 2 &&
+            fingerprintOf(ca.chainPem[0]) === fingerprintOf(chain[1]) &&
+            fingerprintOf(ca.chainPem[1]) === fingerprintOf(chain[2]),
+            'J. the chain is the Issuing CA and the Intermediate, as in x5c',
+            String(ca.chainPem.length));
+    t.check(ca.chainPem.every(function (pem) {
+      return fingerprintOf(pem) !== fingerprintOf(chain[3]);
+    }) && ca.root.fingerprint256 === fingerprintOf(chain[3]),
+            'J. the Root is named apart and is not in the chain', '');
+    t.check(/Policy Export Signing CA/.test(ca.subject) &&
+            Date.parse(ca.notAfter) > Date.now() &&
+            Date.parse(ca.notBefore) <= Date.now(),
+            'J. with its subject and validity', ca.subject + ' ' +
+            ca.notBefore + ' ' + ca.notAfter);
+    t.equal(viewA.trustedSigners.length, 0,
+            'J. realm A has trusted no other realm');
+    const noSecret = function (one) {
+      log.debug('Entering noSecret().');
+      const text = JSON.stringify(one);
+      log.debug('Leaving noSecret().');
+      return !/PRIVATE KEY|privateKey|"d":/.test(text);
+    };
+    t.check(noSecret(viewA), 'J. no private key anywhere in the view', '');
+    t.equal(bBefore.trustedSigners.length, 0,
+            'J. before its yes, realm B lists no trusted signer');
+    const viewB = bAfterYes;
+    const bPrints = viewB.trustedSigners.map(function (one) {
+      return one.fingerprint256;
+    });
+    t.check(viewB.trustedSigners.length === 3 &&
+            bPrints.indexOf(ca.fingerprint256) !== -1 &&
+            bPrints.indexOf(fingerprintOf(chain[2])) !== -1 &&
+            bPrints.indexOf(fingerprintOf(chain[3])) !== -1,
+            'J. after the yes, realm B lists A\'s Issuing CA, Intermediate ' +
+            'and Root as trusted signers', JSON.stringify(bPrints));
+    t.check(viewB.trustedSigners.every(function (one) {
+      return one.purposes.join(',') === 'policy-signer' &&
+             one.addedBy === 'bob' && one.source === 'runtime';
+    }), 'J. each for policy-signer, added by the one who said yes',
+            JSON.stringify(viewB.trustedSigners.map(function (one) {
+              return [one.purposes, one.addedBy, one.source];
+            })));
+    t.check(noSecret(viewB), 'J. and still no private key', '');
+    const dIssuer = inRealm(D, function () {
+      return adminViews.policyTransferJson().issuingCa;
+    });
+    const bLater = inRealm(B, function () {
+      return adminViews.policyTransferJson();
+    });
+    t.check(!!dIssuer && bLater.trustedSigners.some(function (one) {
+      return one.fingerprint256 === dIssuer.fingerprint256;
+    }) && bLater.trustedSigners.length > viewB.trustedSigners.length,
+            'J. the yes to D\'s export (H) added D\'s Issuing CA to B\'s list',
+            JSON.stringify(bLater.trustedSigners.map(function (one) {
+              return one.fingerprint256;
+            })));
+    realms.setOverride(C, 'pki.policyExportAlgorithm', 'ES384');
+    realms.setOverride(C, 'pki.paranoidPolicySigner', false);
+    const viewC = inRealm(C, function () {
+      return adminViews.policyTransferJson();
+    });
+    realms.clearOverride(C, 'pki.policyExportAlgorithm');
+    realms.clearOverride(C, 'pki.paranoidPolicySigner');
+    t.check(viewC.algorithm === 'ES384' &&
+            viewC.paranoidPolicySigner === false,
+            'J. a realm\'s own algorithm and paranoid row are its own',
+            viewC.algorithm + ' ' + viewC.paranoidPolicySigner);
+    // THE ANSWER MEETS ITS CLOSED MODEL: what `/admin-api` holds every
+    // answer to, so a member the model lacks is a 500 (STS-API-0139).
+    const document = require('../common/model_tables')
+      .file('openapi.management.json');
+    const op = document.paths['/admin-api/policies/transfer'] &&
+      document.paths['/admin-api/policies/transfer'].get;
+    t.check(!!op && op.operationId === 'getPolicyTransfer',
+            'J. the Management API OpenAPI document has the operation', '');
+    const Ajv = require('ajv');
+    const validate = new Ajv({ strict: false, allErrors: true }).compile({
+      allOf: [op.responses['200'].content['application/json'].schema],
+      components: document.components });
+    [['A', viewA], ['B', viewB], ['C', viewC]].forEach(function (pair) {
+      t.check(validate(JSON.parse(JSON.stringify(pair[1]))),
+              'J. realm ' + pair[0] + '\'s view meets its model',
+              JSON.stringify(validate.errors || []));
+    });
+    t.check(!validate(Object.assign({ stray: 1 }, viewA)) &&
+            !validate(Object.assign({}, viewA, { issuingCa: Object.assign(
+              { privateKeyPem: 'x' }, viewA.issuingCa) })),
+            'J. and the model is closed, the CA\'s members too', '');
+    const drawn = page.transferSection({ state: {}, transfer: viewB }, tr);
+    t.check(drawn.indexOf(viewB.trustedSigners[0].fingerprint256) >= 0 &&
+            drawn.indexOf('id="transfer-trusted"') >= 0 &&
+            drawn.indexOf('RS256') >= 0,
+            'J. the tab draws the algorithm and the trusted signers',
+            drawn.slice(0, 300));
+    const drawnA = page.transferSection({ state: {}, transfer: viewA }, tr);
+    t.check(drawnA.indexOf(ca.fingerprint256) >= 0 &&
+            drawnA.indexOf(ca['x5t#S256']) >= 0,
+            'J. and this realm\'s Issuing CA with its fingerprint', '');
+    t.check(page.transferSection({ state: {}, transfer: Object.assign({},
+      viewA, { issuingCa: null }) }, tr).indexOf('first export builds it') >=
+            0, 'J. a realm with no CA yet is told the first export builds it',
             '');
   } finally {
     [A, B, C, D].forEach(function (id) {

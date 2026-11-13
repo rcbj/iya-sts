@@ -2099,6 +2099,10 @@
     "en": "148c1a64de18a40e",
     "text": "save-<kind>-policy och reset-<kind>-policy för varje slag — save-password-policy, reset-password-policy, save-authn-policy och reset-authn-policy i dag — samma som konsolen postar till /admin/policies, via samma funktion. En sparning ERSÄTTER profilen och varje fält krävs, så ett utelämnat fält nekas med namn snarare än tyst återställs. En återställning raderar den lagrade posten och sätter tillbaka de inbyggda standardvärdena. Båda gäller för NÄSTA lösenord som sätts i sfären och inte för något som redan är lagrat."
   },
+  "stsmetadata.endpoints./admin-api/policies/transfer.what": {
+    "en": "accd8d6a469cce08",
+    "text": "EJ SPECIFIKATION. Läsningen bredvid export, inspect och import (#1713): pki.policyExportAlgorithm som gäller, om pki.paranoidPolicySigner är på, den här sfärens utfärdande CA för signering av policyexporter (subjekt, giltighet, dess kedja upp till men inte med tjänstens rot, och det SHA-256-fingeravtryck och x5t#S256 som en annan sfär anger för att lita på dess exporter; null tills den första exporten skapar den), och signerartrustlagrets poster för policy-signer: de andra sfärer den har litat på. Endast certifikat, aldrig en privat nyckel."
+  },
   "stsmetadata.endpoints./admin-api/policies/transfer/:action.what": {
     "en": "c9ad043e74f40a37",
     "text": "NON-SPEC. export, inspect och import (#1713): varje profil en sfär LAGRAR på Directory → Policies som ett JSON-dokument, en JWS i den tillplattade JSON-serialiseringen signerad av en ny nyckel under sfärens Policy Export Signing CA, hela kedjan i dess x5c. inspect verifierar signaturen och prövar kedjan i valideringsdörren (syfte policy-signer, de fullständiga paranoida kontrollerna medan pki.paranoidPolicySigner är på); import skriver varje profil genom dess typs egen sparning. Denna sfärs egen signerare är betrodd; en annan sfärs endast efter en administratörs ja som namnger dess Issuing CA, vilket lägger till den kedjan i det betrodda signerarlagret endast för policy-signer."
