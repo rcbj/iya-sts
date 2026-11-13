@@ -216,6 +216,19 @@ signature is 49856 bytes, and the leaf and the TLS Issuing CA each carry one.
 ML-DSA-87, alone or in a composite, fits, and so does SLH-DSA-128f. A realm
 branch is not the listener's chain and is not refused for this reason.
 
+**No certificate authority here can have a composite ML-DSA key.** The TLS
+library this service's listeners use cannot read one, so a chain holding a
+composite-keyed authority cannot be loaded. The Root and the process branch
+are on the main port's and LDAPS's chain. A realm branch's Intermediate is on
+the chain of the realm's SPIFFE listeners, its remote PEPs' listeners and its
+custom listeners. A build that names a composite key is refused and nothing
+is stored (`STS-PKI-0272` for the Root and the process branch, `STS-PKI-0274`
+for a realm). When only `pki.keyAlgorithm` names one, the build uses the
+classical default instead and logs `STS-PKI-0273` or `STS-PKI-0275`. Pure
+ML-DSA and SLH-DSA authorities, and a hybrid branch with an alternative
+ML-DSA key, are the post-quantum choices. Composite keys elsewhere, such as
+a realm's JOSE signing keys or the Certificate Workbench, are not affected.
+
 **CRLs and OCSP responses are signed classically only, on purpose.** No
 published profile defines an alternative signature on either, so no client
 could check one, and a second signature nothing verifies would add size and

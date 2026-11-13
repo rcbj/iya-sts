@@ -2006,16 +2006,35 @@ function processListenerAltSignatureProblem(altKeyAlg, keyAlg) {
 // (STS-TLS-0011, STS-LDAP-0030): the sockets went on serving the certificate
 // they had, now under a revoked Intermediate, while the pages and the
 // workers' pins named one no socket presented. Thirty-two times in eight
-// seconds of `POST /admin-api/pki/build-scope`. Pure ML-DSA and SLH-DSA load,
-// and a composite is still a realm's choice: its signing keys are verified
-// by relying parties, not loaded by this service's OpenSSL.
+// seconds of `POST /admin-api/pki/build-scope`. Pure ML-DSA and SLH-DSA load.
 //
 // A CALLER NAMING ONE IS REFUSED (STS-PKI-0272), before any key is made. The
-// SETTING naming one (`pki.keyAlgorithm`, which a composite is a legal value
-// of for a realm's branch) is not refused for these two builds, because the
+// SETTING naming one (`pki.keyAlgorithm`, whose list still carries the
+// composites) is not refused for these two builds, because the
 // startup build reads it and a refusal there would leave a deployment that
 // stored it without a Root: the classical default is used for them, said
 // (STS-PKI-0273).
+//
+// **AND A REALM'S BRANCH TOO (the same day, after #1684).** That change left
+// a realm's branch free to be composite on the claim that its keys are only
+// verified by relying parties. It is not so: every realm branch carries the
+// SPIFFE authority, whose server SVID the realm's SPIRE Server API and Broker
+// API present through grpc-js (`spiffe/spiffe_grpc.ts`,
+// `presentedChainPem()`), the Remote PEP listeners' authority (`pep-tls`)
+// and the custom listeners' (`realm-tls`, `tls/listeners.js`), and each of
+// those chains is [leaf, Issuing CA, the realm's Intermediate, Root]. The
+// INTERMEDIATE alone is enough: a leaf followed by a composite-keyed
+// Intermediate and nothing else throws the same `03000072 decode error`, and
+// so does a grpc-js `bindAsync()` with the SPIFFE chain. So no Issuing CA's
+// key can rescue a composite branch, and the branch is one key algorithm.
+// The X509-SVIDs handed to workloads are loaded into the WORKLOAD'S TLS stack
+// the same way. A realm branch takes the same rule under codes of its own
+// (STS-PKI-0274 refused, STS-PKI-0275 the setting's fallback), so a log line
+// says which kind of branch it was. A composite LEAF key (a JOSE signing key
+// certified under the `jose` authority, a Workbench object) is untouched:
+// nothing here loads one into OpenSSL. A branch already stored composite is
+// left as it is and still loads at start; the next rebuild or repair of it
+// reads the setting and so falls back.
 // ---------------------------------------------------------------------------
 /**
  * Whether a key algorithm is one this service's OpenSSL cannot read, which
@@ -2034,20 +2053,24 @@ function listenerUnreadableKeyAlg(keyAlg) {
 }
 
 /**
- * The build options for a CA on the listener chain (the Root, the process
- * branch): a composite the caller named is refused, and a composite that
- * only the `pki.keyAlgorithm` setting names is replaced by the classical
- * default.
+ * The build options for a CA on a listener chain (the Root, the process
+ * branch, a realm's branch): a composite the caller named is refused, and a
+ * composite that only the `pki.keyAlgorithm` setting names is replaced by
+ * the classical default.
  *
  * @param options - the build options
  * @param label - what is being built, for the sentence and the log
- * @returns `{ ok: true, options }` or a refusal marked STS-PKI-0272
+ * @param codes - `{ refused, fallback }`, the codes for this kind of build;
+ *   the Root's and the process branch's when omitted
+ * @returns `{ ok: true, options }` or a refusal marked `codes.refused`
  */
-function listenerChainOptions(options, label) {
+function listenerChainOptions(options, label, codes) {
   log.debug('Entering listenerChainOptions(). ' + label);
+  const refused = (codes && codes.refused) || 'STS-PKI-0272';
+  const fallback = (codes && codes.fallback) || 'STS-PKI-0273';
   if (options.keyAlg) {
     if (listenerUnreadableKeyAlg(options.keyAlg)) {
-      log.warn(errorCodes.tag('STS-PKI-0272') + 'pki: ' + label + ' was ' +
+      log.warn(errorCodes.tag(refused) + 'pki: ' + label + ' was ' +
                'asked for a ' + String(options.keyAlg) + ' key, which the ' +
                'TLS listeners cannot load. Nothing was built.');
       log.debug('Leaving listenerChainOptions(). Refused.');
@@ -2059,7 +2082,7 @@ function listenerChainOptions(options, label) {
                         'certificate they have. Choose ML-DSA, SLH-DSA or ' +
                         'a classical key, or a hybrid branch with an ' +
                         'alternative ML-DSA key. Nothing was built.'] },
-                             'STS-PKI-0272');
+                             refused);
     }
     log.debug('Leaving listenerChainOptions(). Named, readable.');
     return { ok: true, options: options };
@@ -2070,10 +2093,9 @@ function listenerChainOptions(options, label) {
     return { ok: true, options: options };
   }
   const classical = 'rsa-' + mode.defaultRsaBits();
-  log.warn(errorCodes.tag('STS-PKI-0273') + 'pki: pki.keyAlgorithm is ' +
+  log.warn(errorCodes.tag(fallback) + 'pki: pki.keyAlgorithm is ' +
            configured + ', which the TLS listeners cannot load, so ' + label +
-           ' is built with ' + classical + '. Realm branches still take ' +
-           'the setting.');
+           ' is built with ' + classical + '.');
   log.debug('Leaving listenerChainOptions(). The classical default.');
   return { ok: true,
            options: Object.assign({}, options, { keyAlg: classical }) };
@@ -2083,18 +2105,21 @@ async function buildScopeNow(scopeId, opts) {
   log.debug('Entering buildScope(). scope=' + scopeId);
   const id = String(scopeId);
   const kind = scopeKindOf(id);
-  let options = opts || {};
-  // The process branch is on the listeners' chain: a composite key named for
-  // it is refused, and one only the setting names is not used for it — see
-  // listenerChainOptions().
-  if (kind === 'process') {
-    const readable = listenerChainOptions(options, 'the process branch');
-    if (!readable.ok) {
-      log.debug('Leaving buildScope(). A key the listeners cannot load.');
-      return readable;
-    }
-    options = readable.options;
+  // Every branch is on a listener's chain — the process branch the main
+  // port's and LDAPS's, a realm's its SPIFFE, Remote PEP and custom
+  // listeners' — so a composite key named for one is refused, and one only
+  // the setting names is not used for it: see listenerChainOptions().
+  const readable = kind === 'process'
+    ? listenerChainOptions(opts || {}, 'the process branch')
+    : listenerChainOptions(opts || {},
+                           'the "' + (id || 'default') + '" realm\'s branch',
+                           { refused: 'STS-PKI-0274',
+                             fallback: 'STS-PKI-0275' });
+  if (!readable.ok) {
+    log.debug('Leaving buildScope(). A key the listeners cannot load.');
+    return readable;
   }
+  const options = readable.options;
   // The algorithms are decided BEFORE the Root is made, so that a build
   // refused for its algorithm (a SHA-1 one in product, #181, or an
   // impossible pair) creates nothing on its way to the refusal.

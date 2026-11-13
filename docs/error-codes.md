@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5438** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5440** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 22
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 260
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 262
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -1077,7 +1077,9 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0270` | A process-scope certificate authority was asked for a signing key or an alternative key whose signatures would make the TLS listener certificate list larger than a stock TLS client accepts (OpenSSL SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). Nothing was stored, and the listener certificate was left as it is (#1421, #1432). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0271` | A certificate was asked to be validated for a realm that does not exist, one removed a moment ago included; refused rather than judged by the policy of whichever realm was ambient (#1147). | the caller's own refusal |
 | `STS-PKI-0272` | The service Root or the process branch was asked for a composite ML-DSA signing key. Both are on the TLS listeners' chain, and OpenSSL cannot read a composite key, so every listener would have refused the new certificate (STS-TLS-0011) and kept serving the old one. Refused before any key is made; nothing is stored. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0273` | pki.keyAlgorithm names a composite ML-DSA key, which the TLS listeners cannot load, so the service Root or the process branch being built without a named algorithm used the classical default instead. Realm branches still take the setting. | none: a log line; the build goes on |
+| `STS-PKI-0273` | pki.keyAlgorithm names a composite ML-DSA key, which the TLS listeners cannot load, so the service Root or the process branch being built without a named algorithm used the classical default instead. A realm branch falls back too, as STS-PKI-0275. | none: a log line; the build goes on |
+| `STS-PKI-0274` | A realm's certificate authority branch was asked for a composite ML-DSA signing key. Its Intermediate is on the chain of the realm's SPIFFE gRPC listeners, Remote PEP listeners and custom listeners, and OpenSSL cannot read a composite key, so each of them would have refused the chain. Refused before any key is made; nothing is stored. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0275` | pki.keyAlgorithm names a composite ML-DSA key, which the realm's TLS listeners cannot load, so a realm branch being built without a named algorithm used the classical default instead. | none: a log line; the build goes on |
 
 ## STS-ENROLL
 
