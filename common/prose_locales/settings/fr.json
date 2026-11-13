@@ -5524,16 +5524,16 @@
     "text": "Format de NameIdentifier par défaut"
   },
   "saml11.nameIdFormat|description": {
-    "en": "2075551ddbb8336f",
-    "text": "Le Format du <saml:NameIdentifier> lorsque la requête n’en demande aucun — ce qui, en SAML 1.1, est TOUJOURS le cas, car le profil n’a pas de message de requête pouvant porter un NameIDPolicy. C’est la différence avec saml2.nameIdFormat, qui est une valeur par défaut qu’une requête surcharge couramment : celle-ci est la réponse, sauf si le paramètre hors spécification `format` la surcharge."
+    "en": "1f1bb898326ff544",
+    "text": "Le Format du <saml:NameIdentifier> lorsque la requête n’en demande aucun — ce qui, en SAML 1.1, est TOUJOURS le cas, car le profil n’a pas de message de requête pouvant porter un NameIDPolicy. C’est la différence avec saml2.nameIdFormat, qui est une valeur par défaut qu’une requête surcharge couramment : celle-ci est la réponse, sauf si l’entrée de la partie de confiance définit saml11NameIdFormat."
   },
   "saml11.defaultProfile|label": {
     "en": "18dccb1d7410af14",
     "text": "Profil navigateur par défaut"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "Le profil qu’utilise le service de transfert intersite lorsque la requête ne le précise pas : Browser/POST (section 4.2), où l’assertion transite par le navigateur dans un POST de formulaire, ou Browser/Artifact (section 4.1), où une référence transite par le navigateur et la partie de confiance récupère l’assertion via SOAP. POST est la valeur par défaut car il n’exige aucun serveur derrière le consommateur d’assertions de la partie de confiance : c’est donc celui qui fonctionne lorsque quelqu’un pointe ce service vers une URL et observe. Le paramètre hors spécification `profile` le surcharge, de même que la liaison qu’une partie de confiance a enregistrée pour le `shire` qu’elle envoie (samlAcsEndpoint, issu des métadonnées consommées)."
+    "en": "8ce998424bcc2563",
+    "text": "Le profil qu’utilise le service de transfert intersite lorsque la partie de confiance n’a enregistré aucune liaison pour le `shire` qu’elle envoie : Browser/POST (section 4.2), où l’assertion transite par le navigateur dans un POST de formulaire, ou Browser/Artifact (section 4.1), où une référence transite par le navigateur et la partie de confiance récupère l’assertion via SOAP. POST est la valeur par défaut car il n’exige aucun serveur derrière le consommateur d’assertions de la partie de confiance : c’est donc celui qui fonctionne lorsque quelqu’un pointe ce service vers une URL et observe. La liaison qu’une partie de confiance a enregistrée pour le `shire` qu’elle envoie (samlAcsEndpoint, issu des métadonnées consommées) le surcharge ; rien dans la requête ne le surcharge."
   },
   "saml11.doNotCacheCondition|label": {
     "en": "e1fd907d123fa918",

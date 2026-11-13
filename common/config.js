@@ -11276,8 +11276,8 @@ const SETTINGS = [
                  'profile has no request message to carry a NameIDPolicy in. ' +
                  'That is the difference from saml2.nameIdFormat, which is a ' +
                  'default a request routinely overrides: this one is the ' +
-                 'answer unless the non-spec `format` parameter overrides ' +
-                 'it.' },
+                 'answer, unless the relying party\'s entry sets ' +
+                 'saml11NameIdFormat.' },
 
   { key: 'saml11.defaultProfile', group: 'SAML 1.1', label: 'Default browser ' +
       'profile',
@@ -11285,17 +11285,18 @@ const SETTINGS = [
     enumValues: ['post', 'artifact'],
     dflt: 'post', runtime: true,
     description: 'Which profile the inter-site transfer service uses when ' +
-                 'the request does not say: Browser/POST (section 4.2), ' +
+                 'the relying party registered no binding for the `shire` ' +
+                 'it sends: Browser/POST (section 4.2), ' +
                  'where the assertion travels through the browser in a form ' +
                  'POST, or Browser/Artifact (section 4.1), where a reference ' +
                  'travels through the browser and the relying party fetches ' +
                  'the assertion over SOAP. POST is the default because it ' +
                  'needs no server behind the relying party\'s assertion ' +
                  'consumer, so it is the one that works when somebody points ' +
-                 'this at a URL and watches. The non-spec `profile` ' +
-                 'parameter overrides it, and so does the binding a ' +
-                 'relying party registered for the `shire` it sends ' +
-                 '(samlAcsEndpoint, from consumed metadata).' },
+                 'this at a URL and watches. The binding a relying party ' +
+                 'registered for the `shire` it sends (samlAcsEndpoint, ' +
+                 'from consumed metadata) overrides it; nothing in the ' +
+                 'request does.' },
 
   { key: 'saml11.doNotCacheCondition', group: 'SAML 1.1 assertions',
     label: 'Mark a Browser/POST assertion DoNotCache',

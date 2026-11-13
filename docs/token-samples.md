@@ -1291,8 +1291,8 @@ as SAML 2.0's, so they are shortened to one line here.
 
 *From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
 
-The non-standard `profile=artifact` parameter on
-`/saml11/sso` selects Browser/Artifact. The browser comes back to the
+A `shire` registered on the `artifact-01` binding selects
+Browser/Artifact. The browser comes back to the
 `shire` with `SAMLart` and `TARGET`:
 
 ```text

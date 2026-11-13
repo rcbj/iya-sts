@@ -1873,8 +1873,9 @@ and `saml_model.ts` reads that file.
   document is sent unchanged. Every Response, ArtifactResponse,
   LogoutRequest, LogoutResponse and metadata document is held.
 * **SAML 1.1's browser profiles have no request message (rule 4b)**, so
-  what a relying party sends is a parameter set, `saml11.browser` (`@params`):
-  the non-spec `profile` parameter's values are its `accepts`.
+  what a relying party sends is a parameter set, `saml11.browser` (`@params`).
+  The binding registered for the `shire` picks the profile; there is no
+  `profile` or `format` parameter.
 
 **Byte for byte**: `tests/saml_model_wire.js` recorded both identity
 providers before the switch — every metadata document, sign-in on each

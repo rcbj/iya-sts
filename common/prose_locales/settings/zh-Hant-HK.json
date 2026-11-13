@@ -1504,8 +1504,8 @@
     "text": "僅限產品模式：當領域沒有 saml2.metadataTrustAnchors 時，管理員的 Import from MDQ（SAML 2.0 頁面、POST /admin-api/saml2/mdq-import）是否可以註冊服務提供者。關閉（預設值）：會被拒絕（STS-SAML-0084）。警告：開啟時，回應程式所回應的文件會在「沒有任何簽章檢查」的情況下被採用——其簽署證書會成為驗證該服務提供者要求的依據，其端點會成為斷言的送達位置——因此任何能代替回應程式主機回應的人（其營運者，或位於通往它之路徑上的任何人）都能選擇這些內容。只有管理員對 entityID 與回應程式的選擇能代替簽章。請優先設定信任錨。由「要求」觸發的查詢永遠不受此設定涵蓋：無論此處如何設定，它都需要信任錨。開發模式無論此處如何設定，都會在沒有信任錨的情況下匯入。在偏執 PKI 模式下，由此放行的匯入會將文件的第一個簽署憑證設為該應用程式的信任錨，之後的擷取必須據此驗證。"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "要求未指明時，站際傳輸服務使用哪個設定檔：Browser/POST（section 4.2），斷言透過瀏覽器以表單 POST 傳遞；或 Browser/Artifact（section 4.1），參照透過瀏覽器傳遞，依賴方再透過 SOAP 擷取斷言。預設為 POST，因為它不需要依賴方的斷言取用端後面有伺服器，所以在有人把它指向某個 URL 並觀察時能夠運作。非規格的 `profile` 參數會覆寫它，依賴方為其傳送之 `shire` 所註冊的繫結（samlAcsEndpoint，來自已採用的元數據）也會覆寫它。"
+    "en": "8ce998424bcc2563",
+    "text": "依賴方未為其傳送之 `shire` 註冊繫結時，站際傳輸服務使用哪個設定檔：Browser/POST（section 4.2），斷言透過瀏覽器以表單 POST 傳遞；或 Browser/Artifact（section 4.1），參照透過瀏覽器傳遞，依賴方再透過 SOAP 擷取斷言。預設為 POST，因為它不需要依賴方的斷言取用端後面有伺服器，所以在有人把它指向某個 URL 並觀察時能夠運作。依賴方為其傳送之 `shire` 所註冊的繫結（samlAcsEndpoint，來自已採用的元數據）會覆寫它；要求中的任何內容都不會覆寫它。"
   },
   "saml11.autocreateApplications|description": {
     "en": "2e68718a26d4706c",

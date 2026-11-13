@@ -33,7 +33,6 @@
   "refusal.STS-KEYS-0070": "Gumagamit ang EncryptedID ng LogoutRequest ng key transport na hindi binubuksan ng serbisyong ito (rsa-1_5). Walang tinapos: naka-sign in ka pa rin.",
   "refusal.STS-REG-0049": "Nakita na dati ang address na paghahatiran ng sagot ngunit hindi pa ito nakukumpirma para sa application na ito, kaya hindi ito ginagamit.",
   "refusal.STS-SAML-0025": "Nag-expire na ang pag-sign in na ito: itinabi ito habang nasa sign-in screen ka, at masyadong matagal itong itinabi.",
-  "refusal.STS-SAML-0026": "Tinutukoy ng link na ito ang isang profile na iba sa dalawang browser profile ng SAML 1.1, post at artifact.",
   "refusal.STS-SAML-0028": "Ang address na paghahatiran ng sagot (ang shire) ay hindi nakarehistro para sa relying party na ito, o walang nakarehistro.",
   "refusal.STS-SAML-0029": "Ang address na paghahatiran ng sagot ay hindi isang absolute na http o https URL.",
   "refusal.STS-SAML-0030": "Hindi sinasabi ng link na ito kung para saang relying party ito: wala itong providerId, at walang TARGET na mapagkukunan nito.",

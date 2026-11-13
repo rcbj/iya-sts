@@ -5524,16 +5524,16 @@
     "text": "Standardformat för NameIdentifier"
   },
   "saml11.nameIdFormat|description": {
-    "en": "2075551ddbb8336f",
-    "text": "Format på <saml:NameIdentifier> när begäran inte begär något — vilket i SAML 1.1 är ALLTID, eftersom profilen inte har något begärandemeddelande att bära en NameIDPolicy i. Det är skillnaden mot saml2.nameIdFormat, som är ett standardvärde som en begäran rutinmässigt åsidosätter: detta är svaret om inte den icke-specificerade parametern `format` åsidosätter det."
+    "en": "1f1bb898326ff544",
+    "text": "Format på <saml:NameIdentifier> när begäran inte begär något — vilket i SAML 1.1 är ALLTID, eftersom profilen inte har något begärandemeddelande att bära en NameIDPolicy i. Det är skillnaden mot saml2.nameIdFormat, som är ett standardvärde som en begäran rutinmässigt åsidosätter: detta är svaret, om inte den förlitande partens post anger saml11NameIdFormat."
   },
   "saml11.defaultProfile|label": {
     "en": "18dccb1d7410af14",
     "text": "Standardprofil för webbläsare"
   },
   "saml11.defaultProfile|description": {
-    "en": "b75b217e5204aad5",
-    "text": "Vilken profil inter-site transfer service använder när begäran inte anger någon: Browser/POST (avsnitt 4.2), där intyget färdas genom webbläsaren i en formulär-POST, eller Browser/Artifact (avsnitt 4.1), där en referens färdas genom webbläsaren och den förlitande parten hämtar intyget över SOAP. POST är standard eftersom den inte kräver någon server bakom den förlitande partens assertion consumer, så den är den som fungerar när någon riktar detta mot en URL och tittar. Den icke-specificerade parametern `profile` åsidosätter det, och det gör även den bindning som en förlitande part har registrerat för den `shire` den skickar (samlAcsEndpoint, från inläst metadata)."
+    "en": "8ce998424bcc2563",
+    "text": "Vilken profil inter-site transfer service använder när den förlitande parten inte har registrerat någon bindning för den `shire` den skickar: Browser/POST (avsnitt 4.2), där intyget färdas genom webbläsaren i en formulär-POST, eller Browser/Artifact (avsnitt 4.1), där en referens färdas genom webbläsaren och den förlitande parten hämtar intyget över SOAP. POST är standard eftersom den inte kräver någon server bakom den förlitande partens assertion consumer, så den är den som fungerar när någon riktar detta mot en URL och tittar. Den bindning som en förlitande part har registrerat för den `shire` den skickar (samlAcsEndpoint, från inläst metadata) åsidosätter det; ingenting i begäran gör det."
   },
   "saml11.doNotCacheCondition|label": {
     "en": "e1fd907d123fa918",

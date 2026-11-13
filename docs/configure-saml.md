@@ -602,7 +602,7 @@ assertions**):
 
 | Setting | Default | What it does |
 |---|---|---|
-| `saml11.defaultProfile` | `post` | The profile used when the request names none: `post` or `artifact`. |
+| `saml11.defaultProfile` | `post` | The profile used when no binding is registered for the `shire`: `post` or `artifact`. |
 | `saml11.signAssertion` / `saml11.signResponse` | `true` | Signs the assertion / the Response. Turning either off is refused in product mode. |
 | `saml11.nameIdFormat` | `…:1.1:nameid-format:unspecified` | The NameIdentifier format. |
 | `saml11.artifactTtlS` | `300` | How long an artifact stays valid. |
@@ -620,7 +620,7 @@ api config/reset '{"key":"saml11.defaultProfile"}'
 
 ```
 GET /saml11/sso?providerId=urn:test:saml11:rp1&shire=https://rp.example.com/saml11/acs
-               &TARGET=https://rp.example.com/done?x=1[&profile=post]
+               &TARGET=https://rp.example.com/done?x=1
 ```
 
 This request carries a `shire`, so it is the relying party's own start and
@@ -628,14 +628,15 @@ needs no switch turned on. After signing in, the person's browser posts a
 signed `samlp:Response` to the `shire`. The Response has `Recipient` set to the `shire` and uses the
 `cm:bearer` confirmation. `TARGET` is returned unchanged.
 
-The profile is chosen by the `profile` parameter first. If there is none, the
-binding of the registered `shire` decides. Failing both,
-`saml11.defaultProfile` applies.
+The profile is chosen by the binding registered for the `shire`
+(`samlAcsEndpoint`, from the relying party's consumed metadata). If none is
+registered, `saml11.defaultProfile` applies. Nothing in the request chooses
+it.
 
 The Shibboleth SP 1.3 form is accepted as it is sent: `providerId`, `shire`,
 a lower-case `target` (returned as `TARGET`) and `time`, which is accepted
 and ignored, so a stale value does not refuse the request. The job
-`sts_saml11.js` sends that form with no `profile` to a relying party whose
+`sts_saml11.js` sends that form to a relying party whose
 metadata names a `browser-post` endpoint, and to one whose metadata names an
 `artifact-01` endpoint, and checks that each binding selects its profile.
 
@@ -645,8 +646,9 @@ relying party is refused.
 
 ## Browser/Artifact and the SOAP responder
 
-With `profile=artifact`, or a `shire` registered on the artifact binding, or
-`saml11.defaultProfile` set to `artifact`, the relying party receives
+With a `shire` registered on the artifact binding, or, for a `shire` with
+no registered binding, `saml11.defaultProfile` set to `artifact`, the relying
+party receives
 `<shire>?SAMLart=…&TARGET=…`. It resolves that at `/saml11/responder` with a
 signed request:
 

@@ -559,7 +559,7 @@ async function run(t) {
             /SAMLart=/.test(artifact.location) &&
             artifact.location.indexOf(rpArt) === 0,
             'a shire registered on artifact-01 is answered on the ARTIFACT ' +
-            'profile with no `profile` parameter (#189)',
+            'profile (#189)',
             artifact.statusCode + ' ' + artifact.location.slice(0, 120));
 
     const rpCert = kit.keyFor(kit.FAMILIES.filter(function (row) {
