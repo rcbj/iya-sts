@@ -801,7 +801,9 @@ function claimFenceLockName(scope, realm, key, reservation) {
 //     job never sets it: that would free blocks this process is handing out.
 //   * A stable origin (`n:…`) with no live origin claim is a process that
 //     has stopped renewing it, on this node or another. A `pid-…` origin
-//     took no such claim, so a missing one proves nothing.
+//     took no such claim, so a missing one proves nothing. "Live" here
+//     includes a claim that lapsed less than ORIGIN_LAPSE_GRACE_MS ago
+//     (below): the store answers that list, and this function reads it.
 //   * An `@node` whose membership has left or expired, and is not this
 //     process's node, is gone even while its origin claim still has a few
 //     seconds to live. A node id that is in neither list is not gone:
@@ -851,6 +853,29 @@ function selectAbandoned(rows, ctx) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// HOW LONG AN ORIGIN CLAIM MAY HAVE LAPSED AND STILL COUNT AS LIVE (#884's
+// review, 2026-11-13). The origin claim lives 30 s and is renewed every
+// 10 s (`persistence.js`). Since #770 a renewal on a busy liveness
+// connection times out rather than waits, so a process that is running
+// can see its claim lapse for a few seconds, and it re-asserts the claim
+// on its next write (LAPSED IS NOT TAKEN, `persistence/CLAUDE.md`). Read
+// as gone at once, the reap job took that process's block while it was
+// handing out indexes from it, and the next tokens failed (STS-OAUTH-1009).
+//
+// So a lapse counts only once it is older than this: three origin-claim
+// lifetimes, two minutes after the last renewal that landed. A process
+// whose renewals have all failed for that long has stopped (or its node's
+// database is unreachable to it, and then nothing it publishes commits).
+// What that costs is a crashed holder's blocks staying out for 90 s more,
+// which the restart's own release (`bareOwn`) does not wait for at all.
+// The holder's half is in `access_token_status.ts`: it waits for its
+// commit unless its own origin was confirmed within one lifetime, so a
+// publish it does not wait for is made at least this long before any
+// release could happen, and is still checked at its response's commit.
+// ---------------------------------------------------------------------------
+const ORIGIN_LAPSE_GRACE_MS = 90 * 1000;
+
 /**
  * Releases the live claims of one scope whose holder has gone. With no
  * shared table there is nothing to release: this process's memory dies
@@ -890,7 +915,7 @@ function releaseAbandoned(scope, opts) {
     return Promise.all([
       theStore.claimsOfScope(String(scope || '')),
       theStore.goneNodeIds(),
-      theStore.liveOriginKeys()
+      theStore.liveOriginKeys(ORIGIN_LAPSE_GRACE_MS)
     ]);
   }).then(function (answers) {
     const selected = selectAbandoned(answers[0] || [], {
@@ -987,6 +1012,7 @@ module.exports = {
   ensurePurgeJob: ensurePurgeJob,
   selectAbandoned: selectAbandoned,
   releaseAbandoned: releaseAbandoned,
+  ORIGIN_LAPSE_GRACE_MS: ORIGIN_LAPSE_GRACE_MS,
   claimFenceLockName: claimFenceLockName,
   reset: reset
 };

@@ -2093,6 +2093,23 @@ const CODES = [
       'database password was in a file or in the connection string rather ' +
       'than in a secret store.',
     spec: 'ASVS 5.0.0 13.3.1' },
+  { code: 'STS-STORE-0172',
+    summary: 'The store is owed an index added after release 1.0.0 ' +
+      '(sts_sessions_subject_band, #876, or sts_sessions_started, #882): ' +
+      'it is missing, or left invalid by an interrupted concurrent build, ' +
+      'and the role this service dials with does not own the table to ' +
+      'build it. The service starts and every question is answered, by a ' +
+      'slower plan. Run postgres/upgrade-1.0.0.sql (or ' +
+      'mariadb/upgrade-1.0.0.sql) as the table\'s owner; it builds the ' +
+      'index without blocking writers.',
+    spec: 'none — the store opens without it' },
+  { code: 'STS-STORE-0173',
+    summary: 'A background build of an index the store was owed (#876, ' +
+      '#882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER ' +
+      'on MariaDB — failed. The service goes on without the index, by a ' +
+      'slower plan; the next start tries again, or the owner runs the ' +
+      'upgrade script.',
+    spec: 'none — the store opens without it' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2246,6 +2263,14 @@ const CODES = [
       'waits behind it (#770). Logged once per wait; one that repeats for a ' +
       'node lifetime names a write that does not finish.',
     spec: '' },
+  { code: 'STS-CLUSTER-0166',
+    summary: 'A response\'s writes committed, and a check deferred onto ' +
+      'that commit refused it, so it was answered 503 with Retry-After ' +
+      'instead of its success (#884\'s review). The one check today is an ' +
+      'access-token status index published without its own commit wait, ' +
+      'whose row the flush dropped because the block claim\'s fence was ' +
+      'gone: the token in the discarded body is not delivered.',
+    spec: 'RFC 9110 section 15.6.4' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -11671,6 +11696,15 @@ const CODES = [
       'block claim\'s fence was lost before its status row committed ' +
       '(#884). The access token is not minted on that index.',
     spec: 'none (recorded only)' },
+  { code: 'STS-OAUTH-1010',
+    summary: 'An access-token status index handed out without waiting for ' +
+      'its own commit (#884\'s review: a block already proven durable, ' +
+      'this process\'s origin claim fresh) was found, at the response\'s ' +
+      'commit, not to have been written: its block claim\'s fence was ' +
+      'gone, or the write failed. The response carrying the token is ' +
+      'refused (STS-CLUSTER-0166), and the block is handed out from no ' +
+      'more.',
+    spec: 'none (recorded; the response is the 503 STS-CLUSTER-0166 names)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -18898,6 +18932,14 @@ const CODES = [
       'of a sign-in key. A published DID takes a key that is not ' +
       'enrolled for sign-in.',
     spec: 'HTTP 400 refusal at /authn-api/wallet' },
+  { code: 'STS-VC-0179',
+    summary: 'A key was refused as a person\'s self-issued sign-in ' +
+      'subject (did:jwk, did:key or JWK thumbprint) because a version of ' +
+      'a DID this realm publishes for that person names it (#775, the ' +
+      'reverse of STS-VC-0178). The public document and the sign-in key ' +
+      'would have been one key.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet, or at ' +
+      '/admin-api/users/enrol-self-issued-subject' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

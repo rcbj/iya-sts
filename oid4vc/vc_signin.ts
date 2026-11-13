@@ -1384,12 +1384,16 @@ class VcSignin {
                                     pinnedKeys: outcome.pinnedKeys || [],
                                     location: VcSignin.locationOf(tx),
                                     keyAlg: String(outcome.alg || '') });
+      // A published DID's key keeps its own code (STS-VC-0179, #775).
+      const refusedAs = enrolled.code === 'STS-VC-0179' ? 'STS-VC-0179'
+                                                        : 'STS-VC-0094';
       this.auditEnrolment(username, String(outcome.subject), tx,
-                          enrolled.ok ? '' : 'STS-VC-0094',
+                          enrolled.ok ? '' : refusedAs,
                           enrolled.ok ? '' : String(enrolled.error),
                           !!enrolled.again);
       if (!enrolled.ok) {
-        errorCodes.mark(res, 'STS-VC-0094');
+        errorCodes.mark(res, enrolled.code === 'STS-VC-0179'
+          ? 'STS-VC-0179' : 'STS-VC-0094');
         this.refuse(res, 400, String(enrolled.error),
           this.refusedView('That key was not enrolled', ctx));
         log.debug("Leaving VcSignin.finish(). Enrolment refused.");
