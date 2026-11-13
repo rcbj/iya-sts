@@ -96,7 +96,7 @@ const OWNERS = {
   '../federation/federation': ['federation.release-index'],
   '../ldap/ldap_server': ['ldap.username-index', 'ldap.group-index',
     'ldap.entryuuid-index', 'ldap.subtree-listings',
-    'ldap.windowed-entryuuids'],
+    'ldap.windowed-entryuuids', 'ldap.gate-usernames'],
   '../kerberos/krb5_principals': ['krb5.long-term-keys',
     'krb5.authenticator-replay'],
   '../spiffe/spiffe_ca': ['spiffe.x509-authorities'],
