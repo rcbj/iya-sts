@@ -67,6 +67,10 @@
     "en": "4aacf430b5a390f0",
     "text": "Les certificats avec lesquels une personne ou une application signe une requête WS-Trust (une signature WS-Security 1.1 sur le Body SOAP et le Timestamp) : digitalSignature seulement, le nom urn:sts:person: ou urn:sts:application: du détenteur, et une clé privée remise une seule fois sous forme de PKCS#12. Émis par un administrateur depuis la console ou /admin-api. Un certificat de cette autorité authentifie son détenteur comme demandeur d’une RST signée, dans ce domaine ; un certificat client TLS de ce service ne le fait pas, et celui-ci ne connecte personne en TLS."
   },
+  "pki.useCases.policy-signing.what": {
+    "en": "9dd7e80fa0d8f1eb",
+    "text": "Les certificats sous lesquels un export de politiques depuis Directory → Policies est signé (#1713) : une clé neuve par export, digitalSignature uniquement, son certificat et toute cette chaîne dans le x5c de l’export. Un domaine qui importe l’export lui fait confiance aussitôt quand il s’agit de sa propre autorité, et demande à un administrateur avant de faire confiance à celle d’un autre domaine, en ajoutant la chaîne de ce domaine à son magasin de confiance des signataires pour cet usage et aucun autre."
+  },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",
     "text": "Un client OAuth ou une partie de confiance enregistré. Sa paire de clés est écrite sur sa propre entrée dans ou=applications."

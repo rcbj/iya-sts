@@ -4147,6 +4147,22 @@
     "en": "03950106a2822b70",
     "text": "Användningsfall `fido-mds`: signeraren av en importerad FIDO MDS3-BLOB. Redan full; paranoid frågar dörren så att kontrollerna är samma kod. Administratörens reviderade förbikoppling overrideSignature är oförändrad. Ankare: risk.mdsTrustAnchors, GlobalSign Root R3, förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
   },
+  "pki.paranoidPolicySigner|label": {
+    "en": "38aa0042d4360db7",
+    "text": "Paranoid: signeraren av en policyexport"
+  },
+  "pki.paranoidPolicySigner|description": {
+    "en": "c64cd02e7a525d75",
+    "text": "Användningsfall `policy-signer`: certifikatet som en policyexport från Directory → Policies signeras med, och kedjan i dess x5c, när den granskas eller importeras (#1713). På gäller de fullständiga kontrollerna i VARJE läge, huvudinställningen pki.paranoid inräknad: giltighet, keyUsage, sökvägen och återkallelsen för varje länk. Ankare: tjänstens rot för denna sfärs egna exporter, det betrodda signerarlagret för en annan sfärs. Av avgör huvudinställningen, som för varje annan rad; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
+  },
+  "pki.policyExportAlgorithm|label": {
+    "en": "86a4a3a6f65c98bb",
+    "text": "Signeringsalgoritm för policyexporter"
+  },
+  "pki.policyExportAlgorithm|description": {
+    "en": "ef8edd8df33cb131",
+    "text": "JWS-algoritmen som en policyexport från Directory → Policies signeras med (#1713). Varje export signeras av en ny nyckel av denna algoritm, certifierad av denna sfärs Policy Export Signing CA, och dokumentet bär det certifikatet och hela dess kedja i x5c. RS256 som standard: algoritmen för sfärens egen JOSE-signeringsnyckel. En RSA-nyckel är 3072 bitar. En ändring gäller nästa export; en redan gjord export behåller den algoritm den signerades med."
+  },
   "pki.signerTrustAnchorsFile|label": {
     "en": "9d4fabbc6c6918f1",
     "text": "Förtroendelager för signerare: en PEM-fil med ankare och mellancertifikat"

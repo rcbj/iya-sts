@@ -9824,6 +9824,47 @@ class AdminApi {
         },
         actions: this.policyKindActions() }),
 
+      // -----------------------------------------------------------------------
+      // POLICY EXPORT AND IMPORT (#1713). Two path segments, so no request
+      // `/policies/:action` answers can reach it, in either order. The answer
+      // is the module's, and a refusal is a 400 with its code, as above. An
+      // import of another realm's export answers 400 with `needsTrust` until
+      // it is posted again with `trustSigner` and the Issuing CA's
+      // fingerprint it was shown: the console's question, as JSON.
+      // -----------------------------------------------------------------------
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/policies/transfer/:action', tag: 'Policies',
+        mirrors: 'POST /admin/policies',
+        handler: function (req, res) {
+          log.debug("Entering the management API policy transfer endpoint.");
+          const body = parseBody(req);
+          const pending = adminActions.policyTransferAction(
+            self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) })
+            .then(function (result) {
+              log.debug("Entering the policy transfer endpoint's answer.");
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0060');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the policy transfer endpoint's answer.");
+            }, function (e) {
+              log.debug("Caught in the management API policy transfer " +
+                        "endpoint: " + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-API-0060');
+              self.sendJson(res, 500, { ok: false, errors: [
+                'The policy transfer failed.'] });
+            });
+          log.debug("Leaving the management API policy transfer endpoint.");
+          return pending;
+        },
+        actions: [
+          { action: 'export', operationId: 'exportPolicies' },
+          { action: 'inspect', operationId: 'inspectPolicyExport' },
+          { action: 'import', operationId: 'importPolicies' }
+        ] }),
+
       { method: 'GET', path: BASE + '/consent', tag: 'Delegation',
         operationId: 'getConsent',
         mirrors: 'GET /admin/consent',

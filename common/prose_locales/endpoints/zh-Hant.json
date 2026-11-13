@@ -1175,6 +1175,10 @@
     "en": "a5461fc6541725a3",
     "text": "變更原則"
   },
+  "endpoints.route./admin-api/policies/transfer/:action.name": {
+    "en": "bc0714219f3243c3",
+    "text": "匯出與匯入原則"
+  },
   "endpoints.route./admin-api/consent/:action.name": {
     "en": "a7acd63ff9b05a72",
     "text": "授予與撤銷同意"

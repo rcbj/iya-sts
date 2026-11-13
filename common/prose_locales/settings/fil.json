@@ -4147,6 +4147,22 @@
     "en": "03950106a2822b70",
     "text": "Use case `fido-mds`: ang signer ng na-import na FIDO MDS3 BLOB. Buo na; nagtatanong ang paranoid sa door para iisang code ang mga pagsusuri. Hindi nagbabago ang na-audit na overrideSignature bypass ng administrator. Mga anchor: risk.mdsTrustAnchors, ang GlobalSign Root R3, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
   },
+  "pki.paranoidPolicySigner|label": {
+    "en": "38aa0042d4360db7",
+    "text": "Paranoid: ang lumalagda ng isang export ng mga patakaran"
+  },
+  "pki.paranoidPolicySigner|description": {
+    "en": "c64cd02e7a525d75",
+    "text": "Gamit na `policy-signer`: ang sertipikong ginamit sa paglagda ng isang export ng mga patakaran mula sa Directory → Policies, at ang kadena sa x5c nito, kapag ito ay sinusuri o ini-import (#1713). Kapag naka-on, ang buong mga pagsusuri ay umiiral sa BAWAT mode, kasama ang pangunahing pki.paranoid: bisa, keyUsage, ang landas at ang pagbawi ng bawat kawing. Mga angkla: ang Root ng serbisyo para sa sariling mga export ng realm na ito, ang truststore ng mga lumalagda para sa sa ibang realm. Kapag naka-off, ang pangunahing setting ang nagpapasya, gaya ng sa bawat ibang hanay; kapag naka-off sa product mode, itinatala ito nang isang beses (STS-PKI-0239) at ipinapakita nang pula sa /admin/pki/trust."
+  },
+  "pki.policyExportAlgorithm|label": {
+    "en": "86a4a3a6f65c98bb",
+    "text": "Algoritmo sa paglagda ng mga export ng patakaran"
+  },
+  "pki.policyExportAlgorithm|description": {
+    "en": "ef8edd8df33cb131",
+    "text": "Ang JWS algorithm na ginagamit sa paglagda ng isang export ng mga patakaran mula sa Directory → Policies (#1713). Bawat export ay nilalagdaan ng bagong susi ng algoritmong ito, na sinertipikahan ng Policy Export Signing CA ng realm na ito, at dala ng dokumento ang sertipikong iyon at ang buong kadena nito sa x5c. RS256 bilang default: ang algoritmo ng sariling JOSE signing key ng realm. Ang isang RSA key ay 3072 bits. Ang pagbabago ay umiiral sa susunod na export; ang export na nagawa na ay nananatili sa algoritmong ginamit sa paglagda nito."
+  },
   "pki.signerTrustAnchorsFile|label": {
     "en": "9d4fabbc6c6918f1",
     "text": "Signer truststore: isang PEM file ng mga anchor at intermediate"

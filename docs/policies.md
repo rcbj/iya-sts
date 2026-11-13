@@ -320,10 +320,68 @@ inherited from the default realm, with that realm's DN, or that nothing is
 stored and the built-in defaults are in force. The list is paged.
 `GET /admin-api/policies` is the same list.
 
+## Export and import
+
+The **Export and import** tab moves a realm's policies as one signed JSON
+document: to another realm of this service, to another installation, or back
+into the same realm as a restore.
+
+**What an export holds.** Every kind on this page, and of each only what the
+realm *stores*: its own `default` profile and its named policies. A profile
+the realm inherits from the default realm, or the built-in defaults, is not
+the realm's and is left out. Each profile is carried as the body its kind's
+Save takes, so an import goes through the same checks a Save from this page
+does.
+
+**How it is signed.** The document is a JWS in the flattened JSON
+serialization (RFC 7515 section 7.2.2): three members, `protected`, `payload`
+and `signature`. Any JOSE library can verify it. Every export is signed with
+a fresh key that this realm's **Policy Export Signing CA** certifies. That
+Issuing CA is a use case of its own on [the PKI page](pki.md). The protected
+header carries `typ` `policy-export+json` and the whole chain in `x5c`: the
+signing certificate, the Policy Export Signing CA, the realm's Intermediate
+and the service Root. The service keeps no copy of the private key.
+`pki.policyExportAlgorithm` chooses the algorithm: RS256 by default (the
+algorithm of the realm's own JOSE signing key), or PS256, ES256, ES384,
+ES512, EdDSA, ML-DSA-44, ML-DSA-65 or ML-DSA-87.
+
+**What an import trusts.** **Check the signer** verifies the signature with
+the key in `x5c` and holds the chain to full PKI validation, whatever the
+mode: validity, key usage, the path and revocation of every certificate. This
+is the `policy-signer` row of [paranoid PKI mode](pki-use-cases.md), on by
+default, and while it is on the checks run in development mode too. Then:
+
+| The signer | What happens |
+|---|---|
+| this realm's own Policy Export Signing CA, under this service's Root | trusted; **Import it** writes the document |
+| another realm whose chain this realm's signer truststore holds for policy imports | trusted the same way |
+| any other realm, of this service or another | the page shows the chain and asks whether to trust it |
+
+**The question.** **Yes: trust this chain and import** adds the chain's three
+certificate authorities to this realm's signer truststore, for policy imports
+and no other use, and imports the document. The next export from that realm
+is trusted without asking. The answer names the Issuing CA it was shown. Every
+realm of one service shares the Root, so trusting the Root alone would trust
+every realm's exports. The yes is therefore pinned to that one Issuing CA,
+and another realm of the same service is still asked about. To withdraw the
+trust, remove those entries on PKI → Trust.
+
+**What is written.** Each profile goes through its kind's own Save. A profile
+of the same name is replaced, and a profile the document does not carry is
+left alone. A profile its kind refuses is named with the reason, and the
+others are still written.
+
+Through the API: `POST /admin-api/policies/transfer/export`, `inspect` and
+`import`. Another realm's import answers 400 with `needsTrust` until it is
+posted again with `trustSigner: true` and `issuerFingerprint`, the Issuing
+CA's SHA-256 fingerprint from the inspection. Export, the yes and the import
+each write an audit row: `admin.policies.export`,
+`admin.policies.trust-signer` and `admin.policies.import`.
+
 ## In the running service
 
 * **Console:** Directory → Policies, `/admin/policies`. A tab per kind, then
-  **All profiles**.
+  **Export and import** and **All profiles**.
 * **API:** `GET /admin-api/policies`. `POST /admin-api/policies/save-<id>-policy`
   and `reset-<id>-policy`, with `<id>` from the table above.
   `save-named-authn-policy` and `delete-named-authn-policy` for a named

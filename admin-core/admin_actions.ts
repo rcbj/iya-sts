@@ -230,6 +230,9 @@ import passwordPolicy = require('../common/password_policy');
 // THE KINDS OF POLICY ON /admin/policies (#64). A library over the policy
 // modules, which are leaves; `policiesAction()` hands each action to its kind.
 import policyKinds = require('./policy_kinds');
+// POLICY EXPORT AND IMPORT (#1713). A library over the kinds above, the
+// realm's Policy Export Signing CA and the validation door; no route.
+import policyTransfer = require('./policy_transfer');
 // THE ERROR CODES (common/error_codes.js, a leaf). An action has no response to
 // mark, so a refusal's code goes on the RESULT, under the same non-enumerable
 // Symbol `mark()` writes on a response. JSON.stringify never sees a Symbol key,
@@ -1099,6 +1102,7 @@ interface AdminActionsDeps {
   roles: typeof roles;
   passwordPolicy: typeof passwordPolicy;
   policyKinds: typeof policyKinds;
+  policyTransfer: typeof policyTransfer;
   errorCodes: typeof errorCodes;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
@@ -1192,6 +1196,7 @@ class AdminActions {
       roles: roles,
       passwordPolicy: passwordPolicy,
       policyKinds: policyKinds,
+      policyTransfer: policyTransfer,
       errorCodes: errorCodes,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
@@ -9386,6 +9391,95 @@ class AdminActions {
       ? (answered as Promise<any>).then(finish) : finish(answered);
   }
 
+  /**
+   * Exports, inspects or imports a realm's policies (#1713): `export` signs
+   * the stored profiles of every kind on Directory → Policies, `inspect`
+   * verifies a document and says who signed it without writing anything,
+   * and `import` writes it — another realm's signer only once `trustSigner`
+   * names the Issuing CA `inspect` showed. Each act is audited.
+   *
+   * @param body - `{ action, document, trustSigner, issuerFingerprint }`
+   * @param context - who is acting (`actor`) and the door (`via`)
+   * @returns a promise of the module's answer, or a refusal
+   */
+  async policyTransferAction(body: IyaApi.AdminActionBody<
+    '/admin-api/policies/transfer'>, context?) {
+    const { log, auditLog, policyTransfer } = this.deps;
+    log.debug("Entering AdminActions.policyTransferAction(). action=" +
+              (body.action || '(none)'));
+    const action = String(body.action || '');
+    const ctx = context || {};
+    const actor = String(ctx.actor || '');
+    const ACTIONS = ['export', 'inspect', 'import'];
+    if (ACTIONS.indexOf(action) === -1) {
+      log.debug("Leaving AdminActions.policyTransferAction(). Unknown.");
+      return this.refused('STS-ADMIN-0934',
+                          { ok: false, errors: ['Unknown action "' + action +
+                            '". The three are: ' + ACTIONS.join(', ') +
+                            '.'] });
+    }
+    if (action === 'export') {
+      const exported = await policyTransfer.exportPolicies({ actor: actor });
+      if (!exported.ok) {
+        log.debug("Leaving AdminActions.policyTransferAction(). Export " +
+                  "refused.");
+        return this.refused(this.innerCode(exported) || 'STS-ADMIN-0925',
+                            exported);
+      }
+      auditLog.audit({
+        action: 'admin.policies.export', actor: actor, target: '',
+        channel: 'http',
+        summary: 'exported this realm\'s policies, signed by ' +
+                 exported.signer.subject,
+        detail: { via: ctx.via || '', counts: exported.counts,
+                  signer: exported.signer }
+      });
+      log.debug("Leaving AdminActions.policyTransferAction(). Exported.");
+      return exported;
+    }
+    if (action === 'inspect') {
+      const seen = await policyTransfer.inspect(body.document);
+      log.debug("Leaving AdminActions.policyTransferAction(). Inspected.");
+      return seen.ok ? policyTransfer.publicView(seen)
+        : this.refused(this.innerCode(seen) || 'STS-ADMIN-0926',
+                       policyTransfer.publicView(seen));
+    }
+    const done = await policyTransfer.importPolicies(body.document, {
+      trustSigner: String(body.trustSigner) === 'true',
+      issuerFingerprint: body.issuerFingerprint, actor: actor });
+    if ((done.trustAdded || []).length) {
+      auditLog.audit({
+        action: 'admin.policies.trust-signer', actor: actor, target: '',
+        channel: 'http',
+        summary: 'trusted another realm\'s policy export signer: ' +
+                 done.trustAdded.map(function (one) {
+                   return one.subject;
+                 }).join(', '),
+        detail: { via: ctx.via || '', purpose: 'policy-signer',
+                  added: done.trustAdded.map(function (one) {
+                    return { subject: one.subject, kind: one.kind,
+                             fingerprint256: one.fingerprint256 };
+                  }) }
+      });
+    }
+    if (done.imported) {
+      auditLog.audit({
+        action: 'admin.policies.import', actor: actor, target: '',
+        channel: 'http',
+        summary: 'imported policies exported by "' + done.realm + '" (' +
+                 done.origin + ')',
+        outcome: done.ok ? 'success' : 'failure',
+        detail: { via: ctx.via || '', origin: done.origin,
+                  signer: done.signer && done.signer.subject,
+                  imported: done.imported, refused: done.refused }
+      });
+    }
+    log.debug("Leaving AdminActions.policyTransferAction(). Import " +
+              (done.ok ? "done." : "refused."));
+    return done.ok ? done : this.refused(this.innerCode(done) ||
+                                         'STS-ADMIN-0932', done);
+  }
+
   // ---------------------------------------------------------------------------
   // GET /admin/claims, POST /admin/claims
   // GET /admin/saml-attributes, POST /admin/saml-attributes
@@ -12464,6 +12558,7 @@ export = {
   roleMemberKindOf: slot.forward('roleMemberKindOf'),
   rolesAction: slot.forward('rolesAction'),
   policiesAction: slot.forward('policiesAction'),
+  policyTransferAction: slot.forward('policyTransferAction'),
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
   claimsAction: slot.forward('claimsAction'),
   sweepText: slot.forward('sweepText'),

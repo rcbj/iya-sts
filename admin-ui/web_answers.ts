@@ -702,6 +702,26 @@ class WebAnswers {
                banner: kit.refusalBanner(errors.length ? errors
                  : ['Refused.'], 'Nobody was created.') };
     }
+    // A POLICY EXPORT CHECKED, OR AN IMPORT THAT ASKS FIRST (#1713): the
+    // Export and import tab drawn again with who signed the document, its
+    // chain and the verdict — and for another realm's signer the question,
+    // whose yes posts the same document again. A refusal stays in the
+    // banner, in English as every refusal is (#539). An import that went in
+    // is not drawn here: the page's profiles changed, so it is read again.
+    if (page === '/admin/policies' &&
+        (action === 'inspect' || (action === 'import' && !ok))) {
+      const out = WebAnswers.copy(json);
+      const inspection = answer && answer.chain ? answer
+        : (answer && answer.inspection) || null;
+      out.state = Object.assign({}, out.state || {}, {
+        transfer: { document: WebAnswers.one(fields, 'document'),
+                    inspection: inspection } });
+      const asks = !!(answer && answer.needsTrust);
+      return { json: out,
+               banner: ok || asks ? ''
+                 : kit.refusalBanner(errors.length ? errors : ['Refused.'],
+                                     'Nothing was imported.') };
+    }
     if (page === '/admin/users/edit' && !ok) {
       const out = WebAnswers.copy(json);
       out.state = { draft: fields, error: errors };

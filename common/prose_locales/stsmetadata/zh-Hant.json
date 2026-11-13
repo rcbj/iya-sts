@@ -304,8 +304,8 @@
     "text": "full——就其發出的內容而言：封裝簽章、互斥正規化，預設為 RSA-SHA256，可依 saml.signatureAlgorithm 使用 RSA-SHA384/512 或已遭破解的 RSA-SHA1（2026-09-12；自 #181 起僅限開發模式）；AES-GCM 或 AES-CBC 內容加密，搭配 RSA-OAEP（rsa-oaep-mgf1p，或 XML Encryption 1.1 使用 SHA-256 與 MGF1-SHA-256 的 rsa-oaep，#168），或僅限開發模式的 RSA-1_5 包裝金鑰——產品模式既不以 RSA-1_5 包裝也不解除包裝（XML Encryption 1.1 第 6.1.2 節）——而對 EC 接收者則使用搭配 ConcatKDF 與 AES 金鑰包裝的 ECDH-ES 金鑰協商（第 5.6.4 節；#168）。聯盟關係會以其所發布的演算法、且僅以這些演算法「解密」夥伴的 EncryptedAssertion、EncryptedID 與 EncryptedAttribute，並在每種模式下拒絕 AES-CBC 與 rsa-1_5。XML Encryption 沒有註冊任何 ML-KEM 方法。「驗證」（自 2026-09-17 起）node 的 OpenSSL 所實作的 RFC 9231 與 XMLDSig 1.1 每種 SignatureMethod——RSA PKCS#1 v1.5 與 RSASSA-PSS（有或沒有 RSAPSSParams）、ECDSA、EdDSA Ed25519/Ed448、DSA——以及草案 draft-eastlake-rfc9231bis-xmlsec-uris 的 ML-DSA 與 SLH-DSA 識別碼；SHA-224、SHA-2、SHA-3 與 RIPEMD-160 摘要；SHA-1 只在 saml.allowSha1Signatures 下、於開發模式中可用。「不」驗證且會被指名拒絕的：MD5、各種 MAC、Whirlpool、ESIGN、預先雜湊的 EdDSA，以及有狀態的 HSS/LMS 與 XMSS。"
   },
   "stsmetadata.specs.rfc6749.coverage": {
-    "en": "56137411ddc592b3",
-    "text": "partial：authorization_code、implicit、password、client_credentials 與 refresh_token。用戶端驗證會被接受但不驗證——「除了」在 RFC 9700 模式下，在此註冊為機密用戶端者必須出示本服務簽發給它的 client_secret（第 2.5 節，本服務中任何地方唯一會檢查的認證資料）。該模式也會直接拒絕 password 授權類型；拒絕 implicit 授權的存取權杖——即每一種從授權端點簽發存取權杖的回應類型——除非管理員為該領域豁免 RFC 9700 第 2.1.2 節，且即便如此也只對已啟用該類型的應用程式生效（#1295、#1296）；並輪替重新整理權杖。第 3.3 節：範圍與用戶端綁定（#110）——本服務自己的受保護範圍（admin:*、SCIM 與 Shared Signals 範圍、偵錯工具權限）在每種模式下都只簽發給 oauthAllowedScope 宣告了它們的用戶端，而在產品模式下每個範圍都受限於該清單或一組有文件記載的預設集合；超出範圍的請求為 invalid_scope。"
+    "en": "77e091b183d9dd7b",
+    "text": "partial：authorization_code、implicit、password、client_credentials 和 refresh_token。用戶端驗證會被接受但不驗證——RFC 9700 模式除外，在該模式下，在此註冊為機密用戶端的用戶端必須出示本服務核發給它的 client_secret（第 2.5 節，這是本服務中唯一被檢查的憑據）。該模式也完全拒絕 password 授權，拒絕 implicit 授權的存取權杖——即從授權端點核發存取權杖的每種回應類型——除非管理員為該領域豁免 RFC 9700 第 2.1.2 節，此時也僅對啟用了該類型的應用程式予以支援（#1295、#1296），並輪替重新整理權杖。第 3.3 節：範圍與用戶端繫結（#110）——本服務自己的受保護範圍（admin:*、SCIM 和 Shared Signals 範圍）在每種模式下都只核發給其 oauthAllowedScope 宣告了它們的用戶端，在產品模式下每個範圍都受該清單或一個有文件記載的預設集合約束；超出範圍的請求為 invalid_scope。"
   },
   "stsmetadata.specs.rfc6750.coverage": {
     "en": "32af4b1d310ee331",
@@ -2098,6 +2098,10 @@
   "stsmetadata.endpoints./admin-api/policies/:action.what": {
     "en": "148c1a64de18a40e",
     "text": "每一種原則的 save-<kind>-policy 與 reset-<kind>-policy——目前為 save-password-policy、reset-password-policy、save-authn-policy 與 reset-authn-policy——與主控台 POST 至 /admin/policies 的相同，透過同一個函式。儲存會「取代」設定檔且每個欄位都是必要的，因此遺漏的欄位會依名稱被拒絕，而不是被悄悄重設。重設會刪除已儲存的項目並恢復內建預設值。兩者都套用於此領域中「下一次」設定的密碼，不影響任何已儲存的密碼。"
+  },
+  "stsmetadata.endpoints./admin-api/policies/transfer/:action.what": {
+    "en": "c9ad043e74f40a37",
+    "text": "NON-SPEC. export、inspect 和 import（#1713）：一個領域在 Directory → Policies 上儲存的每個設定檔，作為一個 JSON 文件，即扁平 JSON 序列化的 JWS，由領域的 Policy Export Signing CA 下的一把新金鑰簽署，整條鏈在其 x5c 中。inspect 驗證簽章並將鏈交給驗證門（用途 policy-signer，在 pki.paranoidPolicySigner 開啟時執行完整的偏執檢查）；import 透過各類型自己的儲存寫入每個設定檔。本領域自己的簽署者受信任；另一領域的僅在管理員指名其 Issuing CA 表示同意後才受信任，這會把該鏈加入簽署者信任庫，僅用於 policy-signer。"
   },
   "stsmetadata.endpoints./admin-api/consent.what": {
     "en": "4454328af36e5774",

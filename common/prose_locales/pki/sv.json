@@ -67,6 +67,10 @@
     "en": "4aacf430b5a390f0",
     "text": "Certifikaten som en person eller en applikation signerar en WS-Trust-begäran med (en WS-Security 1.1-signatur över SOAP-Body och Timestamp): bara digitalSignature, innehavarens urn:sts:person:- eller urn:sts:application:-namn, och en privat nyckel som lämnas ut en gång som PKCS#12. Utfärdas av en administratör från konsolen eller /admin-api. Ett certifikat från den här utfärdaren autentiserar sin innehavare som begärare av en signerad RST, i den här sfären; ett TLS-klientcertifikat från tjänsten gör det inte, och det här loggar inte in någon över TLS."
   },
+  "pki.useCases.policy-signing.what": {
+    "en": "9dd7e80fa0d8f1eb",
+    "text": "De certifikat som en policyexport från Directory → Policies signeras under (#1713): en ny nyckel per export, endast digitalSignature, dess certifikat och hela denna kedja i exportens x5c. En sfär som importerar exporten litar på den direkt när det är dess egen utfärdare, och frågar en administratör innan den litar på en annan sfärs, och lägger då till den sfärens kedja i sitt betrodda signerarlager för denna användning och ingen annan."
+  },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",
     "text": "En registrerad OAuth-klient eller förlitande part. Dess nyckelpar skrivs på dess egen post i ou=applications."

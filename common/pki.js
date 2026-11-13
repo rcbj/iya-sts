@@ -459,7 +459,27 @@ const USE_CASES = [
           'the console or /admin-api. A certificate from this authority ' +
           'authenticates its holder as the requester of a signed RST, in ' +
           'this realm; a TLS client certificate from this service does not, ' +
-          'and this one signs nobody in over TLS.' }
+          'and this one signs nobody in over TLS.' },
+  // **THE SIGNER OF A POLICY EXPORT (#1713, rcbj 2026-11-13).** "Create a
+  // new Issuing CA for each realm that is the policy export signing cert."
+  // `admin-core/policy_transfer.ts` certifies a fresh key under it for every
+  // export and signs the document with that key, carrying the whole chain
+  // in the JWS `x5c`. An authority of its own for `message-signing`'s
+  // reason: every authority here chains to the one Root, so "this key may
+  // speak for this realm's Directory → Policies" is sayable only as WHICH
+  // authority issued it — and an importing realm pins exactly this Issuing
+  // CA, never the Root it shares with every other realm of the service.
+  // REALM-scoped because the policies are a realm's. `pathLen` 0, so
+  // `topUpScopeNow()` adds it to a stored branch without a rebuild.
+  { id: 'policy-signing', scope: 'realm', label: 'Policy export signing',
+    cn: 'Policy Export Signing CA',
+    what: 'The certificates a policy export from Directory → Policies ' +
+          'is signed under (#1713): a fresh key per export, ' +
+          'digitalSignature only, its certificate and this whole chain in ' +
+          'the export\'s x5c. A realm importing the export trusts it at ' +
+          'once when this is its own authority, and asks an administrator ' +
+          'before it trusts another realm\'s, adding that realm\'s chain to ' +
+          'its signer truststore for this use and no other.' }
 ];
 
 /**

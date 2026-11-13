@@ -3455,6 +3455,303 @@ Scope: `admin:write`.
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |
 
+## POST /admin-api/policies/transfer/export
+
+`exportPolicies`
+
+**Export this realm's policies as a signed JSON document**
+
+Every kind on Directory → Policies, and of each only what this realm STORES: its own `default` profile and its named policies, each as the body its save takes (#1713). What the realm inherits is left out. The document is a JWS in the flattened JSON serialization, signed by a fresh key of `pki.policyExportAlgorithm` (RS256 by default) that this realm's Policy Export Signing CA certifies; the protected header carries `typ` policy-export+json and the whole chain, leaf to the service Root, in `x5c`. The private key is not kept. Refused when the realm has no certificate authority branch or the signer cannot be made (STS-ADMIN-0925).
+
+**Mirrors** `POST /admin/policies` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+An empty object.
+
+**200**: The signed document, a file name, the signer and how many profiles of each kind it carries.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `alg` | string |  | The JWS algorithm the export was signed with. |
+| `chain` | list |  | Each certificate of the signer's chain, leaf first, Root last: subject, issuer, validity and SHA-256 fingerprint. |
+| `chain[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `counts` | map |  | How many profiles of each kind the export carries. |
+| `counts.{key}` | integer |  |  |
+| `document` | any JSON |  | The signed export: a JWS in the flattened JSON serialization (RFC 7515 section 7.2.2), its protected header carrying `typ` policy-export+json and the signer's whole chain in `x5c`. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `exportedAt` | string |  | When it was exported. |
+| `exportedBy` | string |  | Who exported it. |
+| `filename` | string |  | A name to save the export under. |
+| `files` | list |  | The export as a file to save, `{ name, mime, base64 }`: the same document, which the console saves where it was asked from. |
+| `files[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `imported` | list |  | An import: the profiles written, by kind. |
+| `imported[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `inspection` | any JSON |  | With `needsTrust`: what the question is about, as `inspect` answers it. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `issuerFingerprint` | string |  | The SHA-256 fingerprint of the chain's Issuing CA, which an import of a foreign export names in `issuerFingerprint` to say yes. |
+| `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
+| `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `message` | string |  |  |
+| `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
+| `ok` | boolean | yes |  |
+| `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `realm` | string |  | The realm the export says it came from. |
+| `realmDomain` | string |  | That realm's DNS domain. |
+| `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
+| `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
+| `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trusted` | boolean |  | Whether the signer is trusted without a question. |
+| `verdict` | any JSON |  | The validation door's verdict on the chain, purpose policy-signer. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `alg` | string |  | The JWS algorithm the export was signed with. |
+| `chain` | list |  | Each certificate of the signer's chain, leaf first, Root last: subject, issuer, validity and SHA-256 fingerprint. |
+| `chain[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `counts` | map |  | How many profiles of each kind the export carries. |
+| `counts.{key}` | integer |  |  |
+| `document` | any JSON |  | The signed export: a JWS in the flattened JSON serialization (RFC 7515 section 7.2.2), its protected header carrying `typ` policy-export+json and the signer's whole chain in `x5c`. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `exportedAt` | string |  | When it was exported. |
+| `exportedBy` | string |  | Who exported it. |
+| `filename` | string |  | A name to save the export under. |
+| `files` | list |  | The export as a file to save, `{ name, mime, base64 }`: the same document, which the console saves where it was asked from. |
+| `files[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `imported` | list |  | An import: the profiles written, by kind. |
+| `imported[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `inspection` | any JSON |  | With `needsTrust`: what the question is about, as `inspect` answers it. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `issuerFingerprint` | string |  | The SHA-256 fingerprint of the chain's Issuing CA, which an import of a foreign export names in `issuerFingerprint` to say yes. |
+| `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
+| `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `message` | string |  |  |
+| `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
+| `ok` | boolean | yes |  |
+| `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `realm` | string |  | The realm the export says it came from. |
+| `realmDomain` | string |  | That realm's DNS domain. |
+| `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
+| `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
+| `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trusted` | boolean |  | Whether the signer is trusted without a question. |
+| `verdict` | any JSON |  | The validation door's verdict on the chain, purpose policy-signer. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+
+## POST /admin-api/policies/transfer/import
+
+`importPolicies`
+
+**Import a policy export into this realm**
+
+Inspects it first, as `inspect` does. A signer of this realm, or one this realm's signer truststore already holds, is trusted. Another realm's is refused with `needsTrust` (STS-ADMIN-0929) until the import is posted again with `trustSigner` true and `issuerFingerprint` naming the Issuing CA it was shown (another is STS-ADMIN-0930); that yes adds the chain's CA certificates to this realm's signer truststore for policy-signer alone (a refusal there is STS-ADMIN-0931). Each profile is then written through its kind's own save, so it is checked as a console save is; a profile its kind refuses is named with the kind's code and the others are written (STS-ADMIN-0932).
+
+**Mirrors** `POST /admin/policies` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `document` | any JSON | yes | The export, as the JSON object `export` answered in `document` or as that JSON in a string. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `issuerFingerprint` | string |  | With `trustSigner`: the SHA-256 fingerprint of the Issuing CA the inspection showed, in either spelling. |
+| `trustSigner` | boolean |  | An administrator's yes to trusting another realm's signer for policy imports in this realm. Ignored for this realm's own signer. |
+
+**200**: What was written, by kind, and what the yes added to the signer truststore.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `alg` | string |  | The JWS algorithm the export was signed with. |
+| `chain` | list |  | Each certificate of the signer's chain, leaf first, Root last: subject, issuer, validity and SHA-256 fingerprint. |
+| `chain[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `counts` | map |  | How many profiles of each kind the export carries. |
+| `counts.{key}` | integer |  |  |
+| `document` | any JSON |  | The signed export: a JWS in the flattened JSON serialization (RFC 7515 section 7.2.2), its protected header carrying `typ` policy-export+json and the signer's whole chain in `x5c`. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `exportedAt` | string |  | When it was exported. |
+| `exportedBy` | string |  | Who exported it. |
+| `filename` | string |  | A name to save the export under. |
+| `files` | list |  | The export as a file to save, `{ name, mime, base64 }`: the same document, which the console saves where it was asked from. |
+| `files[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `imported` | list |  | An import: the profiles written, by kind. |
+| `imported[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `inspection` | any JSON |  | With `needsTrust`: what the question is about, as `inspect` answers it. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `issuerFingerprint` | string |  | The SHA-256 fingerprint of the chain's Issuing CA, which an import of a foreign export names in `issuerFingerprint` to say yes. |
+| `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
+| `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `message` | string |  |  |
+| `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
+| `ok` | boolean | yes |  |
+| `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `realm` | string |  | The realm the export says it came from. |
+| `realmDomain` | string |  | That realm's DNS domain. |
+| `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
+| `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
+| `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trusted` | boolean |  | Whether the signer is trusted without a question. |
+| `verdict` | any JSON |  | The validation door's verdict on the chain, purpose policy-signer. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `alg` | string |  | The JWS algorithm the export was signed with. |
+| `chain` | list |  | Each certificate of the signer's chain, leaf first, Root last: subject, issuer, validity and SHA-256 fingerprint. |
+| `chain[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `counts` | map |  | How many profiles of each kind the export carries. |
+| `counts.{key}` | integer |  |  |
+| `document` | any JSON |  | The signed export: a JWS in the flattened JSON serialization (RFC 7515 section 7.2.2), its protected header carrying `typ` policy-export+json and the signer's whole chain in `x5c`. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `exportedAt` | string |  | When it was exported. |
+| `exportedBy` | string |  | Who exported it. |
+| `filename` | string |  | A name to save the export under. |
+| `files` | list |  | The export as a file to save, `{ name, mime, base64 }`: the same document, which the console saves where it was asked from. |
+| `files[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `imported` | list |  | An import: the profiles written, by kind. |
+| `imported[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `inspection` | any JSON |  | With `needsTrust`: what the question is about, as `inspect` answers it. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `issuerFingerprint` | string |  | The SHA-256 fingerprint of the chain's Issuing CA, which an import of a foreign export names in `issuerFingerprint` to say yes. |
+| `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
+| `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `message` | string |  |  |
+| `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
+| `ok` | boolean | yes |  |
+| `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `realm` | string |  | The realm the export says it came from. |
+| `realmDomain` | string |  | That realm's DNS domain. |
+| `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
+| `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
+| `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trusted` | boolean |  | Whether the signer is trusted without a question. |
+| `verdict` | any JSON |  | The validation door's verdict on the chain, purpose policy-signer. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+
+## POST /admin-api/policies/transfer/inspect
+
+`inspectPolicyExport`
+
+**Verify a policy export and say who signed it, writing nothing**
+
+Checks the document's signature with the key in its `x5c` (STS-ADMIN-0927) and holds the chain to the validation door, purpose policy-signer, forced to the full paranoid checks while `pki.paranoidPolicySigner` is on (STS-ADMIN-0928). Answers `origin`: `own` when the chain's Issuing CA is this realm's Policy Export Signing CA under this service's Root, `trusted` when this realm's signer truststore holds that Issuing CA and its Root for policy-signer, and `foreign` otherwise, with the chain and the Issuing CA's fingerprint to ask an administrator about. A document that is not a policy export is refused (STS-ADMIN-0926), and one naming a kind of policy this service does not have (STS-ADMIN-0933).
+
+**Mirrors** `POST /admin/policies` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `document` | any JSON | yes | The export, as the JSON object `export` answered in `document` or as that JSON in a string. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+
+**200**: Who signed it, whether that signer is trusted here, and what it carries.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `alg` | string |  | The JWS algorithm the export was signed with. |
+| `chain` | list |  | Each certificate of the signer's chain, leaf first, Root last: subject, issuer, validity and SHA-256 fingerprint. |
+| `chain[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `counts` | map |  | How many profiles of each kind the export carries. |
+| `counts.{key}` | integer |  |  |
+| `document` | any JSON |  | The signed export: a JWS in the flattened JSON serialization (RFC 7515 section 7.2.2), its protected header carrying `typ` policy-export+json and the signer's whole chain in `x5c`. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `exportedAt` | string |  | When it was exported. |
+| `exportedBy` | string |  | Who exported it. |
+| `filename` | string |  | A name to save the export under. |
+| `files` | list |  | The export as a file to save, `{ name, mime, base64 }`: the same document, which the console saves where it was asked from. |
+| `files[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `imported` | list |  | An import: the profiles written, by kind. |
+| `imported[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `inspection` | any JSON |  | With `needsTrust`: what the question is about, as `inspect` answers it. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `issuerFingerprint` | string |  | The SHA-256 fingerprint of the chain's Issuing CA, which an import of a foreign export names in `issuerFingerprint` to say yes. |
+| `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
+| `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `message` | string |  |  |
+| `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
+| `ok` | boolean | yes |  |
+| `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `realm` | string |  | The realm the export says it came from. |
+| `realmDomain` | string |  | That realm's DNS domain. |
+| `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
+| `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
+| `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trusted` | boolean |  | Whether the signer is trusted without a question. |
+| `verdict` | any JSON |  | The validation door's verdict on the chain, purpose policy-signer. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `alg` | string |  | The JWS algorithm the export was signed with. |
+| `chain` | list |  | Each certificate of the signer's chain, leaf first, Root last: subject, issuer, validity and SHA-256 fingerprint. |
+| `chain[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `counts` | map |  | How many profiles of each kind the export carries. |
+| `counts.{key}` | integer |  |  |
+| `document` | any JSON |  | The signed export: a JWS in the flattened JSON serialization (RFC 7515 section 7.2.2), its protected header carrying `typ` policy-export+json and the signer's whole chain in `x5c`. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `exportedAt` | string |  | When it was exported. |
+| `exportedBy` | string |  | Who exported it. |
+| `filename` | string |  | A name to save the export under. |
+| `files` | list |  | The export as a file to save, `{ name, mime, base64 }`: the same document, which the console saves where it was asked from. |
+| `files[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `imported` | list |  | An import: the profiles written, by kind. |
+| `imported[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `inspection` | any JSON |  | With `needsTrust`: what the question is about, as `inspect` answers it. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `issuerFingerprint` | string |  | The SHA-256 fingerprint of the chain's Issuing CA, which an import of a foreign export names in `issuerFingerprint` to say yes. |
+| `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
+| `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `message` | string |  |  |
+| `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
+| `ok` | boolean | yes |  |
+| `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `realm` | string |  | The realm the export says it came from. |
+| `realmDomain` | string |  | That realm's DNS domain. |
+| `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
+| `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
+| `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `trusted` | boolean |  | Whether the signer is trusted without a question. |
+| `verdict` | any JSON |  | The validation door's verdict on the chain, purpose policy-signer. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+
 ## POST /admin-api/policies/update-person-attribute
 
 `updatePersonAttribute`

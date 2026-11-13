@@ -536,7 +536,7 @@ function mex(t) {
   t.check(none.status === 200 && sectionsOf(none.body).length === 0,
           'an unknown dialect is an empty Metadata, not a fault');
   const notSoap = WsTrustMex.answer('<x/>', BASE, ISSUER, flags());
-  t.check(notSoap.status === 500 && notSoap.errorCode ===
+  t.check(notSoap.status === 400 && notSoap.errorCode ===
           'STS-WSTRUST-0072' && contains(notSoap.body, 'soap:Client') &&
           !contains(notSoap.body, 'STS-'),
           'a body that is not SOAP is a Client fault, the code not sent');

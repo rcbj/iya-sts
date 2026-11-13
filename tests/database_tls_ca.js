@@ -266,7 +266,9 @@ async function dialOutcome(host, sslmode, pem, certPem, keyPem, viaThread) {
       return;
     }
     const dial = postgres.dialOptions(target, true, pem);
-    client = new (require('pg').Client)({
+    // Through the store's own door (#326): nothing in this tree requires
+    // `pg` itself, which tests/knex_store.js A1 holds.
+    client = require('../persistence/knex_store').openConnection({
       connectionString: dial.connectionString,
       ssl: dial.ssl,
       connectionTimeoutMillis: 4000
@@ -288,10 +290,8 @@ async function dialOutcome(host, sslmode, pem, certPem, keyPem, viaThread) {
   }
   if (client) {
     try {
-      client.end(function (e) {
-        if (e) {
-          log.debug("Caught in dialOutcome(): " + ((e && e.message) || e));
-        }
+      client.end().catch(function (e) {
+        log.debug("Caught in dialOutcome(): " + ((e && e.message) || e));
       });
     } catch (e) {
       log.debug("Caught in dialOutcome(): " + ((e && e.message) || e));

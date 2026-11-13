@@ -1175,6 +1175,10 @@
     "en": "a5461fc6541725a3",
     "text": "Baguhin ang isang policy"
   },
+  "endpoints.route./admin-api/policies/transfer/:action.name": {
+    "en": "bc0714219f3243c3",
+    "text": "Mag-export at mag-import ng mga patakaran"
+  },
   "endpoints.route./admin-api/consent/:action.name": {
     "en": "a7acd63ff9b05a72",
     "text": "Magbigay at bawiin ang consent"

@@ -4633,7 +4633,7 @@ class AdminConsole {
        'kerberos-tab-trusts',
        'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
-       'tab-locale', 'tab-attributes', 'tab-profiles',
+       'tab-locale', 'tab-attributes', 'tab-profiles', 'tab-transfer',
        'listeners-tab-metadata',
        'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults'],
       LISTENER_TAB_IDS, POLICY_SUB_TAB_IDS,

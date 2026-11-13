@@ -715,6 +715,18 @@
     "en": "3919c9c6efb6ee77",
     "text": "密码策略配置文件被更改"
   },
+  "audit.actions.admin.policies.export.label": {
+    "en": "b4c871ea9e88127c",
+    "text": "一个领域的策略已导出并签名"
+  },
+  "audit.actions.admin.policies.import.label": {
+    "en": "18769044ecea4c1c",
+    "text": "已导入一份签名的策略导出"
+  },
+  "audit.actions.admin.policies.trust-signer.label": {
+    "en": "ba7acd0fc8b6667f",
+    "text": "已信任另一领域的策略导出签名者"
+  },
   "audit.actions.admin.authn-policy.change.label": {
     "en": "be6362a1a19bae26",
     "text": "身份验证策略配置文件被更改"

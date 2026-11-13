@@ -82,6 +82,7 @@ surface without touching the rest:
 | **TLS listeners** | **process** | The certificate served on the main port, LDAPS 636 and the embedded debugger's listener. |
 | **SPIFFE authority** | realm | **Every X509-SVID minted in this realm**. The one Issuing CA here with `pathLen: 1` rather than `0`, because `NewDownstreamX509CA` asks it for a CA and not a leaf; the realm Intermediate above it is widened to `2` to match. See [SPIFFE below](#spiffe-takes-its-authority-from-here-now). |
 | **Message signing** | realm | The certificates a person or an application signs a WS-Trust request with (#521): `digitalSignature` only, no extended key usage, the holder's `urn:sts:person:` or `urn:sts:application:` name. Issued by an administrator; see [below](#a-message-signing-certificate-for-a-ws-trust-requester). |
+| **Policy export signing** | realm | The certificate a policy export from Directory → Policies is signed under (#1713): a fresh key per export, `digitalSignature` only, with this whole chain in the export's `x5c`. Another realm that imports the export trusts this Issuing CA, not the Root it shares with every realm. See [Export and import](policies.md#export-and-import). |
 | **Remote PEP listeners** | realm | The HTTPS listener certificate of a remote XACML PEP **registered in this realm** — `serverAuth`, naming the PEP and the hosts its clients dial, issued from `/admin/xacml/peps` or `POST /admin-api/xacml/issue-pep-certificate`. The private key is handed over once and not kept. Realm-scoped because a PEP enforces one realm's policy. See [Remote PEP](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to). |
 
 **A realm branch built before a use case existed gets that Issuing CA added**,
@@ -1745,6 +1746,8 @@ is checked — see
 |---|---|---|---|---|
 | `pki.paranoid` | `STS_PKI_PARANOID` | `auto` | yes | [Paranoid PKI mode](#paranoid-pki-mode): `auto` is on in product and off in development; `on` and `off` force it. |
 | `pki.paranoid<UseCase>` | `STS_PKI_PARANOID_<USE_CASE>` | `true` | yes | One per [use case](pki-use-cases.md). Off, that use case behaves as it did before this mode existed. |
+| `pki.paranoidPolicySigner` | `STS_PKI_PARANOID_POLICY_SIGNER` | `true` | yes | The one row a site forces: while it is on, a policy export's signer chain gets the full checks in every mode, including development. Off, `pki.paranoid` decides, as for every other row. |
+| `pki.policyExportAlgorithm` | `STS_PKI_POLICY_EXPORT_ALGORITHM` | `RS256` | yes | The JWS algorithm a [policy export](policies.md#export-and-import) is signed with: RS256, PS256, ES256, ES384, ES512, EdDSA, ML-DSA-44, ML-DSA-65 or ML-DSA-87. |
 | `pki.signerTrustAnchorsFile` | `STS_PKI_SIGNER_TRUST_ANCHORS_FILE` | *(empty)* | restart | A PEM bundle read into the default realm's [signer truststore](signer-truststore.md) at start; fatal when named and unusable. |
 | `pki.pinnedCertificateWarningDays` | `STS_PKI_PINNED_CERTIFICATE_WARNING_DAYS` | `30` | yes | How far ahead of `notAfter` a pinned certificate is marked `expiring`. |
 

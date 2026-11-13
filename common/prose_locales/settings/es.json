@@ -4147,6 +4147,22 @@
     "en": "03950106a2822b70",
     "text": "Caso de uso `fido-mds`: el firmante de un BLOB FIDO MDS3 importado. Ya completo; paranoico consulta la puerta para que las comprobaciones sean el mismo código. La omisión auditada overrideSignature del administrador no cambia. Anclas: risk.mdsTrustAnchors, la GlobalSign Root R3, el almacén de confianza de firmantes. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
   },
+  "pki.paranoidPolicySigner|label": {
+    "en": "38aa0042d4360db7",
+    "text": "Paranoico: el firmante de una exportación de políticas"
+  },
+  "pki.paranoidPolicySigner|description": {
+    "en": "c64cd02e7a525d75",
+    "text": "Caso de uso `policy-signer`: el certificado con el que se firma una exportación de políticas desde Directory → Policies, y la cadena de su x5c, cuando se inspecciona o se importa (#1713). Activado, las comprobaciones completas se aplican en CADA modo, incluido el pki.paranoid principal: validez, keyUsage, la ruta y la revocación de cada eslabón. Anclas: la raíz del servicio para las exportaciones propias de este dominio, el almacén de confianza de firmantes para las de otro dominio. Desactivado, decide el ajuste principal, como en cualquier otra fila; desactivado en modo producto, se registra una vez (STS-PKI-0239) y se muestra en rojo en /admin/pki/trust."
+  },
+  "pki.policyExportAlgorithm|label": {
+    "en": "86a4a3a6f65c98bb",
+    "text": "Algoritmo de firma de las exportaciones de políticas"
+  },
+  "pki.policyExportAlgorithm|description": {
+    "en": "ef8edd8df33cb131",
+    "text": "El algoritmo JWS con el que se firma una exportación de políticas desde Directory → Policies (#1713). Cada exportación la firma una clave nueva de este algoritmo, certificada por la Policy Export Signing CA de este dominio, y el documento lleva ese certificado y toda su cadena en el x5c. RS256 por defecto: el algoritmo de la clave de firma JOSE propia del dominio. Una clave RSA tiene 3072 bits. Un cambio se aplica a la siguiente exportación; una exportación ya hecha conserva el algoritmo con el que se firmó."
+  },
   "pki.signerTrustAnchorsFile|label": {
     "en": "9d4fabbc6c6918f1",
     "text": "Almacén de confianza de firmantes: un archivo PEM de anclas e intermedios"

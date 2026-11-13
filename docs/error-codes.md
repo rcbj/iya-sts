@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5455** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5466** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 23
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 262
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 263
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 273
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 283
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -1086,6 +1086,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0273` | pki.keyAlgorithm names a composite ML-DSA key, which the TLS listeners cannot load, so the service Root or the process branch being built without a named algorithm used the classical default instead. A realm branch falls back too, as STS-PKI-0275. | none: a log line; the build goes on |
 | `STS-PKI-0274` | A realm's certificate authority branch was asked for a composite ML-DSA signing key. Its Intermediate is on the chain of the realm's SPIFFE gRPC listeners, Remote PEP listeners and custom listeners, and OpenSSL cannot read a composite key, so each of them would have refused the chain. Refused before any key is made; nothing is stored. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0275` | pki.keyAlgorithm names a composite ML-DSA key, which the realm's TLS listeners cannot load, so a realm branch being built without a named algorithm used the classical default instead. | none: a log line; the build goes on |
+| `STS-PKI-0276` | Refused under paranoid PKI mode for policy-signer: the signer of a policy export (#1713); nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
 
 ## STS-ENROLL
 
@@ -2752,7 +2753,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0069` | A WS-Security signature's KeyInfo names a Kerberos token that the security header does not carry, by Reference or by its #Kerberosv5APREQSHA1 key identifier (#658). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0070` | A UsernameToken was refused without being checked: too many recent failures for that identity (#1448). | SOAP FailedAuthentication |
 | `STS-WSTRUST-0071` | A SOAP envelope /sts built — an RSTR, an RSTR collection or a Fault — does not match its model in models/ws/ (#1579): its root, an attribute, a fixed value, or a child element or its order, the SAML assertion inside held to models/saml/. The envelope is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the envelope is unchanged) |
-| `STS-WSTRUST-0072` | A request to POST /sts/mex (WS-MetadataExchange, #958) was not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not well-formed, or a root that is not soap:Envelope. | SOAP 1.1 Client fault, HTTP 500 (SOAP 1.1 section 6.2) |
+| `STS-WSTRUST-0072` | A request to POST /sts/mex (WS-MetadataExchange, #958) was not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not well-formed, or a root that is not soap:Envelope. | SOAP 1.1 Client fault, HTTP 400, as POST /sts answers a body that is not XML (STS-WSTRUST-0001) |
 | `STS-WSTRUST-0073` | A request to POST /sts/mex (#958) carried a wsa:Action that is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata (2004/09), or none, so there is no metadata request to answer. | SOAP Client (SOAP 1.2: Sender) fault, HTTP 500 |
 
 ## STS-WSFED
@@ -5594,6 +5595,16 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0922` | A deleted or renamed person or group could not be taken off, or moved on, the owners of a role, group, application or service account that named its DN, so that object still names the old DN (roles.forgetOwner(), applications.forgetOwner(), the directory's forgetOwnerReferences() and moveOwnerReferences()). | — |
 | `STS-ADMIN-0923` | The store named as many entries as one question answers for a deleted or renamed DN held in an owner attribute, so some groups or service accounts may still name it as an owner (entriesNamingOwner()). | — |
 | `STS-ADMIN-0924` | A role a deleted application owned (its roleApplication named the application) could not be deleted with it, so an application registered later under that identifier finds the role already there (roles.forgetApplicationRoles()). | — |
+| `STS-ADMIN-0925` | A policy export could not be signed (#1713): pki.policyExportAlgorithm names no algorithm an export is signed with, the realm has no certificate authority branch or service Root, the signing key could not be made, or the realm's Policy Export Signing CA would not certify it. Nothing was exported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0926` | A document offered as a policy export is not one (#1713): not JSON, larger than 2 MiB, not a JWS in the flattened JSON serialization, a protected header without typ policy-export+json, an algorithm an export is signed with or the signer's chain in x5c, or signed content of another format or version. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0927` | A policy export's signature does not verify with the key in its x5c, or a certificate there is not X.509 (#1713): it was altered after it was signed, or never signed by that certificate. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0928` | A policy export's signer chain was refused by the validation door for policy-signer (#1713), forced to the full paranoid checks while pki.paranoidPolicySigner is on; the answer carries the verdict and its own STS-PKI code. Or a chain just added to the signer truststore still did not validate through it. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0929` | A policy export was signed by another realm, of this service or another, whose chain this realm's signer truststore does not hold, and the import did not confirm it is to be trusted (trustSigner). The answer carries needsTrust and the chain to ask an administrator about. Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0930` | A policy import confirmed trust in a chain whose Issuing CA fingerprint is not the export's (#1713), so the confirmation is not an answer about this signer. Nothing was imported or trusted. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0931` | An administrator confirmed trust in another realm's policy export signer and the signer truststore refused part of its chain (the admission rule, or a full store), so nothing was imported (#1713). What was added before the refusal is named, and stays until it is removed on /admin/pki/trust. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0932` | A verified policy export was imported and one or more of its profiles was refused by its kind's own save (#1713); each is named with that kind's code. The others were written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0933` | A policy export names a kind of policy this service does not have, or carries one without a list of profiles (#1713). Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0934` | A policy transfer action was asked for that is not export, inspect or import (#1713). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 

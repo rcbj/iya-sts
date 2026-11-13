@@ -715,6 +715,18 @@
     "en": "3919c9c6efb6ee77",
     "text": "En profil för lösenordspolicyn ändrades"
   },
+  "audit.actions.admin.policies.export.label": {
+    "en": "b4c871ea9e88127c",
+    "text": "En sfärs policyer exporterades, signerade"
+  },
+  "audit.actions.admin.policies.import.label": {
+    "en": "18769044ecea4c1c",
+    "text": "En signerad policyexport importerades"
+  },
+  "audit.actions.admin.policies.trust-signer.label": {
+    "en": "ba7acd0fc8b6667f",
+    "text": "En annan sfärs signerare av policyexporter blev betrodd"
+  },
   "audit.actions.admin.authn-policy.change.label": {
     "en": "be6362a1a19bae26",
     "text": "En profil för autentiseringspolicyn ändrades"

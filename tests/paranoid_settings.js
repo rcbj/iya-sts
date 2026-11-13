@@ -124,7 +124,7 @@ module.exports = {
     const named = trust.PURPOSES.map(function (one) {
       return one.setting;
     });
-    t.equal(trust.PURPOSES.length, 23, 'A. twenty-three use cases');
+    t.equal(trust.PURPOSES.length, 24, 'A. twenty-four use cases');
     settingKeys.forEach(function (one) {
       t.check(one.key === 'pki.paranoid' || named.indexOf(one.key) !== -1,
               'A. ' + one.key + ' is a row the table names', '');
@@ -134,11 +134,11 @@ module.exports = {
         return one.key === key;
       }), 'A. ' + key + ' exists in config.js', '');
     });
-    t.equal(settingKeys.length, 24, 'A. the master and one row per use case');
+    t.equal(settingKeys.length, 25, 'A. the master and one row per use case');
     const codes = trust.PURPOSES.map(function (one) {
       return one.code;
     });
-    t.equal(new Set(codes).size, 23, 'A. each use case has its own code');
+    t.equal(new Set(codes).size, 24, 'A. each use case has its own code');
 
     // B. THE DEFAULTS, AND `auto` PER MODE.
     t.log.info('B. the defaults');

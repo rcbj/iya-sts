@@ -715,6 +715,18 @@
     "en": "3919c9c6efb6ee77",
     "text": "May password policy profile na binago"
   },
+  "audit.actions.admin.policies.export.label": {
+    "en": "b4c871ea9e88127c",
+    "text": "Na-export ang mga patakaran ng isang realm, may lagda"
+  },
+  "audit.actions.admin.policies.import.label": {
+    "en": "18769044ecea4c1c",
+    "text": "Na-import ang isang may-lagdang export ng mga patakaran"
+  },
+  "audit.actions.admin.policies.trust-signer.label": {
+    "en": "ba7acd0fc8b6667f",
+    "text": "Pinagkatiwalaan ang lumalagda ng export ng mga patakaran ng ibang realm"
+  },
   "audit.actions.admin.authn-policy.change.label": {
     "en": "be6362a1a19bae26",
     "text": "May authentication policy profile na binago"

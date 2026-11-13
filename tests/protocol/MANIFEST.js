@@ -952,6 +952,12 @@ const JOBS = [
   // their ordered save/read, and refuses classical-only beside
   // postQuantumRequired.
   { file: 'sts_passkey_policy_application.js', browser: false },
+  // POLICY EXPORT AND IMPORT (#1713): two throwaway realms, an export
+  // signed under the exporter's Policy Export Signing CA with its whole chain,
+  // its own realm trusting it, the importer asked first, a yes pinned to the
+  // Issuing CA shown, the chain in the importer's signer truststore and the
+  // profile read back. `local: true`: the console's API is ours.
+  { file: 'sts_policy_transfer.js', browser: false },
   // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
   // /portal/keys in a throwaway realm with statements this job makes — an
   // x5c packed statement under a root minted at run time and configured as

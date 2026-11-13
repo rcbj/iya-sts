@@ -8371,6 +8371,23 @@ function certificateThumbprint(certificate, opts) {
  */
 function certificateSpkiThumbprint(certificate) {
   log.debug("Entering certificateSpkiThumbprint().");
+  const spkiDer = certificateSpkiDer(certificate);
+  log.debug("Leaving certificateSpkiThumbprint().");
+  return nodeCrypto.createHash('sha256').update(spkiDer).digest('base64url');
+}
+
+// The SubjectPublicKeyInfo DER itself, read the way the thumbprint above reads
+// it — asn1js, the bytes as the issuer signed them — so a post-quantum key a
+// node `X509Certificate` cannot load is still a key here (#1713).
+/**
+ * Returns a certificate's SubjectPublicKeyInfo, as the DER the issuer signed.
+ *
+ * @param certificate - the certificate, PEM or base64 DER
+ * @returns the DER
+ * @throws Error for anything that is not a certificate
+ */
+function certificateSpkiDer(certificate) {
+  log.debug("Entering certificateSpkiDer().");
   const text = String(certificate == null ? '' : certificate);
   const first = text.match(
     /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
@@ -8387,7 +8404,7 @@ function certificateSpkiThumbprint(certificate) {
   const spki = fields[versioned ? 6 : 5];
   if (!spki || !spki.idBlock || spki.idBlock.tagNumber !== 16 ||
       !spki.valueBlock || (spki.valueBlock.value || []).length !== 2) {
-    log.debug("Leaving certificateSpkiThumbprint(). Not a certificate.");
+    log.debug("Leaving certificateSpkiDer(). Not a certificate.");
     throw new Error('this is not a DER X.509 certificate with a ' +
                     'SubjectPublicKeyInfo where RFC 5280 puts it.');
   }
@@ -8395,8 +8412,48 @@ function certificateSpkiThumbprint(certificate) {
   const spkiDer = view && view.byteLength
     ? Buffer.from(view.buffer, view.byteOffset, view.byteLength)
     : Buffer.from(spki.toBER(false));
-  log.debug("Leaving certificateSpkiThumbprint().");
-  return nodeCrypto.createHash('sha256').update(spkiDer).digest('base64url');
+  log.debug("Leaving certificateSpkiDer().");
+  return spkiDer;
+}
+
+// ---------------------------------------------------------------------------
+// A COMPACT JWS VERIFIED WITH THE KEY IN A CERTIFICATE (#1713): what a
+// document whose `x5c[0]` names its signer is checked with. The certificate's
+// SubjectPublicKeyInfo is read by `certificateSpkiDer()` and
+// `publicKeyFromSpki()`, so an ML-DSA leaf this service's own post-quantum
+// Issuing CA certified verifies too: its public key is the BIT STRING's
+// octets (RFC 9881), handed to `verifyCompactJws()` as `{ pub }`. Whether the
+// CERTIFICATE is to be relied on is the validation door's question, never
+// this function's.
+// ---------------------------------------------------------------------------
+/**
+ * Verifies a compact JWS with the public key a certificate holds.
+ *
+ * @param token - the compact JWS
+ * @param certificate - the signer's certificate, PEM or base64 DER
+ * @param opts - as for `verifyCompactJws()`; `algorithms` is required
+ * @returns `{ header, claims }`, as `verifyCompactJws()`
+ * @throws Error when the key cannot be read or the signature does not verify
+ */
+function verifyCompactJwsWithCertificate(token, certificate, opts) {
+  log.debug("Entering verifyCompactJwsWithCertificate().");
+  const read = publicKeyFromSpki(certificateSpkiDer(certificate));
+  // A KeyObject, or for a post-quantum key `{ pub }`: what
+  // `verifyCompactJws()` takes for each family.
+  /** @type {any} */
+  let key = read.key;
+  if (read.kind === 'pq') {
+    const decoded = pqcX509.decodeSpki(new Uint8Array(read.spki));
+    key = { pub: Buffer.from(decoded.pub).toString('base64url') };
+  }
+  if (!key) {
+    log.debug("Leaving verifyCompactJwsWithCertificate(). No key.");
+    throw new Error('the certificate holds no key this service can verify ' +
+                    'a signature with.');
+  }
+  const out = verifyCompactJws(token, key, opts);
+  log.debug("Leaving verifyCompactJwsWithCertificate().");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -18291,6 +18348,8 @@ module.exports = {
   credentialDigest: credentialDigest,
   hkdf: hkdf,
   publicKeyFromJwk: publicKeyFromJwk,
+  certificateSpkiDer: certificateSpkiDer,
+  verifyCompactJwsWithCertificate: verifyCompactJwsWithCertificate,
   publicKeyOf: publicKeyOf,
   spkiDerOf: spkiDerOf,
   // --- section 14: HTTP Message Signatures and Content-Digest (#178) ---

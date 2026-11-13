@@ -56,7 +56,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Ownership](admin-api-ownership.html) | 2 |  |
 | [PKI](admin-api-pki.html) | 25 |  |
 | [Persistence](admin-api-persistence.html) | 1 |  |
-| [Policies](admin-api-policies.html) | 22 | The rules this realm holds a credential to — the password policy first: its minimum length, how many previous passwords may not be reused, and the symbol, uppercase and digit rules, stored as `cn=default,ou=passwordPolicies` in the directory and ENFORCED IN PRODUCT MODE at every door that sets a password. Not the XACML policy repository, which is under XACML. |
+| [Policies](admin-api-policies.html) | 25 | The rules this realm holds a credential to — the password policy first: its minimum length, how many previous passwords may not be reused, and the symbol, uppercase and digit rules, stored as `cn=default,ou=passwordPolicies` in the directory and ENFORCED IN PRODUCT MODE at every door that sets a password. Not the XACML policy repository, which is under XACML. |
 | [RISC](admin-api-risc.html) | 5 |  |
 | [Recovery codes](admin-api-recovery-codes.html) | 1 |  |
 | [Risk](admin-api-risk.html) | 10 |  |

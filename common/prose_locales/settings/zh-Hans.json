@@ -4147,6 +4147,22 @@
     "en": "03950106a2822b70",
     "text": "用例 `fido-mds`：已导入的 FIDO MDS3 BLOB 的签名者。原本就已完整；偏执模式改为经由入口检查，使这些检查成为同一份代码。管理员经审计的 overrideSignature 绕过保持不变。锚点：risk.mdsTrustAnchors、GlobalSign Root R3、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
   },
+  "pki.paranoidPolicySigner|label": {
+    "en": "38aa0042d4360db7",
+    "text": "偏执：策略导出的签名者"
+  },
+  "pki.paranoidPolicySigner|description": {
+    "en": "c64cd02e7a525d75",
+    "text": "用例 `policy-signer`：从 Directory → Policies 进行的策略导出所用的签名证书，以及其 x5c 中的链，在检查或导入时（#1713）。开启时，完整检查在每种模式下都适用，包括总开关 pki.paranoid：有效期、keyUsage、每一环的路径和吊销。信任锚：本领域自己的导出用服务根证书，另一领域的用签名者信任库。关闭时由总开关决定，与其他各行相同；在产品模式下关闭会记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.policyExportAlgorithm|label": {
+    "en": "86a4a3a6f65c98bb",
+    "text": "策略导出的签名算法"
+  },
+  "pki.policyExportAlgorithm|description": {
+    "en": "ef8edd8df33cb131",
+    "text": "从 Directory → Policies 进行的策略导出所用的 JWS 算法（#1713）。每次导出都由该算法的一把新密钥签名，由本领域的 Policy Export Signing CA 认证，文档在 x5c 中携带该证书及其整条链。默认 RS256：领域自身 JOSE 签名密钥的算法。RSA 密钥为 3072 位。更改适用于下一次导出；已完成的导出保留其签名时的算法。"
+  },
   "pki.signerTrustAnchorsFile|label": {
     "en": "9d4fabbc6c6918f1",
     "text": "签名者信任库：包含锚点和中间证书的 PEM 文件"

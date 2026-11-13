@@ -5135,6 +5135,12 @@ const CODES = [
       'realm\'s TLS listeners cannot load, so a realm branch being built ' +
       'without a named algorithm used the classical default instead.',
     spec: 'none: a log line; the build goes on' },
+  { code: 'STS-PKI-0276',
+    summary: 'Refused under paranoid PKI mode for policy-signer: the ' +
+      'signer of a policy export (#1713); nothing established what the ' +
+      'use case needs, or the use case itself refused (a self-signed ' +
+      'leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -12767,7 +12773,8 @@ const CODES = [
     summary: 'A request to POST /sts/mex (WS-MetadataExchange, #958) was ' +
       'not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not ' +
       'well-formed, or a root that is not soap:Envelope.',
-    spec: 'SOAP 1.1 Client fault, HTTP 500 (SOAP 1.1 section 6.2)' },
+    spec: 'SOAP 1.1 Client fault, HTTP 400, as POST /sts answers a body ' +
+      'that is not XML (STS-WSTRUST-0001)' },
   { code: 'STS-WSTRUST-0073',
     summary: 'A request to POST /sts/mex (#958) carried a wsa:Action that ' +
       'is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata ' +
@@ -25493,6 +25500,78 @@ const CODES = [
       'registered later under that identifier finds the role already there ' +
       '(roles.forgetApplicationRoles()).',
     spec: '' },
+  { code: 'STS-ADMIN-0925',
+    summary: 'A policy export could not be signed (#1713): ' +
+      'pki.policyExportAlgorithm names no algorithm an export is signed ' +
+      'with, the realm has no certificate authority branch or service ' +
+      'Root, the signing key could not be made, or the realm\'s Policy ' +
+      'Export Signing CA would not certify it. Nothing was exported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0926',
+    summary: 'A document offered as a policy export is not one (#1713): ' +
+      'not JSON, larger than 2 MiB, not a JWS in the flattened JSON ' +
+      'serialization, a protected header without typ ' +
+      'policy-export+json, an algorithm an export is signed with or the ' +
+      'signer\'s chain in x5c, or signed content of another format or ' +
+      'version. Nothing was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0927',
+    summary: 'A policy export\'s signature does not verify with the key in ' +
+      'its x5c, or a certificate there is not X.509 (#1713): it was ' +
+      'altered after it was signed, or never signed by that certificate. ' +
+      'Nothing was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0928',
+    summary: 'A policy export\'s signer chain was refused by the ' +
+      'validation door for policy-signer (#1713), forced to the full ' +
+      'paranoid checks while pki.paranoidPolicySigner is on; the answer ' +
+      'carries the verdict and its own STS-PKI code. Or a chain just ' +
+      'added to the signer truststore still did not validate through it. ' +
+      'Nothing was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0929',
+    summary: 'A policy export was signed by another realm, of this service ' +
+      'or another, whose chain this realm\'s signer truststore does not ' +
+      'hold, and the import did not confirm it is to be trusted ' +
+      '(trustSigner). The answer carries needsTrust and the chain to ' +
+      'ask an administrator about. Nothing was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0930',
+    summary: 'A policy import confirmed trust in a chain whose Issuing CA ' +
+      'fingerprint is not the export\'s (#1713), so the confirmation is ' +
+      'not an answer about this signer. Nothing was imported or trusted.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0931',
+    summary: 'An administrator confirmed trust in another realm\'s policy ' +
+      'export signer and the signer truststore refused part of its chain ' +
+      '(the admission rule, or a full store), so nothing was imported ' +
+      '(#1713). What was added before the refusal is named, and stays ' +
+      'until it is removed on /admin/pki/trust.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0932',
+    summary: 'A verified policy export was imported and one or more of its ' +
+      'profiles was refused by its kind\'s own save (#1713); each is named ' +
+      'with that kind\'s code. The others were written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0933',
+    summary: 'A policy export names a kind of policy this service does not ' +
+      'have, or carries one without a list of profiles (#1713). Nothing ' +
+      'was imported.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0934',
+    summary: 'A policy transfer action was asked for that is not export, ' +
+      'inspect or import (#1713).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

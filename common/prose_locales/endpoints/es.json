@@ -1175,6 +1175,10 @@
     "en": "a5461fc6541725a3",
     "text": "Cambiar una política"
   },
+  "endpoints.route./admin-api/policies/transfer/:action.name": {
+    "en": "bc0714219f3243c3",
+    "text": "Exportar e importar políticas"
+  },
   "endpoints.route./admin-api/consent/:action.name": {
     "en": "a7acd63ff9b05a72",
     "text": "Conceder y revocar consentimiento"

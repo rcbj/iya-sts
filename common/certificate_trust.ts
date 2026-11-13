@@ -476,7 +476,28 @@ const PURPOSES: Purpose[] = [
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
-    exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0262', phase: 5 }
+    exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0262', phase: 5 },
+  // THE SIGNER OF A POLICY EXPORT (#1713). rcbj: "Do full PKI paranoid mode
+  // validation on these certs", so the site forces the full checks while this
+  // row is on, in development as in product: `admin-core/policy_transfer.ts`
+  // passes `force` from `rowOn()`, and with the row off it is an ordinary
+  // row the master decides. `caller` is the chain's own Root, handed in by
+  // the site; `signer-truststore` is the realm's store, where an
+  // administrator's acceptance of another realm's chain is kept for this use
+  // case alone.
+  { id: 'policy-signer', setting: 'pki.paranoidPolicySigner',
+    title: 'The signer of a policy export',
+    covers: 'The certificate a policy export from Directory → Policies ' +
+      'is signed with, and the chain in its x5c, when it is inspected or ' +
+      'imported.',
+    adds: 'While this row is on the full checks apply in every mode, the ' +
+      'master included: validity, keyUsage, the path, revocation of every ' +
+      'link. Off, the master decides as for any other row.',
+    sites: ['admin-core/policy_transfer.ts verifySigner'],
+    anchors: ['caller', 'signer-truststore'],
+    leaf: leaf(SIGNS),
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
+    exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0276', phase: 5 }
 ];
 
 const BY_ID: Json = {};
