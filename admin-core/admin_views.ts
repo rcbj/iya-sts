@@ -259,6 +259,9 @@ import consumerProviders = require('../federation/consumer_providers');
 import fedLinks = require('../federation/federation_links');
 // What a partner encrypts to (#168), for the relationship's page and API.
 import fedEncryption = require('../federation/federation_encryption');
+// A FAPI 1.0 Advanced relationship's TLS client certificate (#931): its
+// public half, for the partner to register.
+import fedClientCert = require('../federation/federation_client_certificate');
 // The receiver half of Shared Signals, which the three reports below draw
 // this service's own registered streams from.
 import signals = require('../ssf/ssf_receivers');
@@ -13291,6 +13294,10 @@ class AdminViews {
     // WHAT A PARTNER ENCRYPTS TO (#168): the policy, the public key table,
     // and the two places it is published.
     const encryption = fedEncryption.viewOf(record);
+    // THE CLIENT CERTIFICATE A FAPI 1.0 ADVANCED RELATIONSHIP PRESENTS
+    // (#931): its public half, its subject DN and x5t#S256, for the
+    // partner to register; null for every other relationship.
+    const clientCertificate = fedClientCert.viewOf(record);
     const jwks = row.protocol === 'oidc' && row.role === 'service-provider'
       ? base + federation.PATHS.jwks + '/' + encodeURIComponent(row.id)
       : null;
@@ -13397,7 +13404,7 @@ class AdminViews {
     return {
       record: record, row: row, base: base, acs: acs, login: login,
       metadata: metadata, loginPath: loginPath, jwks: jwks,
-      encryption: encryption,
+      encryption: encryption, clientCertificate: clientCertificate,
       signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
       unmapped: unmapped, signalSetFields: signalSetFields,
@@ -13446,6 +13453,7 @@ class AdminViews {
           signalArrivals: arrivals,
           outboundSignals: outbound,
           encryption: encryption,
+          clientCertificate: clientCertificate,
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.
           links: linkPage.shown,

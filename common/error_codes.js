@@ -14043,6 +14043,15 @@ const CODES = [
       'token_type is not DPoP (RFC 9449 section 5). At sign-in the ' +
       'sign-in is refused; at a refresh the session is ended.',
     spec: 'HTTP 502' },
+  { code: 'STS-FED-0252',
+    summary: 'A FAPI 1.0 Advanced relationship\'s TLS client certificate ' +
+      '(RFC 8705) could not be issued, sealed, written or opened — when ' +
+      'fedFapi became 1-advanced, by the scheduler job ' +
+      'federation.client-certificate-renew, or at a token, refresh or ' +
+      'UserInfo request that needed it. Nothing is dialled without it: ' +
+      'at a sign-in the sign-in is refused, at a refresh the session is ' +
+      'ended.',
+    spec: 'HTTP 500 at a sign-in; console: the message; job: logged' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +

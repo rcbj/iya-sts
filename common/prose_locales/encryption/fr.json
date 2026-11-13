@@ -199,6 +199,14 @@
     "en": "3d4cea483bdd4763",
     "text": "PAS DU TOUT PERSISTÉS, dans aucun des deux modes ; il n’y a donc rien au repos à sceller. Les trois sont nommés dans le `NOT_YET` de `common/mode.js` plutôt que laissés à découvrir, car *non stocké* et *non protégé* se lisent de la même façon de l’extérieur et ne sont pas la même chose."
   },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "La clé privée du certificat client TLS d’une relation de fédération FAPI 1.0 Advanced (#931) — ce que ce service présente aux points de terminaison de jeton et UserInfo du partenaire, dans `fedClientCertificate`"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "Quiconque la détient peut s’authentifier auprès de ce partenaire en tant que ce service (`tls_client_auth`) et présenter les jetons d’accès que le partenaire a liés au certificat. Scellée au repos partout où les clés sont persistées, et retenue — chiffré compris — de toute recherche LDAP, page et réponse `/admin-api`, qui ne portent que le certificat."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Ce que ce service chiffre AU REPOS, avec quelle clé, sous quel algorithme, et combien de fois c’est arrivé dans ce processus."

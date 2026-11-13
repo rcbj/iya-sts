@@ -1638,6 +1638,18 @@ function readinessOf(record) {
                    'token is a JWT)');
     }
   }
+  // RFC 8705's tls_client_auth (#931) authenticates with the client
+  // certificate only a FAPI 1.0 Advanced relationship holds; named anywhere
+  // else it would be a token request that authenticates with nothing.
+  if (record.fedRole === 'service-provider' &&
+      String(record.fedTokenAuth || '') === 'tls_client_auth' &&
+      !(record.fedProtocol === 'oidc' &&
+        String(record.fedFapi || '').trim() === '1-advanced' &&
+        !String(record.fedTrustAnchor || '').trim())) {
+    missing.push('fedFapi=1-advanced (fedTokenAuth tls_client_auth ' +
+                 'authenticates with the client certificate only that ' +
+                 'profile holds)');
+  }
   // THE KEY A PARTNER HAS TO ENCRYPT TO (#168), where plaintext would be
   // refused: without one nothing could be accepted, which is a relationship
   // that half-works — refused by name like any other missing field.
@@ -2125,6 +2137,72 @@ function writeEncryptionKeys(id, rows, why) {
                    return row.kid + ':' + row.state;
                  }).join(', ') });
   log.debug("Leaving writeEncryptionKeys().");
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// THE CLIENT CERTIFICATE (#931, rcbj's decision of 2026-11-13): a FAPI 1.0
+// Advanced relationship's TLS client certificate, one JSON row on
+// `fedClientCertificate`. `federation_client_certificate.ts` owns what is
+// DONE with it — issuing, sealing, renewing, presenting; this module owns
+// the attribute, so the read and the one write are here beside the
+// encryption key table's.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a relationship's client certificate row, parsed, private key
+ * included; null when it holds none or the value is not JSON.
+ *
+ * @param record - the federation relationship
+ * @returns the row, or null
+ */
+function clientCertificateOf(record) {
+  log.debug("Entering clientCertificateOf().");
+  const raw = String((record && record.fedClientCertificate) || '').trim();
+  if (!raw) {
+    log.debug("Leaving clientCertificateOf(). None.");
+    return null;
+  }
+  try {
+    const row = JSON.parse(raw);
+    if (row && row.certificate && row.privateKey) {
+      log.debug("Leaving clientCertificateOf().");
+      return row;
+    }
+  } catch (e) {
+    log.warn('federation: ' + ((record && record.fedId) || '') + ' holds ' +
+             'a fedClientCertificate value that is not JSON, and it is ' +
+             'ignored: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving clientCertificateOf(). Unusable.");
+  return null;
+}
+
+/**
+ * Writes a relationship's client certificate row and audits it; the one
+ * writer, for `federation_client_certificate.ts`.
+ *
+ * @param id - the relationship id
+ * @param row - the row, private key sealed by the caller
+ * @param why - the audit sentence
+ * @returns whether the directory took it
+ */
+function writeClientCertificate(id, row, why) {
+  log.debug("Entering writeClientCertificate(). id=" + id);
+  const record = get(id);
+  if (!record) {
+    log.debug("Leaving writeClientCertificate(). No such relationship.");
+    return false;
+  }
+  record.fedClientCertificate = JSON.stringify(row);
+  if (!persist(record)) {
+    log.debug("Leaving writeClientCertificate(). The directory refused it.");
+    return false;
+  }
+  recordChange('federation.client-certificate', record,
+               why + ' on the federation relationship ' + id,
+               { serial: String(row.serialHex || ''),
+                 notAfter: String(row.notAfter || '') });
+  log.debug("Leaving writeClientCertificate().");
   return true;
 }
 
@@ -4680,6 +4758,8 @@ module.exports = {
   webFingers: webFingers,
   DISCOVERED_FIELDS: DISCOVERED_FIELDS,
   writeEncryptionKeys: writeEncryptionKeys,
+  clientCertificateOf: clientCertificateOf,
+  writeClientCertificate: writeClientCertificate,
   remove: remove,
   recordUse: recordUse,
   recordFailure: recordFailure,

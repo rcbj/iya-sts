@@ -199,6 +199,14 @@
     "en": "3d4cea483bdd4763",
     "text": "INTE BESTÄNDIGA ALLS, i något av lägena, så det finns ingenting i vila att försegla. Alla tre namnges i `common/mode.js`:s `NOT_YET` snarare än att lämnas att upptäckas, eftersom *inte lagrad* och *inte skyddad* ser likadana ut utifrån och inte är samma sak."
   },
+  "encryption.classes.25.what": {
+    "en": "676f5f32f70780f8",
+    "text": "Den privata nyckeln till TLS-klientcertifikatet för en FAPI 1.0 Advanced-federationsrelation (#931) — det som denna tjänst visar upp för partnerns token- och UserInfo-slutpunkter, i `fedClientCertificate`"
+  },
+  "encryption.classes.25.why": {
+    "en": "7aa85457f3f98d8b",
+    "text": "Den som har den kan autentisera sig mot den partnern som denna tjänst (`tls_client_auth`) och visa upp de åtkomsttoken som partnern bundit till certifikatet. Förseglad i vila överallt där nycklar sparas, och undanhållen — chiffertext inräknad — från varje LDAP-sökning, sida och `/admin-api`-svar, som bara bär certifikatet."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Vad den här tjänsten krypterar I VILA, med vilken nyckel, under vilken algoritm och hur mycket av det som har skett i den här processen."

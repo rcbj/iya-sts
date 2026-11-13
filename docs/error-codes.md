@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5455** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5456** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
-* [Federation (`STS-FED`)](#sts-fed) — 226
+* [Federation (`STS-FED`)](#sts-fed) — 227
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 167
@@ -3030,6 +3030,7 @@ Raised from: federation/.
 | `STS-FED-0249` | A FAPI 2 partner's authorization response names no issuer (RFC 9207), which FAPI 2.0 Security Profile section 5.3.2.2 has the client verify. | HTTP 401 |
 | `STS-FED-0250` | A FAPI partner's JARM response JWT carries no exp, which JARM section 4.4 has the client check. | HTTP 401 |
 | `STS-FED-0251` | A FAPI 2 partner's token response is not DPoP-bound: its token_type is not DPoP (RFC 9449 section 5). At sign-in the sign-in is refused; at a refresh the session is ended. | HTTP 502 |
+| `STS-FED-0252` | A FAPI 1.0 Advanced relationship's TLS client certificate (RFC 8705) could not be issued, sealed, written or opened — when fedFapi became 1-advanced, by the scheduler job federation.client-certificate-renew, or at a token, refresh or UserInfo request that needed it. Nothing is dialled without it: at a sign-in the sign-in is refused, at a refresh the session is ended. | HTTP 500 at a sign-in; console: the message; job: logged |
 
 ## STS-OIDFED
 

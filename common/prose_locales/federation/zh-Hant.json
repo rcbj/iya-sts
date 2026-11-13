@@ -268,8 +268,8 @@
     "text": "額外的授權請求參數，每個值一個，寫作 `<name>=<value>`，供需要它的提供者使用（Twitch 的 `claims`，以便取得地址）。僅限 OpenID Connect 和 OAuth 2.0。此服務自行設定的參數——response_type、client_id、redirect_uri、state、scope、nonce、code_challenge、code_challenge_method、response_mode、request 與 request_uri——在此處會被拒絕，因為在此變更其中任何一個都會破壞此服務所做的一項檢查。"
   },
   "fed.schema.attributes.fedTokenAuth.what": {
-    "en": "d86b5d2b605f0f05",
-    "text": "此服務在合作夥伴權杖端點的驗證方式：client_secret_basic（預設值，RFC 6749 第 2.3.1 節規定伺服器必須支援）或 client_secret_post，用於只從請求本文讀取密鑰的合作夥伴。沒有 fedClientSecret 時，此服務是公開用戶端，兩者皆不適用。"
+    "en": "df266a3a67c1b2b5",
+    "text": "此服務在合作夥伴權杖端點的驗證方式：client_secret_basic（預設值，RFC 6749 第 2.3.1 節規定伺服器必須支援）或 client_secret_post，用於只從請求本文讀取密鑰的合作夥伴。沒有 fedClientSecret 時，此服務是公開用戶端，兩者皆不適用。tls_client_auth（RFC 8705 第 2.1 節）使用關係的 TLS 用戶端憑證（fedClientCertificate）進行驗證，不傳送斷言或密鑰；它僅用於 fedFapi 1-advanced，未設定該設定檔卻指定它的關係不處於就緒狀態。"
   },
   "fed.schema.attributes.fedScope.what": {
     "en": "7f9479e6e589a23f",
@@ -320,8 +320,8 @@
     "text": "僅限 OPENID CONNECT。TRUE 會在每次登入開始時（OpenID Connect Discovery 1.0 第 4 節）從夥伴的探索文件 {fedPeer}/.well-known/openid-configuration 讀取其端點與 jwks_uri，該文件的 issuer 必須與 fedPeer 完全相同；此時不讀取 fedSsoUrl、fedTokenUrl、fedUserinfoUrl 與 fedJwksUri。此位址由管理員設定的 fedPeer 推導而來，絕不來自請求。FALSE 為預設值：端點以人工設定。"
   },
   "fed.schema.attributes.fedFapi.what": {
-    "en": "7e9a016e6c9185c9",
-    "text": "僅適用於 OPENID CONNECT。本服務在合作夥伴處為使用者登入時使用的 FAPI 用戶端設定檔（#931）。留空（預設值）即為目前的 OpenID Connect 信賴方。1-advanced（FAPI 1.0 Advanced）強制使用回應類型 code id_token、PKCE S256、以值傳遞的 PS256 請求物件和 private_key_jwt，且不使用 DPoP 或雙向 TLS。2-security（FAPI 2.0 Security Profile）強制使用探索、推送授權請求、回應類型 code、PKCE S256、private_key_jwt 和 DPoP。2-message-signing 在該推送請求中加入 PS256 請求物件，並使用簽章的授權回應（JARM）。無論 fedTokenAuth 如何設定，設定檔都會強制使用 private_key_jwt。本服務不作為 CIBA 用戶端，也不使用用戶端憑證向合作夥伴進行驗證。"
+    "en": "f2b7f8d0b97ba58f",
+    "text": "僅適用於 OPENID CONNECT。本服務在合作夥伴處為使用者登入時使用的 FAPI 用戶端設定檔（#931）。留空（預設值）即為目前的 OpenID Connect 信賴方。1-advanced（FAPI 1.0 Advanced）強制使用回應類型 code id_token、PKCE S256 和以值傳遞的 PS256 請求物件，向權杖端點與 UserInfo 端點出示關係的 TLS 用戶端憑證（fedClientCertificate），使合作夥伴可將其存取權杖繫結至該憑證（RFC 8705），使用 private_key_jwt 驗證，或在 fedTokenAuth 為 tls_client_auth 時使用該憑證驗證，且不使用 DPoP。2-security（FAPI 2.0 Security Profile）強制使用探索、推送授權請求、回應類型 code、PKCE S256、private_key_jwt 和 DPoP。2-message-signing 在該推送請求中加入 PS256 請求物件，並使用簽章的授權回應（JARM）。無論 fedTokenAuth 如何設定，2.x 設定檔都會強制使用 private_key_jwt。本服務不作為 CIBA 用戶端，只有 1-advanced 會出示用戶端憑證。"
   },
   "fed.schema.attributes.fedInitiateLogin.what": {
     "en": "f4c27cf4c2c9aa2c",
@@ -470,6 +470,10 @@
   "fed.schema.attributes.fedEncryptionKey.what": {
     "en": "b4d2ac940c13b9f8",
     "text": "「金鑰表」：此關係用來解密的每把金鑰各一列 JSON——其 kid、金鑰類型、`current` 或 `previous`、其在此領域 Intermediate 之下的憑證與鏈結，以及私密金鑰，只要金鑰持久保存就以金鑰加密金鑰「密封」。`previous` 列會保留到其 retiresAt，然後由排程工作 federation.encryption-key-retire 移除。只由建立、輪替與該工作寫入；在產品模式下對每次 LDAP 搜尋「隱藏」，也對每個頁面與 /admin-api 回覆隱藏，它們只發布公開的那一半。金鑰類型是一個欄位，因此一旦註冊了混合後量子金鑰，它就能作為一列與傳統金鑰並列。"
+  },
+  "fed.schema.attributes.fedClientCertificate.what": {
+    "en": "c8d1bb6c418a58bb",
+    "text": "僅適用於 OPENID CONNECT 且 fedFapi 為 1-advanced（#931）。本服務在呼叫合作夥伴權杖端點與 UserInfo 端點時出示的 TLS 用戶端憑證：一列 JSON，包含由本領域 TLS Client 簽發 CA 簽發的 clientAuth 憑證（主體 CN=federation <id> client，一個 urn:sts:federation: subjectAltName）、其憑證鏈、其 x5t#S256、其有效期以及私密金鑰；凡是金鑰會持久保存之處，私密金鑰都在金鑰加密金鑰下密封。當 fedTokenAuth 為 tls_client_auth 時，它用於驗證用戶端（RFC 8705 第 2.1 節），合作夥伴也將其存取權杖繫結至此憑證（cnf.x5t#S256，第 3 節）。在 fedFapi 變為 1-advanced 時、在首次沒有憑證的登入時，或由排程工作 federation.client-certificate-renew 簽發；該工作還會在憑證到期前 federation.clientCertificateRenewDays 天以相同主體續期。只由上述途徑寫入；在產品模式下對所有 LDAP 搜尋隱藏，也不出現在任何頁面與 /admin-api 回應中，它們只發布供在合作夥伴處註冊的公開部分。"
   },
   "fed.schema.attributes.fedAllowUnsolicited.what": {
     "en": "5b2a044dd3f46597",
