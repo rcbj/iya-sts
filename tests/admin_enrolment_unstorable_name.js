@@ -17,7 +17,11 @@
 //
 //   A. both doors refuse such a name, STS-AUTHN-0556, quoting nothing;
 //   B. `abandonAdminKeyEnrolment()` reports no write for one, and still
-//      reports one for an ordinary name (so the observer is really there).
+//      reports one for an ordinary name (so the observer is really there);
+//   C. the authenticator app's pending enrolment (run 21's fuzz stage,
+//      `/admin-api/mfa/clear-totp`): a clear or abandon under a NUL name
+//      writes nothing, a begin is refused STS-AUTHN-0557, and abandoning a
+//      held enrolment still writes its delete.
 //
 // WHY IN A CHILD: B installs `realms.setPersistObserver()`, which has no
 // getter, and in the shared process it would replace persistence's own.
@@ -52,9 +56,13 @@ function childMain() {
     const credentials = require(ROOT + '/common/credentials');
     const actions = require(ROOT + '/admin-core/admin_actions');
     const writes = [];
+    const totpWrites = [];
     realms.setPersistObserver(function (handle, realmId, key) {
       if (handle === 'credentials.pendingAdminKeys') {
         writes.push(String(key));
+      }
+      if (handle === 'credentials.pendingTotp') {
+        totpWrites.push(String(key));
       }
     });
     const context = { via: 'api', actor: 'tester', base: 'https://sts.test',
@@ -91,6 +99,32 @@ function childMain() {
     note(writes.length === 1 && writes[0].indexOf('\u0000') < 0,
          'B. abandoning under an ordinary name still reports one',
          JSON.stringify(writes));
+    // C (run 21's fuzz stage): `POST /admin-api/mfa/clear-totp` with a NUL
+    // in the name journalled a delete of a pending authenticator enrolment
+    // nobody had begun, under a key PostgreSQL cannot store (STS-STORE-0063).
+    totpWrites.length = 0;
+    credentials.removeTotp('a\u0000b');
+    credentials.abandonTotpEnrolment('a\u0000b');
+    note(totpWrites.length === 0,
+         'C. clearing or abandoning under a NUL name writes nothing',
+         JSON.stringify(totpWrites));
+    const begun = credentials.beginTotpEnrolment('a\u0000b',
+                                                 { base: 'https://sts.test' });
+    note(begun && begun.ok === false &&
+         errorCodes.codeOf(begun) === 'STS-AUTHN-0557' &&
+         JSON.stringify(begun.errors || []).indexOf('\u0000') < 0 &&
+         totpWrites.length === 0,
+         'C. an enrolment begun for a NUL name is refused STS-AUTHN-0557, ' +
+         'quoting nothing and writing nothing',
+         errorCodes.codeOf(begun) + ' ' + JSON.stringify(totpWrites));
+    const held = credentials.beginTotpEnrolment('alice',
+                                                { base: 'https://sts.test' });
+    totpWrites.length = 0;
+    credentials.abandonTotpEnrolment('alice');
+    note(held && held.ok === true && totpWrites.length === 1,
+         'C. abandoning an enrolment that is held still writes its delete',
+         JSON.stringify(held && held.errors) + ' ' +
+         JSON.stringify(totpWrites));
   } catch (e) {
     note(false, 'the child ran to the end', (e && e.stack) || e);
   }

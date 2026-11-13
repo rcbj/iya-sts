@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5447** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5449** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 435
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 757
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 222
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 166
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 167
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -1768,6 +1768,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0554` | A query parameter of a /authn-api request held a value its declared type does not, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0555` | A /authn-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0556` | An administrator's passkey enrolment was begun or finished for a person named with a control character, a NUL or half of a surrogate pair. No directory name holds one, the pending record is keyed by the two names joined with a newline, and PostgreSQL cannot store a NUL, so it was refused before the pending record was touched (STS-STORE-0063). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0557` | An authenticator app enrolment was begun for a name holding a control character or a NUL. No directory name holds one, and the pending enrolment is keyed by the name, which PostgreSQL cannot store with a NUL in it (STS-STORE-0063), so it was refused before the pending record was touched. | action result with the reason |
 
 ## STS-OAUTH
 
@@ -3536,6 +3537,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0210` | A create was refused because its DN or username is longer than the create coordinator holds (4096 characters). The name is not being created elsewhere, and retrying it cannot succeed (#1402). | HTTP 400 on /admin-api and /scim/v2; LDAP adminLimitExceeded (11). The code is recorded, never sent |
 | `STS-LDAP-0211` | A description was refused because its value carries an operator error code. A description is stored text this service sends back, and a code is recorded, never sent (#1416). | HTTP 400 JSON (the sentence; the code is recorded). LDAP constraintViolation (19). Nothing is stored |
 | `STS-LDAP-0212` | A group write was refused because a member it adds names no entry: a member, uniqueMember or memberUid must name something stored in the realm, so a group can never list a person, group or application that is not there (2026-11-10). | HTTP 400 (console, /admin-api), SCIM 400 invalidValue, LDAP constraintViolation (19). Nothing is stored |
+| `STS-LDAP-0213` | The node-ldapjs in use does not support the errorCloseDelay server option, so a connection that fails is destroyed at once and a TLS alert about why it failed can be lost to the TCP reset that closing it with unread data sends (run 21, 2026-11-13). | none — logged at startup |
 
 ## STS-ATTR
 

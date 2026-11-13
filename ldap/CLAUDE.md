@@ -2284,7 +2284,11 @@ the first change is the `routeAnonymousBinds` server option
 (the bind refusals, below), the second `encodeErrorMessage`, which
 sends a refusal's text as its diagnosticMessage (#261), and the third and
 fourth `saslMechanisms` and `bindDnFromHandler` (#1047, *SASL EXTERNAL*,
-below). A change goes in THE FORK, never as a
+below), and the fifth `errorCloseDelay` (run 21, 2026-11-13): a connection
+that emits an error is destroyed two seconds later rather than at once, so a
+TLS alert reaches a peer still sending the record it is about instead of
+being discarded by the TCP reset (`STS-LDAP-0213` if the option did not
+take; `ldap_server.js` above `plainServer` has the measurement). A change goes in THE FORK, never as a
 patch from this repository into the library: an option whose default is
 upstream's behaviour, a test in the fork's own `test/` (tap), a line in its
 `docs/`, a commit pushed to `rcbj/node-ldapjs`, and the submodule pin bumped

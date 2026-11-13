@@ -17566,6 +17566,19 @@ const SASL_MECHANISMS = ['EXTERNAL'];
 // worth more than a TypeError out of a constructor, which is the same trade
 // every listen path here makes.
 // ---------------------------------------------------------------------------
+// `errorCloseDelay` (run 21, 2026-11-13): A CONNECTION THAT FAILED IS CLOSED
+// TWO SECONDS LATER, NOT AT ONCE. A TLS failure after the handshake (a bad
+// record MAC, a record over the size limit) has a fatal alert to send, and
+// the peer is usually still sending the record it is about. ldapjs destroyed
+// the socket in the same tick, so it closed with that record unread, the
+// kernel answered with a TCP reset, and a reset that reached the peer first
+// discarded the alert. tlsfuzzer's record-layer test against 636 lost it
+// about once in sixty probes under a full run's load (memory and
+// single-node modes, run 21), and 5 of 8 loaded runs of it by hand; with the
+// delay, none of 18. The fork's fifth change; asked of each server below.
+const ERROR_CLOSE_MS = 2000;
+
+// ---------------------------------------------------------------------------
 // `saslMechanisms` and `bindDnFromHandler` (#1047): SASL EXTERNAL reaches
 // the bind handler, which names the entry the connection is bound as. See
 // THE CERTIFICATE BIND, above the bind handler. On 389 it is refused there.
@@ -17573,7 +17586,8 @@ const plainServer = ldap.createServer({ log: log,
                                        routeAnonymousBinds: true,
                                        encodeErrorMessage: true,
                                        saslMechanisms: SASL_MECHANISMS,
-                                       bindDnFromHandler: true });
+                                       bindDnFromHandler: true,
+                                       errorCloseDelay: ERROR_CLOSE_MS });
 
 // The TLS protocol policy, asked of the module that states it. An older copy of
 // `tls_server.js` without the function gets node's defaults, which is what
@@ -17684,6 +17698,7 @@ if (serverCertificate && serverCertificate.certPem &&
     encodeErrorMessage: true,
     saslMechanisms: SASL_MECHANISMS,
     bindDnFromHandler: true,
+    errorCloseDelay: ERROR_CLOSE_MS,
     // ldapjs passes this to `tls.createServer()` as `cert` unchanged, so the
     // bundle is the whole of what LDAPS presents: the leaf, its chain and the
     // Root (#1064), from the one function every listener takes it from.
@@ -17811,6 +17826,25 @@ function saslExternalSupported(ldapServer) {
 }
 
 servers.forEach(saslExternalSupported);
+
+// `errorCloseDelay`, asked of each server as the options above are, because an
+// older submodule ignores it and a peer would again lose the alert about why
+// its connection failed (STS-LDAP-0213).
+function errorCloseDelayed(ldapServer) {
+  log.debug("Entering errorCloseDelayed().");
+  const delayed = !!(ldapServer &&
+                     ldapServer._errorCloseDelay === ERROR_CLOSE_MS);
+  if (!delayed) {
+    log.warn(errorCodes.tag('STS-LDAP-0213') + 'ldap: this node-ldapjs does ' +
+             'not support errorCloseDelay, so a connection that fails is ' +
+             'destroyed at once and a TLS alert about why can be lost to the ' +
+             'TCP reset. Update the node-ldapjs submodule.');
+  }
+  log.debug("Leaving errorCloseDelayed(). " + delayed);
+  return delayed;
+}
+
+servers.forEach(errorCloseDelayed);
 
 // An attribute map without the attributes whose value is undefined: the
 // root DSE publishes an attribute it has no value for by leaving it out.
