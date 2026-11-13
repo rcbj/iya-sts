@@ -13975,6 +13975,25 @@ const CODES = [
   { code: 'STS-FED-0247',
     summary: 'A DPoP proof for a FAPI partner could not be made.',
     spec: 'HTTP 500' },
+  { code: 'STS-FED-0248',
+    summary: 'A FAPI 1.0 Advanced partner\'s front-channel ID Token ' +
+      'carries no s_hash, or one that is not the left half of the ' +
+      'state\'s hash: the detached signature does not cover the state.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0249',
+    summary: 'A FAPI 2 partner\'s authorization response names no ' +
+      'issuer (RFC 9207), which FAPI 2.0 Security Profile section ' +
+      '5.3.2.2 has the client verify.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0250',
+    summary: 'A FAPI partner\'s JARM response JWT carries no exp, which ' +
+      'JARM section 4.4 has the client check.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0251',
+    summary: 'A FAPI 2 partner\'s token response is not DPoP-bound: its ' +
+      'token_type is not DPoP (RFC 9449 section 5). At sign-in the ' +
+      'sign-in is refused; at a refresh the session is ended.',
+    spec: 'HTTP 502' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +

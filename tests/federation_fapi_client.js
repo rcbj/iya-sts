@@ -186,6 +186,34 @@ function childMain() {
        'a JARM payload with a state and a code can be used');
     eq(Fapi.jarmProblem({ state: 's', error: 'access_denied' }), '',
        'a JARM payload with a state and an error can be used');
+    eq(Fapi.jarmExpiryProblem({ state: 's', code: 'c' }),
+       'it carries no exp (as a number)',
+       'a JARM payload with no exp cannot be used (JARM 4.4)');
+    eq(Fapi.jarmExpiryProblem({ exp: '1999999999' }),
+       'it carries no exp (as a number)',
+       'a JARM payload whose exp is a string cannot be used');
+    eq(Fapi.jarmExpiryProblem({ exp: 1999999999 }), '',
+       'a JARM payload with a numeric exp can be used');
+
+    // --- what each profile holds the answer to (#931's review) ------------
+    eq(['', '1-advanced', '2-security', '2-message-signing']
+      .map(function (p) {
+        return [Fapi.requiresStateHash(p) ? 's' : '-',
+                Fapi.requiresIssuerParameter(p) ? 'i' : '-'].join('');
+      }).join(','), '--,s-,-i,-i',
+       's_hash is 1-advanced\'s alone, iss the 2.x profiles\', and no ' +
+       'profile asks for either');
+    eq(Fapi.tokenTypeProblem('2-security', { token_type: 'Bearer' }),
+       'its token_type is "Bearer", not DPoP',
+       'a 2.x token response answered Bearer cannot be used');
+    eq(Fapi.tokenTypeProblem('2-message-signing', {}),
+       'its token_type is "", not DPoP',
+       'a 2.x token response with no token_type cannot be used');
+    eq(Fapi.tokenTypeProblem('2-security', { token_type: 'dPoP' }), '',
+       'token_type is compared without case');
+    eq(Fapi.tokenTypeProblem('1-advanced', { token_type: 'Bearer' }) +
+       Fapi.tokenTypeProblem('', { token_type: 'Bearer' }), '',
+       '1-advanced and no profile are not asked for DPoP');
 
     // --- use_dpop_nonce, once ------------------------------------------------
     const seen = [];
