@@ -25469,6 +25469,12 @@ const CODES = [
       'service accounts may still name it as an owner ' +
       '(entriesNamingOwner()).',
     spec: '' },
+  { code: 'STS-ADMIN-0924',
+    summary: 'A role a deleted application owned (its roleApplication named ' +
+      'the application) could not be deleted with it, so an application ' +
+      'registered later under that identifier finds the role already there ' +
+      '(roles.forgetApplicationRoles()).',
+    spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

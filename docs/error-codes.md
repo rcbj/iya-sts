@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5462** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5463** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 272
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 273
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -5591,6 +5591,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0921` | A deleted application's identifier could not be taken off the clients conferring a role, so whatever is next registered under that identifier still confers it (roles.forgetConferrer()). | — |
 | `STS-ADMIN-0922` | A deleted or renamed person or group could not be taken off, or moved on, the owners of a role, group, application or service account that named its DN, so that object still names the old DN (roles.forgetOwner(), applications.forgetOwner(), the directory's forgetOwnerReferences() and moveOwnerReferences()). | — |
 | `STS-ADMIN-0923` | The store named as many entries as one question answers for a deleted or renamed DN held in an owner attribute, so some groups or service accounts may still name it as an owner (entriesNamingOwner()). | — |
+| `STS-ADMIN-0924` | A role a deleted application owned (its roleApplication named the application) could not be deleted with it, so an application registered later under that identifier finds the role already there (roles.forgetApplicationRoles()). | — |
 
 ## STS-API
 

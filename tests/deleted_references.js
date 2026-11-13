@@ -32,7 +32,16 @@
 //   D. A RENAME CARRIES OWNERSHIP: a person renamed by an LDAP modifyDN
 //      (deleteOldRdn) owns the same four things under the new DN, and
 //      nothing names the old one.
-//   E. The three codes are in the table.
+//   E. The four codes are in the table.
+//   F. A DELETED APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of
+//      2026-11-13): an application owning two roles (`<role>@<app>`, one
+//      held by a person, one by an application), deleted through the
+//      console's Forget (the /admin-api door is the same
+//      applicationsAction()), the registry (the outbound SCIM client's
+//      door) and an LDAP delete, leaves neither; another application's role
+//      and its member are untouched; one `roles.delete` row per role;
+//      registered again under the same identifier it owns none, and a role
+//      made again under the old name starts empty.
 //
 // IN A THROWAWAY REALM, removed at the end (role_member_forget.js's
 // arrangement).
@@ -301,9 +310,117 @@ async function aRename(t) {
   log.debug("Leaving aRename().");
 }
 
+// The roles an application owns (`roleApplication` names it), by name.
+function rolesOwnedBy(id) {
+  log.debug("Entering rolesOwnedBy(). " + id);
+  const owned = roles.all().filter(function (row) {
+    return String(row.application || '').toLowerCase() ===
+           String(id).toLowerCase();
+  }).map(function (row) {
+    return row.name;
+  });
+  log.debug("Leaving rolesOwnedBy(). " + owned.length);
+  return owned;
+}
+
+// F. One door: an application owning two roles, one held by a person and
+// one by an application, deleted through `remove`; another application's
+// role beside it.
+async function ownedRolesByDoor(t, door, remove) {
+  log.debug("Entering ownedRolesByDoor(). " + door);
+  const app = 'dr-roles-' + door + '-' + RUN;
+  const other = 'dr-roles-kept-' + door + '-' + RUN;
+  const person = 'dr-roles-holder-' + door + '-' + RUN;
+  const reader = 'reader@' + app;
+  const writer = 'writer@' + app;
+  const kept = 'reader@' + other;
+  const personDn = dnOf(ldap.createUser(person, { invent: false,
+                                                  attributes: {} }));
+  const made = [makeApplication(app), makeApplication(other),
+    rolesAction({ action: 'create-role', role: 'reader', application: app }),
+    rolesAction({ action: 'create-role', role: 'writer', application: app }),
+    rolesAction({ action: 'create-role', role: 'reader',
+                  application: other }),
+    rolesAction({ action: 'add-member', role: reader, kind: 'user',
+                  member: person }),
+    rolesAction({ action: 'add-member', role: writer, kind: 'application',
+                  member: other }),
+    rolesAction({ action: 'add-member', role: kept, kind: 'user',
+                  member: person })];
+  t.check(!!personDn && made.every(function (one) {
+    return one && one.ok;
+  }) && rolesOwnedBy(app).length === 2 && rolesOwnedBy(other).length === 1,
+          'precondition (' + door + '): an application owns two roles, ' +
+          'another owns one', JSON.stringify(made));
+  const since = Date.now();
+  const gone = await remove(app);
+  t.check(gone === true && !applications.get(app),
+          'F1 (' + door + '). the application is deleted',
+          JSON.stringify(gone));
+  t.check(!roles.read(reader) && !roles.read(writer) &&
+          rolesOwnedBy(app).length === 0,
+          'F2 (' + door + '). neither of its roles is left',
+          JSON.stringify(rolesOwnedBy(app)));
+  const keptRow = roles.read(kept) || {};
+  t.check(keptRow.application === other &&
+          (keptRow.users || []).indexOf(person) >= 0,
+          'F3 (' + door + '). another application\'s role is untouched, ' +
+          'its member kept', JSON.stringify(keptRow));
+  const rows = rowsOf('roles.delete', since).map(function (one) {
+    return String(one.target);
+  });
+  t.check(rows.length === 2 && rows.indexOf(reader) >= 0 &&
+          rows.indexOf(writer) >= 0,
+          'F4 (' + door + '). one roles.delete row per role, and none for ' +
+          'the other application\'s', JSON.stringify(rows));
+  const again = makeApplication(app);
+  t.check(again && again.ok && rolesOwnedBy(app).length === 0 &&
+          !roles.read(reader),
+          'F5 (' + door + '). registered again under the same identifier, ' +
+          'it owns no role', JSON.stringify(rolesOwnedBy(app)));
+  const remade = rolesAction({ action: 'create-role', role: 'reader',
+                               application: app });
+  const fresh = roles.read(reader) || {};
+  t.check(remade && remade.ok && (fresh.users || []).length === 0 &&
+          (fresh.applications || []).length === 0,
+          'F6 (' + door + '). a role made again under the old name starts ' +
+          'empty', JSON.stringify([remade, fresh]));
+  log.debug("Leaving ownedRolesByDoor().");
+}
+
+async function ownedRoles(t) {
+  log.debug("Entering ownedRoles().");
+  t.log.info('=== F. a deleted application\'s own roles go with it ===');
+  // The console's Forget; `POST /admin-api/applications/forget` calls the
+  // same applicationsAction() (mgmt-api/admin_api.ts).
+  await ownedRolesByDoor(t, 'console', function (id) {
+    log.debug("Entering the console door.");
+    const out = adminActions.applicationsAction({ action: 'forget',
+      application: id }, ['oauth2'], { actor: 'test' });
+    log.debug("Leaving the console door.");
+    return !!(out && out.ok);
+  });
+  // The registry's delete, which the outbound SCIM client calls too.
+  await ownedRolesByDoor(t, 'registry', function (id) {
+    log.debug("Entering the registry door.");
+    const out = applications.deleteApplication(id, { actor: 'test' });
+    log.debug("Leaving the registry door.");
+    return !!(out && out.ok);
+  });
+  // An LDAP delete of the application's entry.
+  await ownedRolesByDoor(t, 'ldap', async function (id) {
+    log.debug("Entering the LDAP door.");
+    const dn = (applications.get(id) || {}).dn || '';
+    const out = await ldapOp('del', { dn: dn });
+    log.debug("Leaving the LDAP door.");
+    return !!dn && out.ok !== false && !out.error;
+  });
+  log.debug("Leaving ownedRoles().");
+}
+
 function theCodes(t) {
   log.debug("Entering theCodes().");
-  ['STS-ADMIN-0921', 'STS-ADMIN-0922', 'STS-ADMIN-0923']
+  ['STS-ADMIN-0921', 'STS-ADMIN-0922', 'STS-ADMIN-0923', 'STS-ADMIN-0924']
     .forEach(function (code) {
       t.check(errorCodes.CODES.some(function (one) {
         return one.code === code;
@@ -322,6 +439,7 @@ async function run(t) {
       aPerson(t);
       aGroup(t);
       await aRename(t);
+      await ownedRoles(t);
       theCodes(t);
     });
   } finally {
@@ -334,7 +452,7 @@ module.exports = {
   name: 'deleted_references',
   describe: 'a deleted application confers no role, and a deleted person ' +
             'or group owns nothing, so nothing made again under its name ' +
-            'or DN inherits either; a rename carries ownership (2026-11-13, ' +
-            '#1612)',
+            'or DN inherits either; a deleted application\'s own roles go ' +
+            'with it; a rename carries ownership (2026-11-13, #1612)',
   run: run
 };
