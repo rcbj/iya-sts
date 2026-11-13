@@ -18915,6 +18915,14 @@ const CODES = [
       'of a sign-in key. A published DID takes a key that is not ' +
       'enrolled for sign-in.',
     spec: 'HTTP 400 refusal at /authn-api/wallet' },
+  { code: 'STS-VC-0179',
+    summary: 'A key was refused as a person\'s self-issued sign-in ' +
+      'subject (did:jwk, did:key or JWK thumbprint) because a version of ' +
+      'a DID this realm publishes for that person names it (#775, the ' +
+      'reverse of STS-VC-0178). The public document and the sign-in key ' +
+      'would have been one key.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet, or at ' +
+      '/admin-api/users/enrol-self-issued-subject' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

@@ -1451,7 +1451,14 @@ not measured again for #872. `passwordHashSpec()` with no spec, and the
 policy's `hashAlgorithm` default, are scrypt at N=2^15, r=8, p=3, and
 `PASSWORD_HASH_ALGORITHMS` lists scrypt first. Decision 3 stands in both
 modes: `passwordHashSpec()` raises scrypt's p to OWASP's table, and the
-policy refuses a save below it. Product also applies
+policy refuses a save that NAMES scrypt below it. **Only when scrypt is the
+algorithm (the review of #872, 2026-11-13)**: asked whatever the algorithm,
+every profile stored at #820's p=1 — argon2id ones included — refused every
+unrelated edit, since a save sends the whole profile. And `read()` answers a
+stored p below the table AT the table (`raisedToTable()`), the value
+`passwordHashSpec()` hashes with anyway, so such a profile reports no
+problem and the console's next save of it writes the raised value; a read
+writes nothing. Product also applies
 `mode.minScryptParallelism()` (at least 3) before that clamp, so a profile
 saved at 2^17 with p=1 is written at p=3 there and stays p=1 in development.
 The rehash rule is a strictly lower cost within one algorithm, or a change

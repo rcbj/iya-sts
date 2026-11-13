@@ -563,6 +563,22 @@
     "en": "b0f0da21ac461ad3",
     "text": "直到目錄變更且查詢未命中為止；命中目前項目時不必等待重建。每個領域一個索引。"
   },
+  "caches.store.ldap.gate-usernames.title": {
+    "en": "689e1e6184e6baf0",
+    "text": "主控台關卡的使用者名稱"
+  },
+  "caches.store.ldap.gate-usernames.description": {
+    "en": "06f13f021c4a27e4",
+    "text": "在持有目錄視窗的程序中，/admin-api 關卡在事件迴圈之外詢問過的「誰持有某使用者名稱」（包括無人持有）的答案，使其同步檢查無須詢問儲存區。僅供這些檢查讀取；建立操作一律詢問儲存區。"
+  },
+  "caches.store.ldap.gate-usernames.bound": {
+    "en": "953882a7c140627a",
+    "text": "強制：每個領域 64 個使用者名稱，最久未被詢問的最先捨棄。"
+  },
+  "caches.store.ldap.gate-usernames.lifetime": {
+    "en": "43a85e1731c71231",
+    "text": "直到領域的 ou=users 處、其下或其上的任何內容在此寫入或從另一程序複製過來；關卡的下一次預熱會重新詢問。"
+  },
   "caches.store.ldap.group-index.title": {
     "en": "ed4018229dabe2c1",
     "text": "目錄群組索引"

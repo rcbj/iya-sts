@@ -596,6 +596,113 @@ async function sectionF(t) {
   log.debug("Leaving sectionF().");
 }
 
+// Replaces one attribute of a stored policy entry over the directory's own
+// modify handler, as an `ldapmodify` would: how a profile saved while #820's
+// p=1 default stood is put back without the save door that now refuses it.
+function plantPolicyAttribute(dn, type, value) {
+  log.debug("Entering plantPolicyAttribute().");
+  const handler = ldap.localHandler('modify');
+  const req = {
+    dn: ldapjs.parseDN(dn),
+    changes: [{ operation: 'replace',
+                modification: { type: type, values: [value] } }],
+    connection: { encrypted: false,
+                  ldap: { bindDN: 'cn=anonymous', id: 'password-argon2id' },
+                  remoteAddress: '127.0.0.1', remotePort: 40000 },
+    logId: 'password-argon2id'
+  };
+  return new Promise(function (resolve) {
+    handler(req, { end: function () {
+      log.debug("Entering end().");
+      log.debug("Leaving end().");
+    } }, function (err) {
+      log.debug("Entering the policy modify's next().");
+      if (err) {
+        log.debug("Caught in plantPolicyAttribute(): " +
+                  ((err && err.message) || err));
+      }
+      log.debug("Leaving the policy modify's next().");
+      log.debug("Leaving plantPolicyAttribute(). " + !err);
+      resolve(!err);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// G. a profile stored at p=1 before #872 (the review of #872, 2026-11-13).
+// ---------------------------------------------------------------------------
+async function sectionG(t) {
+  log.debug("Entering sectionG().");
+  t.log.info('=== G. a profile stored below OWASP\'s table before #872 ===');
+  passwordPolicy.reset('default');
+  // An argon2id profile carrying #820's scrypt rows: its scrypt rows hash
+  // nothing, so an unrelated save is accepted.
+  const argon = passwordPolicy.save('default', profileWith(
+    { hashAlgorithm: 'argon2id', scryptLogN: 15, scryptParallelism: 1 }));
+  t.check(argon.ok,
+          'G1. an argon2id profile whose scrypt rows are 2^15 with p=1 is ' +
+          'saved: the table is asked only of scrypt',
+          JSON.stringify(argon.errors));
+  const argonRead = passwordPolicy.read('default');
+  t.check(argonRead.problems.length === 0 &&
+          argonRead.scryptParallelism === 3 &&
+          argonRead.hashAlgorithm === 'argon2id',
+          'G2. it reads with no problem, its scrypt p at the table (3)',
+          JSON.stringify({ p: argonRead.scryptParallelism,
+                           problems: argonRead.problems }));
+  const edit = passwordPolicy.save('default', Object.assign({},
+    argonRead, { minLength: argonRead.minLength + 1 }));
+  t.check(edit.ok, 'G3. and an unrelated edit of what was read is saved',
+          JSON.stringify(edit.errors));
+  // A scrypt profile stored at p=1, as #820 allowed: planted, since the
+  // save door refuses it now.
+  passwordPolicy.reset('default');
+  passwordPolicy.save('default', profileWith(
+    { hashAlgorithm: 'scrypt', scryptLogN: 15, scryptParallelism: 3 }));
+  const dn = passwordPolicy.read('default').dn;
+  const planted = await plantPolicyAttribute(dn, 'stsPwdScryptParallelism',
+                                             '1');
+  const legacy = passwordPolicy.read('default');
+  t.check(planted && legacy.problems.length === 0 &&
+          legacy.scryptParallelism === 3,
+          'G4. a scrypt profile stored at 2^15 with p=1 reads at p=3, with ' +
+          'no problem reported', JSON.stringify({ planted: planted,
+            p: legacy.scryptParallelism, problems: legacy.problems }));
+  t.equal(JSON.stringify(passwordPolicy.hashSpec(legacy)),
+          JSON.stringify({ algorithm: 'scrypt', logN: 15, r: 8, p: 3 }),
+          'G5. and a new password under it is hashed at p=3');
+  const legacyEdit = passwordPolicy.save('default', Object.assign({},
+    legacy, { minLength: legacy.minLength + 1 }));
+  t.check(legacyEdit.ok &&
+          passwordPolicy.read('default').scryptParallelism === 3,
+          'G6. the console\'s save of what it read is accepted and writes ' +
+          'the raised p', JSON.stringify(legacyEdit.errors));
+  // Still refused: a save that NAMES scrypt below the table.
+  const named = passwordPolicy.save('default', profileWith(
+    { hashAlgorithm: 'scrypt', scryptLogN: 15, scryptParallelism: 1 }));
+  t.check(!named.ok,
+          'G7. a save naming scrypt at 2^15 with p=1 is still refused',
+          JSON.stringify(named.errors));
+  // And a switch to scrypt leaving the scrypt rows out takes the raised
+  // value, never the stored p=1.
+  passwordPolicy.save('default', profileWith(
+    { hashAlgorithm: 'argon2id', scryptLogN: 15, scryptParallelism: 1 }));
+  const old = {};
+  ['minLength', 'history', 'minSymbols', 'requireUppercase', 'requireDigit',
+   'generatedLength'].forEach(function (key) {
+    old[key] = passwordPolicy.DEFAULTS[key];
+  });
+  old.hashAlgorithm = 'scrypt';
+  const switched = passwordPolicy.save('default', old);
+  t.check(switched.ok &&
+          passwordPolicy.read('default').scryptParallelism === 3 &&
+          passwordPolicy.hashSpec().p === 3,
+          'G8. a switch to scrypt that leaves the scrypt rows out is ' +
+          'saved at the table\'s p', JSON.stringify(switched.errors));
+  passwordPolicy.reset('default');
+  log.debug("Leaving sectionG().");
+}
+
 module.exports = {
   name: 'password_argon2id',
   describe: 'a person\'s password hash (#847, #872): scrypt at 2^15, ' +
@@ -613,6 +720,7 @@ module.exports = {
       await sectionD(t);
       sectionE(t);
       await sectionF(t);
+      await sectionG(t);
     } finally {
       passwordPolicy.reset('default');
     }

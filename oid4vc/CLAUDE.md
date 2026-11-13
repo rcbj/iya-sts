@@ -1386,7 +1386,15 @@ it has to keep.
   person's, never a key already in the version — `STS-VC-0170`, and never
   a key already enrolled for this person as a sign-in key — `STS-VC-0178`,
   #775: the published DID is its own subject and can sign in, and the
-  document does not publish a key the person already signs in with). A new key
+  document does not publish a key the person already signs in with). **And
+  the other way round** (the review of #775, 2026-11-13): `siop.ts`'s
+  enrolment refuses, as a did:jwk, did:key or thumbprint subject, a key
+  ANY version of the person's published DIDs named (`STS-VC-0179`,
+  `person_did.publishedThumbprints()`, the person's own entry, reached
+  lazily through the `publishedKeys` dep) — every version, since none is
+  rewritten. A subject they already hold is not asked; a person who held
+  both before 9bf3187ce keeps both, and nothing reports it yet (a realm-wide
+  report would walk every holder: a follow-up). A new key
   without a live authorization is `STS-VC-0171`, at the start and at the
   finish. Both proofs are the new version's `authorizedBy`.
 * **`realm` CUSTODY** generates with `crypto.js`'s
