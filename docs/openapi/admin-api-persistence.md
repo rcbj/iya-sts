@@ -352,6 +352,7 @@ Scope: `admin:read`.
 | `status (shape 2).barrier.active` | boolean |  |  |
 | `status (shape 2).barrier.answeredUnheld` | integer |  |  |
 | `status (shape 2).barrier.caughtUp` | integer |  |  |
+| `status (shape 2).barrier.checkRefusals` | integer |  | Responses whose commit succeeded and whose deferred check (an access token's status index, #884) then refused them; each answered 503. |
 | `status (shape 2).barrier.commitFailures` | integer |  |  |
 | `status (shape 2).barrier.gaveUp` | integer |  |  |
 | `status (shape 2).barrier.heldForBacklog` | integer |  |  |
