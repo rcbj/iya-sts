@@ -1678,8 +1678,28 @@ async function everyPageIsDrawn(driver, pages) {
     if (path === "/admin/api-explorer") {
       // WHAT AN OPERATION ANSWERS IS ON THE PAGE (#1353): the document has
       // carried the models all along, and only the page can show they are read.
+      //
+      // A WAIT THAT RUNS OUT SAYS WHAT THE PAGE SHOWED (2026-11-12). Run
+      // 20's memory mode timed out here with nothing else to go on: the
+      // explorer still reading its document, drawing "could not be read",
+      // and a script that never ran all look like a missing `.ophead`.
       const head = await driver.wait(until.elementLocated(By.css(".ophead")),
-                                     30000);
+                                     30000).catch(async function (e) {
+        log.debug("Caught waiting for the explorer: " +
+                  ((e && e.message) || e));
+        const shown = await driver.executeScript(
+          "var app = document.getElementById('app') || document.body; " +
+          "return location.href + ' | ' + document.title + ' | ' + " +
+          "(app ? app.innerText.slice(0, 900) : '');")
+          .catch(function (inner) {
+            log.debug("Caught reading the explorer: " +
+                      ((inner && inner.message) || inner));
+            return "?";
+          });
+        await keepAPicture(driver, "api-explorer");
+        throw new Error("the API explorer drew no operation within 30s; " +
+                        "the page shows: " + shown);
+      });
       await clickInView(driver, head);
       const rows = await driver.wait(until.elementsLocated(
         By.css(".responses table.model tr")), 10000);
