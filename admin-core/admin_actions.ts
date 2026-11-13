@@ -5852,7 +5852,7 @@ class AdminActions {
    * @param protocols - the declared families, when the body carries them
    * @returns `{ ok, changed, errors, message }`
    */
-  updateApplicationFields(identifier, body, protocols) {
+  updateApplicationFields(identifier, body, protocols, actor?) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminActions.updateApplicationFields(). " +
               "identifier=" + identifier);
@@ -5986,6 +5986,10 @@ class AdminActions {
     }
     const changed = [];
     const errors = [];
+    // A METADATA DOCUMENT IN THE SAVE is consumed after every other field
+    // is written (the declared families above all, which decide which
+    // descriptor is read), as `set` consumes one: consumeWrittenMetadata().
+    let metadataDocument = '';
     changes.forEach(function (change) {
       const name = change.attribute;
       const mode = modes[name];
@@ -5995,6 +5999,11 @@ class AdminActions {
       }
       const current = valuesOf(entry.fields[name]);
       const wanted = change.values;
+      if (name === 'samlSpMetadata' && wanted.length === 1 &&
+          !(current.length === 1 && current[0] === wanted[0])) {
+        metadataDocument = wanted[0];
+        return;
+      }
       // `none` BESIDE ANOTHER METHOD (2026-10-01) is refused for the whole
       // list before any of it is written: the removes and adds below go one
       // value at a time, and the first add would land before the second was
@@ -6089,6 +6098,17 @@ class AdminActions {
         }
       });
     }
+    if (!errors.length && metadataDocument) {
+      const consumed = this.consumeWrittenMetadata(identifier,
+                                                   metadataDocument, actor);
+      if (consumed.ok) {
+        changed.push('samlSpMetadata');
+      } else {
+        (consumed.errors || []).forEach(function (one) {
+          errors.push(one);
+        });
+      }
+    }
     if (errors.length) {
       log.debug("Leaving AdminActions.updateApplicationFields(). " +
                 errors.length + " refusal(s).");
@@ -6112,6 +6132,40 @@ class AdminActions {
                  identifier + '": ' + changed.join(', ') + '.'
                : 'Nothing changed: every field already held what was ' +
                  'submitted.' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SERVICE PROVIDER'S METADATA DOCUMENT WRITTEN TO ITS ENTRY, CONSUMED.
+  //
+  // `samlSpMetadata` is the document, and what the document REGISTERS — each
+  // assertion consumer service with its binding (`samlAcsEndpoint`), each
+  // single logout service, the signing and encryption certificates, the
+  // flags — is written beside it by `spMetadata.consume()` in one save. A
+  // `set`, an `add` or the field grid's save that stored the text alone left
+  // an entry whose document said artifact-01 and whose endpoints said
+  // nothing, so SAML 1.1's profileFor() fell back to saml11.defaultProfile
+  // and a shire registered on the artifact profile got a Browser/POST form
+  // (run 22, sts_saml11.js's Browser/Artifact section, on an entry a
+  // development sighting had filed before the job registered it). The
+  // create door and the upload already consumed; this is the third door,
+  // and it answers as they do. Consuming writes the document itself, so a
+  // refused one changes nothing on the entry (STS-ADMIN-0935).
+  // ---------------------------------------------------------------------------
+  private consumeWrittenMetadata(identifier, text, actor) {
+    const { log, applications, spMetadata } = this.deps;
+    log.debug("Entering AdminActions.consumeWrittenMetadata(). " +
+              "identifier=" + identifier);
+    const consumed = spMetadata.upload(identifier, text, actor || '');
+    if (!consumed.ok) {
+      log.debug("Leaving AdminActions.consumeWrittenMetadata(). Refused.");
+      return this.refused('STS-ADMIN-0935', { ok: false,
+        errors: ['The metadata document was not written, because it was ' +
+                 'refused: '].concat(consumed.errors || []) });
+    }
+    log.debug("Leaving AdminActions.consumeWrittenMetadata(). Consumed.");
+    return { ok: true, changed: true,
+             application: applications.get(identifier),
+             message: String(consumed.message || '') };
   }
 
   // ---------------------------------------------------------------------------
@@ -7033,6 +7087,27 @@ class AdminActions {
     }
 
     if (action === 'set' || action === 'add' || action === 'remove') {
+      // A METADATA DOCUMENT WRITTEN TO AN ENTRY THAT EXISTS IS CONSUMED, as
+      // one given with the create is and as an upload is: the document is
+      // the service provider's statement of its endpoints, their bindings
+      // and its keys, and stored without being consumed it registered none
+      // of them. Run 22 found it (sts_saml11.js): an entry a development
+      // sighting had already filed took its metadata through `set`, so no
+      // `samlAcsEndpoint` named the artifact-01 consumer, and the SAML 1.1
+      // shire registered on it was answered with a Browser/POST form.
+      // Clearing it (an empty `set`) is still the plain write.
+      const metadataText = body.value === undefined ? ''
+        : String(body.value);
+      if (action !== 'remove' &&
+          String(body.attribute || '') === 'samlSpMetadata' &&
+          metadataText.trim()) {
+        const consumed = this.consumeWrittenMetadata(identifier,
+                                                     metadataText, actor);
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  " samlSpMetadata " + (consumed.ok ? 'consumed' :
+                                                      'refused') + ".");
+        return consumed;
+      }
       const result = applications.updateApplication(identifier, {
         mode: action,
         attribute: String(body.attribute || ''),
@@ -7055,7 +7130,7 @@ class AdminActions {
     // a form carry every field and still refuse nothing it did not touch.
     if (action === 'update-fields') {
       const result = this.withScopeWarnings(identifier,
-        this.updateApplicationFields(identifier, body, protocols));
+        this.updateApplicationFields(identifier, body, protocols, actor));
       log.debug("Leaving AdminActions.applicationsAction(). update-fields " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return result;

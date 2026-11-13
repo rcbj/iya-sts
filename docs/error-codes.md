@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5466** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5467** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 283
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 284
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -5605,6 +5605,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0932` | A verified policy export was imported and one or more of its profiles was refused by its kind's own save (#1713); each is named with that kind's code. The others were written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0933` | A policy export names a kind of policy this service does not have, or carries one without a list of profiles (#1713). Nothing was imported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0934` | A policy transfer action was asked for that is not export, inspect or import (#1713). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0935` | A service provider's metadata document written to an existing application (set, add, or the field grid's save) was refused when it was consumed; nothing on the entry changed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 

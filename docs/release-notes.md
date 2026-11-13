@@ -163,6 +163,20 @@ follows the same rule.
 1.0.0 is the first release of iya-sts. Every build before it was a
 pre-release.
 
+### SAML service provider metadata written through the API is read
+
+Writing an application's `samlSpMetadata` through `POST /admin-api/applications/set`
+or `add`, or through the console's field grid, now reads the document the way
+creating the application or uploading the document always has: its assertion
+consumer services, their bindings and its certificates are registered. Until
+1.1.0 those doors stored the text and registered nothing, so a SAML 1.1 relying
+party updated that way was answered with the Browser/POST profile at a consumer
+its metadata declares for Browser/Artifact.
+
+A document that does not describe the application is now refused with HTTP 400
+and nothing is written, as the create and upload doors already refuse it
+(`STS-ADMIN-0935`). Writing an empty value still clears it.
+
 ### Not backwards compatible with earlier builds
 
 **1.0.0 is not backwards compatible with the pre-release builds that came
