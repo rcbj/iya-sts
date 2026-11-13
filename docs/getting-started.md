@@ -611,7 +611,9 @@ so on. The build works it out from the repository's `vM.N.P` git tags, and
 nothing is written back to the repository, so the repo-root `VERSION` file
 still says the release a person last set (`1.0.0`). Editing `VERSION` is how
 a new minor or major release starts: set to `1.1.0`, the next build of
-`main` is `1.1.0` and the ones after it `1.1.1`, `1.1.2`. A build of any
+`main` is `1.1.0` and the ones after it `1.1.1`, `1.1.2`. **A release that
+needs a database upgrade script is always a new minor or major release**,
+never a patch, so moving between patch releases never asks you to run one. A build of any
 other branch, or from a checkout, carries `VERSION` as written.
 
 Every build of `main` that publishes its images is also a **GitHub
