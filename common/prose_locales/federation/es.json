@@ -319,6 +319,10 @@
     "en": "bec8778c7adc894f",
     "text": "SOLO OPENID CONNECT. TRUE lee los puntos de conexión del socio y su jwks_uri de su documento de descubrimiento, {fedPeer}/.well-known/openid-configuration, al comienzo de cada inicio de sesión (OpenID Connect Discovery 1.0 sección 4), cuyo issuer debe ser exactamente fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl y fedJwksUri no se leen entonces. La dirección se deriva de fedPeer, que configuró un administrador, y nunca de una solicitud. FALSE, el valor predeterminado: los puntos de conexión se configuran a mano."
   },
+  "fed.schema.attributes.fedFapi.what": {
+    "en": "7e9a016e6c9185c9",
+    "text": "SOLO OPENID CONNECT. El perfil de cliente FAPI que se usa cuando este servicio inicia la sesión de una persona en el socio (#931). Vacío, el valor predeterminado, es la parte de confianza de OpenID Connect actual. 1-advanced (FAPI 1.0 Advanced) impone el tipo de respuesta code id_token, PKCE S256, un objeto de solicitud PS256 por valor y private_key_jwt, y no usa DPoP ni TLS mutuo. 2-security (FAPI 2.0 Security Profile) impone el descubrimiento, una solicitud de autorización enviada (push), el tipo de respuesta code, PKCE S256, private_key_jwt y DPoP. 2-message-signing añade un objeto de solicitud PS256 dentro de esa solicitud enviada y una respuesta de autorización firmada (JARM). Un perfil impone private_key_jwt, diga lo que diga fedTokenAuth. Este servicio no actúa como cliente CIBA ni se autentica ante el socio con un certificado de cliente."
+  },
   "fed.schema.attributes.fedInitiateLogin.what": {
     "en": "f4c27cf4c2c9aa2c",
     "text": "SOLO OPENID CONNECT. TRUE atiende el punto de conexión de inicio de sesión de esta relación, /federation/initiate-login/{id}, que el socio registra como initiate_login_uri (OpenID Connect Core 1.0 sección 4): un inicio de sesión que inicia el SOCIO, nombrándose en iss, que debe ser fedPeer. Un login_hint se transmite, y un target_link_uri solo se sigue hacia una ruta de este servicio. FALSE, el valor predeterminado, lo rechaza: de lo contrario, cualquier página podría iniciar un inicio de sesión en el navegador de una persona."

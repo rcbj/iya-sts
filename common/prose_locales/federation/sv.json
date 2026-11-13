@@ -319,6 +319,10 @@
     "en": "bec8778c7adc894f",
     "text": "ENDAST OPENID CONNECT. TRUE läser partnerns slutpunkter och dess jwks_uri från dess upptäcktsdokument, {fedPeer}/.well-known/openid-configuration, i början av varje inloggning (OpenID Connect Discovery 1.0 avsnitt 4), vars issuer måste vara exakt fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl och fedJwksUri läses då inte. Adressen härleds från fedPeer, som en administratör har konfigurerat, och aldrig från en begäran. FALSE, standardvärdet: slutpunkterna konfigureras för hand."
   },
+  "fed.schema.attributes.fedFapi.what": {
+    "en": "7e9a016e6c9185c9",
+    "text": "ENDAST OPENID CONNECT. Den FAPI-klientprofil som används när den här tjänsten loggar in en person hos partnern (#931). Tomt, standardvärdet, är dagens OpenID Connect-förlitande part. 1-advanced (FAPI 1.0 Advanced) tvingar svarstypen code id_token, PKCE S256, ett PS256-begäransobjekt som värde och private_key_jwt, och använder varken DPoP eller ömsesidig TLS. 2-security (FAPI 2.0 Security Profile) tvingar discovery, en pushad auktoriseringsbegäran, svarstypen code, PKCE S256, private_key_jwt och DPoP. 2-message-signing lägger till ett PS256-begäransobjekt i den pushade begäran och ett signerat auktoriseringssvar (JARM). En profil tvingar private_key_jwt oavsett vad fedTokenAuth anger. Den här tjänsten fungerar inte som CIBA-klient och autentiserar sig inte mot partnern med ett klientcertifikat."
+  },
   "fed.schema.attributes.fedInitiateLogin.what": {
     "en": "f4c27cf4c2c9aa2c",
     "text": "ENDAST OPENID CONNECT. TRUE besvarar den här relationens slutpunkt för att initiera inloggning, /federation/initiate-login/{id}, som partnern registrerar som initiate_login_uri (OpenID Connect Core 1.0 avsnitt 4): en inloggning som PARTNERN startar och där den namnger sig själv i iss, som måste vara fedPeer. En login_hint skickas vidare, och en target_link_uri följs endast till en sökväg på den här tjänsten. FALSE, standardvärdet, avvisar den: annars skulle vilken sida som helst kunna starta en inloggning i en persons webbläsare."
