@@ -86,10 +86,12 @@ function fenceLockName(kind, id, identity) {
  * Builds the portable statements over one driver's connections.
  *
  * @param deps - `{ dialect, pool, tallyPool, live, liveTransact, boundQuery,
- *   processId, originScope }`: the dialect, the write pool, the tally pool,
- *   the liveness runner, the driver's serialized liveness transaction, a
- *   bounded liveness query `(sql, params, ttlMs)`, a function answering this
- *   process's origin, and the origin claims' scope
+ *   boundTransact, isBoundTimeout, processId, originScope }`: the dialect,
+ *   the write pool, the tally pool, the liveness runner, the driver's
+ *   serialized liveness transaction, a bounded liveness query
+ *   `(sql, params, ttlMs)`, a bounded liveness transaction `(fn, ttlMs)`
+ *   and the test that tells its timeout from a failure (#770's review), a
+ *   function answering this process's origin, and the origin claims' scope
  * @returns the portable operations, each answering what the driver's
  *   PostgreSQL statement answers
  */
@@ -831,9 +833,33 @@ function create(deps) {
     // Kept by the same holder within its lifetime; otherwise a new token.
     const kept = '?? = ? AND ?? > ' + dialect.nowText;
     log.debug("Leaving acquireLease().");
-    // The fence lock commits with the tenure. Unbounded on purpose: a
-    // takeover waits for the fences that share-lock the old name.
-    return onLive(function (client) {
+    // The fence lock commits with the tenure, and a takeover still waits
+    // for the fences that share-lock the old name: it cannot commit before
+    // they have. It waits in bounded attempts (#770's review, 2026-11-13),
+    // `boundTransact()` when the driver passed one: unbounded, the wait held
+    // the liveness connection, the node's own heartbeat queued behind it
+    // where its bound had not started, and a standby fenced itself
+    // (STS-CLUSTER-0004) while taking over. A timeout rolls the whole
+    // transaction back and answers `{ held: false, pending: true }`; the
+    // caller asks again on its next beat.
+    const holderOf = function () {
+      return run(live, 'acquireLease.holder',
+        kx('sts_cluster_leases').select('holder', 'token', 'expires_at')
+          .where({ name: name })
+      ).then(function (found) {
+        const row = first(found);
+        return { held: false, pending: true,
+                 holder: row ? row.holder : '',
+                 token: row ? Number(row.token) : 0,
+                 expiresAt: row ? Number(row.expires_at) : 0 };
+      });
+    };
+    const transact = typeof deps.boundTransact === 'function'
+      ? function (fn) {
+        return deps.boundTransact(fn, ttlMs);
+      }
+      : onLive;
+    return transact(function (client) {
       return run(client, 'acquireLease.renew',
         kx('sts_cluster_leases').update({
           token: kx.raw('CASE WHEN ' + kept + ' THEN ?? ELSE ?? + 1 END',
@@ -887,6 +913,13 @@ function create(deps) {
                  token: row ? Number(row.token) : 0,
                  expiresAt: row ? Number(row.expires_at) : 0 };
       });
+    }).then(null, function (err) {
+      if (typeof deps.isBoundTimeout !== 'function' ||
+          !deps.isBoundTimeout(err)) {
+        throw err;
+      }
+      log.debug("Caught in acquireLease(): " + ((err && err.message) || err));
+      return holderOf();
     });
   }
 

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5449** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5457** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -54,7 +54,7 @@ is an ordinary outcome.
 * [Service core (`STS-CORE`)](#sts-core) — 108
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 52
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 110
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 33
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 22
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
-* [Federation (`STS-FED`)](#sts-fed) — 222
+* [Federation (`STS-FED`)](#sts-fed) — 226
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 167
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 269
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 272
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -487,6 +487,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0162` | The store every node shares could not be asked to spend against a budget (a GNAP right's limits); the operation was refused (#432 phase 5). | — |
 | `STS-CLUSTER-0163` | A spend against a shared budget could not be refunded: the store could not be asked (#432 phase 5). | — |
 | `STS-CLUSTER-0164` | The flush that was to give back a directory create's claims (its DN and username) failed, so they stay held until they expire (two minutes): the release is a statement of the transaction that writes the entry, or follows that flush on one node, and goes back with it (#628). A create of one of those names before then waits and is refused as in progress (STS-LDAP-0092). | — |
+| `STS-CLUSTER-0165` | Taking over a lease is waiting for writes the previous holder still has in flight under it: the ask is bounded by the heartbeat's own bound, rolls back when the bound runs out, and is made again on the next heartbeat, so this node's own renewal never waits behind it (#770). Logged once per wait; one that repeats for a node lifetime names a write that does not finish. | — |
 
 ## STS-CELL
 
@@ -3020,6 +3021,10 @@ Raised from: federation/.
 | `STS-FED-0245` | A FAPI client could not sign its private_key_jwt or its request object. | HTTP 500 |
 | `STS-FED-0246` | A FAPI partner's JARM response was missing or did not verify. | HTTP 401 |
 | `STS-FED-0247` | A DPoP proof for a FAPI partner could not be made. | HTTP 500 |
+| `STS-FED-0248` | A FAPI 1.0 Advanced partner's front-channel ID Token carries no s_hash, or one that is not the left half of the state's hash: the detached signature does not cover the state. | HTTP 401 |
+| `STS-FED-0249` | A FAPI 2 partner's authorization response names no issuer (RFC 9207), which FAPI 2.0 Security Profile section 5.3.2.2 has the client verify. | HTTP 401 |
+| `STS-FED-0250` | A FAPI partner's JARM response JWT carries no exp, which JARM section 4.4 has the client check. | HTTP 401 |
+| `STS-FED-0251` | A FAPI 2 partner's token response is not DPoP-bound: its token_type is not DPoP (RFC 9449 section 5). At sign-in the sign-in is refused; at a refresh the session is ended. | HTTP 502 |
 
 ## STS-OIDFED
 
@@ -5578,6 +5583,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0918` | A passkey an administrator enrolled was recorded, and the account signal about it could not be sent (ASVS 5.0.0 2.3.3). | — |
 | `STS-ADMIN-0919` | A deleted or renamed application, person or group could not be taken out of, or renamed in, a role or group that named it, so that role or group still names the old name or DN (roles.forgetMember(), roles.renameMember(), the directory's forgetGroupMemberships() and moveGroupMemberships()). | — |
 | `STS-ADMIN-0920` | A console role grant named somebody with no entry in the realm's directory; a role is granted only to a person who exists (admin_rbac.ts grant(), reason noSuchPerson). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0921` | A deleted application's identifier could not be taken off the clients conferring a role, so whatever is next registered under that identifier still confers it (roles.forgetConferrer()). | — |
+| `STS-ADMIN-0922` | A deleted or renamed person or group could not be taken off, or moved on, the owners of a role, group, application or service account that named its DN, so that object still names the old DN (roles.forgetOwner(), applications.forgetOwner(), the directory's forgetOwnerReferences() and moveOwnerReferences()). | — |
+| `STS-ADMIN-0923` | The store named as many entries as one question answers for a deleted or renamed DN held in an owner attribute, so some groups or service accounts may still name it as an owner (entriesNamingOwner()). | — |
 
 ## STS-API
 

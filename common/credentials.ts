@@ -6636,7 +6636,7 @@ class Credentials {
       try {
         raws = census(list);
       } catch (e) {
-        if (Credentials.storeRefused(errorCodes, e)) {
+        if (this.censusFailureRefuses(e)) {
           log.error(errorCodes.tag('STS-AUTHN-0293') +
                     'credentials: the directory\'s credential census could ' +
                     'not read the store, so ' + list.length + ' name(s) are ' +
@@ -6671,8 +6671,9 @@ class Credentials {
   // different facts. Where the directory offers no asynchronous census — a
   // test's stub, an older `ldap_server.js` — this is `factorCensus()`. A
   // census that FAILED (the store could not be read) is the synchronous
-  // census's failure: logged under STS-AUTHN-0293 and answered one person at
-  // a time.
+  // census's failure: logged under STS-AUTHN-0293 and, where the store
+  // refused it or the directory is windowed, answered unknown; otherwise one
+  // person at a time (`censusFailureRefuses()`).
   // ===========================================================================
   /**
    * `factorCensus()`, with the directory asked asynchronously.
@@ -6694,7 +6695,7 @@ class Credentials {
     try {
       raws = await census(list);
     } catch (e) {
-      if (Credentials.storeRefused(errorCodes, e)) {
+      if (this.censusFailureRefuses(e)) {
         log.error(errorCodes.tag('STS-AUTHN-0293') +
                   'credentials: the directory\'s credential census could not ' +
                   'read the store, so ' + list.length + ' name(s) are ' +
@@ -6722,8 +6723,12 @@ class Credentials {
   // ~165,000 names, every one refused and logged, and a request worker was
   // held for minutes. Those names are answered unknown instead (an empty
   // Map: the list draws them with no factors, counted in no tile), and the
-  // census is logged once. Any other throw is still answered one at a time,
-  // as is a directory that offers no census. That answer passes
+  // census is logged once. Since #786's review any store-side failure, and
+  // any failure at all in a windowed process, is answered the same way
+  // (`censusFailureRefuses()`, below); only a failure that is not the
+  // store's, in a process holding the directory in memory, is still
+  // answered one at a time, as is a directory that offers no census. That
+  // answer passes
   // `withoutRecoveryCodes`, so neither recovery-code read runs:
   // `backupCodeStatus()`, or `recoveryAdvised`'s `backupCodesOf()` for a
   // person who holds a second factor.
@@ -6734,6 +6739,57 @@ class Credentials {
     helpers.log.debug("Leaving Credentials.storeRefused(). " + code);
     return code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131' ||
            code === 'STS-LDAP-0175';
+  }
+
+  // ---------------------------------------------------------------------------
+  // AND ANY OTHER STORE-SIDE FAILURE IS REFUSED TOO (#786's review,
+  // 2026-11-13). `storeRefused()` lists three codes, and a census can fail on
+  // the store for others: a pool that timed out (STS-STORE-0066), a query the
+  // driver refused, a page the window could not read. Each of those sent the
+  // census back to `mechanismsFor()` one name at a time, which on a large
+  // realm is the multi-minute outage #786 was about. So a census failure is
+  // answered unknown, and the page says the census is unavailable, when:
+  //
+  //   * `storeRefused()` names its code, as before;
+  //   * its code is any STS-STORE- or STS-LDAP- code: the store or the
+  //     directory said it could not answer, and a one-name read meets the
+  //     same store;
+  //   * the directory is a window onto the store (`directoryWindowed`, a
+  //     hook `ldap_server.js` offers), whatever the failure was: there every
+  //     one-name read is a synchronous store round trip, so a fallback over
+  //     `factorScanLimit` names holds the event loop for as long as the
+  //     store takes.
+  //
+  // A process holding the whole directory in memory, with a failure that is
+  // not the store's, still answers one name at a time, as it always did:
+  // there `mechanismsFor()` reads the Map.
+  // ---------------------------------------------------------------------------
+  private censusFailureRefuses(e) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.censusFailureRefuses().');
+    if (Credentials.storeRefused(errorCodes, e)) {
+      log.debug('Leaving Credentials.censusFailureRefuses(). Listed.');
+      return true;
+    }
+    const code = String(errorCodes.codeOf(e) || '');
+    if (/^STS-(STORE|LDAP)-/.test(code)) {
+      log.debug('Leaving Credentials.censusFailureRefuses(). ' + code + '.');
+      return true;
+    }
+    const windowed = this.directoryHook('directoryWindowed');
+    let inWindow = false;
+    try {
+      inWindow = !!(windowed && windowed());
+    } catch (err) {
+      log.debug('Caught in Credentials.censusFailureRefuses(): ' +
+                ((err && err.message) || err));
+      // Not known: a window is the safe reading, since the fallback is what
+      // costs a windowed process minutes.
+      inWindow = true;
+    }
+    log.debug('Leaving Credentials.censusFailureRefuses(). windowed=' +
+              inWindow);
+    return inWindow;
   }
 
   // The names a census is asked about, as both doors trim them.

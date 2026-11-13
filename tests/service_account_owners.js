@@ -19,7 +19,9 @@
 //      requires one; more than MAX_OWNERS refused (STS-SVCACCT-0031); one
 //      bad owner refuses the whole set and writes nothing; none allowed and
 //      the attribute gone when the policy does not require one; an owner
-//      deleted since is reported, never dropped.
+//      deleted is taken off the list and the other owner kept (#1612's
+//      rule, 2026-11-13: until then it was reported with no kind and kept,
+//      so somebody made again at the DN owned the account).
 //   B. AN LDAP MODIFY writes two owners, and is refused for one that names
 //      nobody; the directory merge treats the attribute as a list.
 //   C. THE VIEW: `serviceAccountJson()` answers `owners`, and the person
@@ -202,10 +204,10 @@ async function theList(t) {
     const gone = ldap.deletePerson(bobDn);
     if (gone && gone.ok !== false) {
       const facts = serviceAccounts.of('svc-o');
-      t.check(facts.owners.length === 2 && facts.owners[1].kind === '' &&
-              facts.owners[1].dn === bobDn,
-              'A10. an owner deleted since is reported with no kind, not ' +
-              'dropped', JSON.stringify(facts.owners));
+      t.check(facts.owners.length === 1 &&
+              facts.owners[0].dn !== bobDn && facts.owners[0].kind === 'person',
+              'A10. an owner deleted is taken off the list, and the other ' +
+              'owner kept', JSON.stringify(facts.owners));
     } else {
       t.bad('A10. could not delete the owner to test it',
             JSON.stringify(gone));

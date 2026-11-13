@@ -2238,6 +2238,14 @@ const CODES = [
       'back with it (#628). A create of one of those names before then ' +
       'waits and is refused as in progress (STS-LDAP-0092).',
     spec: '' },
+  { code: 'STS-CLUSTER-0165',
+    summary: 'Taking over a lease is waiting for writes the previous ' +
+      'holder still has in flight under it: the ask is bounded by the ' +
+      'heartbeat\'s own bound, rolls back when the bound runs out, and is ' +
+      'made again on the next heartbeat, so this node\'s own renewal never ' +
+      'waits behind it (#770). Logged once per wait; one that repeats for a ' +
+      'node lifetime names a write that does not finish.',
+    spec: '' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -13976,6 +13984,25 @@ const CODES = [
   { code: 'STS-FED-0247',
     summary: 'A DPoP proof for a FAPI partner could not be made.',
     spec: 'HTTP 500' },
+  { code: 'STS-FED-0248',
+    summary: 'A FAPI 1.0 Advanced partner\'s front-channel ID Token ' +
+      'carries no s_hash, or one that is not the left half of the ' +
+      'state\'s hash: the detached signature does not cover the state.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0249',
+    summary: 'A FAPI 2 partner\'s authorization response names no ' +
+      'issuer (RFC 9207), which FAPI 2.0 Security Profile section ' +
+      '5.3.2.2 has the client verify.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0250',
+    summary: 'A FAPI partner\'s JARM response JWT carries no exp, which ' +
+      'JARM section 4.4 has the client check.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0251',
+    summary: 'A FAPI 2 partner\'s token response is not DPoP-bound: its ' +
+      'token_type is not DPoP (RFC 9449 section 5). At sign-in the ' +
+      'sign-in is refused; at a refresh the session is ended.',
+    spec: 'HTTP 502' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -25382,6 +25409,24 @@ const CODES = [
       'realm\'s directory; a role is granted only to a person who exists ' +
       '(admin_rbac.ts grant(), reason noSuchPerson).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0921',
+    summary: 'A deleted application\'s identifier could not be taken off ' +
+      'the clients conferring a role, so whatever is next registered under ' +
+      'that identifier still confers it (roles.forgetConferrer()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0922',
+    summary: 'A deleted or renamed person or group could not be taken off, ' +
+      'or moved on, the owners of a role, group, application or service ' +
+      'account that named its DN, so that object still names the old DN ' +
+      '(roles.forgetOwner(), applications.forgetOwner(), the directory\'s ' +
+      'forgetOwnerReferences() and moveOwnerReferences()).',
+    spec: '' },
+  { code: 'STS-ADMIN-0923',
+    summary: 'The store named as many entries as one question answers for a ' +
+      'deleted or renamed DN held in an owner attribute, so some groups or ' +
+      'service accounts may still name it as an owner ' +
+      '(entriesNamingOwner()).',
+    spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

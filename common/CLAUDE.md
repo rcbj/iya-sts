@@ -6603,8 +6603,25 @@ owner (`0173`), a value not listed (`0176`) and more than `MAX_OWNERS`
 (`0175`), and write through `write()`. **`write()` keeps the owners when a
 caller does not name them** (`given.owners === undefined`), for
 `conferredBy`'s reason: every older caller writes the whole record. An owner
-grants nothing; `ownersOf()` reports one deleted since with `kind: ''`, and
+grants nothing; `ownersOf()` reports one naming nobody with `kind: ''` (since
+2026-11-13 a delete takes the DN off, so only a value written before that or
+by hand), and
 `entryOf()` answers the role's directory entry for its page.
+
+**A DELETED OWNER OWNS NOTHING, AND A DELETED CLIENT CONFERS NOTHING
+(2026-11-13, #1612's review).** "Keeps what the entry holds" is also why the
+first pass of #1612 left both behind: `forgetMember()` writes the role back
+without naming `conferredBy` or `owners`, so both survived the delete of what
+they named. `forgetConferrer(identifier)` takes a deleted application off every
+role it conferred (`STS-ADMIN-0921`), and `forgetOwner(dn)` /
+`renameOwner(from, to)` take a deleted person's or group's DN off every role's
+owners or move a renamed one's (`STS-ADMIN-0922`); `applications.forgetOwner()`
+/ `renameOwner()` do the same for `appOwner`, off the kept listing. The
+directory calls all of them where it deletes and renames
+(`ldap/CLAUDE.md`, *the four structural rules*), and writes the audit rows:
+`roles.unconfer` (registered in `audit.ACTIONS` with `roles.confer` that day —
+`admin_actions.ts` had written both through a ternary the vocabulary test could
+not read) and each register's remove-owner action.
 
 **An application has owners too (#604)**: `appOwner` on its entry, written by
 `applications.addOwner()` and `removeOwner()` alone (in no EDITABLE row, so the
@@ -14544,7 +14561,13 @@ service account's `stsServiceAccountOwner` (#600), an application's
 every door resolving a username or a cn first. A person owns an object when a
 value names them or a group they are in (direct or through `memberOf`,
 `groupsOfUser()`); DNs are compared through `dnKey()` (case, and the spaces
-around a comma, do not matter).
+around a comma, do not matter). **Because the DN is the name, a value naming
+a deleted person or group is taken off when it is deleted, and moved when it
+is renamed (2026-11-13, #1612's rule)**: a person made again at the same DN
+would otherwise own everything the first one did, owner:write included. The
+directory does it (`forgetOwnerReferences()`, `moveOwnerReferences()`,
+`ldap/CLAUDE.md`); a value written by hand that names nobody is still reported
+here with `kind: ''`.
 
 **`ownership.ts` ANSWERS, AND NEVER DECIDES.** `identityOf()` (the person's
 DN and their groups' — the policy's `owner-identity`), `objectOf()` (an
