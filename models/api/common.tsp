@@ -679,7 +679,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithAlgWhatSpec {`alg`?: string; `what`?: string; `spec`?: string}
 
-@hoisted model WithIdLabelKind {`id`?: string; `label`?: string; `kind`?: string}
+@hoisted model WithIdLabelKind {`id`?: string; `label`?: string; `kind`?: string; `tlsUsable`?: boolean}
 
 @hoisted model WithOptionsRequired {`options`?: ((string)[])[]; `required`?: boolean}
 

@@ -952,6 +952,7 @@ Scope: `admin:read`.
 | `page.credentials.ca.keyAlgorithms[].id` | string |  |  |
 | `page.credentials.ca.keyAlgorithms[].kind` | string |  |  |
 | `page.credentials.ca.keyAlgorithms[].label` | string |  |  |
+| `page.credentials.ca.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `page.credentials.ca.leafLifetimeDays` | number |  |  |
 | `page.credentials.clientSecret` | object |  |  |
 | `page.credentials.clientSecret.authMethod` | string |  |  |

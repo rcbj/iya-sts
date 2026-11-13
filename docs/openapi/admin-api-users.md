@@ -844,6 +844,7 @@ Scope: `admin:read`.
 | `(shape 2).page.keyPairs.ca.keyAlgorithms[].id` | string |  |  |
 | `(shape 2).page.keyPairs.ca.keyAlgorithms[].kind` | string |  |  |
 | `(shape 2).page.keyPairs.ca.keyAlgorithms[].label` | string |  |  |
+| `(shape 2).page.keyPairs.ca.keyAlgorithms[].tlsUsable` | boolean |  |  |
 | `(shape 2).page.keyPairs.ca.leafLifetimeDays` | number |  |  |
 | `(shape 2).page.keyPairs.found` | boolean |  |  |
 | `(shape 2).page.keyPairs.maxPerPerson` | number |  |  |
