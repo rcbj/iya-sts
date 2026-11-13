@@ -969,9 +969,9 @@ Scope: `admin:read`.
 
 **Whether the identity protocol debugger is embedded, where it answers, and what its api process is doing**
 
-The embedded identity protocol debugger: `embedded` and the setting and mode that decided it, the listener's `port` and whether it is `listening`, the client (`clientId`), the resource server (`resource`), the permission its api requires (`permission`) and the audience a token for it carries (`audience`), and under `api` the child process: its `state` (`starting`, `running`, `restarting`, `given-up`, `not-installed`, `stopped`), process id, socket, starts, consecutive failures, last exit and last error, and — in product mode — the `allowedRanges` it may dial. `settings` is the `Protocol debugger` group as `/admin/debugger` draws it.
+The embedded identity protocol debugger: `embedded` and the setting and mode that decided it, the listener's `port` and whether it is `listening`, the client the debugger and its api sign in as (`clientId`), and under `api` the child process: its `state` (`starting`, `running`, `restarting`, `given-up`, `not-installed`, `stopped`), process id, socket, starts, consecutive failures, last exit and last error, and — in product mode — the `allowedRanges` it may dial. `settings` is the `Protocol debugger` group as `/admin/debugger` draws it.
 
-Nothing here opens the debugger: its gate is the permission, which the authorization server issues to console administrators only.
+Nothing here opens the debugger: its gate is a console administrator's sign-in session, and it accepts no access token.
 
 **Mirrors** `GET /admin/debugger` on the admin console.
 
@@ -1010,16 +1010,13 @@ Scope: `admin:read`.
 | `api.starts` | integer |  |  |
 | `api.state` | string |  |  |
 | `api.uiUrl` | string, or null |  |  |
-| `audience` | string |  |  |
 | `clientId` | string |  |  |
 | `embedded` | boolean |  |  |
 | `listenError` | string, or null |  |  |
 | `listening` | boolean |  |  |
 | `mode` | string |  |  |
-| `permission` | string |  |  |
 | `port` | number |  |  |
 | `publicBaseUrl` | string, or null |  |  |
-| `resource` | string |  |  |
 | `scheme` | string |  |  |
 | `setting` | string |  |  |
 | `settings` | object |  | The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns. |

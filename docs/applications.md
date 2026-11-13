@@ -348,8 +348,7 @@ startup, under `ou=applications` with everything else:
 | `sts-account-api` | The [account API](account-api.md), `/account-api`, as an OAuth 2.0 resource: the user portal's only door | every realm |
 | `sts-report-api` | The [reports API](reporting.md), `/report-api`, as an OAuth 2.0 resource | every realm |
 | `sts-resource` | The default resource, `<issuer base>/resource`: the audience a token gets when its request names no `resource`, which UserInfo, SCIM, Shared Signals, OpenID4VCI and Grant Management accept | every realm |
-| `sts-debugger-api` | The [embedded protocol debugger's](admin-console.md#the-embedded-protocol-debugger) api: a resource server that defines one delegated permission, `urn:sts:debugger-api:debugger` | default realm, whether or not the debugger is embedded |
-| `sts-debugger-ui` | The embedded debugger's browser client: a relying party granted that permission | default realm, whether or not the debugger is embedded |
+| `sts-debugger-ui` | The [embedded protocol debugger](admin-console.md#the-embedded-protocol-debugger) — its UI and its api, one confidential relying party. Until #1717 its api was a second entry, `sts-debugger-api`; a start removes a seeded copy of that entry from an older install | default realm, whether or not the debugger is embedded |
 
 They are **full RFC 7591 registrations rather than labels**, and they are
 load-bearing. `/admin`, `/portal` and the debugger are relying parties of this
