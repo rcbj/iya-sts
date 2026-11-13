@@ -249,6 +249,9 @@ const DID_TYPE = /^application\/did\+json\b/;
 const SAML_TYPE = /^application\/samlmetadata\+xml\b/;
 const XML_TYPE = /^application\/xml\b/;
 const TEXT_TYPE = /^text\/plain\b/;
+// WSDL 1.1 names no media type. application/wsdl+xml is the conventional one
+// GET /sts/metadata sends (#958).
+const WSDL_TYPE = /^application\/wsdl\+xml\b/;
 // OpenID Federation 1.1 section 9: an Entity Configuration's media type, and
 // 8.7.2's for the Historical Keys.
 const ENTITY_STATEMENT_TYPE = /^application\/entity-statement\+jwt\b/;
@@ -731,12 +734,87 @@ const DOCUMENTS = [
       log.debug("Leaving must().");
       return bad;
     } },
+  { family: "WS-Trust", spec: "WS-Trust 1.3", path: "/sts/metadata",
+    type: WSDL_TYPE, json: false, badCredential: "ignored",
+    // THE WSDL (#958): a port type per trust version. WS-MetadataExchange
+    // is POST /sts/mex, a SOAP request rather than a document. The
+    // certificate stays at /sts/cert; this document names that address and
+    // does not carry the key.
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<wsdl:definitions[\s>]/.test(text)) {
+        bad.push("no wsdl:definitions");
+      }
+      if (!/wsu:Id="RequesterAuthentication"/.test(text)) {
+        bad.push("no requester policy");
+      }
+      if (!/wsu:Id="IssuedTokenTypes"/.test(text)) {
+        bad.push("no issued-type policy");
+      }
+      if (!/sp:UsernameToken/.test(text)) {
+        bad.push("no UsernameToken alternative");
+      }
+      // The document DENIES SAML 1.2 in a sentence. A substring ban would
+      // fail on that sentence. WssSamlV12 and AQ-RES are the advertisements.
+      if (!/There is no SAML 1\.2\./.test(text)) {
+        bad.push("does not say there is no SAML 1.2");
+      }
+      if (/WssSamlV12|AQ-RES/.test(text)) {
+        bad.push("advertises SAML 1.2 or AQ-RES");
+      }
+      if (/AlgorithmSuite|Basic256/.test(text)) {
+        bad.push("names an algorithm suite");
+      }
+      if (!/location="[^"]*\/sts"/.test(text)) {
+        bad.push("the RST address is not /sts");
+      }
+      ["TrustMay2004", "TrustFeb2005", "Trust13", "Trust14"]
+        .forEach(function (name) {
+          if (text.indexOf('<wsdl:portType name="' + name + '">') < 0) {
+            bad.push("no port type " + name);
+          }
+        });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "WS-Trust", spec: "WS-Trust 1.3",
+    path: "/sts/metadata/capabilities", type: XML_TYPE, json: false,
+    badCredential: "ignored",
+    // THE TOKEN CAPABILITY EXTENSION (#958): every credential, every issued
+    // type and each pair, built from the running settings.
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<iya:TokenCapabilities[^>]*urn:iya-sts:metadata:token-capabilities:1/
+        .test(text)) {
+        bad.push("no iya:TokenCapabilities in version 1");
+      }
+      ["InputToken", "OutputToken", "Combination"].forEach(function (name) {
+        if (text.indexOf("<iya:" + name + " ") < 0) {
+          bad.push("no " + name);
+        }
+      });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "WS-Trust", spec: "WS-Trust 1.3",
+    path: "/sts/metadata/capabilities.xsd", type: XML_TYPE, json: false,
+    badCredential: "ignored",
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<xsd:schema[^>]*targetNamespace="urn:iya-sts:metadata:token-capabilities:1"/
+        .test(text)) {
+        bad.push("not the capability schema");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
   { family: "WS-Trust", spec: "WS-Trust 1.3", path: "/sts/cert",
     type: TEXT_TYPE, json: false, badCredential: "ignored",
-    // THE ONLY "METADATA" THIS FAMILY HAS. WS-Trust's own discovery is
-    // WS-MetadataExchange, which this service does not implement, so the
-    // certificate a client verifies issued tokens against is the whole of
-    // what it can read before it sends anything.
+    // THE SIGNING CERTIFICATE. The WSDL is /sts/metadata. This row stays
+    // the certificate a client verifies issued tokens against.
     must: function (text) {
       log.debug("Entering must().");
       log.debug("Leaving must().");

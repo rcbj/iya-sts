@@ -252,8 +252,12 @@
     "text": "partial: ang mga bahaging utang ng isang responder. Plain HTTP (section 5) — sumasagot ang responder sa `pki.httpPort` pati sa TLS main port, at ang plain ang pinangangalanan ng mga certificate; GET na may nakadugtong na base64 request; walang fractional second sa anumang GeneralizedTime (section 2.2.4); ang responder ID ayon sa key hash (section 2.2.2); `unauthorized` para sa request na hindi ito authoritative (section 2.2.3); at ang mga caching header ng section 6.2 — max-age na hindi lalampas sa nextUpdate, Last-Modified, Expires at isang strong ETag, hindi kailanman no-cache o no-store sa isang authoritative na sagot. HINDI PA TAPOS: sina-sign ang mga response kapag hiniling sa halip na PRE-PRODUCED (inirerekomenda ng section 2.2.1 ang pre-production para sa mataas na volume), at ang sagot sa request na may nonce ay minamarkahang private sa halip na ihain mula sa cache."
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "cafeffef561dcd9a",
-    "text": "partial: Issue, Renew, Validate at Cancel sa SOAP 1.1 at 1.2. Hindi vine-verify ang mga request signature. Ang OnBehalfOf at ActAs ay pinagpapasyahan ng issuance policy (#186, ang mga patakarang pinagsasaluhan ng token exchange at Kerberos S4U) — humihingi ang OnBehalfOf ng impersonation at ang ActAs ng delegation, dapat itong payagan ng delegation semantics ng mga entry, ang AppliesTo ay dapat isang nakarehistrong application na pinapayagan ng mga delegation relationship, at kailangan ng taong requester ang delegation.actorRole — at tinatanggihan ng wst:RequestFailed fault (section 11) sa product mode; wst:InvalidRequest ang dalawang element nang sabay; itinatala ng development ang sana ay tinanggihan. Sa PRODUCT mode (2026-09-12), bawat operation ay nangangailangan ng credential — isang UsernameToken na vine-verify laban sa directory, o isang SAML assertion na sina-sign ng STS na ito at nasa loob ng Conditions nito — at ang OnBehalfOf/ActAs ay nangangailangan ng sariling credential ng requester at ng ganoong assertion sa loob nito; walang tinatanggap ang development, gaya ng dati. Sa parehong mode, nililimitahan ang hinihinging wst:Lifetime (wstrust.maxTokenLifetimeMin) at pinangangalanan ng AuthnContext ng inissue na assertion ang credential sa halip na password. Ang humihiling na walang dalang credential ang wsse:Security ay pinapatunayan, sa parehong mode, ng TLS client certificate sa koneksyon kapag inisyu ito ng realm na ito sa isang tao o isang application (#1046), o kapag galing ito sa isang panlabas na certificate authority at nakaimbak sa userCertificate sa eksaktong isa sa kanilang mga entry (#1061)."
+    "en": "34e462a3c1215584",
+    "text": "partial: Issue, Renew, Validate at Cancel sa SOAP 1.1 at 1.2. Ang GET /sts/metadata ay WSDL 1.1, isang port type bawat bersyon ng trust, na may mga credential bilang WS-SecurityPolicy; ang mga pares ng credential/token type ay isang IYA-STS extension sa /sts/metadata/capabilities; sumasagot ang WS-MetadataExchange sa /sts/mex. Ang WS-Security signature sa Body at sa Timestamp ay isang credential (#521), vine-verify sa product. Ang OnBehalfOf at ActAs ay pinagpapasyahan ng issuance policy (#186, ang mga patakarang pinagsasaluhan ng token exchange at Kerberos S4U) — humihingi ang OnBehalfOf ng impersonation at ang ActAs ng delegation, dapat itong payagan ng delegation semantics ng mga entry, ang AppliesTo ay dapat isang nakarehistrong application na pinapayagan ng mga delegation relationship, at kailangan ng taong requester ang delegation.actorRole — at tinatanggihan ng wst:RequestFailed fault (section 11) sa product mode; wst:InvalidRequest ang dalawang element nang sabay; itinatala ng development ang sana ay tinanggihan. Sa PRODUCT mode (2026-09-12), bawat operation ay nangangailangan ng credential — isang UsernameToken na vine-verify laban sa directory, isang SAML 2.0 o SAML 1.1 assertion o isang JWT na inisyu ng STS na ito, isang WS-Security signature, o isang Kerberos token para sa sariling SPN ng serbisyong ito — at ang OnBehalfOf/ActAs ay nangangailangan ng sariling credential ng requester at ng token na inisyu ng STS na ito sa loob nito; walang tinatanggap ang development, gaya ng dati. Sa parehong mode, nililimitahan ang hinihinging wst:Lifetime (wstrust.maxTokenLifetimeMin) at pinangangalanan ng AuthnContext ng inissue na assertion ang credential sa halip na password. Ang humihiling na walang dalang credential ang wsse:Security ay pinapatunayan, sa parehong mode, ng TLS client certificate sa koneksyon kapag inisyu ito ng realm na ito sa isang tao o isang application (#1046), o kapag galing ito sa isang panlabas na certificate authority at nakaimbak sa userCertificate sa eksaktong isa sa kanilang mga entry (#1061)."
+  },
+  "stsmetadata.specs.ws-mex.coverage": {
+    "en": "252983aa08edd8d9",
+    "text": "partial: Sinasagot ng POST /sts/mex ang isang WS-Transfer Get at isang GetMetadata (pinakikitid ng Dialect at Identifier) sa SOAP version at WS-Addressing namespace ng request, kasama ang WSDL, ang token capability document at ang schema nito na naka-embed bilang mga section. Hindi pa ginagawa: isang MetadataReference o Location section, ang namespace ng W3C WS-MetadataExchange 1.1 Recommendation, at metadata sa isang EPR."
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
@@ -2459,6 +2463,22 @@
     "en": "66812a407152a91b",
     "text": "Mag-POST ng SOAP RequestSecurityToken; nagdi-dispatch ayon sa wst:RequestType (Issue, Renew, Validate, Cancel) at nagbabalik ng RSTR. Inilalarawan ng GET ang endpoint. Idagdag ang ?encrypt=1 para maibalik ang ibinigay na assertion bilang EncryptedAssertion."
   },
+  "stsmetadata.endpoints./sts/metadata.what": {
+    "en": "8ffa0771ab14417f",
+    "text": "WSDL 1.1 na may WS-SecurityPolicy. Bawat bersyon ng trust (Mayo 2004, Pebrero 2005, 1.3 at 1.4) ay may sariling port type na may mga operation na itinatakda nito, bawat input at output ay pinangangalanan ang wsa:Action nito, at isang SOAP 1.1 at isang SOAP 1.2 port sa /sts. Ang mga credential ay isang UsernameToken, isang SAML 2.0 o SAML 1.1 assertion, isang JWT, isang X.509 signature, isang Kerberos token kapag naka-on ang wstrust.acceptKerberos, at isang TLS client certificate kapag naka-on ang wstrust.acceptClientCertificate. Inihahain nang may Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.what": {
+    "en": "58631087b8e5323a",
+    "text": "Isang IYA-STS extension (urn:iya-sts:metadata:token-capabilities:1): bawat credential na tinatanggap ng /sts, bawat token type na inilalabas nito, at bawat pares bilang sinusuportahan, may kondisyon o hindi sinusuportahan kasama ang mga kondisyon nito, na binuo mula sa kasalukuyang tumatakbong mga setting. Inihahain nang may Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.xsd.what": {
+    "en": "c38652777c26f595",
+    "text": "Ang XML Schema ng token capability document."
+  },
+  "stsmetadata.endpoints./sts/mex.what": {
+    "en": "5940ecbdab434650",
+    "text": "Mag-POST ng isang WS-Transfer Get o isang WS-MetadataExchange GetMetadata (2004/09), SOAP 1.1 o 1.2; ang sagot ay isang mex:Metadata na naglalaman ng WSDL, ng token capability document at ng schema nito bilang tatlong section."
+  },
   "stsmetadata.endpoints./sts/cert.what": {
     "en": "bb1a31c1486e5138",
     "text": "Ang PEM certificate na ang key ay pumipirma sa mga assertion, para ma-verify ng relying party ang mga ito."
@@ -3852,8 +3872,8 @@
     "text": "Ang 1.2 Web (Passive) Requestor Profile: /wsfed na nagdi-dispatch ayon sa wa, ang sign-in screen, signed federation metadata sa AD FS path, at wsignout1.0."
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "3d88db91fab2cd5f",
-    "text": "RST / RSTR sa SOAP sa /sts, sa lahat ng apat na bersyon (1.0 hanggang 1.4), na naglalabas ng alinmang SAML dialect na naka-sign ang assertion at opsyonal na naka-encrypt sa certificate ng humihiling, isang JWT, o isang Kerberos ticket."
+    "en": "2e317d1cfa752dc2",
+    "text": "RST / RSTR sa SOAP sa /sts, sa lahat ng apat na bersyon (1.0 hanggang 1.4), na naglalabas ng alinmang SAML dialect na naka-sign ang assertion at opsyonal na naka-encrypt sa certificate ng humihiling, isang JWT, o isang Kerberos ticket, na inilalarawan ng isang WSDL na may port type bawat bersyon at inilalathala sa pamamagitan ng WS-MetadataExchange."
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

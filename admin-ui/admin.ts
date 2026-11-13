@@ -10759,6 +10759,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<a href="/admin/delegation">Delegation</a> shows every act it ' +
            'recorded.'],
     links: [['/sts', 'the token service, for a person'],
+            ['/sts/metadata', 'its WSDL, with the credentials it accepts'],
             ['/sts/cert', 'the certificate its assertions verify against'],
             ['/admin/saml-attributes', 'what goes into the assertion'],
             ['/admin/delegation', 'what was asked for on whose behalf']] },

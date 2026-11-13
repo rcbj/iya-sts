@@ -252,8 +252,12 @@
     "text": "partial : les parties qu’un répondeur doit fournir. HTTP en clair (section 5) — le répondeur répond sur `pki.httpPort` ainsi que sur le port principal TLS, et les certificats nomment celui en clair ; GET avec la requête en base64 ajoutée ; aucune fraction de seconde dans aucun GeneralizedTime (section 2.2.4) ; l’identifiant du répondeur par hachage de clé (section 2.2.2) ; `unauthorized` pour une requête pour laquelle il ne fait pas autorité (section 2.2.3) ; et les en-têtes de mise en cache de la section 6.2 — max-age au plus tard à nextUpdate, Last-Modified, Expires et un ETag fort, jamais no-cache ni no-store sur une réponse qui fait autorité. NON FAITS : les réponses sont signées à la demande plutôt que PRÉ-PRODUITES (la section 2.2.1 recommande la pré-production pour les gros volumes), et une réponse à une requête portant un nonce est marquée private plutôt que servie depuis un cache."
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "cafeffef561dcd9a",
-    "text": "partial : Issue, Renew, Validate et Cancel sur SOAP 1.1 et 1.2. Les signatures de requête ne sont pas vérifiées. OnBehalfOf et ActAs sont décidés par la politique d’émission (#186, les règles que partagent l’échange de jetons et Kerberos S4U) — OnBehalfOf demande l’usurpation d’identité et ActAs la délégation, la sémantique de délégation des entrées doit le permettre, l’AppliesTo doit être une application enregistrée que les relations de délégation autorisent, et un demandeur qui est une personne a besoin de delegation.actorRole — et sont refusés avec une faute wst:RequestFailed (section 11) en mode produit ; les deux éléments à la fois donnent wst:InvalidRequest ; le développement consigne ce qui aurait été refusé. En mode PRODUIT (2026-09-12), chaque opération exige un identifiant — un UsernameToken vérifié contre l’annuaire, ou une assertion SAML que ce STS a signée et dont les Conditions sont respectées — et un OnBehalfOf/ActAs exige l’identifiant propre du demandeur et une telle assertion à l’intérieur ; le développement n’en accepte aucun, comme il l’a toujours fait. Dans les deux modes, une wst:Lifetime demandée est plafonnée (wstrust.maxTokenLifetimeMin) et l’AuthnContext de l’assertion émise nomme l’identifiant plutôt qu’un mot de passe. Un demandeur dont le wsse:Security ne porte aucun identifiant est authentifié, dans les deux modes, par le certificat client TLS de la connexion lorsque ce domaine l’a délivré à une personne ou à une application (#1046), ou lorsqu’il provient d’une autorité de certification externe et est enregistré dans userCertificate sur exactement une de leurs entrées (#1061)."
+    "en": "34e462a3c1215584",
+    "text": "partial : Issue, Renew, Validate et Cancel sur SOAP 1.1 et 1.2. GET /sts/metadata est un WSDL 1.1, avec un port type par version de trust, dont les identifiants figurent en WS-SecurityPolicy ; les paires identifiant/type de jeton sont une extension IYA-STS à /sts/metadata/capabilities ; WS-MetadataExchange répond à /sts/mex. Une signature WS-Security portant sur le Body et le Timestamp est un identifiant (#521), vérifiée en mode produit. OnBehalfOf et ActAs sont décidés par la politique d’émission (#186, les règles que partagent l’échange de jetons et Kerberos S4U) — OnBehalfOf demande l’usurpation d’identité et ActAs la délégation, la sémantique de délégation des entrées doit le permettre, l’AppliesTo doit être une application enregistrée que les relations de délégation autorisent, et un demandeur qui est une personne a besoin de delegation.actorRole — et sont refusés avec une faute wst:RequestFailed (section 11) en mode produit ; les deux éléments à la fois donnent wst:InvalidRequest ; le développement consigne ce qui aurait été refusé. En mode PRODUIT (2026-09-12), chaque opération exige un identifiant — un UsernameToken vérifié contre l’annuaire, une assertion SAML 2.0 ou SAML 1.1 ou un JWT que ce STS a émis, une signature WS-Security, ou un jeton Kerberos pour le SPN propre de ce service — et un OnBehalfOf/ActAs exige l’identifiant propre du demandeur et un jeton que ce STS a émis à l’intérieur ; le développement n’en accepte aucun, comme il l’a toujours fait. Dans les deux modes, une wst:Lifetime demandée est plafonnée (wstrust.maxTokenLifetimeMin) et l’AuthnContext de l’assertion émise nomme l’identifiant plutôt qu’un mot de passe. Un demandeur dont le wsse:Security ne porte aucun identifiant est authentifié, dans les deux modes, par le certificat client TLS de la connexion lorsque ce domaine l’a délivré à une personne ou à une application (#1046), ou lorsqu’il provient d’une autorité de certification externe et est enregistré dans userCertificate sur exactement une de leurs entrées (#1061)."
+  },
+  "stsmetadata.specs.ws-mex.coverage": {
+    "en": "252983aa08edd8d9",
+    "text": "partial : POST /sts/mex répond à un WS-Transfer Get et à un GetMetadata (restreint par Dialect et Identifier) dans la version SOAP et l’espace de noms WS-Addressing de la requête, avec le WSDL, le document des capacités de jetons et son schéma intégrés en tant que sections. Non réalisé : une section MetadataReference ou Location, l’espace de noms de la recommandation W3C WS-MetadataExchange 1.1, et des métadonnées dans une EPR."
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
@@ -2459,6 +2463,22 @@
     "en": "66812a407152a91b",
     "text": "POST d’un RequestSecurityToken SOAP ; aiguille selon wst:RequestType (Issue, Renew, Validate, Cancel) et renvoie un RSTR. GET décrit le point de terminaison. Ajoutez ?encrypt=1 pour que l’assertion émise soit renvoyée sous forme d’EncryptedAssertion."
   },
+  "stsmetadata.endpoints./sts/metadata.what": {
+    "en": "8ffa0771ab14417f",
+    "text": "WSDL 1.1 avec WS-SecurityPolicy. Chaque version de trust (mai 2004, février 2005, 1.3 et 1.4) a son propre port type avec les opérations qu’elle définit, chaque entrée et chaque sortie nommant son wsa:Action, ainsi qu’un port SOAP 1.1 et un port SOAP 1.2 à /sts. Les identifiants sont un UsernameToken, une assertion SAML 2.0 ou SAML 1.1, un JWT, une signature X.509, un jeton Kerberos lorsque wstrust.acceptKerberos est activé, et un certificat client TLS lorsque wstrust.acceptClientCertificate est activé. Servi avec Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.what": {
+    "en": "58631087b8e5323a",
+    "text": "Une extension IYA-STS (urn:iya-sts:metadata:token-capabilities:1) : chaque identifiant que /sts accepte, chaque type de jeton qu’il émet, et chaque paire indiquée comme prise en charge, conditionnelle ou non prise en charge avec ses conditions, construite à partir des paramètres en vigueur. Servi avec Cache-Control: no-store."
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.xsd.what": {
+    "en": "c38652777c26f595",
+    "text": "Le schéma XML du document des capacités de jetons."
+  },
+  "stsmetadata.endpoints./sts/mex.what": {
+    "en": "5940ecbdab434650",
+    "text": "Envoyez par POST un WS-Transfer Get ou un GetMetadata WS-MetadataExchange (2004/09), en SOAP 1.1 ou 1.2 ; la réponse est un mex:Metadata contenant le WSDL, le document des capacités de jetons et son schéma en trois sections."
+  },
   "stsmetadata.endpoints./sts/cert.what": {
     "en": "bb1a31c1486e5138",
     "text": "Le certificat PEM dont la clé signe les assertions, afin qu’une partie de confiance puisse les vérifier."
@@ -3852,8 +3872,8 @@
     "text": "Le Web (Passive) Requestor Profile 1.2 : /wsfed qui aiguille selon wa, l’écran de connexion, des métadonnées de fédération signées au chemin AD FS, et wsignout1.0."
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "3d88db91fab2cd5f",
-    "text": "RST / RSTR sur SOAP à /sts, dans les quatre versions (1.0 à 1.4), émettant l’un ou l’autre dialecte SAML avec l’assertion signée et éventuellement chiffrée pour le certificat du demandeur, un JWT ou un ticket Kerberos."
+    "en": "2e317d1cfa752dc2",
+    "text": "RST / RSTR sur SOAP à /sts, dans les quatre versions (1.0 à 1.4), émettant l’un ou l’autre dialecte SAML avec l’assertion signée et éventuellement chiffrée pour le certificat du demandeur, un JWT ou un ticket Kerberos, décrit par un WSDL avec un port type par version et publié via WS-MetadataExchange."
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

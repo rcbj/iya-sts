@@ -252,8 +252,12 @@
     "text": "partial：回應程式應盡的部分。純 HTTP（第 5 節）——回應程式除了 TLS 主連接埠外也在 `pki.httpPort` 上回應，且憑證指名的是純 HTTP 那一個；附加 base64 請求的 GET；任何 GeneralizedTime 中都沒有小數秒（第 2.2.4 節）；依金鑰雜湊的回應程式 ID（第 2.2.2 節）；對其無權威之請求回應 `unauthorized`（第 2.2.3 節）；以及第 6.2 節的快取標頭——max-age 不晚於 nextUpdate、Last-Modified、Expires 與強 ETag，權威回應絕不使用 no-cache 或 no-store。「未完成」：回應是依請求簽署，而不是「預先產生」（第 2.2.1 節建議在高流量時預先產生），且對攜帶 nonce 之請求的回應會被標記為 private，而不是從快取提供。"
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "cafeffef561dcd9a",
-    "text": "partial：透過 SOAP 1.1 與 1.2 的 Issue、Renew、Validate 與 Cancel。請求簽章不會被驗證。OnBehalfOf 與 ActAs 由簽發原則決定（#186，權杖交換與 Kerberos S4U 共用的規則）——OnBehalfOf 要求的是模擬身分，ActAs 要求的是委派，項目的委派語意必須允許，AppliesTo 必須是委派關係所允許的已註冊應用程式，而個人請求者需要 delegation.actorRole——在產品模式下以 wst:RequestFailed 錯誤（第 11 節）拒絕；兩個元素同時出現為 wst:InvalidRequest；開發模式則記錄原本會被拒絕的內容。在「產品」模式下（2026-09-12），每項操作都需要認證資料——依目錄驗證的 UsernameToken，或由此 STS 簽署且在其 Conditions 範圍內的 SAML 斷言——而 OnBehalfOf/ActAs 需要請求者自己的認證資料，且其中要有這樣的斷言；開發模式則一如以往什麼都不要求。在兩種模式下，所要求的 wst:Lifetime 都會被限制（wstrust.maxTokenLifetimeMin），且所簽發斷言的 AuthnContext 會指名實際的認證資料，而不是密碼。若請求者的 wsse:Security 未攜帶任何認證資料，則在兩種模式下皆以連線上的 TLS 用戶端憑證驗證請求者，前提是該憑證由本領域核發給某個人或某個應用程式（#1046），或者來自外部憑證授權單位並儲存在其恰好一個項目的 userCertificate 中（#1061）。"
+    "en": "34e462a3c1215584",
+    "text": "partial：透過 SOAP 1.1 與 1.2 的 Issue、Renew、Validate 與 Cancel。GET /sts/metadata 是 WSDL 1.1，每個 trust 版本一個 port type，認證資料寫成 WS-SecurityPolicy；認證資料/權杖類型配對是位於 /sts/metadata/capabilities 的 IYA-STS 擴充；WS-MetadataExchange 在 /sts/mex 回應。涵蓋 Body 與 Timestamp 的 WS-Security 簽章是一種認證資料（#521），並在產品模式下加以驗證。OnBehalfOf 與 ActAs 由簽發原則決定（#186，權杖交換與 Kerberos S4U 共用的規則）——OnBehalfOf 要求的是模擬身分，ActAs 要求的是委派，項目的委派語意必須允許，AppliesTo 必須是委派關係所允許的已註冊應用程式，而個人請求者需要 delegation.actorRole——在產品模式下以 wst:RequestFailed 錯誤（第 11 節）拒絕；兩個元素同時出現為 wst:InvalidRequest；開發模式則記錄原本會被拒絕的內容。在「產品」模式下（2026-09-12），每項操作都需要認證資料——依目錄驗證的 UsernameToken、此 STS 簽發的 SAML 2.0 或 SAML 1.1 斷言或 JWT、WS-Security 簽章，或針對本服務自身 SPN 的 Kerberos 權杖——而 OnBehalfOf/ActAs 需要請求者自己的認證資料，且其中要有此 STS 簽發的權杖；開發模式則一如以往什麼都不要求。在兩種模式下，所要求的 wst:Lifetime 都會被限制（wstrust.maxTokenLifetimeMin），且所簽發斷言的 AuthnContext 會指名實際的認證資料，而不是密碼。若請求者的 wsse:Security 未攜帶任何認證資料，則在兩種模式下皆以連線上的 TLS 用戶端憑證驗證請求者，前提是該憑證由本領域核發給某個人或某個應用程式（#1046），或者來自外部憑證授權單位並儲存在其恰好一個項目的 userCertificate 中（#1061）。"
+  },
+  "stsmetadata.specs.ws-mex.coverage": {
+    "en": "252983aa08edd8d9",
+    "text": "partial：POST /sts/mex 以請求所用的 SOAP 版本與 WS-Addressing 命名空間回應 WS-Transfer Get 與 GetMetadata（可依 Dialect 與 Identifier 縮小範圍），並將 WSDL、權杖能力文件及其結構描述作為區段內嵌。未實作：MetadataReference 或 Location 區段、W3C WS-MetadataExchange 1.1 建議書的命名空間，以及 EPR 中的中繼資料。"
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
@@ -2459,6 +2463,22 @@
     "en": "66812a407152a91b",
     "text": "POST 一個 SOAP RequestSecurityToken；依 wst:RequestType（Issue、Renew、Validate、Cancel）分派並回傳 RSTR。GET 描述此端點。加上 ?encrypt=1 可讓簽發的判斷提示以 EncryptedAssertion 回傳。"
   },
+  "stsmetadata.endpoints./sts/metadata.what": {
+    "en": "8ffa0771ab14417f",
+    "text": "內嵌 WS-SecurityPolicy 的 WSDL 1.1。每個 trust 版本（2004 年 5 月、2005 年 2 月、1.3 與 1.4）都有自己的 port type，包含該版本定義的操作，每個輸入與輸出都指名其 wsa:Action，並在 /sts 上有一個 SOAP 1.1 連接埠與一個 SOAP 1.2 連接埠。認證資料為 UsernameToken、SAML 2.0 或 SAML 1.1 斷言、JWT、X.509 簽章、wstrust.acceptKerberos 開啟時的 Kerberos 權杖，以及 wstrust.acceptClientCertificate 開啟時的 TLS 用戶端憑證。以 Cache-Control: no-store 提供。"
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.what": {
+    "en": "58631087b8e5323a",
+    "text": "IYA-STS 擴充（urn:iya-sts:metadata:token-capabilities:1）：/sts 接受的每種認證資料、它簽發的每種權杖類型，以及每一組配對為支援、有條件支援或不支援及其條件，依目前執行中的設定產生。以 Cache-Control: no-store 提供。"
+  },
+  "stsmetadata.endpoints./sts/metadata/capabilities.xsd.what": {
+    "en": "c38652777c26f595",
+    "text": "權杖能力文件的 XML 結構描述。"
+  },
+  "stsmetadata.endpoints./sts/mex.what": {
+    "en": "5940ecbdab434650",
+    "text": "以 POST 傳送 WS-Transfer Get 或 WS-MetadataExchange GetMetadata（2004/09），SOAP 1.1 或 1.2；回應是一個 mex:Metadata，以三個區段包含 WSDL、權杖能力文件及其結構描述。"
+  },
   "stsmetadata.endpoints./sts/cert.what": {
     "en": "bb1a31c1486e5138",
     "text": "其金鑰簽署判斷提示的 PEM 憑證，讓信賴方能夠驗證它們。"
@@ -3852,8 +3872,8 @@
     "text": "1.2 Web（被動）請求者設定檔：依 wa 分派的 /wsfed、登入畫面、位於 AD FS 路徑的已簽署同盟中繼資料，以及 wsignout1.0。"
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "3d88db91fab2cd5f",
-    "text": "在 /sts 上透過 SOAP 進行 RST / RSTR，支援全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言（判斷提示已簽署，並可選擇加密給請求者的憑證）、JWT 或 Kerberos 票證。"
+    "en": "2e317d1cfa752dc2",
+    "text": "在 /sts 上透過 SOAP 進行 RST / RSTR，支援全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言（判斷提示已簽署，並可選擇加密給請求者的憑證）、JWT 或 Kerberos 票證，由每個版本一個 port type 的 WSDL 描述，並透過 WS-MetadataExchange 發布。"
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

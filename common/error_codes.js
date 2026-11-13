@@ -12697,6 +12697,16 @@ const CODES = [
       'it was built: the model describes the wire and does not reshape it, ' +
       'so this is a model gap to close.',
     spec: 'none (recorded only; the envelope is unchanged)' },
+  { code: 'STS-WSTRUST-0072',
+    summary: 'A request to POST /sts/mex (WS-MetadataExchange, #958) was ' +
+      'not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not ' +
+      'well-formed, or a root that is not soap:Envelope.',
+    spec: 'SOAP 1.1 Client fault, HTTP 500 (SOAP 1.1 section 6.2)' },
+  { code: 'STS-WSTRUST-0073',
+    summary: 'A request to POST /sts/mex (#958) carried a wsa:Action that ' +
+      'is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata ' +
+      '(2004/09), or none, so there is no metadata request to answer.',
+    spec: 'SOAP Client (SOAP 1.2: Sender) fault, HTTP 500' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

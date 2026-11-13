@@ -1207,6 +1207,10 @@
     "en": "d7fa23e10dac9b1d",
     "text": "Modifier l’apparence de la connexion"
   },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "Vérifier l’intégrité du journal d’audit"
+  },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",
     "text": "Journal d’audit"
@@ -1226,6 +1230,14 @@
   "endpoints.route./admin-api/cells/people.name": {
     "en": "3487e884b7bb0884",
     "text": "Résidents de la cellule"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "Analyse antivirus"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "Tester l’analyseur"
   },
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
@@ -1446,6 +1458,18 @@
   "endpoints.route./sts.name": {
     "en": "974efec49bd38548",
     "text": "Security Token Service"
+  },
+  "endpoints.route./sts/metadata.name": {
+    "en": "6d139ba55ee24788",
+    "text": "Métadonnées WS-Trust"
+  },
+  "endpoints.route./sts/metadata/capabilities.name": {
+    "en": "5976fe018c7df889",
+    "text": "Capacités de jetons WS-Trust"
+  },
+  "endpoints.route./sts/metadata/capabilities.xsd.name": {
+    "en": "c89390ca99682b92",
+    "text": "Schéma des capacités de jetons WS-Trust"
   },
   "endpoints.route./sts/cert.name": {
     "en": "a8e401846d25c111",
@@ -2462,17 +2486,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (un certificat client demandé, jamais exigé)"
-  },
-  "endpoints.route./admin-api/malware-scanning.name": {
-    "en": "48adceb89b5e59c8",
-    "text": "Analyse antivirus"
-  },
-  "endpoints.route./admin-api/malware-scanning/:action.name": {
-    "en": "5fea7fc18a3a67b9",
-    "text": "Tester l’analyseur"
-  },
-  "endpoints.route./admin-api/audit/integrity.name": {
-    "en": "79de5da36fba17bd",
-    "text": "Vérifier l’intégrité du journal d’audit"
   }
 }

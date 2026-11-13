@@ -1,9 +1,36 @@
 # ws-trust/
 
 WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
-`/sts/cert`). Two files: `wstrust.ts`, the endpoint, and `ws_model.ts`, the
-model as both this family and `../ws-federation/` read it — see *THE MESSAGES
-ARE THE MODEL'S*, at the end.
+`/sts/cert`, and its metadata, #958, below). Five files: `wstrust.ts`, the
+endpoint; `wstrust_metadata.ts`, the WSDL at `GET /sts/metadata`;
+`wstrust_capabilities.ts`, the token capability model and the extension
+document and schema at `GET /sts/metadata/capabilities{,.xsd}`;
+`wstrust_mex.ts`, WS-MetadataExchange at `POST /sts/mex`; and `ws_model.ts`,
+the model as both this family and `../ws-federation/` read it — see *THE
+MESSAGES ARE THE MODEL'S*, at the end. The three metadata files are kept out
+of `wstrust.ts` because `tests/model_ws.js` refuses a URI written there.
+
+**THE METADATA (#958).** Three documents from one set of flags
+(`WsTrustMetadata.liveFlags()`, read as the endpoint reads them), so what is
+advertised moves with what is accepted:
+
+* **The WSDL has a port type per trust version** — its own namespace's
+  messages, its own operations (May 2004 has no Cancel), each input and
+  output's `wsam:Action` (the output's the one this file writes) — and a
+  SOAP 1.1 and 1.2 port each, all at `/sts`. The credentials and the issued
+  types are WS-SecurityPolicy alternatives that appear only while accepted.
+* **The capability document is an IYA-STS extension, not a standard**
+  (`urn:iya-sts:metadata:token-capabilities:1`): WS-SecurityPolicy cannot
+  say which credential is exchanged for which token type, and the ticket
+  required every pair to be stated rather than inferred. Every
+  input × output pair is written out as supported, conditional or
+  unsupported. **A new credential or token type owes a row there**, or the
+  document says less than the endpoint does; `tests/wstrust_metadata.js` C
+  validates it against its own schema with xmllint.
+* **WS-MEX is an address of its own** (`POST /sts/mex`, the 2004/09
+  submission's Get and GetMetadata). A WS-Transfer Get sent to `POST /sts`
+  is answered as it always was: giving `/sts` a second meaning would change
+  a specification endpoint's behaviour for an existing client.
 
 **ONE PARSER ANSWERS ALL FOUR VERSIONS**, and that is not a simplification. The
 trust namespace alone has four versions in use, so `firstByLocal()` and
@@ -1012,9 +1039,12 @@ file, `models/generated/ws.json`, by the prefixes of their ids, and
   inside against SAML's own model — logs a gap under **STS-WSTRUST-0071**,
   and sends it unchanged.
 
-**What `/sts` does not serve, stated in the model**: no WSDL, no
-WS-MetadataExchange, no WS-Policy assertion — `GET /sts` answers text and
-`GET /sts/cert` the certificate — and no KET or BatchIssue of its own: a
+**What `/sts` serves as metadata, stated in the model**: `GET /sts/metadata`
+is WSDL 1.1 with WS-SecurityPolicy (#958), built by `wstrust_metadata.ts`
+from the same terms and flags the endpoint accepts, beside the capability
+document and `POST /sts/mex` (*THE METADATA*, at the top). `GET /sts` still
+answers text and
+`GET /sts/cert` the certificate. No KET or BatchIssue of its own: a
 request type that is not Renew, Validate or Cancel is answered as an Issue,
 as it always was.
 
