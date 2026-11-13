@@ -1319,6 +1319,38 @@ class PersonDid {
                    alg: String(outcome.alg || '') } : null;
   }
 
+  // THE OTHER DIRECTION OF #775 (the review, 2026-11-13): every key any
+  // version of any of this person's published DIDs ever named, deactivated
+  // ones included — a version is never rewritten, and a resolver may hold
+  // it. `siop.ts`'s enrolment refuses such a key as a did:jwk, did:key or
+  // thumbprint sign-in subject (STS-VC-0179). The person's own entry: one
+  // read, no walk.
+  /**
+   * Returns the RFC 7638 thumbprints of every key any version of the
+   * person's published DIDs named.
+   *
+   * @param username - the person
+   * @returns the thumbprints, [] where there are none or no entry
+   */
+  publishedThumbprints(username: unknown): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PersonDid.publishedThumbprints().");
+    const self = this;
+    const out: string[] = [];
+    (this.read(String(username || '').trim()) || []).forEach(
+      function (record: Json) {
+        record.versions.forEach(function (version: Json) {
+          self.thumbprintsOf(version || {}).forEach(function (one) {
+            if (out.indexOf(one) < 0) {
+              out.push(one);
+            }
+          });
+        });
+      });
+    log.debug("Leaving PersonDid.publishedThumbprints(). " + out.length);
+    return out;
+  }
+
   // The thumbprints of every key already enrolled for this person: a
   // did:jwk or did:key spells its key, a did:web pins it, and a thumbprint
   // subject is the thumbprint. What #775 refuses to publish.
@@ -1996,6 +2028,7 @@ export = {
   list: slot.forward('list'),
   lookup: slot.forward('lookup'),
   isHosted: slot.forward('isHosted'),
+  publishedThumbprints: slot.forward('publishedThumbprints'),
   versionOf: slot.forward('versionOf'),
   documentOf: slot.forward('documentOf'),
   resolve: slot.forward('resolve'),

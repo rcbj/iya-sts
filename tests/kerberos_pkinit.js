@@ -199,12 +199,16 @@ function makeClient() {
     const opts = o || {};
     const anonymous = !!opts.anonymous;
     const body = {
-      kdcOptions: anonymous ? [msgs.KDC_OPTION.REQUEST_ANONYMOUS] : [],
+      kdcOptions: anonymous ? [msgs.KDC_OPTION.REQUEST_ANONYMOUS]
+        : (opts.kdcOptions || []),
       cname: anonymous ? { type: 11, name: ['WELLKNOWN', 'ANONYMOUS'] }
                        : { type: 1, name: [who] },
       realm: REALM, sname: { type: 2, name: ['krbtgt', REALM] },
-      till: new Date(Date.now() + 3600000),
+      till: opts.till || new Date(Date.now() + 3600000),
       nonce: 4242 + nodeCrypto.randomInt(1000), etypes: [18, 17] };
+    if (opts.rtime) {
+      body.rtime = opts.rtime;
+    }
     const raw = msgs.encKdcReqBody(body);
     const padata = [];
     let ecdh = null;
@@ -360,6 +364,67 @@ function makeClient() {
            REALM: REALM };
 }
 
+// RENEW-TILL IS CAPPED AT THE CERTIFICATE TOO (the review of #897,
+// 2026-11-13): RFC 4556 section 3.2.3's "MUST NOT exceed" holds for what a
+// renewal can reach, not only for endtime. A certificate of one day: a
+// RENEWABLE TGT with the realm's seven-day maximum renews to its notAfter
+// and no further, and one whose endtime the certificate already ends is not
+// renewable at all.
+async function renewTillCapped(t, c, who, token) {
+  log.debug("Entering renewTillCapped().");
+  t.log.info('=== 4b. renew-till no later than the certificate ===');
+  const { msgs, enrol, asReq } = c;
+  const settings = require('../common/config');
+  settings.setOverride('est.certificateLifetimeDays', 1);
+  let short = null;
+  try {
+    short = await enrol(who);
+  } finally {
+    settings.clearOverride('est.certificateLifetimeDays');
+  }
+  t.check(short.ok, 'a one-day smart-card logon certificate is enrolled',
+          short.why);
+  if (!short.ok) {
+    log.debug("Leaving renewTillCapped(). No certificate.");
+    return;
+  }
+  const notAfter = new Date(short.record.notAfter).getTime();
+  const renewable = [msgs.KDC_OPTION.RENEWABLE];
+  const plain = await asReq(who, short, { token: token,
+                                          kdcOptions: renewable });
+  const renewTill = plain.enc && plain.enc.renewTill
+    ? new Date(plain.enc.renewTill).getTime() : null;
+  t.check(plain.ok && plain.flags.indexOf('renewable') !== -1 &&
+          renewTill !== null && renewTill <= notAfter &&
+          renewTill > new Date(plain.enc.endtime).getTime(),
+          'RENEWABLE with no rtime: renewable, its renew-till the ' +
+          'certificate\'s notAfter rather than seven days on',
+          JSON.stringify({ renewTill: plain.enc && plain.enc.renewTill,
+                           notAfter: short.record.notAfter,
+                           flags: plain.flags }));
+  const asked = await asReq(who, short, { token: token,
+    kdcOptions: renewable, rtime: new Date(notAfter + 7 * 86400000) });
+  t.check(asked.ok && asked.enc.renewTill &&
+          new Date(asked.enc.renewTill).getTime() <= notAfter,
+          'an rtime past the certificate is cut to its notAfter',
+          JSON.stringify(asked.enc && asked.enc.renewTill));
+  settings.setOverride('krb5.ticketLifetimeSeconds', 3 * 86400);
+  let ended = null;
+  try {
+    ended = await asReq(who, short, { token: token, kdcOptions: renewable,
+      till: new Date(Date.now() + 3 * 86400000) });
+  } finally {
+    settings.clearOverride('krb5.ticketLifetimeSeconds');
+  }
+  t.check(ended.ok &&
+          new Date(ended.enc.endtime).getTime() <= notAfter &&
+          ended.flags.indexOf('renewable') === -1 && !ended.enc.renewTill,
+          'a ticket the certificate ends is issued NOT renewable, with no ' +
+          'renew-till', JSON.stringify({ flags: ended.flags,
+            renewTill: ended.enc && ended.enc.renewTill }));
+  log.debug("Leaving renewTillCapped().");
+}
+
 async function throughTheKdc(t) {
   log.debug("Entering throughTheKdc().");
   const c = makeClient();
@@ -461,6 +526,7 @@ async function throughTheKdc(t) {
   t.check(!noDh.ok && noDh.code === 81, 'no clientPublicValue (RSA key ' +
           'transport) is KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED',
           JSON.stringify(noDh));
+  await renewTillCapped(t, c, ALICE, first.token);
   const revoked = await core.revokeEnrolled(alice.record.serialHex,
                                             'keyCompromise', 'test');
   t.check(revoked && revoked.ok !== false, 'the certificate is revoked');
