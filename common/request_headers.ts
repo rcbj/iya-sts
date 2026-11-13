@@ -139,12 +139,16 @@ const ADDED_IN_TRANSIT: ReadonlyArray<{ by: string; names: string[] }> = [
 // a request worker (`common/request_pool.js`, `common/request_phases.js`,
 // `tls/client_hello.ts`) and one cell to another (`common/cell_channel.ts`).
 // NOT a family: `x-sts-anything` from a caller is exactly what is refused.
+// A name set on an ANSWER between the processes is listed too
+// (`x-sts-pool-revoking`, a request worker to the front, #879, which the
+// front strips), because the rule is every `x-sts-` name the source spells
+// (`tests/admin_api_request_names.js` section D).
 const INTERNAL: ReadonlySet<string> = new Set([
   'x-sts-cell-client', 'x-sts-cell-from', 'x-sts-cell-hops',
   'x-sts-cell-reason', 'x-sts-ldap-drop', 'x-sts-listener',
   'x-sts-peer-authorized', 'x-sts-peer-certificate', 'x-sts-pool-phases',
   'x-sts-pool-phases-wanted', 'x-sts-pool-protocol-worker',
-  'x-sts-pool-ticket', 'x-sts-tls-client-hello'
+  'x-sts-pool-revoking', 'x-sts-pool-ticket', 'x-sts-tls-client-hello'
 ]);
 
 const EXACT: ReadonlySet<string> = new Set(
