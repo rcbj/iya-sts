@@ -4391,9 +4391,8 @@ function codeRedemptionRelaxed() {
 function checkCodeReplay(opts) {
   log.debug("Entering checkCodeReplay().");
   // RFC 6749 section 4.1.2's MUST, in every mode since #187: the relaxation
-  // that answered an identical repeat with the same tokens is now an opt-in
-  // (`oauth2.codeReplayIdempotent`, off by default, never in this mode), for
-  // the parent project's development-mode job that still asserts it.
+  // that answered an identical repeat with the same tokens is an opt-in
+  // (`oauth2.codeReplayIdempotent`, off by default, never in this mode).
   if (!enabled() && config.value('oauth2.codeReplayIdempotent')) {
     log.debug("Leaving checkCodeReplay(). RFC 9700 mode is off and " +
               "oauth2.codeReplayIdempotent is on; the relaxation stands.");

@@ -358,9 +358,9 @@ async function prepare(plan) {
   await oidf.ok(root + "/admin-api/realms/create", { id: realm,
     domain: realm + ".example.net", name: "Conformance " + plan.name },
     "created the realm");
-  // The OpenID plans test the default: the test stack's appconfig turns the
-  // code-replay courtesy on for a parent job (env/docker-tests.js), so each
-  // realm here turns it back off.
+  // The OpenID plans test the default. A code is single use: the courtesy
+  // (oauth2.codeReplayIdempotent) stays off, which is also what the test
+  // stack leaves it at.
   // And the request_uri modules send a fragment hashed from random bytes
   // (the suite's content is not known when it makes the URI), which this
   // OP checks by default: OpenID Connect Core 6.2 asks no OP to, so these

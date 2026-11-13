@@ -22,11 +22,11 @@
 //   * every access / ID / refresh token is an RS256 JWT whose signature
 //     verifies against jwks_uri, with the claims OIDC asks for (aud, nonce,
 //     at_hash, c_hash);
-//   * a bad code_verifier is refused WITHOUT consuming the code, and a code
-//     that was redeemed is single use in the way this mock relaxes it: the
-//     identical request gets the identical tokens back for the rest of the
-//     code's lifetime, and any other request for that code is refused with the
-//     difference named;
+//   * a bad code_verifier spends the code (RFC 6749 section 4.1.2, #424):
+//     the corrected attempt is refused and the flow starts over. A redeemed
+//     code is single use in every mode: a second presentation is
+//     invalid_grant, and what it bought is revoked. The old courtesy is
+//     oauth2.codeReplayIdempotent, off by default and off on this stack;
 //   * introspection tells the truth, revocation takes effect, and a revoked
 //     refresh token stops working;
 //   * dynamic client registration (RFC 7591) and its management calls
@@ -829,33 +829,22 @@ async function testAuthorizationCode(meta, verify) {
                      "a bad code_verifier should be invalid_grant.");
   log.info("[code] OK — PKCE is verified, not just accepted.");
 
-  // ... and what that refusal did to the code. SINCE iya-sts #424 A CODE IS
-  // PRESENTED ONCE, WHATEVER THE OUTCOME (RFC 6749 section 4.1.2): product
-  // mode refuses the corrected attempt too, and the flow starts over. The
-  // development test stacks turn on `oauth2.codeReplayIdempotent`, the
-  // relaxation #424 kept for this job, under which a refused presentation
-  // leaves the code redeemable — a check that burned what it refused would
-  // answer the corrected attempt with "already-used" instead of tokens.
+  // ... and what that refusal did to the code. A code is presented ONCE,
+  // whatever the outcome (RFC 6749 section 4.1.2, iya-sts #424). The
+  // relaxation that left a refused code redeemable is
+  // oauth2.codeReplayIdempotent, off by default and off on this stack, so
+  // the corrected attempt is refused and the flow starts over.
   const corrected = await postForm(meta.token_endpoint, {
     grant_type: "authorization_code", code: code, client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI, code_verifier: verifier
   });
-  if (PRODUCT) {
-    assert.strictEqual(corrected.status, 400,
-      "a product-mode service presents a code once whatever the outcome " +
-          "(iya-sts #424), so the corrected attempt is refused too. Got " +
-          "HTTP " + corrected.status + ": " + corrected.raw);
-    assert.strictEqual(corrected.body.error, "invalid_grant", corrected.raw);
-    log.info("[code] OK — product mode: a code is presented once, the " +
-             "refused one included (#424).");
-  } else {
-    assert.strictEqual(corrected.status, 200,
-      "a refused code_verifier must leave the code redeemable under the " +
-          "development stack's oauth2.codeReplayIdempotent, so the same " +
-          "code with the RIGHT verifier should be exchanged. Got HTTP " +
-          corrected.status + ": " + corrected.raw);
-    log.info("[code] OK — a refused PKCE check does not consume the code.");
-  }
+  assert.strictEqual(corrected.status, 400,
+    "a code is presented once whatever the outcome (iya-sts #424), so the " +
+        "corrected attempt is refused too. Got HTTP " + corrected.status +
+        ": " + corrected.raw);
+  assert.strictEqual(corrected.body.error, "invalid_grant", corrected.raw);
+  log.info("[code] OK — a code is presented once, the refused one " +
+           "included (#424).");
 
   // A fresh one for the token assertions below, so they read against a code
   // whose whole history is this exchange.
@@ -926,113 +915,41 @@ async function testAuthorizationCode(meta, verify) {
            "matching claims, and the refresh token is an encrypted, opaque " +
            "JWE that introspects as a refresh_token for the same subject.");
 
-  // THE SAME CODE, PRESENTED A SECOND TIME — sent ONCE, and what the service
-  // did with it decides which branch below judges it. Until iya-sts #187 the
-  // mode decided: product refused a replay and development answered an
-  // identical one with the same token set. Since #187 it is refused in EVERY
-  // mode (the courtesy survives only as `oauth2.codeReplayIdempotent`, off by
-  // default), so a development service that refuses is judged exactly as a
-  // product one is, and only a 200 from a development service is read as the
-  // old courtesy.
+  // THE SAME CODE, PRESENTED A SECOND TIME. RFC 6749 section 4.1.2 and
+  // RFC 9700 section 4.5: refused in every mode since iya-sts #187, and what
+  // it bought is revoked (RFC 6749 section 10.5). The old development
+  // courtesy is oauth2.codeReplayIdempotent, off by default and off here.
   const replayed = await postForm(meta.token_endpoint, {
     grant_type: "authorization_code", code: code2, client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI, code_verifier: verifier2
   });
-  if (PRODUCT || replayed.status !== 200) {
-    // RFC 6749 section 4.1.2, RFC 9700 section 4.5 and RFC 6749 section
-    // 10.5: a code presented twice is refused, and what it bought is revoked,
-    // because two holders of one code cannot be told apart. Product mode has
-    // always done this; every mode does since iya-sts #187.
-    assert.strictEqual(replayed.status, 400,
-      "a service must refuse a code presented twice (every mode since " +
-          "iya-sts #187; product mode before it). Got HTTP " +
-          replayed.status + ": " + replayed.raw);
-    assert.strictEqual(replayed.body.error, "invalid_grant",
-                       "that refusal should be invalid_grant.");
-    assert.ok(/single use/i.test(String(replayed.body.error_description)),
-      "the refusal should say a code is single use. Got: " +
-          replayed.body.error_description);
-    const revoked = await postForm(meta.introspection_endpoint,
-        { token: set.access_token });
-    assert.strictEqual(revoked.body.active, false,
-      "the access token the replayed code bought must be revoked.");
-    log.info("[code] OK — a replayed code is refused and what it bought is " +
-             "revoked (" + (PRODUCT ? "product" : "development") + " mode).");
-    // A fresh set for the sections after this one, since this one is dead.
-    const third = await authorize(meta, {
-      response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
-      scope: "openid profile email", state: "state-3",
-      nonce: "nonce-" + b64u(crypto.randomBytes(6))
-    });
-    const renewed = await postForm(meta.token_endpoint, {
-      grant_type: "authorization_code", code: third.params.get("code"),
-      client_id: CLIENT_ID, redirect_uri: REDIRECT_URI
-    });
-    assert.strictEqual(renewed.status, 200, "the third code exchange failed: " +
-                       renewed.raw);
-    set = renewed.body;
-  } else {
-    // THE PRE-#187 DEVELOPMENT COURTESY, which the pinned sts/ gitlink still
-    // has. DELETE THIS BRANCH once the sts/ pin is past iya-sts #187: from
-    // then on a development service refuses a replay too, and the branch
-    // above judges it.
-    //
-    // Single use, NON-SPEC-ally relaxed to idempotent for the rest of the code's
-    // own lifetime: the identical Token Request gets the identical token set
-    // back — the first answer, not a second one — because a debugging service
-    // that answers a reloaded page with "Unknown or already-used authorization
-    // code" has told the user nothing about which of those two it was. The
-    // relaxation is the mock's, is documented in docs/mock-sts.md, and RFC 6749
-    // section 4.1.2 permits a real server to refuse this outright.
-    assert.strictEqual(replayed.status, 200,
-      "the same Token Request for a code already redeemed should be answered " +
-          "with what it was answered the first time. Got HTTP " +
-          replayed.status + ": " + replayed.raw);
-    assert.deepStrictEqual(replayed.body, set,
-      "a replay must return the SAME token set, not a newly minted one — " +
-          "nothing is issued twice here.");
-    log.info("[code] OK — an identical replay returns the identical tokens.");
-
-    // Everything else about that code is still refused, and the refusal says
-    // which part of the request did not match. This is what stops the relaxation
-    // from being a way to redeem somebody else's code.
-    const otherClient = await postForm(meta.token_endpoint, {
-      grant_type: "authorization_code", code: code2,
-      client_id: CLIENT_ID + "-somebody-else",
-      redirect_uri: REDIRECT_URI, code_verifier: verifier2
-    });
-    if (PRODUCT) {
-      // A client this service has no registration for is refused as a client
-      // before its code is looked at.
-      assert.strictEqual(otherClient.body.error, "invalid_client",
-        "a redeemed code presented by an UNREGISTERED client must be refused " +
-            "as invalid_client in product mode. Got HTTP " + otherClient.status +
-            ": " + otherClient.raw);
-    } else {
-    assert.strictEqual(otherClient.status, 400,
-      "a redeemed code presented by a DIFFERENT client must be refused. Got " +
-          "HTTP " + otherClient.status + ": " + otherClient.raw);
-    assert.strictEqual(otherClient.body.error, "invalid_grant",
-                       "that refusal should be invalid_grant.");
-    assert.ok(/client_id/.test(String(otherClient.body.error_description)),
-      "the refusal should name what differed from the request the code was " +
-          "redeemed with. Got: " + otherClient.body.error_description);
-    }
-    const otherVerifier = await postForm(meta.token_endpoint, {
-      grant_type: "authorization_code", code: code2, client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI, code_verifier: b64u(crypto.randomBytes(32))
-    });
-    assert.strictEqual(otherVerifier.status, 400,
-      "a redeemed code presented with a different code_verifier must be " +
-          "refused. Got HTTP " + otherVerifier.status + ": " +
-          otherVerifier.raw);
-    assert.ok(/code_verifier/.test(String(otherVerifier.body.error_description)),
-      "that refusal should name the code_verifier. Got: " +
-          otherVerifier.body.error_description);
-    log.info("[code] OK — a redeemed code is replayed only for the request it " +
-             "was redeemed with; another client and another verifier are both " +
-             "refused, each told what differed.");
-  }
+  assert.strictEqual(replayed.status, 400,
+    "a service must refuse a code presented twice. Got HTTP " +
+        replayed.status + ": " + replayed.raw);
+  assert.strictEqual(replayed.body.error, "invalid_grant",
+                     "that refusal should be invalid_grant.");
+  assert.ok(/single use/i.test(String(replayed.body.error_description)),
+    "the refusal should say a code is single use. Got: " +
+        replayed.body.error_description);
+  const revoked = await postForm(meta.introspection_endpoint,
+      { token: set.access_token });
+  assert.strictEqual(revoked.body.active, false,
+    "the access token the replayed code bought must be revoked.");
+  log.info("[code] OK — a replayed code is refused and what it bought is " +
+           "revoked.");
+  // A fresh set for the sections after this one, since this one is dead.
+  const third = await authorize(meta, {
+    response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
+    scope: "openid profile email", state: "state-3",
+    nonce: "nonce-" + b64u(crypto.randomBytes(6))
+  });
+  const renewed = await postForm(meta.token_endpoint, {
+    grant_type: "authorization_code", code: third.params.get("code"),
+    client_id: CLIENT_ID, redirect_uri: REDIRECT_URI
+  });
+  assert.strictEqual(renewed.status, 200, "the third code exchange failed: " +
+                     renewed.raw);
+  set = renewed.body;
 
   // And a code this server never minted is its own answer, rather than being
   // reported as one that was used: the two are indistinguishable to a client,

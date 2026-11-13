@@ -20,9 +20,10 @@
 //      the same issuer until each is clean): open registration, post-quantum
 //      signing OFF (the suite cannot parse kty AKP, and a package full of
 //      warnings for it is a worse submission than a classical one), product
-//      mode unless --development, and the two settings the local job turns
-//      off for the suite's own reasons (`oauth2.codeReplayIdempotent`,
-//      `oauth2.requestUriFragmentCheck`; the job's header says why).
+//      mode unless --development. The realm pins
+//      `oauth2.codeReplayIdempotent` off (already the default: a code is
+//      single use) and turns `oauth2.requestUriFragmentCheck` off; the
+//      local job's header says why.
 //   2. A FRESH PERSON per run, with a password made here.
 //   3. Each selected certification plan, ONE AT A TIME and under ONE alias:
 //      the suite's redirect URI is built on the alias, and two plans running
