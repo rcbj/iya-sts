@@ -1869,6 +1869,36 @@ class Saml11Sso {
              from: 'setting' };
   }
 
+  // THE DEFAULT ASSERTION CONSUMER of a relying party's consumed metadata,
+  // among those bound to a SAML 1.1 browser profile: isDefault="true", else
+  // the first not marked false, else the first (saml-metadata-2.0-os section
+  // 2.2.3). '' when the metadata bound none to either profile.
+  private defaultConsumerOf(fields) {
+    const { log } = this.deps;
+    log.debug("Entering Saml11Sso.defaultConsumerOf().");
+    const listed = Array.isArray(fields.samlAcsEndpoint)
+      ? fields.samlAcsEndpoint
+      : (fields.samlAcsEndpoint ? [fields.samlAcsEndpoint] : []);
+    const candidates = listed.map(function (value) {
+      const parts = String(value).trim().split(/\s+/);
+      return parts.length < 4 ? null : {
+        isDefault: parts[1], binding: parts[2],
+        location: parts.slice(3).join(' ')
+      };
+    }).filter(function (one) {
+      return !!one && (one.binding === PROFILE_POST ||
+                       one.binding === PROFILE_ARTIFACT);
+    });
+    const chosen = candidates.filter(function (one) {
+      return one.isDefault === 'true';
+    })[0] || candidates.filter(function (one) {
+      return one.isDefault !== 'false';
+    })[0] || candidates[0];
+    log.debug("Leaving Saml11Sso.defaultConsumerOf(). " +
+              (chosen ? chosen.location : '(none)'));
+    return chosen ? chosen.location : '';
+  }
+
   private interSiteTransfer(req, res) {
     const { applications, baseUrlOf, beginAuthentication, config, errorCodes,
             gate, log, mode, notePresented, randomId, returnAddress,
@@ -1940,9 +1970,14 @@ class Saml11Sso {
     // GUESSED relying party.
     const knownFirst = this.fieldsOf(scoped.id);
     const recordedAcs = knownFirst.samlAssertionConsumerService;
-    const recorded = Array.isArray(recordedAcs)
-      ? recordedAcs[recordedAcs.length - 1]
-      : recordedAcs || '';
+    // With no shire, the DEFAULT consumer of the consumed metadata, as
+    // saml-metadata-2.0-os section 2.2.3 defines it and SAML 2.0 already
+    // reads it (Saml2Sso.registeredAcsFor()); the last hand-registered
+    // address only when no metadata bound one to a SAML 1.1 profile.
+    const recorded = this.defaultConsumerOf(knownFirst) ||
+      (Array.isArray(recordedAcs)
+        ? recordedAcs[recordedAcs.length - 1]
+        : recordedAcs || '');
     let acsUrl = String(carried.shire || recorded || '');
     if (!mode.acceptsUnregisteredAddresses()) {
       const early = this.relyingPartyFor(carried, scoped,
