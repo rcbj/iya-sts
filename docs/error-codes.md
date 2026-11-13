@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5456** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5457** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -52,7 +52,7 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 108
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 51
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 52
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 110
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 33
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
@@ -326,6 +326,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0049` | A part of an operation's answer that a request worker sent ahead of it (#616: an LDAP search streaming its entries) could not be handed to the caller waiting in the front process — its socket write threw. The operation itself still ends with its answer. | — |
 | `STS-WORKER-0050` | After giving up, the pool scheduled another attempt to start one worker, after workers.giveUpRetryMs (doubled after each failed attempt, and never longer than an hour). Until a worker is ready, requests stay in the front process, or the hosted surfaces stay on the protocol workers. | — |
 | `STS-WORKER-0051` | A request worker took longer than workers.startTimeoutMs to start and is still starting (#820). The pool stops waiting for it and does not replace it; it joins when it reports ready. Only after four times the limit is it reported as failed (STS-WORKER-0017) and replaced. | — |
+| `STS-WORKER-0052` | A request worker revoked something a refresh token rests on (a session, a token, a refresh family, a grant or an account) after the answer's headers had gone, so the front process could not file it for the refresh grant's wait before the client saw the answer (the review of #879). The revocation stands; a refresh routed to a worker that has not applied it may be answered until the workers converge. Logged at the first and every hundredth. | Nothing: the request is answered as it was |
 
 ## STS-STORE
 

@@ -592,15 +592,22 @@ let codeKeysLearnt = 0;
 // because a replay the worker cannot yet see is redeemed as a second use
 // and the family is revoked.
 //
-// * **A SMALL, PLAIN REFRESH GRANT IS KEYED BY `rt:<token>`** whether or
+// * **A SMALL, PLAIN REFRESH GRANT IS KEYED BY `rt:<digest>`** whether or
 //   not this process has seen that token before (refreshKeysOf()). The
-//   same body read as a code exchange. It waits for that key and for
+//   same body read as a code exchange. It waits for that key, for
 //   SHARED_KEY (a keyless write, which is where an issuance this process
-//   could not read is filed). It is NOT filed under SHARED_KEY, so the
-//   next refresh of another token does not wait for it, and neither does
-//   a browser.
+//   could not read is filed) and for REVOKE_KEY (every write that ended
+//   what a refresh token rests on, below). It is NOT filed under
+//   SHARED_KEY, so the next refresh of another token does not wait for it,
+//   and neither does a browser.
+// * **THE KEY IS A DIGEST OF THE TOKEN, NEVER THE TOKEN** (refreshKeyOf(),
+//   the review of #879). The key table lives as long as the process and is
+//   what a heap snapshot or a debugger reads first; a refresh token is a
+//   bearer credential good for hours. `crypto.credentialDigest()` (SHA-256)
+//   is the one place it is hashed, as the opaque access-token store hashes
+//   its handles.
 // * **AN ANSWER FROM THE TOKEN ENDPOINT WHOSE JSON CARRIES `refresh_token`
-//   FILES ITS TICKET UNDER `rt:<value>`** (learnRefreshToken()), inheriting
+//   FILES ITS TICKET UNDER ITS KEY** (learnRefreshToken()), inheriting
 //   the tickets and write generations outstanding under the request's own
 //   keys except SHARED_KEY (inheritIntoRefreshKey()). The client's next
 //   refresh of the new token waits for the response that minted it. The
@@ -619,9 +626,14 @@ let codeKeysLearnt = 0;
 //   CODE_BODY_MAX, a chunked or encoded body, HTTP/2 with no length. The
 //   same rule as an unknown code.
 //
-// A sign-out is a browser's write, not this token's. The refresh grant
-// sees it when the workers converge, which is what `session` already gives
-// up for another client's write. 8081 was not re-measured.
+// ~~A sign-out is a browser's write, not this token's. The refresh grant
+// sees it when the workers converge.~~ **REVERSED BY THE REVIEW OF #879
+// (2026-11-13)**: in product that let a refresh routed to a lagging worker
+// be issued new tokens from a session signed out a moment before. A
+// sign-out, and every other write that ends what a refresh token rests on,
+// is now filed under REVOKE_KEY, which every refresh grant waits for — see
+// THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF, below. 8081 was not
+// re-measured.
 // ---------------------------------------------------------------------------
 // The largest token RESPONSE buffered to read `refresh_token` out of it.
 // The grant's own body stays at CODE_BODY_MAX; a token response also
@@ -632,6 +644,75 @@ const REFRESH_LEARN_MAX = 64 * 1024;
 const REFRESH_TOKEN_MAX = 12 * 1024;
 let refreshKeyedDispatches = 0;
 let refreshKeysLearnt = 0;
+
+// ---------------------------------------------------------------------------
+// THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF (2026-11-13, the review of
+// #879).
+//
+// Keyed by its token, a refresh grant stopped waiting for browsers' writes,
+// and one kind of browser write is exactly what it must wait for: one that
+// ENDS what the refresh token rests on. A sign-out of its session, a global
+// logout, a token revoked at `/oauth2/revoke` or on the console, a refresh
+// family revoked (a replay detected on another worker), a disabled account,
+// a Grant Management grant revoked, a consent withdrawn. The old global
+// wait held a refresh for every one of them; keyed, a refresh routed to a
+// worker that had not applied the sign-out was issued a new token set from
+// a session that had ended.
+//
+// * **REVOKE_KEY IS ONE KEY, AND ONLY TOKEN-ENDPOINT REQUESTS WAIT FOR IT.**
+//   A refresh grant keyed by its token waits for its key, SHARED_KEY and
+//   REVOKE_KEY; so does a code exchange keyed by its code, for the same
+//   reason (a code minted from a session signed out since), and a token
+//   request that carries a browser's cookie (the console's and the
+//   portal's own refreshes). A browser's ordinary request does NOT wait for
+//   it, so a sign-out holds no other browser — #879's gain for every
+//   unrelated browser write stands, and so does #820's.
+// * **A TICKET IS FILED UNDER IT TWO WAYS, and either is enough:**
+//   - **BY ITS PATH, AT DISPATCH** (revokingRequest()): every method on a
+//     sign-out path (`/logout`, `/oauth2/logout`, `/saml2/slo`, any
+//     `logout`, `slo` or `signout` segment, WS-Federation's `wsignout1.0`
+//     and `wsignoutcleanup1.0`), a write to `/oauth2/revoke` and
+//     `/oauth2/grants`, any write to `/admin-api`, `/account-api`, `/scim`
+//     and `/ssf`, and any DELETE. Coarse on purpose: it is the backstop for
+//     a door nobody taught to say so, and what it costs is a refresh
+//     waiting for an administrator's write.
+//   - **BY ITS ANSWER** (REVOKING_HEADER): the funnels that end a session,
+//     a token, a family, a grant or an account say so through
+//     `common/revoking_writes.ts`, and the worker sets the header on the
+//     answer in flight. This catches what no path names — a sign-in that
+//     replaces another session in the same browser, a disabled account, a
+//     refresh replay that revokes its family. It is filed when the answer's
+//     headers arrive, before the client is sent a byte, and a ticket only
+//     blocks once finished, so it is always in time.
+// * **WHAT A REVOKING TICKET COSTS**: a token request that arrives after
+//   it was answered waits until it is announced and the worker it lands on
+//   has reached the generation it wrote — the same wait a browser has
+//   always had for its own write.
+// * **WHAT IT CANNOT SEE**: a revocation made after its answer's headers
+//   had gone (`STS-WORKER-0052`, logged by the worker), and one made by a
+//   cluster job's body, which has no answer — a session expiry, which a
+//   refresh reads as ended whatever any worker has applied.
+// ---------------------------------------------------------------------------
+const REVOKE_KEY = '!revoke';
+// The answer header a worker marks a revoking answer with. Spelled here, in
+// `request_worker.ts` and in `common/revoking_writes.ts`;
+// `tests/revoking_writes.js` compares the three.
+const REVOKING_HEADER = 'x-sts-pool-revoking';
+// A path whose every request may end a session: a sign-out door.
+const SIGN_OUT_PATH = /(?:^|\/)(?:logout|slo|signout|sign-out)(?:\/|$)/i;
+// WS-Federation's sign-out is a query on `/wsfed`.
+const WSFED_PATH = /(?:^|\/)wsfed$/;
+const WSFED_SIGN_OUT = /(?:^|&)wa=wsignout(?:cleanup)?1\.0(?:&|$)/;
+// A write to one of these may revoke a token, a grant, a session or an
+// account. A realm's prefix and a named authorization server's are allowed.
+const REVOKING_WRITE_PATH = new RegExp(
+  '^(?:/realm/[^/]+)?(?:' +
+  '(?:/[^/]+)?/oauth2/(?:revoke|grants)|' +
+  '/(?:admin-api|account-api|scim|ssf)' +
+  ')(?:/|$)');
+let revokingDispatches = 0;
+let revokingAnswers = 0;
+let revokeWaits = 0;
 
 /**
  * Returns a client key's state, most recently used from now.
@@ -877,7 +958,7 @@ function inheritIntoCodeKey(ticket, codeKey) {
  * SHARED_KEY. See THE REFRESH GRANT, KEYED BY ITS TOKEN.
  *
  * @param ticket - the token response's ticket
- * @param refreshKey - `rt:<value>`
+ * @param refreshKey - `rt:<digest>` (refreshKeyOf())
  */
 function inheritIntoRefreshKey(ticket, refreshKey) {
   log.debug("Entering inheritIntoRefreshKey().");
@@ -943,7 +1024,7 @@ function learnRefreshToken(ticket, buf) {
     log.debug("Leaving learnRefreshToken(). Too long to be a key.");
     return false;
   }
-  inheritIntoRefreshKey(ticket, 'rt:' + token);
+  inheritIntoRefreshKey(ticket, refreshKeyOf(token));
   log.debug("Leaving learnRefreshToken().");
   return true;
 }
@@ -1178,9 +1259,73 @@ function codeKeysOf(body) {
 }
 
 /**
- * The keys a refresh grant is held to: `['rt:<token>']` when the body is a
- * whole `refresh_token` grant naming one token short enough to be a key,
- * else null for the global wait. An unknown token is still that key. See
+ * The key a refresh token is held under: `rt:` and the token's SHA-256,
+ * through the one crypto module, so the token itself is never a key in this
+ * process's tables (the review of #879). See THE REFRESH GRANT, KEYED BY ITS
+ * TOKEN.
+ *
+ * @param token - the refresh token
+ * @returns the key
+ */
+function refreshKeyOf(token) {
+  log.debug("Entering refreshKeyOf().");
+  const key = 'rt:' + stsCrypto.credentialDigest(String(token));
+  log.debug("Leaving refreshKeyOf().");
+  return key;
+}
+
+/**
+ * The client keys the session barrier holds, oldest first: names only, for
+ * a test that must see no refresh token among them.
+ *
+ * @returns the keys
+ */
+function clientKeyNames() {
+  log.debug("Entering clientKeyNames().");
+  const names = Array.from(clientStates.keys());
+  log.debug("Leaving clientKeyNames(). " + names.length);
+  return names;
+}
+
+// Whether a request may end what a refresh token rests on, by its method and
+// path alone: see THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF. A HOT PATH —
+// every dispatched request asks — so no Entering/Leaving pair, for the reason
+// route() has none.
+function revokingRequest(req) {
+  const method = String((req && req.method) || 'GET').toUpperCase();
+  const url = String((req && (req.originalUrl || req.url)) || '');
+  const q = url.indexOf('?');
+  const path = q >= 0 ? url.slice(0, q) : url;
+  if (SIGN_OUT_PATH.test(path)) {
+    return true;
+  }
+  if (q >= 0 && WSFED_PATH.test(path) &&
+      WSFED_SIGN_OUT.test(url.slice(q + 1))) {
+    return true;
+  }
+  if (method === 'DELETE') {
+    return true;
+  }
+  if (READ_ONLY_METHODS[method]) {
+    return false;
+  }
+  return REVOKING_WRITE_PATH.test(path);
+}
+
+// Whether a request is a POST to a token endpoint: what waits for REVOKE_KEY
+// when it is keyed by a browser's cookie. Hot path, for route()'s reason.
+function tokenRequest(req) {
+  if (!req || req.method !== 'POST') {
+    return false;
+  }
+  const url = String(req.originalUrl || req.url || '');
+  return TOKEN_PATH.test(url.split('?')[0]);
+}
+
+/**
+ * The keys a refresh grant is held to: `[refreshKeyOf(token)]` when the
+ * body is a whole `refresh_token` grant naming one token short enough to be
+ * a key, else null for the global wait. An unknown token is still that key. See
  * THE REFRESH GRANT, KEYED BY ITS TOKEN.
  *
  * @param body - what readCodeExchangeBody() handed over
@@ -1209,7 +1354,7 @@ function refreshKeysOf(body) {
     return null;
   }
   log.debug("Leaving refreshKeysOf(). Held.");
-  return ['rt:' + tokens[0]];
+  return [refreshKeyOf(tokens[0])];
 }
 
 // Remembers a pruned code key's name, so its exchange stays keyed; see THE
@@ -6958,7 +7103,10 @@ function middleware(options) {
       if (keys) {
         sessionDispatches++;
         pruneClientStates();
-        waitThenProxy(keys, null, false);
+        // A token request a browser's cookie keys (the console's and the
+        // portal's own refreshes) waits for REVOKE_KEY too. See THE WRITES
+        // A REFRESH MUST NOT ANSWER AHEAD OF.
+        waitThenProxy(keys, null, false, tokenRequest(req));
         return;
       }
       // A CODE EXCHANGE IS READ BEFORE IT WAITS (#820): keyed by its code
@@ -6982,8 +7130,10 @@ function middleware(options) {
             codeKeyedDispatches++;
             pruneClientStates();
             // A code redemption is still a back channel's write: filed
-            // under SHARED_KEY as well as its code.
-            waitThenProxy(codeKeys, body, true);
+            // under SHARED_KEY as well as its code. It waits for REVOKE_KEY:
+            // a code minted from a session signed out since is not redeemed
+            // ahead of the sign-out.
+            waitThenProxy(codeKeys, body, true, true);
             return;
           }
           const refreshKeys = refreshKeysOf(body);
@@ -6993,28 +7143,42 @@ function middleware(options) {
             // NOT filed under SHARED_KEY. It waits for that key, so an
             // issuance this process could not read still holds it, and
             // the next refresh of another token does not wait for this
-            // one. See THE REFRESH GRANT, KEYED BY ITS TOKEN.
-            waitThenProxy(refreshKeys, body, false);
+            // one. See THE REFRESH GRANT, KEYED BY ITS TOKEN. It waits for
+            // REVOKE_KEY: a sign-out, a revocation or a disabled account
+            // answered before it is not answered ahead of (the review of
+            // #879).
+            waitThenProxy(refreshKeys, body, false, true);
             return;
           }
           globalDispatches++;
-          waitThenProxy(null, body, true);
+          waitThenProxy(null, body, true, false);
         });
         return;
       }
       globalDispatches++;
-      waitThenProxy(null, null, true);
+      waitThenProxy(null, null, true, false);
 
       // THE WAITS AND THE DISPATCH, for keys already decided (null: global)
       // and a body already read (null: streamed from `req`). `shared`: this
       // request's write is a back channel's — no browser's own — and is
       // filed under SHARED_KEY too, so every keyed request waits for it.
-      // A HOT PATH, for route()'s reason.
-      function waitThenProxy(keys, body, shared) {
+      // `revokeWait`: a keyed token request, which waits for REVOKE_KEY as
+      // well. A request that may end what a refresh token rests on is filed
+      // under REVOKE_KEY (revokingRequest()); its answer may file it there
+      // too (REVOKING_HEADER, in proxy()). A HOT PATH, for route()'s reason.
+      function waitThenProxy(keys, body, shared, revokeWait) {
         // A keyed request waits for its keys AND for SHARED_KEY: the
         // writes of requests no browser made (see SHARED_KEY).
-        const waitKeys = keys ? keys.concat([SHARED_KEY]) : null;
-        const fileKeys = shared ? (keys || []).concat([SHARED_KEY]) : keys;
+        let waitKeys = keys ? keys.concat([SHARED_KEY]) : null;
+        if (waitKeys && revokeWait) {
+          waitKeys.push(REVOKE_KEY);
+          revokeWaits++;
+        }
+        let fileKeys = shared ? (keys || []).concat([SHARED_KEY]) : keys;
+        if (session && revokingRequest(req)) {
+          fileKeys = (fileKeys || []).concat([REVOKE_KEY]);
+          revokingDispatches++;
+        }
         awaitCommitConfirmations(entry, waitKeys).then(function () {
           timing.ticketDone = Date.now();
           const ticket = dispatchTicket(entry, req.method + ' ' +
@@ -7571,6 +7735,15 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     // already gone. See LDAP_DROP_HEADER.
     // ------------------------------------------------------------------
     closeDirectoryConnections(answer.headers[LDAP_DROP_HEADER]);
+    // AN ANSWER THAT ENDED WHAT A REFRESH TOKEN RESTS ON is filed under
+    // REVOKE_KEY here, before a byte of it reaches the client, so a refresh
+    // grant sent after the client has it waits for it (the review of #879,
+    // THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF).
+    if (ticket && answer.headers[REVOKING_HEADER] &&
+        readYourWriteMode() === 'session') {
+      fileTicketUnder(ticket, [REVOKE_KEY]);
+      revokingAnswers++;
+    }
     answeredAt = Date.now();
     workerPhases = requestPhases.decode(
       answer.headers[requestPhases.PHASES_HEADER]);
@@ -7610,7 +7783,8 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       // The worker's instruction to this process, and no business of the
       // client's — for the reason the hop-by-hop headers below are dropped, and
       // because a header naming an identity key has no place on a page.
-      if (name === LDAP_DROP_HEADER || name === requestPhases.PHASES_HEADER) {
+      if (name === LDAP_DROP_HEADER || name === requestPhases.PHASES_HEADER ||
+          name === REVOKING_HEADER) {
         return;
       }
       // Hop-by-hop headers belong to the connection this process made and not
@@ -8942,7 +9116,10 @@ function stats() {
     // of code keys pruned once settled (THE CODE EXCHANGE, KEYED BY ITS
     // CODE). `refreshKeyed` counts refresh grants keyed by their token, and
     // `refreshLearnt` token responses whose refresh token was filed (THE
-    // REFRESH GRANT, KEYED BY ITS TOKEN, #879).
+    // REFRESH GRANT, KEYED BY ITS TOKEN, #879). `revokingDispatched` and
+    // `revokingAnswered` count tickets filed under REVOKE_KEY by their path
+    // and by their answer, and `revokeWaits` the token requests that waited
+    // for it (THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF).
     sessionBarrier: { mode: readYourWriteMode(), session: sessionDispatches,
                      global: globalDispatches,
                      codeKeyed: codeKeyedDispatches,
@@ -8950,6 +9127,9 @@ function stats() {
                      settledCodes: settledCodes.size,
                      refreshKeyed: refreshKeyedDispatches,
                      refreshLearnt: refreshKeysLearnt,
+                     revokingDispatched: revokingDispatches,
+                     revokingAnswered: revokingAnswers,
+                     revokeWaits: revokeWaits,
                      keys: clientStates.size,
                      evicted: clientEvictions,
                      spilled: spilledTickets.size,
@@ -9030,6 +9210,9 @@ function reset() {
   codeKeysLearnt = 0;
   refreshKeyedDispatches = 0;
   refreshKeysLearnt = 0;
+  revokingDispatches = 0;
+  revokingAnswers = 0;
+  revokeWaits = 0;
   reaped = 0;
   // And what each write was and how it was sent (#626).
   lastSharedGeneration = 0;
@@ -9086,6 +9269,14 @@ module.exports = {
   readYourWriteModeOf: readYourWriteModeOf,
   clientKeysOf: clientKeysOf,
   codeExchangeCandidate: codeExchangeCandidate,
+  // THE WRITES A REFRESH MUST NOT ANSWER AHEAD OF, and the refresh token's
+  // key (the review of #879), for tests/request_ryw_session.js: which
+  // requests are filed under REVOKE_KEY by their path, and that a key is a
+  // digest. `clientKeyNames()` is the table's keys, never its tickets.
+  revokingRequest: revokingRequest,
+  refreshKeyOf: refreshKeyOf,
+  REVOKE_KEY: REVOKE_KEY,
+  clientKeyNames: clientKeyNames,
   dispatchPrefixes: dispatchPrefixes,
   fanoutPrefixes: fanoutPrefixes,
   affinityKeyOf: affinityKeyOf,
@@ -9115,6 +9306,9 @@ module.exports = {
   // catch a rename is a test holding them side by side. tests/ldap_logout.js
   // does exactly that.
   LDAP_DROP_HEADER: LDAP_DROP_HEADER,
+  // And the revoking answer's (the review of #879), for
+  // tests/revoking_writes.js.
+  REVOKING_HEADER: REVOKING_HEADER,
   WORKER_DECIDES: WORKER_DECIDES,
   // THIS PROCESS'S OWN WRITES MOVING THE GENERATION, exported so that
   // tests/front_process_writes.js can drive it without a store, a fork or a

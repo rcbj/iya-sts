@@ -52,7 +52,15 @@
 //       token response files it before the bytes are sent, an unknown token
 //       does not wait for another browser, a replay of the same token does,
 //       a keyless write still holds it, and a token response that was not
-//       JSON is one of those keyless writes.
+//       JSON is one of those keyless writes. The table keys it by the
+//       token's digest, never the token.
+//  R16. a refresh grant waits for a write that ended what it rests on (the
+//       review of #879): a sign-out on another worker, filed by its path,
+//       and a revocation the worker said on its answer, each hold a refresh
+//       until announced, and the worker the refresh lands on has then
+//       applied it and refuses; an unrelated browser write does not hold
+//       it, and the client never sees the worker's header. Which requests
+//       the path files is a table in R1.
 // ===========================================================================
 
 const http = require('http');
@@ -62,6 +70,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const pool = require('../common/request_pool');
+const stsCrypto = require('../common/crypto');
 
 const log = require('bunyan').createLogger({
   name: 'request_ryw_session',
@@ -126,7 +135,18 @@ const STUB = [
   "      if (req.url.indexOf('/login') === 0) {",
   "        res.setHeader('set-cookie', 'sts_session=ccc.h; Path=/');",
   "      }",
-  "      const code = /^\\/authorize-code\\?code=([^&]+)/.exec(req.url);",
+  "      if (req.url.indexOf('revoke=1') >= 0) {",
+  "        res.setHeader('x-sts-pool-revoking', '1');",
+  "      }",
+  "      const need = /^\\/oauth2\\/token\\?need=([0-9]+)/.exec(req.url);",
+  "      if (need) {",
+  "        const refused = syncs >= Number(need[1]);",
+  "        res.statusCode = refused ? 400 : 200;",
+  "        res.setHeader('content-type', 'application/json');",
+  "        res.end(refused ? '{\"error\":\"invalid_grant\"}' : '{}');",
+  "        return;",
+  "      }",
+  "      const code =/^\\/authorize-code\\?code=([^&]+)/.exec(req.url);",
   "      if (code) {",
   "        res.statusCode = 302;",
   "        res.setHeader('location', 'https://rp.example/cb?code=' +",
@@ -283,6 +303,19 @@ function announceAll(entries) {
   log.debug("Leaving announceAll().");
 }
 
+// Every ticket `entry` may still hold, announced as a WRITING commit: its
+// generation moves, so a reader that waits for one of those tickets' keys is
+// sent to a worker synced past it.
+function commitAll(entry) {
+  log.debug("Entering commitAll().");
+  const range = [];
+  for (let i = 1; i <= 2000; i++) {
+    range.push(i);
+  }
+  pool.receiveCommitted(entry, { wrote: true, tickets: range });
+  log.debug("Leaving commitAll().");
+}
+
 // A finished, unannounced ticket on `entry`, filed under `keys`.
 function arm(entry, keys) {
   log.debug("Entering arm().");
@@ -310,6 +343,38 @@ function checkTheReaders(t) {
   t.equal(pool.clientKeysOf({ headers: {}, originalUrl: '/oauth2/token' },
                             pool.PROTOCOL_POOL).length, 0,
           'R1. a back-channel request carries no key');
+  // R16. Which requests are filed under REVOKE_KEY by their method and path
+  // alone (the review of #879).
+  const revoking = function (method, url) {
+    return pool.revokingRequest({ method: method, originalUrl: url });
+  };
+  const filed = [
+    ['GET', '/logout'], ['POST', '/logout'],
+    ['GET', '/realm/r1/oauth2/logout?id_token_hint=x'],
+    ['POST', '/saml2/slo'], ['GET', '/authn-api/logout'],
+    ['GET', '/wsfed?wa=wsignout1.0&wreply=x'],
+    ['GET', '/realm/r1/wsfed?wa=wsignoutcleanup1.0'],
+    ['POST', '/oauth2/revoke'], ['POST', '/as1/oauth2/revoke'],
+    ['DELETE', '/oauth2/grants/g1'], ['POST', '/admin-api/users/disable'],
+    ['POST', '/realm/r1/account-api/sessions/end'],
+    ['PATCH', '/scim/v2/Users/u1'], ['POST', '/ssf/events'],
+    ['DELETE', '/anything/at/all']
+  ].filter(function (one) {
+    return !revoking(one[0], one[1]);
+  });
+  t.equal(filed.join(' | '), '',
+          'R16. every sign-out door, a write to a revoking surface and any ' +
+          'DELETE is filed under REVOKE_KEY by its path');
+  const notFiled = [
+    ['GET', '/oauth2/authorize?client_id=x'], ['POST', '/oauth2/token'],
+    ['POST', '/authn-api/pending/p1/password'], ['GET', '/admin-api/users'],
+    ['GET', '/wsfed?wa=wsignin1.0'], ['GET', '/portal/logouts-help'],
+    ['GET', '/oauth2/revoke'], ['POST', '/oauth2/revoked']
+  ].filter(function (one) {
+    return revoking(one[0], one[1]);
+  });
+  t.equal(notFiled.join(' | '), '',
+          'R16. a sign-in, a token request, a read and a near miss are not');
   // Which requests are read before the barrier (#820).
   const form = 'application/x-www-form-urlencoded';
   const ask = function (method, url, headers) {
@@ -523,6 +588,19 @@ async function checkTheCodeExchange(t, port, port2) {
     t.equal(pool.stats().sessionBarrier.refreshLearnt,
             beforeR.refreshLearnt + 1,
             'R15. that refresh token was learnt');
+    // The review of #879: the key is a digest through the one crypto
+    // module, and no key the table holds carries the token.
+    const rt1Key = pool.refreshKeyOf('RT1');
+    const keyNames = pool.clientKeyNames();
+    t.check(rt1Key === 'rt:' + stsCrypto.credentialDigest('RT1') &&
+            keyNames.indexOf(rt1Key) >= 0 &&
+            keyNames.every(function (k) {
+              return k.indexOf('RT1') < 0;
+            }),
+            'R15. the token is held under its digest, and no key is the token',
+            rt1Key + ' ' + JSON.stringify(keyNames.filter(function (k) {
+              return k.indexOf('rt:') === 0;
+            })));
     const mintedR = signR + 1;
     const refresh1 = post(port, '/oauth2/token',
                           'grant_type=refresh_token&refresh_token=RT1',
@@ -548,7 +626,7 @@ async function checkTheCodeExchange(t, port, port2) {
             (Date.now() - tR) + 'ms ' + JSON.stringify(answeredR.headers));
     await refresh2.promise;
 
-    // The first refresh's ticket is on O, unannounced, under rt:RT1. The
+    // The first refresh's ticket is on O, unannounced, under RT1's key. The
     // replay has to land on W or the same-worker exception would not hold it.
     const oServed = O.served;
     O.served = 1e9;
@@ -614,6 +692,93 @@ async function checkTheCodeExchange(t, port, port2) {
     // it keeps the ticket that must not have released the refreshes above.
     t.check(otherR > 0, 'R15. the other browser\'s ticket was armed',
             String(otherR));
+
+    // R16. The writes a refresh must not answer ahead of (the review of
+    // #879). The browser C signs out on W; a refresh with no cookie goes to
+    // O, which has not applied it. The stub at `/oauth2/token?need=<n>`
+    // refuses once it has answered n sync rounds: a worker that has applied
+    // the sign-out refuses the refresh, as the service does.
+    await sleep(50);
+    announceAll(workers);
+    const beforeV = pool.stats().sessionBarrier;
+    const probe = await post(port, '/oauth2/token',
+                             'grant_type=refresh_token&refresh_token=RTP',
+                             false).promise;
+    const sV = Number(probe.headers['x-syncs']);
+    t.check(probe.status === 200 &&
+            probe.headers['x-worker'] === String(O.pid),
+            'R16. a refresh with no cookie is answered by O',
+            JSON.stringify(probe.headers));
+    const signOut = await start(port, '/logout', C).promise;
+    t.check(signOut.headers['x-worker'] === String(W.pid),
+            'R16. the browser signs out on W',
+            JSON.stringify(signOut.headers));
+    await sleep(50);
+    const afterOut = post(port, '/oauth2/token?need=' + (sV + 1),
+                          'grant_type=refresh_token&refresh_token=RTA',
+                          false);
+    await sleep(HELD_MS);
+    t.check(!afterOut.done, 'R16. a refresh sent after a sign-out on another ' +
+            'worker is held by it, though it carries another key',
+            JSON.stringify(afterOut.answer));
+    commitAll(W);
+    const refusedOut = await afterOut.promise;
+    t.check(refusedOut.status === 400 &&
+            refusedOut.headers['x-worker'] === String(O.pid) &&
+            Number(refusedOut.headers['x-syncs']) === sV + 1,
+            'R16. and once the sign-out is announced, is answered by a ' +
+            'worker that has applied it, and refused',
+            refusedOut.status + ' ' + JSON.stringify(refusedOut.headers));
+
+    // An unrelated write of the same browser does not hold a refresh.
+    const sW = Number(refusedOut.headers['x-syncs']);
+    await sleep(50);
+    announceAll(workers);
+    const plain = await post(port, '/authn-api/pending/p1/password', 'x=1',
+                             false, C).promise;
+    t.check(plain.headers['x-worker'] === String(W.pid),
+            'R16. an ordinary browser write is answered on W',
+            JSON.stringify(plain.headers));
+    await sleep(50);
+    const tPlain = Date.now();
+    const afterPlain = post(port, '/oauth2/token?need=' + (sW + 1),
+                            'grant_type=refresh_token&refresh_token=RTB',
+                            false);
+    await sleep(HELD_MS);
+    t.check(afterPlain.done && afterPlain.answer.status === 200 &&
+            afterPlain.answer.headers['x-worker'] === String(O.pid) &&
+            (Date.now() - tPlain) < HELD_MS + 300,
+            'R16. a refresh is not held by an unrelated browser write',
+            JSON.stringify(afterPlain.answer && afterPlain.answer.headers));
+
+    // A revocation the worker said on its answer (a disabled account, a
+    // session replaced at sign-in): the path files nothing; the header does.
+    const said = await post(port, '/authn-api/pending/p1/password?revoke=1',
+                            'x=1', false, C).promise;
+    t.check(said.headers['x-worker'] === String(W.pid) &&
+            said.headers['x-sts-pool-revoking'] === undefined,
+            'R16. a revoking answer is answered on W, and the client does ' +
+            'not see the worker\'s header', JSON.stringify(said.headers));
+    await sleep(50);
+    const afterSaid = post(port, '/oauth2/token?need=' + (sW + 1),
+                           'grant_type=refresh_token&refresh_token=RTC',
+                           false);
+    await sleep(HELD_MS);
+    t.check(!afterSaid.done, 'R16. a refresh sent after a revocation said on ' +
+            'its answer is held by it', JSON.stringify(afterSaid.answer));
+    commitAll(W);
+    const refusedSaid = await afterSaid.promise;
+    t.check(refusedSaid.status === 400 &&
+            refusedSaid.headers['x-worker'] === String(O.pid),
+            'R16. and once it is announced, is refused by a worker that has ' +
+            'applied it', refusedSaid.status + ' ' +
+            JSON.stringify(refusedSaid.headers));
+    const endV = pool.stats().sessionBarrier;
+    t.check(endV.revokingDispatched >= beforeV.revokingDispatched + 1 &&
+            endV.revokingAnswered === beforeV.revokingAnswered + 1 &&
+            endV.revokeWaits >= beforeV.revokeWaits + 4,
+            'R16. counted: one by its path, one by its answer, and the waits',
+            JSON.stringify(endV));
   } finally {
     W.served = served;
     session.close();
