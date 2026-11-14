@@ -19,9 +19,10 @@
 use std::path::PathBuf;
 
 use serde_json::{json, Map, Value as Json};
+use sts_crypto::algorithms::AcceptAll;
 use sts_crypto::jws::{
-    generate_key, sign_input, sign_jws, verify_compact, verify_input,
-    SignOptions, VerifyOptions,
+    generate_key, sign_input, sign_jws, verify_compact,
+    verify_compact_with_certificate, verify_input, SignOptions, VerifyOptions,
 };
 use sts_crypto::jws_alg::{id_token_half_hash, ALGS};
 use sts_crypto::keys::{JwsKey, KeyPolicy};
@@ -42,10 +43,67 @@ fn read(name: &str) -> Option<Vec<Json>> {
 
 #[test]
 fn every_node_jws_verifies_here() {
-    let Some(rows) = read("jws-node.json") else {
+    let Some(all) = read("jws-node.json") else {
         return;
     };
+    let (certified, rows): (Vec<Json>, Vec<Json>) = all
+        .into_iter()
+        .partition(|row| row["certificateRow"] == true);
     assert_eq!(rows.len(), ALGS.len(), "one vector per algorithm");
+    // A JWS verified with the key in a certificate (#1713): Node's verdict
+    // with the certificate as PEM and as bare base64 DER, under another
+    // certificate's key, and Node's words for what is not a certificate.
+    assert!(
+        certified.len() >= 5,
+        "the certificate rows are in the vectors"
+    );
+    for row in &certified {
+        let alg = row["alg"].as_str().unwrap();
+        let options = VerifyOptions {
+            algorithms: &[alg],
+            empty_payload: false,
+            policy: KeyPolicy::STRICT,
+        };
+        let token = row["token"].as_str().unwrap();
+        let answer = |certificate: &str| {
+            verify_compact_with_certificate(
+                token,
+                certificate,
+                &options,
+                &AcceptAll,
+            )
+        };
+        let certificate = row["certificate"].as_str().unwrap();
+        match (answer(certificate), &row["pem"]) {
+            (Ok(v), node) if node["ok"] == true => {
+                assert_eq!(v.claims.unwrap()["sub"], node["sub"], "{}", alg)
+            }
+            (Err(e), node) if node["ok"] == false => {
+                assert_eq!(e.0, node["refusal"].as_str().unwrap(), "{}", alg)
+            }
+            (mine, node) => {
+                panic!("{}: Rust {:?}, Node {}", alg, mine.map(|_| ()), node)
+            }
+        }
+        if row["der"].is_object() {
+            let der: String = certificate
+                .lines()
+                .filter(|l| !l.starts_with("-----"))
+                .collect();
+            assert_eq!(
+                answer(&der).is_ok(),
+                row["der"]["ok"] == true,
+                "{} as bare DER",
+                alg
+            );
+        }
+        if let Some(other) = row.get("wrongCertificate") {
+            // Another certificate's key: Node's words there are its
+            // libraries', so the verdict is the check.
+            let mine = answer(row["otherCertificate"].as_str().unwrap());
+            assert_eq!(mine.is_ok(), other["ok"] == true, "{}", alg);
+        }
+    }
     for row in &rows {
         let alg = row["alg"].as_str().unwrap();
         let key = JwsKey::from_jwk(&row["jwk"])

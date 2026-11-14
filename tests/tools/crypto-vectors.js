@@ -74,6 +74,64 @@ function keyFor(alg) {
 }
 
 function jws() {
+  return jwsRows().concat(certificateJwsRows());
+}
+
+// A COMPACT JWS VERIFIED WITH THE KEY IN A CERTIFICATE (#1713): a token per
+// certificate kind — RSA, and each ML-DSA set, whose key only the
+// certificate's own SubjectPublicKeyInfo can carry — and Node's
+// verifyCompactJwsWithCertificate() answer, with the certificate as PEM and
+// as bare base64 DER; and a refusal for what is not a certificate.
+function certificateJwsRows() {
+  const rows = [];
+  const tokenOf = function (alg, sign) {
+    const input = Buffer.from(JSON.stringify({ alg: alg, kid: 'cert-1' }))
+      .toString('base64url') + '.' +
+      Buffer.from(JSON.stringify({ sub: 'alice' })).toString('base64url');
+    return input + '.' +
+      Buffer.from(sign(Buffer.from(input, 'ascii'))).toString('base64url');
+  };
+  const answer = function (token, certificate, alg) {
+    try {
+      const out = crypto.verifyCompactJwsWithCertificate(token, certificate,
+                                                         { algorithms: [alg] });
+      return { ok: true, sub: out.claims.sub };
+    } catch (e) {
+      return { ok: false, refusal: e.message };
+    }
+  };
+  const rsa = crypto.selfSignedRsaCertificate({ commonName: 'jws signer',
+                                                bits: 2048 });
+  const rsaToken = tokenOf('RS256', function (input) {
+    return nodeCrypto.sign('sha256', input, rsa.privateKeyPem);
+  });
+  const ec = crypto.selfSignedMlDsaCertificate({ algorithm: 'ML-DSA-44',
+                                                 commonName: 'other' });
+  const certs = [['RS256', rsa.certPem, rsaToken]];
+  ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87'].forEach(function (alg) {
+    const made = crypto.selfSignedMlDsaCertificate({
+      algorithm: alg.toLowerCase(), commonName: 'jws signer ' + alg });
+    const jwk = nodeCrypto.createPrivateKey(made.privateKeyPem)
+      .export({ format: 'jwk' });
+    certs.push([alg, made.certPem, tokenOf(alg, function (input) {
+      return pqJose.sign(alg, Buffer.from(jwk.priv, 'base64url'), input);
+    })]);
+  });
+  certs.forEach(function (c) {
+    const der = c[1].replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+    rows.push({ certificateRow: true, alg: c[0], token: c[2],
+                certificate: c[1], pem: answer(c[2], c[1], c[0]),
+                der: answer(c[2], der, c[0]),
+                otherCertificate: ec.certPem,
+                wrongCertificate: answer(c[2], ec.certPem, c[0]) });
+  });
+  rows.push({ certificateRow: true, alg: 'RS256', token: rsaToken,
+              certificate: 'not a certificate',
+              pem: answer(rsaToken, 'not a certificate', 'RS256') });
+  return rows;
+}
+
+function jwsRows() {
   return crypto.JWS_SIGNING_ALGS.map(function (alg) {
     const key = keyFor(alg);
     const input = Buffer.from('eyJhbGciOiJ4In0.eyJzdWIiOiJhbGljZSJ9',

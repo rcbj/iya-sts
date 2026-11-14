@@ -702,6 +702,97 @@ pub fn verify_compact(
     verify_compact_under(token, key, options, &AcceptAll)
 }
 
+/// `certificateSpkiDer()`: a certificate's SubjectPublicKeyInfo, as the
+/// DER the issuer signed, read structurally rather than through OpenSSL so
+/// that a post-quantum key OpenSSL cannot load is still a key (#1713). The
+/// certificate is PEM (the first CERTIFICATE block) or base64 DER, read as
+/// leniently as Node's `Buffer.from(…, 'base64')`.
+pub fn certificate_spki_der(certificate: &str) -> CryptoResult<Vec<u8>> {
+    use crate::der_lite as der;
+    let refused = || {
+        CryptoError::new(
+            "this is not a DER X.509 certificate with a \
+             SubjectPublicKeyInfo where RFC 5280 puts it.",
+        )
+    };
+    let begin = "-----BEGIN CERTIFICATE-----";
+    let end = "-----END CERTIFICATE-----";
+    let block = certificate
+        .find(begin)
+        .and_then(|at| {
+            certificate[at..]
+                .find(end)
+                .map(|to| &certificate[at..at + to + end.len()])
+        })
+        .unwrap_or(certificate);
+    // stripPem(): every `-----…-----` marker and all white space go.
+    let mut body = String::new();
+    let mut rest = block;
+    while let Some(at) = rest.find("-----") {
+        body.push_str(&rest[..at]);
+        let after = &rest[at + 5..];
+        match after.find("-----") {
+            Some(to) if to > 0 && !after[..to].contains('-') => {
+                rest = &after[to + 5..];
+            }
+            _ => {
+                body.push_str("-----");
+                rest = after;
+            }
+        }
+    }
+    body.push_str(rest);
+    let body: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = crate::secrets::node_base64(&body);
+    let top = der::read(&bytes).ok_or_else(refused)?;
+    let outer = der::children(top.content).ok_or_else(refused)?;
+    if top.tag != der::SEQUENCE || outer.len() != 3 {
+        return Err(refused());
+    }
+    let fields = der::children(outer[0].content).ok_or_else(refused)?;
+    let versioned = fields.first().is_some_and(|f| f.is_context(0));
+    let spki = fields
+        .get(if versioned { 6 } else { 5 })
+        .filter(|f| f.tag == der::SEQUENCE)
+        .filter(|f| der::children(f.content).is_some_and(|c| c.len() == 2))
+        .ok_or_else(refused)?;
+    Ok(spki.raw.to_vec())
+}
+
+/// `verifyCompactJwsWithCertificate()` (#1713): [`verify_compact_under`]
+/// with the key a certificate holds — what a document whose `x5c[0]` names
+/// its signer is checked with. A post-quantum key is its BIT STRING's
+/// octets (RFC 9881), as an AKP `pub`. Whether the CERTIFICATE is to be
+/// relied on is the validation door's question, never this function's.
+pub fn verify_compact_with_certificate(
+    token: &str,
+    certificate: &str,
+    options: &VerifyOptions,
+    policy: &dyn SignaturePolicy,
+) -> CryptoResult<Verified> {
+    let read = crate::raw_sig::public_key_from_spki(&certificate_spki_der(
+        certificate,
+    )?);
+    let key = if read.kind == "pq" {
+        crate::pq_x509::decode_spki(&read.spki).map(|(_, public)| {
+            JwsKey::of(Material::Akp {
+                alg: None,
+                public,
+                private: None,
+            })
+        })
+    } else {
+        read.key.map(|public| JwsKey::of(Material::Public(public)))
+    };
+    let key = key.ok_or_else(|| {
+        CryptoError::new(
+            "the certificate holds no key this service can verify a \
+             signature with.",
+        )
+    })?;
+    verify_compact_under(token, &key, options, policy)
+}
+
 /// `refuseUnacceptableJws()`: THE ONE JOSE ACCEPT CHOKEPOINT (#1368). The
 /// policy's refusal, with its code beside the sentence.
 fn refuse_unacceptable_jws(

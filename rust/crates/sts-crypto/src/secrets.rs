@@ -228,6 +228,12 @@ fn parse_int(s: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
+/// Node's lenient `Buffer.from(text, 'base64')`, for a caller elsewhere in
+/// this crate reading what Node reads that way.
+pub(crate) fn node_base64(text: &str) -> Vec<u8> {
+    lenient_b64(text)
+}
+
 /// Node's lenient `Buffer.from(text, 'base64')`.
 fn lenient_b64(text: &str) -> Vec<u8> {
     use base64::alphabet;
