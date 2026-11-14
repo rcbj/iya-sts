@@ -23,7 +23,8 @@ import { documents, everyOperation, projections, renderApiTypes }
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
-import { renderRustApi, renderRustDomain } from '../lib/rust_lib.mjs';
+import { renderRustApi, renderRustDomain, renderRustPolicyTables }
+  from '../lib/rust_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
 import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
@@ -267,6 +268,9 @@ async function generate() {
         JSON.stringify(declared));
     }
   });
+  // The policy kinds' tables for the Rust runtime's sts-policy (#444).
+  fs.writeFileSync(path.join(out, 'policy_tables.json'),
+    renderRustPolicyTables(objects, schemaOf, fieldsOf, factsOf(objects)));
   log.debug("Leaving generate().");
   return authored.length;
 }

@@ -1,0 +1,1484 @@
+{
+ "policy.attributes": {
+  "schema": {
+   "container": "ou=attributePolicies",
+   "definitionContainer": "ou=attributeDefinitions",
+   "objectClasses": [
+    {
+     "name": "stsAttributePolicy",
+     "what": "This service's class for an attribute policy: the attributes every person in a realm must hold. Named by the PROFILE (`cn=default`, or a named profile of the realm's own)."
+    },
+    {
+     "name": "stsAttributeDefinition",
+     "what": "This service's class for a custom attribute of a realm, in ou=attributeDefinitions, named by the attribute (`cn=<name>`)."
+    }
+   ],
+   "attributes": [
+    {
+     "name": "stsAttributeRequired",
+     "kind": "multi",
+     "what": "The attributes every person in this realm must hold a value of, besides uid, cn and sn, which are always required. A list, or comma-separated. Any attribute a person may be given a value for: the inetOrgPerson schema, the credential catalogue, mail, and this realm's custom attributes. Enforced in product mode: a create without one is refused at every door, and an edit may not take one away. Default givenName, sn and mail."
+    },
+    {
+     "name": "description",
+     "what": "What the profile or the custom attribute is for, for the next person."
+    },
+    {
+     "name": "stsAttributeLabel",
+     "kind": "single",
+     "what": "A custom attribute's label, drawn beside its name."
+    },
+    {
+     "name": "stsAttributeSyntax",
+     "kind": "single",
+     "what": "A custom attribute's syntax: string, integer, boolean, date, email, uri or dn. Its values are checked against it."
+    },
+    {
+     "name": "stsAttributeSingleValued",
+     "kind": "single",
+     "what": "TRUE where a custom attribute holds one value, FALSE where it holds several."
+    },
+    {
+     "name": "stsAttributePortalVisible",
+     "kind": "single",
+     "what": "TRUE where a person sees their own values of a custom attribute on the user portal's Overview. FALSE, or absent, by default."
+    },
+    {
+     "name": "stsAttributePortalEditable",
+     "kind": "single",
+     "what": "TRUE where a person may change their own values of a custom attribute on the user portal. Implies stsAttributePortalVisible. FALSE, or absent, by default."
+    },
+    {
+     "name": "stsAttributePolicyPrecedence",
+     "kind": "single",
+     "what": "Which named attribute policy applies where the person and their groups name several: the lowest, from 1 to 1000."
+    }
+   ],
+   "personAttributes": [
+    {
+     "name": "stsAttributePolicy",
+     "kind": "single",
+     "what": "On a person or a group: the attribute policy it names, `default` or a named profile of the realm. One value."
+    }
+   ]
+  },
+  "fields": [
+   {
+    "key": "requiredAttributes",
+    "type": "attributeList",
+    "dflt": "givenName, sn, mail",
+    "label": "Required attributes",
+    "attribute": "stsAttributeRequired",
+    "what": "The attributes every person in this realm must hold a value of, besides uid, cn and sn, which are always required. A list, or comma-separated. Any attribute a person may be given a value for: the inetOrgPerson schema, the credential catalogue, mail, and this realm's custom attributes. Enforced in product mode: a create without one is refused at every door, and an edit may not take one away. Default givenName, sn and mail."
+   }
+  ],
+  "selectors": [
+   {
+    "key": "precedence",
+    "attribute": "stsAttributePolicyPrecedence",
+    "what": "Which named attribute policy applies where the person and their groups name several: the lowest, from 1 to 1000."
+   }
+  ],
+  "facts": {}
+ },
+ "policy.authn": {
+  "schema": {
+   "container": "ou=authnPolicies",
+   "objectClasses": [
+    {
+     "name": "stsAuthnPolicy",
+     "what": "This service's class for an authentication policy: which mechanisms are accepted as a first and as a second factor, and when a second factor is required. The entry is named by the PROFILE (`cn=default`)."
+    }
+   ],
+   "attributes": [
+    {
+     "name": "stsAuthnRequireSecondFactor",
+     "kind": "single",
+     "what": "`if-held`: a person is asked for a second factor when they hold one (or their entry says stsMfaRequired). `always`: everybody in this realm is, and somebody who holds none is sent to enrol one at their next sign-in. This replaced authn.mfaRequired. There is no \"never\": a held factor is always asked for."
+    },
+    {
+     "name": "stsAuthnRequireSecondFactorForAdministrators",
+     "kind": "single",
+     "what": "For anybody holding a console role (Admin Read or Admin Write) who holds no second factor. `offer`: they are shown the step that sets one up, with an Ignore button, at every sign-in. `always`: they must set one up before they are signed in — except the default realm's built-in administrator (admin.bootstrapUsername), who is only ever offered one, so a service is never left with nobody who can sign in. `if-held`: as everybody else, by the field above. WEAKER THAN `always`: an administrator on a password alone is an administrator anyone with the password is."
+    },
+    {
+     "name": "stsAuthnPasswordPrimary",
+     "kind": "single",
+     "what": "A password on the sign-in screen. As a SECOND factor it is the password asked for after a wallet or other passwordless first factor."
+    },
+    {
+     "name": "stsAuthnPasswordSecondFactor",
+     "kind": "single",
+     "what": "A password on the sign-in screen. As a SECOND factor it is the password asked for after a wallet or other passwordless first factor."
+    },
+    {
+     "name": "stsAuthnPasskeyPrimary",
+     "kind": "single",
+     "what": "Any passkey (WebAuthn credential) the person holds, signing them in with no password. A passkey has no role: this row says, at each sign-in, whether any of them may be a first factor in this realm, unless the first factors of the authentication policy an application names (appAuthnPolicy) say otherwise."
+    },
+    {
+     "name": "stsAuthnSecurityKeySecondFactor",
+     "kind": "single",
+     "what": "Any passkey (WebAuthn credential) the person holds, asked for after a first factor. A passkey has no role: this row says, at each sign-in, whether any of them may be a second factor in this realm, unless the second factors of the authentication policy an application names (appAuthnPolicy) say otherwise."
+    },
+    {
+     "name": "stsAuthnTotpSecondFactor",
+     "kind": "single",
+     "what": "An RFC 6238 one-time code. Never a first factor: this service holds the same shared secret the app does. Off here, nobody may ENROL one; a person who already holds one is still asked for it, because an off switch that downgraded every enrolled account to a password alone would do something other than it says (this row replaced totp.enabled, and keeps its contract)."
+    },
+    {
+     "name": "stsAuthnRecoveryCodeSecondFactor",
+     "kind": "single",
+     "what": "A single-use code from a set the person generated. Off here, no new set may be generated; a set already held still works (this row replaced backupCodes.enabled, and keeps its contract)."
+    },
+    {
+     "name": "stsAuthnEmailCodePrimary",
+     "kind": "single",
+     "what": "A six-digit code mailed to the person's VERIFIED address. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk."
+    },
+    {
+     "name": "stsAuthnEmailCodeSecondFactor",
+     "kind": "single",
+     "what": "A six-digit code mailed to the person's VERIFIED address. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk."
+    },
+    {
+     "name": "stsAuthnEmailLinkPrimary",
+     "kind": "single",
+     "what": "A single-use link mailed to the person's VERIFIED address, which completes the sign-in only in the browser that started it. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk."
+    },
+    {
+     "name": "stsAuthnEmailLinkSecondFactor",
+     "kind": "single",
+     "what": "A single-use link mailed to the person's VERIFIED address, which completes the sign-in only in the browser that started it. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk."
+    },
+    {
+     "name": "stsAuthnCertificatePrimary",
+     "kind": "single",
+     "what": "A verified TLS client certificate: GET /tls/sign-in, or Continue with your certificate on the sign-in screen."
+    },
+    {
+     "name": "stsAuthnKerberosPrimary",
+     "kind": "single",
+     "what": "GET /authn/spnego with a Kerberos ticket."
+    },
+    {
+     "name": "stsAuthnWalletPrimary",
+     "kind": "single",
+     "what": "/authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password."
+    },
+    {
+     "name": "stsAuthnWalletSecondFactor",
+     "kind": "single",
+     "what": "/authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password."
+    },
+    {
+     "name": "stsAuthnFederationPrimary",
+     "kind": "single",
+     "what": "A sign-in asserted by a configured federation partner."
+    },
+    {
+     "name": "stsAuthnEmailCodeTtlS",
+     "kind": "single",
+     "what": "From the moment it is sent. At most ten minutes, NIST SP 800-63B-4 section 3.1.3.2's bound for an out-of-band secret."
+    },
+    {
+     "name": "stsAuthnEmailCodeAttempts",
+     "kind": "single",
+     "what": "How many wrong codes one sign-in step accepts before it is ended and the person starts again. The per-person and per-network rate limits apply as well."
+    },
+    {
+     "name": "stsAuthnEmailResendS",
+     "kind": "single",
+     "what": "A new code or link replaces the last one, which stops working. At most three are sent for one sign-in step."
+    },
+    {
+     "name": "stsAuthnEmailFailureLimit",
+     "kind": "single",
+     "what": "NIST SP 800-63B-4 section 3.2.2 asks for no more than 100. The person, and their administrators, are told, and the person turns it on again from the portal."
+    },
+    {
+     "name": "stsAuthnRememberedBrowserSkipsSecondFactor",
+     "kind": "single",
+     "what": "OFF BY DEFAULT. On, a person signing in on a browser they chose to remember is not asked for their second factor again within the period below of last giving it on that browser. NEVER at the admin console, the user portal or the protocol debugger; never for an administrator; never while the sign-in's risk is medium or higher; and the sign-in is then ONE factor to every relying party — amr [\"pwd\"] and acr \"1\", as a password alone — so an application asking for \"mfa\" is refused it. The browser is recognised by a bearer cookie: whoever copies the cookie skips the second factor too, until the copy is caught."
+    },
+    {
+     "name": "stsAuthnRememberedBrowserDays",
+     "kind": "single",
+     "what": "Counted from the last time the person gave their second factor on that browser. After it they are asked again, and giving it starts the period again."
+    },
+    {
+     "name": "description",
+     "what": "What the profile is for, for the next person."
+    },
+    {
+     "name": "stsAuthnPolicyMechanism",
+     "kind": "multi",
+     "what": "On a NAMED authentication policy (#1148, #1237): a first-factor mechanism a sign-in it applies to allows — where the application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy) names it and its precedence is the lowest named — password, password-mfa, webauthn, spnego, wallet or federation, one value each. None allows every one the realm allows."
+    },
+    {
+     "name": "stsAuthnPolicySecondFactor",
+     "kind": "multi",
+     "what": "On a NAMED authentication policy (#1148, #1237): a second factor a sign-in it applies to allows — where the application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy) names it and its precedence is the lowest named — password, securityKey, totp, recoveryCode, emailCode, emailLink or wallet, one value each. None leaves the realm's authentication policy as it is."
+    },
+    {
+     "name": "stsAuthnPolicyPrecedence",
+     "kind": "single",
+     "what": "On a NAMED authentication policy (#1237): which one applies where several are named for one sign-in — by the application (appAuthnPolicy) and by the person's groups (stsAuthnPolicy) — the lowest, from 1 to 1000, ties by name. 100 when absent."
+    }
+   ],
+   "personAttributes": [
+    {
+     "name": "stsMailFactor",
+     "kind": "single",
+     "what": "Which emailed second factor this person opted in to: `code` or `link`. Absent: none. Set on /portal/mfa, cleared on /admin/mfa and after too many consecutive failures."
+    },
+    {
+     "name": "stsMailFactorFailures",
+     "kind": "single",
+     "what": "Consecutive failed emailed codes or links, reset by a success. Maintained by this service."
+    }
+   ]
+  },
+  "fields": [
+   {
+    "key": "requireSecondFactor",
+    "type": "enum",
+    "values": [
+     "if-held",
+     "always"
+    ],
+    "dflt": "if-held",
+    "label": "Second factor required",
+    "attribute": "stsAuthnRequireSecondFactor",
+    "what": "`if-held`: a person is asked for a second factor when they hold one (or their entry says stsMfaRequired). `always`: everybody in this realm is, and somebody who holds none is sent to enrol one at their next sign-in. This replaced authn.mfaRequired. There is no \"never\": a held factor is always asked for."
+   },
+   {
+    "key": "requireSecondFactorForAdministrators",
+    "type": "enum",
+    "values": [
+     "if-held",
+     "offer",
+     "always"
+    ],
+    "dflt": "offer",
+    "label": "Second factor for administrators",
+    "attribute": "stsAuthnRequireSecondFactorForAdministrators",
+    "what": "For anybody holding a console role (Admin Read or Admin Write) who holds no second factor. `offer`: they are shown the step that sets one up, with an Ignore button, at every sign-in. `always`: they must set one up before they are signed in — except the default realm's built-in administrator (admin.bootstrapUsername), who is only ever offered one, so a service is never left with nobody who can sign in. `if-held`: as everybody else, by the field above. WEAKER THAN `always`: an administrator on a password alone is an administrator anyone with the password is."
+   },
+   {
+    "key": "emailCodeTtlS",
+    "type": "int",
+    "dflt": 300,
+    "min": 60,
+    "max": 600,
+    "unit": "seconds",
+    "email": true,
+    "label": "How long an emailed code or link is valid",
+    "attribute": "stsAuthnEmailCodeTtlS",
+    "what": "From the moment it is sent. At most ten minutes, NIST SP 800-63B-4 section 3.1.3.2's bound for an out-of-band secret."
+   },
+   {
+    "key": "emailCodeAttempts",
+    "type": "int",
+    "dflt": 5,
+    "min": 1,
+    "max": 10,
+    "unit": "attempts",
+    "email": true,
+    "label": "Wrong codes before the sign-in step ends",
+    "attribute": "stsAuthnEmailCodeAttempts",
+    "what": "How many wrong codes one sign-in step accepts before it is ended and the person starts again. The per-person and per-network rate limits apply as well."
+   },
+   {
+    "key": "emailResendS",
+    "type": "int",
+    "dflt": 60,
+    "min": 15,
+    "max": 600,
+    "unit": "seconds",
+    "email": true,
+    "label": "Shortest wait before another code or link is sent",
+    "attribute": "stsAuthnEmailResendS",
+    "what": "A new code or link replaces the last one, which stops working. At most three are sent for one sign-in step."
+   },
+   {
+    "key": "emailFailureLimit",
+    "type": "int",
+    "dflt": 100,
+    "min": 5,
+    "max": 100,
+    "unit": "failures",
+    "email": true,
+    "label": "Consecutive failures before a person's email factor is turned off",
+    "attribute": "stsAuthnEmailFailureLimit",
+    "what": "NIST SP 800-63B-4 section 3.2.2 asks for no more than 100. The person, and their administrators, are told, and the person turns it on again from the portal."
+   },
+   {
+    "key": "rememberedBrowserSkipsSecondFactor",
+    "type": "bool",
+    "dflt": false,
+    "label": "A remembered browser may skip the second factor",
+    "attribute": "stsAuthnRememberedBrowserSkipsSecondFactor",
+    "what": "OFF BY DEFAULT. On, a person signing in on a browser they chose to remember is not asked for their second factor again within the period below of last giving it on that browser. NEVER at the admin console, the user portal or the protocol debugger; never for an administrator; never while the sign-in's risk is medium or higher; and the sign-in is then ONE factor to every relying party — amr [\"pwd\"] and acr \"1\", as a password alone — so an application asking for \"mfa\" is refused it. The browser is recognised by a bearer cookie: whoever copies the cookie skips the second factor too, until the copy is caught."
+   },
+   {
+    "key": "rememberedBrowserDays",
+    "type": "int",
+    "dflt": 30,
+    "min": 1,
+    "max": 400,
+    "unit": "days",
+    "label": "How long a remembered browser skips the second factor",
+    "attribute": "stsAuthnRememberedBrowserDays",
+    "what": "Counted from the last time the person gave their second factor on that browser. After it they are asked again, and giving it starts the period again."
+   }
+  ],
+  "selectors": [],
+  "facts": {
+   "mechanisms": [
+    {
+     "id": "password",
+     "label": "Password",
+     "primary": true,
+     "secondFactor": true
+    },
+    {
+     "id": "passkey",
+     "label": "Passkey (passwordless)",
+     "primary": true,
+     "secondFactor": null
+    },
+    {
+     "id": "securityKey",
+     "label": "Passkey (second factor)",
+     "primary": null,
+     "secondFactor": true
+    },
+    {
+     "id": "totp",
+     "label": "Authenticator app (TOTP)",
+     "primary": null,
+     "secondFactor": true
+    },
+    {
+     "id": "recoveryCode",
+     "label": "Recovery code",
+     "primary": null,
+     "secondFactor": true
+    },
+    {
+     "id": "emailCode",
+     "label": "Emailed six-digit code",
+     "primary": false,
+     "secondFactor": false,
+     "email": true
+    },
+    {
+     "id": "emailLink",
+     "label": "Emailed sign-in link",
+     "primary": false,
+     "secondFactor": false,
+     "email": true
+    },
+    {
+     "id": "certificate",
+     "label": "TLS client certificate",
+     "primary": true,
+     "secondFactor": null
+    },
+    {
+     "id": "kerberos",
+     "label": "Kerberos (SPNEGO)",
+     "primary": true,
+     "secondFactor": null
+    },
+    {
+     "id": "wallet",
+     "label": "Wallet presentation",
+     "primary": true,
+     "secondFactor": true
+    },
+    {
+     "id": "federation",
+     "label": "Federation partner",
+     "primary": true,
+     "secondFactor": null
+    }
+   ]
+  }
+ },
+ "policy.locale": {
+  "schema": {
+   "container": "ou=localePolicies",
+   "objectClasses": [
+    {
+     "name": "stsLocalePolicy",
+     "what": "This service's class for a locale policy: the language a realm's pages fall back to and gives a new person. Named by the PROFILE (`cn=default`, or a named profile an application or a group names)."
+    }
+   ],
+   "attributes": [
+    {
+     "name": "stsLocaleDefault",
+     "kind": "single",
+     "what": "A BCP 47 language tag (RFC 5646), such as en, fr-CA or zh-TW. Pages are drawn in it when the request, the person's preferredLanguage, the language chooser and the browser name nothing a catalog answers; dates and numbers are formatted for it even where no catalog does. Mail to a person whose entry names no language is written in it. Replaces the setting mail.defaultLanguage."
+    },
+    {
+     "name": "stsLocalePopulatePreferredLanguage",
+     "kind": "single",
+     "what": "ON BY DEFAULT. A person entry created in this realm without a preferredLanguage (RFC 2798 section 2.7) is given the default language above as one — by the console, the management API, SCIM, a federated or self-service sign-up, or a bulk load. A named profile applies where the application that caused the creation names it, or one of the person's groups does. Existing entries are never rewritten."
+    },
+    {
+     "name": "stsLocalePrecedence",
+     "kind": "single",
+     "what": "Which named locale policy wins where several are named for a page: the lowest, from 1 to 1000."
+    },
+    {
+     "name": "description",
+     "what": "What the profile is for, for the next person."
+    }
+   ],
+   "personAttributes": [
+    {
+     "name": "stsPreferredLanguagePopulated",
+     "kind": "single",
+     "what": "The preferredLanguage the locale policy gave this person when their entry was created. While preferredLanguage still equals it, it is the POLICY's choice and a page ranks it below the browser's language; once anybody sets another, it is the person's. Written by this service only."
+    }
+   ]
+  },
+  "fields": [
+   {
+    "key": "defaultLocale",
+    "type": "locale",
+    "dflt": "en",
+    "label": "Default language and region",
+    "attribute": "stsLocaleDefault",
+    "what": "A BCP 47 language tag (RFC 5646), such as en, fr-CA or zh-TW. Pages are drawn in it when the request, the person's preferredLanguage, the language chooser and the browser name nothing a catalog answers; dates and numbers are formatted for it even where no catalog does. Mail to a person whose entry names no language is written in it. Replaces the setting mail.defaultLanguage."
+   },
+   {
+    "key": "populatePreferredLanguage",
+    "type": "bool",
+    "dflt": true,
+    "label": "Give a new person this language",
+    "attribute": "stsLocalePopulatePreferredLanguage",
+    "what": "ON BY DEFAULT. A person entry created in this realm without a preferredLanguage (RFC 2798 section 2.7) is given the default language above as one — by the console, the management API, SCIM, a federated or self-service sign-up, or a bulk load. A named profile applies where the application that caused the creation names it, or one of the person's groups does. Existing entries are never rewritten."
+   }
+  ],
+  "selectors": [
+   {
+    "key": "precedence",
+    "attribute": "stsLocalePrecedence",
+    "what": "Which named locale policy wins where several are named for a page: the lowest, from 1 to 1000."
+   }
+  ],
+  "facts": {}
+ },
+ "policy.passkey": {
+  "schema": {
+   "container": "ou=passkeyPolicies",
+   "objectClasses": [
+    {
+     "name": "stsPasskeyPolicy",
+     "what": "This service's class for a passkey policy: how passkeys behave in this realm. The entry is named by the PROFILE (`cn=default`)."
+    }
+   ],
+   "attributes": [
+    {
+     "name": "stsPasskeyAllowUsernameless",
+     "kind": "single",
+     "what": "ON BY DEFAULT. On, the sign-in screen offers *Sign in with a passkey* and the username field's autofill, which ask the browser for any discoverable credential of this realm (WebAuthn Level 3 section 5.4, `allowCredentials` empty) and sign in the account its user handle names, with user verification required and checked. Off, neither is offered and a sign-in always names the person first. Replaces the setting webauthn.usernameless."
+    },
+    {
+     "name": "stsPasskeyRequireUsernameless",
+     "kind": "single",
+     "what": "OFF BY DEFAULT. On, an application whose authentication mechanism is a passkey and nothing else (the authentication policy it names, appAuthnPolicy, lists `webauthn` alone) gets a sign-in screen with no username field: *Sign in with a passkey* is the way in, and a sign-in that names a person is refused. It needs the row above. The realm's `default` profile does not apply it to the admin console, the debugger or the user portal; a named profile selecting that application does."
+    },
+    {
+     "name": "stsPasskeySecurityKeyResidentKey",
+     "kind": "single",
+     "what": "The `residentKey` an enrolment through *Use a security key* (or one that names no kind) sends WHILE usernameless sign-in is ON. While it is off the button always asks `required`, so it makes a discoverable credential as *Create a passkey* does (which asks `required` always). `discouraged` or `preferred` spare a security key's few resident slots, at the cost of a key that needs the username to sign in. Replaces the setting webauthn.residentKey."
+    },
+    {
+     "name": "stsPasskeyBackupEligibility",
+     "kind": "single",
+     "what": "`allow` (the default) accepts any passkey. `disallow` accepts only DEVICE-BOUND ones: a passkey whose authenticator says it may be backed up or synced (the BE flag, WebAuthn Level 3 section 6.1) is refused when it is registered and when it signs somebody in, so a synced passkey enrolled before the realm said no stops working too. BE never changes for a credential."
+    },
+    {
+     "name": "stsPasskeyEnforcePinLength",
+     "kind": "single",
+     "what": "OFF BY DEFAULT. On, registration asks the authenticator for its minimum PIN length (CTAP 2.1 section 12.4, the minPinLength extension), records it on the key, and refuses a key whose minimum is below the next row, at registration and at every sign-in. A key answers only for relying parties it was configured to tell (CTAP 2.1 setMinPINLength with this RP ID); every other key, and every platform or synced passkey, does not report, and is refused unless the row after next is on."
+    },
+    {
+     "name": "stsPasskeyMinPinLength",
+     "kind": "single",
+     "what": "The shortest PIN a security key may be set to accept, as the key itself reports it, while the row above is on. Between 4 (CTAP 2.1's own floor) and 63."
+    },
+    {
+     "name": "stsPasskeyPinLengthOnlyIfSupported",
+     "kind": "single",
+     "what": "OFF BY DEFAULT, which is the strict reading: while the PIN length is enforced, a key that does not report it is refused. On, such a key is accepted and only a reported minimum is held to the rule — so the rule then binds only keys configured to report to this relying party."
+    },
+    {
+     "name": "stsPasskeyEnforceAttestationAtSignIn",
+     "kind": "single",
+     "what": "OFF BY DEFAULT. The attestation rules (the webauthn.attestation* settings: the policy, the AAGUID list, the certification level and FIPS) are checked when a passkey is registered. On, they are checked again at every sign-in against what was recorded then and the FIDO Metadata Service as it is now, so a key registered before a rule was tightened, or whose model was since reported compromised, stops signing anybody in. A key with no trusted attestation fails every rule that demands one."
+    },
+    {
+     "name": "stsPasskeyPostQuantumRequired",
+     "kind": "single",
+     "what": "`off` (the default) accepts a passkey whatever its signature algorithm. `sign-in` accepts only a POST-QUANTUM passkey, one whose algorithm is ML-DSA-44, ML-DSA-65 or ML-DSA-87 (RFC 9964), when it signs somebody in, as the first credential or as the second factor; a classical one may still be registered. `registration-and-sign-in` refuses a classical one at registration too, and enrolment then offers only ML-DSA. The algorithm decides, not the lane a key was created in. Refused while the realm offers no ML-DSA (webauthn.algorithms names none, and neither webauthn.pqcOnly nor webauthn.pqcAlongsideClassical is on)."
+    },
+    {
+     "name": "stsPasskeyPostQuantumAllowCredentials",
+     "kind": "single",
+     "what": "`realm` (the default) follows the realm's webauthn.postQuantumAllowCredentials. Read only while postQuantumRequired requires a post-quantum passkey at sign-in. `narrow` names only the person's post-quantum (ML-DSA) passkeys in the passkey step's request, so a classical one is never offered, and a person whose device holds only their classical one sees the platform's own \"no passkey found\" message. `list-and-refuse` names every passkey they hold and refuses a classical one after the ceremony, with a page saying that this application requires a post-quantum passkey and where to add one; the person may then pick a passkey that will be refused. A person holding no post-quantum passkey is told before any ceremony either way. Left out of a save, `realm` is kept."
+    },
+    {
+     "name": "stsPasskeyRegistrationAlgorithms",
+     "kind": "single",
+     "what": "`realm` (the default) offers the realm's webauthn.algorithms. Otherwise the signature algorithms a passkey registration offers to this profile's people, in order of preference (an authenticator makes the first it supports), from the algorithms webauthn.algorithms may name. The next row may narrow or reorder it, and a passkey whose algorithm is not one this profile offers is refused when it is registered. Left out of a save, `realm` is kept."
+    },
+    {
+     "name": "stsPasskeyRegistrationMode",
+     "kind": "single",
+     "what": "`realm` (the default) follows webauthn.pqcOnly and webauthn.pqcAlongsideClassical. `pq-only` offers only ML-DSA, and refuses a retry with the classical algorithms. `pq-first` offers ML-DSA first and the classical algorithms after it, even where the realm requests ML-DSA only. `classical-only` offers no ML-DSA and no post-quantum passkey beside a classical one, for people whose devices fail an ML-DSA registration. Refused with postQuantumRequired other than off or with attestationAlgorithms set (classical-only), and where the algorithms offered name no ML-DSA (pq-only, pq-first). Left out of a save, `realm` is kept."
+    },
+    {
+     "name": "stsPasskeyLanes",
+     "kind": "single",
+     "what": "`realm` (the default) follows webauthn.pqcAlongsideClassical. `both` gives this profile's people a classical and a post-quantum passkey side by side, each under its own user handle, wherever the realm's setting is off; `one` gives them one lane wherever it is on. webauthn.pqcOnly still means one lane. Refused as `both` with registrationMode classical-only. Left out of a save, `realm` is kept."
+    },
+    {
+     "name": "stsPasskeyClientRules",
+     "kind": "single",
+     "what": "EMPTY BY DEFAULT: every client is offered the list as it stands. Otherwise up to 20 rules separated by `;`, each `<browser> on <system>`, where either side is a family as the passkey ceremony rows name it (`Chrome`, `Firefox`, `macOS`, `Android`) or `*` for any, optionally followed by a major-version range (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. A passkey registration from a matching client offers the list less ML-DSA (ES256 and RS256 where that leaves none). Not applied where a classical passkey is not allowed — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, or at the sign-in step under postQuantumRequired sign-in — nor to the post-quantum lane, and the ceremony row says it was not. Left out of a save, empty is kept."
+    },
+    {
+     "name": "stsPasskeyHintsPasskey",
+     "kind": "single",
+     "what": "The WebAuthn hints (Level 3 section 5.4.8) the portal's *Create a passkey* sends, in order, from security-key, client-device and hybrid, or none. They tell the browser which way of making the passkey to lead with. A hint may not contradict webauthn.authenticatorAttachment: client-device implies platform, security-key and hybrid cross-platform."
+    },
+    {
+     "name": "stsPasskeyHintsSecurityKey",
+     "kind": "single",
+     "what": "The hints *Use a security key* sends, in order, or none. The button asks for a cross-platform authenticator, so client-device contradicts it and is refused."
+    },
+    {
+     "name": "stsPasskeyHintsSignIn",
+     "kind": "single",
+     "what": "The hints a sign-in ceremony sends — the passkey step, the sign-in with no username and its autofill — in order, or none (the default: the browser offers every way it knows)."
+    },
+    {
+     "name": "stsPasskeyEnterpriseSerialAttribute",
+     "kind": "single",
+     "what": "EMPTY BY DEFAULT: no serial is checked. Set to an attribute of a person's entry (for example `serialNumber`, which may hold several values), a security key registers only with a TRUSTED enterprise attestation whose certificate names a device serial that is one of that person's values. Needs webauthn.attestation set to enterprise, and the vendor or platform configured to release enterprise attestation to this RP ID; without that the browser sends ordinary attestation and every registration is refused."
+    },
+    {
+     "name": "stsPasskeyUserDisplayName",
+     "kind": "single",
+     "what": "EMPTY BY DEFAULT: the name the sign-in knows, else the username. Otherwise up to six directory attributes in order, separated by commas; a group of attributes separated by spaces (givenName sn) joins their values. The first whose every attribute has a value becomes user.displayName (WebAuthn Level 3 section 5.4.3), with control and direction-changing characters removed and at most 64 characters. The username is always user.name."
+    },
+    {
+     "name": "stsPasskeyRpNameExtras",
+     "kind": "single",
+     "what": "`none` (the default) shows webauthn.rpName alone. `realm`, `organisation` or `realm-and-organisation` append the realm's name and/or saml.organizationName, so a person with accounts in several realms can tell the prompts apart."
+    },
+    {
+     "name": "stsPasskeyCredentialLabel",
+     "kind": "single",
+     "what": "EMPTY BY DEFAULT: the provider's name, else \"Passkey\" or \"Security key\". Otherwise this text, with {provider} and {kind} filled in, at most 60 characters. The person may rename it afterwards, as always."
+    },
+    {
+     "name": "stsPasskeyAggregateDevices",
+     "kind": "single",
+     "what": "ON BY DEFAULT: one \"Use passkey\" step whose request lists every one of the person's passkeys, and the browser offers whichever is present. Off, a person with more than one is shown a choice per passkey, by its name, and the request names only that one."
+    },
+    {
+     "name": "stsPasskeyRecoveryAssurance",
+     "kind": "single",
+     "what": "`any` BY DEFAULT IN DEVELOPMENT, `not-weaker` IN PRODUCT. Whether a way back into the account that asks for no passkey — a password reset link, an activation link, a recovery code, an emailed code or link — restores access for a person who holds one. `any`: at once. `not-weaker`: the first sign-in after it that is not a passkey sign-in reaches no application; the person registers a passkey that satisfies this policy and signs in with it. `operator-only`: as not-weaker, and the self-service doors (the forgot-password form, a recovery code or an emailed code or link at sign-in) are refused; only an administrator's reset link, generated password or activation link remains. Left out of a save, the built-in default is kept."
+    },
+    {
+     "name": "stsPasskeyAttestationAlgorithms",
+     "kind": "single",
+     "what": "`none` BY DEFAULT: an attestation is accepted whatever it is signed with. Otherwise a list from post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa and composite-ml-dsa: a passkey registers only with a TRUSTED attestation that carries a certificate, whose statement signature and the signature on every certificate of its chain, from the leaf to the trust anchor, are each one the list allows (`post-quantum` allows any ML-DSA, SLH-DSA or composite ML-DSA signature). Self and none attestation are refused, having no certificate. With enforceAttestationAtSignIn on, every sign-in holds the passkey to it by what its registration recorded, so a passkey registered before the rule stops working. This is the attestation's algorithm, not the passkey's own (postQuantumRequired). Left out of a save, the built-in default is kept."
+    },
+    {
+     "name": "stsPasskeyAdminEnrolment",
+     "kind": "single",
+     "what": "`off` BY DEFAULT. `on` lets an administrator holding the Admin Write console role enrol a passkey for a person this profile applies to, from the person's page on the console or /admin-api: the registration ceremony runs in the administrator's own browser, against an authenticator they hold (a security key to be handed over, say), under the person's user handle, and is verified exactly as the person's own registration is — attestation, algorithms and this policy's registration rules. Nothing made elsewhere can be imported. The key records which administrator enrolled it and when, and the person is told. Left out of a save, the built-in default is kept."
+    },
+    {
+     "name": "stsPasskeyDeviceBoundRequired",
+     "kind": "single",
+     "what": "OFF BY DEFAULT. On, an issuance to an application this profile covers waits until the sign-on session is bound to the browser's key, and is refused when the browser skipped that registration or the wait elapsed without a binding. A session that was never offered registration is not refused by this row. Refused while authn.deviceBoundSessions is off."
+    },
+    {
+     "name": "stsPasskeyPrecedence",
+     "kind": "single",
+     "what": "Which named passkey policy wins where several match: the lowest, from 1 to 1000."
+    },
+    {
+     "name": "description",
+     "what": "What the profile is for, for the next person."
+    }
+   ],
+   "personAttributes": [
+    {
+     "name": "stsRecoveryPending",
+     "kind": "single",
+     "what": "A recovery restored access to this person, who holds a passkey, and no passkey has signed them in since: the door and when, as `<door> <ISO 8601 instant>`. While the passkey policy's recoveryAssurance is not-weaker or operator-only, a sign-in that is not a passkey reaches no application. Maintained by this service."
+    },
+    {
+     "name": "stsPasswordResetSource",
+     "kind": "single",
+     "what": "Who issued the password reset link on this entry: `self` (the forgot-password form) or `operator` (an administrator). Written and cleared with the link. Maintained by this service."
+    }
+   ]
+  },
+  "fields": [
+   {
+    "key": "allowUsernameless",
+    "type": "bool",
+    "dflt": true,
+    "label": "Allow a passkey sign-in with no username",
+    "attribute": "stsPasskeyAllowUsernameless",
+    "what": "ON BY DEFAULT. On, the sign-in screen offers *Sign in with a passkey* and the username field's autofill, which ask the browser for any discoverable credential of this realm (WebAuthn Level 3 section 5.4, `allowCredentials` empty) and sign in the account its user handle names, with user verification required and checked. Off, neither is offered and a sign-in always names the person first. Replaces the setting webauthn.usernameless."
+   },
+   {
+    "key": "requireUsernameless",
+    "type": "bool",
+    "dflt": false,
+    "label": "Require a passkey sign-in with no username",
+    "attribute": "stsPasskeyRequireUsernameless",
+    "what": "OFF BY DEFAULT. On, an application whose authentication mechanism is a passkey and nothing else (the authentication policy it names, appAuthnPolicy, lists `webauthn` alone) gets a sign-in screen with no username field: *Sign in with a passkey* is the way in, and a sign-in that names a person is refused. It needs the row above. The realm's `default` profile does not apply it to the admin console, the debugger or the user portal; a named profile selecting that application does."
+   },
+   {
+    "key": "securityKeyResidentKey",
+    "type": "enum",
+    "dflt": "required",
+    "label": "What \"Use a security key\" asks for while usernameless sign-in is on",
+    "attribute": "stsPasskeySecurityKeyResidentKey",
+    "what": "The `residentKey` an enrolment through *Use a security key* (or one that names no kind) sends WHILE usernameless sign-in is ON. While it is off the button always asks `required`, so it makes a discoverable credential as *Create a passkey* does (which asks `required` always). `discouraged` or `preferred` spare a security key's few resident slots, at the cost of a key that needs the username to sign in. Replaces the setting webauthn.residentKey."
+   },
+   {
+    "key": "backupEligibility",
+    "type": "enum",
+    "dflt": "allow",
+    "label": "Synced passkeys (backup eligible)",
+    "attribute": "stsPasskeyBackupEligibility",
+    "what": "`allow` (the default) accepts any passkey. `disallow` accepts only DEVICE-BOUND ones: a passkey whose authenticator says it may be backed up or synced (the BE flag, WebAuthn Level 3 section 6.1) is refused when it is registered and when it signs somebody in, so a synced passkey enrolled before the realm said no stops working too. BE never changes for a credential."
+   },
+   {
+    "key": "enforcePinLength",
+    "type": "bool",
+    "dflt": false,
+    "label": "Require a minimum security-key PIN length",
+    "attribute": "stsPasskeyEnforcePinLength",
+    "what": "OFF BY DEFAULT. On, registration asks the authenticator for its minimum PIN length (CTAP 2.1 section 12.4, the minPinLength extension), records it on the key, and refuses a key whose minimum is below the next row, at registration and at every sign-in. A key answers only for relying parties it was configured to tell (CTAP 2.1 setMinPINLength with this RP ID); every other key, and every platform or synced passkey, does not report, and is refused unless the row after next is on."
+   },
+   {
+    "key": "minPinLength",
+    "type": "int",
+    "unit": "characters",
+    "label": "Minimum security-key PIN length",
+    "attribute": "stsPasskeyMinPinLength",
+    "what": "The shortest PIN a security key may be set to accept, as the key itself reports it, while the row above is on. Between 4 (CTAP 2.1's own floor) and 63."
+   },
+   {
+    "key": "pinLengthOnlyIfSupported",
+    "type": "bool",
+    "dflt": false,
+    "label": "Accept a key that does not report its PIN length",
+    "attribute": "stsPasskeyPinLengthOnlyIfSupported",
+    "what": "OFF BY DEFAULT, which is the strict reading: while the PIN length is enforced, a key that does not report it is refused. On, such a key is accepted and only a reported minimum is held to the rule — so the rule then binds only keys configured to report to this relying party."
+   },
+   {
+    "key": "enforceAttestationAtSignIn",
+    "type": "bool",
+    "dflt": false,
+    "label": "Hold every sign-in to the attestation rules in force",
+    "attribute": "stsPasskeyEnforceAttestationAtSignIn",
+    "what": "OFF BY DEFAULT. The attestation rules (the webauthn.attestation* settings: the policy, the AAGUID list, the certification level and FIPS) are checked when a passkey is registered. On, they are checked again at every sign-in against what was recorded then and the FIDO Metadata Service as it is now, so a key registered before a rule was tightened, or whose model was since reported compromised, stops signing anybody in. A key with no trusted attestation fails every rule that demands one."
+   },
+   {
+    "key": "postQuantumRequired",
+    "type": "enum",
+    "dflt": "off",
+    "label": "Require a post-quantum passkey",
+    "attribute": "stsPasskeyPostQuantumRequired",
+    "what": "`off` (the default) accepts a passkey whatever its signature algorithm. `sign-in` accepts only a POST-QUANTUM passkey, one whose algorithm is ML-DSA-44, ML-DSA-65 or ML-DSA-87 (RFC 9964), when it signs somebody in, as the first credential or as the second factor; a classical one may still be registered. `registration-and-sign-in` refuses a classical one at registration too, and enrolment then offers only ML-DSA. The algorithm decides, not the lane a key was created in. Refused while the realm offers no ML-DSA (webauthn.algorithms names none, and neither webauthn.pqcOnly nor webauthn.pqcAlongsideClassical is on)."
+   },
+   {
+    "key": "postQuantumAllowCredentials",
+    "type": "enum",
+    "dflt": "realm",
+    "optional": true,
+    "label": "Passkeys a sign-in names where a post-quantum one is required",
+    "attribute": "stsPasskeyPostQuantumAllowCredentials",
+    "what": "`realm` (the default) follows the realm's webauthn.postQuantumAllowCredentials. Read only while postQuantumRequired requires a post-quantum passkey at sign-in. `narrow` names only the person's post-quantum (ML-DSA) passkeys in the passkey step's request, so a classical one is never offered, and a person whose device holds only their classical one sees the platform's own \"no passkey found\" message. `list-and-refuse` names every passkey they hold and refuses a classical one after the ceremony, with a page saying that this application requires a post-quantum passkey and where to add one; the person may then pick a passkey that will be refused. A person holding no post-quantum passkey is told before any ceremony either way. Left out of a save, `realm` is kept."
+   },
+   {
+    "key": "registrationAlgorithms",
+    "type": "list",
+    "optional": true,
+    "label": "Algorithms a passkey registration offers",
+    "attribute": "stsPasskeyRegistrationAlgorithms",
+    "what": "`realm` (the default) offers the realm's webauthn.algorithms. Otherwise the signature algorithms a passkey registration offers to this profile's people, in order of preference (an authenticator makes the first it supports), from the algorithms webauthn.algorithms may name. The next row may narrow or reorder it, and a passkey whose algorithm is not one this profile offers is refused when it is registered. Left out of a save, `realm` is kept."
+   },
+   {
+    "key": "registrationMode",
+    "type": "enum",
+    "dflt": "realm",
+    "optional": true,
+    "label": "Post-quantum algorithms at registration",
+    "attribute": "stsPasskeyRegistrationMode",
+    "what": "`realm` (the default) follows webauthn.pqcOnly and webauthn.pqcAlongsideClassical. `pq-only` offers only ML-DSA, and refuses a retry with the classical algorithms. `pq-first` offers ML-DSA first and the classical algorithms after it, even where the realm requests ML-DSA only. `classical-only` offers no ML-DSA and no post-quantum passkey beside a classical one, for people whose devices fail an ML-DSA registration. Refused with postQuantumRequired other than off or with attestationAlgorithms set (classical-only), and where the algorithms offered name no ML-DSA (pq-only, pq-first). Left out of a save, `realm` is kept."
+   },
+   {
+    "key": "lanes",
+    "type": "enum",
+    "dflt": "realm",
+    "optional": true,
+    "label": "A classical and a post-quantum passkey side by side",
+    "attribute": "stsPasskeyLanes",
+    "what": "`realm` (the default) follows webauthn.pqcAlongsideClassical. `both` gives this profile's people a classical and a post-quantum passkey side by side, each under its own user handle, wherever the realm's setting is off; `one` gives them one lane wherever it is on. webauthn.pqcOnly still means one lane. Refused as `both` with registrationMode classical-only. Left out of a save, `realm` is kept."
+   },
+   {
+    "key": "clientRules",
+    "type": "clientRules",
+    "dflt": "",
+    "optional": true,
+    "label": "Clients a registration offers no ML-DSA",
+    "attribute": "stsPasskeyClientRules",
+    "what": "EMPTY BY DEFAULT: every client is offered the list as it stands. Otherwise up to 20 rules separated by `;`, each `<browser> on <system>`, where either side is a family as the passkey ceremony rows name it (`Chrome`, `Firefox`, `macOS`, `Android`) or `*` for any, optionally followed by a major-version range (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. A passkey registration from a matching client offers the list less ML-DSA (ES256 and RS256 where that leaves none). Not applied where a classical passkey is not allowed — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, or at the sign-in step under postQuantumRequired sign-in — nor to the post-quantum lane, and the ceremony row says it was not. Left out of a save, empty is kept."
+   },
+   {
+    "key": "passkeyHints",
+    "type": "list",
+    "dflt": "client-device,hybrid",
+    "label": "Hints \"Create a passkey\" sends",
+    "attribute": "stsPasskeyHintsPasskey",
+    "what": "The WebAuthn hints (Level 3 section 5.4.8) the portal's *Create a passkey* sends, in order, from security-key, client-device and hybrid, or none. They tell the browser which way of making the passkey to lead with. A hint may not contradict webauthn.authenticatorAttachment: client-device implies platform, security-key and hybrid cross-platform."
+   },
+   {
+    "key": "securityKeyHints",
+    "type": "list",
+    "dflt": "security-key",
+    "label": "Hints \"Use a security key\" sends",
+    "attribute": "stsPasskeyHintsSecurityKey",
+    "what": "The hints *Use a security key* sends, in order, or none. The button asks for a cross-platform authenticator, so client-device contradicts it and is refused."
+   },
+   {
+    "key": "signInHints",
+    "type": "list",
+    "label": "Hints a passkey sign-in sends",
+    "attribute": "stsPasskeyHintsSignIn",
+    "what": "The hints a sign-in ceremony sends — the passkey step, the sign-in with no username and its autofill — in order, or none (the default: the browser offers every way it knows)."
+   },
+   {
+    "key": "enterpriseSerialAttribute",
+    "type": "attribute",
+    "dflt": "",
+    "label": "Directory attribute holding a person's security-key serials",
+    "attribute": "stsPasskeyEnterpriseSerialAttribute",
+    "what": "EMPTY BY DEFAULT: no serial is checked. Set to an attribute of a person's entry (for example `serialNumber`, which may hold several values), a security key registers only with a TRUSTED enterprise attestation whose certificate names a device serial that is one of that person's values. Needs webauthn.attestation set to enterprise, and the vendor or platform configured to release enterprise attestation to this RP ID; without that the browser sends ordinary attestation and every registration is refused."
+   },
+   {
+    "key": "userDisplayName",
+    "type": "attributes",
+    "dflt": "",
+    "label": "The name a passkey prompt shows for the person",
+    "attribute": "stsPasskeyUserDisplayName",
+    "what": "EMPTY BY DEFAULT: the name the sign-in knows, else the username. Otherwise up to six directory attributes in order, separated by commas; a group of attributes separated by spaces (givenName sn) joins their values. The first whose every attribute has a value becomes user.displayName (WebAuthn Level 3 section 5.4.3), with control and direction-changing characters removed and at most 64 characters. The username is always user.name."
+   },
+   {
+    "key": "rpNameExtras",
+    "type": "enum",
+    "dflt": "none",
+    "label": "What a passkey prompt adds to the service's name",
+    "attribute": "stsPasskeyRpNameExtras",
+    "what": "`none` (the default) shows webauthn.rpName alone. `realm`, `organisation` or `realm-and-organisation` append the realm's name and/or saml.organizationName, so a person with accounts in several realms can tell the prompts apart."
+   },
+   {
+    "key": "credentialLabel",
+    "type": "text",
+    "dflt": "",
+    "label": "The name a new passkey is given",
+    "attribute": "stsPasskeyCredentialLabel",
+    "what": "EMPTY BY DEFAULT: the provider's name, else \"Passkey\" or \"Security key\". Otherwise this text, with {provider} and {kind} filled in, at most 60 characters. The person may rename it afterwards, as always."
+   },
+   {
+    "key": "aggregateDevices",
+    "type": "bool",
+    "dflt": true,
+    "label": "Offer a person's passkeys as one sign-in choice",
+    "attribute": "stsPasskeyAggregateDevices",
+    "what": "ON BY DEFAULT: one \"Use passkey\" step whose request lists every one of the person's passkeys, and the browser offers whichever is present. Off, a person with more than one is shown a choice per passkey, by its name, and the request names only that one."
+   },
+   {
+    "key": "recoveryAssurance",
+    "type": "enum",
+    "dflt": "any",
+    "optional": true,
+    "label": "Account recovery for a person who holds a passkey",
+    "attribute": "stsPasskeyRecoveryAssurance",
+    "what": "`any` BY DEFAULT IN DEVELOPMENT, `not-weaker` IN PRODUCT. Whether a way back into the account that asks for no passkey — a password reset link, an activation link, a recovery code, an emailed code or link — restores access for a person who holds one. `any`: at once. `not-weaker`: the first sign-in after it that is not a passkey sign-in reaches no application; the person registers a passkey that satisfies this policy and signs in with it. `operator-only`: as not-weaker, and the self-service doors (the forgot-password form, a recovery code or an emailed code or link at sign-in) are refused; only an administrator's reset link, generated password or activation link remains. Left out of a save, the built-in default is kept."
+   },
+   {
+    "key": "attestationAlgorithms",
+    "type": "list",
+    "optional": true,
+    "label": "Algorithms a passkey's attestation must be signed with",
+    "attribute": "stsPasskeyAttestationAlgorithms",
+    "what": "`none` BY DEFAULT: an attestation is accepted whatever it is signed with. Otherwise a list from post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa and composite-ml-dsa: a passkey registers only with a TRUSTED attestation that carries a certificate, whose statement signature and the signature on every certificate of its chain, from the leaf to the trust anchor, are each one the list allows (`post-quantum` allows any ML-DSA, SLH-DSA or composite ML-DSA signature). Self and none attestation are refused, having no certificate. With enforceAttestationAtSignIn on, every sign-in holds the passkey to it by what its registration recorded, so a passkey registered before the rule stops working. This is the attestation's algorithm, not the passkey's own (postQuantumRequired). Left out of a save, the built-in default is kept."
+   },
+   {
+    "key": "adminEnrolment",
+    "type": "enum",
+    "dflt": "off",
+    "optional": true,
+    "label": "Let an administrator enrol a passkey for a person",
+    "attribute": "stsPasskeyAdminEnrolment",
+    "what": "`off` BY DEFAULT. `on` lets an administrator holding the Admin Write console role enrol a passkey for a person this profile applies to, from the person's page on the console or /admin-api: the registration ceremony runs in the administrator's own browser, against an authenticator they hold (a security key to be handed over, say), under the person's user handle, and is verified exactly as the person's own registration is — attestation, algorithms and this policy's registration rules. Nothing made elsewhere can be imported. The key records which administrator enrolled it and when, and the person is told. Left out of a save, the built-in default is kept."
+   },
+   {
+    "key": "deviceBoundRequired",
+    "type": "bool",
+    "dflt": false,
+    "optional": true,
+    "label": "Require a device-bound session",
+    "attribute": "stsPasskeyDeviceBoundRequired",
+    "what": "OFF BY DEFAULT. On, an issuance to an application this profile covers waits until the sign-on session is bound to the browser's key, and is refused when the browser skipped that registration or the wait elapsed without a binding. A session that was never offered registration is not refused by this row. Refused while authn.deviceBoundSessions is off."
+   }
+  ],
+  "selectors": [
+   {
+    "key": "precedence",
+    "attribute": "stsPasskeyPrecedence",
+    "what": "Which named passkey policy wins where several match: the lowest, from 1 to 1000."
+   }
+  ],
+  "facts": {}
+ },
+ "policy.password": {
+  "schema": {
+   "container": "ou=passwordPolicies",
+   "objectClasses": [
+    {
+     "name": "pwdPolicy",
+     "what": "draft-behera-ldap-password-policy's class for a password policy entry. `pwdAttribute` names the attribute the policy governs, and here that is always `userPassword`."
+    },
+    {
+     "name": "stsPasswordPolicy",
+     "what": "This service's own class, carrying the composition rules and the generated length the draft has no attribute for. The entry is named by the PROFILE: `cn=default`, or a named policy's name."
+    }
+   ],
+   "attributes": [
+    {
+     "name": "pwdAttribute",
+     "what": "The attribute this policy governs: `userPassword`."
+    },
+    {
+     "name": "pwdMinLength",
+     "kind": "single",
+     "what": "The shortest password this service will set, counted in characters (Unicode code points, so an emoji is one). The attribute is draft-behera-ldap-password-policy's. Twelve is the default; NIST SP 800-63B asks for at least 8, and 15 where a password is the only factor."
+    },
+    {
+     "name": "pwdInHistory",
+     "kind": "single",
+     "what": "How many of a person's PREVIOUS passwords are remembered and refused. The current password is always refused as well while this is above 0, so 5 means a new password may be none of the last six. 0 turns the rule off. The draft's attribute, with the draft's meaning. Each remembered password is kept as the hash it was already stored as (argon2id or scrypt), in pwdHistory on the person's own entry, and checking a new password costs one hash comparison per one remembered."
+    },
+    {
+     "name": "stsPwdMinSymbols",
+     "kind": "single",
+     "what": "Always 0. A policy that asks for symbols is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted, so length is what this policy asks for."
+    },
+    {
+     "name": "stsPwdRequireUppercase",
+     "kind": "single",
+     "what": "Always off. A policy that requires an uppercase letter is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted."
+    },
+    {
+     "name": "stsPwdRequireDigit",
+     "kind": "single",
+     "what": "Always off. A policy that requires a number is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted."
+    },
+    {
+     "name": "stsPwdGeneratedLength",
+     "kind": "single",
+     "what": "How long a password this service MAKES UP is — for a new user created from the console or /admin-api, an operator's Generate, and the product-mode bootstrap account. It must be at least the minimum length and at least twice the symbol count plus two. Twenty characters from a 90-character alphabet is about 130 bits."
+    },
+    {
+     "name": "stsPwdHashAlgorithm",
+     "kind": "single",
+     "what": "The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying. One in another algorithm, or in the same algorithm at a strictly lower cost, is hashed again at the person's next verified sign-in. A same-algorithm hash already at least this cost is left. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt."
+    },
+    {
+     "name": "stsPwdArgon2Memory",
+     "kind": "single",
+     "what": "The memory one argon2id hash uses, in kibibytes (m). 19456 KiB (19 MiB) is OWASP's minimum and the least this service will write. Raising it makes a stolen store slower to attack, and every sign-in uses that much more memory."
+    },
+    {
+     "name": "stsPwdArgon2Iterations",
+     "kind": "single",
+     "what": "How many passes argon2id makes over its memory (t). 2 is OWASP's minimum at 19 MiB; each pass adds the same time again."
+    },
+    {
+     "name": "stsPwdArgon2Parallelism",
+     "kind": "single",
+     "what": "How many lanes argon2id divides its memory into (p). It is part of the hash, not a thread count: node computes a hash on one thread whatever this says. 1 is OWASP's figure."
+    },
+    {
+     "name": "stsPwdScryptLogN",
+     "kind": "single",
+     "what": "scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default is 2^15 with p=3, one of those pairs. A parallelism below the pair for the chosen cost is refused."
+    },
+    {
+     "name": "stsPwdScryptBlockSize",
+     "kind": "single",
+     "what": "scrypt's block size for a newly stored password while the algorithm is scrypt. Memory is about 128 × N × r bytes; 8 is the figure RFC 7914 and OWASP give."
+    },
+    {
+     "name": "stsPwdScryptParallelism",
+     "kind": "single",
+     "what": "scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts. The default is 3. A value below OWASP's pair for the chosen cost is refused."
+    },
+    {
+     "name": "stsPasswordPrecedence",
+     "kind": "single",
+     "what": "Which named password policy wins where several are named for one person: the lowest, from 1 to 1000."
+    },
+    {
+     "name": "description",
+     "what": "What the profile is for, for the next person."
+    }
+   ],
+   "personAttributes": [
+    {
+     "name": "pwdHistory",
+     "what": "One value per remembered previous password, in the draft's form `time#syntaxOID#length#data` — the data being the hash that password was stored under, never the password. Maintained by this service and refused on an LDAP add or modify, because a history anybody can edit is a history anybody can empty."
+    },
+    {
+     "name": "pwdChangedTime",
+     "what": "When the password was last set, as a GeneralizedTime. Maintained by this service."
+    }
+   ]
+  },
+  "fields": [
+   {
+    "key": "minLength",
+    "type": "int",
+    "dflt": 12,
+    "min": 1,
+    "max": 1024,
+    "label": "Minimum length",
+    "unit": "characters",
+    "attribute": "pwdMinLength",
+    "what": "The shortest password this service will set, counted in characters (Unicode code points, so an emoji is one). The attribute is draft-behera-ldap-password-policy's. Twelve is the default; NIST SP 800-63B asks for at least 8, and 15 where a password is the only factor."
+   },
+   {
+    "key": "history",
+    "type": "int",
+    "dflt": 5,
+    "min": 0,
+    "max": 24,
+    "label": "Previous passwords that may not be reused",
+    "unit": "passwords",
+    "attribute": "pwdInHistory",
+    "what": "How many of a person's PREVIOUS passwords are remembered and refused. The current password is always refused as well while this is above 0, so 5 means a new password may be none of the last six. 0 turns the rule off. The draft's attribute, with the draft's meaning. Each remembered password is kept as the hash it was already stored as (argon2id or scrypt), in pwdHistory on the person's own entry, and checking a new password costs one hash comparison per one remembered."
+   },
+   {
+    "key": "minSymbols",
+    "type": "int",
+    "dflt": 0,
+    "min": 0,
+    "max": 16,
+    "label": "Minimum number of symbols",
+    "unit": "symbols",
+    "attribute": "stsPwdMinSymbols",
+    "what": "Always 0. A policy that asks for symbols is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted, so length is what this policy asks for."
+   },
+   {
+    "key": "requireUppercase",
+    "type": "bool",
+    "dflt": false,
+    "label": "Require an uppercase letter",
+    "attribute": "stsPwdRequireUppercase",
+    "what": "Always off. A policy that requires an uppercase letter is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted."
+   },
+   {
+    "key": "requireDigit",
+    "type": "bool",
+    "dflt": false,
+    "label": "Require a number",
+    "attribute": "stsPwdRequireDigit",
+    "what": "Always off. A policy that requires a number is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted."
+   },
+   {
+    "key": "generatedLength",
+    "type": "int",
+    "dflt": 20,
+    "min": 12,
+    "max": 128,
+    "label": "Length of a generated password",
+    "unit": "characters",
+    "attribute": "stsPwdGeneratedLength",
+    "what": "How long a password this service MAKES UP is — for a new user created from the console or /admin-api, an operator's Generate, and the product-mode bootstrap account. It must be at least the minimum length and at least twice the symbol count plus two. Twenty characters from a 90-character alphabet is about 130 bits."
+   },
+   {
+    "key": "hashAlgorithm",
+    "type": "enum",
+    "dflt": "scrypt",
+    "optional": true,
+    "label": "Password hash algorithm",
+    "attribute": "stsPwdHashAlgorithm",
+    "what": "The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying. One in another algorithm, or in the same algorithm at a strictly lower cost, is hashed again at the person's next verified sign-in. A same-algorithm hash already at least this cost is left. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt."
+   },
+   {
+    "key": "argon2Memory",
+    "type": "int",
+    "optional": true,
+    "label": "argon2id memory",
+    "unit": "KiB",
+    "attribute": "stsPwdArgon2Memory",
+    "what": "The memory one argon2id hash uses, in kibibytes (m). 19456 KiB (19 MiB) is OWASP's minimum and the least this service will write. Raising it makes a stolen store slower to attack, and every sign-in uses that much more memory."
+   },
+   {
+    "key": "argon2Iterations",
+    "type": "int",
+    "optional": true,
+    "label": "argon2id iterations",
+    "unit": "passes",
+    "attribute": "stsPwdArgon2Iterations",
+    "what": "How many passes argon2id makes over its memory (t). 2 is OWASP's minimum at 19 MiB; each pass adds the same time again."
+   },
+   {
+    "key": "argon2Parallelism",
+    "type": "int",
+    "optional": true,
+    "label": "argon2id parallelism",
+    "unit": "lanes",
+    "attribute": "stsPwdArgon2Parallelism",
+    "what": "How many lanes argon2id divides its memory into (p). It is part of the hash, not a thread count: node computes a hash on one thread whatever this says. 1 is OWASP's figure."
+   },
+   {
+    "key": "scryptLogN",
+    "type": "int",
+    "optional": true,
+    "label": "scrypt cost (log2 of N)",
+    "attribute": "stsPwdScryptLogN",
+    "what": "scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default is 2^15 with p=3, one of those pairs. A parallelism below the pair for the chosen cost is refused."
+   },
+   {
+    "key": "scryptBlockSize",
+    "type": "int",
+    "optional": true,
+    "label": "scrypt block size (r)",
+    "attribute": "stsPwdScryptBlockSize",
+    "what": "scrypt's block size for a newly stored password while the algorithm is scrypt. Memory is about 128 × N × r bytes; 8 is the figure RFC 7914 and OWASP give."
+   },
+   {
+    "key": "scryptParallelism",
+    "type": "int",
+    "optional": true,
+    "label": "scrypt parallelism (p)",
+    "attribute": "stsPwdScryptParallelism",
+    "what": "scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts. The default is 3. A value below OWASP's pair for the chosen cost is refused."
+   }
+  ],
+  "selectors": [
+   {
+    "key": "precedence",
+    "attribute": "stsPasswordPrecedence",
+    "what": "Which named password policy wins where several are named for one person: the lowest, from 1 to 1000."
+   }
+  ],
+  "facts": {}
+ },
+ "policy.postLogin": {
+  "schema": {
+   "container": "ou=postLoginPolicies",
+   "objectClasses": [
+    {
+     "name": "stsPostLoginPolicy",
+     "what": "This service's class for a post-login activity profile: what a person is asked to do after signing in. Named by the PROFILE (`cn=default`, or a named profile an application or a group names)."
+    }
+   ],
+   "attributes": [
+    {
+     "name": "stsPostLoginEnabled",
+     "kind": "single",
+     "what": "OFF BY DEFAULT. On, every person this profile reaches who is due the activity below is asked to do it after signing in, before they are sent back to the application. A named profile with this off EXCLUDES whoever it is selected for: the members of the groups naming it, and a sign-in to an application naming it."
+    },
+    {
+     "name": "stsPostLoginActivity",
+     "kind": "single",
+     "what": "What is asked. pqc-passkey-migration: a person holding a passkey made with a classical algorithm is asked to register a post-quantum (ML-DSA) passkey. Whether the classical passkey is replaced in place or kept beside it is the method's to say (below). Nobody is asked where the realm offers no ML-DSA algorithm at registration (the default webauthn.algorithms does)."
+    },
+    {
+     "name": "stsPostLoginSnoozeDays",
+     "kind": "single",
+     "what": "How long Skip puts the activity off for that person."
+    },
+    {
+     "name": "stsPostLoginGraceDays",
+     "kind": "single",
+     "what": "Counted from the person's FIRST invitation. When it has passed, Skip is gone and the sign-in is held — no session is started — until the activity is done. 0 is no deadline: it can always be skipped."
+    },
+    {
+     "name": "stsPostLoginNoPasskey",
+     "kind": "single",
+     "what": "leave: not asked. invite: asked to register a post-quantum passkey, and may always skip it. require: asked, and may skip it only until the allotted time has passed."
+    },
+    {
+     "name": "stsPostLoginMethod",
+     "kind": "single",
+     "what": "upgrade: the person uses their classical passkey once, then an ML-DSA passkey replaces it in place on the same authenticator — one passkey, nothing left behind. alongside: an ML-DSA passkey is added beside it, in the post-quantum lane where the realm offers two lanes, or on another authenticator where it offers one. automatic: alongside where the person's passkey policy offers two lanes, upgrade where it offers one."
+    },
+    {
+     "name": "stsPostLoginAttestation",
+     "kind": "single",
+     "what": "any: its key algorithm is ML-DSA. post-quantum: its key algorithm is ML-DSA AND its recorded attestation was signed with post-quantum algorithms throughout; a passkey with a classical attestation, or none recorded, does not count, and its holder is asked for one that does."
+    },
+    {
+     "name": "stsPostLoginNoPasskeyFallback",
+     "kind": "single",
+     "what": "none: ML-DSA only. classical: after an ML-DSA registration fails on the device, a retry with the classical algorithms is offered (where the passkey policy allows one) — a classical passkey is better than a password, and its holder is asked for the migration later like anyone else's."
+    },
+    {
+     "name": "stsPostLoginPrecedence",
+     "kind": "single",
+     "what": "Which named post-login profile wins where several are named for one sign-in — by the application and by the person's groups: the lowest, from 1 to 1000."
+    },
+    {
+     "name": "description",
+     "what": "What the profile is for, for the next person."
+    },
+    {
+     "name": "stsPostLoginNoPasskeyRole",
+     "kind": "single",
+     "what": "Retired (#1135): the role a person with no passkey registered one in. A passkey has no role; nothing reads it."
+    }
+   ]
+  },
+  "fields": [
+   {
+    "key": "enabled",
+    "type": "bool",
+    "dflt": false,
+    "label": "Ask after sign-in",
+    "attribute": "stsPostLoginEnabled",
+    "what": "OFF BY DEFAULT. On, every person this profile reaches who is due the activity below is asked to do it after signing in, before they are sent back to the application. A named profile with this off EXCLUDES whoever it is selected for: the members of the groups naming it, and a sign-in to an application naming it."
+   },
+   {
+    "key": "activity",
+    "type": "enum",
+    "dflt": "pqc-passkey-migration",
+    "label": "Activity",
+    "attribute": "stsPostLoginActivity",
+    "what": "What is asked. pqc-passkey-migration: a person holding a passkey made with a classical algorithm is asked to register a post-quantum (ML-DSA) passkey. Whether the classical passkey is replaced in place or kept beside it is the method's to say (below). Nobody is asked where the realm offers no ML-DSA algorithm at registration (the default webauthn.algorithms does)."
+   },
+   {
+    "key": "snoozeDays",
+    "type": "int",
+    "dflt": 7,
+    "min": 1,
+    "max": 90,
+    "unit": "days",
+    "label": "Skip puts it off for",
+    "attribute": "stsPostLoginSnoozeDays",
+    "what": "How long Skip puts the activity off for that person."
+   },
+   {
+    "key": "graceDays",
+    "type": "int",
+    "dflt": 0,
+    "min": 0,
+    "max": 3650,
+    "unit": "days",
+    "label": "Allotted time",
+    "attribute": "stsPostLoginGraceDays",
+    "what": "Counted from the person's FIRST invitation. When it has passed, Skip is gone and the sign-in is held — no session is started — until the activity is done. 0 is no deadline: it can always be skipped."
+   },
+   {
+    "key": "noPasskey",
+    "type": "enum",
+    "dflt": "leave",
+    "values": [
+     "leave",
+     "invite",
+     "require"
+    ],
+    "label": "A person with no passkey",
+    "attribute": "stsPostLoginNoPasskey",
+    "what": "leave: not asked. invite: asked to register a post-quantum passkey, and may always skip it. require: asked, and may skip it only until the allotted time has passed."
+   },
+   {
+    "key": "method",
+    "type": "enum",
+    "dflt": "automatic",
+    "values": [
+     "automatic",
+     "upgrade",
+     "alongside"
+    ],
+    "label": "How a classical passkey is migrated",
+    "attribute": "stsPostLoginMethod",
+    "what": "upgrade: the person uses their classical passkey once, then an ML-DSA passkey replaces it in place on the same authenticator — one passkey, nothing left behind. alongside: an ML-DSA passkey is added beside it, in the post-quantum lane where the realm offers two lanes, or on another authenticator where it offers one. automatic: alongside where the person's passkey policy offers two lanes, upgrade where it offers one."
+   },
+   {
+    "key": "attestation",
+    "type": "enum",
+    "dflt": "any",
+    "values": [
+     "any",
+     "post-quantum"
+    ],
+    "label": "A passkey counts as post-quantum when",
+    "attribute": "stsPostLoginAttestation",
+    "what": "any: its key algorithm is ML-DSA. post-quantum: its key algorithm is ML-DSA AND its recorded attestation was signed with post-quantum algorithms throughout; a passkey with a classical attestation, or none recorded, does not count, and its holder is asked for one that does."
+   },
+   {
+    "key": "noPasskeyFallback",
+    "type": "enum",
+    "dflt": "none",
+    "values": [
+     "none",
+     "classical"
+    ],
+    "label": "A person with no passkey whose device cannot make ML-DSA",
+    "attribute": "stsPostLoginNoPasskeyFallback",
+    "what": "none: ML-DSA only. classical: after an ML-DSA registration fails on the device, a retry with the classical algorithms is offered (where the passkey policy allows one) — a classical passkey is better than a password, and its holder is asked for the migration later like anyone else's."
+   }
+  ],
+  "selectors": [
+   {
+    "key": "precedence",
+    "attribute": "stsPostLoginPrecedence",
+    "what": "Which named post-login profile wins where several are named for one sign-in — by the application and by the person's groups: the lowest, from 1 to 1000."
+   }
+  ],
+  "facts": {}
+ },
+ "policy.serviceAccount": {
+  "schema": {
+   "container": "ou=serviceAccountPolicies",
+   "objectClasses": [
+    {
+     "name": "stsServiceAccountPolicy",
+     "what": "This service's class for a service-account policy: what a service account in this realm may do and how its password rotates. The entry is named by the PROFILE: `cn=default`, or a named profile a service account names in its stsServiceAccountPolicy."
+    }
+   ],
+   "attributes": [
+    {
+     "name": "stsSvcAcctExemptFromSecondFactor",
+     "kind": "single",
+     "what": "OFF BY DEFAULT. On, the authentication policy's second-factor requirements do not apply to a service account in this realm, and nor does the refusal of a password alone at the password doors (#101). The account's amr still says pwd only, so a relying party asking for more is refused it. WEAKER: an account on a password alone is an account anyone with the password is."
+    },
+    {
+     "name": "stsSvcAcctAllowBrowserSignIn",
+     "kind": "single",
+     "what": "OFF BY DEFAULT. Off, the sign-in screen, the user portal and the admin console refuse a service account, whichever first factor it presents, and turning a person into a service account ends their browser sessions. A service account is used by a program, and a program has no business at a sign-in screen."
+    },
+    {
+     "name": "stsSvcAcctAllowLdapBind",
+     "kind": "single",
+     "what": "A bind on 389 or 636 (RFC 4513). Off, a service account's right password is refused there as a wrong one is."
+    },
+    {
+     "name": "stsSvcAcctAllowWsTrust",
+     "kind": "single",
+     "what": "A WS-Security UsernameToken sent to the security token service. Off, a service account's right password is refused there as a wrong one is."
+    },
+    {
+     "name": "stsSvcAcctAllowScim",
+     "kind": "single",
+     "what": "HTTP Basic at /scim/v2 (RFC 7617). Off, a service account's right password is refused there as a wrong one is."
+    },
+    {
+     "name": "stsSvcAcctAllowSsf",
+     "kind": "single",
+     "what": "HTTP Basic at the /ssf endpoints (RFC 7617). Off, a service account's right password is refused there as a wrong one is."
+    },
+    {
+     "name": "stsSvcAcctAllowEst",
+     "kind": "single",
+     "what": "HTTP Basic at /.well-known/est (RFC 7030 section 3.2.3). Off, a service account's right password is refused there as a wrong one is."
+    },
+    {
+     "name": "stsSvcAcctAllowKerberos",
+     "kind": "single",
+     "what": "An AS-REQ whose pre-authentication proves the password's key (RFC 4120), and MS-KKDCP. Off, a service account's right password is refused there as a wrong one is."
+    },
+    {
+     "name": "stsSvcAcctAllowPasswordGrant",
+     "kind": "single",
+     "what": "grant_type=password at the token endpoint (RFC 6749 section 4.3), where the realm allows the grant at all. Off, a service account's right password is refused there as a wrong one is."
+    },
+    {
+     "name": "stsSvcAcctRotationEnabled",
+     "kind": "single",
+     "what": "OFF BY DEFAULT. On, the service-accounts.rotate job gives every service account that names a push destination a new generated password each interval: pushed to the destination FIRST, its hash committed only after the push succeeds, the previous password kept for the overlap below. A failed push changes nothing. Cannot be turned on while this realm has no push destination."
+    },
+    {
+     "name": "stsSvcAcctRotationIntervalDays",
+     "kind": "single",
+     "what": "How long a service account's password is kept before the job replaces it, counted from the last rotation (or the account's last password change)."
+    },
+    {
+     "name": "stsSvcAcctRotationOverlapMinutes",
+     "kind": "single",
+     "what": "After a rotation the previous password is accepted for this long, so a consumer slow to read the new one is not refused — nor counted by risk scoring as guessing (#226). The previous Kerberos keys are kept as long. 0: the old password stops at once."
+    },
+    {
+     "name": "stsSvcAcctGeneratedLength",
+     "kind": "single",
+     "what": "Drawn by the password policy's generator, so it meets that policy, and never shorter than its minimum length."
+    },
+    {
+     "name": "stsSvcAcctRequireOwner",
+     "kind": "single",
+     "what": "ON BY DEFAULT. The owner — a person or a group in this realm — is who answers for the account; a service account cannot be saved without one while this is on."
+    },
+    {
+     "name": "stsSvcAcctRotationAlarmFailures",
+     "kind": "single",
+     "what": "A failed rotation is retried at the job's next run. After this many in a row the account is reported on Monitoring → Service accounts and logged as an alarm (STS-SVCACCT-0042)."
+    },
+    {
+     "name": "stsServiceAccountPrecedence",
+     "kind": "single",
+     "what": "Which named service-account policy wins where several are named: the lowest, from 1 to 1000. A service account names one policy, so today it decides nothing."
+    },
+    {
+     "name": "description",
+     "what": "What the profile is for, for the next person."
+    }
+   ]
+  },
+  "fields": [
+   {
+    "key": "exemptFromSecondFactor",
+    "type": "bool",
+    "dflt": false,
+    "label": "Service accounts are exempt from the second factor",
+    "attribute": "stsSvcAcctExemptFromSecondFactor",
+    "what": "OFF BY DEFAULT. On, the authentication policy's second-factor requirements do not apply to a service account in this realm, and nor does the refusal of a password alone at the password doors (#101). The account's amr still says pwd only, so a relying party asking for more is refused it. WEAKER: an account on a password alone is an account anyone with the password is."
+   },
+   {
+    "key": "allowBrowserSignIn",
+    "type": "bool",
+    "dflt": false,
+    "label": "Service accounts may sign in at a browser",
+    "attribute": "stsSvcAcctAllowBrowserSignIn",
+    "what": "OFF BY DEFAULT. Off, the sign-in screen, the user portal and the admin console refuse a service account, whichever first factor it presents, and turning a person into a service account ends their browser sessions. A service account is used by a program, and a program has no business at a sign-in screen."
+   },
+   {
+    "key": "rotationEnabled",
+    "type": "bool",
+    "dflt": false,
+    "label": "Rotate service-account passwords automatically",
+    "attribute": "stsSvcAcctRotationEnabled",
+    "what": "OFF BY DEFAULT. On, the service-accounts.rotate job gives every service account that names a push destination a new generated password each interval: pushed to the destination FIRST, its hash committed only after the push succeeds, the previous password kept for the overlap below. A failed push changes nothing. Cannot be turned on while this realm has no push destination."
+   },
+   {
+    "key": "rotationIntervalDays",
+    "type": "int",
+    "dflt": 30,
+    "min": 1,
+    "max": 3650,
+    "unit": "days",
+    "label": "Rotation interval",
+    "attribute": "stsSvcAcctRotationIntervalDays",
+    "what": "How long a service account's password is kept before the job replaces it, counted from the last rotation (or the account's last password change)."
+   },
+   {
+    "key": "rotationOverlapMinutes",
+    "type": "int",
+    "dflt": 60,
+    "min": 0,
+    "max": 10080,
+    "unit": "minutes",
+    "label": "How long the previous password still works",
+    "attribute": "stsSvcAcctRotationOverlapMinutes",
+    "what": "After a rotation the previous password is accepted for this long, so a consumer slow to read the new one is not refused — nor counted by risk scoring as guessing (#226). The previous Kerberos keys are kept as long. 0: the old password stops at once."
+   },
+   {
+    "key": "generatedLength",
+    "type": "int",
+    "dflt": 32,
+    "min": 16,
+    "max": 128,
+    "unit": "characters",
+    "label": "Length of a rotated password",
+    "attribute": "stsSvcAcctGeneratedLength",
+    "what": "Drawn by the password policy's generator, so it meets that policy, and never shorter than its minimum length."
+   },
+   {
+    "key": "requireOwner",
+    "type": "bool",
+    "dflt": true,
+    "label": "A service account must name an owner",
+    "attribute": "stsSvcAcctRequireOwner",
+    "what": "ON BY DEFAULT. The owner — a person or a group in this realm — is who answers for the account; a service account cannot be saved without one while this is on."
+   },
+   {
+    "key": "rotationAlarmFailures",
+    "type": "int",
+    "dflt": 3,
+    "min": 1,
+    "max": 100,
+    "unit": "failures",
+    "label": "Failed rotations in a row before the alarm",
+    "attribute": "stsSvcAcctRotationAlarmFailures",
+    "what": "A failed rotation is retried at the job's next run. After this many in a row the account is reported on Monitoring → Service accounts and logged as an alarm (STS-SVCACCT-0042)."
+   }
+  ],
+  "selectors": [
+   {
+    "key": "precedence",
+    "attribute": "stsServiceAccountPrecedence",
+    "what": "Which named service-account policy wins where several are named: the lowest, from 1 to 1000. A service account names one policy, so today it decides nothing."
+   }
+  ],
+  "facts": {
+   "doors": [
+    {
+     "id": "ldap",
+     "key": "allowLdapBind",
+     "label": "LDAP simple bind"
+    },
+    {
+     "id": "wstrust",
+     "key": "allowWsTrust",
+     "label": "WS-Trust UsernameToken"
+    },
+    {
+     "id": "scim",
+     "key": "allowScim",
+     "label": "SCIM HTTP Basic"
+    },
+    {
+     "id": "ssf",
+     "key": "allowSsf",
+     "label": "Shared Signals HTTP Basic"
+    },
+    {
+     "id": "est",
+     "key": "allowEst",
+     "label": "EST HTTP Basic"
+    },
+    {
+     "id": "kerberos",
+     "key": "allowKerberos",
+     "label": "Kerberos AS exchange"
+    },
+    {
+     "id": "ropc",
+     "key": "allowPasswordGrant",
+     "label": "OAuth 2.0 password grant"
+    }
+   ]
+  }
+ }
+}

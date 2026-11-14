@@ -15,6 +15,7 @@
 #   types/api.generated.d.ts
 #   common/domain_classes.ts
 #   rust/crates/sts-model/src/generated/{domain,api,unions}.rs
+#   rust/crates/sts-policy/src/generated/policy_tables.json
 #   docs/data-model-directory.md
 #   docs/data-model-persistence.md
 #
@@ -35,6 +36,7 @@ docker run --rm --label com.docker.compose.project=none \
   -v "${PWD}/types:/out/types" \
   -v "${PWD}/common:/out/common" \
   -v "${PWD}/rust/crates/sts-model/src/generated:/out/rust" \
+  -v "${PWD}/rust/crates/sts-policy/src/generated:/out/rust-policy" \
   "${TAG}" bash -c \
   "node common/model_emit.js --docs && \
    cp docs/data-model-directory.md docs/data-model-persistence.md /out/docs/ && \
@@ -45,6 +47,7 @@ docker run --rm --label com.docker.compose.project=none \
    cp models/generated/domain_classes.txt /out/common/domain_classes.ts && \
    cp models/generated/domain.rs models/generated/api.rs \
      models/generated/unions.rs /out/rust/ && \
+   cp models/generated/policy_tables.json /out/rust-policy/ && \
    chown $(id -u):$(id -g) \
      /out/docs/data-model-directory.md \
      /out/docs/data-model-persistence.md \
@@ -53,4 +56,5 @@ docker run --rm --label com.docker.compose.project=none \
      /out/types/domain.generated.d.ts \
      /out/types/api.generated.d.ts \
      /out/common/domain_classes.ts \
-     /out/rust/domain.rs /out/rust/api.rs /out/rust/unions.rs"
+     /out/rust/domain.rs /out/rust/api.rs /out/rust/unions.rs \
+     /out/rust-policy/policy_tables.json"

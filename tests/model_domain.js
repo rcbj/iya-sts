@@ -139,6 +139,14 @@ function declarations(t) {
     'rust/crates/sts-model/src/generated/' + name + '.rs is what the model ' +
       'generates (tests/tools/regenerate-model-docs.sh)');
   });
+  // THE POLICY KINDS' TABLES (#444 phase 4): sts-policy reads the same
+  // rows the seven kinds read, from one file the same script writes.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-policy',
+    'src', 'generated', 'policy_tables.json'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated',
+      'policy_tables.json'), 'utf8'),
+  'rust/crates/sts-policy/src/generated/policy_tables.json is what the ' +
+    'model generates (tests/tools/regenerate-model-docs.sh)');
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');
