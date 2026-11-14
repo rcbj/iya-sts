@@ -13,7 +13,11 @@
 //!   refusals, and on the general engine's signatures in every other method
 //!   — is given here, field for field and in the same words, except where
 //!   the words are a parser's or OpenSSL's own;
-//! * the Redirect binding's signatures, made and checked, and its refusals.
+//! * the Redirect binding's signatures, made and checked, and its refusals;
+//! * the signature policy (#1368, ASVS 5.0.0 11.6.1): each scenario's
+//!   settings, the verdicts Node gave under them and the documents and query
+//!   strings it signed or refused to, with the code and the words;
+//! * the registry's XML rows, each with its row id, in Node's order.
 //!
 //! The directory is `STS_CRYPTO_VECTORS`, never committed (the vectors hold
 //! private keys); with it unset this test says so and passes.
@@ -25,7 +29,7 @@ use serde_json::{json, Value as Json};
 use sts_core::errors::ErrorCode;
 use sts_crypto::xmldsig::{
     self, EnvelopedOptions, Placement, QueryVerdict, VerifyOptions, XmlPolicy,
-    XmlVerdict,
+    XmlSignError, XmlVerdict,
 };
 use sts_crypto::{jws, pq};
 
@@ -76,6 +80,80 @@ fn without_value(xml: &str) -> String {
             format!("{}{}{}", &xml[..a + open.len()], "", &xml[b..])
         }
         _ => xml.to_string(),
+    }
+}
+
+fn strings(v: &Json) -> Vec<String> {
+    v.as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The policy a vector names, field for field.
+fn policy_of(v: &Json) -> XmlPolicy {
+    let b = |k: &str| v[k].as_bool().unwrap_or(false);
+    XmlPolicy {
+        sha1_allowed: b("sha1Allowed"),
+        broken_algorithms: b("brokenAlgorithms"),
+        signature_algorithms: strings(&v["signatureAlgorithms"]),
+        accepted_signature_algorithms: strings(
+            &v["acceptedSignatureAlgorithms"],
+        ),
+        accepted_digest_algorithms: strings(&v["acceptedDigestAlgorithms"]),
+        pqc_only: b("pqcOnly"),
+        jose_signing_algorithms: strings(&v["joseSigningAlgorithms"]),
+        jose_accepted_algorithms: strings(&v["joseAcceptedAlgorithms"]),
+        omits_unapproved_curves: b("omitsUnapprovedCurves"),
+    }
+}
+
+/// A signer's answer against Node's: the bytes (or, where the method is
+/// randomised, the bytes but the value), or the refusal's words and code.
+fn compare_signed(
+    name: &str,
+    node: &Json,
+    ours: &Result<String, XmlSignError>,
+    deterministic: bool,
+    query: bool,
+    out: &mut Vec<String>,
+) {
+    match (s(&node["signed"]), ours) {
+        (Some(theirs), Ok(mine)) => {
+            let same = if deterministic || query {
+                !deterministic || theirs == mine
+            } else {
+                without_value(theirs) == without_value(mine)
+            };
+            if !same {
+                out.push(format!(
+                    "{}: signed differently\n node: {}\n rust: {}",
+                    name, theirs, mine
+                ));
+            }
+        }
+        (None, Err(e)) => {
+            let n = (s(&node["refused"]), s(&node["code"]));
+            let code = code_str(e.code());
+            let r = (Some(e.to_string()), code);
+            if (n.0.map(String::from), n.1.map(String::from)) != r {
+                out.push(format!(
+                    "{}: refused otherwise: node {:?}, rust {:?}",
+                    name, n, r
+                ));
+            }
+        }
+        (Some(_), Err(e)) => {
+            out.push(format!("{}: Node signed, Rust refused: {}", name, e))
+        }
+        (None, Ok(_)) => out.push(format!(
+            "{}: Node refused ({:?}), Rust signed",
+            name,
+            s(&node["refused"])
+        )),
     }
 }
 
@@ -207,12 +285,78 @@ fn xml_signatures_match_node() {
     };
     let text = std::fs::read_to_string(dir.join("xmldsig-node.json")).unwrap();
     let v: Json = serde_json::from_str(&text).unwrap();
-    let policy = XmlPolicy {
-        sha1_allowed: v["policy"]["sha1Allowed"].as_bool().unwrap(),
-        broken_algorithms: v["policy"]["brokenAlgorithms"].as_bool().unwrap(),
-    };
+    let policy = policy_of(&v["policy"]);
     let keys = &v["keys"];
     let mut failures = Vec::new();
+
+    // The registry: every XML SignatureMethod Node reads, with its row id,
+    // in its order — the HMAC rows (#658) among them.
+    let node_methods: Vec<(String, String, String, Vec<String>, bool, bool)> =
+        v["registry"]["methods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                (
+                    s(&m["uri"]).unwrap().to_string(),
+                    s(&m["id"]).unwrap().to_string(),
+                    s(&m["label"]).unwrap().to_string(),
+                    strings(&m["keyTypes"]),
+                    m["weak"].as_bool().unwrap(),
+                    m["sha1"].as_bool().unwrap(),
+                )
+            })
+            .collect();
+    let rust_methods: Vec<(String, String, String, Vec<String>, bool, bool)> =
+        xmldsig::signature_methods()
+            .iter()
+            .map(|m| {
+                (
+                    m.uri.clone(),
+                    m.id.clone(),
+                    m.label.clone(),
+                    m.key_types.clone(),
+                    m.weak,
+                    m.sha1,
+                )
+            })
+            .collect();
+    if node_methods != rust_methods {
+        for (n, r) in node_methods.iter().zip(&rust_methods) {
+            if n != r {
+                failures.push(format!("registry: node {:?}, rust {:?}", n, r));
+            }
+        }
+        if node_methods.len() != rust_methods.len() {
+            failures.push(format!(
+                "registry: {} rows in Node, {} here",
+                node_methods.len(),
+                rust_methods.len()
+            ));
+        }
+    }
+    let node_digests: Vec<String> = v["registry"]["digests"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    let rust_digests: Vec<String> = xmldsig::digest_methods()
+        .into_iter()
+        .map(|(uri, _)| uri)
+        .collect();
+    if node_digests != rust_digests {
+        failures.push(format!(
+            "digests: node {:?}, rust {:?}",
+            node_digests, rust_digests
+        ));
+    }
+    for (uri, why) in v["registry"]["refused"].as_object().unwrap() {
+        if xmldsig::refused_signature_method(uri) != why.as_str() {
+            failures.push(format!("refused {}: node {:?}", uri, why));
+        }
+    }
+    let registry = node_methods.len();
     let mut identical = 0;
     let mut written = Vec::new();
 
@@ -225,6 +369,8 @@ fn xml_signatures_match_node() {
             c14n_alg: s(&case["c14nAlg"]),
             placement: placement(s(&case["placement"]).unwrap()),
             cert_pem: s(&case["certPem"]),
+            key_info_xml: s(&case["keyInfoXml"]),
+            policy: policy.clone(),
             ..EnvelopedOptions::default()
         };
         let ours = match xmldsig::sign_enveloped(
@@ -282,7 +428,7 @@ fn xml_signatures_match_node() {
                 element: s(&case["element"]).unwrap(),
                 cert_pem: s(&case["certPem"]),
                 public_key_pem: s(&case["publicKeyPem"]),
-                policy,
+                policy: policy.clone(),
             },
         );
         let before = failures.len();
@@ -302,7 +448,8 @@ fn xml_signatures_match_node() {
         let key_name = s(&case["key"]).unwrap();
         let key = private_key(keys, key_name);
         let ours =
-            xmldsig::sign_query_string(query, &key, Some(sig_alg)).unwrap();
+            xmldsig::sign_query_string(query, &key, Some(sig_alg), &policy)
+                .unwrap();
         if case["deterministic"].as_bool().unwrap()
             && Some(ours.as_str()) != s(&case["signature"])
         {
@@ -359,6 +506,92 @@ fn xml_signatures_match_node() {
         );
     }
 
+    // The policy scenarios.
+    let mut policed = 0;
+    for scenario in v["policies"].as_array().unwrap() {
+        let label = s(&scenario["name"]).unwrap();
+        let under = policy_of(&scenario["policy"]);
+        let before = failures.len();
+        for case in scenario["verify"].as_array().unwrap() {
+            let name = format!("{}: {}", label, s(&case["name"]).unwrap());
+            let ours = xmldsig::verify_xml_signature(
+                s(&case["xml"]).unwrap(),
+                &VerifyOptions {
+                    element: s(&case["element"]).unwrap(),
+                    cert_pem: None,
+                    public_key_pem: s(&case["publicKeyPem"]),
+                    policy: under.clone(),
+                },
+            );
+            compare_xml(&name, &case["verdict"], &ours, &mut failures);
+        }
+        for case in scenario["sign"].as_array().unwrap() {
+            let name = format!("{}: sign {}", label, s(&case["name"]).unwrap());
+            let key = private_key(keys, s(&case["key"]).unwrap());
+            let deterministic = case["deterministic"].as_bool().unwrap();
+            let ours = xmldsig::sign_enveloped(
+                s(&case["input"]).unwrap(),
+                &key,
+                &EnvelopedOptions {
+                    sig_alg: s(&case["sigAlg"]),
+                    cert_pem: s(&keys["rsa"]["certPem"]),
+                    policy: under.clone(),
+                    ..EnvelopedOptions::default()
+                },
+            );
+            compare_signed(
+                &name,
+                case,
+                &ours,
+                deterministic,
+                false,
+                &mut failures,
+            );
+            if let Ok(signed) = &ours {
+                written.push(json!({
+                    "name": name,
+                    "element": "Assertion",
+                    "publicKeyPem": keys[s(&case["key"]).unwrap()]
+                        ["publicKeyPem"],
+                    "signed": signed,
+                    "ok": true,
+                }));
+            }
+            let ours = xmldsig::sign_query_string(
+                s(&case["query"]).unwrap(),
+                &key,
+                s(&case["sigAlg"]),
+                &under,
+            );
+            compare_signed(
+                &format!("{} (query)", name),
+                &case["queryResult"],
+                &ours,
+                deterministic,
+                true,
+                &mut failures,
+            );
+        }
+        for case in scenario["queries"].as_array().unwrap() {
+            let verdict = xmldsig::verify_query_string(
+                s(&case["query"]).unwrap(),
+                s(&case["signature"]),
+                s(&case["sigAlg"]).unwrap(),
+                s(&case["certPem"]),
+                &under,
+            );
+            compare_query(
+                &format!("{}: {}", label, s(&case["name"]).unwrap()),
+                &case["verdict"],
+                &verdict,
+                &mut failures,
+            );
+        }
+        if failures.len() == before {
+            policed += 1;
+        }
+    }
+
     if std::env::var("STS_WRITE_VECTORS").is_ok() {
         std::fs::write(
             dir.join("xmldsig-rust.json"),
@@ -376,7 +609,9 @@ fn xml_signatures_match_node() {
         panic!("{} differences:\n{}", failures.len(), shown.join("\n"));
     }
     eprintln!(
-        "{} signed documents as Node signs them, {} verdicts as Node gives them",
-        identical, verified
+        "{} signed documents as Node signs them, {} verdicts as Node gives \
+         them, {} policy scenarios as Node answers them, {} registry rows as \
+         Node's",
+        identical, verified, policed, registry
     );
 }

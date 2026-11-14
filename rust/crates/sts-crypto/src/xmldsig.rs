@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 //! XML Signature: what the Node service's `common/crypto.js` section 1 and
-//! 1a do over `common/vendored/xmldsig.js`, as one module on `sts-xml`.
+//! 1a do over `common/crypto_impl/xmldsig.js`, as one module on `sts-xml`.
+//!
+//! **THE SIGNATURE POLICY IS THE CALLER'S, AS SETTINGS (#1368).** Which
+//! methods a realm signs with and accepts, which digests it accepts,
+//! `keys.pqcOnly` and the mode arrive in an [`XmlPolicy`], and the four
+//! answers `common/signature_policy.ts` gives for the `xml` surface —
+//! [`XmlPolicy::sign_cause`], [`XmlPolicy::accept_cause`],
+//! [`XmlPolicy::accept_digest_cause`] and the JOSE ES256K question
+//! secp256k1 is asked under — are worked out from it here, in Node's order
+//! and words, at the same chokepoints: every signer, and the algorithm
+//! verdict before any key operation.
 //!
 //! * [`sign_enveloped`] — `crypto.signXml()`: the ten SignatureMethods
 //!   `saml.signatureAlgorithm` offers, each down the path Node sends it. RSA
@@ -198,12 +208,20 @@ pub enum Family {
     Dsa,
     /// ML-DSA and SLH-DSA, pure, empty context.
     PostQuantum,
+    /// A WS-Security signature with a Kerberos token's session key (#658).
+    /// Read, so that a SignedInfo naming one is answered by name; nothing
+    /// here holds a shared key, so none is ever verified or made.
+    Hmac,
 }
 
 /// One SignatureMethod, as the merged registry knows it.
 #[derive(Clone, Debug)]
 pub struct SignatureMethod {
     pub uri: String,
+    /// The algorithm registry's row id (`common/crypto_impl/
+    /// algorithm_registry.js`): what `saml.signatureAlgorithms` and
+    /// `saml.acceptedSignatureAlgorithms` name.
+    pub id: String,
     pub family: Family,
     pub hash: Option<Hash>,
     /// Node's `asymmetricKeyType` values a key must have.
@@ -343,6 +361,49 @@ fn row(
     }
 }
 
+/// The registry's row id for a method: the JOSE name where the method has
+/// one, else the family and the hash spelled out — as
+/// `algorithm_registry.js` names its rows. `tests/xmldsig_vectors.rs` holds
+/// every one to the registry's.
+fn registry_id(uri: &str, family: Family, hash: Option<Hash>) -> String {
+    let h = hash.map(|h| h.label(false)).unwrap_or_default();
+    match (family, hash) {
+        (Family::Rsa, Some(Hash::Sha1)) => "RS1".to_string(),
+        (Family::Rsa, Some(Hash::Sha256 | Hash::Sha384 | Hash::Sha512))
+        | (
+            Family::RsaPss | Family::Ecdsa | Family::Hmac,
+            Some(Hash::Sha256 | Hash::Sha384 | Hash::Sha512),
+        ) if !uri.ends_with("#rsa-pss") => {
+            let prefix = match family {
+                Family::Rsa => "RS",
+                Family::RsaPss => "PS",
+                Family::Ecdsa => "ES",
+                _ => "HS",
+            };
+            format!("{}{}", prefix, &h[3..])
+        }
+        (Family::Rsa, _) => format!("RSA-{}", h),
+        (Family::RsaPss, _) if uri.ends_with("#rsa-pss") => {
+            "RSA-PSS-PARAMS".to_string()
+        }
+        (Family::RsaPss, _) => format!("RSA-PSS-{}", h),
+        (Family::Ecdsa, _) => format!("ECDSA-{}", h),
+        (Family::Hmac, _) => format!("HMAC-{}", h),
+        (Family::Dsa, _) => format!("DSA-{}", h),
+        (Family::EdDsa, _) => {
+            if uri.ends_with("ed448") {
+                "Ed448".to_string()
+            } else {
+                "Ed25519".to_string()
+            }
+        }
+        (Family::PostQuantum, _) => PQ_SIGS
+            .iter()
+            .find(|p| uri.ends_with(&format!("#{}", p.0)))
+            .map_or_else(String::new, |p| p.1.to_string()),
+    }
+}
+
 /// `crypto.js`'s XML_SIGNATURE_METHODS, in its order.
 fn verified_rows() -> Vec<Row> {
     let mut out = Vec::new();
@@ -436,6 +497,19 @@ fn verified_rows() -> Vec<Row> {
         &["dsa"],
         "DSA-SHA1".to_string(),
     ));
+    // The HMAC rows (#658), where the registry puts them.
+    for (hash, uri) in [
+        (Hash::Sha1, format!("{}hmac-sha1", DS_NS)),
+        (Hash::Sha256, format!("{}hmac-sha256", XMLDSIG_MORE)),
+        (Hash::Sha384, format!("{}hmac-sha384", XMLDSIG_MORE)),
+        (Hash::Sha512, format!("{}hmac-sha512", XMLDSIG_MORE)),
+    ] {
+        let label = format!(
+            "HMAC-{} (a Kerberos token's session key)",
+            hash.label(false)
+        );
+        out.push(row(uri, Family::Hmac, Some(hash), &["secret"], label));
+    }
     out.push(row(
         format!("{}dsa-sha256", XMLDSIG11),
         Family::Dsa,
@@ -575,6 +649,7 @@ static METHODS: LazyLock<Vec<SignatureMethod>> = LazyLock::new(|| {
             let sha1 = r.hash == Some(Hash::Sha1);
             SignatureMethod {
                 pq_alg: pq.map(|p| p.1),
+                id: registry_id(&r.uri, r.family, r.hash),
                 uri: r.uri,
                 family: r.family,
                 hash: r.hash,
@@ -697,13 +772,170 @@ fn refused_digest_method(uri: &str) -> Option<&'static str> {
 // The policy, and the verdict before any cryptography.
 // ---------------------------------------------------------------------------
 
-/// What the mode and the settings decide.
-#[derive(Clone, Copy, Debug, Default)]
+/// What the mode and the settings decide: every input section 1a and the
+/// `xml` surface of `common/signature_policy.ts` read, as the ambient realm
+/// holds them. The lists are the settings parsed as that file's `parsed()`
+/// parses a csv (trimmed, empty members dropped); an empty list is no list.
+/// `Default` is a development realm with no list set and SHA-1 off.
+#[derive(Clone, Debug, Default)]
 pub struct XmlPolicy {
     /// `saml.allowSha1Signatures` as in force (always off in product).
     pub sha1_allowed: bool,
     /// `mode.usesBrokenAlgorithms()`: development keeps every ECDSA curve.
     pub broken_algorithms: bool,
+    /// `saml.signatureAlgorithms`: the row ids this realm signs XML with.
+    pub signature_algorithms: Vec<String>,
+    /// `saml.acceptedSignatureAlgorithms`: the row ids it accepts.
+    pub accepted_signature_algorithms: Vec<String>,
+    /// `saml.acceptedDigestAlgorithms`: DigestMethod labels (`SHA-256`).
+    pub accepted_digest_algorithms: Vec<String>,
+    /// `keys.pqcOnly`.
+    pub pqc_only: bool,
+    /// `keys.signingAlgorithms`, which decides ES256K for JOSE.
+    pub jose_signing_algorithms: Vec<String>,
+    /// `keys.acceptedSigningAlgorithms`, the same.
+    pub jose_accepted_algorithms: Vec<String>,
+    /// `mode.omitsUnapprovedSigningCurves()`: product mode.
+    pub omits_unapproved_curves: bool,
+}
+
+/// Why the policy refuses an algorithm: `signature_policy.ts`'s `Cause`. The
+/// code is never in the message, which callers copy into an
+/// `error_description`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Cause {
+    pub code: ErrorCode,
+    pub message: String,
+}
+
+impl XmlPolicy {
+    // -----------------------------------------------------------------
+    // THE ANSWERS BELOW ARE A HOT PATH in Node too, asked for every
+    // signature made or checked, and carry no tracing span for the reason
+    // its own comment gives: they would drown the log.
+    // -----------------------------------------------------------------
+
+    /// `signIds('xml')`: the sign list, or `None`. Under `keys.pqcOnly` a
+    /// list naming nothing post-quantum is not a list.
+    fn sign_ids(&self) -> Option<&[String]> {
+        let list = &self.signature_algorithms;
+        if list.is_empty() {
+            return None;
+        }
+        if self.pqc_only
+            && !list.iter().any(|id| {
+                METHODS
+                    .iter()
+                    .any(|m| &m.id == id && m.family == Family::PostQuantum)
+            })
+        {
+            return None;
+        }
+        Some(list)
+    }
+
+    /// `signCause('xml', alg)`: why this realm may not sign XML with a
+    /// method, or `None`. `alg` is a SignatureMethod URI or a row id; a name
+    /// no row has is refused only by a list, and otherwise left to the
+    /// signer's own refusal, as in Node.
+    pub fn sign_cause(&self, alg: &str) -> Option<Cause> {
+        if alg == "none" {
+            return None;
+        }
+        let row = METHODS.iter().find(|m| m.uri == alg || m.id == alg);
+        if let Some(ids) = self.sign_ids() {
+            let id = row.map_or(alg, |m| m.id.as_str());
+            if !ids.iter().any(|i| i == id) {
+                return Some(Cause {
+                    code: codes::STS_KEYS_0187,
+                    message: format!(
+                        "this realm does not sign with {}: \
+                         saml.signatureAlgorithms does not list it.",
+                        alg
+                    ),
+                });
+            }
+        }
+        if row.is_some_and(|m| m.family != Family::PostQuantum) && self.pqc_only
+        {
+            return Some(Cause {
+                code: codes::STS_KEYS_0191,
+                message: format!(
+                    "this realm does not sign with {}: keys.pqcOnly is on.",
+                    alg
+                ),
+            });
+        }
+        None
+    }
+
+    /// `acceptCause('xml', method)`: why this realm may not accept an XML
+    /// signature in a method, asked before any key operation. A URI no row
+    /// spells is `None`: the verdict's own refusal answers it.
+    pub fn accept_cause(&self, method: &str) -> Option<Cause> {
+        let row = METHODS.iter().find(|m| m.uri == method)?;
+        let accepted = &self.accepted_signature_algorithms;
+        if !accepted.is_empty() && !accepted.iter().any(|a| a == &row.id) {
+            return Some(Cause {
+                code: codes::STS_KEYS_0182,
+                message: format!(
+                    "this signature is in {}, which \
+                     saml.acceptedSignatureAlgorithms does not list.",
+                    row.id
+                ),
+            });
+        }
+        // `refusesUnapprovedCurve()` asks this of the row id ES256K, which
+        // no XML row has; it is kept for the day one does.
+        if row.id == "ES256K"
+            && accepted.is_empty()
+            && self.omits_unapproved_curves
+        {
+            return Some(Cause {
+                code: codes::STS_KEYS_0182,
+                message: format!(
+                    "this signature is in {}: secp256k1 is not an approved \
+                     curve, and in product mode a signature on it is \
+                     accepted only where saml.acceptedSignatureAlgorithms \
+                     lists it.",
+                    row.id
+                ),
+            });
+        }
+        None
+    }
+
+    /// `acceptXmlDigestCause(label)`: why this realm may not accept a
+    /// DigestMethod, by its label (`SHA-256`).
+    pub fn accept_digest_cause(&self, label: &str) -> Option<Cause> {
+        let accepted = &self.accepted_digest_algorithms;
+        if accepted.is_empty() || accepted.iter().any(|a| a == label) {
+            return None;
+        }
+        Some(Cause {
+            code: codes::STS_KEYS_0183,
+            message: format!(
+                "the DigestMethod {} is not one saml.acceptedDigestAlgorithms \
+                 lists",
+                label
+            ),
+        })
+    }
+
+    /// Whether `acceptCause('jose', 'ES256K')` is null, which is what
+    /// `xmlEcdsaCurveProblem()` asks before a secp256k1 key verifies an XML
+    /// signature (ASVS 5.0.0 11.6.1). JOSE's own list decides where there is
+    /// one; without one, product refuses it unless `keys.signingAlgorithms`
+    /// names it (`joseSignList()`, which adds RS256 to a list and names
+    /// ES256K only where the operator did).
+    pub fn accepts_es256k(&self) -> bool {
+        let accepted = &self.jose_accepted_algorithms;
+        if !accepted.is_empty() {
+            return accepted.iter().any(|a| a == "ES256K");
+        }
+        !self.omits_unapproved_curves
+            || self.jose_signing_algorithms.iter().any(|a| a == "ES256K")
+    }
 }
 
 /// `xmlAlgorithmVerdict()`.
@@ -742,11 +974,32 @@ pub fn algorithm_verdict(
         };
     };
     let mut out = AlgorithmVerdict {
-        weak: sig.weak,
-        sha1: sig.sha1,
         label: sig.label.clone(),
         ..AlgorithmVerdict::default()
     };
+    // AN HMAC NEEDS A SHARED KEY (#658). Node's only one is a Kerberos
+    // token's session key, in a WS-Security signature whose KeyInfo names
+    // the token (`verifyWsSecurityHmac()`, which passes `sharedKey`); no
+    // caller of this module holds one, so an HMAC is always answered as a
+    // method a certificate cannot check.
+    if sig.family == Family::Hmac {
+        out.problem = format!(
+            "the SignatureMethod \"{}\" is an HMAC, which needs a shared \
+             key; a certificate cannot check one",
+            signature
+        );
+        out.code = Some(codes::STS_KEYS_0061);
+        return out;
+    }
+    // THE XML ACCEPT CHOKEPOINT (#1368), before any key operation; `weak`
+    // and `sha1` are said only of a method the policy lets through.
+    if let Some(cause) = policy.accept_cause(signature) {
+        out.problem = cause.message;
+        out.code = Some(cause.code);
+        return out;
+    }
+    out.weak = sig.weak;
+    out.sha1 = sig.sha1;
     let mut sha1_digest = false;
     for uri in digests {
         let Some(hash) = digest_method(uri) else {
@@ -760,6 +1013,11 @@ pub fn algorithm_verdict(
             out.code = Some(codes::STS_KEYS_0061);
             return out;
         };
+        if let Some(cause) = policy.accept_digest_cause(&hash.label(true)) {
+            out.problem = cause.message;
+            out.code = Some(cause.code);
+            return out;
+        }
         out.weak = out.weak || hash.weak();
         out.sha1 = out.sha1 || hash == Hash::Sha1;
         sha1_digest = sha1_digest || hash == Hash::Sha1;
@@ -875,6 +1133,19 @@ pub fn ecdsa_curve_problem(
     policy: &XmlPolicy,
 ) -> Option<String> {
     let curve = key.ec_key().ok().and_then(|ec| ec.group().curve_name());
+    // secp256k1 is at least 256 bits and still not an approved curve (ASVS
+    // 5.0.0 11.6.1): it verifies an XML signature only where JOSE's ES256K
+    // is accepted — in product, where keys.acceptedSigningAlgorithms or
+    // keys.signingAlgorithms names it; in development, unless a JOSE accept
+    // list leaves it out.
+    if curve == Some(Nid::SECP256K1) && !policy.accepts_es256k() {
+        return Some(
+            "an ECDSA key on secp256k1, which is not an approved curve and \
+             verifies an XML signature in product mode only where \
+             keys.acceptedSigningAlgorithms lists ES256K"
+                .to_string(),
+        );
+    }
     if curve.is_some_and(|c| XML_ECDSA_CURVES.contains(&c))
         || policy.broken_algorithms
     {
@@ -1135,6 +1406,8 @@ pub fn verify_signature_value(
                 pq::verify_message(key, alg, octets, signature, None).ok()
             })
             .unwrap_or(false),
+        // No public key checks a MAC; `algorithm_verdict` has refused it.
+        Family::Hmac => false,
     }
 }
 
@@ -1444,7 +1717,35 @@ pub struct EnvelopedOptions<'a> {
     pub placement: Placement,
     /// Embedded as `ds:X509Data` unless `omit_key_info`.
     pub cert_pem: Option<&'a str>,
+    /// `keyInfoXml` (#1064): the signer's `ds:X509Data` — its leaf, chain
+    /// and the service Root, as `helpers.xmlSignerKeyInfo()` builds it —
+    /// written inside `ds:KeyInfo` in place of the bare certificate, by the
+    /// RSA and ECDSA paths. A post-quantum signature takes none.
+    pub key_info_xml: Option<&'a str>,
     pub omit_key_info: bool,
+    /// The sign chokepoint's settings (#1368).
+    pub policy: XmlPolicy,
+}
+
+/// Why a document or a query string was not signed: refused by the policy
+/// (`signCause()`, with its code — Node marks it on the error it throws), or
+/// a signer's own failure.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum XmlSignError {
+    #[error("{}", .0.message)]
+    Refused(Cause),
+    #[error(transparent)]
+    Failed(#[from] CryptoError),
+}
+
+impl XmlSignError {
+    /// The refusal's code, where the policy refused.
+    pub fn code(&self) -> Option<ErrorCode> {
+        match self {
+            XmlSignError::Refused(cause) => Some(cause.code),
+            XmlSignError::Failed(_) => None,
+        }
+    }
 }
 
 fn cert_pem_to_b64(pem: &str) -> String {
@@ -1586,12 +1887,33 @@ pub fn signs_with(method: &str) -> bool {
 }
 
 /// `crypto.signXml()`: an enveloped signature over the document's root.
+///
+/// THE XML SIGN CHOKEPOINT (#1368) comes first, and only for a method the
+/// caller NAMED, as in Node: the default (RSA-SHA256) is what
+/// `xmlSignatureChoice()` already chose within the list.
 pub fn sign_enveloped(
+    xml: &str,
+    key: &PKeyRef<Private>,
+    o: &EnvelopedOptions,
+) -> Result<String, XmlSignError> {
+    if let Some(cause) = o.sig_alg.and_then(|alg| o.policy.sign_cause(alg)) {
+        return Err(XmlSignError::Refused(cause));
+    }
+    Ok(sign_enveloped_as_asked(xml, key, o)?)
+}
+
+fn sign_enveloped_as_asked(
     xml: &str,
     key: &PKeyRef<Private>,
     o: &EnvelopedOptions,
 ) -> CryptoResult<String> {
     let sig_alg = o.sig_alg.unwrap_or(RSA_SHA256);
+    // `chainKeyInfo`: nothing where no KeyInfo is wanted at all.
+    let chain = if o.omit_key_info {
+        ""
+    } else {
+        o.key_info_xml.unwrap_or("")
+    };
     if !signs_with(sig_alg) {
         return Err(CryptoError::new(format!(
             "{} is not a SignatureMethod this service signs with",
@@ -1617,8 +1939,9 @@ pub fn sign_enveloped(
     };
     let method = signature_method(sig_alg);
     if method.is_some_and(|m| m.family == Family::Ecdsa) {
-        return sign_general(&mut doc, root, key, sig_alg, &ref_uri, o);
+        return sign_general(&mut doc, root, key, sig_alg, &ref_uri, chain, o);
     }
+    let post_quantum = method.is_some_and(|m| m.family == Family::PostQuantum);
     // signEnveloped(): RSA, and the post-quantum rows.
     let (hash, digest_uri) = match rsa_spec(sig_alg) {
         Some(spec) => spec,
@@ -1647,6 +1970,11 @@ pub fn sign_enveloped(
         v = digest
     );
     let key_info = match o.cert_pem {
+        // signEnveloped() wraps a caller's keyInfoXml in ds:KeyInfo itself;
+        // crypto.signXml() hands its post-quantum path none.
+        _ if !post_quantum && !chain.is_empty() => {
+            format!("<ds:KeyInfo>{}</ds:KeyInfo>", chain)
+        }
         Some(cert) if !o.omit_key_info && !cert.is_empty() => format!(
             "<ds:KeyInfo><ds:X509Data><ds:X509Certificate>{}\
              </ds:X509Certificate></ds:X509Data></ds:KeyInfo>",
@@ -1691,6 +2019,7 @@ fn sign_general(
     key: &PKeyRef<Private>,
     sig_alg: &str,
     ref_uri: &str,
+    chain: &str,
     o: &EnvelopedOptions,
 ) -> CryptoResult<String> {
     let method = signature_method(sig_alg)
@@ -1714,7 +2043,12 @@ fn sign_general(
     } else {
         ref_uri.to_string()
     };
-    let key_info = if o.omit_key_info {
+    // The general engine's buildKeyInfo() answers a caller's keyInfoXml AS
+    // IS and ahead of its `none` check, so crypto.signXml() hands it in
+    // already wrapped, and only when KeyInfo is wanted.
+    let key_info = if !chain.is_empty() {
+        format!("<ds:KeyInfo>{}</ds:KeyInfo>", chain)
+    } else if o.omit_key_info {
         String::new()
     } else {
         let cert = o.cert_pem.filter(|c| !c.is_empty()).ok_or_else(|| {
@@ -1768,18 +2102,25 @@ fn sign_general(
 }
 
 /// `crypto.signQueryString()`: the base64 signature over the query string
-/// exactly as given.
+/// exactly as given. The sign chokepoint (#1368) is asked of the method
+/// whether or not the caller named one — Node asks it of `sigAlg` as passed
+/// — so with a list set the default is held to it as well.
 pub fn sign_query_string(
     query: &str,
     key: &PKeyRef<Private>,
     sig_alg: Option<&str>,
-) -> CryptoResult<String> {
+    policy: &XmlPolicy,
+) -> Result<String, XmlSignError> {
+    if let Some(cause) = policy.sign_cause(sig_alg.unwrap_or("undefined")) {
+        return Err(XmlSignError::Refused(cause));
+    }
     let sig_alg = sig_alg.unwrap_or(RSA_SHA256);
     if !signs_with(sig_alg) {
         return Err(CryptoError::new(format!(
             "{} is not a SignatureMethod this service signs with",
             sig_alg
-        )));
+        ))
+        .into());
     }
     Ok(standard_b64(&sign_octets(sig_alg, key, query.as_bytes())?))
 }
@@ -1787,6 +2128,20 @@ pub fn sign_query_string(
 // ---------------------------------------------------------------------------
 // Verification.
 // ---------------------------------------------------------------------------
+
+/// THE TRANSFORMS A SIGNATURE FROM OUTSIDE MAY NAME (ASVS 5.0.0 1.2.7, 5.0.0
+/// 15.3): `crypto.js`'s `XML_ACCEPTED_TRANSFORMS`, enveloped-signature and
+/// the four canonicalizations, in its order — its refusal quotes the list.
+/// An XPath, XPath Filter 2.0, XSLT or base64 transform is work a verifier
+/// would do on the sender's terms, and is refused before anything is
+/// canonicalized or digested.
+pub const XML_ACCEPTED_TRANSFORMS: [&str; 5] = [
+    TRANSFORM_ENVELOPED,
+    C14N_EXCLUSIVE,
+    C14N_EXCLUSIVE_WC,
+    C14N_INCLUSIVE,
+    C14N_INCLUSIVE_WC,
+];
 
 /// What to verify, and against what.
 #[derive(Clone, Debug, Default)]
@@ -2043,6 +2398,27 @@ pub fn verify_xml_signature(xml: &str, o: &VerifyOptions) -> XmlVerdict {
     let cm_prefixes = cm
         .and_then(|c| first_descendant(&doc, c, None, "InclusiveNamespaces"))
         .and_then(|i| prefix_set(attr(&doc, i, "PrefixList")));
+    // `verifyXml()`'s `allowedTransforms`, which `verifyXmlSignature()`
+    // always passes: every `ds:Transform` in the SignedInfo — in the
+    // xmldsig namespace only, as `getElementsByTagNameNS(DS_NS, …)` finds
+    // them — must be on the list.
+    for t in all_descendants(&doc, si, Some(DS_NS), "Transform") {
+        let alg = attr(&doc, t, "Algorithm");
+        if !XML_ACCEPTED_TRANSFORMS.contains(&alg) {
+            verdict.why = format!(
+                "The Transform \"{}\" is not one this verifier accepts \
+                 ({}).",
+                alg,
+                XML_ACCEPTED_TRANSFORMS.join(", ")
+            );
+            verdict.code = Some(codes::STS_KEYS_0014);
+            if let Some(k) = &key {
+                verdict.signer_subject = k.subject.clone();
+                verdict.signer_cert_b64 = key_info_cert;
+            }
+            return verdict;
+        }
+    }
     let si_octets = canonicalize_by(&doc, si, &engine_c14n, cm_prefixes, None)
         .unwrap_or_default();
     let signature_bytes =

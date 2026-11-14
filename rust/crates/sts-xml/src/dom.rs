@@ -9,16 +9,18 @@
 //! namespace declaration where it was made; `roxmltree` resolves names and
 //! drops the prefixes, and the mutable trees on crates.io either do the same
 //! or bring an XPath engine this service does not use (the service refuses
-//! the XPath transforms: `common/vendored/xmldsig.js`). So the parse is
+//! the XPath transforms: `common/crypto_impl/xmldsig.js`). So the parse is
 //! `quick-xml`'s, and the tree is this arena: an element keeps its prefix,
 //! its local name, its resolved namespace, and its attributes IN DOCUMENT
 //! ORDER with the `xmlns` declarations among them, as the xmldom DOM the
 //! Node canonicalizer walks does.
 //!
 //! **The parse is strict, and changes no byte it does not have to.** A
-//! document that is not well-formed is refused by name; a DOCTYPE is
-//! refused (no entity of any kind is ever defined, so none can be expanded
-//! against this process); an undeclared prefix is refused. What XML 1.0
+//! document that is not well-formed is refused by name; a DOCTYPE or an
+//! ENTITY declaration is refused before anything is parsed, by the same
+//! textual test and in the same words as the Node service's
+//! `common/xml_parser.js` ([`declaration_in`]); an undeclared prefix is
+//! refused. What XML 1.0
 //! itself requires is done: line ends become `\n` (2.11), attribute values
 //! are normalized (3.3.3), and the five predefined entities and character
 //! references are resolved.
@@ -42,6 +44,55 @@ fn err(message: impl Into<String>) -> XmlError {
 }
 
 pub type XmlResult<T> = Result<T, XmlError>;
+
+/// JavaScript's `\s`: the whitespace `common/xml_parser.js`'s pattern skips
+/// between `<!` and the keyword. Not `char::is_whitespace`, which has NEL
+/// and lacks the byte-order mark.
+fn js_space(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n'
+            | '\u{b}'
+            | '\u{c}'
+            | '\r'
+            | ' '
+            | '\u{a0}'
+            | '\u{1680}'
+            | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+    )
+}
+
+/// `xml_parser.declarationIn()`: `DOCTYPE` or `ENTITY` where the text holds
+/// `/<!\s*(DOCTYPE|ENTITY)\b/i` ANYWHERE — inside a comment or a CDATA
+/// section too, as Node's test is on the text and not on the parse — else
+/// `None`. The first match names it. The case is folded for ASCII only, as a
+/// JavaScript pattern without the `u` flag folds it here.
+pub fn declaration_in(source: &str) -> Option<&'static str> {
+    let mut rest = source;
+    while let Some(at) = rest.find("<!") {
+        let after = rest[at + 2..].trim_start_matches(js_space);
+        for keyword in ["DOCTYPE", "ENTITY"] {
+            let head = after.get(..keyword.len());
+            if head.is_some_and(|h| h.eq_ignore_ascii_case(keyword))
+                && !after[keyword.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
+                return Some(keyword);
+            }
+        }
+        rest = &rest[at + 2..];
+    }
+    None
+}
 
 /// A node's handle in its document's arena.
 pub type NodeId = usize;
@@ -384,6 +435,18 @@ impl Document {
         xml: &str,
         context: &[(String, String)],
     ) -> XmlResult<Vec<NodeId>> {
+        // `xml_parser.js`'s DOMParser refuses ahead of any parse
+        // (STS-CORE-0174 there, which its callers then report under their
+        // own codes, as the callers here do).
+        if let Some(found) = declaration_in(xml) {
+            return Err(err(format!(
+                "the document carries a <!{}> declaration, which this \
+                 service never accepts: SOAP 1.2 forbids a Document Type \
+                 Declaration, and none of the XML this service reads needs \
+                 one.",
+                found
+            )));
+        }
         let mut reader = Reader::from_str(xml);
         let config = reader.config_mut();
         config.expand_empty_elements = true;
@@ -705,6 +768,27 @@ mod tests {
         assert!(Document::parse("<a>&nope;</a>").is_err());
         assert!(Document::parse("<a x='1' x='2'/>").is_err());
         assert!(Document::parse("").is_err());
+    }
+
+    #[test]
+    fn a_declaration_is_found_where_node_finds_one() {
+        assert_eq!(declaration_in("<!doctype a><a/>"), Some("DOCTYPE"));
+        assert_eq!(
+            declaration_in("<a><!-- <! \u{feff}EnTiTy --></a>"),
+            Some("ENTITY")
+        );
+        assert_eq!(
+            declaration_in("<a><![CDATA[<!ENTITY]]></a>"),
+            Some("ENTITY")
+        );
+        assert_eq!(declaration_in("<!DOCTYPEx><a/>"), None);
+        assert_eq!(declaration_in("<!-- DOCTYPE --><a/>"), None);
+        assert_eq!(declaration_in("<!\u{85}DOCTYPE a>"), None);
+        let refused = Document::parse("<a><!-- <!DOCTYPE --></a>");
+        assert!(refused
+            .unwrap_err()
+            .0
+            .starts_with("the document carries a <!DOCTYPE> declaration"));
     }
 
     #[test]
