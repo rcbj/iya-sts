@@ -547,6 +547,18 @@ The feature sections below still carry the *COPY closure* / *COPY set* notes
 they were written with ("no new require reaches…", "owed…"); they are
 history, and none of them is owed.
 
+**What those jobs assert is held HERE too, in process, since 2026-11-14**:
+`../tests/kerberos_as_exchange.js` (from `krb5_as_exchange.js`: salts,
+flags, the session key in both copies, the client's enctype order, every AS
+refusal with its number, e-text and stime, TCP and UDP on one port),
+`../tests/kerberos_tgs_exchange.js` (the KDC half of `krb5_tgs_ap.js`: the
+service ticket, the PAC under the right keys, PA-PAC-REQUEST, the partner
+realm's referral, renewal and the TGS refusals) and
+`../tests/kerberos_acceptor.js` (its AP half and `krb5_spnego_http.js`, through
+`krb5_service.accept()` and `spnego_exchange.negotiate()`, which no HTTP door
+reaches with their options since #595). They were written on 2026-10-22 and
+recovered on 2026-11-14; the parent's copies are its own business.
+
 ---
 
 ## A logout stops a ticket-granting ticket, and it is the only thing a KDC can honestly do
