@@ -49,6 +49,17 @@ function read(name) {
  */
 function run(t) {
   log.debug("Entering run().");
+  // The XACML engine's (#444), which needs no key and so no other set:
+  // `tests/tools/xacml-vectors.js` holds what the sts-xacml crate wrote to
+  // Node's engine.
+  if (fs.existsSync(path.join(VECTORS, 'xacml-rust.json')) &&
+      fs.existsSync(path.join(VECTORS, 'xacml-node.json'))) {
+    require('./tools/xacml-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('xacml-rust.json'),
+      read('xacml-node.json'), function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   if (!fs.existsSync(path.join(VECTORS, 'jws-rust.json'))) {
     log.info('rust_crypto_vectors: no Rust vectors in ' + VECTORS + ', so ' +
              'nothing is checked (tests/tools/crypto-vectors.js says how ' +

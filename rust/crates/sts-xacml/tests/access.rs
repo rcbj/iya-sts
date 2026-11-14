@@ -29,6 +29,7 @@ fn q(
         owner: owner.map(str::to_string),
         subject: subject.into(),
         authenticated,
+        ..Question::default()
     }
 }
 
@@ -38,7 +39,7 @@ fn s(list: &[&str]) -> Vec<String> {
 
 #[test]
 fn ownership_is_a_constraint_and_roles_are_rbac() {
-    let policy = built_in("access-control", Parameters::default()).unwrap();
+    let policy = built_in("access-control", &Parameters::default()).unwrap();
     // THE REGRESSION: the portal requires no role, and that must not admit
     // somebody else.
     for action in ["manage-own", "read"] {
@@ -123,7 +124,7 @@ fn ownership_is_a_constraint_and_roles_are_rbac() {
 fn each_parameter_does_what_it_says() {
     let no_owner = built_in(
         "p",
-        Parameters {
+        &Parameters {
             permit_owner: false,
             ..Default::default()
         },
@@ -149,7 +150,7 @@ fn each_parameter_does_what_it_says() {
     );
     let closed = built_in(
         "p",
-        Parameters {
+        &Parameters {
             permit_when_nothing_required: false,
             ..Default::default()
         },
@@ -175,7 +176,7 @@ fn each_parameter_does_what_it_says() {
     );
     let open = built_in(
         "p",
-        Parameters {
+        &Parameters {
             require_authenticated: false,
             ..Default::default()
         },
@@ -217,7 +218,7 @@ fn the_request_and_the_other_refusals() {
     // Under the built-in deny-unless-permit that is a Deny (what Node's
     // template comment warns of); an override combining otherwise is where
     // an Indeterminate reaches the PEP.
-    let broken = document("broken", Parameters::default()).replace(
+    let broken = document("broken", &Parameters::default()).replace(
         "urn:oasis:names:tc:xacml:3.0:function:any-of\"",
         "urn:oasis:names:tc:xacml:1.0:function:any-of\"",
     );
@@ -261,7 +262,8 @@ fn the_request_and_the_other_refusals() {
         (Decision::NotApplicable, Some(Refused::NotApplicable))
     );
     assert_eq!(a.refused.unwrap().code(), "STS-XACML-0046");
-    // A name with markup in it is the policy's id, not markup.
-    let named = built_in("a\"<b>&c", Parameters::default()).unwrap();
-    assert_eq!(named.id(), "a\"<b>&c");
+    // The PolicyId is the name's slug, as the template builds it, so a name
+    // with markup in it is never markup.
+    let named = built_in("a\"<b>&c", &Parameters::default()).unwrap();
+    assert_eq!(named.id(), "urn:sts:xacml:policy:a-b-c");
 }
