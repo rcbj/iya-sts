@@ -82,7 +82,25 @@ about suite release-v5.3.1 decide the variants, both read in its source:
 `extra-action-ignored`, expect 200 under section 10.1.1 ("receivers MUST
 ignore unknown fields"), and this API refused such a member with `0009`.
 rcbj decided to follow the specification (2026-11-13): *Unknown members are
-IGNORED*, below.
+IGNORED*, below. **And two more (2026-11-14)**: every plan's
+`*-reject-non-json-content-type` expects 400 or 415 for `text/plain`, and
+this API read any body as JSON (`app.js`'s text parser takes every type):
+section 10.1's "Requests MUST include a `Content-Type` header with the
+value `application/json`" is now held, 415 `0117` (`notJson()`, after the
+caller is admitted, before the body is read; a parameter is allowed, an
+absent header is refused). And the Resource Search of type `record` found
+nothing, since this service has no records: a type with no objects here
+now takes the policy's `resource-id` literals as its candidates (*The
+searches*). **One module is LEDGERED, not fixed**: the batch's
+`default-value-merging` expects an item's `resource: { id, properties }`
+to take `type` from the top-level `resource`, a member-by-member merge;
+section 7.1.1 says "Any of these keys specified within an individual
+evaluation object overrides the corresponding top-level default", the key
+being `resource` whole, which is this API's reading (*The batch*), so the
+item has no `type` and is its own 400. The job's own fixture
+(`CERT_POLICY`) is the suite's: rule 2 (alice reads record-2), and rule 6's
+admin and archived record known to the PDP as bob and record-2, because the
+searches send neither property.
 
 ## The mapping, in one table
 
@@ -381,7 +399,13 @@ between them): directory people for a resolved subject type; `application`,
 (`appAllowedToDelegateTo`, as `<source>|<target>`) resources; and as
 actions, every literal the repository's policies compare action-id with
 (a static walk of the model) plus an application's own `oauthPermission`
-names. A type with no source answers empty results, never a 400.
+names. **A resource type that is none of the three takes the same walk over
+`resource-id`** (#936, `policyLiterals()`): until then it answered nothing
+whatever the policy permitted, which section 8.5's "all of the resources
+of that type" does not allow when the PDP can name them, and the
+conformance suite's `record` search was that case. A literal is still a
+result only where the policy permits it as the searched type. A subject
+type with no source answers empty results, never a 400.
 
 * **Bounded, and said so**: `authzen.searchMaxCandidates` caps the decisions;
   past it, or with a candidate the PDP could not decide, `context.incomplete`
@@ -818,4 +842,5 @@ the callback, the job and the mail; 0100–0115 the token-exchange binding
 (#1181): 0100–0102 a tuple's shape, 0103–0107 a fixed-rule `false`, 0108–0110
 the exchange question's answer, 0111–0113 a scope's, 0114 an expired subject
 token, 0115 the no-broadening check; 0116 an answer that is not its model's
-(#1579).
+(#1579); 0117 a request whose `Content-Type` is not `application/json`
+(#936).

@@ -88,12 +88,28 @@
 // a member 400 (STS-AUTHZEN-0009) until rcbj decided, on 2026-11-13, to
 // follow the specification; every /access/v1 request now ignores one and
 // 0009 is retired (authzen/CLAUDE.md, *Unknown members are IGNORED*).
-// Resource search of type record (RESOURCE_TYPES) is the one difference
-// still expected, ledgered from the printed module id after a run if the
-// suite judges it. A wrong fixture decision, a missing alice or
-// bob, a missing read or write, a batch-order failure, an authentication
-// failure, and a Content-Type the suite will not accept are fixed, not
-// ledgered.
+// The first run of the six plans (2026-11-14) found three more, fixed too:
+// every `*-reject-non-json-content-type` (this API read a text/plain body
+// as JSON; section 10.1 requires application/json, now 415
+// STS-AUTHZEN-0117); the batch and search decisions that need alice to
+// read record-2 and the PDP to know bob is the admin and record-2 the
+// archived record (this file's fixture, below); and every Resource Search
+// of type record, which answered nothing because this service had no
+// candidates for a type it has no objects of (they are now the policy's
+// resource-id literals).
+//
+// LEDGERED FROM THE SPECIFICATION: authzen-pdp-evaluations-batch-with-
+// default-value-merging (in evals and evals-comp) sends an item
+// `"resource": { "id": "record-1", "properties": {…} }` under a top-level
+// `"resource": { "type": "record" }` and expects the item to be decided
+// as a record. AuthZEN 1.0 section 7.1.1: "Any of these keys specified
+// within an individual evaluation object overrides the corresponding
+// top-level default". The key is `resource`, so the item's resource
+// replaces the default whole and has no `type` (section 5.3: REQUIRED),
+// which is that item's own 400 and `decision: false` (section 7.2). The
+// suite merges member by member, which the text does not say; this PDP
+// keeps the specification's reading and the answer 1.0.0 gave
+// (authzen/CLAUDE.md, *The batch*).
 //
 // OWNED HERE (local: true). sts_authzen.js stays the Todo job.
 // ---------------------------------------------------------------------------
@@ -211,6 +227,21 @@ const CATALOGUE = [
 // are ANDed, which is (read of record-1) AND (alice OR bob). Writing the
 // `or` in the same clause as the `and`s would permit bob for every
 // request, because `and` binds tighter than `or`.
+//
+// THE SUITE'S FIXTURE, AS ITS MODULES STATE IT (release-v5.3.1's
+// scenarios): alice and bob read record-1 (rules 1 and 3), alice reads
+// record-2 (the batch modules: "alice/read on record-1 and record-2 are
+// both permitted in the fixture"), alice writes record-1 and bob does not
+// (rule 4), alice may not write an archived record (rule 5), an admin
+// writes an archived record (rule 6), alice soft-deletes record-1 and may
+// not hard-delete it (rules 7 and 8). Rule 6's facts are the FIXTURE'S as
+// well as the request's: the searches send no properties ("users who can
+// write to an archived record" sends status but no role, and expects bob;
+// "records bob (admin) can write to" sends role but no status, and expects
+// record-2), so the PDP must already know bob is the admin and record-2 is
+// the archived record. That is `subjectId == "bob"` and `resourceId ==
+// "record-2"` beside the two properties. No module asks a non-admin bob to
+// write record-2.
 const CERT_POLICY = [
   "namespace cert {",
   "  attribute act { category = actionCat",
@@ -244,11 +275,16 @@ const CERT_POLICY = [
   "      target clause act == \"write\" and resourceId == \"record-1\" and",
   "        subjectId == \"alice\"",
   "    }",
-  "    rule bobAdminWriteArchived {",
+  "    rule aliceReadRecord2 {",
   "      permit",
-  "      target clause act == \"write\" and resourceId == \"record-2\" and",
-  "        subjectId == \"bob\" and role == \"admin\" and",
-  "        status == \"archived\"",
+  "      target clause act == \"read\" and resourceId == \"record-2\" and",
+  "        subjectId == \"alice\"",
+  "    }",
+  "    rule adminWriteArchived {",
+  "      permit",
+  "      target clause act == \"write\"",
+  "      target clause status == \"archived\" or resourceId == \"record-2\"",
+  "      target clause role == \"admin\" or subjectId == \"bob\"",
   "    }",
   "    rule aliceSoftDelete {",
   "      permit",
@@ -259,7 +295,7 @@ const CERT_POLICY = [
   "}"
 ].join("\n");
 
-// A module the suite judged FAILED, argued (none yet: filled from a run).
+// A module the suite judged FAILED, argued.
 const EXPECTED = {};
 // Conditions whose WARNING is kept, and why (none yet).
 const KNOWN_WARNINGS = {};
@@ -277,6 +313,16 @@ KNOWN_FAILURES["*/" + INVALID_CREDENTIALS +
   why: "the suite's precondition needs an environment object \"client\" " +
        "that no AuthZEN test of release-v5.3.1 creates for api_key",
   msg: /couldn't find (required )?object in environment[^:]*: client\b/
+};
+// The header's specification argument: section 7.1.1 overrides a top-level
+// key WHOLE, so the first item's resource has no type and is decided
+// false (its own 400). Only the decision comparison is argued; any other
+// failure of the module is a finding.
+KNOWN_FAILURES["*/authzen-pdp-evaluations-batch-with-default-value-merging" +
+               "/EnsureAuthzenEvaluationsResponseValsMatchExpectedVals"] = {
+  why: "AuthZEN 1.0 section 7.1.1: a key named in an evaluation " +
+       "overrides the top-level default whole; the suite merges members",
+  msg: /decision does not match expected value/
 };
 
 const addedAnchors = [];

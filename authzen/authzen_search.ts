@@ -41,7 +41,9 @@
 //                `delegation`   every delegation relationship an entry
 //                               declares (`appAllowedToDelegateTo`), as
 //                               `<source>|<target>`
-//                any other type has none
+//                any other type: every literal the root policy (and the
+//                policies it references) compares resource-id with
+//                (#936), as the actions below are named
 //   actions      every action name the root policy (and the policies it
 //                references) compares action-id with, and — for a resource
 //                that is an application or an API — the names of the
@@ -72,6 +74,9 @@ const KINDS = Object.freeze(['subject', 'resource', 'action']);
 
 // The resource types this service can name candidates of.
 const RESOURCE_TYPES = Object.freeze(['application', 'api', 'delegation']);
+
+// The attribute a resource of any other type is named by in a policy (#936).
+const RESOURCE_ID = 'urn:oasis:names:tc:xacml:1.0:resource:resource-id';
 
 // What stands in for the id a search does not send, so the evaluation can be
 // read by the one reader; it is replaced per candidate.
@@ -407,8 +412,18 @@ class AuthzenSearch {
   resources(type: string): string[] {
     log.debug("Entering AuthzenSearch.resources(). " + type);
     if (RESOURCE_TYPES.indexOf(type) < 0) {
-      log.debug("Leaving AuthzenSearch.resources(). Not ours.");
-      return [];
+      // A TYPE THIS SERVICE HAS NO OBJECTS OF (#936): the resource ids the
+      // policies compare resource-id with, as the actions are named, each
+      // still decided by the policy as this type before it is a result.
+      // Until #936 such a type answered no results whatever the policy
+      // permitted, which section 8.5 ("all of the resources of that type
+      // that the subject can perform the action on") does not allow when
+      // the PDP can name them.
+      const named = this.policyLiterals(RESOURCE_ID).slice(0);
+      named.sort();
+      log.debug("Leaving AuthzenSearch.resources(). From the policies, " +
+                named.length);
+      return named;
     }
     const rows = this.deps.applications.list() || [];
     let out: string[] = [];
@@ -474,7 +489,24 @@ class AuthzenSearch {
    */
   policyActions(): string[] {
     log.debug("Entering AuthzenSearch.policyActions().");
-    const ACTION_ID = 'urn:oasis:names:tc:xacml:1.0:action:action-id';
+    const found = this.policyLiterals(
+      'urn:oasis:names:tc:xacml:1.0:action:action-id');
+    log.debug("Leaving AuthzenSearch.policyActions(). " + found.length);
+    return found;
+  }
+
+  /**
+   * Every literal the realm's root policy, and the policies its repository
+   * holds, compare one attribute with — a target's match or a condition's
+   * comparison. The action candidates (action-id) and, since #936, the
+   * resources of a type this service has no objects of (resource-id).
+   *
+   * @param attributeId - the attribute the literals are compared with
+   * @returns the literals, each once, in the order found
+   */
+  policyLiterals(attributeId: string): string[] {
+    log.debug("Entering AuthzenSearch.policyLiterals(). " + attributeId);
+    const ACTION_ID = attributeId;
     const found: string[] = [];
     // Recursive, once per node of every policy: no Entering/Leaving pair,
     // which would drown the log around a property read.
@@ -519,12 +551,12 @@ class AuthzenSearch {
         walk(store.parseDocument(root.document), 0);
       }
     } catch (e) {
-      // A repository that will not read names no actions; the search then
+      // A repository that will not read names no literals; the search then
       // answers none rather than failing.
-      log.debug("Caught in AuthzenSearch.policyActions(): " +
+      log.debug("Caught in AuthzenSearch.policyLiterals(): " +
                 ((e && e.message) || e));
     }
-    log.debug("Leaving AuthzenSearch.policyActions(). " + found.length);
+    log.debug("Leaving AuthzenSearch.policyLiterals(). " + found.length);
     return found.filter(function (one: string, i: number) {
       return found.indexOf(one) === i;
     });

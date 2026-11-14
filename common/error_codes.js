@@ -23806,6 +23806,11 @@ const CODES = [
       '(#1579). The answer is sent as it was built: the model describes ' +
       'the wire and does not reshape it, so this is a model gap to close.',
     spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-AUTHZEN-0117',
+    summary: 'An AuthZEN evaluation, batch or search request did not carry ' +
+      'Content-Type: application/json, which AuthZEN 1.0 section 10.1 ' +
+      'requires; refused before its body was read (#936).',
+    spec: 'HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16)' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
