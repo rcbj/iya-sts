@@ -37,7 +37,17 @@
 //   J. THE VIEW (`GET /admin-api/policies/transfer`): the algorithm in force,
 //      the paranoid row, the realm's Policy Export Signing CA (the certificate
 //      an export carries in x5c, its fingerprint and x5t#S256), the signers a
-//      yes added, no private key, and an answer that meets its closed model.
+//      yes added, no private key, the policies an export may select, and an
+//      answer that meets its closed model.
+//   K. A SELECTION (rcbj, 2026-11-14: "import / export individual
+//      policies"): an export of one policy and of two, each verifying and
+//      imported into another realm after the yes, writing only those; a
+//      name the realm does not store refused with its code before a key is
+//      made; inspect listing every profile with `replaces`; an import of a
+//      selection writing only what it names; a name the document does not
+//      carry refused before the trust question; a whole export importing
+//      exactly as before; the audit rows naming the selection; each answer
+//      against its closed model; and the console's checklists.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -141,6 +151,434 @@ function fingerprintOf(pem) {
     .replace(/:/g, '').toUpperCase();
 }
 
+/**
+ * The names of a kind's profiles a realm stores, sorted.
+ *
+ * @param module - the kind's module (`passwordPolicy`)
+ * @returns the names
+ */
+function storedNames(module) {
+  log.debug('Entering storedNames().');
+  const out = module.list().filter(function (one) {
+    return one.stored === true;
+  }).map(function (one) {
+    return String(one.name);
+  }).sort();
+  log.debug('Leaving storedNames().');
+  return out;
+}
+
+/**
+ * The names of the authentication policy's named policies, sorted.
+ *
+ * @returns the names
+ */
+function namedAuthn() {
+  log.debug('Entering namedAuthn().');
+  const out = authnPolicy.named().map(function (one) {
+    return String(one.name);
+  }).sort();
+  log.debug('Leaving namedAuthn().');
+  return out;
+}
+
+/**
+ * K. A SELECTION: export and import of individual policies.
+ *
+ * @param t - the harness
+ * @param ctx - `{ A, E, F, document, Ajv }`: the exporting realm (which
+ *   stores password `default` and `strict` and the named authentication
+ *   policy `keys-only`), a realm that stores nothing yet and will be
+ *   imported into, a realm that is never answered, and the Management API
+ *   OpenAPI document
+ */
+async function selections(t, ctx) {
+  log.debug('Entering selections().');
+  const A = ctx.A;
+  const E = ctx.E;
+  const F = ctx.F;
+  t.log.info('K. a selection');
+  const ajv = new ctx.Ajv({ strict: false, allErrors: true });
+  const validators = {};
+  const meets = function (op, status, body) {
+    log.debug('Entering meets(). ' + op + ' ' + status);
+    const key = op + ' ' + status;
+    if (!validators[key]) {
+      const operation = ctx.document.paths['/admin-api/policies/transfer/' +
+                                            op].post;
+      validators[key] = ajv.compile({
+        allOf: [operation.responses[String(status)]
+          .content['application/json'].schema],
+        components: ctx.document.components });
+    }
+    const ok = validators[key](JSON.parse(JSON.stringify(body)));
+    log.debug('Leaving meets().');
+    return ok ? '' : JSON.stringify(validators[key].errors);
+  };
+  const exportOp = ctx.document.paths['/admin-api/policies/transfer/export']
+    .post;
+  const importOp = ctx.document.paths['/admin-api/policies/transfer/import']
+    .post;
+  const requestOf = function (operation) {
+    log.debug('Entering requestOf().');
+    log.debug('Leaving requestOf().');
+    return ajv.compile({
+      allOf: [operation.requestBody.content['application/json'].schema],
+      components: ctx.document.components });
+  };
+  const exportRequest = requestOf(exportOp);
+  const importRequest = requestOf(importOp);
+  t.check(exportRequest({ policies: [{ kind: 'password', name: 'strict' }] })
+          && exportRequest({}) &&
+          !exportRequest({ policies: [] }) &&
+          !exportRequest({ policies: [{ kind: 'password' }] }) &&
+          !exportRequest({ policies: [{ kind: 'password', name: 'x',
+                                        stray: 1 }] }),
+          'K. the export request model takes a selection of {kind, name}, ' +
+          'closed, at least one', JSON.stringify(exportRequest.errors));
+  t.check(importRequest({ document: {}, policies: [{ kind: 'password',
+                                                    name: 'strict' }] }),
+          'K. and the import request model takes one too',
+          JSON.stringify(importRequest.errors));
+  const keysMade = [];
+  const counting = new transfer.PolicyTransfer(Object.assign(
+    transfer.PolicyTransfer.defaultDeps(), {
+      makeKey: function (alg) {
+        keysMade.push(alg);
+        return transfer.PolicyTransfer.makeKey(alg);
+      }
+    }));
+
+  // K1. ONE POLICY.
+  const one = await inRealm(A, function () {
+    return counting.exportPolicies({ actor: 'alice',
+      policies: [{ kind: 'password', name: 'strict' }] });
+  });
+  t.check(one.ok, 'K1. one policy exports', JSON.stringify(one.errors));
+  const onePayload = payloadOf(one.document);
+  t.check(onePayload.kinds.length === 1 &&
+          onePayload.kinds[0].id === 'password' &&
+          onePayload.kinds[0].profiles.length === 1 &&
+          onePayload.kinds[0].profiles[0].name === 'strict' &&
+          onePayload.kinds[0].profiles[0].body.precedence === 40,
+          'K1. it carries that one profile and nothing else',
+          JSON.stringify(onePayload.kinds));
+  t.check(onePayload.format === 'iya-sts.policy-export' &&
+          onePayload.version === 1 && headerOf(one.document).x5c.length === 4,
+          'K1. in the same format, with the whole chain', '');
+  t.equal(JSON.stringify(onePayload.selection),
+          JSON.stringify([{ kind: 'password', name: 'strict' }]),
+          'K1. and records that it is a selection');
+  t.equal(JSON.stringify(one.selection),
+          JSON.stringify([{ kind: 'password', name: 'strict' }]),
+          'K1. the answer names the selection');
+  t.check(one.filename.indexOf('policy-' + A + '-password-strict-') === 0,
+          'K1. the file is named for the one policy', one.filename);
+  t.equal(meets('export', 200, one), '', 'K1. the answer meets its model');
+  const oneSeen = await inRealm(A, function () {
+    return transfer.inspect(one.document);
+  });
+  t.check(oneSeen.ok && oneSeen.origin === 'own',
+          'K1. and verifies in its own realm', JSON.stringify(oneSeen.errors));
+
+  // K2. TWO POLICIES, OF TWO KINDS, ONE OF THEM NAMED.
+  const two = await inRealm(A, function () {
+    return transfer.exportPolicies({ policies: [
+      { kind: 'password', name: 'default' },
+      { kind: 'authn', name: 'keys-only' },
+      { kind: 'password', name: 'default' }] });
+  });
+  t.check(two.ok, 'K2. two policies export', JSON.stringify(two.errors));
+  const twoPayload = payloadOf(two.document);
+  const carried = twoPayload.kinds.map(function (kind) {
+    return kind.id + ':' + kind.profiles.map(function (p) {
+      return p.name;
+    }).concat((kind.named || []).map(function (n) {
+      return 'named ' + n.name;
+    })).join('+');
+  }).sort().join(',');
+  t.equal(carried, 'authn:named keys-only,password:default',
+          'K2. it carries exactly those two, and the kinds holding them');
+  t.equal(twoPayload.selection.length, 2,
+          'K2. a policy named twice is selected once');
+
+  // K3. A NAME THE REALM DOES NOT STORE.
+  keysMade.length = 0;
+  const unknown = await inRealm(A, function () {
+    return counting.exportPolicies({ policies: [
+      { kind: 'password', name: 'strict' },
+      { kind: 'password', name: 'no-such-policy' }] });
+  });
+  t.equal(!unknown.ok && errorCodes.codeOf(unknown), 'STS-ADMIN-0937',
+          'K3. an export naming a policy the realm does not store is ' +
+          'refused with its code');
+  t.check(unknown.document === undefined && unknown.files === undefined &&
+          keysMade.length === 0,
+          'K3. and nothing is exported: no document, no key made',
+          JSON.stringify(keysMade));
+  t.check(Array.isArray(unknown.missing) && unknown.missing.length === 1 &&
+          unknown.missing[0].name === 'no-such-policy',
+          'K3. the refusal names what is missing',
+          JSON.stringify(unknown.missing));
+  t.equal(meets('export', 400, unknown), '',
+          'K3. the refusal meets its model');
+  const inherited = await inRealm(A, function () {
+    return transfer.exportPolicies({ policies: [
+      { kind: 'authn', name: 'default' }] });
+  });
+  t.equal(errorCodes.codeOf(inherited), 'STS-ADMIN-0937',
+          'K3. an inherited policy is not the realm\'s to export');
+  const noKind = await inRealm(A, function () {
+    return transfer.exportPolicies({ policies: [
+      { kind: 'no-such-kind', name: 'default' }] });
+  });
+  t.equal(errorCodes.codeOf(noKind), 'STS-ADMIN-0937',
+          'K3. nor a kind this service does not have');
+  const empty = await inRealm(A, function () {
+    return transfer.exportPolicies({ policies: [] });
+  });
+  const shapeless = await inRealm(A, function () {
+    return transfer.exportPolicies({ policies: [{ kind: 'password' }] });
+  });
+  t.check(errorCodes.codeOf(empty) === 'STS-ADMIN-0937' &&
+          errorCodes.codeOf(shapeless) === 'STS-ADMIN-0937',
+          'K3. an empty selection and one without a name are refused', '');
+
+  // K4. INSPECT LISTS EVERY PROFILE, WITH `replaces`.
+  inRealm(E, function () {
+    return passwordPolicy.save('strict', Object.assign(passwordBody(12),
+      { precedence: 50 }));
+  });
+  const whole = await inRealm(A, function () {
+    return transfer.exportPolicies({ actor: 'alice' });
+  });
+  t.check(whole.ok && whole.selection === undefined &&
+          payloadOf(whole.document).selection === undefined,
+          'K4. a whole export carries no selection, as before', '');
+  const atE = await inRealm(E, function () {
+    return transfer.inspect(whole.document);
+  });
+  const listed = function (seen) {
+    log.debug('Entering listed().');
+    const out = {};
+    (seen.profiles || []).forEach(function (one) {
+      out[one.kind + '/' + one.name] = one;
+    });
+    log.debug('Leaving listed().');
+    return out;
+  };
+  const atEList = listed(atE);
+  t.check(atE.ok && atE.origin === 'foreign' &&
+          Object.keys(atEList).sort().join(',') ===
+            'authn/keys-only,password/default,password/strict',
+          'K4. inspect lists every profile the export carries',
+          JSON.stringify(atE.profiles));
+  t.check(atEList['password/strict'].replaces === true &&
+          atEList['password/default'].replaces === false &&
+          atEList['authn/keys-only'].replaces === false &&
+          atEList['authn/keys-only'].named === true &&
+          atEList['password/default'].named === false,
+          'K4. marking the one this realm already stores by that name as ' +
+          'replacing it', JSON.stringify(atE.profiles));
+  t.equal(meets('inspect', 200, transfer.publicView(atE)), '',
+          'K4. the inspection meets its model');
+  const oneAtE = await inRealm(E, function () {
+    return transfer.inspect(one.document);
+  });
+  t.equal(JSON.stringify(oneAtE.selection),
+          JSON.stringify([{ kind: 'password', name: 'strict' }]),
+          'K4. and says what a selection\'s document was asked to hold');
+
+  // K5. A NAME THE DOCUMENT DOES NOT CARRY, REFUSED BEFORE THE QUESTION.
+  const notCarried = await inRealm(F, function () {
+    return transfer.importPolicies(one.document, { trustSigner: true,
+      issuerFingerprint: atE.issuerFingerprint,
+      policies: [{ kind: 'password', name: 'default' }] });
+  });
+  t.equal(errorCodes.codeOf(notCarried), 'STS-ADMIN-0938',
+          'K5. an import naming a profile the export does not carry is ' +
+          'refused with its code');
+  t.check(!notCarried.needsTrust && notCarried.missing.length === 1 &&
+          notCarried.missing[0].name === 'default',
+          'K5. before the trust question, naming what is missing',
+          JSON.stringify(notCarried.missing));
+  t.check(inRealm(F, function () {
+    return signers.list().length === 0 &&
+           storedNames(passwordPolicy).length === 0;
+  }), 'K5. nothing was trusted and nothing written', '');
+  t.equal(meets('import', 400, notCarried), '',
+          'K5. the refusal meets its model');
+
+  // K6. ONE POLICY INTO ANOTHER REALM, AFTER THE YES.
+  const asked = await inRealm(E, function () {
+    return transfer.importPolicies(one.document, {
+      policies: [{ kind: 'password', name: 'strict' }] });
+  });
+  t.check(errorCodes.codeOf(asked) === 'STS-ADMIN-0929' && asked.needsTrust,
+          'K6. a selection from another realm is still asked about first',
+          JSON.stringify(asked.errors));
+  t.equal(inRealm(E, function () {
+    return passwordPolicy.read('strict').minLength;
+  }), 12, 'K6. and nothing is written until it is answered');
+  const yes = await inRealm(E, function () {
+    return transfer.importPolicies(one.document, { trustSigner: true,
+      issuerFingerprint: asked.inspection.issuerFingerprint,
+      actor: 'erin' });
+  });
+  t.check(yes.ok && yes.origin === 'foreign' && yes.trustAdded.length === 3,
+          'K6. the yes imports the one-policy document',
+          JSON.stringify(yes.errors));
+  t.equal(meets('import', 200, yes), '', 'K6. the answer meets its model');
+  t.check(inRealm(E, function () {
+    return storedNames(passwordPolicy).join(',') === 'strict' &&
+           passwordPolicy.read('strict').minLength === 19 &&
+           namedAuthn().length === 0;
+  }), 'K6. writing only that policy: E\'s strict is A\'s, its default is ' +
+      'still not stored, and no authentication policy arrived', '');
+
+  const twoAtF = await inRealm(F, function () {
+    return transfer.importPolicies(two.document, { trustSigner: true,
+      issuerFingerprint: asked.inspection.issuerFingerprint, actor: 'fay' });
+  });
+  t.check(twoAtF.ok && twoAtF.origin === 'foreign',
+          'K6. the two-policy document imports into a third realm after ' +
+          'its yes', JSON.stringify(twoAtF.errors));
+  t.check(inRealm(F, function () {
+    return storedNames(passwordPolicy).join(',') === 'default' &&
+           passwordPolicy.read('default').minLength === 17 &&
+           namedAuthn().join(',') === 'keys-only';
+  }), 'K6. writing those two and not A\'s strict', '');
+
+  // K7. A SELECTION OF A WHOLE EXPORT.
+  const picked = await inRealm(E, function () {
+    return transfer.importPolicies(whole.document, {
+      policies: [{ kind: 'authn', name: 'keys-only' }] });
+  });
+  t.check(picked.ok && picked.origin === 'trusted' &&
+          JSON.stringify(picked.imported) ===
+            JSON.stringify([{ kind: 'authn', names: ['keys-only'] }]),
+          'K7. an import of a selection writes only what it names',
+          JSON.stringify(picked.imported || picked.errors));
+  t.equal(JSON.stringify(picked.selection),
+          JSON.stringify([{ kind: 'authn', name: 'keys-only' }]),
+          'K7. and its answer names the selection');
+  t.check(inRealm(E, function () {
+    return namedAuthn().join(',') === 'keys-only' &&
+           storedNames(passwordPolicy).join(',') === 'strict';
+  }), 'K7. leaving the rest of the export unwritten', '');
+
+  // K8. A WHOLE EXPORT IMPORTS EXACTLY AS BEFORE.
+  const all = await inRealm(E, function () {
+    return transfer.importPolicies(whole.document, {});
+  });
+  const writtenNames = (all.imported || []).map(function (one) {
+    return one.kind + ':' + one.names.slice().sort().join('+');
+  }).sort().join(',');
+  t.check(all.ok && all.selection === undefined &&
+          writtenNames === 'authn:keys-only,password:default+strict',
+          'K8. a whole export, imported with no selection, writes every ' +
+          'profile, as before', writtenNames);
+  t.check(inRealm(E, function () {
+    return storedNames(passwordPolicy).join(',') === 'default,strict' &&
+           passwordPolicy.read('default').minLength === 17;
+  }), 'K8. E now holds A\'s default too', '');
+
+  // K9. THE ACTION LAYER RECORDS THE SELECTION ON THE AUDIT ROWS.
+  const viaAction = await inRealm(A, function () {
+    return adminActions.policyTransferAction({ action: 'export',
+      policies: [{ kind: 'password', name: 'strict' }] },
+                                             { via: 'api', actor: 'alice' });
+  });
+  t.check(viaAction.ok && payloadOf(viaAction.document).kinds.length === 1,
+          'K9. the action layer passes an export\'s selection on',
+          JSON.stringify(viaAction.errors));
+  const refusedAction = await inRealm(A, function () {
+    return adminActions.policyTransferAction({ action: 'export',
+      policies: [{ kind: 'password', name: 'nope' }] },
+                                             { via: 'api', actor: 'alice' });
+  });
+  t.equal(errorCodes.codeOf(refusedAction), 'STS-ADMIN-0937',
+          'K9. and its refusal');
+  const importAction = await inRealm(E, function () {
+    return adminActions.policyTransferAction({ action: 'import',
+      document: viaAction.document,
+      policies: [{ kind: 'password', name: 'strict' }] },
+                                             { via: 'api', actor: 'erin' });
+  });
+  t.check(importAction.ok && importAction.imported.length === 1,
+          'K9. and an import\'s', JSON.stringify(importAction.errors));
+  const rowOf = function (id, action) {
+    log.debug('Entering rowOf(). ' + id + ' ' + action);
+    const out = inRealm(id, function () {
+      return audit.list().filter(function (row) {
+        return row.action === action;
+      })[0];
+    });
+    log.debug('Leaving rowOf().');
+    return out;
+  };
+  const exportRow = rowOf(A, 'admin.policies.export');
+  const importRow = rowOf(E, 'admin.policies.import');
+  t.check(!!exportRow && exportRow.detail.selection === 'password/strict' &&
+          /1 of this realm/.test(exportRow.summary),
+          'K9. the export\'s audit row names the policy selected',
+          JSON.stringify(exportRow && exportRow.detail));
+  t.check(!!importRow && importRow.detail.selection === 'password/strict',
+          'K9. and the import\'s', JSON.stringify(importRow &&
+                                                  importRow.detail));
+
+  // K10. THE CONSOLE.
+  const page = require('../admin-ui/web_policies');
+  const kit = require('../admin-ui/web_kit');
+  const WebAnswers = require('../admin-ui/web_answers');
+  const tr = kit.context({}, true).t;
+  const viewA = inRealm(A, function () {
+    return adminViews.policyTransferJson();
+  });
+  const tab = page.transferSection({ state: {}, transfer: viewA }, tr);
+  const strictValue = kit.esc(JSON.stringify({ kind: 'password',
+                                               name: 'strict' }));
+  t.check(tab.indexOf('name="policies" value="' + strictValue + '"') >= 0 &&
+          /data-check-all="policies"/.test(tab) &&
+          /name="action" value="export"/.test(tab),
+          'K10. the tab draws a box per stored policy and Select all, in ' +
+          'the export\'s form', tab.slice(0, 400));
+  const oneForm = page.exportOneForm('password', 'strict', tr);
+  t.check(/name="action" value="export"/.test(oneForm) &&
+          oneForm.indexOf('name="policies" value="' + strictValue + '"') >= 0,
+          'K10. a policy\'s own Export button posts it alone', oneForm);
+  const redrawn = WebAnswers.redraw('/admin/policies', 'inspect',
+    { action: 'inspect', document: JSON.stringify(whole.document) },
+    transfer.publicView(atE), { state: {} }, tr);
+  const checklist = page.transferSection(redrawn.json, tr);
+  t.check(checklist.indexOf('replaces an existing policy') >= 0 &&
+          checklist.indexOf('name="policies" value="' + strictValue +
+                            '" checked') >= 0 &&
+          /name="trustSigner" value="true"/.test(checklist),
+          'K10. after Inspect the file\'s policies are a ticked checklist, ' +
+          'one marked as replacing, in the form whose yes imports them',
+          checklist.slice(0, 400));
+  const ConsoleRuntime = require('../admin-ui/web_runtime');
+  const runtime = new ConsoleRuntime({ location: { pathname: '/admin' } });
+  runtime.spec = ctx.document;
+  const shaped = runtime.shapeFields({ action: 'export', policies: [
+    JSON.stringify({ kind: 'password', name: 'strict' }),
+    JSON.stringify({ kind: 'authn', name: 'keys-only' })] },
+  runtime.deref(exportOp.requestBody.content['application/json'].schema));
+  t.equal(JSON.stringify(shaped.policies), JSON.stringify([
+    { kind: 'password', name: 'strict' },
+    { kind: 'authn', name: 'keys-only' }]),
+          'K10. the console sends the ticked boxes as the operation\'s ' +
+          '`policies`, each a {kind, name}');
+  const single = runtime.shapeFields({ action: 'export',
+    policies: JSON.stringify({ kind: 'password', name: 'strict' }) },
+  runtime.deref(exportOp.requestBody.content['application/json'].schema));
+  t.equal(JSON.stringify(single.policies), JSON.stringify([
+    { kind: 'password', name: 'strict' }]),
+          'K10. and one policy\'s button as a list of one');
+  log.debug('Leaving selections().');
+}
+
 async function run(t) {
   log.debug('Entering run().');
   const tag = stsCrypto.randomBytes(3).toString('hex');
@@ -148,7 +586,9 @@ async function run(t) {
   const B = 'ptx-b-' + tag;
   const C = 'ptx-c-' + tag;
   const D = 'ptx-d-' + tag;
-  [A, B, C, D].forEach(function (id) {
+  const E = 'ptx-e-' + tag;
+  const F = 'ptx-f-' + tag;
+  [A, B, C, D, E, F].forEach(function (id) {
     realms.create({ id: id, name: id, domain: id + '.example.net',
                     description: 'Created by ' + __filename });
   });
@@ -617,8 +1057,23 @@ async function run(t) {
       viewA, { issuingCa: null }) }, tr).indexOf('first export builds it') >=
             0, 'J. a realm with no CA yet is told the first export builds it',
             '');
+    t.check(Array.isArray(viewA.policies) &&
+            viewA.policies.some(function (one) {
+              return one.kind === 'password' && one.name === 'strict' &&
+                     one.named === false;
+            }) && viewA.policies.some(function (one) {
+              return one.kind === 'authn' && one.name === 'keys-only' &&
+                     one.named === true;
+            }) && !viewA.policies.some(function (one) {
+              return one.kind === 'authn' && one.name === 'default';
+            }),
+            'J. the view lists what may be selected: every stored policy, ' +
+            'and not an inherited one', JSON.stringify(viewA.policies));
+
+    await selections(t, { A: A, E: E, F: F, document: document,
+                          validate: validate, Ajv: Ajv });
   } finally {
-    [A, B, C, D].forEach(function (id) {
+    [A, B, C, D, E, F].forEach(function (id) {
       if (realms.get(id)) {
         realms.remove(id);
       }

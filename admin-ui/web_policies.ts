@@ -93,7 +93,8 @@ class PoliciesPage {
       '<table><tr><th>' + t.html('consolePolicies.profiles.kind') +
       '</th><th>' + t.html('consolePolicies.profiles.profile') + '</th><th>' +
       t.html('consolePolicies.profiles.storedAt') + '</th>' +
-      '<th>' + t.html('consolePolicies.profiles.problems') + '</th></tr>' +
+      '<th>' + t.html('consolePolicies.profiles.problems') + '</th>' +
+      '<th></th></tr>' +
       view.profiles.map(function (row) {
         return '<tr><td>' + kit.esc(kindLabel[row.kind] || row.kind) +
           '</td><td><a href="#' + kit.esc(row.kind) + '">' +
@@ -103,7 +104,11 @@ class PoliciesPage {
               ? t.html('consolePolicies.profiles.inherited', { dn: row.dn })
               : '<span class="state-none">' +
                 t.html('consolePolicies.profiles.notStored') + '</span>') +
-          '</td><td>' + kit.esc(String(row.problems.length)) + '</td></tr>';
+          '</td><td>' + kit.esc(String(row.problems.length)) + '</td><td>' +
+          // ONE POLICY, EXPORTED (rcbj 2026-11-14): only what this realm
+          // stores is its own to export.
+          (row.stored ? PoliciesPage.exportOneForm(row.kind, row.name, t)
+                      : '') + '</td></tr>';
       }).join('') + '</table>' +
       listedNav.foot +
 
@@ -162,8 +167,17 @@ class PoliciesPage {
       return '<input type="hidden" name="' + kit.esc(name) + '" value="' +
         kit.esc(value) + '">';
     };
+    // THE EXPORT, AND WHAT IT CARRIES (rcbj 2026-11-14): every policy this
+    // realm stores as a box, none ticked; ticked ones are carried alone, and
+    // with none ticked the export is everything, as it always was.
+    const exportable = (view.transfer && Array.isArray(view.transfer.policies))
+      ? view.transfer.policies : [];
+    const exportList = exportable.length
+      ? '<p>' + t.html('consolePolicies.transfer.selectNote') + '</p>' +
+        PoliciesPage.policyChecklist(exportable, false, t)
+      : '';
     const exportForm = '<form method="post" action="/admin/policies">' +
-      hidden('action', 'export') +
+      hidden('action', 'export') + exportList +
       '<p><button>' + t.html('consolePolicies.transfer.export') +
       '</button></p></form>';
     const importForm = '<h3 id="transfer-import">' +
@@ -216,18 +230,30 @@ class PoliciesPage {
       // THE QUESTION (rcbj: "present a user with a question of whether to
       // trust dsig certs from other realms"). The yes names the Issuing CA
       // it was shown, so it cannot be replayed onto another chain.
+      // WHICH PROFILES TO WRITE: every one the document carries, ticked,
+      // with "replaces" beside a name this realm already stores. Unticking
+      // one leaves it out; with none ticked the whole document is written.
+      const carried = Array.isArray(seen.profiles) ? seen.profiles : [];
+      const checklist = carried.length
+        ? '<h4 id="transfer-profiles">' +
+          t.html('consolePolicies.transfer.profilesHeading') + '</h4>' +
+          '<p>' + t.html('consolePolicies.transfer.importSelectNote') +
+          '</p>' + PoliciesPage.policyChecklist(carried, true, t)
+        : '';
       const answer = !verdict.ok ? ''
         : origin === 'foreign'
           ? '<form method="post" action="/admin/policies">' +
             hidden('action', 'import') + hidden('document', pasted) +
             hidden('trustSigner', 'true') +
             hidden('issuerFingerprint', String(seen.issuerFingerprint)) +
+            checklist +
             kit.warn(t.html('consolePolicies.transfer.question',
                             { fingerprint: String(seen.issuerFingerprint) })) +
             '<p><button>' + t.html('consolePolicies.transfer.trustAndImport') +
             '</button></p></form>'
           : '<form method="post" action="/admin/policies">' +
             hidden('action', 'import') + hidden('document', pasted) +
+            checklist +
             '<p><button>' + t.html('consolePolicies.transfer.importTrusted') +
             '</button></p></form>';
       result = '<h3 id="transfer-signer">' +
@@ -240,6 +266,69 @@ class PoliciesPage {
       '</h2>' + kit.note(t.html('consolePolicies.transfer.lead')) +
       PoliciesPage.transferSigner(view.transfer, t) +
       exportForm + importForm + result;
+  }
+
+  /**
+   * One policy's Export button (rcbj 2026-11-14): a form posting `export`
+   * with that one policy as the selection, whose answer is the signed
+   * document as a download.
+   *
+   * @param kind - the policy's kind
+   * @param name - its name within the kind
+   * @param t - the page's translator (#539)
+   * @returns the form as HTML
+   */
+  static exportOneForm(kind, name, t) {
+    return '<form method="post" action="/admin/policies#transfer" ' +
+      'class="inline"><input type="hidden" name="action" value="export">' +
+      '<input type="hidden" name="policies" value="' +
+      kit.esc(JSON.stringify({ kind: String(kind), name: String(name) })) +
+      '"><button class="secondary"' +
+      kit.tip(t.text('consolePolicies.transfer.exportOneTip',
+                     { kind: String(kind), name: String(name) })) + '>' +
+      t.html('consolePolicies.transfer.exportOne') + '</button></form>';
+  }
+
+  /**
+   * A checklist of policies, a box per policy named `policies` whose value is
+   * its `{ kind, name }` as JSON (the selection an operation takes as
+   * `policies`), and a Select all switch the runtime wires
+   * (`data-check-all`).
+   *
+   * @param rows - `{ kind, name, named?, replaces? }` per policy
+   * @param ticked - whether every box starts ticked
+   * @param t - the page's translator (#539)
+   * @returns the checklist as HTML
+   */
+  static policyChecklist(rows, ticked, t) {
+    const marks = rows.some(function (one) {
+      return one.replaces !== undefined;
+    });
+    return '<p><label><input type="checkbox" data-check-all="policies"' +
+      (ticked ? ' checked' : '') + '> ' +
+      t.html('consolePolicies.transfer.selectAll') + '</label></p>' +
+      '<table class="transfer-checklist"><tr><th></th><th>' +
+      t.html('consolePolicies.profiles.kind') + '</th><th>' +
+      t.html('consolePolicies.profiles.profile') + '</th>' +
+      (marks ? '<th>' + t.html('consolePolicies.transfer.inThisRealm') +
+               '</th>' : '') + '</tr>' +
+      rows.map(function (one) {
+        const value = JSON.stringify({ kind: String(one.kind),
+                                       name: String(one.name) });
+        return '<tr><td><input type="checkbox" name="policies" value="' +
+          kit.esc(value) + '"' + (ticked ? ' checked' : '') +
+          ' aria-label="' + kit.esc(t.text(
+            'consolePolicies.transfer.pick',
+            { kind: String(one.kind), name: String(one.name) })) +
+          '"></td><td><code>' + kit.esc(one.kind) + '</code></td><td>' +
+          kit.esc(one.name) + (one.named ? ' <span class="sub">' +
+            t.html('consolePolicies.transfer.namedPolicy') + '</span>' : '') +
+          '</td>' + (marks ? '<td>' + (one.replaces
+            ? '<strong>' + t.html('consolePolicies.transfer.replaces') +
+              '</strong>'
+            : '<span class="sub">' + t.html('consolePolicies.transfer.isNew') +
+              '</span>') + '</td>' : '') + '</tr>';
+      }).join('') + '</table>';
   }
 
   /**
@@ -500,6 +589,7 @@ class PoliciesPage {
         '</td><td><details><summary>' +
         t.html('consolePolicies.authnNamed.change') + '</summary>' +
         form(policy) + '</details>' +
+        PoliciesPage.exportOneForm('authn', policy.name, t) +
         '<form method="post" action="/admin/policies#authn-named" ' +
         'class="inline"><input type="hidden" name="action" ' +
         'value="delete-named-authn-policy"><input type="hidden" ' +

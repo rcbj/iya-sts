@@ -80,6 +80,22 @@
 // administrator was shown. That membership is read with `list()`, which is a
 // pin decision rather than a validation: the path itself is still the door's.
 //
+// ---------------------------------------------------------------------------
+// A SELECTION (rcbj, 2026-11-14: "import / export individual policies"). An
+// export may name the policies it carries, each by its KIND and its NAME —
+// the identity the Policies page and each kind's save already use, and for
+// the authentication policy's named policies the name `saveNamed()` takes.
+// Named, only those are carried; unnamed, everything the realm stores, as
+// before. A name this realm does not store is refused (STS-ADMIN-0937) and
+// nothing is signed. The document is the same format either way — a
+// selection is fewer profiles, so one policy's export is a document every
+// importer of this version reads — and it says it is one (`selection`).
+// An import may name the profiles it writes the same way: `inspect()` lists
+// every profile the document carries and whether this realm already stores
+// one by that name (`replaces`), and a name the document does not carry is
+// refused (STS-ADMIN-0938) before anything is trusted or written. The trust
+// question is about the whole document's signer and is unchanged.
+//
 // A LIBRARY (rule 3): no route, no listener, no timer. `admin_actions.ts`
 // answers the console and `/admin-api`, and audits each act.
 // ===========================================================================
@@ -125,6 +141,8 @@ const ALGORITHMS: Readonly<Record<string, { keyAlg: string;
 // A document is a few policies; anything larger is not one.
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_CHAIN = 6;
+// The most policies one selection may name: the closed model's `maxItems`.
+const MAX_SELECTION = 256;
 
 interface PolicyTransferDeps {
   log: typeof helpers.log;
@@ -247,6 +265,132 @@ class PolicyTransfer {
   }
 
   // ---------------------------------------------------------------------------
+  // A SELECTION: `[{ kind, name }]`, the policies an export carries or an
+  // import writes. Absent (undefined or null) is everything; anything else
+  // must be a list of one to MAX_SELECTION such pairs.
+  // ---------------------------------------------------------------------------
+
+  // One policy's key in a selection: its kind and its name, apart.
+  private keyOf(kind: string, name: string): string {
+    this.deps.log.debug("Entering PolicyTransfer.keyOf().");
+    this.deps.log.debug("Leaving PolicyTransfer.keyOf().");
+    return String(kind) + '\u0000' + String(name);
+  }
+
+  // A selection read: `{ ok, all }` for none, `{ ok, list, keys }` for a
+  // list (duplicates dropped, in the order given), or a refusal under the
+  // caller's code.
+  private selectionOf(raw: unknown, code: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering PolicyTransfer.selectionOf().");
+    if (raw === undefined || raw === null) {
+      log.debug("Leaving PolicyTransfer.selectionOf(). Everything.");
+      return { ok: true, all: true };
+    }
+    const shaped = Array.isArray(raw) && raw.length > 0 &&
+      raw.length <= MAX_SELECTION && raw.every(function (one: Json) {
+        return one && typeof one === 'object' &&
+               typeof one.kind === 'string' && one.kind !== '' &&
+               typeof one.name === 'string' && one.name !== '';
+      });
+    if (!shaped) {
+      log.debug("Leaving PolicyTransfer.selectionOf(). Not a selection.");
+      return this.refuse(code, 'A selection is a list of 1 to ' +
+        MAX_SELECTION + ' policies, each named by its kind and its name ' +
+        '({ "kind": "password", "name": "default" }).');
+    }
+    const keys: Record<string, boolean> = Object.create(null);
+    const list: Json[] = [];
+    (raw as Json[]).forEach((one: Json) => {
+      const key = this.keyOf(one.kind, one.name);
+      if (!keys[key]) {
+        keys[key] = true;
+        list.push({ kind: String(one.kind), name: String(one.name) });
+      }
+    });
+    log.debug("Leaving PolicyTransfer.selectionOf(). " + list.length +
+              " named.");
+    return { ok: true, all: false, list: list, keys: keys };
+  }
+
+  // A carried kind narrowed to a selection: its profiles and named policies
+  // whose key the selection holds. The kind itself is kept, possibly empty.
+  private narrowKind(carried: Json, keys: Record<string, boolean>): Json {
+    this.deps.log.debug("Entering PolicyTransfer.narrowKind(). " +
+                        carried.id);
+    const picked = (one: Json): boolean => {
+      return !!keys[this.keyOf(carried.id, String(one && one.name))];
+    };
+    const out: Json = Object.assign({}, carried, {
+      profiles: (carried.profiles || []).filter(picked) });
+    if (Array.isArray(carried.named)) {
+      out.named = carried.named.filter(picked);
+    }
+    this.deps.log.debug("Leaving PolicyTransfer.narrowKind().");
+    return out;
+  }
+
+  // Every profile a list of carried kinds holds, as `{ kind, name, named }`.
+  private profilesIn(carriedKinds: Json[]): Json[] {
+    this.deps.log.debug("Entering PolicyTransfer.profilesIn().");
+    const out: Json[] = [];
+    carriedKinds.forEach(function (kind: Json) {
+      (kind.profiles || []).forEach(function (one: Json) {
+        out.push({ kind: String(kind.id), name: String(one && one.name),
+                   named: false });
+      });
+      (kind.named || []).forEach(function (one: Json) {
+        out.push({ kind: String(kind.id), name: String(one && one.name),
+                   named: true });
+      });
+    });
+    this.deps.log.debug("Leaving PolicyTransfer.profilesIn(). " +
+                        out.length + ".");
+    return out;
+  }
+
+  // What this realm stores now, as the keys `keyOf()` makes: the stored
+  // profiles of every kind, and the authentication policy's named policies.
+  private storedKeys(): Record<string, boolean> {
+    const { log, kinds } = this.deps;
+    log.debug("Entering PolicyTransfer.storedKeys().");
+    const out: Record<string, boolean> = Object.create(null);
+    kinds.list().forEach((kind: Json) => {
+      const module = kind.module;
+      module.list().forEach((profile: Json) => {
+        if (profile && profile.stored === true) {
+          out[this.keyOf(kind.id, String(profile.name))] = true;
+        }
+      });
+      if (typeof module.named === 'function') {
+        module.named().forEach((one: Json) => {
+          out[this.keyOf(kind.id, String(one.name))] = true;
+        });
+      }
+    });
+    log.debug("Leaving PolicyTransfer.storedKeys().");
+    return out;
+  }
+
+  /**
+   * Every policy this realm stores, as an export would carry it and a
+   * selection names it: `{ kind, name, named }`, `named` for the
+   * authentication policy's named policies. What the console's checklist
+   * and each policy's Export button are drawn from.
+   *
+   * @returns the list, in `policy_kinds.ts`'s order
+   */
+  exportable(): Json[] {
+    const { log, kinds } = this.deps;
+    log.debug("Entering PolicyTransfer.exportable().");
+    const out = this.profilesIn(kinds.list().map((kind: Json) => {
+      return this.kindExport(kind);
+    }));
+    log.debug("Leaving PolicyTransfer.exportable(). " + out.length + ".");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
   // EXPORT.
   // ---------------------------------------------------------------------------
 
@@ -302,14 +446,49 @@ class PolicyTransfer {
    * Exports the ambient realm's stored policies, signed by a fresh key under
    * the realm's Policy Export Signing CA.
    *
-   * @param options - `{ actor }`, who asked
-   * @returns a promise of `{ ok, document, filename, signer, counts }` or a
-   *   refusal
+   * @param options - `{ actor, policies }`: who asked, and optionally the
+   *   policies to carry (`[{ kind, name }]`), every stored one when absent
+   * @returns a promise of `{ ok, document, filename, signer, counts,
+   *   selection? }` or a refusal
    */
   async exportPolicies(options?: Json): Promise<Json> {
     const { log, config, realms, crypto, pki, kinds } = this.deps;
     log.debug("Entering PolicyTransfer.exportPolicies().");
     const opts = options || {};
+    // THE SELECTION IS CHECKED FIRST: a name this realm does not store is
+    // refused before a key is made or a certificate issued.
+    const selection = this.selectionOf(opts.policies, 'STS-ADMIN-0937');
+    if (!selection.ok) {
+      log.debug("Leaving PolicyTransfer.exportPolicies(). Selection.");
+      return selection;
+    }
+    let carriedKinds = kinds.list().map((kind: Json) => {
+      return this.kindExport(kind);
+    });
+    if (!selection.all) {
+      const held: Record<string, boolean> = Object.create(null);
+      this.profilesIn(carriedKinds).forEach((one: Json) => {
+        held[this.keyOf(one.kind, one.name)] = true;
+      });
+      const missing = selection.list.filter((one: Json) => {
+        return !held[this.keyOf(one.kind, one.name)];
+      });
+      if (missing.length) {
+        log.debug("Leaving PolicyTransfer.exportPolicies(). Not stored.");
+        return this.refuse('STS-ADMIN-0937', 'This realm stores no ' +
+          'policy ' + missing.map(function (one: Json) {
+            return one.kind + ' "' + one.name + '"';
+          }).join(', ') + ' (a policy it inherits is not its own to ' +
+          'export). Nothing was exported.',
+          { missing: missing });
+      }
+      carriedKinds = carriedKinds.map((kind: Json) => {
+        return this.narrowKind(kind, selection.keys);
+      }).filter(function (kind: Json) {
+        return kind.profiles.length > 0 ||
+               (Array.isArray(kind.named) && kind.named.length > 0);
+      });
+    }
     const realmId = realms.currentId();
     const alg = String(config.value('pki.policyExportAlgorithm') || 'RS256');
     if (!ALGORITHMS[alg]) {
@@ -365,10 +544,13 @@ class PolicyTransfer {
       realmDomain: realms.domainOf(realmId),
       exportedAt: exportedAt,
       exportedBy: String(opts.actor || ''),
-      kinds: kinds.list().map((kind: Json) => {
-        return this.kindExport(kind);
-      })
+      kinds: carriedKinds
     };
+    // A SELECTION SAYS SO, and names what it holds; a whole export carries
+    // no such member, so its document is what it always was.
+    if (!selection.all) {
+      payload.selection = selection.list;
+    }
     // certificate-header: none — this document names its signer's chain
     // itself, always and whole, because an importing realm has no other way
     // to reach it: its x5c is built above from the certificate just issued.
@@ -387,9 +569,18 @@ class PolicyTransfer {
              'exported, signed ' + alg + ' by ' + made.record.subject +
              ' (serial ' + made.record.serialHex + ').');
     log.debug("Leaving PolicyTransfer.exportPolicies().");
-    const filename = 'policies-' + label + '-' +
+    // ONE POLICY'S FILE IS NAMED FOR IT: the console's Export button on a
+    // policy's row saves `policy-<realm>-<kind>-<name>-<instant>.json`.
+    const safe = function (text: string): string {
+      return String(text).replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 64);
+    };
+    const one = !selection.all && selection.list.length === 1
+      ? selection.list[0] : null;
+    const filename = (one ? 'policy-' + label + '-' + safe(one.kind) + '-' +
+                            safe(one.name)
+                          : 'policies-' + label) + '-' +
                      exportedAt.replace(/[:.]/g, '-') + '.json';
-    return {
+    const answer: Json = {
       ok: true, document: document, filename: filename,
       // THE SAME DOCUMENT AS A FILE (`web_runtime.ts` saves an answer's
       // `files`), so the console's Export button is a download.
@@ -401,6 +592,10 @@ class PolicyTransfer {
                 notAfter: made.record.notAfter },
       counts: counts
     };
+    if (!selection.all) {
+      answer.selection = selection.list;
+    }
+    return answer;
   }
 
   // ---------------------------------------------------------------------------
@@ -639,6 +834,14 @@ class PolicyTransfer {
                  return String(one.name);
                }) };
     });
+    // EVERY PROFILE THE DOCUMENT CARRIES, and whether importing it would
+    // REPLACE one this realm stores by that name: what the console's
+    // checklist is drawn from, and what an import's selection names.
+    const stored = this.storedKeys();
+    const profiles = this.profilesIn(claims.kinds).map((one: Json) => {
+      return Object.assign(one, {
+        replaces: !!stored[this.keyOf(one.kind, one.name)] });
+    });
     const answer: Json = {
       ok: verdict.ok,
       origin: own ? 'own' : (held ? 'trusted' : 'foreign'),
@@ -651,10 +854,19 @@ class PolicyTransfer {
       exportedAt: String(claims.exportedAt || ''),
       exportedBy: String(claims.exportedBy || ''),
       kinds: kindsSummary,
+      profiles: profiles,
       verdict: { ok: verdict.ok, code: verdict.code || '',
                  why: verdict.why || '', inForce: !!verdict.inForce,
                  checks: verdict.checks || {} }
     };
+    // A SELECTION'S DOCUMENT SAYS WHAT IT WAS ASKED TO HOLD.
+    if (Array.isArray(claims.selection)) {
+      answer.selection = claims.selection.filter(function (one: Json) {
+        return one && typeof one === 'object';
+      }).map(function (one: Json) {
+        return { kind: String(one.kind), name: String(one.name) };
+      });
+    }
     if (!verdict.ok) {
       log.debug("Leaving PolicyTransfer.inspect(). The door refused.");
       return this.refuse('STS-ADMIN-0928', 'The signer\'s certificate chain ' +
@@ -737,19 +949,49 @@ class PolicyTransfer {
    * its kind's own save, so a profile a kind refuses is reported by name and
    * the others still go in.
    *
+   * A selection (`policies`, `[{ kind, name }]`) writes only those
+   * profiles; every one it names must be in the document, or nothing is
+   * trusted or written.
+   *
    * @param input - the document
-   * @param options - `{ trustSigner, issuerFingerprint, actor }`
-   * @returns a promise of `{ ok, origin, imported, refused, trustAdded }`,
-   *   or a refusal; `needsTrust` on the refusal of an unanswered question
+   * @param options - `{ trustSigner, issuerFingerprint, actor, policies }`
+   * @returns a promise of `{ ok, origin, imported, refused, trustAdded,
+   *   selection? }`, or a refusal; `needsTrust` on the refusal of an
+   *   unanswered question
    */
   async importPolicies(input: unknown, options?: Json): Promise<Json> {
     const { log, kinds } = this.deps;
     log.debug("Entering PolicyTransfer.importPolicies().");
     const opts = options || {};
+    const selection = this.selectionOf(opts.policies, 'STS-ADMIN-0938');
+    if (!selection.ok) {
+      log.debug("Leaving PolicyTransfer.importPolicies(). Selection.");
+      return selection;
+    }
     const seen = await this.inspect(input);
     if (!seen.ok) {
       log.debug("Leaving PolicyTransfer.importPolicies(). Inspect refused.");
       return seen;
+    }
+    // A NAME THE DOCUMENT DOES NOT CARRY is refused before the trust
+    // question is asked or answered, so a mistyped selection costs nothing
+    // and trusts nobody.
+    if (!selection.all) {
+      const carried: Record<string, boolean> = Object.create(null);
+      seen.profiles.forEach((one: Json) => {
+        carried[this.keyOf(one.kind, one.name)] = true;
+      });
+      const missing = selection.list.filter((one: Json) => {
+        return !carried[this.keyOf(one.kind, one.name)];
+      });
+      if (missing.length) {
+        log.debug("Leaving PolicyTransfer.importPolicies(). Not carried.");
+        return this.refuse('STS-ADMIN-0938', 'The export carries no ' +
+          'policy ' + missing.map(function (one: Json) {
+            return one.kind + ' "' + one.name + '"';
+          }).join(', ') + '. Nothing was imported.',
+          { missing: missing, inspection: this.publicView(seen) });
+      }
     }
     const chainPems: string[] = seen.pems;
     let trustAdded: Json[] = [];
@@ -796,8 +1038,10 @@ class PolicyTransfer {
     }
     const imported: Json[] = [];
     const refused: Json[] = [];
-    for (const carried of seen.payload.kinds) {
-      const kind = kinds.byId(String(carried.id));
+    for (const whole of seen.payload.kinds) {
+      const kind = kinds.byId(String(whole.id));
+      const carried = selection.all ? whole
+        : this.narrowKind(whole, selection.keys);
       const done = await this.importKind(kind, carried);
       if (done.imported.length) {
         imported.push({ kind: kind.id, names: done.imported });
@@ -809,14 +1053,16 @@ class PolicyTransfer {
     const written = imported.reduce(function (n: number, one: Json) {
       return n + one.names.length;
     }, 0);
-    const answer = { ok: refused.length === 0, origin: seen.origin,
-                     message: written + ' profile(s) imported from the "' +
-                              seen.realm + '" realm\'s export' +
-                              (refused.length ? ', ' + refused.length +
-                               ' refused.' : '.'),
-                     realm: seen.realm, signer: seen.signer,
-                     imported: imported, refused: refused,
-                     trustAdded: trustAdded };
+    const answer: Json = {
+      ok: refused.length === 0, origin: seen.origin,
+      message: written + ' profile(s) imported from the "' + seen.realm +
+               '" realm\'s export' +
+               (refused.length ? ', ' + refused.length + ' refused.' : '.'),
+      realm: seen.realm, signer: seen.signer,
+      imported: imported, refused: refused, trustAdded: trustAdded };
+    if (!selection.all) {
+      answer.selection = selection.list;
+    }
     log.info('policy transfer: an export of "' + seen.realm + '" (' +
              seen.origin + ') was imported into "' +
              (this.deps.realms.currentId() || 'default') + '": ' +
@@ -858,8 +1104,9 @@ class PolicyTransfer {
   /**
    * This realm's policy-transfer view: the export algorithm in force, its
    * Policy Export Signing Issuing CA (null before the first export), the
-   * paranoid row, and the signer truststore's entries that serve
-   * `policy-signer`.
+   * paranoid row, the signer truststore's entries that serve
+   * `policy-signer`, and every policy this realm stores (what an export
+   * may select).
    *
    * @returns the view, which carries no private key
    */
@@ -919,7 +1166,11 @@ class PolicyTransfer {
       algorithms: Object.keys(ALGORITHMS),
       paranoidPolicySigner: trust.rowOn(PURPOSE, realmId),
       issuingCa: issuingCa,
-      trustedSigners: trusted
+      trustedSigners: trusted,
+      // What an export may select: every policy this realm stores.
+      policies: this.exportable().map(function (one: Json) {
+        return { kind: one.kind, name: one.name, named: one.named };
+      })
     };
     log.debug("Leaving PolicyTransfer.view(). " +
               (issuingCa ? 'An Issuing CA' : 'No Issuing CA') + ', ' +
@@ -974,5 +1225,6 @@ export = {
   importPolicies: slot.forward('importPolicies'),
   verifySigner: slot.forward('verifySigner'),
   publicView: slot.forward('publicView'),
+  exportable: slot.forward('exportable'),
   view: slot.forward('view')
 };

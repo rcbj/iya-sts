@@ -1414,6 +1414,7 @@ class ConsoleRuntime extends SpaClient {
     this.wireCopyButtons();
     this.wireViewDownloads();
     this.wireOrderedChoices();
+    this.wireCheckAll();
     this.loadPageScripts();
     this.revealActiveNav();
   }
@@ -2124,6 +2125,24 @@ class ConsoleRuntime extends SpaClient {
           // Not JSON: sent as typed, and the operation names what it is.
           value = fieldsIn[name];
         }
+      }
+      // A COLUMN OF BOXES WHOSE VALUES ARE JSON, where the schema takes a
+      // list of objects: Directory → Policies' selection posts each policy
+      // as `{ kind, name }` (rcbj 2026-11-14). Each is a value; one that is
+      // not JSON is sent as typed, and the operation names what it is.
+      if (Array.isArray(value) && wantsObjects) {
+        value = value.map(function (one: Json) {
+          if (typeof one !== 'string') {
+            return one;
+          }
+          try {
+            const parsed = JSON.parse(one);
+            return parsed && typeof parsed === 'object' ? parsed : one;
+          } catch (e) {
+            // Not JSON: sent as typed.
+            return one;
+          }
+        });
       }
       if (types.indexOf('array') >= 0 && types.indexOf('string') < 0 &&
           !Array.isArray(value)) {
@@ -3222,6 +3241,51 @@ class ConsoleRuntime extends SpaClient {
         ConsoleRuntime.realmLinks(
         WebShell.accountItems(this.accounts, this.subject, this.t),
         this.prefix));
+    }
+  }
+
+  // A SELECT ALL BOX (rcbj 2026-11-14): `data-check-all="<name>"` ticks or
+  // unticks every checkbox of that name in its form, and is itself ticked
+  // exactly when every one of them is. It carries no name, so it posts
+  // nothing. Directory → Policies' export and import checklists are the
+  // first; the boxes work without it.
+  /**
+   * Wires every Select all box on the page drawn.
+   *
+   * @returns nothing
+   */
+  wireCheckAll(): void {
+    const doc = this.env.document;
+    const switches = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('input[data-check-all]') : [];
+    for (let i = 0; i < switches.length; i++) {
+      const sw = switches[i];
+      const form = sw.form;
+      if (!form) {
+        continue;
+      }
+      const name = String(sw.getAttribute('data-check-all') || '');
+      const boxes: Json[] = [];
+      const inputs = form.querySelectorAll('input[type="checkbox"]');
+      for (let j = 0; j < inputs.length; j++) {
+        if (String(inputs[j].name || '') === name && name !== '') {
+          boxes.push(inputs[j]);
+        }
+      }
+      const refresh = function (): void {
+        sw.checked = boxes.length > 0 && boxes.every(function (box) {
+          return !!box.checked;
+        });
+      };
+      sw.addEventListener('change', function () {
+        boxes.forEach(function (box) {
+          box.checked = !!sw.checked;
+        });
+      });
+      boxes.forEach(function (box) {
+        box.addEventListener('change', refresh);
+      });
+      refresh();
     }
   }
 

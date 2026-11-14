@@ -24,6 +24,12 @@
 //      Issuing CA is refused; the yes naming the one shown imports, adds the
 //      chain to the signer truststore for policy-signer, and the profile
 //      reads back; the next import is `trusted` without a question.
+//   E. a selection: the view lists what may be selected; an export of one
+//      policy carries it alone and records the selection; a name the realm
+//      does not store is refused; inspect lists every profile and marks the
+//      one it would replace; an import of a selection writes only that one
+//      and leaves the importer's other policy as it was; a name the export
+//      does not carry is refused.
 // ===========================================================================
 
 const assert = require("assert");
@@ -122,6 +128,102 @@ async function minLengthIn(id) {
   return profile.minLength;
 }
 
+// E. A SELECTION, OVER HTTP (rcbj, 2026-11-14: "import / export individual
+// policies"). Runs after D, so IMPORTER already trusts EXPORTER's signer and
+// stores its default password profile.
+async function selections() {
+  log.debug("Entering selections().");
+  const named = Object.assign(await passwordProfile(EXPORTER, 18),
+                              { profile: "ptx-strict", precedence: 40 });
+  const saved = await call(EXPORTER, "POST",
+                           "/policies/save-password-policy", named);
+  assert.strictEqual(saved.status, 200, "saving a named password policy " +
+                     "answered " + saved.status + " " +
+                     String(saved.raw).slice(0, 400));
+  const view = await call(EXPORTER, "GET", "/policies/transfer");
+  check("E. THE VIEW LISTS WHAT AN EXPORT MAY SELECT", function () {
+    assert.strictEqual(view.status, 200, String(view.raw).slice(0, 300));
+    const names = (view.body.policies || []).map(function (one) {
+      return one.kind + "/" + one.name;
+    });
+    assert.ok(names.indexOf("password/default") >= 0 &&
+              names.indexOf("password/ptx-strict") >= 0,
+              JSON.stringify(view.body.policies));
+  });
+
+  const one = await call(EXPORTER, "POST", "/policies/transfer/export",
+    { policies: [{ kind: "password", name: "ptx-strict" }] });
+  check("E. AN EXPORT OF ONE POLICY CARRIES THAT ONE AND SAYS SO",
+        function () {
+    assert.strictEqual(one.status, 200, String(one.raw).slice(0, 400));
+    const payload = JSON.parse(Buffer.from(one.body.document.payload,
+                                           "base64url").toString("utf8"));
+    assert.strictEqual(payload.kinds.length, 1, JSON.stringify(payload.kinds));
+    assert.deepStrictEqual(payload.kinds[0].profiles.map(function (p) {
+      return p.name;
+    }), ["ptx-strict"]);
+    assert.deepStrictEqual(payload.selection,
+                           [{ kind: "password", name: "ptx-strict" }]);
+    assert.ok(/^policy-/.test(one.body.filename), one.body.filename);
+  });
+
+  const unknown = await call(EXPORTER, "POST", "/policies/transfer/export",
+    { policies: [{ kind: "password", name: "ptx-no-such-policy" }] });
+  check("E. AN EXPORT NAMING A POLICY THE REALM DOES NOT STORE IS REFUSED, " +
+        "AND NOTHING IS EXPORTED", function () {
+    assert.strictEqual(unknown.status, 400, String(unknown.raw).slice(0, 300));
+    assert.ok(!unknown.body.document && Array.isArray(unknown.body.missing),
+              String(unknown.raw).slice(0, 300));
+  });
+
+  const whole = await call(EXPORTER, "POST", "/policies/transfer/export", {});
+  const seen = await call(IMPORTER, "POST", "/policies/transfer/inspect",
+                          { document: whole.body.document });
+  check("E. INSPECT LISTS EVERY PROFILE, MARKING ONE IT WOULD REPLACE",
+        function () {
+    assert.strictEqual(seen.status, 200, String(seen.raw).slice(0, 300));
+    const byName = {};
+    (seen.body.profiles || []).forEach(function (one) {
+      byName[one.kind + "/" + one.name] = one;
+    });
+    assert.strictEqual(byName["password/default"].replaces, true,
+                       JSON.stringify(seen.body.profiles));
+    assert.strictEqual(byName["password/ptx-strict"].replaces, false,
+                       JSON.stringify(seen.body.profiles));
+  });
+
+  const lowered = await call(IMPORTER, "POST",
+                             "/policies/save-password-policy",
+                             await passwordProfile(IMPORTER, 11));
+  assert.strictEqual(lowered.status, 200, String(lowered.raw).slice(0, 300));
+  const picked = await call(IMPORTER, "POST", "/policies/transfer/import",
+    { document: whole.body.document,
+      policies: [{ kind: "password", name: "ptx-strict" }] });
+  const after = await call(IMPORTER, "GET", "/policies/transfer");
+  const length = await minLengthIn(IMPORTER);
+  check("E. AN IMPORT OF A SELECTION WRITES ONLY WHAT IT NAMES", function () {
+    assert.strictEqual(picked.status, 200, String(picked.raw).slice(0, 400));
+    assert.deepStrictEqual(picked.body.imported,
+                           [{ kind: "password", names: ["ptx-strict"] }]);
+    assert.ok((after.body.policies || []).some(function (one) {
+      return one.kind === "password" && one.name === "ptx-strict";
+    }), JSON.stringify(after.body.policies));
+    assert.strictEqual(length, 11, "the importer's default was rewritten " +
+                       "to " + length);
+  });
+
+  const missing = await call(IMPORTER, "POST", "/policies/transfer/import",
+    { document: one.body.document,
+      policies: [{ kind: "password", name: "default" }] });
+  check("E. AN IMPORT NAMING A PROFILE THE EXPORT DOES NOT CARRY IS REFUSED",
+        function () {
+    assert.strictEqual(missing.status, 400, String(missing.raw).slice(0, 300));
+    assert.ok(Array.isArray(missing.body.missing) && !missing.body.needsTrust,
+              String(missing.raw).slice(0, 300));
+  });
+  log.debug("Leaving selections().");
+}
+
 async function test() {
   log.debug("Entering test().");
   await realm(EXPORTER);
@@ -208,7 +310,8 @@ async function test() {
     assert.strictEqual(again.status, 200, String(again.raw).slice(0, 300));
     assert.strictEqual(again.body.origin, "trusted");
   });
-  assert.ok(checks >= 5, "only " + checks + " checks ran; a section has " +
+  await selections();
+  assert.ok(checks >= 10, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

@@ -3461,7 +3461,7 @@ Scope: `admin:write`.
 
 **How this realm's policy exports are signed, and whose it trusts**
 
-The policy transfer view (#1713): the JWS algorithm the next export is signed with (`pki.policyExportAlgorithm`), whether `pki.paranoidPolicySigner` is on, this realm's Policy Export Signing Issuing CA with its SHA-256 fingerprint (the `issuerFingerprint` another realm's import names to trust this realm's exports), its validity and its chain up to but not including the service Root, and the signer truststore's entries in this realm for policy-signer — the chains of the other realms it has trusted. `issuingCa` is null until this realm's first export builds the CA; a read builds nothing. Certificates only: no private key is in the answer. A view that cannot be built is STS-ADMIN-0936.
+The policy transfer view (#1713): the JWS algorithm the next export is signed with (`pki.policyExportAlgorithm`), whether `pki.paranoidPolicySigner` is on, this realm's Policy Export Signing Issuing CA with its SHA-256 fingerprint (the `issuerFingerprint` another realm's import names to trust this realm's exports), its validity and its chain up to but not including the service Root, and the signer truststore's entries in this realm for policy-signer — the chains of the other realms it has trusted — and every policy this realm stores (`policies`), which an export's selection names. `issuingCa` is null until this realm's first export builds the CA; a read builds nothing. Certificates only: no private key is in the answer. A view that cannot be built is STS-ADMIN-0936.
 
 **Mirrors** `GET /admin/policies` on the admin console.
 
@@ -3498,6 +3498,10 @@ Scope: `admin:read`.
 | `issuingCa.subject` | string | yes | The Issuing CA's subject, as RFC 4514 writes it. |
 | `issuingCa.x5t#S256` | string | yes | The same digest as RFC 7515 section 4.1.8's `x5t#S256`: base64url, unpadded. |
 | `paranoidPolicySigner` | boolean | yes | Whether `pki.paranoidPolicySigner` is on here, which forces the full paranoid checks on an export's signer in every mode. |
+| `policies` | list | yes | Every policy this realm stores, in Directory → Policies' order: what an export carries, and what its `policies` may name. |
+| `policies[].kind` | string | yes | The policy's kind. |
+| `policies[].name` | string | yes | Its name within its kind. |
+| `policies[].named` | boolean | yes | True for one of the authentication policy's named policies. |
 | `realm` | string | yes | The realm this view is about. |
 | `trustedSigners` | list | yes | The signer truststore's entries in this realm that serve policy-signer: the chains of the other realms whose exports this realm has trusted. |
 | `trustedSigners[].addedAt` | string | yes | When it was added. |
@@ -3519,7 +3523,7 @@ Scope: `admin:read`.
 
 **Export this realm's policies as a signed JSON document**
 
-Every kind on Directory → Policies, and of each only what this realm STORES: its own `default` profile and its named policies, each as the body its save takes (#1713). What the realm inherits is left out. The document is a JWS in the flattened JSON serialization, signed by a fresh key of `pki.policyExportAlgorithm` (RS256 by default) that this realm's Policy Export Signing CA certifies; the protected header carries `typ` policy-export+json and the whole chain, leaf to the service Root, in `x5c`. The private key is not kept. Refused when the realm has no certificate authority branch or the signer cannot be made (STS-ADMIN-0925).
+Every kind on Directory → Policies, and of each only what this realm STORES: its own `default` profile and its named policies, each as the body its save takes (#1713). What the realm inherits is left out. The document is a JWS in the flattened JSON serialization, signed by a fresh key of `pki.policyExportAlgorithm` (RS256 by default) that this realm's Policy Export Signing CA certifies; the protected header carries `typ` policy-export+json and the whole chain, leaf to the service Root, in `x5c`. The private key is not kept. `policies` narrows it to the policies it names, each by kind and name: the document is the same format, carries only those, and records them in its payload's `selection`, so one policy's export is a document any importer reads; a name this realm does not store is refused (STS-ADMIN-0937) and nothing is signed. Refused when the realm has no certificate authority branch or the signer cannot be made (STS-ADMIN-0925).
 
 **Mirrors** `POST /admin/policies` on the admin console.
 
@@ -3534,7 +3538,11 @@ Scope: `admin:write`.
 
 **Request body**
 
-An empty object.
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `policies` | list |  | The policies to carry, each by its kind and its name. Absent: every policy this realm stores. A name this realm does not store is refused (STS-ADMIN-0937) and nothing is exported. |
+| `policies[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `policies[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 
 **200**: The signed document, a file name, the signer and how many profiles of each kind it carries.
 
@@ -3560,13 +3568,24 @@ An empty object.
 | `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
 | `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `message` | string |  |  |
+| `missing` | list |  | A refused selection: the policies it named that this realm does not store (an export, STS-ADMIN-0937) or that the document does not carry (an import, STS-ADMIN-0938). |
+| `missing[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `missing[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
 | `ok` | boolean | yes |  |
 | `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `profiles` | list |  | An inspection: every profile the export carries, with whether this realm already stores one by that name (`replaces`). What an import's `policies` names. |
+| `profiles[].kind` | string | yes | The policy's kind. |
+| `profiles[].name` | string | yes | Its name within its kind. |
+| `profiles[].named` | boolean | yes | True for one of the authentication policy's named policies, which has an act of its own; false for a kind's profile. |
+| `profiles[].replaces` | boolean | yes | Whether this realm already stores a policy of that kind by that name, so importing this one would replace it. |
 | `realm` | string |  | The realm the export says it came from. |
 | `realmDomain` | string |  | That realm's DNS domain. |
 | `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
 | `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `selection` | list |  | The policies a selection named: for an export or an import the `policies` it was asked for, for an inspection the selection the document records it was exported as. Absent for a whole export. |
+| `selection[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `selection[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
 | `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
@@ -3597,13 +3616,24 @@ An empty object.
 | `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
 | `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `message` | string |  |  |
+| `missing` | list |  | A refused selection: the policies it named that this realm does not store (an export, STS-ADMIN-0937) or that the document does not carry (an import, STS-ADMIN-0938). |
+| `missing[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `missing[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
 | `ok` | boolean | yes |  |
 | `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `profiles` | list |  | An inspection: every profile the export carries, with whether this realm already stores one by that name (`replaces`). What an import's `policies` names. |
+| `profiles[].kind` | string | yes | The policy's kind. |
+| `profiles[].name` | string | yes | Its name within its kind. |
+| `profiles[].named` | boolean | yes | True for one of the authentication policy's named policies, which has an act of its own; false for a kind's profile. |
+| `profiles[].replaces` | boolean | yes | Whether this realm already stores a policy of that kind by that name, so importing this one would replace it. |
 | `realm` | string |  | The realm the export says it came from. |
 | `realmDomain` | string |  | That realm's DNS domain. |
 | `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
 | `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `selection` | list |  | The policies a selection named: for an export or an import the `policies` it was asked for, for an inspection the selection the document records it was exported as. Absent for a whole export. |
+| `selection[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `selection[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
 | `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
@@ -3616,7 +3646,7 @@ An empty object.
 
 **Import a policy export into this realm**
 
-Inspects it first, as `inspect` does. A signer of this realm, or one this realm's signer truststore already holds, is trusted. Another realm's is refused with `needsTrust` (STS-ADMIN-0929) until the import is posted again with `trustSigner` true and `issuerFingerprint` naming the Issuing CA it was shown (another is STS-ADMIN-0930); that yes adds the chain's CA certificates to this realm's signer truststore for policy-signer alone (a refusal there is STS-ADMIN-0931). Each profile is then written through its kind's own save, so it is checked as a console save is; a profile its kind refuses is named with the kind's code and the others are written (STS-ADMIN-0932).
+Inspects it first, as `inspect` does. A signer of this realm, or one this realm's signer truststore already holds, is trusted. Another realm's is refused with `needsTrust` (STS-ADMIN-0929) until the import is posted again with `trustSigner` true and `issuerFingerprint` naming the Issuing CA it was shown (another is STS-ADMIN-0930); that yes adds the chain's CA certificates to this realm's signer truststore for policy-signer alone (a refusal there is STS-ADMIN-0931). Each profile is then written through its kind's own save, so it is checked as a console save is; a profile its kind refuses is named with the kind's code and the others are written (STS-ADMIN-0932). `policies` writes only the profiles it names, as `inspect` lists them; a name the export does not carry is refused (STS-ADMIN-0938) before the trust question and before anything is written.
 
 **Mirrors** `POST /admin/policies` on the admin console.
 
@@ -3635,6 +3665,9 @@ Scope: `admin:write`.
 |---|---|---|---|
 | `document` | any JSON | yes | The export, as the JSON object `export` answered in `document` or as that JSON in a string. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `issuerFingerprint` | string |  | With `trustSigner`: the SHA-256 fingerprint of the Issuing CA the inspection showed, in either spelling. |
+| `policies` | list |  | The profiles to write, each by its kind and its name, as `inspect` lists them in `profiles`. Absent: every profile the export carries. A name the export does not carry is refused (STS-ADMIN-0938) before anything is trusted or written; the rest of the export is left unwritten. |
+| `policies[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `policies[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `trustSigner` | boolean |  | An administrator's yes to trusting another realm's signer for policy imports in this realm. Ignored for this realm's own signer. |
 
 **200**: What was written, by kind, and what the yes added to the signer truststore.
@@ -3661,13 +3694,24 @@ Scope: `admin:write`.
 | `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
 | `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `message` | string |  |  |
+| `missing` | list |  | A refused selection: the policies it named that this realm does not store (an export, STS-ADMIN-0937) or that the document does not carry (an import, STS-ADMIN-0938). |
+| `missing[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `missing[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
 | `ok` | boolean | yes |  |
 | `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `profiles` | list |  | An inspection: every profile the export carries, with whether this realm already stores one by that name (`replaces`). What an import's `policies` names. |
+| `profiles[].kind` | string | yes | The policy's kind. |
+| `profiles[].name` | string | yes | Its name within its kind. |
+| `profiles[].named` | boolean | yes | True for one of the authentication policy's named policies, which has an act of its own; false for a kind's profile. |
+| `profiles[].replaces` | boolean | yes | Whether this realm already stores a policy of that kind by that name, so importing this one would replace it. |
 | `realm` | string |  | The realm the export says it came from. |
 | `realmDomain` | string |  | That realm's DNS domain. |
 | `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
 | `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `selection` | list |  | The policies a selection named: for an export or an import the `policies` it was asked for, for an inspection the selection the document records it was exported as. Absent for a whole export. |
+| `selection[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `selection[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
 | `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
@@ -3698,13 +3742,24 @@ Scope: `admin:write`.
 | `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
 | `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `message` | string |  |  |
+| `missing` | list |  | A refused selection: the policies it named that this realm does not store (an export, STS-ADMIN-0937) or that the document does not carry (an import, STS-ADMIN-0938). |
+| `missing[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `missing[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
 | `ok` | boolean | yes |  |
 | `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `profiles` | list |  | An inspection: every profile the export carries, with whether this realm already stores one by that name (`replaces`). What an import's `policies` names. |
+| `profiles[].kind` | string | yes | The policy's kind. |
+| `profiles[].name` | string | yes | Its name within its kind. |
+| `profiles[].named` | boolean | yes | True for one of the authentication policy's named policies, which has an act of its own; false for a kind's profile. |
+| `profiles[].replaces` | boolean | yes | Whether this realm already stores a policy of that kind by that name, so importing this one would replace it. |
 | `realm` | string |  | The realm the export says it came from. |
 | `realmDomain` | string |  | That realm's DNS domain. |
 | `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
 | `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `selection` | list |  | The policies a selection named: for an export or an import the `policies` it was asked for, for an inspection the selection the document records it was exported as. Absent for a whole export. |
+| `selection[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `selection[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
 | `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
@@ -3717,7 +3772,7 @@ Scope: `admin:write`.
 
 **Verify a policy export and say who signed it, writing nothing**
 
-Checks the document's signature with the key in its `x5c` (STS-ADMIN-0927) and holds the chain to the validation door, purpose policy-signer, forced to the full paranoid checks while `pki.paranoidPolicySigner` is on (STS-ADMIN-0928). Answers `origin`: `own` when the chain's Issuing CA is this realm's Policy Export Signing CA under this service's Root, `trusted` when this realm's signer truststore holds that Issuing CA and its Root for policy-signer, and `foreign` otherwise, with the chain and the Issuing CA's fingerprint to ask an administrator about. A document that is not a policy export is refused (STS-ADMIN-0926), and one naming a kind of policy this service does not have (STS-ADMIN-0933).
+Checks the document's signature with the key in its `x5c` (STS-ADMIN-0927) and holds the chain to the validation door, purpose policy-signer, forced to the full paranoid checks while `pki.paranoidPolicySigner` is on (STS-ADMIN-0928). Answers `origin`: `own` when the chain's Issuing CA is this realm's Policy Export Signing CA under this service's Root, `trusted` when this realm's signer truststore holds that Issuing CA and its Root for policy-signer, and `foreign` otherwise, with the chain and the Issuing CA's fingerprint to ask an administrator about. `profiles` lists every profile it carries, each with `replaces` true where this realm already stores one of that kind by that name. A document that is not a policy export is refused (STS-ADMIN-0926), and one naming a kind of policy this service does not have (STS-ADMIN-0933).
 
 **Mirrors** `POST /admin/policies` on the admin console.
 
@@ -3760,13 +3815,24 @@ Scope: `admin:write`.
 | `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
 | `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `message` | string |  |  |
+| `missing` | list |  | A refused selection: the policies it named that this realm does not store (an export, STS-ADMIN-0937) or that the document does not carry (an import, STS-ADMIN-0938). |
+| `missing[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `missing[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
 | `ok` | boolean | yes |  |
 | `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `profiles` | list |  | An inspection: every profile the export carries, with whether this realm already stores one by that name (`replaces`). What an import's `policies` names. |
+| `profiles[].kind` | string | yes | The policy's kind. |
+| `profiles[].name` | string | yes | Its name within its kind. |
+| `profiles[].named` | boolean | yes | True for one of the authentication policy's named policies, which has an act of its own; false for a kind's profile. |
+| `profiles[].replaces` | boolean | yes | Whether this realm already stores a policy of that kind by that name, so importing this one would replace it. |
 | `realm` | string |  | The realm the export says it came from. |
 | `realmDomain` | string |  | That realm's DNS domain. |
 | `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
 | `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `selection` | list |  | The policies a selection named: for an export or an import the `policies` it was asked for, for an inspection the selection the document records it was exported as. Absent for a whole export. |
+| `selection[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `selection[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
 | `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
@@ -3797,13 +3863,24 @@ Scope: `admin:write`.
 | `kinds` | list |  | The kinds of policy the export carries, each with its profile names. |
 | `kinds[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `message` | string |  |  |
+| `missing` | list |  | A refused selection: the policies it named that this realm does not store (an export, STS-ADMIN-0937) or that the document does not carry (an import, STS-ADMIN-0938). |
+| `missing[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `missing[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `needsTrust` | boolean |  | An import of another realm's export that was not confirmed: ask, then post again with `trustSigner` and `issuerFingerprint`. |
 | `ok` | boolean | yes |  |
 | `origin` | one of `own`, `trusted`, `foreign` |  | `own`: signed under this realm's own Policy Export Signing CA, trusted. `trusted`: another realm's, whose chain this realm's signer truststore holds for policy-signer. `foreign`: another realm's this realm has not trusted, so an import needs an administrator's yes. |
+| `profiles` | list |  | An inspection: every profile the export carries, with whether this realm already stores one by that name (`replaces`). What an import's `policies` names. |
+| `profiles[].kind` | string | yes | The policy's kind. |
+| `profiles[].name` | string | yes | Its name within its kind. |
+| `profiles[].named` | boolean | yes | True for one of the authentication policy's named policies, which has an act of its own; false for a kind's profile. |
+| `profiles[].replaces` | boolean | yes | Whether this realm already stores a policy of that kind by that name, so importing this one would replace it. |
 | `realm` | string |  | The realm the export says it came from. |
 | `realmDomain` | string |  | That realm's DNS domain. |
 | `refused` | list |  | An import: each profile its kind refused, with the kind's code and sentences. |
 | `refused[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
+| `selection` | list |  | The policies a selection named: for an export or an import the `policies` it was asked for, for an inspection the selection the document records it was exported as. Absent for a whole export. |
+| `selection[].kind` | string | yes | The policy's kind, an id of Directory → Policies: `password`, `authn`, `passkey` and the others. |
+| `selection[].name` | string | yes | The policy's name within its kind: `default`, a named policy, or one of the authentication policy's named policies. |
 | `signer` | any JSON |  | The signing certificate: for an export its subject, algorithm, serial and expiry; for an inspection or import its subject, issuer, validity and SHA-256 fingerprint. A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |
 | `trustAdded` | list |  | An import: the certificates added to this realm's signer truststore by the yes. |
 | `trustAdded[]` | any JSON |  | A member of a policy export, inspection or import answer (#1713): a signed document, a certificate described, a verdict, a list of profiles. Its shape is the module's, `admin-core/policy_transfer.ts`. |

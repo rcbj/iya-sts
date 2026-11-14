@@ -9565,6 +9565,19 @@ class AdminActions {
       ? (answered as Promise<any>).then(finish) : finish(answered);
   }
 
+  // A policy selection as the audit row records it: `kind/name` per policy,
+  // comma-separated, or nothing for a whole export or import (an audit
+  // detail is a flat value; a list of objects would read as
+  // "[object Object]").
+  private selectionText(list: any): string {
+    this.deps.log.debug("Entering AdminActions.selectionText().");
+    const out = Array.isArray(list) ? list.map(function (one) {
+      return String(one.kind) + '/' + String(one.name);
+    }).join(', ') : '';
+    this.deps.log.debug("Leaving AdminActions.selectionText().");
+    return out;
+  }
+
   /**
    * Exports, inspects or imports a realm's policies (#1713): `export` signs
    * the stored profiles of every kind on Directory → Policies, `inspect`
@@ -9572,7 +9585,12 @@ class AdminActions {
    * and `import` writes it — another realm's signer only once `trustSigner`
    * names the Issuing CA `inspect` showed. Each act is audited.
    *
-   * @param body - `{ action, document, trustSigner, issuerFingerprint }`
+   * A selection (`policies`, `[{ kind, name }]`, rcbj 2026-11-14) narrows
+   * an export or an import to the policies it names, and the audit row
+   * records it.
+   *
+   * @param body - `{ action, document, trustSigner, issuerFingerprint,
+   *   policies }`
    * @param context - who is acting (`actor`) and the door (`via`)
    * @returns a promise of the module's answer, or a refusal
    */
@@ -9593,7 +9611,8 @@ class AdminActions {
                             '.'] });
     }
     if (action === 'export') {
-      const exported = await policyTransfer.exportPolicies({ actor: actor });
+      const exported = await policyTransfer.exportPolicies({
+        actor: actor, policies: body.policies });
       if (!exported.ok) {
         log.debug("Leaving AdminActions.policyTransferAction(). Export " +
                   "refused.");
@@ -9603,10 +9622,14 @@ class AdminActions {
       auditLog.audit({
         action: 'admin.policies.export', actor: actor, target: '',
         channel: 'http',
-        summary: 'exported this realm\'s policies, signed by ' +
+        summary: (exported.selection
+          ? 'exported ' + exported.selection.length + ' of this realm\'s ' +
+            'policies'
+          : 'exported this realm\'s policies') + ', signed by ' +
                  exported.signer.subject,
         detail: { via: ctx.via || '', counts: exported.counts,
-                  signer: exported.signer }
+                  signer: exported.signer,
+                  selection: this.selectionText(exported.selection) }
       });
       log.debug("Leaving AdminActions.policyTransferAction(). Exported.");
       return exported;
@@ -9620,7 +9643,8 @@ class AdminActions {
     }
     const done = await policyTransfer.importPolicies(body.document, {
       trustSigner: String(body.trustSigner) === 'true',
-      issuerFingerprint: body.issuerFingerprint, actor: actor });
+      issuerFingerprint: body.issuerFingerprint, actor: actor,
+      policies: body.policies });
     if ((done.trustAdded || []).length) {
       auditLog.audit({
         action: 'admin.policies.trust-signer', actor: actor, target: '',
@@ -9645,7 +9669,8 @@ class AdminActions {
         outcome: done.ok ? 'success' : 'failure',
         detail: { via: ctx.via || '', origin: done.origin,
                   signer: done.signer && done.signer.subject,
-                  imported: done.imported, refused: done.refused }
+                  imported: done.imported, refused: done.refused,
+                  selection: this.selectionText(done.selection) }
       });
     }
     log.debug("Leaving AdminActions.policyTransferAction(). Import " +
