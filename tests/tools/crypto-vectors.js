@@ -3682,6 +3682,90 @@ async function schedulerTickVectors() {
            }) };
 }
 
+// THE CACHE REGISTRY (`common/cache_registry.js`, rule 3ap, #74, #704): three
+// stores the vectors describe — one per process with entries expired and not,
+// one per realm whose lookup is not counted, and one replay store that
+// TALLIES rather than lists — asked for the report `/admin/caches` draws, one
+// store's detail, the compact snapshot a heartbeat carries, and an ejection,
+// with the report after it. The registry is the process's one, so every store
+// another module registered is forgotten first.
+async function cacheRegistryVectors() {
+  const reg = require(path.join(ROOT, 'common', 'cache_registry.js'));
+  reg.names().forEach(function (n) {
+    reg.forget(n);
+  });
+  const now = Date.UTC(2026, 9, 5, 12, 0, 0);
+  const procRows = new Map([['k1', now - 5], ['k2', now + 1000],
+                            ['k3', null]]);
+  const realmRows = [{ realm: 'acme', key: 'a1', validUntil: now + 5 },
+                     { realm: 'acme', key: 'a2', validUntil: now - 1 },
+                     { realm: null, key: 'd1', validUntil: now + 9 }];
+  const descriptors = [
+    { name: 'v.process', title: 'Process store', description: 'D one',
+      owner: 'o/one.js', scope: 'process', bound: 'ENFORCED: three.',
+      settings: ['v.max'] },
+    { name: 'v.realm', title: 'Realm store', description: 'D two',
+      owner: 'o/two.js', scope: 'realm', counted: false,
+      notCountedWhy: 'its lookup is elsewhere' },
+    { name: 'v.tally', title: 'Replay store', description: 'D three',
+      owner: 'o/three.js', scope: 'realm', kind: 'replay', persisted: true,
+      hitMeaning: 'a value seen before' }
+  ];
+  const c1 = reg.register(Object.assign({}, descriptors[0], {
+    maxEntries: function () { return 3; },
+    lifetime: function () { return 'five minutes'; },
+    entries: function (at) {
+      return Array.from(procRows.entries()).map(function (e) {
+        return { realm: null, key: e[0], validUntil: e[1],
+                 valid: e[1] === null || e[1] > at,
+                 basis: e[1] === null ? 'no expiry' : 'time' };
+      });
+    },
+    eject: function (at) {
+      let n = 0;
+      procRows.forEach(function (until, key) {
+        if (until !== null && until <= at) {
+          procRows.delete(key);
+          n += 1;
+        }
+      });
+      return n;
+    }
+  }));
+  const c2 = reg.register(Object.assign({}, descriptors[1], {
+    maxEntries: function () { return 2; },
+    lifetime: function () { return 'an hour'; },
+    entries: function (at) {
+      return realmRows.map(function (r) {
+        return { realm: r.realm, key: r.key, validUntil: r.validUntil,
+                 valid: r.validUntil > at, basis: 'time' };
+      });
+    }
+  }));
+  const c3 = reg.register(Object.assign({}, descriptors[2], {
+    maxEntries: function () { return 100; },
+    lifetime: function () { return 'a day'; },
+    entries: function () { return []; },
+    tally: function () { return { size: 10, largestRealm: 6, valid: 7 }; }
+  }));
+  c1.hit(); c1.hit(); c1.hit(); c1.miss(); c1.evicted(2);
+  c2.hit(); c2.refused();
+  c3.miss();
+  const out = { now: now, descriptors: descriptors,
+                procRows: Array.from(procRows.entries()),
+                realmRows: realmRows,
+                report: reg.report(now),
+                detail: reg.detail('v.process', now),
+                snapshot: reg.snapshot(now) };
+  out.ejected = await reg.ejectExpiredAsync(now);
+  out.after = reg.report(now);
+  out.snapshotAsync = await reg.snapshotAsync(now);
+  ['v.process', 'v.realm', 'v.tally'].forEach(function (n) {
+    reg.forget(n);
+  });
+  return out;
+}
+
 // THE SCHEDULER'S HISTORY AND REPORT (`cluster/scheduler.ts`, #338 and the
 // status /admin/scheduler draws): the TypeScript Scheduler over a store the
 // vectors carry — runs finished, running and queued, old and new, process
@@ -5384,6 +5468,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: schedulerHistoryVectors },
                  { file: 'scheduler-tick-node.json',
                    build: schedulerTickVectors },
+                 { file: 'cache-registry-node.json',
+                   build: cacheRegistryVectors },
                  { file: 'realm-lifecycle-node.json',
                    build: realmLifecycleVectors },
                  { file: 'http-node.json', build: httpVectors },
