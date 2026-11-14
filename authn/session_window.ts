@@ -589,7 +589,22 @@ class SessionWindow {
     }
     const slot = this.lru.peek(key);
     if ((slot && slot.dirty) || this.journalledSafe(realm, id)) {
-      log.debug("Leaving SessionWindow.considerApply(). Kept.");
+      // KEPT, AND THE OTHER NODE'S ROW MERGED INTO IT (2026-11-14,
+      // `sts_siop_did_web` in the cluster mode). This process's copy has a
+      // write not yet committed, so it is not replaced — but it was not
+      // touched either, and that lost a write another node had committed:
+      // an arrival session node A upgraded to a sign-in stayed the arrival
+      // here, the account selection ticket A handed out named a session
+      // node B read as not live (STS-AUTHN-0346), and the browser was sent
+      // to sign in again. The same row reached here a second time, as the
+      // flush's merged answer (`settleDecided()`), and was dropped again,
+      // because that runs before `onCommitted()` unpins the slot — so the
+      // stale copy outlived the commit. The store's own `mergeRow()` is
+      // what the two copies become when this process's write lands; it is
+      // applied to the held object in place now, so the next read here
+      // answers what the flush will write.
+      this.mergeIntoHeld(realm, id, slot, value);
+      log.debug("Leaving SessionWindow.considerApply(). Kept, merged.");
       return 'keep';
     }
     const inMap = this.mapRead(realm, id).present;
@@ -602,6 +617,55 @@ class SessionWindow {
     }
     log.debug("Leaving SessionWindow.considerApply(). Skipped.");
     return 'skip';
+  }
+
+  /**
+   * Merges another process's committed row into the copy this process holds
+   * with a write of its own still to commit, IN PLACE, through the store's
+   * `mergeRow()` (`authn.ts`'s `mergeSessionRows()`): what the flush of
+   * that write will store. In place because a request may hold the object,
+   * and the map and the slot share it. Without a merge function, or when it
+   * throws, the held copy is left as it was — the behaviour before.
+   *
+   * @param realm - the realm
+   * @param id - the session id
+   * @param slot - the window's slot, or undefined
+   * @param value - the other process's opened row
+   */
+  private mergeIntoHeld(realm: string, id: string, slot: Slot | undefined,
+                        value: any): void {
+    log.debug("Entering SessionWindow.mergeIntoHeld().");
+    try {
+      const store = realms.handleFor(HANDLE);
+      const merge = store && typeof store.mergeRow === 'function'
+        ? store.mergeRow : null;
+      const mapped = this.mapRead(realm, id);
+      const held = [slot && slot.session,
+                    mapped.present ? mapped.value : null]
+        .filter(function (one, i, all) {
+          return !!one && typeof one === 'object' && all.indexOf(one) === i;
+        });
+      if (!merge || !held.length || !value || typeof value !== 'object') {
+        log.debug("Leaving SessionWindow.mergeIntoHeld(). Nothing to merge.");
+        return;
+      }
+      held.forEach(function (mine: any) {
+        const merged = merge(mine, value);
+        if (!merged || typeof merged !== 'object' || merged === mine) {
+          return;
+        }
+        Object.keys(mine).forEach(function (field) {
+          if (!Object.prototype.hasOwnProperty.call(merged, field)) {
+            delete mine[field];
+          }
+        });
+        Object.assign(mine, merged);
+      });
+    } catch (e) {
+      log.debug("Caught in SessionWindow.mergeIntoHeld(): " +
+                ((e && (e as Error).message) || e));
+    }
+    log.debug("Leaving SessionWindow.mergeIntoHeld().");
   }
 
   // Hot path: a lastSeenAt touch. No Entering/Leaving pair.

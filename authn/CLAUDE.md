@@ -2309,6 +2309,19 @@ fixed at start: turning it off while running is refused, because a start
 that skipped the session bodies would then answer committed sessions as
 absent. `tests/session_window.js` holds it.
 
+**ANOTHER NODE'S ROW IS MERGED INTO A COPY HELD WITH A WRITE PENDING
+(2026-11-14).** `considerApply()` keeps this process's copy of a session
+whose own write has not committed, and until then it ignored the other
+node's row. In the `cluster` mode node A upgraded an arrival to a sign-in
+while node B held the arrival with a touch still in flight. B kept the
+arrival, the account selection ticket A handed out named a session B read
+as not live (`STS-AUTHN-0346`), and `sts_siop_did_web` was sent to sign in
+again. The flush's merged answer reached the same branch before
+`onCommitted()` unpinned the slot, so the stale copy outlived the commit
+too. The kept copy now takes `mergeSessionRows()` of the two, in place: it
+is what the flush will write. `tests/session_window.js`,
+`upgradedElsewhereCase()`.
+
 **A CONSOLE PAGE MAY NOT BE "A WALK THAT NEEDS EVERY SESSION" (2026-10-22,
 #820).** On 8081, Monitoring → Sessions opened all ~470,000 sealed bodies,
 one synchronous read each, on a request worker, and held it for two minutes.
