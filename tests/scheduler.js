@@ -64,7 +64,11 @@
 //   Q. the run whose slot ends first goes first: a realm job every two
 //      seconds in forty-one realms that the cap can never clear does not
 //      starve a service job every second, and an hourly job still runs in
-//      every realm inside its slot (2026-11-13, `ssf.internal-poll`).
+//      every realm inside its slot (2026-11-13, `ssf.internal-poll`);
+//   R. a job filter on the report reads that job's own last slots from the
+//      store, beside a newest window another job fills, on a node that
+//      holds none of its finished rows — a leader that just took over
+//      (2026-11-14, run 28's crash takeover step 3).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -1530,6 +1534,127 @@ async function run(t) {
             JSON.stringify({ duringFlood: hourlyDuringFlood, hourly: hourly,
                              realms: realmIds.length }));
   }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== R. a job filter reads the job\'s own slots (2026-11-14) ===');
+  {
+    // RUN 28's CRASH TAKEOVER: four seconds after node-b took over, its
+    // `?job=authn.session-expiry` answered no succeeded run. Since #883 a
+    // finished interval run is not resident on the node that did not write
+    // it, and the newest window — twenty rows a realm across every job — is
+    // filled within seconds by the one-second service jobs, so a
+    // thirty-second job is almost never in it. The durable table here holds
+    // six succeeded slots of a thirty-second job and, newer than all of
+    // them, twenty rows of a one-second one, which are the whole window.
+    const durable = new Map();
+    const reads = [];
+    let failReads = false;
+    const w = kit.world({
+      clustered: false,
+      readRuns: function (realmId, ids) {
+        reads.push({ realmId: realmId, ids: ids.slice() });
+        if (failReads) {
+          return Promise.reject(new Error('the store did not answer'));
+        }
+        const out = new Map();
+        ids.forEach(function (id) {
+          const row = durable.get(realmId + '\n' + id);
+          if (row) {
+            out.set(id, row);
+          }
+        });
+        return Promise.resolve(out);
+      },
+      newestRuns: function (realmIds) {
+        const rows = [];
+        durable.forEach(function (row) {
+          if (realmIds.indexOf(row.realm) >= 0) {
+            rows.push(row);
+          }
+        });
+        rows.sort(function (a, b) {
+          return b.startedAt - a.startedAt;
+        });
+        return Promise.resolve(rows.slice(0, 20));
+      }
+    });
+    const node = w.node('b');
+    const slow = baseJob({ id: 'test.slow-sweep',
+      everyMs: function () { return 30000; } });
+    const fast = baseJob({ id: 'test.fast-poll',
+      everyMs: function () { return 1000; } });
+    node.scheduler.register(slow);
+    node.scheduler.register(fast);
+    const now = node.scheduler.nowMs();
+    const slowSlot = Math.floor(now / 30000);
+    const fastSlot = Math.floor(now / 1000);
+    const runIdFor = function (job, realmId, n) {
+      return node.scheduler['runIdFor'](node.scheduler.job(job.id),
+                                        realmId, n);
+    };
+    const put = function (job, n, every) {
+      const id = runIdFor(job, 'default', n);
+      durable.set('default\n' + id, {
+        runId: id, kind: 'run', jobId: job.id, realm: 'default',
+        slot: n, dueAt: n * every, trigger: 'schedule', state: 'succeeded',
+        attempt: 1, fenceAt: 1, queuedAt: n * every,
+        startedAt: n * every + 10, endedAt: n * every + 20,
+        nodeName: 'node-a'
+      });
+      return id;
+    };
+    const slowIds = [];
+    for (let k = 1; k <= 6; k++) {
+      slowIds.push(put(slow, slowSlot - k, 30000));
+    }
+    for (let k = 1; k <= 20; k++) {
+      put(fast, fastSlot - k, 1000);
+    }
+    const resident = Array.from(w.store.realmMap('default').keys());
+    const runs = await node.scheduler.recentRuns({ job: 'test.slow-sweep' });
+    const got = runs.map(function (r) {
+      return r.runId;
+    });
+    t.check(resident.length === 0 && runs.length === 6 &&
+            slowIds.every(function (id) { return got.indexOf(id) >= 0; }) &&
+            runs.every(function (r) {
+              return r.jobId === 'test.slow-sweep' &&
+                r.state === 'succeeded' && r.trigger === 'schedule';
+            }),
+            'R1. on a node holding none of its rows, the job filter answers ' +
+            'all six of the thirty-second job\'s stored slots, though the ' +
+            'newest window is twenty rows of a one-second job',
+            JSON.stringify({ resident: resident.length, got: got,
+                             want: slowIds }));
+    const asked = reads[reads.length - 1] || { realmId: '', ids: [] };
+    t.check(reads.length === 1 && asked.realmId === 'default' &&
+            asked.ids.length === 20 &&
+            asked.ids[0] === runIdFor(slow, 'default', slowSlot),
+            'R2. one batch read of the default realm, of the job\'s current ' +
+            'slot and the nineteen before it',
+            JSON.stringify({ reads: reads.length, realm: asked.realmId,
+                             ids: asked.ids.length }));
+    const unfiltered = await node.scheduler.recentRuns({});
+    t.check(reads.length === 1 && unfiltered.length === 20 &&
+            unfiltered.every(function (r) {
+              return r.jobId === 'test.fast-poll';
+            }),
+            'R3. with no job filter nothing is read by id: the list is the ' +
+            'newest window, as before',
+            JSON.stringify({ reads: reads.length,
+                             listed: unfiltered.length }));
+    const fastRuns = await node.scheduler.recentRuns({ outcome: 'succeeded',
+                                                     job: 'test.fast-poll' });
+    t.check(fastRuns.length === 20,
+            'R4. the window still answers the job it holds',
+            JSON.stringify({ listed: fastRuns.length }));
+    failReads = true;
+    const lost = await node.scheduler.recentRuns({ job: 'test.slow-sweep' });
+    t.check(lost.length === 0,
+            'R5. a slot read that fails answers what the window holds, and ' +
+            'does not throw',
+            JSON.stringify({ listed: lost.length }));
+  }
   log.debug('Leaving run().');
 }
 
@@ -1540,6 +1665,7 @@ module.exports = {
             'off states, manual runs, the report, per-process jobs, the ' +
             'bounded run history, removed realms, a tick that reads no ' +
             'history, a finished interval slot read once and not held (#883), ' +
-            'the line ordered by the end of each run\'s slot',
+            'the line ordered by the end of each run\'s slot, a job ' +
+            'filter reading the job\'s own slots',
   run: run
 };

@@ -1602,6 +1602,9 @@ const UNIT_WATCHDOG_MS = {
 const UNIT_ALONE = new Set([
   'request_barrier', 'request_proxy_replay',
   'request_worker_replacement', 'key_residency',
+  // Its sections time a barrier against syncNow()'s 4.6 s deadline and a
+  // 2 s bound (2026-11-14); a loaded host would move both.
+  'read_barrier_slow_apply',
   // The outbound SCIM client's pacing (S3: requests 250 ms apart, a gap no
   // shorter than 200 ms) read one gap of 199 ms under the pool in the
   // cluster mode of the full run on 71607cbd (2026-10-27); alone it holds.
