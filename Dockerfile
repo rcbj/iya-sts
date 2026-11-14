@@ -42,7 +42,7 @@
 # is what lets "nothing" work under the classic builder, which cannot make a
 # COPY optional.
 # ---------------------------------------------------------------------------
-ARG DEBUGGER_IMAGE=ghcr.io/rcbj/id-proto-debugger-embedded:0.9.1
+ARG DEBUGGER_IMAGE=ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3
 FROM ubuntu:latest AS debugger-none
 RUN mkdir -p /debugger
 FROM ${DEBUGGER_IMAGE} AS debugger

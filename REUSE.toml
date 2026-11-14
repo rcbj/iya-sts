@@ -39,7 +39,7 @@ SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
 SPDX-License-Identifier = "MIT"
 
 # The id-proto-debugger user guides under docs/debugger/, copied from that
-# project's release 0.9.1 (#1717): the same owner, and that project's MIT
+# project's release 0.9.3 (#1717): the same owner, and that project's MIT
 # licence, like the protocol jobs above. The chapter's own two pages,
 # docs/debugger/index.md and access.md, are this service's and stay BUSL-1.1
 # under the catch-all.

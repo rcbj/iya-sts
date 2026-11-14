@@ -5,7 +5,7 @@ nav_order: 14
 
 # Token detail, introspection, UserInfo, and JWKS
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
 
 Step 2 of the [OAuth2 / OIDC workflow](index.md) links to four small pages.
 Each one also stands on its own. **Logout** is a fifth page, and it only

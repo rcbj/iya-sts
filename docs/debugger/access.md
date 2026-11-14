@@ -144,7 +144,7 @@ STS_DEBUGGER_ENABLED=off
 
 **2. Out of the image.** The image takes the debugger from a published image
 at build time, through the build argument `DEBUGGER_IMAGE`. Its default is
-`ghcr.io/rcbj/id-proto-debugger-embedded:0.9.1`. Build with `debugger-none`,
+`ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3`. Build with `debugger-none`,
 and the image carries no debugger files at all:
 
 ```bash

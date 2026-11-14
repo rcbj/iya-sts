@@ -5,7 +5,7 @@ nav_order: 30
 
 # JWT Tools
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
 
 **JWT Tools** (`/jwt_tools.html`) builds, signs, encrypts, verifies, and
 decrypts a JSON Web Token in the browser. Open it from the **Tools** pane

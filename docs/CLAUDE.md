@@ -96,7 +96,7 @@ here: `debugger/index.md`, the chapter and its table of guides, and
 `debugger/access.md`, which covers reaching the debugger, who may use it, turning it on, and
 `DEBUGGER_IMAGE=debugger-none`. **Everything else under `debugger/` is a
 COPY of the id-proto-debugger user guides at the release the image embeds
-(0.9.1)** — its `docs/oauth2-oidc/` with the screenshots, `saml.md`,
+(0.9.3)** — its `docs/oauth2-oidc/` with the screenshots, `saml.md`,
 `saml-assertion.md`, `saml-decoders.md`, `wstrust.md`, `jwt-tools.md`,
 `digital-signature.md` and `what-is-a-protocol-debugger.md` — under that
 project's MIT licence (`REUSE.toml`).

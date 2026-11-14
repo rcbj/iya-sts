@@ -5,7 +5,7 @@ nav_order: 22
 
 # SAML decoders and certificate details
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
 
 Three pages read a message or a certificate you already have. None of them
 sends what you paste, and none of them stores a private key. Open them from

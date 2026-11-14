@@ -5,7 +5,7 @@ nav_order: 3
 
 # What a protocol debugger is
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
 
 A **protocol debugger** is a tool that stands at one end of a network
 protocol, speaks that protocol for real, and shows you every message in both
@@ -191,20 +191,20 @@ the tree. Each protocol has its own page here:
 |---|---|
 | using the OAuth2 / OIDC workflow, registration, and the token pages | [oauth2-oidc](oauth2-oidc/index.md) |
 | using the SAML 2.0 workflow, the assertion tool, and the decoders | [saml.md](saml.md), [saml-assertion.md](saml-assertion.md), [saml-decoders.md](saml-decoders.md) |
-| SAML 1.1, as a different protocol rather than an older spelling | [saml11.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/saml11.md) |
+| SAML 1.1, as a different protocol rather than an older spelling | [saml11.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/saml11.md) |
 | using the WS-Trust workflow | [wstrust.md](wstrust.md) |
 | JWT Tools and Digital Signature | [jwt-tools.md](jwt-tools.md), [digital-signature.md](digital-signature.md) |
-| WS-Federation | [wsfed.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/wsfed.md) |
-| the OAuth 2.0 Security BCP | [rfc9700.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/rfc9700.md) |
-| what is worth building next in OAuth 2.0 / OIDC | [spec-roadmap.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/spec-roadmap.md) |
-| OIDC flows, DPoP, DIDs | [oidc-flows.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/oidc-flows.md), [dpop.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/dpop.md), [dids.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/dids.md) |
-| SD-JWT VC issuance and presentation | [sd-jwt-vc-issuance.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/sd-jwt-vc-issuance.md), [sd-jwt-vc-presentation.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/sd-jwt-vc-presentation.md) |
-| WebAuthn, and the read-only observer | [webauthn.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/webauthn.md) |
-| Kerberos v5, and SPNEGO over HTTP | [kerberos.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/kerberos.md), [spnego.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/spnego.md) |
-| LDAP | [ldap.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/ldap.md) |
-| SCIM 2.0 provisioning | [scim.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/scim.md) |
-| Shared Signals, and the two vocabularies over it | [ssf.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/ssf.md), [caep.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/caep.md), [risc.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/risc.md) |
-| SPIFFE / SPIRE | [spiffe.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/spiffe.md) |
-| X.509, the certificate authority, and post-quantum PKI | [pki.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/pki.md) |
-| encryption, hashing, XML Signature, stateful hash-based signatures | [encryption.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/encryption.md), [hashing.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/hashing.md), [xmldsig-pqc.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/xmldsig-pqc.md), [hbs.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/hbs.md) |
-| iya-sts, the identity provider the tests run against | [mock-sts.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/mock-sts.md) |
+| WS-Federation | [wsfed.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/wsfed.md) |
+| the OAuth 2.0 Security BCP | [rfc9700.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/rfc9700.md) |
+| what is worth building next in OAuth 2.0 / OIDC | [spec-roadmap.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/spec-roadmap.md) |
+| OIDC flows, DPoP, DIDs | [oidc-flows.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/oidc-flows.md), [dpop.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/dpop.md), [dids.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/dids.md) |
+| SD-JWT VC issuance and presentation | [sd-jwt-vc-issuance.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/sd-jwt-vc-issuance.md), [sd-jwt-vc-presentation.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/sd-jwt-vc-presentation.md) |
+| WebAuthn, and the read-only observer | [webauthn.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/webauthn.md) |
+| Kerberos v5, and SPNEGO over HTTP | [kerberos.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/kerberos.md), [spnego.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/spnego.md) |
+| LDAP | [ldap.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/ldap.md) |
+| SCIM 2.0 provisioning | [scim.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/scim.md) |
+| Shared Signals, and the two vocabularies over it | [ssf.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/ssf.md), [caep.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/caep.md), [risc.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/risc.md) |
+| SPIFFE / SPIRE | [spiffe.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/spiffe.md) |
+| X.509, the certificate authority, and post-quantum PKI | [pki.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/pki.md) |
+| encryption, hashing, XML Signature, stateful hash-based signatures | [encryption.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/encryption.md), [hashing.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/hashing.md), [xmldsig-pqc.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/xmldsig-pqc.md), [hbs.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/hbs.md) |
+| iya-sts, the identity provider the tests run against | [mock-sts.md](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/mock-sts.md) |

@@ -281,7 +281,7 @@ the rule `common/CLAUDE.md` states about anything that is not a row in a store.
   debugger project.
 * **The image:** the Dockerfile's `ARG DEBUGGER_IMAGE` and `COPY
   --from=debugger /debugger/ ./debugger/embedded/`. **The default is a tagged
-  release since #1717 (2026-11-14)**: `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.1`, published
+  release since #1717 (2026-11-14)**: `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3`, published
   public by the debugger project's Docker Image CI from its master. Pinned to
   an M.N.O so a release ships the debugger it was tested with; moving it is
   bumping the tag here and in `docker-compose.yml`'s `DEBUGGER_IMAGE` default.

@@ -5,7 +5,7 @@ nav_order: 13
 
 # Dynamic client registration
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
 
 The **OIDC Dynamic Client Registration** card opens
 `oauth2_oidc_1.html#dcr_fieldset`. The same pane is on step 1 of the
