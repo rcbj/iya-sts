@@ -19,7 +19,12 @@
 //      `POST /admin-api/applications/import-ldif`, where the application's
 //      client secret gets a token at that realm's `/oauth2/token`;
 //   d. the same file again refused (400) — an import never overwrites —
-//      and so is a file carrying an attribute this registry derives.
+//      and so is a file carrying an attribute this registry derives;
+//   e. a PERSON, the same pattern on Directory → Users (2026-11-14): made in
+//      the first realm with a password, exported through
+//      `POST /admin-api/users/export-ldif` with no credential unless asked,
+//      imported into the second through `/users/import-ldif` with their
+//      password's hash, and the same file again refused.
 //
 // OWNED HERE (local: true): this repository's own console operations and
 // management API.
@@ -59,6 +64,9 @@ const FROM = realmId("ldifa-");
 const TO = realmId("ldifb-");
 const APP = "ldif-app-" + STAMP.toLowerCase();
 const SECRET = "ldif-546-" + String(Date.now()).slice(-8) + "-secret-value";
+const PERSON = ("ldifperson" + STAMP).toLowerCase().replace(/[^a-z0-9]/g, "")
+  .slice(0, 40);
+const PASSWORD = "Ldif-Person-" + String(Date.now()).slice(-8) + "-Pw!x";
 
 let checks = 0;
 function check(what, fn) {
@@ -194,6 +202,50 @@ async function test() {
                                  { ldif: other });
   check("a file carrying a derived attribute is refused", function () {
     assert.strictEqual(derived.status, 400, derived.raw.slice(0, 400));
+  });
+
+  log.info("=== e. a person, out and back in ===");
+  await ok(fromApi + "/users/create", { username: PERSON, invent: "no",
+    attributes: { cn: "LDIF Person", sn: "Person", givenName: "LDIF",
+                  mail: PERSON + "@example.net", title: "Engineer" },
+    credential: "password", password: PASSWORD },
+    "created the person");
+  const person = await ok(fromApi + "/users/export-ldif", { user: PERSON },
+                          "exported the person");
+  check("one record naming the person, with no credential by default",
+        function () {
+    assert.ok(/^dn: uid=/m.test(person.ldif), person.ldif.slice(0, 400));
+    assert.strictEqual(person.ldif.match(/^dn: /mg).length, 1);
+    assert.ok(/^title: Engineer$/m.test(person.ldif), person.ldif);
+    assert.ok(!/^userPassword:/mi.test(person.ldif), person.ldif);
+    assert.ok(!/^entryUUID:/mi.test(person.ldif), person.ldif);
+    assert.ok((person.leftOut || []).indexOf("userPassword") >= 0,
+              JSON.stringify(person.leftOut));
+    assert.ok(/\.ldif$/.test(((person.files || [])[0] || {}).name || ""),
+              JSON.stringify(person.files));
+  });
+  const personFull = await ok(fromApi + "/users/export-ldif",
+                              { user: PERSON, credentials: true },
+                              "exported the person with credentials");
+  check("with the box, the password's stored hash is in it", function () {
+    assert.ok(/^userPassword:/mi.test(personFull.ldif) &&
+              unfold(personFull.ldif).indexOf(PASSWORD) < 0,
+              personFull.ldif.slice(0, 600));
+  });
+  const imported = await ok(toApi + "/users/import-ldif",
+                            { ldif: personFull.ldif },
+                            "imported the person");
+  check("the person is made in the other realm with their password",
+        function () {
+    assert.strictEqual(imported.username, PERSON);
+    assert.ok((imported.credentials || []).indexOf("userPassword") >= 0,
+              JSON.stringify(imported));
+    assert.strictEqual(imported.kerberosKeys, false);
+  });
+  const personAgain = await postJson(toApi + "/users/import-ldif",
+                                     { ldif: personFull.ldif });
+  check("the same person again is refused, never overwritten", function () {
+    assert.strictEqual(personAgain.status, 400, personAgain.raw.slice(0, 400));
   });
 
   log.info("Test completed successfully. " + checks + " check(s) passed.");

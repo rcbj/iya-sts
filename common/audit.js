@@ -667,6 +667,13 @@ const ACTIONS = [
   { action: 'user.delete', category: 'directory', label: 'A user was deleted' },
   { action: 'user.update', category: 'directory', label: 'A user was updated' },
   { action: 'user.rename', category: 'directory', label: 'A user was renamed' },
+  // A person's LDIF file an administrator took away or brought in
+  // (2026-11-14, `ldap/person_ldif.ts`). The row says whether credential
+  // material went with it, and never a value.
+  { action: 'user.export', category: 'directory',
+    label: 'A user was exported to an LDIF file' },
+  { action: 'user.import', category: 'directory',
+    label: 'A user was imported from an LDIF file' },
   // A PERSON'S HOME MOVED TO ANOTHER CELL (#98): an administrator's act, one
   // row at the cell that held them, naming the cell they went to.
   { action: 'cells.rehome', category: 'directory',

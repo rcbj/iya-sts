@@ -129,6 +129,8 @@
   "audit.actions.user.delete.label": "A user was deleted",
   "audit.actions.user.update.label": "A user was updated",
   "audit.actions.user.rename.label": "A user was renamed",
+  "audit.actions.user.export.label": "A user was exported to an LDIF file",
+  "audit.actions.user.import.label": "A user was imported from an LDIF file",
   "audit.actions.cells.rehome.label": "A person was moved to another cell",
   "audit.actions.user.query.label": "A search returned at least one user",
   "audit.actions.group.create.label": "A group was created",

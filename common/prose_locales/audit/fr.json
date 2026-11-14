@@ -519,6 +519,14 @@
     "en": "13b017cf352d6b64",
     "text": "Un utilisateur a été renommé"
   },
+  "audit.actions.user.export.label": {
+    "en": "13bfbf4853070b8e",
+    "text": "Un utilisateur a été exporté vers un fichier LDIF"
+  },
+  "audit.actions.user.import.label": {
+    "en": "9afa273a898e8879",
+    "text": "Un utilisateur a été importé depuis un fichier LDIF"
+  },
   "audit.actions.cells.rehome.label": {
     "en": "5d1b93eaa6c979c6",
     "text": "Une personne a été déplacée vers une autre cellule"

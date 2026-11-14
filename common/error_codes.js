@@ -16433,6 +16433,50 @@ const CODES = [
       'TLS alert about why it failed can be lost to the TCP reset that ' +
       'closing it with unread data sends (run 21, 2026-11-13).',
     spec: 'none — logged at startup' },
+  // A person exported to, and imported from, an LDIF file (2026-11-14), on
+  // the user page's Import / export tab and /admin-api/users/{action}.
+  { code: 'STS-LDAP-0214',
+    summary: 'A person export was refused: nobody by that name is in this ' +
+      'realm\'s directory.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0215',
+    summary: 'A person export with credential material was refused: a ' +
+      'sealed credential on the entry (the authenticator app\'s secret, a ' +
+      'legacy recovery-code set) will not open under this process\'s ' +
+      'key-encryption key, so it cannot be written in the clear. Nothing ' +
+      'was exported.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0216',
+    summary: 'A person import was refused: the file is not LDIF holding ' +
+      'exactly one record.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0217',
+    summary: 'A person import was refused: the record is not a person\'s ' +
+      'entry (its DN is not uid=<name>,ou=users,…, or its one uid is not ' +
+      'that name), or it is an application\'s, which the application page ' +
+      'imports.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0218',
+    summary: 'A person import was refused: a person with that username is ' +
+      'already in this realm. Nothing is overwritten.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0219',
+    summary: 'A person import was refused: the record carries an attribute ' +
+      'no import writes — what this service records about a person, the ' +
+      'entryUUID, a credential a subsystem mints (Kerberos keys, key pairs, ' +
+      'enrolment secrets), or a name that is not a person\'s attribute.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0220',
+    summary: 'A person import was refused: a credential in the file is not ' +
+      'in the form an export writes (a password that is not a stored hash, ' +
+      'a record that is not JSON, a certificate that is not one), is ' +
+      'already held by somebody else in this realm (a passkey user handle, ' +
+      'a stored certificate), or could not be sealed. Nothing was created.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0221',
+    summary: 'A person import created the entry but could not write the ' +
+      'credentials the file carried. The person is there without them.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +

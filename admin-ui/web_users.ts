@@ -1232,6 +1232,11 @@ class UsersPage {
           html: directory +
             UsersPage.userAttributesSection(t, key, json.attributeEditor,
                                        gate, back) },
+        // The person as an LDIF file, out and back in: the application
+        // page's Import / export tab (#546) on a person's page (2026-11-14).
+        { id: 'utab-import-export',
+          label: t.text('consoleUsers.ldif.tab'),
+          html: UsersPage.userLdifSection(t, key, gate, back) },
         { id: 'utab-signout', label: t.text('consoleUsers.detail.tabSignOut'),
           html:
       // ---------------------------------------------------------------------
@@ -3561,6 +3566,60 @@ class UsersPage {
   // /admin-api/users?user=. Read only: a person's document is theirs to
   // edit, and an RPT is revoked on /admin/uma, which each list links to.
   // ---------------------------------------------------------------------------
+  // THE IMPORT / EXPORT TAB (2026-11-14), the application page's
+  // `applicationLdifSection()` for a person. Export writes this person's
+  // entry as an LDIF file: the attributes a create takes, and their
+  // credential material only when the box is ticked — and then UNENCRYPTED,
+  // which the box says. Import creates a person from such a file in this
+  // realm and never overwrites one: the file names its own username, which
+  // is refused when it is already here, so importing from this page cannot
+  // touch the person the page is about. Both post to /admin/users as every
+  // form on this page does; the export's answer is a file the runtime saves.
+  /**
+   * Draws a person's Import / export tab: export to LDIF, with or without
+   * credential material, and import from LDIF.
+   *
+   * @param t - the page's translator
+   * @param key - the person, as the page names them
+   * @param gate - `{ write }`, whether the reader holds Admin Write
+   * @param back - the list view to come back to
+   * @returns the tab's HTML
+   */
+  static userLdifSection(t, key, gate, back) {
+    if (!gate.write) {
+      return '<h2>' + t.html('consoleUsers.ldif.heading') + '</h2>' +
+        kit.note(t.html('consoleUsers.ldif.needsWrite'));
+    }
+    const carry = '<input type="hidden" name="from" value="user">' +
+      '<input type="hidden" name="back" value="' + kit.esc(back) + '">';
+    return '<h2>' + t.html('consoleUsers.ldif.exportHeading') + '</h2>' +
+      kit.note(t.html('consoleUsers.ldif.exportIntro')) +
+      '<form method="post" action="/admin/users">' + carry +
+      '<input type="hidden" name="action" value="export-ldif">' +
+      '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+      '<div class="formrow"><label>' +
+      '<input type="checkbox" name="credentials" value="on"> ' +
+      t.html('consoleUsers.ldif.withCredentials') + '</label></div>' +
+      kit.note(t.html('consoleUsers.ldif.credentialsWarning')) +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleUsers.ldif.export') + '</button></div></form>' +
+      '<h2>' + t.html('consoleUsers.ldif.importHeading') + '</h2>' +
+      kit.note(t.html('consoleUsers.ldif.importIntro')) +
+      '<form method="post" action="/admin/users" ' +
+      'enctype="multipart/form-data">' + carry +
+      '<input type="hidden" name="action" value="import-ldif">' +
+      '<div class="formrow"><label for="user-ldif-file">' +
+      t.html('consoleUsers.ldif.file') + '</label>' +
+      '<input type="file" id="user-ldif-file" name="file" ' +
+      'accept=".ldif,text/plain,text/x-ldif"></div>' +
+      '<div class="formrow"><label for="user-ldif-text">' +
+      t.html('consoleUsers.ldif.paste') + '</label>' +
+      '<textarea id="user-ldif-text" name="ldif" rows="8" cols="60">' +
+      '</textarea></div>' +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleUsers.ldif.import') + '</button></div></form>';
+  }
+
   /**
    * Draws a person's UMA tab.
    *

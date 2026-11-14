@@ -78,7 +78,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Trust realms](admin-api-trust-realms.html) | 6 |  |
 | [UMA](admin-api-uma.html) | 11 |  |
 | [UserInfo claims](admin-api-userinfo-claims.html) | 9 |  |
-| [Users](admin-api-users.html) | 62 | Who it has authenticated, and what each of them holds. |
+| [Users](admin-api-users.html) | 64 | Who it has authenticated, and what each of them holds. |
 | [Verifier request](admin-api-verifier-request.html) | 8 | What this realm's OID4VP Verifier asks a wallet for. |
 | [WS-Federation](admin-api-ws-federation.html) | 1 |  |
 | [WS-Trust](admin-api-ws-trust.html) | 1 |  |

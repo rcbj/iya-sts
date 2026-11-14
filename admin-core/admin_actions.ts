@@ -205,6 +205,10 @@ import accountState = require('../common/account_state');
 // filled through its own slot by `ldap_server.js`, so requiring it here loads
 // no route module.
 import personEditor = require('../ldap/person_editor');
+// A person out to an LDIF file and back in (2026-11-14). A library that
+// reads the directory out of the require cache at request time, so requiring
+// it here loads no route module either.
+import personLdif = require('../ldap/person_ldif');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
@@ -437,7 +441,10 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // A message-signing certificate issued to the
                        // person by an administrator, and revoked (#521).
                        'issue-signing-certificate',
-                       'revoke-signing-certificate'];
+                       'revoke-signing-certificate',
+                       // The person as an LDIF file, out and back in: the
+                       // Import / export tab of their page (2026-11-14).
+                       'export-ldif', 'import-ldif'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -1088,6 +1095,7 @@ interface AdminActionsDeps {
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
   personEditor: typeof personEditor;
+  personLdif: typeof personLdif;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
@@ -1182,6 +1190,7 @@ class AdminActions {
       accountSignals: accountSignals,
       accountState: accountState,
       personEditor: personEditor,
+      personLdif: personLdif,
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
@@ -5226,6 +5235,96 @@ class AdminActions {
                    'changed at the next sign-in.'
                  : 'The password for ' + who + ' is set. It is stored as a ' +
                    'hash and cannot be shown again.' };
+    }
+
+    // THE PERSON AS AN LDIF FILE (2026-11-14), the application page's #546
+    // pattern on a person's page. `ldap/person_ldif.ts` decides what goes in
+    // and what comes out; this is the transport — the file answered as a
+    // named attachment the console saves (`files`) and as `ldif` for a
+    // script, and an import read from the console's file input (`file`, its
+    // name and text) or from `ldif` — and the Shared Signals an import of
+    // credentials owes, as every other door that gives a person one says
+    // (#145).
+    if (action === 'export-ldif') {
+      const { personLdif } = this.deps;
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+            'the person in `user`.'] });
+      }
+      const withCredentials = body.credentials === true ||
+        ['true', 'on', '1'].indexOf(String(body.credentials || '')
+          .toLowerCase()) >= 0;
+      const exported: any = personLdif.exportPerson(who,
+        { credentials: withCredentials, actor: ctx.actor });
+      if (!exported || exported.ok === false) {
+        log.debug("Leaving AdminActions.usersAction(). export-ldif refused.");
+        return exported;
+      }
+      log.debug("Leaving AdminActions.usersAction(). export-ldif.");
+      return { ok: true, changed: false, username: exported.username,
+               credentials: exported.credentials,
+               attributes: exported.attributes, leftOut: exported.leftOut,
+               ldif: exported.ldif,
+               message: '"' + exported.username + '" exported to ' +
+                        exported.fileName +
+                        (exported.credentials
+                          ? ', WITH their credential material, unencrypted.'
+                          : ', without credential material.'),
+               files: [{ name: exported.fileName, mime: 'text/plain',
+                         base64: Buffer.from(exported.ldif, 'utf8')
+                           .toString('base64') }] };
+    }
+    if (action === 'import-ldif') {
+      const { personLdif } = this.deps;
+      const given: any = body.file;
+      const file = given && typeof given === 'object'
+        ? String(given.text || '') : '';
+      const text = String(body.ldif || '').trim() ? String(body.ldif) : file;
+      const imported: any = personLdif.importPerson(text,
+        { actor: ctx.actor });
+      if (!imported || imported.ok === false) {
+        log.debug("Leaving AdminActions.usersAction(). import-ldif refused.");
+        return this.refusedBy('STS-LDAP-0216', imported || { ok: false,
+          errors: ['The import was refused.'] });
+      }
+      const who = imported.username;
+      const said = { username: who, changeType: 'create',
+                     initiatingEntity: 'admin', via: ctx.via,
+                     reasonAdmin: 'An administrator imported ' + who +
+                                  ' from an LDIF file, with credentials.',
+                     reasonUser: 'Your account was created with ' +
+                                 'credentials an administrator imported.' };
+      const kinds = imported.credentialKinds || [];
+      if (kinds.indexOf('password') >= 0 ||
+          kinds.indexOf('app-passwords') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: 'password' }));
+      }
+      if (kinds.indexOf('totp') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: accountSignals.TOTP_CREDENTIAL_TYPE }));
+      }
+      if (kinds.indexOf('passkey') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: accountSignals.keyCredentialType(null) }));
+      }
+      if (kinds.indexOf('certificate') >= 0) {
+        accountSignals.credentialChanged(Object.assign({},
+          said, { credentialType: 'x509' }));
+      }
+      log.debug("Leaving AdminActions.usersAction(). import-ldif.");
+      return { ok: true, changed: true, username: who, dn: imported.dn,
+               attributes: imported.attributes,
+               credentials: imported.credentials,
+               kerberosKeys: false,
+               message: '"' + who + '" was imported' +
+                        (imported.credentials.length
+                          ? ' with ' + imported.credentials.join(', ') +
+                            '. No Kerberos key is derived from a stored ' +
+                            'hash: set the password again for Kerberos.'
+                          : ', with no credential.') };
     }
 
     if (action === 'create') {

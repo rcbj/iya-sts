@@ -1542,6 +1542,64 @@ used to write `undefined` into it, and every SCIM list after that threw
 sixteen mutants across this file and the others the change touched, all caught, and
 twenty more for the race, the rename and the timestamp.
 
+## A PERSON AS AN LDIF FILE: `person_ldif.ts` (rcbj, 2026-11-14)
+
+The application page's Import / export tab (#546, `common/CLAUDE.md`) on
+Directory → Users → (a person), as `export-ldif` and `import-ldif` on
+`usersAction()` and `POST /admin-api/users/{action}` (rule 7). The file's
+header argues each rule; what a maintainer must not undo:
+
+* **DECLARED MEANS WHAT A CREATE TAKES.** An export writes the attributes
+  `personAttributesFrom()` accepts — `vc_claims.ts`'s catalogue and the
+  person editor's universe, custom attributes included (`creatable()` asks
+  the same two) — so a file round-trips through `createUser()`, which is the
+  import's create: the attribute policy, the DN rules and one entry per
+  person are its checks, not a copy. Everything else the entry holds that is
+  not a credential below is RECORDED and is neither exported nor imported
+  (STS-LDAP-0219): sign-in methods, federation sightings, consents, the
+  account's flags, pending links. The account's state (disabled, MFA
+  required, delegation flags, a service account) is set again by its own
+  controls where the person lands.
+* **THE CREDENTIALS ARE `CREDENTIALS`, A CLOSED TABLE**: the password's hash,
+  the TOTP record, the passkeys and both user handles, the recovery codes,
+  the app passwords, stored certificates, HOBA keys and the CIBA code's hash.
+  Exported only with the box, UNENCRYPTED: the two sealed records (TOTP,
+  a legacy recovery-code set) are OPENED with `credentials.ts`'s labels and
+  sealed again on import where the key persists; one that will not open
+  refuses the export (STS-LDAP-0215). A credential a subsystem mints
+  (Kerberos keys, key pairs, enrolled certificates, enrolment secrets,
+  published DIDs, self-issued subjects) is never exported and refused on
+  import. **A new credential attribute on a person owes a row there, or a
+  decision that it is minted.**
+* **A PASSWORD ONLY AS A HASH THIS SERVICE WRITES** (`isHashedSecret()`): a
+  hash cannot be held to the password policy (#546's rule for a client
+  secret), and a clear one is refused (STS-LDAP-0220) for `set-password`.
+  **No Kerberos key is derived** — the imported person has none until the
+  password is set again; the answer says `kerberosKeys: false`.
+* **NEVER OVERWRITES, AND NO `entryUUID`.** An existing username is
+  STS-LDAP-0218; an `entryUUID` in the file is refused, and the create mints
+  one, for `ALWAYS_PROTECTED_OPERATIONAL`'s reason. A passkey user handle or
+  a stored certificate somebody in the realm holds already is refused,
+  before anything is written: each finds ONE person.
+* **THE CREDENTIALS ARE WRITTEN THROUGH `writeImportedCredentials()`**, after
+  the create, in their stored forms: a third door that writes
+  `stsWebauthnCredential`, so it derives the Android marker and tells the
+  passkey report (#942), stamps `pwdChangedTime` for a password, and touches
+  once. A failure there leaves the person made without them
+  (STS-LDAP-0221). The CAEP credential-change per kind is the action's.
+* **NO GROUP MEMBERSHIP**, as #546 exports no relationship: a membership is
+  on the group's entry, and a group in another realm is another group.
+* **THE DIRECTORY IS READ OUT OF `require.cache`**, never required: this file
+  is loaded with `admin-core/admin_actions.ts` at 18 and this module
+  registers routes at 21 (rule 1). No slot.
+* **AN IMPORT CLAIMS ITS NAME LIKE A CREATE** (`mgmt-api/admin_api.ts`,
+  `runClaimed()` with `usernameOf()`), and an import naming a person policy
+  reference is the Security Administrator's (`common/security_operations.ts`).
+  Export and import both ask for a recent sign-in (`REAUTHENTICATED_ACTIONS`).
+
+Audited as `user.export` and `user.import`, names only. `tests/user_ldif.js`
+in process; `tests/protocol/sts_application_ldif.js` section e over HTTP.
+
 ## A DOOR THAT IS NOT THIS FILE: THE BULK IMPORT (#629, 2026-10-14)
 
 `persistence/bulk_import.js` writes people into `ou=users` without this
