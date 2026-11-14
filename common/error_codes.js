@@ -14059,6 +14059,13 @@ const CODES = [
       'at a sign-in the sign-in is refused, at a refresh the session is ' +
       'ended.',
     spec: 'HTTP 500 at a sign-in; console: the message; job: logged' },
+  { code: 'STS-FED-0253',
+    summary: 'An OpenID Connect partner\'s ID Token was issued before the ' +
+      'sign-in it answers began, or in the future, beyond ' +
+      'oauth2.clockSkewS either way (OpenID Connect Core 1.0 section ' +
+      '3.1.3.7 step 10; #931). Refused before any code is redeemed or ' +
+      'UserInfo asked.',
+    spec: 'HTTP 401, the refusal page' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -18080,6 +18087,18 @@ const CODES = [
   { code: 'STS-TLS-0060',
     summary: 'A certificate sign-in started no session because the person owes a second factor.',
     spec: 'HTTP 200' },
+  { code: 'STS-TLS-0061',
+    summary: 'A TLS listener already held its bound of connections that ' +
+      'failed at the TLS layer, so another was closed at once rather than ' +
+      'held for its alert to be read, and the TCP reset could discard the ' +
+      'alert (tls/alert_close.ts, 2026-11-13).',
+    spec: 'none (logged): the connection closes with its alert sent' },
+  { code: 'STS-TLS-0062',
+    summary: 'A server-side TLS socket has no raw socket under it ' +
+      '(TLSSocket._parent), so a connection that fails at the TLS layer is ' +
+      'closed at once and its alert can be lost to the TCP reset ' +
+      '(tls/alert_close.ts, 2026-11-13).',
+    spec: 'none (logged once)' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +

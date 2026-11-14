@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5468** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5471** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
-* [Federation (`STS-FED`)](#sts-fed) — 227
+* [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 167
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 62
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 166
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 141
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
@@ -3032,6 +3032,7 @@ Raised from: federation/.
 | `STS-FED-0250` | A FAPI partner's JARM response JWT carries no exp, which JARM section 4.4 has the client check. | HTTP 401 |
 | `STS-FED-0251` | A FAPI 2 partner's token response is not DPoP-bound: its token_type is not DPoP (RFC 9449 section 5). At sign-in the sign-in is refused; at a refresh the session is ended. | HTTP 502 |
 | `STS-FED-0252` | A FAPI 1.0 Advanced relationship's TLS client certificate (RFC 8705) could not be issued, sealed, written or opened — when fedFapi became 1-advanced, by the scheduler job federation.client-certificate-renew, or at a token, refresh or UserInfo request that needed it. Nothing is dialled without it: at a sign-in the sign-in is refused, at a refresh the session is ended. | HTTP 500 at a sign-in; console: the message; job: logged |
+| `STS-FED-0253` | An OpenID Connect partner's ID Token was issued before the sign-in it answers began, or in the future, beyond oauth2.clockSkewS either way (OpenID Connect Core 1.0 section 3.1.3.7 step 10; #931). Refused before any code is redeemed or UserInfo asked. | HTTP 401, the refusal page |
 
 ## STS-OIDFED
 
@@ -3970,6 +3971,8 @@ Raised from: tls/.
 | `STS-TLS-0058` | A resumed TLS session's client certificate was demoted under paranoid PKI mode: its full handshake was refused, or no record of it reached this process within tls.resumedChainWaitMs. The next full handshake settles it (#1360). | none (logged): the certificate is treated as unverified |
 | `STS-TLS-0059` | GET /tls/sign-in was asked for by a browser other than as a navigation typed by the person or sent from this origin, in product (ASVS 5.0.0 3.5.3). | HTTP 403 |
 | `STS-TLS-0060` | A certificate sign-in started no session because the person owes a second factor. | HTTP 200 |
+| `STS-TLS-0061` | A TLS listener already held its bound of connections that failed at the TLS layer, so another was closed at once rather than held for its alert to be read, and the TCP reset could discard the alert (tls/alert_close.ts, 2026-11-13). | none (logged): the connection closes with its alert sent |
+| `STS-TLS-0062` | A server-side TLS socket has no raw socket under it (TLSSocket._parent), so a connection that fails at the TLS layer is closed at once and its alert can be lost to the TCP reset (tls/alert_close.ts, 2026-11-13). | none (logged once) |
 
 ## STS-VC
 

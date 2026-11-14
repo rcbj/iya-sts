@@ -245,6 +245,9 @@ revoked still answers for it.
 - `tests/protocol/sts_oidfed.js` (local): the same over HTTP, with Trust Marks
   and key rotation through `/admin-api`.
 - `tests/siop.js` 7f: the verifier's `openid_federation:` client identifier.
+- `tests/oidfed_rp.js`: the RP's reading of the OP's metadata (#933): an
+  absent `issuer` is the Entity Identifier (Connect 1.1, 5.1.2), another
+  one is refused.
 - `tests/oidfed_extensions.js`: the page pointer; a subordinate's history
   through registration, updates, suspension, reinstatement and revocation;
   a realm's creation, rotation and deletion; the Extended Listing's paging,
@@ -258,6 +261,7 @@ revoked still answers for it.
 - a resolution through a real foreign entity over HTTP. The fetcher is covered
   by a stub, and `fetchPublished()` by the federation tests. The relying-party
   direction is the `joined-rp` plan of
-  `tests/protocol/sts_oidfed_conformance.js` (#933); a suite run against it
-  is outstanding;
+  `tests/protocol/sts_oidfed_conformance.js` (#933), whose first run timed
+  out at the OP's missing `issuer` (fixed; `tests/oidfed_rp.js`) and has
+  not yet reached the token endpoint;
 - a post-quantum Federation Entity Key end to end.

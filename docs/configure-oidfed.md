@@ -327,6 +327,11 @@ token-endpoint authentication with its Federation Entity Key. `fedSsoUrl`,
 `fedTokenUrl`, `fedJwks`, `fedJwksUri`, `fedClientId` and `fedClientSecret`
 are not read. Only the authorization code flow is used.
 
+The OP's `openid_provider` metadata may leave out `issuer`. It is then
+read as the OP's Entity Identifier, the only value OpenID Federation for
+OpenID Connect 1.1 section 5.1.2 allows. An `issuer` that names another
+entity is refused (`STS-FED-0149`).
+
 Taken from `sts_oidfed.js` (section 8), where the relationship `oidfed-rp` is
 in realm `fed` and the OP is the default realm, which is also the Trust
 Anchor.

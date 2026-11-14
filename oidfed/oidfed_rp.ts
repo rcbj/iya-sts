@@ -254,10 +254,22 @@ class OidfedRp {
     }
     const op = (got.resolved.metadata || {}).openid_provider;
     let problem = '';
+    // AN ABSENT `issuer` IS THE ENTITY IDENTIFIER (#933). Connect 1.1 section
+    // 5.1.2 says the issuer in openid_provider metadata MUST match the
+    // Entity Identifier, so that is the one value it can have, and the
+    // resolved metadata determines it whether or not it is written out. The
+    // OpenID Foundation's suite publishes its OP that way, and its own
+    // relying party fills `issuer` in from the Entity Configuration's `iss`.
+    // Refusing it left every happy-path module of the relying-party plan
+    // WAITING until it timed out. An issuer that IS present and names
+    // anybody else is still refused, and the ID Token's `iss` is still held
+    // to the Entity Identifier, so nothing is believed that was not before.
+    const issuer = (op && (op.issuer === undefined || op.issuer === null))
+      ? peer : (op ? op.issuer : undefined);
     if (!op) {
       problem = 'it resolves with no openid_provider metadata';
-    } else if (op.issuer !== peer) {
-      problem = 'its issuer is ' + op.issuer + ', not its Entity ' +
+    } else if (issuer !== peer) {
+      problem = 'its issuer is ' + issuer + ', not its Entity ' +
                 'Identifier (Connect 1.1, 5.1.2)';
     } else if (!EntityStatement.isEndpointUrl(op.authorization_endpoint) ||
                !EntityStatement.isEndpointUrl(op.token_endpoint)) {
@@ -305,7 +317,7 @@ class OidfedRp {
       fedClientSecret: '',
       fedResponseType: 'code',
       fedTokenAuth: 'private_key_jwt',
-      fedOpIssuer: String(op.issuer)
+      fedOpIssuer: String(issuer)
     });
     log.debug("Leaving OidfedRp.effectiveRecord(). Through " + anchor);
     return { ok: true, record: effective, anchor: anchor };

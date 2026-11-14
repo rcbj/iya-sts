@@ -158,6 +158,18 @@ refused. A request that worked in 1.0.0 gets the same answer.
 declare. The remote PEP's AuthZEN endpoint in the `xacml-pep` container
 follows the same rule.
 
+### A federated OpenID Provider may leave out its `issuer`
+
+This applies to a federation relationship that finds its OpenID Provider
+through an [OpenID Federation](configure-oidfed.md#this-service-as-a-federated-relying-party) Trust Anchor
+(`fedTrustAnchor`). In 1.0.0, the sign-in was refused with `STS-FED-0149`
+when the provider's resolved `openid_provider` metadata had no `issuer`.
+In 1.1.0 an absent `issuer` is read as the provider's Entity Identifier.
+OpenID Federation for OpenID Connect 1.1 section 5.1.2 allows no other
+value. An `issuer` that is present and names another entity is still
+refused. The ID Token's `iss` is still checked against the Entity
+Identifier. Nothing this service publishes changes.
+
 ## 1.0.0
 
 1.0.0 is the first release of iya-sts. Every build before it was a
@@ -176,6 +188,17 @@ its metadata declares for Browser/Artifact.
 A document that does not describe the application is now refused with HTTP 400
 and nothing is written, as the create and upload doors already refuse it
 (`STS-ADMIN-0935`). Writing an empty value still clears it.
+
+### An inbound OpenID Connect ID Token's `iat` is held to the sign-in
+
+A federation relationship that signs people in from an OpenID Connect partner
+now refuses an ID Token whose `iat` is before the sign-in started or after now,
+each end widened by `oauth2.clockSkewS` (OpenID Connect Core 3.1.3.7, step 10;
+`STS-FED-0253`). Nothing is redeemed and UserInfo is not asked after the
+refusal. Until 1.1.0 any `iat` was accepted, so an ID Token issued a week
+earlier signed a person in. This applies to every relationship, not only the
+FAPI profiles. A partner whose clock is behind this service's by more than the
+skew is now refused; raise `oauth2.clockSkewS` for it.
 
 ### Not backwards compatible with earlier builds
 

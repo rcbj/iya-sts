@@ -17,12 +17,20 @@
 //
 // A `clientError` listener replaces node's own handling, so this writes what
 // node would have: 431, 408 for a request timeout, 400 for the rest.
+//
+// A FAILURE OF THE TLS LAYER IS NOT A REQUEST (2026-11-13). Node's HTTP/1.1
+// server reports a TLSSocket's `error` here too, and this wrote a plaintext
+// 400 into a connection whose TLS engine had just sent a fatal alert, logged
+// it as a refused request, and lingered for the peer's close. It is closed
+// instead, which `tls/alert_close.ts` holds for a moment so the alert is
+// read.
 // ===========================================================================
 
 import bunyan = require('bunyan');
 import config = require('./config');
 import errorCodes = require('./error_codes');
 import lingeringClose = require('./lingering_close');
+import AlertClose = require('../tls/alert_close');
 
 const log = bunyan.createLogger({ name: 'sts-parser-refusal' });
 config.registerLogger(log);
@@ -67,6 +75,13 @@ class ParserRefusal {
     if (code === 'ECONNRESET' || !socket.writable) {
       socket.destroy();
       log.debug("Leaving ParserRefusal.answer(). Nobody to answer.");
+      return;
+    }
+    // The TLS engine failed and has sent its alert: nothing more may be sent
+    // (RFC 8446 section 6.2), and the close is held by tls/alert_close.ts.
+    if (AlertClose.isTlsFailure(err)) {
+      socket.destroy();
+      log.debug("Leaving ParserRefusal.answer(). A TLS failure.");
       return;
     }
     const status = ANSWERS[code] || '400 Bad Request';
