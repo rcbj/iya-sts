@@ -113,9 +113,12 @@ rcbj asked for five things on 2026-10-26, all drawn by
   because its token is the service's; this one is the realm's.
 * **A documentation link** under the bar, `DocLinks.markup()` to
   `reporting.html` on the site every surface links to.
-* **The version** under the card, from the index's `version` (`GET
-  /report-api` carries `common/version.js`'s `load()` as the console's
-  shell does; `tests/version.js` lists `report_api.ts` among the drawers).
+* ~~**The version** under the card~~ — gone on 2026-11-14 (rcbj): the
+  page footer every shell draws carries the version, so the line under the
+  card was the version said twice. `GET /report-api` still answers
+  `version` from `common/version.js`'s `load()` (`tests/version.js` lists
+  `report_api.ts` among the sources), and `ensureChrome()` no longer reads
+  the index for it.
 * **One filter row to begin with**, and the `+` on the last row adds the
   next: the runtime clones the last row, renames its controls to the next
   index, empties them and moves the `+`; `queryDocument()` reads rows
@@ -152,9 +155,9 @@ rcbj asked for five things on 2026-10-26, all drawn by
   always shown under the controls. Weekday names are Intl's in the page's
   language, so they cost no catalog.
 
-The index, the realms view and the version are read once per load
-(`ensureChrome()`), after the token is in hand. `tests/report_query.js`'s
-`chrome()` holds the realm field's two shapes, the footer, a row with and
+The realms view is read once per load (`ensureChrome()`), after the token
+is in hand. `tests/report_query.js`'s `chrome()` holds the realm field's two
+shapes, that no version line is drawn, a row with and
 without the `+`, and the variable reader over a form double; what it does
 not hold is the browser's cloning and the navigation.
 

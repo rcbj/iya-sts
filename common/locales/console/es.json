@@ -5,8 +5,6 @@
   "shell.memory.link": "Persistencia",
   "shell.memory.after": " y está desactivada de forma predeterminada.",
   "shell.json": "Cada página de aquí también responde a <code>?format=json</code>, y cada formulario también acepta un cuerpo JSON, así que una prueba puede manejar esta consola sin navegador.",
-  "shell.version": "versión de iya-sts <code>{version}</code>",
-  "shell.notStamped": " (no es una compilación sellada: este proceso es una copia de trabajo y su hora de compilación es el momento en que arrancó)",
   "shell.open.text": "<strong>Esta consola no está protegida.</strong> La barrera está DESACTIVADA, así que nada aquí comprueba una credencial, y nada más en este servicio lo hace tampoco: el nombre de usuario escrito en la pantalla de inicio de sesión es la identidad en cada token que emite. Cualquiera que pueda llegar a este puerto puede revocar todos los tokens y cambiar lo que contendrá el siguiente. Eso está bien en un portátil o en una red de compose, y no lo está en una dirección pública. Indique quién puede entrar en ",
   "shell.adminRoles": "Roles de administración",
   "shell.open.after": ", que muestra todos los ajustes que hay detrás de esta página.",

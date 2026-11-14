@@ -61,7 +61,6 @@
   "indexedNote": "An indexed operator is answered by the directory without reading every person. A query on users whose filter uses none of them, or that sorts or counts, reads every person: it is refused when run synchronously and becomes a job when the mode is auto.",
   "trustRealm": "Trust realm",
   "go": "Go",
-  "version": "iya-sts version {version}",
   "docsLink": "Documentation",
   "addFilter": "Add a filter",
   "removeFilter": "Remove this filter",

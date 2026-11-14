@@ -1786,15 +1786,10 @@ function chrome(t) {
   t.check(runTag.indexOf('disabled') < 0 && runTag.indexOf('hidden') < 0,
     'the Run button is the default button until then');
 
-  // The footer.
-  const foot = ReportRuntime.footerHtml(tr, { version: '0.1.1', stamped: true,
-    buildInfo: 'built 2026-10-26' });
-  t.check(foot.indexOf('iya-sts version 0.1.1') >= 0,
-    'the footer names the version', foot);
-  t.check(foot.indexOf('title="built 2026-10-26"') >= 0,
-    'the build is the footer\'s title');
-  t.equal(ReportRuntime.footerHtml(tr, null), '',
-    'no version draws no footer');
+  // The version line under the card is gone (2026-11-14): the page footer
+  // every shell draws carries the version (tests/page_footer.js).
+  t.check(typeof ReportRuntime.footerHtml === 'undefined',
+    'the reports application draws no version line of its own');
 
   // A filter row, with and without the +.
   const first = ReportRuntime.filterRowHtml(tr, 0, '<option value="a">a' +

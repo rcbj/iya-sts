@@ -11,9 +11,10 @@
 // `GET /` was a server-drawn card until #579; it is now the first public
 // surface on #570's foundation (`common/CLAUDE.md` 3cl), and this is its
 // renderer: the card's body drawn from `GET /home-api/front`'s view — the
-// name, the version and its provenance, what a sign-in here checks, the
-// image, and the six links — in the page's language, from the `home`
-// catalog namespace the server-drawn page used, word for word.
+// name, what a sign-in here checks, the image, and the six links (the
+// version is the page footer's since 2026-11-14) — in the page's language,
+// from the `home` catalog namespace the server-drawn page used, word for
+// word.
 //
 // THE VIEW IS LANGUAGE-FREE (`home/home.ts`, `frontView()`): each link is an
 // `id` and an address, and THIS module turns the id into its label and note.
@@ -135,8 +136,7 @@ class WebHomeFront {
 
   /**
    * The front page's body, under the chooser: the name, what this service
-   * is, the version with its build in the tooltip, the warning, and the
-   * links.
+   * is, the warning, and the links. The version is the page footer's.
    *
    * @param view - `GET /home-api/front`'s view
    * @param ctx - the surface's context; its `t` is the page's translator
@@ -147,12 +147,10 @@ class WebHomeFront {
     const v = view || {};
     return '<h1>' + WebHomeFront.esc(v.name) + '</h1>' +
       '<p class="sub">' + t.html('home.sub') + '</p>' +
-      // THE VERSION, WITH ITS PROVENANCE IN THE TOOLTIP: the number is what
-      // a bug report quotes, the build instant and commit what somebody
-      // needs when two builds of the same release differ (#1298).
-      '<p class="ver" title="' + WebHomeFront.esc(v.build) + '">' +
-      t.html('home.version', { version: String(v.version || '') }) +
-      '</p>' +
+      // NO VERSION LINE (rcbj, 2026-11-14): the page footer every shell
+      // draws carries the version, with its build line in the tooltip, so
+      // a second one here was the version said twice. The view still
+      // answers `version` and `build`, which machines read.
       // DEVELOPMENT'S WARNING ONLY (#543 round 2): "It checks no password,
       // validates no access token … do not put this port on a public
       // address" was drawn on a product realm's front door too, where every

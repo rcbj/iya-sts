@@ -429,6 +429,13 @@ async function everySurfaceReportsTheSameBuild(index, consoleClient) {
     index.version + "). It is the surface that reported package.json's " +
     "placeholder patch for every build ever made, so it is checked against " +
     "the string rather than trusted.");
+  // AND THE FOOTER (2026-11-14), which is the one place a page DRAWS the
+  // version since the in-content version lines went: the facts the browser
+  // redraws it from are on the shell and must be this API's string.
+  assert.ok(html.indexOf(' data-sts-footer-version="' + index.version +
+                         '"') >= 0,
+    "the front page's footer should carry the version this API reports (" +
+    index.version + "), since the footer is where every page shows it.");
   const front = await fetch(base + "/home-api/front");
   const frontView = ((await front.json()) || {}).view || {};
   assert.strictEqual(frontView.version, index.version,
