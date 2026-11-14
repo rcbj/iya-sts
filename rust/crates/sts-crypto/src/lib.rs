@@ -19,6 +19,7 @@ pub mod jwe;
 pub mod jws;
 pub mod jws_alg;
 pub mod keys;
+pub mod krb5;
 pub mod krb5_prf;
 pub mod pq;
 pub mod pq_x509;

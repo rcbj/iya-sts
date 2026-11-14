@@ -50,6 +50,8 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 impl KrbTime {
     /// JavaScript's `Date.UTC(year, month0, day, h, mi, s)` in seconds,
     /// with its roll-over and its two-digit-year rule.
+    // A hot path: run for every KerberosTime field of every message; no
+    // span (an Entering/Leaving pair would drown the log).
     pub fn utc(
         year: i64,
         month0: i64,
@@ -70,6 +72,8 @@ impl KrbTime {
     }
 
     /// The civil fields: (year, month 1–12, day, hour, minute, second).
+    // A hot path: run for every KerberosTime field of every message; no
+    // span (an Entering/Leaving pair would drown the log).
     pub fn fields(&self) -> (i64, i64, i64, i64, i64, i64) {
         let days = self.0.div_euclid(86_400);
         let secs = self.0.rem_euclid(86_400);
@@ -78,6 +82,8 @@ impl KrbTime {
     }
 
     /// Node's `parseKerberosTime()`.
+    // A hot path: run for every KerberosTime field of every message; no
+    // span (an Entering/Leaving pair would drown the log).
     pub fn parse(text: &str) -> Krb5Result<Self> {
         let b = text.as_bytes();
         let ok = b.len() == 15
@@ -105,6 +111,8 @@ impl KrbTime {
     }
 
     /// Node's `formatKerberosTime()`.
+    // A hot path: run for every KerberosTime field of every message; no
+    // span (an Entering/Leaving pair would drown the log).
     pub fn format(&self) -> String {
         let (y, m, d, h, mi, s) = self.fields();
         format!("{}{:02}{:02}{:02}{:02}{:02}Z", y, m, d, h, mi, s)
@@ -112,6 +120,8 @@ impl KrbTime {
 
     /// JavaScript's `Date.prototype.toISOString()`, which is how a decoded
     /// time serializes.
+    // A hot path: run for every KerberosTime field of every message; no
+    // span (an Entering/Leaving pair would drown the log).
     pub fn iso(&self) -> String {
         let (y, m, d, h, mi, s) = self.fields();
         let year = if (0..=9999).contains(&y) {
@@ -130,6 +140,8 @@ impl KrbTime {
 
 /// `JSON.stringify()` of a string, for the one error message that quotes
 /// one.
+// A hot path: run for every KerberosTime field of every message; no
+// span (an Entering/Leaving pair would drown the log).
 pub(crate) fn json_string(text: &str) -> String {
     let mut out = String::from("\"");
     for c in text.chars() {
