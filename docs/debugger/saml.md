@@ -5,7 +5,7 @@ nav_order: 20
 
 # Using the SAML workflow
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
 
 The SAML workflow is the **SAML Protocol** card on the landing page. It is
 two pages. `saml_request.html` builds the request and sends it to an identity
@@ -13,7 +13,7 @@ provider. `saml_response.html` shows the response that came back to the
 assertion consumer service.
 
 **Protocol Version** defaults to **SAML 2.0**. SAML 1.1 is a different
-exchange and has [its own page](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/saml11.md). **SAML 1.0 (reference only)**
+exchange and has [its own page](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/saml11.md). **SAML 1.0 (reference only)**
 fills the form and does not complete a sign-in.
 
 These pages have no screenshots. The pictures in the
@@ -98,7 +98,7 @@ These values are what a fresh page shows *before* you load metadata. After
 | **Signer Certificate** | a sample certificate, subject `saml-debugger-sp-test`. **Load Metadata** replaces it with the IdP signing certificate. **View signer certificate details** opens [Certificate Details](saml-decoders.md#certificate-details). |
 
 Single logout fields are hidden when the protocol version has no logout.
-See [SAML 1.1](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/saml11.md).
+See [SAML 1.1](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/saml11.md).
 
 ## SP / Request Settings
 
@@ -111,7 +111,7 @@ See [SAML 1.1](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/saml11.
 | **SP entityID** | `https://localhost:8444/saml/sp` | The Issuer of the AuthnRequest, when the field was empty. |
 | **ACS URL** | `https://localhost:8444/api/samlacs` | Where the IdP posts the response, when the field was empty. |
 | **Digitally sign the AuthnRequest** | on | Hides the key-pair fields when you clear it. |
-| **Signature Algorithm** | RSA-SHA256 | Also RSA-SHA1, RSA-SHA384, RSA-SHA512. After the page loads, a further group is added: **Post-quantum — draft-eastlake-rfc9231bis-xmlsec-uris**. Those sixteen methods are described in [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/xmldsig-pqc.md). |
+| **Signature Algorithm** | RSA-SHA256 | Also RSA-SHA1, RSA-SHA384, RSA-SHA512. After the page loads, a further group is added: **Post-quantum — draft-eastlake-rfc9231bis-xmlsec-uris**. Those sixteen methods are described in [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/xmldsig-pqc.md). |
 | **Key Size** | 2048 | Also 3072 and 4096, for a generated RSA pair. |
 | **Generate Keys** | | A fresh RSA pair and a self-signed SP certificate. |
 | **Download** | | The pair as PEM. |

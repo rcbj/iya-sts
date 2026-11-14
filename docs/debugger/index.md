@@ -24,9 +24,9 @@ administrator gets in.
 * **[What a protocol debugger is](what-is-a-protocol-debugger.md)**: what the
   tool is for, and what it deliberately is not.
 
-The user guides below are copied from the debugger's release **0.9.1**, which
+The user guides below are copied from the debugger's release **0.9.3**, which
 is the version this service's image embeds
-(`ghcr.io/rcbj/id-proto-debugger-embedded:0.9.1`):
+(`ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3`):
 
 | Guide | What it covers |
 |---|---|
@@ -45,6 +45,6 @@ is the version this service's image embeds
 The debugger has workflows these guides do not cover yet, among them
 Kerberos and SPNEGO, LDAP, SCIM, Shared Signals with CAEP and RISC, SPIFFE,
 PKI, WebAuthn, smart cards, GNAP and XACML. Their notes are in the debugger's
-own [`docs/`](https://github.com/rcbj/id-proto-debugger/tree/0.9.1/docs)
+own [`docs/`](https://github.com/rcbj/id-proto-debugger/tree/0.9.3/docs)
 directory. They are written for somebody changing the debugger, but each page
 is also documented on screen.

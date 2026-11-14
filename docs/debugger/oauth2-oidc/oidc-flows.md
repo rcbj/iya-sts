@@ -5,7 +5,7 @@ nav_order: 12
 
 # OpenID Connect authentication flows
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
 
 This page shows how to run each of the six OpenID Connect authentication flows
 the debugger supports, and how to make the access token sender-constrained
@@ -264,6 +264,6 @@ the authorization endpoint, which never sees a proof. The DPoP pane says so.
 * [Using the OAuth2 / OIDC workflow](index.md): the common steps and panes.
 * [OAuth 2.0 authorization grants](oauth2-grants.md): the underlying grants,
   plus Refresh Token and Token Exchange.
-* [RFC 9700 compliance mode](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/rfc9700.md).
+* [RFC 9700 compliance mode](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/rfc9700.md).
 * iya-sts's [Configuring OpenID Connect flows](../../configure-oidc-flows.md):
   how to set up the other side.

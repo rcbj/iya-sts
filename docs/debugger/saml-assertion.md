@@ -5,7 +5,7 @@ nav_order: 21
 
 # SAML Assertion Tool
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
 
 `/saml_tools.html` builds a SAML assertion, signs it, and encrypts it, in
 the browser. It does not send anything. Open it from the **Tools** pane on
@@ -85,7 +85,7 @@ An enveloped signature over the assertion.
 
 | Field | Default | What it does |
 |---|---|---|
-| **Signature Algorithm** | RSA-SHA256 | Also RSA-SHA1, RSA-SHA384, RSA-SHA512. After load, the post-quantum group from [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/xmldsig-pqc.md) is appended. |
+| **Signature Algorithm** | RSA-SHA256 | Also RSA-SHA1, RSA-SHA384, RSA-SHA512. After load, the post-quantum group from [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/xmldsig-pqc.md) is appended. |
 | **Canonicalization** | Exclusive XML Canonicalization 1.0 | Or inclusive C14N 1.0. |
 | **Key Size** | 2048 | Also 3072 and 4096. |
 | **Generate Keys** | | RSA pair and a self-signed certificate, embedded in `KeyInfo`. |

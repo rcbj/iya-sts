@@ -5,7 +5,7 @@ nav_order: 11
 
 # OAuth 2.0 authorization grants
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
 
 This page shows how to run each OAuth 2.0 grant the debugger supports. For
 each grant it covers when to use it, the steps on each page, and what you
@@ -356,7 +356,7 @@ pair of clients involved.
 * [Using the OAuth2 / OIDC workflow](index.md): the common steps and panes.
 * [OpenID Connect authentication flows](oidc-flows.md): ID tokens, nonces,
   and the Hybrid flows.
-* [RFC 9700 compliance mode](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/rfc9700.md): what the debugger checks when
+* [RFC 9700 compliance mode](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/rfc9700.md): what the debugger checks when
   compliance mode is on.
 * iya-sts's [Configuring OAuth 2.0 grants](../../configure-oauth2-grants.md):
   how to set up the other side.

@@ -5,7 +5,7 @@ nav_order: 23
 
 # Using the WS-Trust workflow
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.1 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
 
 The **WS-Trust Protocol** card opens `wstrust_tools.html`. The page builds a
 SOAP `RequestSecurityToken` in the browser and sends it to a security token
@@ -80,7 +80,7 @@ certificate is one this API does not trust.
 |---|---|---|
 | **Digitally sign the request** | off | A WS-Security signature over the SOAP body. |
 | **Also sign the Timestamp** | on, once signing is open | Adds the timestamp to the signed references. |
-| **Signature Algorithm** | RSA-SHA256 | Also RSA-SHA1, RSA-SHA384, RSA-SHA512. After load, the same post-quantum group as the SAML page is appended. See [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.1/docs/xmldsig-pqc.md). |
+| **Signature Algorithm** | RSA-SHA256 | Also RSA-SHA1, RSA-SHA384, RSA-SHA512. After load, the same post-quantum group as the SAML page is appended. See [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/xmldsig-pqc.md). |
 | **Key Size** | 2048 | Also 3072 and 4096. |
 | **Generate Keys** / **Download** | | RSA pair and self-signed certificate, as PEM. |
 | **Private Key** / **Certificate** | empty | PKCS#8 and the certificate carried in `KeyInfo`. |

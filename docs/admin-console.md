@@ -2264,7 +2264,7 @@ then build and run this service's image (it runs from an image, see
 `https://localhost:8444/` and sign in as a console administrator.
 
 **In a container it is there already.** The image is built with a tagged
-release of the debugger, `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.1` — publish 8444. To build
+release of the debugger, `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3` — publish 8444. To build
 against a debugger of your own instead:
 
 ```bash
