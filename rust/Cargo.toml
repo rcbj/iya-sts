@@ -48,7 +48,12 @@ tracing = "0.1"
 # rcbj's confidential OpenID Connect relying party and CAEP/RISC poll
 # receiver (MIT, crates.io): the reverse proxy's session mechanism (#1760).
 # rust/DESIGN.md, *Third-party crates*, says why a crate and not a port.
-oidc-caep-risc = "0.2.1"
+# PINNED TO A COMMIT until 0.3.0 is published: the bounded session store,
+# the receiver's health and the async API (feature `tokio`) the proxy uses
+# are in rcbj/oidc-caep-risc-rust's develop (PR #44), not yet on crates.io.
+# Once rcbj publishes it this becomes
+#   oidc-caep-risc = { version = "0.3.0", features = ["tokio"] }
+oidc-caep-risc = { git = "https://github.com/rcbj/oidc-caep-risc-rust", rev = "3303482760add1eb74b5841cbe27acbc6528c6bf", features = ["tokio"] }
 
 [workspace.lints.rust]
 # The one exception (rust/DESIGN.md section 6) is the openssl-sys wrapper in

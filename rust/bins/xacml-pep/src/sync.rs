@@ -408,11 +408,16 @@ struct State {
     relying_parties: (usize, usize),
 }
 
+/// What `GET /` asks the proxy's relying parties about their CAEP/RISC
+/// streams (`rp_set::RpSet::signals_json`), set by the proxy at start.
+pub type SignalsReporter = Arc<dyn Fn() -> Value + Send + Sync>;
+
 /// The register / pull / heartbeat client and what it holds.
 pub struct Sync {
     client: PdpClient,
     options: Options,
     state: Mutex<State>,
+    signals_reporter: Mutex<Option<SignalsReporter>>,
     /// The reverse proxy's sign-ins and sessions (#1760): here so that
     /// `GET /` can count them.
     pub proxy_sessions: Arc<Stores>,
@@ -465,6 +470,7 @@ impl Sync {
                 proxy_counters: ProxyCounters::default(),
                 relying_parties: (0, 0),
             }),
+            signals_reporter: Mutex::new(None),
         }
     }
 
@@ -1434,6 +1440,13 @@ impl Sync {
         *c.by_status.entry(status).or_insert(0) += 1;
     }
 
+    pub fn set_signals_reporter(&self, reporter: SignalsReporter) {
+        *self
+            .signals_reporter
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(reporter);
+    }
+
     pub fn set_relying_parties(&self, counts: (usize, usize)) {
         self.lock().relying_parties = counts;
     }
@@ -1450,6 +1463,14 @@ impl Sync {
     /// `GET /` answers whoever reaches the container.
     pub fn proxy_json(&self) -> Value {
         let (live, pending) = self.proxy_sessions.counts();
+        // Asked before this module's own lock is taken: the reporter takes
+        // the relying parties' locks, never this one.
+        let signals = self
+            .signals_reporter
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .map_or(Value::Null, |report| report());
         let state = self.lock();
         let h = &state.proxy;
         let c = &state.proxy_counters;
@@ -1491,6 +1512,7 @@ impl Sync {
             "sessionClients": h.pulled.realm.clients.len(),
             "relyingParties": state.relying_parties.0,
             "signalsReceivers": state.relying_parties.1,
+            "signals": signals,
             "signingCertificates": h.pulled.realm.signing_certificates.len(),
             "lastPullAt": h.last_pull_at,
             "lastPullOk": h.last_pull_ok,

@@ -104,6 +104,10 @@ pub struct Options {
     pub proxy_rp_allow_insecure: bool,
     /// How often the CAEP/RISC receiver polls the service's stream.
     pub proxy_signals_poll_ms: u64,
+    /// How long a receiver may go without a successful poll before its
+    /// signals stop deciding session liveness (never less than three
+    /// polls).
+    pub proxy_signals_stale_ms: u64,
 }
 
 /// One caller `PEP_AUTHZEN_CALLERS` names: the certificate it presents, by
@@ -364,6 +368,11 @@ impl Options {
                 5000u64,
             )
             .max(100),
+            proxy_signals_stale_ms: int_from_env(
+                "PEP_PROXY_SIGNALS_STALE_MS",
+                60000u64,
+            )
+            .max(1),
         }
     }
 }

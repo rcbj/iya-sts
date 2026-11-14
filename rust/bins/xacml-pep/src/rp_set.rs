@@ -8,12 +8,29 @@
 //! `signals` on, one CAEP/RISC `SignalsReceiver` on the library's poll
 //! stream, which removes the session a `session-revoked` names.
 //!
-//! **THE LIBRARY IS BLOCKING** (ureq): every call that may touch the
-//! network — `create` (discovery), `start`, `stop`, `authorize`,
-//! `complete_session` — runs on `spawn_blocking`, never on the runtime's
-//! threads, and the receiver polls on a thread of its own the library
-//! spawns. Asking whether a session is still there (`session()`) is a map
-//! lookup and runs where it is asked.
+//! **THE LIBRARY'S ASYNC API** (its `tokio` feature, 0.3.0): every call
+//! that may touch the network — `create_async` (discovery), `start_async`,
+//! `stop_async`, `authorize_async`, `complete_session_async`,
+//! `session_access_token_async` — is awaited, and the library runs it on
+//! tokio's blocking pool, never on the runtime's threads (its HTTP client is
+//! still `ureq`: one blocking-pool thread per call in flight). The receiver
+//! polls on one thread of its own. Asking whether a session is still there
+//! (`session()`) and the receiver's `health()` are map reads and run where
+//! they are asked.
+//!
+//! **THE LIBRARY'S SESSION STORE IS BOUNDED** (`MemorySessionStore::new`):
+//! twice `PEP_PROXY_MAX_SESSIONS` entries, each kept
+//! `PEP_PROXY_SESSION_TTL_MS` after it was last written. The proxy's own
+//! store is the admission rule (it REFUSES past its bound); the library's is
+//! a memory bound behind it, with headroom so that an entry the proxy let
+//! expire without removing never pushes a live one out.
+//!
+//! **A STREAM THAT STOPS ANSWERING IS NOTICED** (`ReceiverHealth`): a
+//! receiver with no successful poll within `PEP_PROXY_SIGNALS_STALE_MS` is
+//! not trusted to end sessions, and its routes ask the service's session
+//! endpoint instead (`STS-XPEP-0099`, logged once when it goes stale and once
+//! when it recovers) — otherwise a sign-out signalled while the stream is
+//! down would end nothing.
 //!
 //! **BUILT FROM THE PULL, REBUILT WHEN IT CHANGES.** An entry is keyed by
 //! a digest of everything it was built from (the issuer, the client, its
@@ -25,6 +42,7 @@
 //! logged or reported**: the digest is not either.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use oidc_caep_risc::{
@@ -48,13 +66,52 @@ pub struct Party {
     /// Signals were asked for. With no receiver running, the fallback
     /// (`validation.session`) decides liveness instead.
     pub signals: bool,
+    /// The client this party is for, for the log only.
+    client_id: String,
+    /// How long a receiver may go without a successful poll.
+    stale_ms: u64,
+    /// The receiver was last seen stale, so a change is logged once.
+    stale: Arc<AtomicBool>,
 }
 
 impl Party {
     /// The library's own answer about a session is the liveness check
-    /// only while a receiver is there to end sessions.
+    /// only while a receiver is there to end sessions AND its stream has
+    /// answered within `PEP_PROXY_SIGNALS_STALE_MS`.
     pub fn signals_live(&self) -> bool {
-        self.signals && self.receiver.is_some()
+        if !self.signals {
+            return false;
+        }
+        let Some(receiver) = &self.receiver else {
+            return false;
+        };
+        let healthy = receiver.health().is_healthy(self.stale_ms as f64 / 1000.0);
+        let was_stale = self.stale.swap(!healthy, Ordering::SeqCst);
+        if !healthy && !was_stale {
+            let health = receiver.health();
+            tracing::warn!(
+                "{}xacml-pep: proxy: the CAEP/RISC stream of client {} has \
+                 not answered a poll within {} ms ({} failed in a row: {}); \
+                 sessions of its routes are checked with the service's \
+                 session endpoint until it does.",
+                tag("STS-XPEP-0099"),
+                self.client_id,
+                self.stale_ms,
+                health.consecutive_failures,
+                if health.last_error.is_empty() {
+                    "no error recorded"
+                } else {
+                    health.last_error.as_str()
+                }
+            );
+        } else if healthy && was_stale {
+            tracing::info!(
+                "xacml-pep: proxy: the CAEP/RISC stream of client {} answers \
+                 again; its signals decide session liveness once more.",
+                self.client_id
+            );
+        }
+        healthy
     }
 }
 
@@ -67,6 +124,9 @@ struct Entry {
 pub struct RpSet {
     allow_insecure: bool,
     poll_ms: u64,
+    stale_ms: u64,
+    store_max: usize,
+    store_ttl_sec: u64,
     on_end: OnEnd,
     entries: Mutex<HashMap<String, Entry>>,
     /// The library's session stores, one per client, outliving rebuilds.
@@ -156,11 +216,26 @@ pub fn wanted(pulled: &Pulled) -> HashMap<String, bool> {
     out
 }
 
+/// What `RpSet::new` is given, from `Options`.
+pub struct RpLimits {
+    pub allow_insecure: bool,
+    pub poll_ms: u64,
+    pub stale_ms: u64,
+    pub max_sessions: usize,
+    pub session_ttl_ms: u64,
+}
+
 impl RpSet {
-    pub fn new(allow_insecure: bool, poll_ms: u64, on_end: OnEnd) -> RpSet {
+    pub fn new(limits: RpLimits, on_end: OnEnd) -> RpSet {
+        let poll_ms = limits.poll_ms.max(10);
         RpSet {
-            allow_insecure,
-            poll_ms: poll_ms.max(10),
+            allow_insecure: limits.allow_insecure,
+            poll_ms,
+            // Never shorter than three polls, or one slow answer would
+            // flip a working stream to stale.
+            stale_ms: limits.stale_ms.max(poll_ms * 3),
+            store_max: limits.max_sessions.max(1).saturating_mul(2),
+            store_ttl_sec: limits.session_ttl_ms.div_ceil(1000).max(1),
             on_end,
             entries: Mutex::new(HashMap::new()),
             stores: Mutex::new(HashMap::new()),
@@ -170,7 +245,12 @@ impl RpSet {
     fn store_for(&self, client_id: &str) -> Arc<MemorySessionStore> {
         lock(&self.stores)
             .entry(client_id.to_string())
-            .or_insert_with(|| Arc::new(MemorySessionStore::default()))
+            .or_insert_with(|| {
+                Arc::new(MemorySessionStore::new(
+                    self.store_max,
+                    self.store_ttl_sec,
+                ))
+            })
             .clone()
     }
 
@@ -211,15 +291,17 @@ impl RpSet {
         let poll_ms = self.poll_ms as i64;
         let described =
             format!("iya-sts xacml-pep reverse proxy ({})", client_id);
-        let built = tokio::task::spawn_blocking(move || {
-            let rp = Arc::new(
-                RelyingParty::create(config).map_err(|e| e.to_string())?,
-            );
-            rp.set_session_store(store as Arc<dyn SessionStore>);
-            if !signals {
-                return Ok::<_, String>((rp, None, None));
-            }
-            let receiver = SignalsReceiver::new(
+        let rp = Arc::new(
+            RelyingParty::create_async(config)
+                .await
+                .map_err(|e| e.to_string())?,
+        );
+        rp.set_session_store(store as Arc<dyn SessionStore>);
+        let (receiver, receiver_problem) = if !signals {
+            (None, None)
+        } else {
+            let reporting = client_id.to_string();
+            let made = SignalsReceiver::new(
                 &issuer,
                 Arc::new(move |ended: Vec<String>, _: SignalEvent| {
                     on_end(ended)
@@ -230,20 +312,30 @@ impl RpSet {
                     scope: "ssf.manage".into(),
                     description: described,
                     poll_interval_ms: poll_ms,
+                    // The library's own lines (a failed poll, a refused
+                    // SET) go to this log, at debug: the state change
+                    // that matters is logged once by `signals_live()`.
+                    on_error: Some(Arc::new(move |line: &str| {
+                        tracing::debug!(
+                            "xacml-pep: proxy: client {}: {}",
+                            reporting,
+                            line
+                        );
+                    })),
                     ..ReceiverOptions::default()
                 },
             );
-            let started = receiver.and_then(|r| r.start().map(|_| r));
-            match started {
-                Ok(receiver) => Ok((rp, Some(Arc::new(receiver)), None)),
-                Err(error) => Ok((rp, None, Some(error.to_string()))),
+            match made {
+                Err(error) => (None, Some(error.to_string())),
+                Ok(made) => {
+                    let made = Arc::new(made);
+                    match made.start_async().await {
+                        Ok(()) => (Some(made), None),
+                        Err(error) => (None, Some(error.to_string())),
+                    }
+                }
             }
-        })
-        .await
-        .map_err(|e| {
-            format!("the relying party could not be built: {}", e)
-        })??;
-        let (rp, receiver, receiver_problem) = built;
+        };
         if let Some(problem) = receiver_problem {
             tracing::warn!(
                 "{}xacml-pep: proxy: the CAEP/RISC receiver for client {} \
@@ -258,6 +350,9 @@ impl RpSet {
             rp,
             receiver,
             signals,
+            client_id: client_id.to_string(),
+            stale_ms: self.stale_ms,
+            stale: Arc::new(AtomicBool::new(false)),
         };
         let replaced = lock(&self.entries).insert(
             client_id.to_string(),
@@ -320,6 +415,68 @@ impl RpSet {
         }
     }
 
+    /// The CAEP/RISC streams' and the library session stores' state, for
+    /// `GET /`: COUNTS and ages only — no client id, no URL, no error text
+    /// (an error can carry the service's address), since `GET /` answers
+    /// whoever reaches the container.
+    pub fn signals_json(&self) -> Value {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        let entries = lock(&self.entries);
+        let (mut receivers, mut healthy) = (0u64, 0u64);
+        let (mut worst_failures, mut accepted, mut refused, mut ended) =
+            (0u64, 0u64, 0u64, 0u64);
+        let mut oldest_success_ms: Option<u64> = None;
+        for entry in entries.values() {
+            let Some(receiver) = &entry.party.receiver else {
+                continue;
+            };
+            receivers += 1;
+            let h = receiver.health();
+            if h.is_healthy_at(now, self.stale_ms as f64 / 1000.0) {
+                healthy += 1;
+            }
+            worst_failures = worst_failures.max(h.consecutive_failures);
+            accepted += h.sets_accepted;
+            refused += h.sets_refused;
+            ended += h.sessions_ended;
+            if let Some(at) = h.last_success_at.or(h.started_at) {
+                let age = ((now - at).max(0.0) * 1000.0) as u64;
+                oldest_success_ms =
+                    Some(oldest_success_ms.map_or(age, |o| o.max(age)));
+            }
+        }
+        drop(entries);
+        let (mut held, mut evicted, mut expired) = (0usize, 0u64, 0u64);
+        for store in lock(&self.stores).values() {
+            let stats = store.stats();
+            held += stats.entries;
+            evicted += stats.evicted;
+            expired += stats.expired;
+        }
+        json!({
+            "receivers": receivers,
+            "healthy": healthy,
+            "stale": receivers - healthy,
+            "staleAfterMs": self.stale_ms,
+            "pollIntervalMs": self.poll_ms,
+            "oldestSuccessAgeMs": oldest_success_ms,
+            "mostConsecutiveFailures": worst_failures,
+            "setsAccepted": accepted,
+            "setsRefused": refused,
+            "sessionsEnded": ended,
+            "librarySessions": {
+                "held": held,
+                "max": self.store_max,
+                "ttlSec": self.store_ttl_sec,
+                "evicted": evicted,
+                "expired": expired
+            }
+        })
+    }
+
     /// How many relying parties and receivers are held, for `GET /`.
     pub fn counts(&self) -> (usize, usize) {
         let entries = lock(&self.entries);
@@ -333,10 +490,18 @@ impl RpSet {
     }
 }
 
-/// A receiver's `stop()` waits up to twenty seconds for its poll thread,
-/// so it is never awaited on a request.
+/// A receiver's `stop()` waits for a transmitter call in flight (at most
+/// the library's 15 s HTTP timeout), so it is never awaited on a request:
+/// it runs as a task of its own, on the blocking pool.
 fn stop_detached(receiver: Arc<SignalsReceiver>) {
-    std::thread::spawn(move || receiver.stop());
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            handle.spawn(async move { receiver.stop_async().await });
+        }
+        Err(_) => {
+            std::thread::spawn(move || receiver.stop());
+        }
+    }
 }
 
 #[cfg(test)]

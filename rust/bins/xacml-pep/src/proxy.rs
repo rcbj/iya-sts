@@ -69,7 +69,7 @@ use crate::proxy_request::{
     response_headers, SESSION_COOKIE,
 };
 use crate::rp_session::{self, Pending, Session};
-use crate::rp_set::{self, RpSet};
+use crate::rp_set::{self, RpLimits, RpSet};
 use crate::service::Pep;
 use crate::sync::encode;
 use oidc_caep_risc::EndSessionOptions;
@@ -84,7 +84,7 @@ pub struct Proxy {
     auth: Authenticator,
     upstream: Mutex<Option<(u64, reqwest::Client)>>,
     /// The session mechanism's relying parties (`rp_set.rs`).
-    rps: RpSet,
+    rps: Arc<RpSet>,
     /// Mode `jwt`'s tokens and mode `saml`'s jars (D11, `identity.rs`).
     tokens: Tokens,
     jars: Jars,
@@ -273,11 +273,21 @@ impl Proxy {
                 }
             }
         });
-        let rps = RpSet::new(
-            pep.options.proxy_rp_allow_insecure,
-            pep.options.proxy_signals_poll_ms,
+        let o = &pep.options;
+        let rps = Arc::new(RpSet::new(
+            RpLimits {
+                allow_insecure: o.proxy_rp_allow_insecure,
+                poll_ms: o.proxy_signals_poll_ms,
+                stale_ms: o.proxy_signals_stale_ms,
+                max_sessions: o.proxy_max_sessions,
+                session_ttl_ms: o.proxy_session_ttl_ms,
+            },
             on_end,
-        );
+        ));
+        // `GET /` reports the streams' health as it is when asked.
+        let reporting = rps.clone();
+        pep.sync
+            .set_signals_reporter(Arc::new(move || reporting.signals_json()));
         Proxy {
             pep,
             auth: Authenticator::new(client, ttl),
@@ -885,17 +895,9 @@ impl Proxy {
                 }
             };
         let rp = party.rp.clone();
-        let authorized =
-            tokio::task::spawn_blocking(move || rp.authorize()).await;
+        let authorized = rp.authorize_async(Default::default()).await;
         let transaction = match authorized {
-            Ok(Ok(transaction)) => transaction,
-            Ok(Err(error)) => {
-                return Established::Refused(Refusal::new(
-                    502,
-                    "STS-XPEP-0075",
-                    &format!("the sign-in could not be started: {}", error),
-                ))
-            }
+            Ok(transaction) => transaction,
             Err(error) => {
                 return Established::Refused(Refusal::new(
                     502,
@@ -993,25 +995,18 @@ impl Proxy {
         let rp = party.rp.clone();
         let transaction = pending.transaction.clone();
         let session_id = id.clone();
-        let completed = tokio::task::spawn_blocking(move || {
-            rp.complete_session(&pairs, &transaction, &session_id)
-        })
-        .await;
+        let completed = rp
+            .complete_session_async(pairs, transaction, session_id)
+            .await;
         let login = match completed {
-            Ok(Ok(login)) => login,
-            Ok(Err(error)) => {
+            Ok(login) => login,
+            Err(error) => {
                 return refused(
                     "STS-XPEP-0083",
                     &format!(
                         "the sign-in was refused ({}): {}",
                         error.code, error.message
                     ),
-                )
-            }
-            Err(error) => {
-                return refused(
-                    "STS-XPEP-0083",
-                    &format!("the sign-in could not be completed: {}", error),
                 )
             }
         };
@@ -1198,20 +1193,14 @@ impl Proxy {
             return Err(none("the session's relying party is no longer held"));
         };
         let rp = party.rp.clone();
-        match tokio::task::spawn_blocking(move || rp.session_access_token(&id))
-            .await
-        {
-            Ok(Ok(access)) if !access.access_token.is_empty() => {
+        match rp.session_access_token_async(id).await {
+            Ok(access) if !access.access_token.is_empty() => {
                 Ok(("access_token", access.access_token))
             }
-            Ok(Ok(_)) => Err(none("the session holds no access token")),
-            Ok(Err(error)) => Err(none(&format!(
+            Ok(_) => Err(none("the session holds no access token")),
+            Err(error) => Err(none(&format!(
                 "the session's access token could not be had ({})",
                 error.code
-            ))),
-            Err(error) => Err(none(&format!(
-                "the session's access token could not be had: {}",
-                error
             ))),
         }
     }
