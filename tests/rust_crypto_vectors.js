@@ -399,7 +399,7 @@ function xmlSignatures(t, vectors) {
 // THE KERBEROS CODEC (#444, phase 2b): what `sts-kerberos` made — keys from
 // passwords, ciphertexts under its own random confounders, checksums,
 // messages of every kind it encodes, MIC and Wrap tokens, SPNEGO tokens,
-// a 0x8003 checksum and the MS-KKDCP envelope — read by kerberos/'s codec
+// a 0x8003 checksum, a keytab and the MS-KKDCP envelope — read by kerberos/'s codec
 // here: the same key, the plaintext back, the checksum verified, and each
 // message decoded to the JSON Rust decoded it to and re-encoded to Rust's
 // bytes.
@@ -567,6 +567,9 @@ async function krb5CodecFromRust(t, v) {
   t.check(same(gss.parseGssChecksum(unhex(v.gssChecksum.bytes)),
                v.gssChecksum.parsed), 'a 0x8003 checksum Rust built ' +
           'parses in Node as Rust parses it');
+  const kt = require(path.join(K, 'krb5_keytab'));
+  t.check(same(kt.readKeytab(unhex(v.keytab.bytes)), v.keytab.entries),
+          'a keytab Rust wrote reads in Node as Rust reads it');
   // The /KdcProxy reading (krb5_kdc.js) of both envelopes Rust built, and
   // the reply envelope Node itself would build.
   [v.kkdcp.envelope, v.kkdcp.client].forEach(function (/** @type {any} */ e) {

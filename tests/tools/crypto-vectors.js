@@ -4106,6 +4106,62 @@ async function krb5Codec() {
                asn1.encOctetString(frame(r)))])) };
   });
 
+  // ---- the keytab file format (krb5_keytab.ts) ----------------------
+  const kt = require(path.join(K, 'krb5_keytab'));
+  const ktEntries = [
+    { realm: 'EXAMPLE.COM', components: ['HTTP', 'web.example.com'],
+      timestamp: 1800000000, kvno: 3, etype: 18, key: keyFor(18, 0) },
+    { realm: 'EXAMPLE.COM', components: ['host', 'hé.example.com'],
+      nameType: 3, timestamp: 4294967297, kvno: 300, etype: -138,
+      key: keyFor(23, 0) },
+    // Not 0: Node writes `timestamp || now`, so 0 is the time of writing.
+    { realm: '', components: ['x'], timestamp: 1, kvno: 0, etype: 23,
+      key: unhex('01') }];
+  const keytab = { written: [], read: [] };
+  [[ktEntries[0]], ktEntries, [], [{ realm: 'R', components: [],
+    timestamp: 0, kvno: 1, etype: 17, key: unhex('01') }],
+   [{ realm: 'R', components: ['a', ''], timestamp: 0, kvno: 1, etype: 17,
+      key: unhex('01') }],
+   [{ realm: 'R', components: ['a'], timestamp: 0, kvno: 1, etype: 17,
+      key: new Uint8Array(0) }],
+   [{ realm: 'R', components: ['a'.repeat(70000)], timestamp: 0, kvno: 1,
+      etype: 17, key: unhex('01') }]].forEach(function (list) {
+    const r = attempt(function () { return kt.writeKeytab(list); });
+    keytab.written.push({ entries: list.map(function (e) {
+      return { realm: e.realm, components: e.components,
+               nameType: e.nameType === undefined ? null : e.nameType,
+               timestamp: e.timestamp, kvno: e.kvno, etype: e.etype,
+               key: hex(e.key) };
+    }), bytes: r.ok ? hex(r.ok) : null, error: r.error || null });
+  });
+  const goodTab = kt.writeKeytab(ktEntries);
+  const be32 = function (n) {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setInt32(0, n);
+    return b;
+  };
+  const oneEntry = kt.writeKeytab([ktEntries[0]]).subarray(2);
+  [goodTab, cat(unhex('0502'), be32(-5), new Uint8Array(5), oneEntry),
+   cat(unhex('0502'), oneEntry.subarray(0, oneEntry.length - 4)),
+   cat(unhex('0502'), be32(oneEntry.length - 8),
+       oneEntry.subarray(4, oneEntry.length - 4)),
+   unhex('0501'), unhex('05'), unhex('0502'), unhex('050200'),
+   cat(unhex('0502'), be32(-9), new Uint8Array(2)),
+   cat(unhex('0502'), be32(100), new Uint8Array(3)),
+   cat(unhex('0502'), be32(0)), cat(unhex('0502'), be32(1), unhex('00')),
+   cat(unhex('0502'), be32(6), unhex('0001'), unhex('0009'), unhex('00')),
+   cat(unhex('0502'), be32(8), unhex('0000'), unhex('0001'), unhex('41'),
+       unhex('000000')),
+   cat(unhex('0502'), be32(17), unhex('0001'), unhex('0001'), unhex('ff'),
+       unhex('0000'), new Uint8Array(11), unhex('0000')),
+   cat(unhex('0502'), be32(16), unhex('0000'), unhex('0000'),
+       new Uint8Array(11), unhex('0001'), unhex('aa')),
+   cat(unhex('0502'), be32(4), unhex('0000'))].forEach(function (b) {
+    const r = attempt(function () { return kt.readKeytab(b); });
+    keytab.read.push({ bytes: hex(b), entries: r.ok ? norm(r.ok) : null,
+                       error: r.error || null });
+  });
+
   return {
     primitives: primitives, nfold: nfold, profiles: profiles,
     etypeNames: etypeNames, stringToKey: s2k, derived: derived,
@@ -4121,6 +4177,7 @@ async function krb5Codec() {
               negStates: negStates,
               mechs: sp.MECHS },
     kkdcp: { bodies: kkdcp, replies: replies },
+    keytab: keytab,
     usage: kc.KEY_USAGE, preference: kc.DEFAULT_ETYPE_PREFERENCE
   };
 }

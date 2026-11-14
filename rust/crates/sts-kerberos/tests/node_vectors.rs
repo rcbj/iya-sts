@@ -37,6 +37,7 @@ use sts_kerberos::crypto::{self, Enctype};
 use sts_kerberos::error::Krb5Error;
 use sts_kerberos::fast;
 use sts_kerberos::gss::{self, GssChecksumOptions, Role, TokenOptions};
+use sts_kerberos::keytab::{self, KeytabEntry};
 use sts_kerberos::kkdcp;
 use sts_kerberos::messages::*;
 use sts_kerberos::pkinit;
@@ -916,6 +917,39 @@ fn the_kerberos_codec_matches_node() {
         );
     }
 
+    // ---- the keytab file format -------------------------------------
+    for x in v["keytab"]["written"].as_array().unwrap() {
+        let entries: Vec<KeytabEntry> = x["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| KeytabEntry {
+                realm: e["realm"].as_str().unwrap().into(),
+                components: e["components"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|c| c.as_str().unwrap().to_string())
+                    .collect(),
+                name_type: e["nameType"].as_u64().map(|n| n as u32),
+                timestamp: Some(i(&e["timestamp"])),
+                kvno: i(&e["kvno"]) as u32,
+                etype: i(&e["etype"]),
+                key: unhex(&e["key"]),
+            })
+            .collect();
+        let r = keytab::write_keytab(&entries);
+        let got = r.as_ref().map(|b| json!(hex(b))).unwrap_or(Json::Null);
+        c.eq(&got, &x["bytes"], || "writeKeytab".into());
+        c.eq(&err_json(&r), &x["error"], || "writeKeytab refusal".into());
+    }
+    for x in v["keytab"]["read"].as_array().unwrap() {
+        let r = keytab::read_keytab(&unhex(&x["bytes"]));
+        let got = r.as_ref().map(js).unwrap_or(Json::Null);
+        c.eq(&got, &x["entries"], || format!("readKeytab {}", x["bytes"]));
+        c.eq(&err_json(&r), &x["error"], || "readKeytab refusal".into());
+    }
+
     eprintln!(
         "krb5-codec-node.json: {} checks over {} message kinds, {} failed",
         c.checked,
@@ -1437,6 +1471,30 @@ fn write_the_rust_vectors_when_asked() {
             "client": hex(&kkdcp::client_proxy_message(&reply,
                 Some("RUST.EXAMPLE")))}
     });
+    let tab = keytab::write_keytab(&[
+        KeytabEntry {
+            realm: "RUST.EXAMPLE".into(),
+            components: vec!["HTTP".into(), "rust.example".into()],
+            name_type: None,
+            timestamp: Some(1_800_000_000),
+            kvno: 70_000,
+            etype: 20,
+            key: crypto::random_bytes(32).unwrap(),
+        },
+        KeytabEntry {
+            realm: "RUST.EXAMPLE".into(),
+            components: vec!["carol".into()],
+            name_type: Some(1),
+            timestamp: Some(1),
+            kvno: 2,
+            etype: 23,
+            key: crypto::random_bytes(16).unwrap(),
+        },
+    ])
+    .unwrap();
+    let mut out = out;
+    out["keytab"] = json!({"bytes": hex(&tab),
+        "entries": js(&keytab::read_keytab(&tab).unwrap())});
     let path = std::path::Path::new(&dir).join("krb5-codec-rust.json");
     std::fs::write(&path, serde_json::to_string_pretty(&out).unwrap()).unwrap();
     eprintln!("wrote {}", path.display());

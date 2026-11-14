@@ -16,6 +16,7 @@
 //! | [`spnego`] | `kerberos/krb5_spnego.js` (the RFC 4178 codec, not the negotiation) |
 //! | [`fast`] | `kerberos/krb5_fast_codec.ts` |
 //! | [`pkinit`] | `kerberos/krb5_pkinit_codec.ts` |
+//! | [`keytab`] | `kerberos/krb5_keytab.ts` (the MIT keytab file format) |
 //! | [`kkdcp`] | the MS-KKDCP envelope `krb5_kdc.js` and `krb5_home.ts` read and write |
 //!
 //! **THE DER CODER IS NODE'S, NOT `rasn-kerberos`** (a deviation from the
@@ -28,8 +29,8 @@
 //!
 //! Not here, and phase 9's: the KDC, the acceptor, the principal database,
 //! SPNEGO's negotiation, the replay cache and anything else that holds
-//! state. The PAC and its NDR (`krb5_pac.js`, `krb5_ndr.js`) and the keytab
-//! format (`krb5_keytab.ts`) are pure codecs too and are not yet ported.
+//! state. The PAC and its NDR (`krb5_pac.js`, `krb5_ndr.js`) are pure codecs
+//! too and are not yet ported.
 //!
 //! Proved against Node by `tests/node_vectors.rs` over
 //! `krb5-codec-node.json` (`tests/tools/crypto-vectors.js`), and the other
@@ -43,6 +44,7 @@ pub mod error;
 pub mod fast;
 pub mod gss;
 mod hex;
+pub mod keytab;
 pub mod kkdcp;
 pub mod messages;
 pub mod pkinit;
