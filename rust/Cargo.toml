@@ -21,6 +21,7 @@ members = [
   "crates/sts-model",
   "crates/sts-guards",
   "crates/sts-kerberos",
+  "crates/sts-ldap",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]
@@ -48,6 +49,7 @@ sts-mgmt-api = { path = "crates/sts-mgmt-api" }
 sts-model = { path = "crates/sts-model" }
 sts-xml = { path = "crates/sts-xml" }
 sts-kerberos = { path = "crates/sts-kerberos" }
+sts-ldap = { path = "crates/sts-ldap" }
 axum = "0.8"
 base64 = "0.23"
 flate2 = "1"
@@ -85,6 +87,8 @@ md4 = "0.11"
 md-5 = "0.11"
 rc4 = "0.2"
 thiserror = "2.0"
+# Kanidm's LDAPv3 codec: sts-ldap compares its own against it in a test.
+ldap3_proto = "0.9"
 tracing = "0.1"
 
 [workspace.lints.rust]
