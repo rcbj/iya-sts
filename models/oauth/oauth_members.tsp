@@ -69,6 +69,19 @@ model AuthorizationServerMetadata {
   @member(#{ cite: "JARM section 4" })
   authorization_signing_alg_values_supported?: string[];
 
+  /** The realm's `/oauth2/challenge`, advertised only where it trusts an attester (#229). */
+  @member(#{ cite: "OAuth 2.0 Attestation-Based Client Authentication (draft 11) section 8" })
+  challenge_endpoint?: string;
+
+  @member(#{ cite: "OAuth 2.0 Attestation-Based Client Authentication (draft 11) section 8" })
+  client_attestation_pop_methods_supported?: string[];
+
+  @member(#{ cite: "OAuth 2.0 Attestation-Based Client Authentication (draft 11) section 8" })
+  client_attestation_pop_signing_alg_values_supported?: string[];
+
+  @member(#{ cite: "OAuth 2.0 Attestation-Based Client Authentication (draft 11) section 8" })
+  client_attestation_signing_alg_values_supported?: string[];
+
   @member(#{ cite: "RFC 8414 section 2" })
   code_challenge_methods_supported?: string[];
 
@@ -355,6 +368,18 @@ model TokenResponse {
   /** UMA's persisted claims token, issued with an RPT for the claims gathered (#1168). */
   @member(#{ cite: "UMA 2.0 Grant for OAuth 2.0 Authorization section 3.3.5" })
   pct?: string;
+
+  /** True when the RPT presented with the ticket was upgraded into this one and revoked (#1168). */
+  @member(#{ cite: "UMA 2.0 Grant for OAuth 2.0 Authorization section 3.3.5" })
+  upgraded?: boolean;
+
+  /** A Kerberos token from a token exchange: its Authenticator's subkey, base64url, which the holder needs to use the token (#658, D5). */
+  @member(#{ cite: "this service's own (a Kerberos token issued by RFC 8693 token exchange, #658)", own: true })
+  session_key?: string;
+
+  /** The RFC 3961 encryption type of `session_key` (#658, D5). */
+  @member(#{ cite: "this service's own (a Kerberos token issued by RFC 8693 token exchange, #658)", own: true })
+  session_key_etype?: int32;
 }
 
 /** An error response: the token endpoint's, and every JSON refusal shaped like it. */

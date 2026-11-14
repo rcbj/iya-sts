@@ -6462,7 +6462,15 @@ model gap to close in the TypeSpec. The open claim sets and the other answers
 are held by `tests/model_oauth.js`, against every answer, decoded token and
 error code `tests/oauth_model_wire.snapshot.json` recorded in development,
 RFC 9700, OAuth 2.1 and FAPI 2.0 modes, and it builds both discovery
-documents with every `oauth2.*` switch on in each FAPI profile. **That is a
+documents with every `oauth2.*` switch on in each FAPI profile — and with an
+attester trusted, since attestation-based client authentication's four members
+appear only then and no switch says so (they were a gap a stack run found
+while this check stayed green, 2026-11-14). A member that only one grant
+answers is held where that grant is tested, with
+`tests/tools/oauth_model_hold.js` (which also takes the member out of the set
+and requires the gap): UMA's `pct` (`uma_claims.js` C6a) and `upgraded`
+(`uma_grant.js` U1a), the Kerberos token's `session_key` and
+`session_key_etype` (`kerberos_tokens.js` X2a, this service's own). **That is a
 decision rcbj may reverse**: refusing (a 500, as the published APIs do with
 `STS-API-0139`) would make the model the gate, at the cost of a client
 seeing a 500 for a member the model forgot.

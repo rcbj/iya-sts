@@ -124,6 +124,8 @@ async function childBody() {
   const xstore = require(ROOT + '/xacml/xacml_store');
   const xml = require(ROOT + '/xacml/xacml_xml');
   const templates = require(ROOT + '/xacml/xacml_templates');
+  const OAuthModel = require(ROOT + '/oauth-oidc/oauth_model');
+  const modelHold = require(ROOT + '/tests/tools/oauth_model_hold');
 
   const marks = [];
   const mark = errorCodes.mark;
@@ -448,6 +450,17 @@ async function childBody() {
           oldGone.json.active === false,
           'U1. an upgrade adds what is decided again, says upgraded, and ' +
           'revokes the old RPT', brief(r));
+  // The upgrade's answer is the model's (UMA 2.0 Grant section 3.3.5's
+  // `upgraded`; #1579's gap scan found it undeclared in token-response,
+  // logged under STS-OAUTH-1005 on every upgrade), and the model without
+  // `upgraded` names it, so the first half is about that member.
+  const upHeld = modelHold.hold(OAuthModel, 'token-response', r.json,
+                                'upgraded');
+  t.check(r.json && r.json.upgraded === true && upHeld.gaps.length === 0 &&
+          upHeld.caught,
+          'U1a. the upgrade\'s token response is the model\'s ' +
+          '(token-response declares upgraded; without it, a gap)',
+          upHeld.gaps.concat(upHeld.mutated).join('; '));
   since = marks.length;
   const otherRpt = r.json.access_token;
   r = await ask('ug-client', { ticket: await ticketFor(pat2,
