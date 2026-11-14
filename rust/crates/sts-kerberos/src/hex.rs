@@ -9,6 +9,8 @@
 use serde::Serializer;
 
 /// Lowercase hex of some bytes.
+// A hot path: runs for every byte field a decoded structure
+// serializes; no span (an Entering/Leaving pair would drown the log).
 pub fn encode(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
     for b in bytes {
@@ -18,10 +20,14 @@ pub fn encode(bytes: &[u8]) -> String {
     out
 }
 
+// A hot path: runs for every byte field a decoded structure
+// serializes; no span (an Entering/Leaving pair would drown the log).
 pub fn ser<S: Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(&encode(bytes))
 }
 
+// A hot path: runs for every byte field a decoded structure
+// serializes; no span (an Entering/Leaving pair would drown the log).
 pub fn opt<S: Serializer>(
     bytes: &Option<Vec<u8>>,
     s: S,

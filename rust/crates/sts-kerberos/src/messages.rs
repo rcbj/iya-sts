@@ -69,6 +69,7 @@ pub mod application {
 }
 
 /// The name of an application number: Node's `APPLICATION_NAMES`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn application_name(n: u8) -> Option<&'static str> {
     Some(match n {
         1 => "Ticket",
@@ -122,6 +123,7 @@ pub const PA_TYPES: [(&str, i64); 13] = [
 ];
 
 /// Node's `PA_TYPE_NAMES[type] || "PA-" + type`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn pa_type_name(t: i64) -> String {
     PA_TYPES
         .iter()
@@ -182,6 +184,7 @@ pub const PAC_OPTIONS: [(&str, u32); 4] = [
 ];
 
 /// Node's `flagNames()`: lowercase, `-` for `_`, `bit-N` when unnamed.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn flag_names(table: &[(&str, u32)], bits: &[u32]) -> Vec<String> {
     bits.iter()
         .map(|b| match table.iter().rev().find(|(_, n)| n == b) {
@@ -191,14 +194,17 @@ pub fn flag_names(table: &[(&str, u32)], bits: &[u32]) -> Vec<String> {
         .collect()
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn kdc_option_names(bits: &[u32]) -> Vec<String> {
     flag_names(&KDC_OPTIONS, bits)
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn ticket_flag_names(bits: &[u32]) -> Vec<String> {
     flag_names(&TICKET_FLAGS, bits)
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn ap_option_names(bits: &[u32]) -> Vec<String> {
     flag_names(&AP_OPTIONS, bits)
 }
@@ -334,6 +340,7 @@ pub struct ErrorDescription {
     pub meaning: String,
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn describe_error(code: i64) -> ErrorDescription {
     match ERROR_CODES.iter().find(|(c, _, _)| *c == code) {
         Some((_, name, meaning)) => ErrorDescription {
@@ -404,6 +411,7 @@ pub struct PrincipalName {
 }
 
 impl PrincipalName {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(r#type: i64, name: &[&str]) -> Self {
         PrincipalName {
             r#type,
@@ -411,6 +419,7 @@ impl PrincipalName {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         let components: Vec<Vec<u8>> = self
             .name
@@ -423,6 +432,7 @@ impl PrincipalName {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let f = fields(t)?;
         Ok(PrincipalName {
@@ -435,6 +445,7 @@ impl PrincipalName {
     }
 
     /// Node's `principalToString()`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn to_text(&self, realm: Option<&str>) -> String {
         let s = self.name.join("/");
         match realm.filter(|r| !r.is_empty()) {
@@ -455,6 +466,7 @@ pub struct ParsedPrincipal {
 /// Node's `parsePrincipal()`: the realm after the LAST `@` (not at the
 /// start), components split on `/`, and a type guessed from the shape
 /// when none is given.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn parse_principal(
     text: &str,
     default_type: Option<i64>,
@@ -501,6 +513,7 @@ pub struct EncryptedData {
 }
 
 impl EncryptedData {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(etype: i64, kvno: Option<i64>, cipher: Vec<u8>) -> Self {
         EncryptedData {
             etype,
@@ -510,6 +523,7 @@ impl EncryptedData {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, int(self.etype)),
@@ -518,6 +532,7 @@ impl EncryptedData {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let f = fields(t)?;
         let etype = asn1::dec_integer(f.tag_of(0)?)?;
@@ -541,6 +556,7 @@ pub struct EncryptionKey {
 }
 
 impl EncryptionKey {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(etype: i64, key: Vec<u8>) -> Self {
         EncryptionKey {
             etype,
@@ -549,6 +565,7 @@ impl EncryptionKey {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, int(self.etype)),
@@ -556,6 +573,7 @@ impl EncryptionKey {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let f = fields(t)?;
         let etype = asn1::dec_integer(f.tag_of(0)?)?;
@@ -576,6 +594,7 @@ pub struct Checksum {
 }
 
 impl Checksum {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, int(self.r#type)),
@@ -583,6 +602,7 @@ impl Checksum {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let f = fields(t)?;
         Ok(Checksum {
@@ -603,6 +623,7 @@ pub struct PaData {
 }
 
 impl PaData {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(r#type: i64, value: Vec<u8>) -> Self {
         PaData {
             r#type,
@@ -611,6 +632,7 @@ impl PaData {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (1, int(self.r#type)),
@@ -619,6 +641,7 @@ impl PaData {
     }
 
     /// Node's `readPaData()`: a missing value is empty, not a refusal.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let f = fields(t)?;
         let r#type = asn1::dec_integer(f.tag_of(1)?)?;
@@ -633,6 +656,7 @@ impl PaData {
     }
 
     /// The first of a type in a list: Node's `find()` (FAST codec).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn find(list: &[PaData], r#type: i64) -> Option<&PaData> {
         list.iter().find(|p| p.r#type == r#type)
     }
@@ -643,6 +667,7 @@ fn padata_list(t: &Tlv<'_>) -> Krb5Result<Vec<PaData>> {
 }
 
 /// A SEQUENCE OF PA-DATA.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_padata_list(list: &[PaData]) -> Vec<u8> {
     let items: Vec<Vec<u8>> = list.iter().map(PaData::encode).collect();
     asn1::enc_sequence(&items)
@@ -657,6 +682,7 @@ pub struct HostAddress {
 }
 
 impl HostAddress {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, int(self.r#type)),
@@ -664,6 +690,7 @@ impl HostAddress {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let f = fields(t)?;
         Ok(HostAddress {
@@ -674,11 +701,13 @@ impl HostAddress {
 }
 
 /// HostAddresses: Node's `encHostAddresses()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_host_addresses(list: &[HostAddress]) -> Vec<u8> {
     let items: Vec<Vec<u8>> = list.iter().map(HostAddress::encode).collect();
     asn1::enc_sequence(&items)
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_host_addresses(t: &Tlv<'_>) -> Krb5Result<Vec<HostAddress>> {
     asn1::dec_sequence_of(t)?
         .iter()
@@ -702,6 +731,7 @@ pub struct AuthorizationEntry {
 }
 
 /// AuthorizationData: Node's `encAuthorizationData()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_authorization_data(list: &[AuthorizationEntry]) -> Vec<u8> {
     let items: Vec<Vec<u8>> = list
         .iter()
@@ -716,6 +746,7 @@ pub fn enc_authorization_data(list: &[AuthorizationEntry]) -> Vec<u8> {
 }
 
 /// Node's `readAuthorizationData()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_authorization_data(
     t: &Tlv<'_>,
 ) -> Krb5Result<Vec<AuthorizationEntry>> {
@@ -750,6 +781,7 @@ pub struct Ticket {
 
 impl Ticket {
     /// Node's `encTicket()`: the raw bytes when it has them.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         if let Some(raw) = &self.raw {
             return raw.clone();
@@ -765,6 +797,7 @@ impl Ticket {
         )
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app = asn1::read_application(bytes, Some(application::TICKET))?;
         let f = fields(&app.sequence)?;
@@ -804,6 +837,7 @@ pub struct EncTicketPart {
 }
 
 impl EncTicketPart {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         let (tt, tc) = match &self.transited {
             Some(t) => (t.r#type, t.contents.clone()),
@@ -833,6 +867,7 @@ impl EncTicketPart {
         ))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app =
             asn1::read_application(bytes, Some(application::ENC_TICKET_PART))?;
@@ -885,6 +920,7 @@ pub struct KdcReqBody {
 impl KdcReqBody {
     /// Node's `encKdcReqBody()` — always built, never the raw bytes (the
     /// callers that keep raw bytes test for them themselves).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         let etypes: Vec<Vec<u8>> =
             self.etypes.iter().map(|e| asn1::enc_integer(*e)).collect();
@@ -921,6 +957,7 @@ impl KdcReqBody {
 
     /// The raw bytes when it has them, else built: what `encKdcReq()` and
     /// `encFastReq()` write.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn bytes(&self) -> Krb5Result<Vec<u8>> {
         match &self.raw {
             Some(r) => Ok(r.clone()),
@@ -928,6 +965,7 @@ impl KdcReqBody {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let f = fields(t)?;
         Ok(KdcReqBody {
@@ -1042,6 +1080,7 @@ pub struct KdcRep {
 }
 
 impl KdcRep {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         let tgs = self.msg_type == msg_type::TGS_REP;
         asn1::enc_application(
@@ -1067,6 +1106,7 @@ impl KdcRep {
         )
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app = asn1::read_application(bytes, None)?;
         if app.number != application::AS_REP
@@ -1123,6 +1163,7 @@ pub struct EncKdcRepPart {
 
 impl EncKdcRepPart {
     /// Node's `encEncKdcRepPart(p, applicationNumber)`, 25 by default.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(
         &self,
         application_number: Option<u8>,
@@ -1165,6 +1206,7 @@ impl EncKdcRepPart {
         ))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app = asn1::read_application(bytes, None)?;
         if app.number != application::ENC_AS_REP_PART
@@ -1226,6 +1268,7 @@ pub struct Authenticator {
 }
 
 impl Authenticator {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_application(
             application::AUTHENTICATOR,
@@ -1243,6 +1286,7 @@ impl Authenticator {
         )
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app =
             asn1::read_application(bytes, Some(application::AUTHENTICATOR))?;
@@ -1276,6 +1320,7 @@ pub struct ApReq {
 }
 
 impl ApReq {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         Ok(asn1::enc_application(
             application::AP_REQ,
@@ -1289,6 +1334,7 @@ impl ApReq {
         ))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app = asn1::read_application(bytes, Some(application::AP_REQ))?;
         let f = fields(&app.sequence)?;
@@ -1312,6 +1358,7 @@ pub struct ApRep {
 }
 
 impl ApRep {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_application(
             application::AP_REP,
@@ -1323,6 +1370,7 @@ impl ApRep {
         )
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app = asn1::read_application(bytes, Some(application::AP_REP))?;
         let f = fields(&app.sequence)?;
@@ -1345,6 +1393,7 @@ pub struct EncApRepPart {
 }
 
 impl EncApRepPart {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_application(
             application::ENC_AP_REP_PART,
@@ -1357,6 +1406,7 @@ impl EncApRepPart {
         )
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app =
             asn1::read_application(bytes, Some(application::ENC_AP_REP_PART))?;
@@ -1400,6 +1450,7 @@ pub struct KrbError {
 
 impl KrbError {
     /// A KRB-ERROR to send: the fields a KDC fills, the rest absent.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(
         error_code: i64,
         stime: KrbTime,
@@ -1426,6 +1477,7 @@ impl KrbError {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_application(
             application::KRB_ERROR,
@@ -1506,6 +1558,7 @@ pub struct PaEncTsEnc {
 
 impl PaEncTsEnc {
     /// Node's `encPaEncTsEnc(when, usec)`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(when: KrbTime, usec: Option<i64>) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, time(when)),
@@ -1513,6 +1566,7 @@ impl PaEncTsEnc {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let t = asn1::read_tlv(bytes, 0, 0)?;
         let f = fields(&t)?;
@@ -1535,6 +1589,7 @@ pub struct EtypeInfo2Entry {
 }
 
 /// Node's `encEtypeInfo2()`: an empty salt IS written (only null is not).
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_etype_info2(entries: &[EtypeInfo2Entry]) -> Vec<u8> {
     let items: Vec<Vec<u8>> = entries
         .iter()
@@ -1549,6 +1604,7 @@ pub fn enc_etype_info2(entries: &[EtypeInfo2Entry]) -> Vec<u8> {
     asn1::enc_sequence(&items)
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_etype_info2(bytes: &[u8]) -> Krb5Result<Vec<EtypeInfo2Entry>> {
     let t = asn1::read_tlv(bytes, 0, 0)?;
     asn1::read_children(t.value, 0)?
@@ -1578,6 +1634,7 @@ pub struct EtypeInfoEntry {
     pub salt: Option<String>,
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_etype_info(bytes: &[u8]) -> Krb5Result<Vec<EtypeInfoEntry>> {
     let t = asn1::read_tlv(bytes, 0, 0)?;
     asn1::read_children(t.value, 0)?
@@ -1600,6 +1657,7 @@ pub fn read_etype_info(bytes: &[u8]) -> Krb5Result<Vec<EtypeInfoEntry>> {
 }
 
 /// KERB-PA-PAC-REQUEST: Node's `encPaPacRequest()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_pa_pac_request(include: bool) -> Vec<u8> {
     asn1::enc_sequence(&[asn1::enc_context(
         0,
@@ -1616,6 +1674,7 @@ pub struct PaPacRequest {
     pub include_pac: Option<bool>,
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_pa_pac_request(bytes: &[u8]) -> Krb5Result<PaPacRequest> {
     let t = asn1::read_tlv(bytes, 0, 0)?;
     let f = fields(&t)?;
@@ -1636,6 +1695,7 @@ pub struct PaForUser {
 
 impl PaForUser {
     /// Node's `encPaForUser()`: an empty auth-package is "Kerberos".
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         let package = if self.auth_package.is_empty() {
             "Kerberos"
@@ -1650,6 +1710,7 @@ impl PaForUser {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let t = asn1::read_tlv(bytes, 0, 0)?;
         let f = fields(&t)?;
@@ -1663,6 +1724,7 @@ impl PaForUser {
 }
 
 /// PA-PAC-OPTIONS: Node's `encPaPacOptions()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_pa_pac_options(bits: &[u32]) -> Krb5Result<Vec<u8>> {
     Ok(asn1::enc_tagged_sequence(&[(
         0,
@@ -1676,6 +1738,7 @@ pub struct PaPacOptions {
     pub flags: Vec<u32>,
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_pa_pac_options(bytes: &[u8]) -> Krb5Result<PaPacOptions> {
     let t = asn1::read_tlv(bytes, 0, 0)?;
     let f = fields(&t)?;
@@ -1702,6 +1765,7 @@ pub struct KrbCredInfo {
 }
 
 impl KrbCredInfo {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         Ok(asn1::enc_tagged_sequence(&[
             (0, Some(self.key.encode())),
@@ -1718,6 +1782,7 @@ impl KrbCredInfo {
         ]))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let f = fields(t)?;
         let key = match f.get(0) {
@@ -1759,6 +1824,7 @@ pub struct EncKrbCredPart {
 }
 
 impl EncKrbCredPart {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         let infos = self
             .ticket_info
@@ -1778,6 +1844,7 @@ impl EncKrbCredPart {
         ))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app = asn1::read_application(
             bytes,
@@ -1809,6 +1876,7 @@ pub struct KrbCred {
 }
 
 impl KrbCred {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         let tickets: Vec<Vec<u8>> =
             self.tickets.iter().map(Ticket::encode).collect();
@@ -1823,6 +1891,7 @@ impl KrbCred {
         )
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let app = asn1::read_application(bytes, Some(application::KRB_CRED))?;
         let f = fields(&app.sequence)?;
@@ -1861,6 +1930,7 @@ pub struct Identified {
     pub name: String,
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn identify(bytes: &[u8]) -> Option<Identified> {
     let n = asn1::peek_application_number(bytes)?;
     Some(Identified {
@@ -1879,6 +1949,7 @@ pub enum KdcResponse {
     Reply { kind: String, rep: KdcRep },
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_kdc_response(bytes: &[u8]) -> Krb5Result<KdcResponse> {
     let id = identify(bytes).ok_or_else(|| {
         Krb5Error::new("krb5: not a Kerberos message (no [APPLICATION n] tag)")

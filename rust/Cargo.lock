@@ -1715,8 +1715,11 @@ dependencies = [
  "base64 0.23.1",
  "flate2",
  "foreign-types",
+ "md-5",
+ "md4",
  "openssl",
  "openssl-sys",
+ "rc4",
  "serde_json",
  "sha3",
  "sts-core",
@@ -1752,10 +1755,6 @@ name = "sts-kerberos"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
- "md-5",
- "md4",
- "openssl",
- "rc4",
  "serde",
  "serde_json",
  "sts-core",
