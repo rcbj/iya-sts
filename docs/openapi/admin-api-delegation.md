@@ -1997,6 +1997,7 @@ As `application/json`:
 | `drawing` | object |  |  |
 | `drawing.failed` | string, or null |  |  |
 | `drawing.height` | number |  |  |
+| `drawing.verifiesCredentials` | boolean |  | Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444). |
 | `drawing.width` | number |  |  |
 | `facts` | object |  |  |
 | `facts.apps` | map |  |  |
@@ -2436,6 +2437,7 @@ As `application/json`:
 | `drawing` | object |  |  |
 | `drawing.failed` | string, or null |  |  |
 | `drawing.height` | number |  |  |
+| `drawing.verifiesCredentials` | boolean |  | Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444). |
 | `drawing.width` | number |  |  |
 | `facts` | object |  |  |
 | `facts.apps` | map |  |  |

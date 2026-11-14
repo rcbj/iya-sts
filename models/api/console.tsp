@@ -2036,6 +2036,8 @@ namespace IyaSts.Api.Console {
   }
 
 @js(#{`description`:"Each node's look, by node id."}) @component model `NodeSLookNodeId` is Record<`WithShapeLabelSublabel2`>;
+
+@js(#{`description`:"Where each box of the federation picture links, by node id: an application to the applications register, a partner to its first relationship, this service nowhere."}) @component model `FederationBoxLinks` is Record<{@js(#{`description`:"The console page the box links to."}) `href`?: string}>;
   
 
 @component model `WithIdKindRealm` {
@@ -2712,7 +2714,7 @@ op `setConsoleLanguage`(@js(#{`$open`:true}) `requestBody/content/application~1j
   #{
     `operationId`:"getDelegationMap",
     `summary`:"The delegation picture: the graph, each box, the drawing",
-    `description`:"The same acts as `GET /admin-api/delegation`, with the time taken out and the parties shared: a party that is the intermediary of six chains is ONE node with six edges. Drawn from everything that MATCHED the filter, not from one page of it.\n\n`nodes` and `edges` are the graph. `looks` says what each node IS, by node id: its label, its shape, the identifier a protocol would present for it, and the console page it links to — which the directory and the application registry decide. `svg` is the drawing, laid out on the server, with its links in it; `drawing` is its size, and says so if the layout failed. `summary` carries the counts by mechanism, kind and outcome that the filter's choices show.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/delegation/map` on the admin console.",
+    `description`:"The same acts as `GET /admin-api/delegation`, with the time taken out and the parties shared: a party that is the intermediary of six chains is ONE node with six edges. Drawn from everything that MATCHED the filter, not from one page of it.\n\n`nodes` and `edges` are the graph. `looks` says what each node IS, by node id: its label, its shape, the identifier a protocol would present for it, and the console page it links to — which the directory and the application registry decide. `svg` is the drawing, with its links in it; `drawing` is its size, says so if the layout failed, and says whether this realm verifies what is presented (`verifiesCredentials`). The console lays the picture out in the browser from `nodes`, `edges`, `looks` and `drawing`, with the code that draws `svg` here. `summary` carries the counts by mechanism, kind and outcome that the filter's choices show.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/delegation/map` on the admin console.",
     `tags`:#["Delegation"],
     `responses`:#{
       `200`:#{
@@ -2987,7 +2989,7 @@ op `getDelegationMap`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-c
   #{
     `operationId`:"getFederationMap",
     `summary`:"This realm's federation relationships, drawn",
-    `description`:"Every federation relationship of the trust realm, filtered by `role`, `protocol` and text, as a graph — the partners, this service and the applications behind each relationship — with the relationships and their sign-ins, the drawing (`svg`, laid out on the server, with its links), its size, the filter's vocabulary and the key.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/federation/map` on the admin console.",
+    `description`:"Every federation relationship of the trust realm, filtered by `role`, `protocol` and text, as a graph — the partners, this service and the applications behind each relationship — with the relationships and their sign-ins, where each box links (`looks`), the drawing (`svg`, with its links) and its size, the filter's vocabulary and the key. The console lays the picture out in the browser from `nodes`, `edges`, `relationships`, `looks` and `drawing.verifiesCredentials`, with the code that draws `svg` here.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/federation/map` on the admin console.",
     `tags`:#["Federation"],
     `responses`:#{
       `200`:#{
@@ -3099,7 +3101,11 @@ op `getFederationMap`(`parameters/0/schema`: string,
       `id`?: string;
       `kind`?: string;
       `label`?: string;
-      `relationships`?: (string)[]
+      `relationships`?: (string)[];
+      @js(#{`description`:"This service's box: the trust realm's id."}) `realm`?: string;
+      @js(#{`description`:"This service's box: the trust realm's name."}) `realmName`?: string;
+      @js(#{`description`:"A foreign service provider's box: the application this service knows it as."}) `application`?: string;
+      @js(#{`description`:"A partner's box: its own name for itself."}) `peer`?: string
     })[];
     `edges`?: ({
       `id`?: string;
@@ -3111,6 +3117,7 @@ op `getFederationMap`(`parameters/0/schema`: string,
       `use`?: `BrokeredUseValue`
     })[];
     `drawing`?: WithWidthHeightFailed;
+    `looks`?: `FederationBoxLinks`;
     `label`?: string;
     `svg`?: string;
     `roles`?: (WithRoleLabelShortEtc4)[];
@@ -4003,7 +4010,7 @@ op `getDelegationSettings`(`parameters/0/schema`: string,
   #{
     `operationId`:"getDelegationChain",
     `summary`:"One delegation relationship: its acts, graph and drawing",
-    `description`:"One chain — (mechanism, initial identity, intermediary, target) — named by its `chain` key, as `GET /admin-api/delegation` lists them in `chains`. The answer is the chain, every act on it (not paged), the graph of those acts and, as for `/delegation/map`, `looks`, the drawing (`svg`, laid out on the server, with its links) and its size.\n\n**A KEY NO ACT IS HELD UNDER IS NOT AN ERROR**: the store is capped and drops the oldest, so the answer is `found: false` with `maxRecords`.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/delegation/chain` on the admin console.",
+    `description`:"One chain — (mechanism, initial identity, intermediary, target) — named by its `chain` key, as `GET /admin-api/delegation` lists them in `chains`. The answer is the chain, every act on it (not paged), the graph of those acts and, as for `/delegation/map`, `looks`, the drawing (`svg`, with its links) and its size.\n\n**A KEY NO ACT IS HELD UNDER IS NOT AN ERROR**: the store is capped and drops the oldest, so the answer is `found: false` with `maxRecords`.\n\nWith `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.\n\n**Mirrors** `GET /admin/delegation/chain` on the admin console.",
     `tags`:#["Delegation"],
     `responses`:#{
       `200`:#{
