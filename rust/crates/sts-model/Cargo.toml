@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-model"
+version = "0.1.0"
+description = "The abstract model's data objects (models/, #1390) as Rust: the domain concepts and every request and answer of the five published APIs, generated from the TypeSpec (D15)."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
