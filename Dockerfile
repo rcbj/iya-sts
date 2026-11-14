@@ -346,8 +346,11 @@ RUN find /usr/src/sts/node_modules /usr/src/sts/node-ldapjs/node_modules \
 # scripts or the documentation runs curl, jq, wget, unzip or a bsdextrautils
 # tool inside the container. `/bin/sh` is the base's dash again: every `sh
 # -c` the compose files and launchers pass is POSIX, and what needs bash names
-# bash. No ca-certificates either: node carries its own root store and is not
-# told to read the system's.
+# bash. Node carries its own root store and is not told to read the system's.
+#
+# CURL AND JQ ARE BACK (rcbj, 2026-11-14): operators' utility scripts run them
+# inside the container. ca-certificates comes with them so curl can verify an
+# https URL; the service itself still uses node's root store.
 # ---------------------------------------------------------------------------
 FROM debian:bookworm-slim
 
@@ -372,6 +375,9 @@ RUN apt-get update \
         # fails to start when the network it is being given is the thing that
         # is broken.
         iproute2 \
+        curl \
+        jq \
+        ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && node -v
 
