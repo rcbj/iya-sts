@@ -3979,6 +3979,28 @@ if (require.main === module) {
     // STS_ONLY=<prefix> writes only the files it names the start of, so one
     // family's vectors can be rewritten without changing every other key.
     const only = process.env.STS_ONLY || '';
+    // EVERY SET IN A PROCESS OF ITS OWN when no STS_ONLY names one (#444,
+    // phase 2b). The builders share the service's modules, and a module
+    // keeps its state: the realms realmsVectors() creates were still defined
+    // when realmLifecycleVectors() began, so that set described a registry
+    // nobody else would see, and only a run of the whole generator showed
+    // it. A child per set starts each one from a fresh service, as each was
+    // written and checked.
+    if (!only) {
+      const childProcess = require('child_process');
+      for (const one of VECTORS) {
+        const child = childProcess.spawnSync(process.execPath,
+          [__filename].concat(process.argv.slice(2)),
+          { env: Object.assign({}, process.env, { STS_ONLY: one.file }),
+            stdio: 'inherit' });
+        if (child.status !== 0) {
+          console.error(one.file + ': the builder failed (' +
+            (child.status === null ? child.signal : child.status) + ')');
+          process.exitCode = 1;
+        }
+      }
+      return;
+    }
     for (const one of VECTORS) {
       if (only && one.file.indexOf(only) !== 0) {
         continue;
