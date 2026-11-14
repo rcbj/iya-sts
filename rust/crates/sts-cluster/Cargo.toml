@@ -23,6 +23,10 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+# The two-node test runs two processes on one PostgreSQL store through the
+# store's own driver. A dev-dependency only: sts-store depends on this crate,
+# and Cargo allows the cycle for an integration test.
+sts-store.workspace = true
 
 [lints]
 workspace = true

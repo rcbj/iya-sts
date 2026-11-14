@@ -1690,6 +1690,7 @@ dependencies = [
  "serde_json",
  "sts-core",
  "sts-crypto",
+ "sts-store",
  "tokio",
  "tracing",
 ]
