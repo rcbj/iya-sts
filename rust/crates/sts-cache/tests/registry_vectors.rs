@@ -19,11 +19,14 @@ use std::sync::{Arc, Mutex};
 use serde_json::{json, Value as Json};
 use sts_cache::{CacheRegistry, Descriptor, Kind, Row, Scope, Tally};
 
+/// (realm, key, valid until) of one held entry.
+type Held = (Option<String>, String, Option<i64>);
+
 struct Store {
     d: Json,
     max: usize,
     lifetime: &'static str,
-    rows: Mutex<Vec<(Option<String>, String, Option<i64>)>>,
+    rows: Mutex<Vec<Held>>,
     tally: Option<Tally>,
 }
 
