@@ -110,6 +110,7 @@ async function childBody() {
   const owner = require(ROOT + '/uma/uma_owner_policy');
   const claimsModule = require(ROOT + '/uma/uma_claims');
   const oauth2 = require(ROOT + '/oauth-oidc/oauth2');
+  const OAuthModel = require(ROOT + '/oauth-oidc/oauth_model');
   const screen = require(ROOT + '/tests/tools/authn_screen');
 
   const marks = [];
@@ -271,6 +272,15 @@ async function childBody() {
   t.check(r.status === 200 && !!r.json.access_token && !!pct,
           'C6. the next grant issues the RPT, and a PCT for the claims ' +
           'gathered', brief(r));
+  // The token response carrying a PCT is the model's (UMA 2.0 Grant section
+  // 3.3.5; #1579's gap scan found `pct` undeclared in token-response, logged
+  // under STS-OAUTH-1005 on every such grant). Held here to the member set
+  // the service holds it to, so removing `pct` from the model fails this.
+  const gaps = r.json ? OAuthModel.undeclared('token-response', r.json)
+    : ['no answer'];
+  t.check(!!pct && gaps.length === 0,
+          'C6a. the token response carrying a PCT is the model\'s ' +
+          '(token-response declares pct)', gaps.join('; '));
   r = await ask({ ticket: await ticketFor(['view']), pct: pct });
   t.check(r.status === 200 && !!r.json.access_token && !r.json.pct,
           'C7. the PCT names the person next time, and is not re-issued ' +

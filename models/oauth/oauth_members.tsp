@@ -351,6 +351,10 @@ model TokenResponse {
 
   @member(#{ cite: "RFC 8693 section 2.2.1" })
   issued_token_type?: string;
+
+  /** UMA's persisted claims token, issued with an RPT for the claims gathered (#1168). */
+  @member(#{ cite: "UMA 2.0 Grant for OAuth 2.0 Authorization section 3.3.5" })
+  pct?: string;
 }
 
 /** An error response: the token endpoint's, and every JSON refusal shaped like it. */
