@@ -1722,6 +1722,49 @@ unexpected message while it waits for its close_notify answer. It is a race
 often not seen. RFC 8446 section 4.2.11 does not apply: it binds only TLS 1.3
 early data to the original ALPN.
 
+## A CONNECTION THAT FAILS AT THE TLS LAYER KEEPS ITS ALERT (2026-11-13)
+
+**The memory-mode run on 9300a96d1 failed `sts_tlsfuzzer` on one probe of
+`test-tls13-record-layer-limits.py`** ("too big ciphertext … fuzzed tag",
+*Unexpected closure from peer* where a record_overflow or bad_record_mac
+alert was expected), about one in seventy under load. LDAPS had the same
+failure in run 21 and the same cause (`ldap/CLAUDE.md`, the fork's
+`errorCloseDelay`): node closed the socket within a tick of the TLS failure,
+with the record the alert was about still arriving, so the kernel answered
+with a TCP reset and a reset that reached the peer first discarded the alert
+OpenSSL had already written.
+
+`tls/alert_close.ts` holds such a connection for two seconds before closing
+it, on the main port, every custom listener (`server.js`) and the debugger's
+listener. What it rests on, because none of it is a node option:
+
+* **A server-side TLSSocket closes by calling `destroy()` on the raw socket
+  under it** (`TLSWrap.close()`), and that one call is what closes the
+  descriptor. A raw socket marked as failed has its own `destroy()` replaced
+  for that connection only; the TLS engine goes on reading the TCP stream and
+  discarding it while the socket is held, so the receive buffer stays empty
+  (measured: Recv-Q 0 with the peer still sending).
+* **There are two ways a failure arrives.** Before node counts the handshake
+  done (a bad record behind the client's Finished, as tlsfuzzer sends it, or
+  a handshake failure), node destroys the TLSSocket itself and closes its
+  handle a microtask after `tlsClientError`, which is where it is marked.
+  After it, the TLSSocket's `error` reaches HTTP/1.1's `clientError` or the
+  HTTP/2 session, both of which destroy in the same call, so it is marked
+  from an `error` listener prepended at `secureConnection`.
+* **`TLSSocket._parent`** (the raw socket) is not public API; without it the
+  connection closes at once as before, logged once (`STS-TLS-0062`).
+* **An alert the PEER sent is not held** — nothing is owed back.
+* **Bounded**: 256 held per listener; beyond that a failure closes at once
+  (`STS-TLS-0061`, the first and then a count at most once a minute). One
+  one-shot timer per failed connection, cleared on close, which is the
+  per-connection timeout the scheduler rule exempts.
+
+`common/parser_refusal.ts` no longer answers a TLS failure: it wrote a
+plaintext 400 into a connection whose TLS engine had just sent its fatal
+alert and logged it as a refused request (`STS-HTTP-0026`). It closes it, and
+the close is held. `tests/tls_alert_close.js` holds all of it, with the
+control.
+
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 
 `server.js` installs `common/proxy_protocol.ts` on the main port when
