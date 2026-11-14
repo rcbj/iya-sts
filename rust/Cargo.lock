@@ -1803,6 +1803,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-tls"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "sts-core",
+ "sts-pki",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "sts-xacml"
 version = "0.1.0"
 dependencies = [

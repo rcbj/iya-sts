@@ -348,6 +348,41 @@ pub fn decapsulate(
     }
 }
 
+// ---------------------------------------------------------------------------
+// THE ONE TLS CONTEXT KNOB THE `openssl` CRATE DOES NOT BIND (#444 phase 3,
+// the `tls` slice): `SSL_CTX_set_timeout`. node's `sessionTimeout` option is
+// that call (`tls/tls_server.js`'s `protocolOptions()`, `tls.sessionTimeoutS`,
+// 300 s), and it is what a TLS 1.3 NewSessionTicket carries as its
+// `ticket_lifetime` — so a listener left at OpenSSL's own 7200 s would tell
+// every client a different lifetime than the Node service does. openssl-sys
+// declares no binding for it, so it is declared here; the symbol is
+// libssl's, which openssl-sys already links.
+// ---------------------------------------------------------------------------
+
+extern "C" {
+    fn SSL_CTX_set_timeout(
+        ctx: *mut ffi::SSL_CTX,
+        t: std::os::raw::c_long,
+    ) -> std::os::raw::c_long;
+}
+
+/// Sets how long a session made by a context may be resumed, in seconds
+/// (`SSL_CTX_set_timeout`), as node's `sessionTimeout` does.
+#[tracing::instrument(level = "debug", skip(builder))]
+pub fn set_session_timeout(
+    builder: &mut openssl::ssl::SslContextBuilder,
+    seconds: u32,
+) {
+    // SAFETY: the builder owns a live SSL_CTX for the duration of the call;
+    // SSL_CTX_set_timeout only stores the value and returns the old one.
+    let _previous: std::os::raw::c_long = unsafe {
+        SSL_CTX_set_timeout(
+            builder.as_ptr(),
+            std::os::raw::c_long::from(seconds),
+        )
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
