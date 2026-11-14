@@ -67,6 +67,12 @@ const EXCEPTIONS = {
       'record its SCHEMA (the model\'s generated table) describes and back, ' +
       'and a concept is read-only'
   },
+  'ldap/person_ldif.ts': {
+    names: '*',
+    why: 'a person\'s entry written as an LDIF record and read back: the ' +
+      'file is the entry\'s attributes by their stored names, which a ' +
+      'concept, carrying no credential, cannot round-trip'
+  },
   'common/cell_rehome.ts': {
     names: '*',
     why: 'moves a whole entry between cells, rewriting the attributes that ' +

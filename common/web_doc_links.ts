@@ -323,6 +323,8 @@ const EXACT: Record<string, string> = {
   'utab-gnap': 'gnap.html',
   'utab-uma': 'uma.html#the-console',
   'utab-entry': 'admin-console.html#the-persons-directory-entry',
+  'utab-import-export':
+    'admin-console.html#exporting-and-importing-a-person-as-ldif',
   'utab-signout': 'signing-out.html',
   'gtab-group': 'admin-console.html#groups--admingroups',
   'gtab-owners': 'management-api.html#owners',

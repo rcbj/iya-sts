@@ -519,6 +519,14 @@
     "en": "13b017cf352d6b64",
     "text": "May user na pinalitan ng pangalan"
   },
+  "audit.actions.user.export.label": {
+    "en": "13bfbf4853070b8e",
+    "text": "May user na na-export sa isang LDIF file"
+  },
+  "audit.actions.user.import.label": {
+    "en": "9afa273a898e8879",
+    "text": "May user na na-import mula sa isang LDIF file"
+  },
   "audit.actions.cells.rehome.label": {
     "en": "5d1b93eaa6c979c6",
     "text": "May taong inilipat sa ibang cell"

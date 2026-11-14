@@ -519,6 +519,14 @@
     "en": "13b017cf352d6b64",
     "text": "重命名了用户"
   },
+  "audit.actions.user.export.label": {
+    "en": "13bfbf4853070b8e",
+    "text": "已将用户导出到 LDIF 文件"
+  },
+  "audit.actions.user.import.label": {
+    "en": "9afa273a898e8879",
+    "text": "已从 LDIF 文件导入用户"
+  },
   "audit.actions.cells.rehome.label": {
     "en": "5d1b93eaa6c979c6",
     "text": "某人被迁移到另一个单元"

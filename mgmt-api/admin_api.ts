@@ -153,6 +153,8 @@ import ownership = require('../common/ownership');
 // Whether a create can race another node's, and the sentence a refused one
 // carries (#46 section 3). A LIBRARY that registers nothing.
 import createClaims = require('../ldap/directory_create_claims');
+// The username an LDIF import names, which it claims as a create does.
+import personLdif = require('../ldap/person_ldif');
 import helpers = require('../common/helpers');
 const { log, parseBody, baseUrlOf, STS } = helpers;
 // BOTH ARE LIBRARIES (rule 3): they register no route, so requiring them here
@@ -720,10 +722,14 @@ type RouteApp = typeof app;
 // actions' `evidence`, being the same act on every factor at once, and they
 // had been left out of this list, so they were the two that took none of the
 // recent sign-in the single-factor removals take.
+// A person's LDIF file since 2026-11-14: an export can carry their
+// credentials in the clear, and an import writes credentials onto a new
+// person, so both are asked for a recent sign-in as `set-password` is.
 const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
   'issue-password-reset', 'clear-totp', 'clear-key', 'clear-backup-codes',
   'clear-email-factor', 'disable-mfa', 'disable-primary-keys', 'set-mail',
-  'create-app-password', 'revoke-app-password'];
+  'create-app-password', 'revoke-app-password', 'export-ldif',
+  'import-ldif'];
 
 class AdminApi {
   /**
@@ -4892,10 +4898,16 @@ class AdminApi {
           // synchronous and reads the verdict this leaves.
           return require('../common/breached_passwords')
             .screenAll([request.password]).then(function () {
-          // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
+          // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`. An LDIF
+          // import is a create too, of the username its file names.
           return self.runClaimed(res, request.action === 'create'
             ? { username: String(request.username || request.user || '') }
-            : null, function (held) {
+            : (request.action === 'import-ldif'
+                ? { username: personLdif.usernameOf(
+                      String((request as any).ldif || '').trim()
+                        ? (request as any).ldif
+                        : (((request as any).file || {}).text || '')) }
+                : null), function (held) {
             // `via: 'api'` and the subject of the token the gate verified,
             // for the audit rows this action writes (#446). It was an empty
             // actor while this API authenticated only clients; with no token
@@ -5077,6 +5089,12 @@ class AdminApi {
 
           { action: 'remove-certificate',
             operationId: 'removeUserCertificate' },
+
+          // THE PERSON AS AN LDIF FILE (2026-11-14): the Import / export tab
+          // of their console page, #546's pattern.
+          { action: 'export-ldif', operationId: 'exportUserLdif' },
+
+          { action: 'import-ldif', operationId: 'importUserLdif' },
 
           { action: 'issue-signing-certificate',
             operationId: 'issueUserSigningCertificate' },

@@ -17496,6 +17496,69 @@ function writePersonAttribute(dn, name, values) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// A PERSON'S CREDENTIALS, AS AN LDIF IMPORT CARRIES THEM (2026-11-14).
+//
+// `ldap/person_ldif.ts` creates the person through `createUser()` first and
+// then writes the credential attributes the file held — already in their
+// stored forms (a password's hash, a TOTP record sealed where the key
+// persists, the passkey records and their user handles) — with this one
+// call. It is the store's half and decides nothing about a value: the library
+// has checked each one. What it does that a plain attribute write does not is
+// what the two passkey writers above do, because this is a third door that
+// writes `stsWebauthnCredential`: the Android marker is derived and the
+// passkey report told (#942). A password imported gets `pwdChangedTime`, which
+// the password policy's age is counted from. One touch for the lot, and the
+// account observer is told, as every other person write tells it.
+//
+// It writes only onto an entry that is a person, and only the names it is
+// handed (lower-cased, values as strings); an empty list writes nothing for
+// that name.
+// ---------------------------------------------------------------------------
+/**
+ * Writes the credential attributes an LDIF import carried onto a person's
+ * entry, in their stored forms.
+ *
+ * @param dn - the person's DN
+ * @param values - lower-cased attribute name to the values to store
+ * @returns true when the entry was written
+ */
+function writeImportedCredentials(dn, values) {
+  log.debug('Entering writeImportedCredentials(). dn=' + dn);
+  const stored = getEntry(dn);
+  if (!stored || !isPersonEntry(stored)) {
+    log.warn(errorCodes.tag('STS-LDAP-0110') + 'ldap: ' + dn + ' is not a ' +
+             'person in this realm, so the imported credentials were not ' +
+             'written.');
+    log.debug('Leaving writeImportedCredentials(). Not a person.');
+    return false;
+  }
+  const before = attributeSnapshot(stored);
+  const keysBefore = (stored.attributes.stswebauthncredential || []).slice(0);
+  const given = values || {};
+  Object.keys(given).forEach(function (name) {
+    const kept = [].concat(given[name] || []).map(String);
+    if (kept.length) {
+      stored.attributes[String(name).toLowerCase()] = kept;
+    }
+  });
+  if (given.userpassword && [].concat(given.userpassword).length) {
+    stored.attributes.pwdchangedtime = [generalizedTime()];
+  }
+  if (given.stswebauthncredential) {
+    deriveAndroidMarker(stored);
+    notePasskeysChanged(stored, keysBefore,
+                        stored.attributes.stswebauthncredential || []);
+  }
+  stored.modifiedAt = generalizedTime();
+  stored.attributes.modifytimestamp = [stored.modifiedAt];
+  touchDirectory(stored.dn);
+  noteAccountChange('updated', stored.dn, before, attributeSnapshot(stored));
+  log.debug('Leaving writeImportedCredentials(). ' +
+            Object.keys(given).length + ' attribute(s).');
+  return true;
+}
+
 function inDefaultRealm(fn) {
   log.debug("Entering inDefaultRealm().");
   log.debug("Leaving inDefaultRealm().");
@@ -31510,6 +31573,11 @@ module.exports = {
   entries: entries,
   autoCreateUser: autoCreateUser,
   createUser: createUser,
+  // A person exported to, and imported from, LDIF (`ldap/person_ldif.ts`):
+  // the credentials written in their stored forms, and who holds a passkey
+  // user handle already. Read through `require.cache` at request time.
+  writeImportedCredentials: writeImportedCredentials,
+  webauthnUserHandleHolder: webauthnUserHandleHolder,
   existingUserEntry: existingUserEntry,
   // A person's profile photo record (#719), `common/profile_photo.ts`'s.
   readProfilePhoto: readProfilePhoto,

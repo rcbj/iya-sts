@@ -525,6 +525,62 @@ write of the same attribute is. An identity verification covers a value only
 while the entry still holds it, so changing a verified value lets that
 verification lapse for it.
 
+#### Exporting and importing a person as LDIF
+
+A person's page has an **Import / export** tab (Admin Write), the same
+tab an [application's page](applications.md#exporting-and-importing-an-application-as-ldif)
+has. It moves one person between realms, or between two deployments of
+this service, as an [RFC 2849](https://www.rfc-editor.org/rfc/rfc2849)
+LDIF file of one record: the entry's DN (`uid=<name>,ou=users,…`), its
+object classes and its attributes.
+
+**Export** writes the attributes a create takes: the person schema, the
+credential catalogue's attributes and the realm's custom attributes, the
+same fields as the Attributes tab and `/admin/users/new`. It does not
+write what this service *recorded* about the person, such as sign-in
+methods, federation sightings, consents, the account's flags and pending
+links. It also writes no group memberships, because a membership is on
+the group's entry and a group in another realm is a different group, and
+no `entryUUID`.
+
+* **By default no credential material is exported.** The comments at the
+  top of the file name what was left out.
+* **Include credential material** writes them **unencrypted**: the
+  password as its stored hash, the authenticator app's secret (opened
+  where it is sealed at rest), passkeys and their user handles, recovery
+  codes, app passwords, stored client certificates, HOBA keys and the
+  CIBA user code's hash. Treat the file as you would those secrets.
+* **Some credentials are never exported**: Kerberos keys, signing key
+  pairs and enrolled certificates (each certified under this realm's
+  authority), ACME and SCEP enrolment secrets, published DIDs and
+  self-issued subjects. Make them again where the person is imported.
+
+**Import** takes a file (or pasted LDIF) of exactly one person's entry and
+creates that person **in the realm the console is in**, through the same
+create as `/admin/users/new`, so the realm's
+[attribute policy](policies.md) applies.
+
+* **An existing username is refused** (`STS-LDAP-0218`). An import never
+  overwrites, so it cannot change the person whose page it was started
+  from.
+* **A new subject is minted.** A file carrying `entryUUID` is refused, and
+  so is one carrying anything an export does not write (`STS-LDAP-0219`).
+* **A password is taken only as the hash this service stores.** A hash
+  cannot be checked against the password policy, so a clear password in
+  the file is refused (`STS-LDAP-0220`); set one with `set-password`
+  after the import. A passkey user handle or a certificate that somebody
+  in the realm already holds is refused the same way. Nothing is created
+  when a file is refused.
+* **No Kerberos key is derived from a hash.** The imported person has
+  none until their password is set again.
+* A CAEP credential-change is sent for each kind of credential that came
+  in. Both acts are audited (`user.export`, `user.import`) with attribute
+  names, never a value. Both need a recent sign-in.
+
+The API is `POST /admin-api/users/export-ldif`
+(`{"user": "…", "credentials": true}`, answering the LDIF as `ldif` and as
+a file) and `POST /admin-api/users/import-ldif` (`{"ldif": "…"}`).
+
 #### Creating a person — `/admin/users/new`
 
 The list page has one control: a name, and a button to **`/admin/users/new`**,

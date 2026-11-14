@@ -519,6 +519,14 @@
     "en": "13b017cf352d6b64",
     "text": "Se renombró un usuario"
   },
+  "audit.actions.user.export.label": {
+    "en": "13bfbf4853070b8e",
+    "text": "Se exportó un usuario a un archivo LDIF"
+  },
+  "audit.actions.user.import.label": {
+    "en": "9afa273a898e8879",
+    "text": "Se importó un usuario desde un archivo LDIF"
+  },
   "audit.actions.cells.rehome.label": {
     "en": "5d1b93eaa6c979c6",
     "text": "Se trasladó a una persona a otra celda"

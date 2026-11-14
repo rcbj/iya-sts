@@ -183,6 +183,20 @@ value. An `issuer` that is present and names another entity is still
 refused. The ID Token's `iss` is still checked against the Entity
 Identifier. Nothing this service publishes changes.
 
+### New: export and import a person as LDIF
+
+A person's page under **Directory → Users** has an **Import / export** tab,
+the one an application's page has had since 1.0.0. **Export** saves the
+person as an LDIF file of one record: the attributes a create takes, and,
+only when its box is ticked, their credentials **unencrypted** (the
+password as its stored hash, the authenticator app, passkeys, recovery
+codes, app passwords and stored certificates). **Import** creates a person
+from such a file in the realm the console is in, and never overwrites one
+who is already there. Both need Admin Write and a recent sign-in. The API
+is `POST /admin-api/users/export-ldif` and `/import-ldif`; see
+[Exporting and importing a person as LDIF](admin-console.md#exporting-and-importing-a-person-as-ldif).
+Nothing that existed in 1.0.0 changes.
+
 ## 1.0.0
 
 1.0.0 is the first release of iya-sts. Every build before it was a

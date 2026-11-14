@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5473** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5481** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 167
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 175
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -3552,6 +3552,14 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0211` | A description was refused because its value carries an operator error code. A description is stored text this service sends back, and a code is recorded, never sent (#1416). | HTTP 400 JSON (the sentence; the code is recorded). LDAP constraintViolation (19). Nothing is stored |
 | `STS-LDAP-0212` | A group write was refused because a member it adds names no entry: a member, uniqueMember or memberUid must name something stored in the realm, so a group can never list a person, group or application that is not there (2026-11-10). | HTTP 400 (console, /admin-api), SCIM 400 invalidValue, LDAP constraintViolation (19). Nothing is stored |
 | `STS-LDAP-0213` | The node-ldapjs in use does not support the errorCloseDelay server option, so a connection that fails is destroyed at once and a TLS alert about why it failed can be lost to the TCP reset that closing it with unread data sends (run 21, 2026-11-13). | none — logged at startup |
+| `STS-LDAP-0214` | A person export was refused: nobody by that name is in this realm's directory. | none (a console or management API refusal, HTTP 400) |
+| `STS-LDAP-0215` | A person export with credential material was refused: a sealed credential on the entry (the authenticator app's secret, a legacy recovery-code set) will not open under this process's key-encryption key, so it cannot be written in the clear. Nothing was exported. | none (a console or management API refusal, HTTP 400) |
+| `STS-LDAP-0216` | A person import was refused: the file is not LDIF holding exactly one record. | none (a console or management API refusal, HTTP 400) |
+| `STS-LDAP-0217` | A person import was refused: the record is not a person's entry (its DN is not uid=<name>,ou=users,…, or its one uid is not that name), or it is an application's, which the application page imports. | none (a console or management API refusal, HTTP 400) |
+| `STS-LDAP-0218` | A person import was refused: a person with that username is already in this realm. Nothing is overwritten. | none (a console or management API refusal, HTTP 400) |
+| `STS-LDAP-0219` | A person import was refused: the record carries an attribute no import writes — what this service records about a person, the entryUUID, a credential a subsystem mints (Kerberos keys, key pairs, enrolment secrets), or a name that is not a person's attribute. | none (a console or management API refusal, HTTP 400) |
+| `STS-LDAP-0220` | A person import was refused: a credential in the file is not in the form an export writes (a password that is not a stored hash, a record that is not JSON, a certificate that is not one), is already held by somebody else in this realm (a passkey user handle, a stored certificate), or could not be sealed. Nothing was created. | none (a console or management API refusal, HTTP 400) |
+| `STS-LDAP-0221` | A person import created the entry but could not write the credentials the file carried. The person is there without them. | none (a console or management API refusal, HTTP 400) |
 
 ## STS-ATTR
 

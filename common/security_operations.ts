@@ -519,6 +519,25 @@ class SecurityOperations {
                               hooks: SecurityHooks): SecurityChange | null {
     log.debug("Entering SecurityOperations.personChange(). " + action);
     const who = String(body.user || body.username || '').trim();
+    if (action === 'import-ldif') {
+      // AN LDIF FILE NAMING A POLICY creates a person who names it
+      // (2026-11-14), the application import's reading: a new person holds
+      // no role, so only the references are asked.
+      const file = body.file && typeof body.file === 'object'
+        ? String(body.file.text || '')
+        : String(body.file || body.ldif || '');
+      const named = SecurityOperations.referenceAttributes('person')
+        .filter(function (attribute) {
+          const line = new RegExp('^' + attribute + '\\s*:{1,2}\\s*(\\S.*)$',
+                                  'im').exec(file);
+          return !!line && SecurityOperations.normal([line[1]]).length > 0;
+        });
+      log.debug("Leaving SecurityOperations.personChange(). import-ldif " +
+                named.length);
+      return named.length
+        ? { kind: 'reference', detail: 'it creates a person who names a ' +
+            'policy in ' + named.join(', ') } : null;
+    }
     const creating = action === 'create';
     if (!creating) {
       const holder = SecurityOperations.holderChange(who, hooks);

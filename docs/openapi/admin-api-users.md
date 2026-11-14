@@ -3444,6 +3444,79 @@ Scope: `admin:write`.
 | `reason` | string |  |  |
 | `username` | string |  |  |
 
+## POST /admin-api/users/export-ldif
+
+`exportUserLdif`
+
+**Export one person's entry as an LDIF file**
+
+Answers the person's directory entry as an RFC 2849 LDIF document with one record: `ldif` (the text) and `files` (the same, named and base64, which the console saves). The attributes a create takes only — the inetOrgPerson attributes, the credential catalogue's and the realm's custom attributes, which is what `import-ldif` writes back; nothing this service recorded about the person (sign-in methods, federation sightings, consents, flags), no group membership and no `entryUUID`. The DN is the entry's own; `import-ldif` creates the person in whichever realm it is called in.
+
+**CREDENTIAL MATERIAL IS LEFT OUT BY DEFAULT** and named in `leftOut`. With `credentials` true the password's stored hash, the authenticator app (its secret opened), the passkeys and their user handles, the recovery codes, the app passwords, the stored client certificates, the HOBA keys and the CIBA user code's hash are written **UNENCRYPTED**: a value sealed under this process's key-encryption key is opened, because a file sealed under it opens nowhere else. Keep such a file as you would the secrets in it. Kerberos keys, the RFC 7523 and RFC 7522 key pairs, enrolled certificates and enrolment secrets are never exported: each is minted by its own subsystem. An audit row (`user.export`) says whether credentials went with the file, never a value. Asked for a recent sign-in, as `set-password` is.
+
+**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `credentials` | boolean, or one of `true`, `false`, `on` |  | Include credential material, UNENCRYPTED. False when absent. |
+| `user` | string | yes | The person, as /admin-api/users names them. |
+| `username` | string |  | Accepted for `user`. |
+
+**200**: `ldif`, `files` (one `.ldif`), the `attributes` written, `credentials`, and `leftOut`: the credential attributes not written.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `attributes` | list |  |  |
+| `attributes[]` | string |  |  |
+| `changed` | boolean |  |  |
+| `credentials` | boolean |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `files` | list |  |  |
+| `files[].base64` | string |  |  |
+| `files[].mime` | string |  |  |
+| `files[].name` | string |  |  |
+| `files[].text` | string |  |  |
+| `ldif` | string |  |  |
+| `leftOut` | list |  |  |
+| `leftOut[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `username` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `attributes` | list |  |  |
+| `attributes[]` | string |  |  |
+| `changed` | boolean |  |  |
+| `credentials` | boolean |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `files` | list |  |  |
+| `files[].base64` | string |  |  |
+| `files[].mime` | string |  |  |
+| `files[].name` | string |  |  |
+| `files[].text` | string |  |  |
+| `ldif` | string |  |  |
+| `leftOut` | list |  |  |
+| `leftOut[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `username` | string |  |  |
+
 ## POST /admin-api/users/federation-link
 
 `linkUserFederation`
@@ -3703,6 +3776,70 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `previousAlgorithm` | string |  |  |
 | `reason` | string |  |  |
+
+## POST /admin-api/users/import-ldif
+
+`importUserLdif`
+
+**Create a person from an LDIF file**
+
+Reads an RFC 2849 LDIF document holding ONE person's record, as `export-ldif` writes it (`uid=<name>,ou=users,…` with that name as its one `uid`), and creates that person in the realm this is called in, through the create `POST /admin-api/users/create` makes: the realm's attribute policy, the username rules and one entry per person are its checks. **IT NEVER OVERWRITES**: a username already here is refused, naming the entry that holds it (STS-LDAP-0218). A new `entryUUID`, and so a new subject, is minted; a file carrying one is refused.
+
+Only the attributes a create takes and the credentials an export writes are taken; a record carrying what this service records about a person, or a credential a subsystem mints, is refused naming each (STS-LDAP-0219). A credential in the file is written as stored: a password only as the hash this service writes (a hash cannot be held to the password policy, so a clear password is refused — set one with `set-password` after the import), the authenticator secret and a legacy recovery-code set sealed again wherever the key-encryption key persists, a passkey user handle or a stored certificate refused when somebody here holds it already (STS-LDAP-0220). **No Kerberos key is derived from a hash**: the person has none until their password is set again. A CAEP credential-change is sent for each kind of credential that came in, and the import is audited (`user.import`) with the attribute names, never a value. Give the document as `ldif` (its text), or as `file` (its name and text), which is how the console sends an uploaded file. Asked for a recent sign-in, as `set-password` is.
+
+**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `file` | object |  | An uploaded LDIF file: its name and its text. |
+| `file.name` | string |  |  |
+| `file.text` | string | yes |  |
+| `ldif` | string |  | The LDIF document. |
+
+**200**: The `username` created, its `dn`, the `attributes` the create wrote and the `credentials` written after it.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `attributes` | list |  |  |
+| `attributes[]` | string |  |  |
+| `changed` | boolean |  |  |
+| `credentials` | list |  |  |
+| `credentials[]` | string |  |  |
+| `dn` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `kerberosKeys` | boolean |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `username` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `attributes` | list |  |  |
+| `attributes[]` | string |  |  |
+| `changed` | boolean |  |  |
+| `credentials` | list |  |  |
+| `credentials[]` | string |  |  |
+| `dn` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `kerberosKeys` | boolean |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `username` | string |  |  |
 
 ## POST /admin-api/users/issue-activation
 
