@@ -452,6 +452,21 @@ function childMain() {
         result.errors.push(key + ': ' + e.message);
       }
     });
+    // Attestation-based client authentication is advertised only where the
+    // realm trusts an attester, which no boolean switch says, so the
+    // default realm is given one: #1579's gap scan found its four members
+    // undeclared (STS-OAUTH-1005 on every metadata answer of a run that
+    // trusted one) while this section, with no attester, stayed green.
+    const attester = require('crypto').generateKeyPairSync('ec',
+      { namedCurve: 'P-256' }).publicKey.export({ format: 'jwk' });
+    try {
+      config.setOverride('oauth2.clientAttestationTrustedKeys',
+        JSON.stringify({ keys: [Object.assign({ kid: 'mo-attester' },
+                                              attester)] }));
+    } catch (e) {
+      result.errors.push('clientAttestationTrustedKeys: ' + e.message);
+    }
+    result.attestation = [];
     const SETS = [['/.well-known/oauth-authorization-server',
                    'authorization-server-metadata'],
                   ['/.well-known/openid-configuration',
@@ -468,6 +483,22 @@ function childMain() {
           result.problems.push((prefixes[i] || '(default)') + ' ' +
                                SETS[j][0] + ': ' + one);
         });
+        if (!prefixes[i]) {
+          // The default realm's documents carry the attestation members,
+          // and the model without `challenge_endpoint` names it.
+          const held = require(ROOT + '/tests/tools/oauth_model_hold')
+            .hold(OAuthModel, SETS[j][1], doc, 'challenge_endpoint');
+          result.attestation.push({
+            doc: SETS[j][0],
+            carried: ['challenge_endpoint',
+                      'client_attestation_signing_alg_values_supported',
+                      'client_attestation_pop_signing_alg_values_supported',
+                      'client_attestation_pop_methods_supported']
+              .every(function (name) {
+                return doc[name] !== undefined;
+              }),
+            caught: held.caught });
+        }
       }
     }
     server.close();
@@ -516,6 +547,15 @@ function everySwitch(t) {
           'D. both discovery documents, every switch on in each FAPI ' +
           'profile, carry only the model\'s members (' + result.documents +
           ' documents)', result.problems.slice(0, 20).join('\n'));
+  const attestation = result.attestation || [];
+  t.check(attestation.length === 2 &&
+          attestation.every(function (one) {
+            return one.carried && one.caught;
+          }),
+          'D. with an attester trusted, both default-realm documents carry ' +
+          'the four attestation-based client authentication members, and ' +
+          'the model without challenge_endpoint is a gap',
+          JSON.stringify(attestation));
   log.debug("Leaving everySwitch().");
 }
 

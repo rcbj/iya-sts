@@ -147,6 +147,8 @@ async function childBody() {
   const wstrustModule = require(ROOT + '/ws-trust/wstrust');
   const wstrust = new wstrustModule.WsTrust(
     wstrustModule.WsTrust.defaultDeps());
+  const OAuthModel = require(ROOT + '/oauth-oidc/oauth_model');
+  const modelHold = require(ROOT + '/tests/tools/oauth_model_hold');
   const msgs = wire.msgs;
   await keystore.start();
 
@@ -649,6 +651,19 @@ async function childBody() {
           'PAC names the front end', x.status + ' ' +
           JSON.stringify(x.json).slice(0, 300) + ' ' +
           JSON.stringify(opened.delegation));
+  // The Kerberos token's answer is the model's (#658's `session_key` and
+  // `session_key_etype`, this service's own; #1579's gap scan found both
+  // undeclared in token-response, logged under STS-OAUTH-1005), and the
+  // model without `session_key` names it.
+  const krbHeld = modelHold.hold(OAuthModel, 'token-response', x.json,
+                                 'session_key');
+  t.check(!!x.json.session_key &&
+          Number.isInteger(x.json.session_key_etype) &&
+          krbHeld.gaps.length === 0 && krbHeld.caught,
+          'X2a. the Kerberos token\'s token response is the model\'s ' +
+          '(token-response declares session_key and session_key_etype; ' +
+          'without session_key, a gap)',
+          krbHeld.gaps.concat(krbHeld.mutated).join('; '));
   config.clearOverride('oauth2.tokenExchangeKerberosOutput');
   x = await exchange({ subject_token: b64u((await apFor(proxy)).token),
                        subject_token_type: GSS, requested_token_type: GSS });
