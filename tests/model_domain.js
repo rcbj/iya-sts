@@ -139,6 +139,15 @@ function declarations(t) {
     'rust/crates/sts-model/src/generated/' + name + '.rs is what the model ' +
       'generates (tests/tools/regenerate-model-docs.sh)');
   });
+  // AND THE DIRECTORY'S TABLES AS sts-directory READS THEM (#444, phase 4):
+  // the bundle of the seven files `ldap/ldap_server.js` and
+  // `common/domain_map.ts` read, written by the same script.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-directory',
+    'src', 'generated', 'directory.json'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated',
+      'directory.rust.json'), 'utf8'),
+  'rust/crates/sts-directory/src/generated/directory.json is what the model ' +
+    'generates (tests/tools/regenerate-model-docs.sh)');
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');

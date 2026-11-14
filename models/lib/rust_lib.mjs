@@ -1029,3 +1029,49 @@ function renderUnions(unions) {
   log.debug("Leaving renderUnions().");
   return lines.join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// THE DIRECTORY'S OWN TABLES, FOR `sts-directory` (#444, phase 4).
+//
+// `ldap/ldap_server.js` and `common/domain_map.ts` read seven generated
+// tables: the name lists (`directory.names.json`), the facts and links
+// (`directory.facts.json`, `directory.links.json`), every authored object's
+// `<id>.schema.json` and `<id>.fields.json`, and the concepts
+// (`domain.json`). The Rust directory reads the SAME tables, bundled into one
+// file so the crate carries one include and one drift check: each member is
+// exactly what the build writes to the file it is named after, and nothing
+// is derived here. Committed as
+// `rust/crates/sts-directory/src/generated/directory.json` by
+// tests/tools/regenerate-model-docs.sh and held there by tests/model_domain.js.
+// ---------------------------------------------------------------------------
+
+/**
+ * The directory's generated tables, bundled for the Rust directory.
+ *
+ * @param tables - `{ names, facts, links, concepts, schemas, fields }`, each
+ *   what generate.mjs writes: `schemas` and `fields` by object id
+ * @returns the text of `rust/crates/sts-directory/src/generated/
+ *   directory.json`
+ */
+export function renderRustDirectory(tables) {
+  log.debug("Entering renderRustDirectory().");
+  const sorted = function (byId) {
+    const out = {};
+    Object.keys(byId || {}).sort().forEach(function (id) {
+      out[id] = byId[id];
+    });
+    return out;
+  };
+  const bundle = {
+    generated: 'models/ (#1390, #444). Do not edit: change the model and ' +
+      'run tests/tools/regenerate-model-docs.sh.',
+    names: tables.names,
+    facts: tables.facts,
+    links: tables.links,
+    schemas: sorted(tables.schemas),
+    fields: sorted(tables.fields),
+    concepts: tables.concepts
+  };
+  log.debug("Leaving renderRustDirectory().");
+  return JSON.stringify(bundle, null, 1) + '\n';
+}

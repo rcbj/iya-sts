@@ -23,7 +23,8 @@ import { documents, everyOperation, projections, renderApiTypes }
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
-import { renderRustApi, renderRustDomain } from '../lib/rust_lib.mjs';
+import { renderRustApi, renderRustDirectory, renderRustDomain }
+  from '../lib/rust_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
 import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
@@ -258,15 +259,26 @@ async function generate() {
     throw new Error('The model has no object written by hand, so the ' +
       'service would have no table to read.');
   }
+  // The directory's tables as the Rust directory reads them (#444): each
+  // object's schema and fields beside the files below, bundled.
+  const directorySchemas = {};
+  const directoryFields = {};
   authored.forEach(function (object) {
+    directorySchemas[object.id] = schemaOf(object);
     fs.writeFileSync(path.join(out, object.id + '.schema.json'),
       JSON.stringify(schemaOf(object)));
     const declared = fieldsOf(object);
     if (declared.fields.length > 0 || declared.selectors.length > 0) {
+      directoryFields[object.id] = declared;
       fs.writeFileSync(path.join(out, object.id + '.fields.json'),
         JSON.stringify(declared));
     }
   });
+  fs.writeFileSync(path.join(out, 'directory.rust.json'),
+    renderRustDirectory({ names: names, facts: factsOf(objects),
+                          links: linksIn(objects), concepts: concepts,
+                          schemas: directorySchemas,
+                          fields: directoryFields }));
   log.debug("Leaving generate().");
   return authored.length;
 }
