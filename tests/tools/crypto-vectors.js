@@ -2971,7 +2971,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'realm-lifecycle-node.json',
                    build: realmLifecycleVectors },
                  { file: 'http-node.json', build: httpVectors },
-                 { file: 'keystore-node.json', build: keystoreVectors }];
+                 { file: 'keystore-node.json', build: keystoreVectors },
+                 // The XACML engine's: tests/tools/xacml-vectors.js.
+                 { file: 'xacml-node.json',
+                   build: function () {
+                     return require('./xacml-vectors.js').build(ROOT);
+                   } }];
 
 // THE KEYSTORE'S DATA KEYS (#444): values sealed by `common/keystore.js`
 // under a durable key-encryption key — with the data-key rows it wrote to

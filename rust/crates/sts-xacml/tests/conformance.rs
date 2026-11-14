@@ -214,3 +214,53 @@ fn every_mandatory_case_passes_bar_the_recorded_exceptions() {
         stale_passes.join(", ")
     );
 }
+
+/// Every mandatory case against NODE'S verdict on it today, case by case:
+/// `xacml-node.json`'s `conformance`, which `tests/tools/xacml-vectors.js`
+/// writes with `tests/xacml_conformance.js`'s own `readCase()` and
+/// `runCase()`. Both runners say why in the same words, so a case that
+/// passes in both passes for the same decision, and one that fails fails
+/// for the same reason. The directory is `STS_CRYPTO_VECTORS`, never
+/// committed; with it unset this test says so and passes.
+#[test]
+fn every_mandatory_case_has_nodes_verdict() {
+    let Ok(dir) = std::env::var("STS_CRYPTO_VECTORS") else {
+        eprintln!(
+            "STS_CRYPTO_VECTORS is not set: Node's verdicts are not checked"
+        );
+        return;
+    };
+    let text =
+        fs::read_to_string(Path::new(&dir).join("xacml-node.json")).unwrap();
+    let vectors: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let cases = vectors["conformance"].as_array().unwrap();
+    assert_eq!(cases.len(), MANDATORY_CASES, "Node read every case");
+    let mut differ = Vec::new();
+    let mut node_passed = 0;
+    for row in cases {
+        let name = row["name"].as_str().unwrap_or_default();
+        let case = read_case(&suite_root().join(name));
+        let node_ok = row["ok"].as_bool() == Some(true);
+        let node_why = row["why"].as_str().unwrap_or_default();
+        if node_ok {
+            node_passed += 1;
+        }
+        let (ok, why) = match run_case(&case) {
+            Ok(why) => (true, why),
+            Err(why) => (false, why),
+        };
+        if ok != node_ok || why != node_why {
+            differ.push(format!(
+                "{}: Rust {} \"{}\", Node {} \"{}\"",
+                name, ok, why, node_ok, node_why
+            ));
+        }
+    }
+    println!(
+        "Node passes {} of {}; Rust agrees on every case but {}",
+        node_passed,
+        cases.len(),
+        differ.len()
+    );
+    assert!(differ.is_empty(), "{}", differ.join("\n"));
+}
