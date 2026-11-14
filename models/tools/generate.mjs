@@ -23,7 +23,8 @@ import { documents, everyOperation, projections, renderApiTypes }
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
-import { renderRustApi, renderRustDomain } from '../lib/rust_lib.mjs';
+import { renderRustApi, renderRustDomain, renderRustManagementOperations }
+  from '../lib/rust_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
 import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
@@ -220,6 +221,9 @@ async function generate() {
   const rust = renderRustApi(served);
   fs.writeFileSync(path.join(out, 'api.rs'), rust.api);
   fs.writeFileSync(path.join(out, 'unions.rs'), rust.unions);
+  // The management API's operations, for sts-mgmt-api's router (#444).
+  fs.writeFileSync(path.join(out, 'mgmt_operations.rs'),
+    renderRustManagementOperations(served));
   const projected = projections(program);
   const conceptNames = new Set(concepts.map(function (one) {
     return one.name;
