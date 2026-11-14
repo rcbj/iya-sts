@@ -22,6 +22,7 @@ members = [
   "crates/sts-guards",
   "crates/sts-tls",
   "crates/sts-kerberos",
+  "crates/sts-ldap",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]
@@ -50,6 +51,7 @@ sts-model = { path = "crates/sts-model" }
 sts-xml = { path = "crates/sts-xml" }
 sts-tls = { path = "crates/sts-tls" }
 sts-kerberos = { path = "crates/sts-kerberos" }
+sts-ldap = { path = "crates/sts-ldap" }
 axum = "0.8"
 base64 = "0.23"
 flate2 = "1"
@@ -91,6 +93,10 @@ brotli = "8"
 futures-util = "0.3"
 encoding_rs = "0.8"
 icu_locale = "2"
+# Kanidm's LDAPv3 codec: sts-ldap compares its own against it in a test.
+ldap3_proto = "0.9"
+bytes = "1"
+tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
 # The appconfig file a 1.x operator wrote is a JavaScript module (D11):
 # QuickJS evaluates it with no I/O but the appconfig files it requires.
