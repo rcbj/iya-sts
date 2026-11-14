@@ -227,6 +227,19 @@ function childMain() {
       const requires = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
       let found = requires.exec(code);
       while (found) {
+        // THE ONE PACKAGE (#444 phase 2b, 2026-11-14): the console lays its
+        // pictures out in the browser, and the layout library is bundled
+        // into its script with them. It is pure JavaScript with one
+        // dependency, names nothing of node's and leaves no `require()` in
+        // the bundle (C3 below). Named exactly, and only for the modules
+        // that lay a picture out, so a second package is a decision made
+        // here rather than a line that slipped through.
+        if (found[1] === '@dagrejs/dagre' &&
+            /^admin-ui\/web_(delegation_map|federation_diagram)\.ts$/
+              .test(name)) {
+          found = requires.exec(code);
+          continue;
+        }
         if (!/^(\.\/|\.\.\/[a-z0-9-]+\/)web_[a-z0-9_]+$/.test(found[1])) {
           foreign.push(name + ' requires ' + found[1]);
         }
@@ -437,6 +450,33 @@ function childMain() {
     const unviewed = [];
     const differing = [];
     const drilled = [];
+    // THE PICTURES ARE LAID OUT IN THE BROWSER (#444 phase 2b): a page that
+    // draws one draws it from the answer's data, and what the bundle draws
+    // must be, to the byte, the `svg` this process answered beside that
+    // data — one code path, two places — and its document on its own must
+    // be a document.
+    const pictured = [];
+    const pictureDiffers = [];
+    const drawnPictures = [];
+    const pictureCheck = function (label, page, view, drawn) {
+      if (typeof page.document !== 'function' || !view ||
+          typeof view.svg !== 'string') {
+        return;
+      }
+      pictured.push(label);
+      const alone = StsConsole && StsConsole.documentOf
+        ? StsConsole.documentOf(page.path, view) : null;
+      // A page with nothing chosen draws no picture (a chooser instead);
+      // one that draws a diagram must draw the answer's own.
+      if (typeof drawn !== 'string' ||
+          (drawn.indexOf('<div class="diagram">') >= 0 &&
+           drawn.indexOf(view.svg) < 0) ||
+          typeof alone !== 'string' || alone.indexOf('<svg') !== 0) {
+        pictureDiffers.push(label);
+      } else if (drawn.indexOf('<div class="diagram">') >= 0) {
+        drawnPictures.push(label);
+      }
+    };
     for (let i = 0; i < WebPages.PAGES.length; i++) {
       const page = WebPages.PAGES[i];
       let view = null;
@@ -451,6 +491,7 @@ function childMain() {
       drawnPages.push({ path: page.path, html: mine });
       const theirs = StsConsole
         ? StsConsole.render(page.path, view, ctx) : null;
+      pictureCheck(page.path, page, view, theirs);
       if (typeof mine !== 'string' || mine.length < 100 || mine !== theirs) {
         differing.push(page.path + ' (' + String(mine).length + ' against ' +
                        String(theirs).length + ')');
@@ -490,6 +531,7 @@ function childMain() {
           drawnPages.push({ path: label, html: a });
           const b = StsConsole ? StsConsole.render(page.path, one, ectx)
                                : null;
+          pictureCheck(label, page, one, b);
           if (typeof a !== 'string' || a.length < 100 || a !== b ||
               a === mine) {
             differing.push(label + ' (' + String(a).length + ' against ' +
@@ -522,6 +564,7 @@ function childMain() {
         const a = WebPages.render(page.path, one, dctx);
         drawnPages.push({ path: label, html: a });
         const b = StsConsole ? StsConsole.render(page.path, one, dctx) : null;
+        pictureCheck(label, page, one, b);
         // Not the list again: a drill that fell through to the list's
         // renderer would draw the same page for every item.
         if (typeof a !== 'string' || a.length < 100 || a !== b ||
@@ -1111,6 +1154,43 @@ function childMain() {
          differing.join(', ') ||
          'drill-downs: ' + drilled.join(', ') + '; examples: ' +
          exampled.join(', '));
+    note(drawnPictures.length >= 7 && pictureDiffers.length === 0,
+         'D1-pictures. every picture the bundle lays out from an answer is, ' +
+         'to the byte, the svg this process answered beside it, and its ' +
+         'document on its own is drawn too (' + pictured.length +
+         ' view(s), ' + drawnPictures.length + ' of them drawing one)',
+         pictureDiffers.join(', ') || drawnPictures.join(', '));
+    // AND THE MAP (#444 phase 2b): Geolocation's view, given the outlines
+    // the runtime fetches from `/admin/geo-outlines.json` (the page row's
+    // `assets`), draws in the bundle the very `picture.svg` this process
+    // answered; without them it says so instead of drawing a map.
+    const geoPage = WebPages.pageFor('/admin/geolocation');
+    const geoView = geoPage ? await viewOf(geoPage, {}).catch(function (e) {
+      return { failed: String((e && e.message) || e) };
+    }) : null;
+    const outlines = JSON.parse(fsC.readFileSync(pathC.join(ROOT_DIR,
+      'admin-ui', 'natural_earth', 'countries.json'), 'utf8'));
+    const geoCtx = WebKit.context({}, true);
+    const geoWith = geoView && geoView.drawing
+      ? (StsConsole ? StsConsole.render('/admin/geolocation',
+          Object.assign({}, geoView, { countryOutlines: outlines }),
+          geoCtx) : '')
+      : '';
+    const geoWithout = geoView && geoView.drawing && StsConsole
+      ? StsConsole.render('/admin/geolocation', geoView, geoCtx) : '';
+    note(!!(geoPage && geoPage.assets &&
+            geoPage.assets.countryOutlines ===
+            '/admin/geo-outlines.json') &&
+         !!(geoView && geoView.drawing && geoView.drawing.map &&
+            geoView.drawing.picture) &&
+         geoWith.indexOf(geoView.drawing.picture.svg) >= 0 &&
+         geoWithout.indexOf(geoView.drawing.picture.svg) < 0 &&
+         geoWithout.indexOf('/admin/geo-outlines.json') >= 0,
+         'D1-map. the bundle draws Geolocation\'s map from drawing.map over ' +
+         'the outlines, to the byte the picture.svg this process answered, ' +
+         'and says so where it has no outlines',
+         geoView && geoView.failed ? geoView.failed
+           : String(geoWith.length) + ' / ' + String(geoWithout.length));
     const oauthPage = WebPages.pageFor('/admin/oauth2');
     const oauthView = oauthPage ? await viewOf(oauthPage, {}) : null;
     const oauthHtml = oauthView
