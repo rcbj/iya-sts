@@ -2260,15 +2260,16 @@ then build and run this service's image (it runs from an image, see
 [Getting started](getting-started.md)), publish 8444, open
 `https://localhost:8444/` and sign in as a console administrator.
 
-**In a container:** build the debugger project's embedded image and pass it to
-this one:
+**In a container it is there already.** The image is built with a tagged
+release of the debugger, `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.1` — publish 8444. To build
+against a debugger of your own instead:
 
 ```bash
 docker build -f embedded/Dockerfile -t rcbj/id-proto-debugger-embedded:dev .   # in the debugger project
 DEBUGGER_IMAGE=rcbj/id-proto-debugger-embedded:dev docker compose build sts   # here
 ```
 
-and publish 8444. Without a debugger image the build succeeds, and
+and `DEBUGGER_IMAGE=debugger-none` builds an image without one, where
 `/admin/debugger` says the debugger is not installed.
 
 **What it does not change:** the debugger's own standalone deployment — its

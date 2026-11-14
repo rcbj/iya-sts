@@ -117,7 +117,7 @@ mapping under `sts` → `ports` (or `postgres` → `ports`) to reach one:
 | Add | For |
 |---|---|
 | `"389:389"`, `"636:636"` (or `"1389:389"`, `"1636:636"`) | LDAP and LDAPS. LDAPS serves the same certificate as the main port. |
-| `"8444:8444"` | The [embedded debugger](admin-console.md). Both sides must be the same number, because the debugger's sign-in sends the browser back to the service by the host name it used. It runs only when the image was built with `DEBUGGER_IMAGE`. |
+| `"8444:8444"` | The [embedded debugger](admin-console.md). Both sides must be the same number, because the debugger's sign-in sends the browser back to the service by the host name it used. The image carries it by default (`DEBUGGER_IMAGE`, below); it runs when `debugger.enabled` says so — `auto` is on in development mode and off in product mode. |
 | `"5432:5432"` under `postgres` | To look at the database with `psql` |
 
 A realm's SPIFFE listeners are not published either. A published port maps to
@@ -225,7 +225,8 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_KEYS_KEK_PROVIDER` | `vault-transit` | `vault` reads the key from KV (`STS_KEYS_KEK_REF=secret/data/sts`) instead of using the Transit key |
 | `OPENBAO_TAG` | `latest` | The OpenBao image tag |
 | `STS_IMAGE`, `XACML_PEP_IMAGE`, `STS_COMPANION_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep`, `iya-sts-companion` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |
-| `GIT_COMMIT`, `DEBUGGER_IMAGE` | empty | Build arguments: see [Which build am I running?](getting-started.md#which-build-am-i-running) and the embedded debugger |
+| `GIT_COMMIT` | empty | Build argument: see [Which build am I running?](getting-started.md#which-build-am-i-running) |
+| `DEBUGGER_IMAGE` | `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.1` | Build argument: the [embedded debugger](admin-console.md#the-embedded-protocol-debugger) the image carries, a tagged release of id-proto-debugger. `debugger-none` builds an image without one |
 | `*_CONTAINER_NAME` | `sts`, `sts-postgres`, `sts-openbao`, … | Container names, which are machine-wide; change them to run a second stack beside this one |
 
 `OID4VCI_WALLET_URL` is not in the file. Add it under `sts` → `environment`
