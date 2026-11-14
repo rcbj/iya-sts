@@ -145,7 +145,7 @@ pub fn build_context(
     policy: &ListenerPolicy,
     certificates: &[ListenerCertificate],
     ca: &[String],
-    http2: bool,
+    alpn: Option<bool>,
 ) -> Result<Applied, String> {
     let options = ProtocolOptions::of(policy);
     let e = |what: &str, err: openssl::error::ErrorStack| {
@@ -240,19 +240,23 @@ pub fn build_context(
     } else {
         b.set_verify(SslVerifyMode::NONE);
     }
-    let server = alpn_wire(http2);
-    b.set_alpn_select_callback(move |_ssl, client| {
-        // The server's list FIRST: its order wins, as node's does.
-        select_next_proto(&server, client)
-            .map(|chosen| {
-                if chosen == b"h2" {
-                    &b"h2"[..]
-                } else {
-                    &b"http/1.1"[..]
-                }
-            })
-            .ok_or(AlpnError::ALERT_FATAL)
-    });
+    // `alpn` is `Some(http2)` for an HTTP listener and `None` for one that
+    // speaks no ALPN protocol (LDAPS: tlsfuzzer's `noAlpnOnLdaps`).
+    if let Some(http2) = alpn {
+        let server = alpn_wire(http2);
+        b.set_alpn_select_callback(move |_ssl, client| {
+            // The server's list FIRST: its order wins, as node's does.
+            select_next_proto(&server, client)
+                .map(|chosen| {
+                    if chosen == b"h2" {
+                        &b"h2"[..]
+                    } else {
+                        &b"http/1.1"[..]
+                    }
+                })
+                .ok_or(AlpnError::ALERT_FATAL)
+        });
+    }
     Ok(Applied {
         context: b.build(),
         require_verified: reject,
@@ -942,7 +946,7 @@ mod tests {
         let s = Settings::new(json!({}), HashMap::new());
         let p = policy_for(&s, &ListenerKind::Main);
         let applied =
-            build_context("t", &p, &[certificate()], &[], true).unwrap();
+            build_context("t", &p, &[certificate()], &[], Some(true)).unwrap();
         assert!(!applied.require_verified);
     }
 
@@ -953,7 +957,7 @@ mod tests {
             HashMap::new(),
         );
         let p = policy_for(&s, &ListenerKind::Main);
-        let err = build_context("t", &p, &[certificate()], &[], true)
+        let err = build_context("t", &p, &[certificate()], &[], Some(true))
             .err()
             .unwrap();
         assert!(err.starts_with("tls.ciphers"), "{}", err);
@@ -1016,7 +1020,7 @@ mod tests {
         let s = Settings::new(json!({}), HashMap::new());
         let p = policy_for(&s, &ListenerKind::Main);
         let applied =
-            build_context("t", &p, &[certificate()], &[], true).unwrap();
+            build_context("t", &p, &[certificate()], &[], Some(true)).unwrap();
         let listener = TlsListener::new("main", "t", 0, applied, true);
         let tcp = listener.bind("127.0.0.1:0").await.unwrap();
         let port = tcp.local_addr().unwrap().port();

@@ -52,6 +52,7 @@
 #![forbid(unsafe_code)]
 
 mod certificates;
+mod ldap_listener;
 mod listener;
 mod listeners;
 mod solo;
@@ -96,13 +97,72 @@ fn fatal(code: sts_core::errors::ErrorCode, message: &str) -> ! {
 /// code — never thrown. None is ported yet; a family registers here when
 /// its phase lands (DESIGN 4.2's `ProtocolFamily::listeners()`).
 #[derive(Default)]
-struct SocketOwners;
+struct SocketOwners {
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+}
 
 impl SocketOwners {
     #[tracing::instrument(level = "debug", skip_all)]
-    async fn listen(&self, _listeners: &Arc<Listeners>) {
+    async fn listen(
+        &mut self,
+        settings: &Settings,
+        listeners: &Arc<Listeners>,
+        host: &str,
+    ) {
+        // THE DIRECTORY'S TWO SOCKETS: the wire is sts-ldap's, the
+        // handlers phase 4's (`ldap_listener::NotYet` until then).
+        let handlers: Arc<dyn ldap_listener::Handlers> =
+            Arc::new(ldap_listener::NotYet);
+        let port = |key: &str| {
+            u16::try_from(settings.value_of(key).as_int()).unwrap_or(0)
+        };
+        if let Some(t) = ldap_listener::listen_plain(
+            host,
+            port("ldap.port"),
+            handlers.clone(),
+        )
+        .await
+        {
+            self.tasks.push(t);
+        }
+        let first = listeners
+            .material
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .certificates
+            .first()
+            .cloned();
+        let label = format!("LDAPS ({})", port("ldap.tlsPort"));
+        let built = first
+            .ok_or_else(|| "no listener certificate".to_string())
+            .and_then(|c| {
+                listeners.context_for(
+                    &label,
+                    &ListenerKind::Ldaps,
+                    Some(&vec![c]),
+                )
+            });
+        match built {
+            Ok(applied) => {
+                if let Some(t) = ldap_listener::listen_tls(
+                    host,
+                    port("ldap.tlsPort"),
+                    applied.context,
+                    handlers,
+                )
+                .await
+                {
+                    self.tasks.push(t);
+                }
+            }
+            Err(why) => tracing::error!(
+                "{}ldap: LDAPS could not be built ({}); LDAPS is not offered.",
+                tag(codes::STS_LDAP_0028),
+                why
+            ),
+        }
         tracing::debug!(
-            "runtime: no family socket is ported yet (KDC 88, LDAP 389/636, SPIFFE, the revocation \
+            "runtime: the other family sockets are not ported yet (KDC 88, SPIFFE, the revocation \
              listener, the cell channel, the debugger)."
         );
     }
@@ -200,7 +260,7 @@ fn check_every_policy(settings: &Settings, listeners: &Listeners) {
                 p,
                 &certificates,
                 &[],
-                true,
+                Some(true),
             ) {
                 let message = if kind == ListenerKind::Process {
                     format!(
@@ -444,7 +504,8 @@ async fn run(settings: Arc<Settings>) -> Result<(), String> {
         }
     }
     // 7.
-    SocketOwners.listen(&listeners).await;
+    let mut owners = SocketOwners::default();
+    owners.listen(&settings, &listeners, &host).await;
     tokio::select! {
         _ = async { while tasks.join_next().await.is_some() {} } => {}
         _ = shutdown_signal() => {
@@ -452,6 +513,9 @@ async fn run(settings: Arc<Settings>) -> Result<(), String> {
         }
     }
     tasks.abort_all();
+    for t in &owners.tasks {
+        t.abort();
+    }
     stack.stop().await;
     Ok(())
 }

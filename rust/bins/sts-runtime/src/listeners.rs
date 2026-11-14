@@ -116,7 +116,10 @@ impl Listeners {
             &policy,
             &self.certificates_for(own),
             &ca,
-            http2_for(&self.settings, kind),
+            match kind {
+                ListenerKind::Ldaps => None,
+                k => Some(http2_for(&self.settings, k)),
+            },
         )
     }
 

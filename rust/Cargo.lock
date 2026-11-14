@@ -2115,6 +2115,7 @@ dependencies = [
  "sts-core",
  "sts-crypto",
  "sts-http",
+ "sts-ldap",
  "sts-pki",
  "sts-store",
  "sts-tls",

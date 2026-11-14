@@ -16,6 +16,7 @@ sts-crypto.workspace = true
 sts-cluster.workspace = true
 sts-cache.workspace = true
 sts-http.workspace = true
+sts-ldap.workspace = true
 sts-pki.workspace = true
 sts-store.workspace = true
 sts-tls.workspace = true
