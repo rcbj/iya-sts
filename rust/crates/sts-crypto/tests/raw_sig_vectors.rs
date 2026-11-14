@@ -102,6 +102,56 @@ fn raw_signatures_and_the_tpm_match_node() {
             format!("{}: the wrong key", name),
         );
     }
+    // The pq family with the algorithm named (#1368): Node's verdicts, and
+    // Rust's own signature under Node's raw private key, which Node checks.
+    let mut named = Vec::new();
+    for r in v["named"].as_array().unwrap() {
+        let alg = r["alg"].as_str().unwrap();
+        let data = b"a challenge the attestor signs";
+        let (public, sig) = (b64(&r["pub"]), b64(&r["signature"]));
+        let mut tampered = sig.clone();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 1;
+        check(
+            raw_sig::verify_raw_signature_named(alg, &public, data, &sig)
+                == r["ok"].as_bool().unwrap(),
+            format!("{}: the named signature", alg),
+        );
+        check(
+            raw_sig::verify_raw_signature_named(alg, &public, data, &tampered)
+                == r["tampered"].as_bool().unwrap(),
+            format!("{}: the named signature, tampered", alg),
+        );
+        check(
+            raw_sig::verify_raw_signature_named(
+                alg,
+                &b64(&r["otherPub"]),
+                data,
+                &sig,
+            ) == r["wrongKey"].as_bool().unwrap(),
+            format!("{}: the named signature, the wrong key", alg),
+        );
+        let ours =
+            raw_sig::sign_raw_signature_named(alg, &b64(&r["priv"]), data)
+                .unwrap();
+        check(
+            raw_sig::verify_raw_signature_named(alg, &public, data, &ours),
+            format!("{}: Rust's named signature verifies here", alg),
+        );
+        named.push(serde_json::json!({
+            "alg": alg, "pub": r["pub"], "signature": STANDARD.encode(&ours),
+        }));
+    }
+    if std::env::var("STS_WRITE_VECTORS").is_ok() {
+        std::fs::write(
+            std::path::Path::new(&dir).join("raw-sig-rust.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "named": named,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
     for k in v["kdfa"].as_array().unwrap() {
         let hash = RawHash::from_name(k["hash"].as_str().unwrap()).unwrap();
         let out = raw_sig::tpm_kdfa(

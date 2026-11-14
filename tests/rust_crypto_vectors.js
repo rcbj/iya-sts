@@ -90,11 +90,26 @@ function run(t) {
             row.alg + ': a token Rust signed with a key Rust generated ' +
             'verifies in Node', why);
   });
-  const jwes = read('jwe-rust.json');
+  log.debug("Leaving run(). The JWE checks are asynchronous.");
+  return jwesFromRust(t, read('jwe-rust.json')).then(function () {
+    return afterJwes(t);
+  });
+}
+
+// JWE: every JWE Rust encrypted decrypts in Node, through the door Node's
+// own callers use — `decryptJweCompactAsync()`, which derives a PBES2 key
+// off the event loop and is `decryptJweCompact()` for every other alg.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} jwes - jwe-rust.json
+ * @returns {Promise<void>} when every row is checked
+ */
+async function jwesFromRust(t, jwes) {
+  log.debug("Entering jwesFromRust().");
   t.check(jwes.length >= crypto.JWE_ALGS.length,
           'there is a Rust JWE vector for every alg Node speaks',
           jwes.length + ' / ' + crypto.JWE_ALGS.length);
-  jwes.forEach(function (row) {
+  for (const row of jwes) {
     const options = {};
     if (row.secret) {
       options.secret = Buffer.from(row.secret, 'base64url');
@@ -108,25 +123,37 @@ function run(t) {
     let opened = null;
     let why = '';
     try {
-      opened = crypto.decryptJweCompact(row.compact, options);
+      opened = await crypto.decryptJweCompactAsync(row.compact, options);
     } catch (e) {
-      log.debug("Caught in run(): " + ((e && e.message) || e));
+      log.debug("Caught in jwesFromRust(): " + ((e && e.message) || e));
       why = (e && e.message) || String(e);
     }
     t.check(!!opened && opened.plaintext === '{"sub":"alice"}',
             row.alg + ' ' + row.enc + ': a JWE Rust encrypted decrypts in ' +
             'Node', why);
-  });
+  }
+  log.debug("Leaving jwesFromRust().");
+}
+
+/**
+ * The checks after the JWE ones.
+ *
+ * @param {any} t - the runner's check collector
+ * @returns {Promise<void>|undefined} when the asynchronous checks are done
+ */
+function afterJwes(t) {
+  log.debug("Entering afterJwes().");
   if (fs.existsSync(path.join(VECTORS, 'xmldsig-rust.json'))) {
     xmlSignatures(t, read('xmldsig-rust.json'));
   }
   if (fs.existsSync(path.join(VECTORS, 'pq-x509-rust.json'))) {
-    log.debug("Leaving run(). The post-quantum checks are asynchronous.");
+    log.debug("Leaving afterJwes(). The post-quantum checks are " +
+              "asynchronous.");
     return pqX509FromRust(t, read('pq-x509-rust.json')).then(function () {
       return restOfRun(t);
     });
   }
-  log.debug("Leaving run().");
+  log.debug("Leaving afterJwes().");
   return restOfRun(t);
 }
 
@@ -146,6 +173,16 @@ function restOfRun(t) {
     xmlEncryption(t, read('xmlenc-rust.json'), read('xmlenc-node.json'));
   }
   const pending = [];
+  if (fs.existsSync(path.join(VECTORS, 'webauthn-rust.json')) &&
+      fs.existsSync(path.join(VECTORS, 'webauthn-node.json'))) {
+    coseSign1FromRust(t, read('webauthn-rust.json'),
+                      read('webauthn-node.json'));
+  }
+  if (fs.existsSync(path.join(VECTORS, 'raw-sig-rust.json'))) {
+    pending.push(function () {
+      return rawSignaturesFromRust(t, read('raw-sig-rust.json'));
+    });
+  }
   if (fs.existsSync(path.join(VECTORS, 'sigstore-rust.json'))) {
     pending.push(function () {
       return sigstoreFromRust(t, read('sigstore-rust.json'));
@@ -292,12 +329,58 @@ async function sigstoreFromRust(t, v) {
   log.debug("Leaving sigstoreFromRust().");
 }
 
-// The composite whose ECDSA half is P-521: @noble/curves 1.4.0 writes and
-// reads its DER with a short-form length, which is not DER.
-const NOBLE_P521 = 'mldsa87-ecdsa-p521-sha512';
+// COSE_SIGN1 (#1368): every COSE_Sign1 Rust signed with Node's key, in each
+// algorithm coseSign1Sign() signs with, verifies with coseSign1Verify() over
+// the same protected header, payload and external AAD.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} vectors - webauthn-rust.json
+ * @param {any} node - webauthn-node.json, for the message
+ */
+function coseSign1FromRust(t, vectors, node) {
+  log.debug("Entering coseSign1FromRust().");
+  const message = node.coseSign1;
+  vectors.coseSign1.forEach(function (row) {
+    let ok = false;
+    try {
+      ok = crypto.coseSign1Verify(row.alg, row.publicJwk,
+        Buffer.from(message.protected, 'base64'),
+        Buffer.from(message.payload, 'base64'),
+        Buffer.from(row.signature, 'base64'),
+        { external: Buffer.from(message.external, 'base64') });
+    } catch (e) {
+      log.debug("Caught in coseSign1FromRust(): " + ((e && e.message) || e));
+    }
+    t.check(ok, 'COSE ' + row.alg + ': a COSE_Sign1 Rust signed verifies ' +
+            'in Node');
+  });
+  log.debug("Leaving coseSign1FromRust().");
+}
+
+// RAW SIGNATURES, THE PQ FAMILY WITH THE ALGORITHM NAMED (#1368): every
+// signature Rust made under Node's raw AKP private key verifies with
+// verifyRawSignature() against the raw public key.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} vectors - raw-sig-rust.json
+ * @returns {Promise<void>} when every row is checked
+ */
+async function rawSignaturesFromRust(t, vectors) {
+  log.debug("Entering rawSignaturesFromRust().");
+  const data = Buffer.from('a challenge the attestor signs');
+  for (const row of vectors.named) {
+    const ok = await crypto.verifyRawSignature(
+      { family: 'pq', alg: row.alg }, Buffer.from(row.pub, 'base64'), data,
+      Buffer.from(row.signature, 'base64'));
+    t.check(ok, row.alg + ': a raw post-quantum signature Rust made, the ' +
+            'algorithm named, verifies in Node');
+  }
+  log.debug("Leaving rawSignaturesFromRust().");
+}
 
 // POST-QUANTUM KEYS IN X.509: every signature Rust made verifies with
-// pqc_x509.js, the engine every post-quantum certificate here is checked by.
+// pqc_x509.js, the engine every post-quantum certificate here is checked by
+// — the P-521 composite too, since #445 made that engine's ECDSA half DER.
 /**
  * @param {any} t - the runner's check collector
  * @param {any} rows - pq-x509-rust.json
@@ -305,7 +388,7 @@ const NOBLE_P521 = 'mldsa87-ecdsa-p521-sha512';
  */
 async function pqX509FromRust(t, rows) {
   log.debug("Entering pqX509FromRust().");
-  const pqcX509 = require('../common/vendored/pqc_x509.js');
+  const pqcX509 = require('../common/crypto_impl/pqc_x509.js');
   for (const row of rows) {
     let ok = false;
     try {
@@ -315,21 +398,14 @@ async function pqX509FromRust(t, rows) {
     } catch (e) {
       log.debug("Caught in pqX509FromRust(): " + ((e && e.message) || e));
     }
-    if (row.id === NOBLE_P521) {
-      // The known defect: @noble/curves 1.4.0 reads a DER ECDSA signature
-      // with a short-form length only, so a correct P-521 one is refused.
-      // When Node is fixed this fails, and the exception goes.
-      t.check(!ok, row.id + ': Node refuses a correct (long-form DER) P-521 ' +
-              'signature — the known @noble/curves 1.4.0 defect');
-      continue;
-    }
     t.check(ok, row.id + ': a signature Rust made verifies in Node');
   }
   log.debug("Leaving pqX509FromRust().");
 }
 
 // SECRETS: every scrypt hash Rust made verifies here (and a wrong secret
-// does not), every envelope Rust sealed opens under its data key, and every
+// does not), so does every password hash it made under a password policy's
+// spec — argon2id and scrypt (#847, #872) — every envelope Rust sealed opens under its data key, and every
 // data key Rust wrapped unwraps under the key-encryption key and AAD.
 /**
  * @param {any} t - the runner's check collector
@@ -342,6 +418,14 @@ function secretsFromRust(t, vectors) {
             !crypto.verifySecret(row.plain + 'x', row.stored),
             'a scrypt hash Rust made verifies in Node, and only for its ' +
             'secret');
+  });
+  (vectors.passwords || []).forEach(function (row) {
+    t.check(crypto.verifySecret(row.plain, row.stored) &&
+            !crypto.verifySecret(row.plain + 'x', row.stored) &&
+            crypto.storedSecretMatchesSpec(row.stored, row.ask),
+            'a password hash Rust made under ' + JSON.stringify(row.ask) +
+            ' verifies in Node, only for its password, and is what Node ' +
+            'would write under that spec');
   });
   vectors.envelopes.forEach(function (row) {
     let opened = null;

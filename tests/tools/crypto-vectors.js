@@ -74,6 +74,64 @@ function keyFor(alg) {
 }
 
 function jws() {
+  return jwsRows().concat(certificateJwsRows());
+}
+
+// A COMPACT JWS VERIFIED WITH THE KEY IN A CERTIFICATE (#1713): a token per
+// certificate kind — RSA, and each ML-DSA set, whose key only the
+// certificate's own SubjectPublicKeyInfo can carry — and Node's
+// verifyCompactJwsWithCertificate() answer, with the certificate as PEM and
+// as bare base64 DER; and a refusal for what is not a certificate.
+function certificateJwsRows() {
+  const rows = [];
+  const tokenOf = function (alg, sign) {
+    const input = Buffer.from(JSON.stringify({ alg: alg, kid: 'cert-1' }))
+      .toString('base64url') + '.' +
+      Buffer.from(JSON.stringify({ sub: 'alice' })).toString('base64url');
+    return input + '.' +
+      Buffer.from(sign(Buffer.from(input, 'ascii'))).toString('base64url');
+  };
+  const answer = function (token, certificate, alg) {
+    try {
+      const out = crypto.verifyCompactJwsWithCertificate(token, certificate,
+                                                         { algorithms: [alg] });
+      return { ok: true, sub: out.claims.sub };
+    } catch (e) {
+      return { ok: false, refusal: e.message };
+    }
+  };
+  const rsa = crypto.selfSignedRsaCertificate({ commonName: 'jws signer',
+                                                bits: 2048 });
+  const rsaToken = tokenOf('RS256', function (input) {
+    return nodeCrypto.sign('sha256', input, rsa.privateKeyPem);
+  });
+  const ec = crypto.selfSignedMlDsaCertificate({ algorithm: 'ML-DSA-44',
+                                                 commonName: 'other' });
+  const certs = [['RS256', rsa.certPem, rsaToken]];
+  ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87'].forEach(function (alg) {
+    const made = crypto.selfSignedMlDsaCertificate({
+      algorithm: alg.toLowerCase(), commonName: 'jws signer ' + alg });
+    const jwk = nodeCrypto.createPrivateKey(made.privateKeyPem)
+      .export({ format: 'jwk' });
+    certs.push([alg, made.certPem, tokenOf(alg, function (input) {
+      return pqJose.sign(alg, Buffer.from(jwk.priv, 'base64url'), input);
+    })]);
+  });
+  certs.forEach(function (c) {
+    const der = c[1].replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+    rows.push({ certificateRow: true, alg: c[0], token: c[2],
+                certificate: c[1], pem: answer(c[2], c[1], c[0]),
+                der: answer(c[2], der, c[0]),
+                otherCertificate: ec.certPem,
+                wrongCertificate: answer(c[2], ec.certPem, c[0]) });
+  });
+  rows.push({ certificateRow: true, alg: 'RS256', token: rsaToken,
+              certificate: 'not a certificate',
+              pem: answer(rsaToken, 'not a certificate', 'RS256') });
+  return rows;
+}
+
+function jwsRows() {
   return crypto.JWS_SIGNING_ALGS.map(function (alg) {
     const key = keyFor(alg);
     const input = Buffer.from('eyJhbGciOiJ4In0.eyJzdWIiOiJhbGljZSJ9',
@@ -139,7 +197,13 @@ function jweRecipient(alg) {
   return crypto.generateJweKemKeyPair(alg, 'node-1');
 }
 
-function jwe() {
+// PBES2 IS DERIVED OFF THE EVENT LOOP (ASVS 5.0.0 11.4.4): the synchronous
+// door refuses a PBES2 JWE, so every row is made with
+// `encryptJweCompactAsync()`, which is the synchronous door for every other
+// alg. After the rows, the refusals Rust must make in the same words: the
+// synchronous door handed a PBES2 JWE, and the asynchronous one handed a
+// `p2c` below the floor or above the ceiling.
+async function jwe() {
   const cases = crypto.JWE_ALGS.map(function (alg) {
     return { alg: alg, enc: 'A256GCM' };
   }).concat(Object.keys(crypto.JWE_ENCS).map(function (enc) {
@@ -147,18 +211,75 @@ function jwe() {
   }), Object.keys(crypto.JWE_ENCS).map(function (enc) {
     return { alg: 'dir', enc: enc };
   }));
-  return cases.map(function (one) {
+  const rows = [];
+  for (const one of cases) {
     const recipient = jweRecipient(one.alg);
     const secret = recipient ? null : jweSecretFor(one.alg, one.enc);
-    const compact = crypto.encryptJweCompact('{"sub":"alice"}', {
+    const compact = await crypto.encryptJweCompactAsync('{"sub":"alice"}', {
       alg: one.alg, enc: one.enc,
       jwk: recipient ? recipient.publicJwk : undefined,
       secret: secret || undefined });
-    return { alg: one.alg, enc: one.enc,
-             privateJwk: recipient ? recipient.privateJwk : null,
-             secret: secret ? secret.toString('base64url') : null,
-             compact: compact };
-  });
+    rows.push({ alg: one.alg, enc: one.enc,
+                privateJwk: recipient ? recipient.privateJwk : null,
+                secret: secret ? secret.toString('base64url') : null,
+                compact: compact });
+  }
+  return rows.concat(await jweRefusals());
+}
+
+// A PBES2 JWE with its header's `p2c` replaced: the ciphertext no longer
+// matters, because the count is refused before anything is derived.
+function withP2c(compact, p2c) {
+  const parts = compact.split('.');
+  const header = JSON.parse(Buffer.from(parts[0], 'base64url')
+    .toString('utf8'));
+  header.p2c = p2c;
+  parts[0] = Buffer.from(JSON.stringify(header), 'utf8')
+    .toString('base64url');
+  return parts.join('.');
+}
+
+async function jweRefusals() {
+  const out = [];
+  const secret = Buffer.from('a password for PBES2', 'utf8');
+  for (const alg of crypto.JWE_ALGS.filter(function (a) {
+    return /^PBES2-/.test(a);
+  })) {
+    const compact = await crypto.encryptJweCompactAsync('{"sub":"alice"}',
+      { alg: alg, enc: 'A256GCM', secret: secret });
+    const refused = async function (door, text, minIterations) {
+      try {
+        if (door === 'sync') {
+          crypto.decryptJweCompact(text, { secret: secret });
+        } else {
+          await crypto.decryptJweCompactAsync(text, { secret: secret });
+        }
+      } catch (e) {
+        out.push({ alg: alg, enc: 'A256GCM', door: door,
+                   secret: secret.toString('base64url'), compact: text,
+                   minIterations: minIterations,
+                   refusal: (e && e.message) || String(e) });
+        return;
+      }
+      throw new Error(alg + ': the ' + door + ' door did not refuse');
+    };
+    let syncEncrypt = null;
+    try {
+      crypto.encryptJweCompact('{"sub":"alice"}',
+                               { alg: alg, enc: 'A256GCM', secret: secret });
+    } catch (e) {
+      syncEncrypt = (e && e.message) || String(e);
+    }
+    out.push({ alg: alg, enc: 'A256GCM', door: 'sync-encrypt',
+               secret: secret.toString('base64url'), compact: null,
+               refusal: syncEncrypt });
+    await refused('sync', compact, null);
+    // npm-tests runs in development, whose floor is RFC 7518's 1000.
+    await refused('async', withP2c(compact, 999), 1000);
+    await refused('async', withP2c(compact, '12x'), 1000);
+    await refused('async', withP2c(compact, 1000001), 1000);
+  }
+  return out;
 }
 
 // CANONICAL XML: every element of every document, in all four forms, as
@@ -1034,9 +1155,83 @@ function secrets() {
              credential: crypto.deriveSharedCredential.apply(null,
                [row[0], row[1]].concat(row[2])) };
   });
-  return { hotp: hotp, hashes: hashes, envelopes: envelopes, wraps: wraps,
-           derived: derived, kekRefusals: kekRefusals,
-           credentials: credentials };
+  return Object.assign({ hotp: hotp, hashes: hashes, envelopes: envelopes,
+                         wraps: wraps, derived: derived,
+                         kekRefusals: kekRefusals,
+                         credentials: credentials }, passwordVectors());
+}
+
+// A PERSON'S PASSWORD (#847, #872): what the password policy's spec becomes,
+// hashes under each algorithm, and what the upgrade on sign-in asks of a
+// stored value — its parameters, whether it matches a spec, whether it is
+// weaker. The asks include out-of-range and missing values, because
+// passwordHashSpec() clamps; the stored values include forms this service
+// writes, the pre-#872 cost, and argon2id strings outside the bounds a
+// verification will compute.
+function passwordVectors() {
+  const asks = [
+    {}, { algorithm: 'scrypt' }, { algorithm: 'argon2id' },
+    { algorithm: 'scrypt', logN: 13 }, { algorithm: 'scrypt', logN: 14 },
+    { algorithm: 'scrypt', logN: 16, p: 1 }, { algorithm: 'scrypt', logN: 17 },
+    { algorithm: 'scrypt', logN: 99, r: 1, p: 99 },
+    { algorithm: 'scrypt', logN: 15.9, r: 12.5, p: '' },
+    { algorithm: 'argon2id', memory: 1, passes: 1, parallelism: 0 },
+    { algorithm: 'argon2id', memory: 65536, passes: 3, parallelism: 4 },
+    { algorithm: 'argon2id', memory: 9e9, passes: 99, parallelism: 99 },
+    { algorithm: 'bcrypt' }
+  ];
+  const specs = asks.map(function (ask) {
+    return { ask: ask, spec: crypto.passwordHashSpec(ask) };
+  });
+  const plains = ['', 'password', 'pässwörd 🔑'];
+  const passwords = [];
+  [{ algorithm: 'argon2id' },
+   { algorithm: 'argon2id', memory: 20000, passes: 3, parallelism: 2 },
+   {}, { algorithm: 'scrypt', logN: 14 }].forEach(function (ask) {
+    plains.forEach(function (plain) {
+      passwords.push({ ask: ask, plain: plain,
+                       stored: crypto.hashPassword(plain, ask) });
+    });
+  });
+  const salt = nodeCrypto.randomBytes(16).toString('base64')
+    .replace(/=+$/, '');
+  const tag = nodeCrypto.randomBytes(32).toString('base64')
+    .replace(/=+$/, '');
+  const stored = passwords.map(function (row) {
+    return row.stored;
+  }).concat([
+    crypto.hashSecret('legacy'),
+    '$argon2id$v=19$m=4194304,t=2,p=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=19456,t=17,p=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=16,t=1,p=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=15,t=1,p=2$' + salt + '$' + tag,
+    '$argon2id$v=18$m=19456,t=2,p=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=19456,t=2,p=1,x=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=19456,t=2,p=1$' + salt + '=$' + tag,
+    '$argon2id$v=19$m=19456,t=2,p=1$AAAA$' + tag,
+    '$scrypt$30000$8$1$' + salt + '$' + tag,
+    '$scrypt$x$8$1$' + salt + '$' + tag,
+    'plain-text', '', '{SSHA}abc'
+  ]);
+  const storedRows = stored.map(function (one) {
+    return {
+      stored: one,
+      hashed: crypto.isHashedSecret(one),
+      parameters: crypto.storedSecretParameters(one),
+      matches: asks.map(function (ask) {
+        return crypto.storedSecretMatchesSpec(one, ask);
+      }),
+      weaker: asks.map(function (ask) {
+        return crypto.storedSecretIsWeaker(one, ask);
+      })
+    };
+  });
+  const digests = ['', 'an authorization code', 'é 中 🔑',
+                   'x'.repeat(1000)].map(function (value) {
+    return { value: value, digest: crypto.credentialDigest(value) };
+  });
+  return { passwordAsks: asks, passwordSpecs: specs, passwords: passwords,
+           storedSecrets: storedRows, credentialDigests: digests };
 }
 
 // KERBEROS, SESSION STATE AND DKIM: all deterministic, so Rust must
@@ -1136,7 +1331,7 @@ function kerberosAndDkim() {
 // DER and so must be Rust's bytes; Rust must verify every signature, and
 // Node verifies Rust's (tests/rust_crypto_vectors.js).
 async function pqX509() {
-  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+  const pqcX509 = require(path.join(ROOT, 'common', 'crypto_impl',
                                     'pqc_x509.js'));
   const message = Buffer.from('a certificate\'s to-be-signed bytes');
   const out = [];
@@ -1175,7 +1370,7 @@ async function pqX509() {
 // which Rust activates; and CMS SignedData made by the openssl command
 // line, with the signer's certificate embedded and (AWS's shape) without.
 async function rawSignatures() {
-  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+  const pqcX509 = require(path.join(ROOT, 'common', 'crypto_impl',
                                     'pqc_x509.js'));
   const data = Buffer.from('a challenge the attestor signs');
   const spkiOf = function (pub) {
@@ -1314,8 +1509,30 @@ async function rawSignatures() {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+  // THE PQ FAMILY WITH THE ALGORITHM NAMED (#1368): the raw AKP key bytes
+  // a Data Integrity proof holds, every JOSE post-quantum algorithm, signed
+  // by signRawSignature() and judged by verifyRawSignature().
+  const named = [];
+  for (const alg of pqJose.PQ_ALGS) {
+    const pair = pqJose.generate(alg);
+    const other = pqJose.generate(alg);
+    const scheme = { family: 'pq', alg: alg };
+    const sig = crypto.signRawSignature(scheme, pair.priv, data);
+    const tampered = Buffer.from(sig);
+    tampered[tampered.length - 1] ^= 1;
+    named.push({ alg: alg, pub: pair.pub.toString('base64'),
+                 priv: pair.priv.toString('base64'),
+                 otherPub: other.pub.toString('base64'),
+                 signature: Buffer.from(sig).toString('base64'),
+                 ok: await crypto.verifyRawSignature(scheme, pair.pub, data,
+                                                     sig),
+                 tampered: await crypto.verifyRawSignature(scheme, pair.pub,
+                                                           data, tampered),
+                 wrongKey: await crypto.verifyRawSignature(scheme, other.pub,
+                                                           data, sig) });
+  }
   return { signatures: rows, kdfa: kdfa, credential: credential,
-           integers: integers, pkcs7: pkcs7 };
+           integers: integers, pkcs7: pkcs7, named: named };
 }
 
 // WEBAUTHN (section 10): Node's verdict from verifyCoseSignature() for
@@ -1504,7 +1721,7 @@ function webauthn() {
   };
   // A CSR attestation bundle with a tcg-attest-tpm-certify statement.
   const certDer = new nodeCrypto.X509Certificate(
-    require(path.join(ROOT, 'common', 'vendored', 'xmldsig.js'))
+    require(path.join(ROOT, 'common', 'crypto_impl', 'xmldsig.js'))
       .generateKeyPair(1024, 'bundle').certPem).raw;
   const stmt = new asn1js.Sequence({ value: [
     new asn1js.OctetString({ valueHex: sized(attest) }),
@@ -1528,8 +1745,74 @@ function webauthn() {
                 signature: t.signature.toString('base64'),
                 tpmTPublic: t.tpmTPublic.toString('base64') };
   return { cose: cose, tpm: tpm, extensions: extensions, csr: csr,
+           coseSign1: coseSign1Vectors(keyFor),
            brokenAlgorithms: require(path.join(ROOT, 'common', 'mode.js'))
              .usesBrokenAlgorithms() };
+}
+
+// COSE_SIGN1 (#1368): coseSign1Sign() over a protected header, a payload
+// and external AAD, for every COSE algorithm it signs with, and
+// coseSign1Verify()'s verdicts on the signature, a tampered one, and the
+// same signature under other AAD. RS1 is never signed with, and its refusal
+// is a row. The private key travels so that Rust signs with Node's key: the
+// deterministic ones (RSA PKCS#1, EdDSA) must be the same bytes.
+function coseSign1Vectors(keyFor) {
+  const protectedBytes = Buffer.from('a10126', 'hex');
+  const payload = Buffer.from('a COSE_Sign1 payload \u00e9', 'utf8');
+  const external = Buffer.from('external aad');
+  const plan = [
+    [-7, 'ec256'], [-35, 'ec384'], [-36, 'ec521'], [-8, 'ed25519'],
+    [-8, 'ed448'], [-257, 'rsa'], [-258, 'rsa'], [-259, 'rsa'],
+    [-37, 'rsa'], [-38, 'rsa'], [-39, 'rsa'], [-9, 'ec256'], [-51, 'ec384'],
+    [-52, 'ec521'], [-47, 'k1'], [-19, 'ed25519'], [-53, 'ed448'],
+    [-48, 'ML-DSA-44'], [-49, 'ML-DSA-65'], [-50, 'ML-DSA-87']
+  ];
+  const rows = plan.map(function (row) {
+    const spec = crypto.coseSignatureAlg(row[0]);
+    let publicKey;
+    let privateKey;
+    let out;
+    if (spec.family === 'pq') {
+      const pair = pqJose.generate(spec.name);
+      publicKey = { kty: 'AKP', alg: spec.name,
+                    pub: pair.pub.toString('base64url') };
+      privateKey = pair.priv.toString('base64');
+      out = { publicJwk: publicKey, privateRaw: privateKey };
+      privateKey = pair.priv;
+    } else {
+      const pair = keyFor[row[1]];
+      publicKey = pair.publicKey.export({ format: 'jwk' });
+      privateKey = pair.privateKey;
+      out = { publicJwk: publicKey,
+              privatePem: pair.privateKey.export({ type: 'pkcs8',
+                                                   format: 'pem' }) };
+    }
+    const sig = crypto.coseSign1Sign(row[0], privateKey, protectedBytes,
+                                     payload, { external: external });
+    const tampered = Buffer.from(sig);
+    tampered[tampered.length - 1] ^= 1;
+    const verdict = function (bytes, aad) {
+      return crypto.coseSign1Verify(row[0], publicKey, protectedBytes,
+                                    payload, bytes, { external: aad });
+    };
+    return Object.assign(out, {
+      alg: row[0], key: row[1],
+      deterministic: spec.family === 'rsa-pkcs1' || spec.family === 'eddsa',
+      signature: Buffer.from(sig).toString('base64'),
+      ok: verdict(sig, external), tampered: verdict(tampered, external),
+      otherAad: verdict(sig, Buffer.from('other aad')) });
+  });
+  let refusal = null;
+  try {
+    crypto.coseSign1Sign(-65535, keyFor.rsa.privateKey, protectedBytes,
+                         payload, {});
+  } catch (e) {
+    refusal = e.message;
+  }
+  return { protected: protectedBytes.toString('base64'),
+           payload: payload.toString('base64'),
+           external: external.toString('base64'),
+           rows: rows, rs1Refusal: refusal };
 }
 
 // SIGSTORE AND TUF (section 11): Node's two canonical forms over values
@@ -1540,7 +1823,7 @@ function webauthn() {
 // tampered signature, odd hex and thresholds Number() reads oddly; Rekor
 // SETs good, tampered and from an unknown log; DSSE PAE and the two hashes.
 async function sigstore() {
-  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+  const pqcX509 = require(path.join(ROOT, 'common', 'crypto_impl',
                                     'pqc_x509.js'));
   const values = [
     null, true, 0, -0, 1, -17, 1e21, 1e20, 0.1, 1.5e-7, 123.456,

@@ -26,6 +26,7 @@ use openssl::rsa::Padding;
 use openssl::sign::{RsaPssSaltlen, Signer, Verifier};
 use serde_json::{Map, Value as Json};
 
+use crate::algorithms::{AcceptAll, SignaturePolicy, Surface};
 use crate::b64;
 use crate::error::{CryptoError, CryptoResult};
 use crate::jws_alg::{Composite, Family, Hash, JwsAlg, Traditional};
@@ -691,11 +692,173 @@ pub struct VerifyOptions<'a> {
 
 /// Verifies a compact JWS somebody else signed — a DPoP proof, a client
 /// assertion, a request object — and checks no claims: each profile checks
-/// its own.
+/// its own. The realm's signature policy is not asked; see
+/// [`verify_compact_under`].
 pub fn verify_compact(
     token: &str,
     key: &JwsKey,
     options: &VerifyOptions,
+) -> CryptoResult<Verified> {
+    verify_compact_under(token, key, options, &AcceptAll)
+}
+
+/// A compact JWS read without being verified ([`decode_jws`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Decoded {
+    pub header: Json,
+    pub payload: Json,
+    /// The third segment as it was carried.
+    pub signature: String,
+}
+
+/// `decodeJws()`: a compact JWS read WITHOUT verifying it, for the places
+/// that must look at a token before choosing how to treat it. Strict
+/// base64url, as the verifier's, so a token this reads and the verifier
+/// refuses cannot exist. Nothing read here is evidence of anything. `None`
+/// where it is not three segments with JSON in the first two.
+pub fn decode_jws(token: &str) -> Option<Decoded> {
+    let parts: Vec<&str> = token.split('.').collect();
+    let [header, payload, signature] = parts.as_slice() else {
+        return None;
+    };
+    let json = |segment: &str, what: &str| -> Option<Json> {
+        let bytes = b64::decode_strict(segment, what).ok()?;
+        serde_json::from_slice(&bytes).ok()
+    };
+    Some(Decoded {
+        header: json(header, "JWS protected header")?,
+        payload: json(payload, "JWS payload")?,
+        signature: (*signature).to_string(),
+    })
+}
+
+/// `certificateSpkiDer()`: a certificate's SubjectPublicKeyInfo, as the
+/// DER the issuer signed, read structurally rather than through OpenSSL so
+/// that a post-quantum key OpenSSL cannot load is still a key (#1713). The
+/// certificate is PEM (the first CERTIFICATE block) or base64 DER, read as
+/// leniently as Node's `Buffer.from(…, 'base64')`.
+pub fn certificate_spki_der(certificate: &str) -> CryptoResult<Vec<u8>> {
+    use crate::der_lite as der;
+    let refused = || {
+        CryptoError::new(
+            "this is not a DER X.509 certificate with a \
+             SubjectPublicKeyInfo where RFC 5280 puts it.",
+        )
+    };
+    let begin = "-----BEGIN CERTIFICATE-----";
+    let end = "-----END CERTIFICATE-----";
+    let block = certificate
+        .find(begin)
+        .and_then(|at| {
+            certificate[at..]
+                .find(end)
+                .map(|to| &certificate[at..at + to + end.len()])
+        })
+        .unwrap_or(certificate);
+    // stripPem(): every `-----…-----` marker and all white space go.
+    let mut body = String::new();
+    let mut rest = block;
+    while let Some(at) = rest.find("-----") {
+        body.push_str(&rest[..at]);
+        let after = &rest[at + 5..];
+        match after.find("-----") {
+            Some(to) if to > 0 && !after[..to].contains('-') => {
+                rest = &after[to + 5..];
+            }
+            _ => {
+                body.push_str("-----");
+                rest = after;
+            }
+        }
+    }
+    body.push_str(rest);
+    let body: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = crate::secrets::node_base64(&body);
+    let top = der::read(&bytes).ok_or_else(refused)?;
+    let outer = der::children(top.content).ok_or_else(refused)?;
+    if top.tag != der::SEQUENCE || outer.len() != 3 {
+        return Err(refused());
+    }
+    let fields = der::children(outer[0].content).ok_or_else(refused)?;
+    let versioned = fields.first().is_some_and(|f| f.is_context(0));
+    let spki = fields
+        .get(if versioned { 6 } else { 5 })
+        .filter(|f| f.tag == der::SEQUENCE)
+        .filter(|f| der::children(f.content).is_some_and(|c| c.len() == 2))
+        .ok_or_else(refused)?;
+    Ok(spki.raw.to_vec())
+}
+
+/// `verifyCompactJwsWithCertificate()` (#1713): [`verify_compact_under`]
+/// with the key a certificate holds — what a document whose `x5c[0]` names
+/// its signer is checked with. A post-quantum key is its BIT STRING's
+/// octets (RFC 9881), as an AKP `pub`. Whether the CERTIFICATE is to be
+/// relied on is the validation door's question, never this function's.
+pub fn verify_compact_with_certificate(
+    token: &str,
+    certificate: &str,
+    options: &VerifyOptions,
+    policy: &dyn SignaturePolicy,
+) -> CryptoResult<Verified> {
+    let read = crate::raw_sig::public_key_from_spki(&certificate_spki_der(
+        certificate,
+    )?);
+    let key = if read.kind == "pq" {
+        crate::pq_x509::decode_spki(&read.spki).map(|(_, public)| {
+            JwsKey::of(Material::Akp {
+                alg: None,
+                public,
+                private: None,
+            })
+        })
+    } else {
+        read.key.map(|public| JwsKey::of(Material::Public(public)))
+    };
+    let key = key.ok_or_else(|| {
+        CryptoError::new(
+            "the certificate holds no key this service can verify a \
+             signature with.",
+        )
+    })?;
+    verify_compact_under(token, &key, options, policy)
+}
+
+/// `refuseUnacceptableJws()`: THE ONE JOSE ACCEPT CHOKEPOINT (#1368). The
+/// policy's refusal, with its code beside the sentence.
+fn refuse_unacceptable_jws(
+    policy: &dyn SignaturePolicy,
+    alg: &str,
+) -> CryptoResult<()> {
+    match policy.accept_cause(Surface::Jose, alg) {
+        Some(cause) => Err(CryptoError::coded(cause.message, cause.code)),
+        None => Ok(()),
+    }
+}
+
+/// `jwsSignatureValid()`: [`verify_input`] after the realm's policy has
+/// been asked — GNAP's `jws` and `jwsd` proofs come this way, and until
+/// #1368 were never asked.
+pub fn signature_valid_under(
+    alg: &str,
+    key: &JwsKey,
+    input: &[u8],
+    signature: &[u8],
+    key_policy: KeyPolicy,
+    policy: &dyn SignaturePolicy,
+) -> CryptoResult<bool> {
+    refuse_unacceptable_jws(policy, alg)?;
+    verify_input(alg, key, input, signature, key_policy)
+}
+
+/// [`verify_compact`], asking the realm's signature policy after the
+/// caller's own list and before the signature (`prepareVerification()`),
+/// so no verifier accepts what the realm no longer publishes, whatever list
+/// it was handed.
+pub fn verify_compact_under(
+    token: &str,
+    key: &JwsKey,
+    options: &VerifyOptions,
+    policy: &dyn SignaturePolicy,
 ) -> CryptoResult<Verified> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
@@ -744,6 +907,7 @@ pub fn verify_compact(
             }
         )));
     }
+    refuse_unacceptable_jws(policy, alg)?;
     alg_row(alg)?;
     let input = format!("{}.{}", parts[0], parts[1]);
     if !verify_input(alg, key, input.as_bytes(), &signature, options.policy)? {
@@ -1077,5 +1241,62 @@ mod tests {
             ),
             "dnI-Ky-fHTSREBAdNyebSA"
         );
+    }
+
+    #[test]
+    fn the_realm_policy_refuses_with_its_code() {
+        use crate::algorithms::Cause;
+        struct NoPq;
+        impl SignaturePolicy for NoPq {
+            fn accept_cause(
+                &self,
+                surface: Surface,
+                alg: &str,
+            ) -> Option<Cause> {
+                (surface == Surface::Jose && alg.starts_with("ML-DSA")).then(
+                    || Cause {
+                        code: sts_core::errors::codes::STS_KEYS_0157,
+                        message: format!("this JWS is signed with \"{}\"", alg),
+                    },
+                )
+            }
+        }
+        let key = generate_key("ML-DSA-44").unwrap();
+        let mut payload = Map::new();
+        payload.insert("sub".into(), Json::from("a"));
+        let token = sign_jws(
+            &payload,
+            &key,
+            &SignOptions {
+                algorithm: Some("ML-DSA-44".into()),
+                ..SignOptions::default()
+            },
+        )
+        .unwrap();
+        let options = VerifyOptions {
+            algorithms: &["ML-DSA-44"],
+            empty_payload: false,
+            policy: KeyPolicy::STRICT,
+        };
+        assert!(verify_compact(&token, &key, &options).is_ok());
+        let refused =
+            verify_compact_under(&token, &key, &options, &NoPq).unwrap_err();
+        assert_eq!(refused.0, "this JWS is signed with \"ML-DSA-44\"");
+        assert_eq!(
+            refused.code(),
+            Some(sts_core::errors::codes::STS_KEYS_0157)
+        );
+    }
+
+    #[test]
+    fn decode_jws_reads_strictly_and_verifies_nothing() {
+        let token = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJhIn0.c2ln";
+        let read = decode_jws(token).unwrap();
+        assert_eq!(read.header["alg"], "none");
+        assert_eq!(read.payload["sub"], "a");
+        assert_eq!(read.signature, "c2ln");
+        assert!(decode_jws("eyJhbGciOiJub25lIn0=.eyJzdWIiOiJhIn0.x").is_none());
+        assert!(decode_jws("a.b").is_none());
+        assert!(decode_jws("e30.bm90IGpzb24.x").is_none());
     }
 }

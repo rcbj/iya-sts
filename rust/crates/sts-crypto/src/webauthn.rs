@@ -162,6 +162,10 @@ pub struct CoseOptions {
     pub allow_insecure: bool,
     /// The mode's key policy: development accepts an RSA key under 2048.
     pub policy: KeyPolicy,
+    /// An ECDSA signature as r||s (`ecdsaEncoding: 'ieee-p1363'`): what a
+    /// COSE_Sign1 proper carries (RFC 9053 section 2.1, #935), where
+    /// WebAuthn section 6.5.5 sends DER.
+    pub ecdsa_p1363: bool,
 }
 
 impl Default for CoseOptions {
@@ -170,6 +174,7 @@ impl Default for CoseOptions {
         CoseOptions {
             allow_insecure: false,
             policy: KeyPolicy::STRICT,
+            ecdsa_p1363: false,
         }
     }
 }
@@ -254,6 +259,21 @@ pub fn verify_cose_signature(
     let attempt = || -> Result<bool, openssl::error::ErrorStack> {
         let md = md_named(spec.hash.unwrap_or("sha256"));
         Ok(match (spec.family, public.id()) {
+            (CoseFamily::Ecdsa, Id::EC) if o.ecdsa_p1363 => {
+                // Node's ieee-p1363 verifier throws on a signature that is
+                // not exactly r||s at the curve's size, which is false here.
+                let width = public.ec_key()?.group().degree().div_ceil(8);
+                let width = width as usize;
+                if signature.len() != 2 * width {
+                    return Ok(false);
+                }
+                let der = EcdsaSig::from_private_components(
+                    BigNum::from_slice(&signature[..width])?,
+                    BigNum::from_slice(&signature[width..])?,
+                )?
+                .to_der()?;
+                Verifier::new(md, &public)?.verify_oneshot(&der, data)?
+            }
             (CoseFamily::Ecdsa, Id::EC) => {
                 Verifier::new(md, &public)?.verify_oneshot(signature, data)?
             }

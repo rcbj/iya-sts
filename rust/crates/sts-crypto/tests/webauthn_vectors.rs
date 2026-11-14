@@ -22,6 +22,8 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value as Json};
+use sts_crypto::algorithms::AcceptAll;
+use sts_crypto::cose::{self, Sign1};
 use sts_crypto::der_lite as der;
 use sts_crypto::keys::KeyPolicy;
 use sts_crypto::webauthn::{self, CoseKey, CoseOptions};
@@ -67,10 +69,12 @@ fn webauthn_matches_node() {
     let plain = CoseOptions {
         allow_insecure: false,
         policy,
+        ecdsa_p1363: false,
     };
     let insecure = CoseOptions {
         allow_insecure: true,
         policy,
+        ecdsa_p1363: false,
     };
     let data = b"authenticatorData || clientDataHash";
     let mut failures = Vec::new();
@@ -186,11 +190,13 @@ fn webauthn_matches_node() {
                 );
                 let theirs = b64(&n["signature"]);
                 if o.sig_alg == webauthn::tpm_alg::ECDSA {
-                    let (want, _) = integers(&theirs);
-                    let (have, minimal) = integers(&o.signature);
+                    // Node writes minimal DER since #904, so the bytes are
+                    // the same and not merely the integers.
+                    let (_, minimal) = integers(&o.signature);
                     check(
-                        want == have && minimal,
-                        "TPMT_SIGNATURE ECDSA: Node's integers, minimal DER"
+                        o.signature == theirs && minimal,
+                        "TPMT_SIGNATURE ECDSA: Node's minimal DER, byte for \
+                         byte"
                             .to_string(),
                     );
                 } else {
@@ -266,6 +272,94 @@ fn webauthn_matches_node() {
         "tcg-attest-tpm-certify".to_string(),
     );
 
+    // COSE_Sign1 (#1368): Node's verdicts, Rust's signature with Node's
+    // key — the same bytes where the scheme is deterministic — and Rust's
+    // rows for Node to check.
+    let sign1 = &v["coseSign1"];
+    let (protected, payload, external) = (
+        b64(&sign1["protected"]),
+        b64(&sign1["payload"]),
+        b64(&sign1["external"]),
+    );
+    let message = Sign1 {
+        protected: &protected,
+        payload: &payload,
+        external: &external,
+    };
+    let other = Sign1 {
+        external: b"other aad",
+        ..message
+    };
+    let mut written = Vec::new();
+    for r in sign1["rows"].as_array().unwrap() {
+        let alg = r["alg"].as_i64().unwrap();
+        let sig = b64(&r["signature"]);
+        let mut tampered = sig.clone();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 1;
+        let verdict = |m: &Sign1, bytes: &[u8]| {
+            cose::cose_sign1_verify(
+                alg,
+                CoseKey::Jwk(&r["publicJwk"]),
+                m,
+                bytes,
+                &plain,
+                &AcceptAll,
+            )
+            .unwrap()
+        };
+        check(
+            verdict(&message, &sig) == r["ok"].as_bool().unwrap()
+                && verdict(&message, &tampered)
+                    == r["tampered"].as_bool().unwrap()
+                && verdict(&other, &sig) == r["otherAad"].as_bool().unwrap(),
+            format!("COSE_Sign1 {} ({}): Node's verdicts", alg, r["key"]),
+        );
+        let private_raw =
+            r["privateRaw"].as_str().map(|_| b64(&r["privateRaw"]));
+        let private_pem = r["privatePem"].as_str().map(|pem| {
+            openssl::pkey::PKey::private_key_from_pem(pem.as_bytes()).unwrap()
+        });
+        let key = match (&private_raw, &private_pem) {
+            (Some(raw), _) => cose::CoseSigningKey::PostQuantum(raw),
+            (_, Some(pem)) => cose::CoseSigningKey::Private(pem),
+            _ => unreachable!(),
+        };
+        let ours =
+            cose::cose_sign1_sign(alg, key, &message, &AcceptAll).unwrap();
+        if r["deterministic"] == true {
+            check(
+                ours == sig,
+                format!("COSE_Sign1 {}: Node's deterministic bytes", alg),
+            );
+        }
+        check(
+            verdict(&message, &ours),
+            format!("COSE_Sign1 {}: Rust's signature verifies here", alg),
+        );
+        written.push(json!({
+            "alg": alg, "publicJwk": r["publicJwk"],
+            "signature": STANDARD.encode(&ours),
+        }));
+    }
+    let rs1 = cose::cose_sign1_sign(
+        -65535,
+        cose::CoseSigningKey::PostQuantum(b""),
+        &message,
+        &AcceptAll,
+    );
+    check(
+        rs1.is_err_and(|e| e.0 == sign1["rs1Refusal"].as_str().unwrap()),
+        "RS1 is never signed with, in Node's words".to_string(),
+    );
+    if std::env::var("STS_WRITE_VECTORS").is_ok() {
+        std::fs::write(
+            std::path::Path::new(&dir).join("webauthn-rust.json"),
+            serde_json::to_string_pretty(&json!({ "coseSign1": written }))
+                .unwrap(),
+        )
+        .unwrap();
+    }
     assert!(
         failures.is_empty(),
         "{} differences:\n{}",
