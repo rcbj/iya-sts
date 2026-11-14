@@ -1315,6 +1315,10 @@
     "en": "4750f8f23393c7dd",
     "text": "NON-SPEC. Ang nag-iisang stylesheet ng console (#446)."
   },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "NON-SPEC. Ang mga bansa ng Natural Earth sa 1:50m, nasa public domain, gaya ng pagkakadala ng admin-ui/natural_earth/countries.json, na kinukuha ng console nang isang beses at pinagguguhitan ng mapa ng Monitoring → Geolocation sa browser (#444). Public, gaya ng script."
+  },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
     "text": "NON-SPEC. ANG UNANG SURFACE SA SERBISYONG ITO NA PAG-AARI NG TAONG TUMITINGIN DITO, at isang STATIC APPLICATION mula noong #568: ang path na ito at bawat isa sa ilalim nito ay sumasagot ng parehong dokumento, na naglo-load ng script at stylesheet ng portal. Nagsa-sign in ang script bilang public client na sts-user-portal (PKCE, mga DPoP-bound token na hawak sa memory, account:manage) at iginuguhit ang bawat page sa browser mula sa /account-api, at bawat aksyon na ginagawa nito ay isang /account-api operation — ang pattern ng admin console (#446). Walang may gate dito: walang dalang katotohanan o credential ang dokumento, at ang API ang nag-iisang gate. Ang method maliban sa GET ay sinasagot ng 404. Ang hubad na /portal sa serbisyong may mga realm ay nagtatanong muna kung aling realm (common/realm_chooser.ts)."

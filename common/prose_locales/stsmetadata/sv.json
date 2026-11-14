@@ -1315,6 +1315,10 @@
     "en": "4750f8f23393c7dd",
     "text": "ICKE-SPEC. Konsolens enda stilmall (#446)."
   },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "ICKE-SPEC. Natural Earths landsdata i 1:50m, allmän egendom, så som admin-ui/natural_earth/countries.json levererar dem, som konsolen hämtar en gång och ritar kartan på Monitoring → Geolocation över i webbläsaren (#444). Publik, liksom skriptet."
+  },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
     "text": "ICKE-SPEC. DEN FÖRSTA YTAN I DEN HÄR TJÄNSTEN SOM TILLHÖR PERSONEN SOM TITTAR PÅ DEN, och en STATISK APPLIKATION sedan #568: den här sökvägen och varje sökväg under den svarar med samma dokument, som laddar portalens skript och stilmall. Skriptet loggar in som den publika klienten sts-user-portal (PKCE, DPoP-bundna tokens som hålls i minnet, account:manage) och ritar varje sida i webbläsaren från /account-api, och varje handling det utför är en /account-api-operation — administrationskonsolens mönster (#446). Ingenting här är grindat: dokumentet bär inget faktum och ingen inloggningsuppgift, och API:t är den enda grinden. En annan metod än GET besvaras med 404. Ett bart /portal på en tjänst med sfärer frågar först vilken sfär (common/realm_chooser.ts)."

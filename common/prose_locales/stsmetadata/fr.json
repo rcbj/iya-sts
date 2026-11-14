@@ -1315,6 +1315,10 @@
     "en": "4750f8f23393c7dd",
     "text": "NON-SPEC. L’unique feuille de style de la console (#446)."
   },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "NON-SPEC. Les pays au 1:50m de Natural Earth, du domaine public, tels que admin-ui/natural_earth/countries.json les livre, que la console récupère une seule fois et sur lesquels elle dessine dans le navigateur la carte de Monitoring → Geolocation (#444). Public, comme le script."
+  },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
     "text": "NON-SPEC. LA PREMIÈRE SURFACE DE CE SERVICE QUI APPARTIENT À LA PERSONNE QUI LA CONSULTE, et une APPLICATION STATIQUE depuis #568 : ce chemin et tous ceux qui se trouvent en dessous répondent le même document, qui charge le script et la feuille de style du portail. Le script se connecte en tant que client public sts-user-portal (PKCE, jetons liés par DPoP conservés en mémoire, account:manage) et affiche chaque page dans le navigateur à partir de /account-api, et chaque action qu’il effectue est une opération /account-api — le modèle de la console d’administration (#446). Rien ici n’est sous contrôle d’accès : le document ne porte ni fait ni justificatif, et l’API est le seul contrôle. Une méthode autre que GET reçoit une 404. Un /portal nu, sur un service doté de domaines, demande d’abord quel domaine choisir (common/realm_chooser.ts)."

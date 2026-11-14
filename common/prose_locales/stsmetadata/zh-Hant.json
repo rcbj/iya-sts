@@ -1315,6 +1315,10 @@
     "en": "4750f8f23393c7dd",
     "text": "非規格端點。主控台唯一的樣式表（#446）。"
   },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "非規格端點。Natural Earth 的公有領域 1:50m 國家資料，與 admin-ui/natural_earth/countries.json 所附帶的相同；主控台只擷取一次，並在瀏覽器中據此繪製 監控 → Geolocation 的地圖（#444）。與指令碼一樣公開。"
+  },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
     "text": "非規格端點。這是本服務中第一個屬於正在檢視它的那個人的介面，自 #568 起為「靜態應用程式」：此路徑及其下每個路徑都回應同一份文件，該文件會載入入口網站的指令碼與樣式表。指令碼以公開用戶端 sts-user-portal 登入（PKCE，保存在記憶體中的 DPoP 繫結權杖，account:manage），並在瀏覽器中從 /account-api 繪製每個頁面，它執行的每個動作都是 /account-api 操作——即管理主控台的模式（#446）。這裡沒有任何閘門：文件不攜帶任何事實與認證資訊，API 是唯一的閘門。GET 以外的方法會得到 404。在設有領域的服務上，單純的 /portal 會先詢問要使用哪個領域（common/realm_chooser.ts）。"

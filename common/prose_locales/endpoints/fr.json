@@ -531,6 +531,10 @@
     "en": "cd6aeb9c9e8ebf8a",
     "text": "La feuille de style de la console"
   },
+  "endpoints.route./admin/geo-outlines.json.name": {
+    "en": "54575728e7ed9de1",
+    "text": "Les contours des pays de la carte de la console"
+  },
   "endpoints.route./portal.name": {
     "en": "5212610fe0e7c89a",
     "text": "Le compte propre d’une personne"

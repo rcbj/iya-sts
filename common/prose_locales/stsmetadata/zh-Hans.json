@@ -1315,6 +1315,10 @@
     "en": "4750f8f23393c7dd",
     "text": "非规范。控制台唯一的样式表（#446）。"
   },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "非规范。Natural Earth 的公有领域 1:50m 国家数据，与 admin-ui/natural_earth/countries.json 所附带的一致；控制台只获取一次，并在浏览器中据此绘制“监控 → 地理位置”的地图（#444）。与脚本一样公开。"
+  },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
     "text": "非规范。本服务中第一个属于正在查看它的人的界面，自 #568 起是一个静态应用：此路径及其下的每个路径都应答同一个文档，该文档加载门户的脚本和样式表。脚本以公共客户端 sts-user-portal 登录（PKCE，保存在内存中的 DPoP 绑定令牌，account:manage），并在浏览器中从 /account-api 绘制每个页面，它执行的每个操作都是一个 /account-api 操作——即管理控制台的模式（#446）。这里没有任何关卡：该文档不携带任何事实和凭据，API 是唯一的关卡。GET 以外的方法以 404 应答。在有多个领域的服务上，单独的 /portal 会先询问使用哪个领域（common/realm_chooser.ts）。"

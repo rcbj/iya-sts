@@ -531,6 +531,10 @@
     "en": "cd6aeb9c9e8ebf8a",
     "text": "La hoja de estilos de la consola"
   },
+  "endpoints.route./admin/geo-outlines.json.name": {
+    "en": "54575728e7ed9de1",
+    "text": "Los contornos de los países del mapa de la consola"
+  },
   "endpoints.route./portal.name": {
     "en": "5212610fe0e7c89a",
     "text": "La cuenta propia de una persona"
