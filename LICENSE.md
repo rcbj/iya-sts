@@ -176,7 +176,7 @@ because it was added for a protocol rather than a primitive (#1760,
 
 | Licence | Crate |
 |---|---|
-| MIT | `oidc-caep-risc` 0.3.0 (pinned to a commit of github.com/rcbj/oidc-caep-risc-rust, the same owner, until 0.3.0 is on crates.io): the reverse proxy's OpenID Connect relying party and CAEP/RISC receiver |
+| MIT | `oidc-caep-risc` 0.3.0 (crates.io; source github.com/rcbj/oidc-caep-risc-rust, the same owner): the reverse proxy's OpenID Connect relying party and CAEP/RISC receiver |
 
 The npm packages' transitive dependencies, and the optional packages under
 `peerDependencies` — the cloud SDKs, and the attribute sources' database

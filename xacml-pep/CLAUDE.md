@@ -1036,9 +1036,8 @@ too.
 party ON BEHALF OF THE APPLICATION BEHIND IT** — an ordinary CONFIDENTIAL
 client the administrator registered in iya-sts, with
 `<publicBaseUrl>/.iya-pep/callback` among its redirect URIs — **and it is
-implemented with rcbj's crate `oidc-caep-risc` (0.3.0, MIT; a git dependency pinned
-to a commit until rcbj publishes 0.3.0 to crates.io, then `version =
-"0.3.0"`, `features = ["tokio"]`)**,
+implemented with rcbj's crate `oidc-caep-risc` (0.3.0 from crates.io, MIT, `features =
+["tokio"]`; a git commit until it was published on 2026-11-14)**,
 never a relying party written here (`rust/DESIGN.md` section 7). The
 hand-written PKCE, nonce, token exchange and ID Token check of the first
 draft are gone; `jwt.rs` stays for the `oauth2` mechanism.

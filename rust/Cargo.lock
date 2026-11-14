@@ -1078,7 +1078,8 @@ dependencies = [
 [[package]]
 name = "oidc-caep-risc"
 version = "0.3.0"
-source = "git+https://github.com/rcbj/oidc-caep-risc-rust?rev=3303482760add1eb74b5841cbe27acbc6528c6bf#3303482760add1eb74b5841cbe27acbc6528c6bf"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "667bf3d4d41c0a657934ad52224006f39ce1af348eb0b566b1c15ca582206a24"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
