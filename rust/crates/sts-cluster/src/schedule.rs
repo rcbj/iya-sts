@@ -223,11 +223,11 @@ impl JobSpec {
         self.nice.unwrap_or(DEFAULT_NICE)
     }
 
-    fn manual_only(&self) -> bool {
+    pub fn manual_only(&self) -> bool {
         matches!(self.schedule, Schedule::ManualOnly)
     }
 
-    fn cron(&self) -> Option<&str> {
+    pub fn cron(&self) -> Option<&str> {
         match &self.schedule {
             Schedule::Cron(c) => Some(c),
             _ => None,
@@ -410,6 +410,7 @@ pub struct Schedules {
     settings: Arc<dyn SchedulerSettings>,
     /// How many connections the store's pool holds; 0 where there is none.
     store_connections: Option<Arc<dyn Fn() -> f64 + Send + Sync>>,
+    request_workers: Option<Arc<dyn Fn() -> f64 + Send + Sync>>,
 }
 
 impl Schedules {
@@ -418,6 +419,7 @@ impl Schedules {
             jobs: IndexMap::new(),
             settings,
             store_connections: None,
+            request_workers: None,
         }
     }
 
@@ -426,6 +428,17 @@ impl Schedules {
         f: Arc<dyn Fn() -> f64 + Send + Sync>,
     ) -> Schedules {
         self.store_connections = Some(f);
+        self
+    }
+
+    /// The threads a cluster run's body is handed to (#408): Node's protocol
+    /// request workers, the tokio runtime's worker threads here.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn with_request_workers(
+        mut self,
+        f: Arc<dyn Fn() -> f64 + Send + Sync>,
+    ) -> Schedules {
+        self.request_workers = Some(f);
         self
     }
 
@@ -541,9 +554,9 @@ impl Schedules {
     /// How many cluster runs the leader may have going at once
     /// (`maxConcurrentRuns()`, rcbj 2026-11-10): `scheduler.maxConcurrentRuns`
     /// when it is 1 or more (read directly: 0 is a legal value), otherwise
-    /// [`MIN_DEFAULT_RUNS`] — Node's default is the larger of two and one
-    /// fewer than its protocol request workers, and this runtime has no
-    /// request workers to hand a body to (#408), which is Node with none.
+    /// the larger of [`MIN_DEFAULT_RUNS`] and one fewer than the threads a
+    /// body runs on ([`Schedules::with_request_workers`]: Node's protocol
+    /// request workers, the runtime's worker threads here; none is two).
     /// And never every connection the store's pool holds: one is always
     /// left for the requests.
     pub fn max_concurrent_runs(&self) -> f64 {
@@ -551,7 +564,8 @@ impl Schedules {
         let mut n = if setting >= 1.0 {
             setting.floor()
         } else {
-            MIN_DEFAULT_RUNS
+            let workers = self.request_workers.as_ref().map_or(0.0, |f| f());
+            MIN_DEFAULT_RUNS.max(workers - 1.0)
         };
         let pool = self.store_connections.as_ref().map_or(0.0, |f| f());
         if pool > 0.0 {

@@ -15,6 +15,13 @@ use serde_json::{json, Map, Value as Json};
 use sts_core::realm::DEFAULT_ID;
 
 use super::{num, text, Scheduler, LEADER_KEY};
+
+/// The page's newest window (#883): a few rows per realm, and the list the
+/// page draws.
+const NEWEST_PER_REALM: usize = 20;
+const NEWEST_WINDOW: usize = 200;
+/// How many of a job's own last slots a job filter reads back by id.
+const JOB_SLOTS_PER_REALM: usize = 20;
 use crate::schedule::{
     run_id_for, JobSpec, Kind, Schedule, Scope, FINAL, LEADER_LEASE,
     OVERDUE_FLOOR_MS, QUIET_RECORD_MS,
@@ -640,6 +647,223 @@ impl Scheduler {
         };
         out.sort_by_key(|v| std::cmp::Reverse(when(v)));
         out
+    }
+
+    /// The realms the page's newest window is read from
+    /// (`newestRealmIds()`): every realm, or the one asked for and the
+    /// default one.
+    fn newest_realm_ids(&self, realm: Option<&str>) -> Vec<String> {
+        let all = self.deps.realms.ids();
+        match realm.filter(|r| !r.is_empty()) {
+            None => all,
+            Some(want) => {
+                let ids: Vec<String> = all
+                    .into_iter()
+                    .filter(|id| id == want || id == DEFAULT_ID)
+                    .collect();
+                if ids.is_empty() {
+                    vec![want.to_string()]
+                } else {
+                    ids
+                }
+            }
+        }
+    }
+
+    /// Whether a row passes the page's filters, as `recent_runs()` applies
+    /// them (`acceptsRun()`).
+    fn accepts_run(
+        &self,
+        row: &Json,
+        partition: &str,
+        job: Option<&str>,
+        realm: Option<&str>,
+        outcome: Option<&str>,
+    ) -> bool {
+        if text(row, "kind") != "run" {
+            return false;
+        }
+        if let Some(r) = realm.filter(|r| !r.is_empty()) {
+            if partition != r && partition != DEFAULT_ID {
+                return false;
+            }
+            if partition == DEFAULT_ID
+                && r != DEFAULT_ID
+                && self
+                    .job(text(row, "jobId"))
+                    .is_some_and(|j| j.scope == Scope::Realm)
+            {
+                return false;
+            }
+        }
+        !(job.is_some_and(|j| text(row, "jobId") != j)
+            || outcome.is_some_and(|o| text(row, "state") != o))
+    }
+
+    /// Recent runs, newest first, filtered by job, realm and outcome, as
+    /// `recentRuns()` reads them since #883: the resident rows win by id
+    /// over the store's bounded newest window, and the page draws at most
+    /// [`NEWEST_WINDOW`] of them. A JOB FILTER READS THAT JOB'S OWN LAST
+    /// [`JOB_SLOTS_PER_REALM`] SLOTS BY ID (2026-11-14, `jobSlotRuns()`):
+    /// the window is twenty rows a realm across every job, so a thirty-
+    /// second job was almost never in it once the one-second jobs filled
+    /// it, and a finished interval run is not resident. With no
+    /// [`super::RunHistory`] this is [`Scheduler::recent_runs`].
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn recent_runs_at(
+        &self,
+        job: Option<&str>,
+        realm: Option<&str>,
+        outcome: Option<&str>,
+        at: f64,
+    ) -> Vec<Json> {
+        let mut out = self.recent_runs(job, realm, outcome);
+        let Some(history) = self.extras.history.clone() else {
+            return out;
+        };
+        let mut ids: std::collections::HashSet<String> =
+            out.iter().map(|v| text(v, "runId").to_string()).collect();
+        let mut windowed = false;
+        match history
+            .newest_runs(self.newest_realm_ids(realm), NEWEST_PER_REALM)
+            .await
+        {
+            Ok(Some(extra)) => {
+                windowed = true;
+                for row in extra {
+                    let id = text(&row, "runId").to_string();
+                    if id.is_empty() || ids.contains(&id) {
+                        continue;
+                    }
+                    let partition = match text(&row, "realm") {
+                        "" => DEFAULT_ID.to_string(),
+                        r => r.to_string(),
+                    };
+                    if self.accepts_run(&row, &partition, job, realm, outcome) {
+                        ids.insert(id);
+                        out.push(run_view(&row));
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(e) => tracing::debug!(
+                "scheduler: the newest window was not read: {}",
+                e
+            ),
+        }
+        if self
+            .job_slot_runs(job, realm, outcome, at, &mut ids, &mut out)
+            .await
+        {
+            windowed = true;
+        }
+        let when = |v: &Json| {
+            ["startedAt", "queuedAt"]
+                .iter()
+                .find_map(|k| {
+                    v.get(*k).and_then(Json::as_str).filter(|s| !s.is_empty())
+                })
+                .unwrap_or("")
+                .to_string()
+        };
+        out.sort_by_key(|v| std::cmp::Reverse(when(v)));
+        if windowed {
+            out.truncate(NEWEST_WINDOW);
+        }
+        out
+    }
+
+    /// The filtered job's last slots, read by id (`jobSlotRuns()`).
+    /// Nothing for no job filter, a job not registered here, a per-process,
+    /// cron or manual job (their finished rows are resident). A failed read
+    /// is that realm's loss only. Answers whether any read reached a store.
+    async fn job_slot_runs(
+        &self,
+        job: Option<&str>,
+        realm: Option<&str>,
+        outcome: Option<&str>,
+        at: f64,
+        ids: &mut std::collections::HashSet<String>,
+        out: &mut Vec<Json>,
+    ) -> bool {
+        let Some(history) = self.extras.history.clone() else {
+            return false;
+        };
+        let Some(spec) = job.and_then(|j| self.job(j)) else {
+            return false;
+        };
+        if spec.kind == Kind::PerProcess
+            || spec.cron().is_some()
+            || spec.manual_only()
+        {
+            return false;
+        }
+        let Some(n) = self
+            .schedules()
+            .slot_at(&spec, at as i64)
+            .and_then(|s| s.slot)
+        else {
+            return false;
+        };
+        if n < 0 {
+            return false;
+        }
+        let wanted = self.newest_realm_ids(realm);
+        let mut reached = false;
+        for realm_id in self.realm_ids_for(&spec) {
+            if !wanted.contains(&realm_id) {
+                continue;
+            }
+            let ask: Vec<String> = (0..JOB_SLOTS_PER_REALM as i64)
+                .map(|k| n - k)
+                .take_while(|slot| *slot >= 0)
+                .map(|slot| run_id_for(&spec.id, &realm_id, slot))
+                .filter(|id| !ids.contains(id))
+                .collect();
+            if ask.is_empty() {
+                continue;
+            }
+            let got = match history.read_runs(&realm_id, ask.clone()).await {
+                Ok(Some(got)) => got,
+                Ok(None) => continue,
+                Err(e) => {
+                    tracing::debug!(
+                        "scheduler: a job's slots were not read in {}: {}",
+                        realm_id,
+                        e
+                    );
+                    continue;
+                }
+            };
+            reached = true;
+            // In the order asked, so the answer does not hang on a map's.
+            for id in ask {
+                let Some(row) = got.get(&id) else {
+                    continue;
+                };
+                let run_id = match text(row, "runId") {
+                    "" => id.clone(),
+                    r => r.to_string(),
+                };
+                if ids.contains(&run_id) {
+                    continue;
+                }
+                let copy = if text(row, "runId").is_empty() {
+                    let mut c = row.clone();
+                    if let Some(o) = c.as_object_mut() {
+                        o.insert("runId".into(), json!(run_id));
+                    }
+                    c
+                } else {
+                    row.clone()
+                };
+                if self.accepts_run(&copy, &realm_id, job, realm, outcome) {
+                    ids.insert(run_id);
+                    out.push(run_view(&copy));
+                }
+            }
+        }
+        reached
     }
 
     /// One run by id, in whichever realm holds it.
