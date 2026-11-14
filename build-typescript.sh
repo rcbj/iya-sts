@@ -204,6 +204,10 @@ bundle_surface() {
 # by `web_console.ts`), served at `/admin/console.js`.
 bundle_surface "the admin console" admin-ui/web_pages.ts StsConsole \
   admin-ui/console.bundle.js admin-ui/web_console.ts admin-ui/console.js
+# AND THE COUNTRY OUTLINES ITS GEOLOCATION MAP IS DRAWN OVER (#444 phase
+# 2b), served at `/admin/geo-outlines.json`: not built, but 1.3 MB a browser
+# fetches once per load, so precompressed with the console's script.
+PACKED_FILES+=("admin-ui/natural_earth/countries.json")
 
 # THE USER PORTAL (#568): `portal/portal.bundle.js` (`StsPortal`,
 # `web_portal_pages.ts`) and `portal/portal-spa.js` (`web_portal.ts`), served

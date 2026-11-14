@@ -6701,10 +6701,115 @@ function mayWrite(method) {
   return !READ_ONLY_METHODS[String(method || '').toUpperCase()];
 }
 
-// How long a barrier may hold a request. Reaching it means the store is
-// unwell rather than that more time is needed, and the request is then served
-// from what that worker has — which is the behaviour before this existed.
-const BARRIER_TIMEOUT_MS = 5000;
+// ---------------------------------------------------------------------------
+// A BARRIER THAT RUNS OUT IS A REFUSAL, NEVER A STALE ANSWER (2026-11-14).
+//
+// Until this date a reader gave up at a hard-coded 5,000 ms and was SERVED
+// "from what that worker has", on the argument that reaching the bound meant
+// the store was unwell rather than that more time was needed. The run that
+// disproved it (GitHub Actions 43622250478, single-node, a runner slower than
+// the laptop): one worker spent 7 to 22 s applying a global logout's 8,000
+// minted rows, missed fifteen barriers (STS-WORKER-0027) in two minutes, and
+// two protocol jobs got WRONG answers — `sts_realm_administrators` a 404 from
+// `/realm/<a realm created a moment before>/oauth2/authorize`, and
+// `sts_scope_policy` a SCIM 403 for a scope declared through `/admin-api` a
+// moment before. The store was well; the worker was merely behind. That is
+// the case this file's own rule names: dispatch without coordination answers
+// WRONGLY rather than slowly, so it is refused.
+//
+// **AND A SECOND PATH SERVED STALE WITHOUT A WORD.** The worker's answer to a
+// sync round is `persistence.syncNow()`'s, which gives up at its own 4,600 ms
+// deadline and says `caughtUp: false` — and the front read only `ok`, which
+// is true for that answer too. So a worker whose pull outlasted the deadline
+// but whose loop was free to answer was STAMPED CURRENT at the generation the
+// reader wanted: no STS-WORKER-0027, the request served stale, and every
+// later reader at that generation sent there without a barrier at all. A
+// round counts now only when the worker says it caught up (or that its store
+// does not coordinate, where there is nothing to catch up with).
+//
+// WHAT A RUN-OUT BARRIER DOES INSTEAD, and the two alternatives weighed:
+//
+//   * **IT KEEPS ASKING**, a round at a time (one round per worker still
+//     shared by every reader it covers, below), for up to
+//     `workers.readBarrierTimeoutMs` in all — 30 s by default, past the 22 s
+//     the slowest apply of that run took. A worker that is applying a burst
+//     answers its next round once the pull that began after the round
+//     finishes, and the request is then served CURRENT.
+//   * **THEN IT IS REFUSED**: HTTP 503 with `Retry-After`, STS-WORKER-0053,
+//     the ticket dropped (no byte reached a worker, so nothing was written —
+//     ticketAbandoned()'s argument); a dispatched operation is rejected with
+//     the same code, and its caller already answers LDAP_UNAVAILABLE or
+//     KDC_ERR_SVC_UNAVAILABLE for a rejection.
+//   * **NOT SENT TO ANOTHER WORKER THAT IS CURRENT.** It reads well and it
+//     breaks two things. A request's worker is chosen by its affinity, and a
+//     pin is honoured because worker-local state rides on it (`oidc_rp.ts`'s
+//     back channel pins to the worker holding a code another client wrote);
+//     and the ticket wait exempts a worker's OWN answered writes, which are in
+//     its memory — a different worker would owe a different, stricter wait
+//     that this request has not done. And when one worker is behind on a
+//     burst, the others are applying the same burst.
+//   * **NOT A LARGER CONSTANT.** A bound is a deployment's choice between
+//     waiting and refusing, so it is a setting (`common/config.js`), read per
+//     request; `0` is not legal, because "never wait" is the stale answer.
+//
+// What stays a constant is the ROUND: how long the front waits for one reply
+// before it asks again, which decides no answer any more — a missed round is
+// counted (STS-WORKER-0027) and the reader stays. It stays above
+// `persistence_replication.js`'s 4,600 ms SYNC_DEADLINE_MS so a worker that
+// can answer answers inside it.
+// ---------------------------------------------------------------------------
+const BARRIER_ROUND_MS = 5000;
+// The least time between two rounds one reader starts, so that a worker whose
+// store answers "not caught up" at once (a read that failed) is not asked in
+// a tight loop for thirty seconds.
+const BARRIER_ROUND_SPACING_MS = 250;
+// The row's default, for a process with no configuration at all (an
+// in-process job that loaded this module on its own).
+const READ_BARRIER_TIMEOUT_DEFAULT_MS = 30000;
+
+// Readers a run-out barrier refused (STS-WORKER-0053, STS-WORKER-0054) and
+// rounds that came back without the worker caught up, for stats().
+let barrierRefusals = 0;
+let barrierRoundsMissed = 0;
+
+/**
+ * How long, in all, a read barrier may hold one request before it is
+ * refused: `workers.readBarrierTimeoutMs`, read per request.
+ *
+ * @returns milliseconds, at least one
+ */
+function readBarrierTimeoutMs() {
+  log.debug("Entering readBarrierTimeoutMs().");
+  let n = READ_BARRIER_TIMEOUT_DEFAULT_MS;
+  try {
+    n = Number(config.value('workers.readBarrierTimeoutMs'));
+  } catch (e) {
+    log.debug("Caught in readBarrierTimeoutMs(): " +
+              ((e && e.message) || e));
+    // No configuration at all: the row's own default.
+    n = READ_BARRIER_TIMEOUT_DEFAULT_MS;
+  }
+  if (!(n >= 1)) {
+    n = READ_BARRIER_TIMEOUT_DEFAULT_MS;
+  }
+  log.debug("Leaving readBarrierTimeoutMs(). " + n + ".");
+  return n;
+}
+
+/**
+ * Whether a worker's answer to a sync round says it caught up: `ok`, and not
+ * `caughtUp: false` from a store that coordinates.
+ *
+ * @param message - the worker's answer
+ * @returns true when the round may stamp the worker current
+ */
+function roundCaughtUp(message) {
+  log.debug("Entering roundCaughtUp().");
+  const caught = !!(message && message.ok) &&
+    (message.caughtUp !== false || message.coordinating === false);
+  log.debug("Leaving roundCaughtUp(). " + caught + ".");
+  return caught;
+}
 
 let nextSyncId = 1;
 const pendingSyncs = new Map();
@@ -6732,48 +6837,169 @@ const pendingSyncs = new Map();
 // highest generation asked for in between. Two syncs per worker at most,
 // however many readers.
 //
-// The per-reader bound is unchanged — each reader still gives up at
-// BARRIER_TIMEOUT_MS — and a round has the same bound of its own, so a worker
-// that never answers costs one round rather than wedging every later reader
-// behind a sync that will not come back.
+// A round has a bound of its own (BARRIER_ROUND_MS), so a worker that never
+// answers costs one round rather than wedging every later reader behind a
+// sync that will not come back; a reader whose round ran out asks again, for
+// up to `workers.readBarrierTimeoutMs` in all (see A BARRIER THAT RUNS OUT IS
+// A REFUSAL, above).
 // ---------------------------------------------------------------------------
 /**
  * Waits for a worker to catch up to a generation, sharing one sync round
- * per worker among readers.
+ * per worker among readers, round after round, until it has or
+ * `workers.readBarrierTimeoutMs` has passed.
  *
- * Resolves on every path, at most after five seconds.
+ * Resolves on every path and never rejects. `false` means the worker is
+ * still behind: the caller REFUSES the request (STS-WORKER-0053) and does not
+ * serve it from what that worker has.
  * @param entry - the worker's table entry
  * @param wanted - the generation it must reach
+ * @param stillWanted - optional; asked between rounds, and a false answer
+ *   (the client went away) ends the wait at once, resolving false
  * @returns a promise of whether it caught up
  */
-function barrier(entry, wanted) {
+function barrier(entry, wanted, stillWanted) {
   log.debug('Entering barrier(). pid=' + entry.pid + ' want=' + wanted);
   if (entry.generation >= wanted) {
     log.debug('Leaving barrier(). Already current.');
     return Promise.resolve(true);
   }
+  const bound = readBarrierTimeoutMs();
+  const deadline = Date.now() + bound;
   log.debug("Leaving barrier().");
+  // A LOOP, NOT A CHAIN (tests/no_periodic_timers.js): the rounds are retries
+  // within one request's wait, bounded by its deadline.
+  return (async function () {
+    let missed = 0;
+    for (;;) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        break;
+      }
+      const began = Date.now();
+      const caught = await roundWithin(entry, wanted,
+                                       Math.min(remaining, BARRIER_ROUND_MS));
+      if (caught || entry.generation >= wanted) {
+        return true;
+      }
+      missed += 1;
+      barrierRoundsMissed += 1;
+      if (stillWanted && !stillWanted()) {
+        return false;
+      }
+      warnSparingly('STS-WORKER-0027',
+                    'request_pool: worker ' + entry.pid + ' had not caught ' +
+                    'up after read-barrier round ' + missed + ' (it did not ' +
+                    'answer within ' + BARRIER_ROUND_MS + 'ms, or answered ' +
+                    'that its pull is still running); the request keeps ' +
+                    'waiting, for up to ' + bound + 'ms in all ' +
+                    '(workers.readBarrierTimeoutMs), and is refused rather ' +
+                    'than served from what that worker has.');
+      const spent = Date.now() - began;
+      const pause = Math.min(BARRIER_ROUND_SPACING_MS - spent,
+                             deadline - Date.now());
+      if (pause > 0) {
+        await new Promise(function (resolve) {
+          setTimeout(resolve, pause);
+        });
+      }
+    }
+    return entry.generation >= wanted;
+  })();
+}
+
+// One round's answer for one reader, or false once `ms` has passed: the
+// round itself goes on for the other readers that share it.
+function roundWithin(entry, wanted, ms) {
+  log.debug('Entering roundWithin(). pid=' + entry.pid + ' ms=' + ms);
+  log.debug("Leaving roundWithin().");
   return new Promise(function (resolve) {
     let done = false;
     const timer = setTimeout(function () {
-      if (done) {
-        return;
+      if (!done) {
+        done = true;
+        resolve(false);
       }
-      done = true;
-      warnSparingly('STS-WORKER-0027',
-                    'request_pool: worker ' + entry.pid + ' did not answer a ' +
-                    'read barrier within ' + BARRIER_TIMEOUT_MS + 'ms; the ' +
-                    'request is being served from what that worker has.');
-      resolve(false);
-    }, BARRIER_TIMEOUT_MS);
+    }, ms);
     syncRoundFor(entry, wanted).then(function (ok) {
-      if (done) {
-        return;
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        resolve(!!ok);
       }
-      done = true;
-      clearTimeout(timer);
-      resolve(!!ok);
     });
+  });
+}
+
+/**
+ * Refuses a dispatched request whose worker did not catch up within
+ * `workers.readBarrierTimeoutMs` (STS-WORKER-0053): a 503 with Retry-After,
+ * and its ticket dropped, since no byte of it reached a worker.
+ *
+ * @param entry - the worker's table entry
+ * @param req - the request
+ * @param res - the response
+ * @param ticket - the request's read-barrier ticket, or 0
+ * @param waitedMs - how long it waited
+ */
+function refuseBehind(entry, req, res, ticket, waitedMs) {
+  log.debug('Entering refuseBehind(). pid=' + entry.pid);
+  if (ticket) {
+    ticketAbandoned(entry, ticket);
+  }
+  barrierRefusals += 1;
+  warnSparingly('STS-WORKER-0053',
+                'request_pool: ' + req.method + ' ' +
+                String(req.originalUrl || req.url || '').split('?')[0] +
+                ' was REFUSED with a 503: worker ' + entry.pid + ' had not ' +
+                'caught up with the writes answered before it after ' +
+                waitedMs + 'ms (workers.readBarrierTimeoutMs), and serving ' +
+                'it from what that worker has could answer wrongly. The ' +
+                'worker\'s own STS-STORE-0039 line says where its pull\'s ' +
+                'time is going.');
+  errorCodes.mark(res, 'STS-WORKER-0053');
+  res.status(503);
+  res.set('Retry-After', '5');
+  res.type('text/plain');
+  res.send('The request worker that must answer this request has not yet ' +
+           'caught up with writes answered before it, so it was refused ' +
+           'rather than answered from a copy that may be stale. Try again ' +
+           'shortly; the service log says why.\n');
+  log.debug("Leaving refuseBehind().");
+}
+
+/**
+ * Proxies a dispatched request once its worker has caught up, and refuses
+ * it once `workers.readBarrierTimeoutMs` has passed without (#2026-11-14's
+ * change: never served from what a behind worker has). A client that went
+ * away while it waited is handed to proxy(), which drops its ticket.
+ *
+ * @param entry - the worker's table entry
+ * @param req - the request
+ * @param res - the response
+ * @param wanted - the generation the worker must reach
+ * @param ticket - the request's read-barrier ticket
+ * @param timing - optional; the request's phase stamps (#820)
+ * @param body - optional; what was read of the body already (#820)
+ * @returns a promise that settles once the request was proxied or refused
+ */
+function proxyAfterBarrier(entry, req, res, wanted, ticket, timing, body) {
+  log.debug('Entering proxyAfterBarrier(). pid=' + entry.pid);
+  const began = Date.now();
+  const gone = function () {
+    return !!(res.destroyed || res.closed || res.writableEnded);
+  };
+  log.debug("Leaving proxyAfterBarrier().");
+  return barrier(entry, wanted, function () {
+    return !gone();
+  }).then(function (caught) {
+    if (timing) {
+      timing.barrierDone = Date.now();
+    }
+    if (!caught && !gone()) {
+      refuseBehind(entry, req, res, ticket, Date.now() - began);
+      return;
+    }
+    proxy(entry, req, res, wanted, ticket, timing, body);
   });
 }
 
@@ -6856,18 +7082,22 @@ function startSyncRound(entry, wanted) {
     // mark it current for a write it has not seen. And NEVER BACKWARDS: two
     // rounds can settle out of order, and the earlier one's generation is
     // the smaller.
-    if (message.ok && !(entry.generation >= round.wanted)) {
+    // AND ONLY WHEN IT SAYS IT CAUGHT UP (2026-11-14): `ok` with
+    // `caughtUp: false` is a worker whose syncNow() gave up at its own
+    // deadline, still behind. See A BARRIER THAT RUNS OUT IS A REFUSAL.
+    const caught = roundCaughtUp(message);
+    if (caught && !(entry.generation >= round.wanted)) {
       entry.generation = round.wanted;
     }
     if (entry.syncing === round) {
       entry.syncing = null;
     }
-    settle(!!message.ok);
+    settle(caught);
     log.debug("Leaving finish().");
   };
   timer = setTimeout(function () {
     finish({ ok: false });
-  }, BARRIER_TIMEOUT_MS);
+  }, BARRIER_ROUND_MS);
   pendingSyncs.set(id, finish);
   try {
     entry.child.send({ sync: true, id: id });
@@ -6895,6 +7125,74 @@ function receiveSync(entry, message) {
   pendingSyncs.delete(message.id);
   waiter(message);
   log.debug("Leaving receiveSync().");
+}
+
+/**
+ * The front process's own read barrier for a request it keeps: syncNow()
+ * again and again until it says it caught up (or that the store does not
+ * coordinate), for up to `workers.readBarrierTimeoutMs`.
+ *
+ * @param persistence - the persistence module
+ * @param stillWanted - asked between attempts; false (the client went)
+ *   ends the wait, resolving false
+ * @returns a promise of whether this process caught up
+ */
+function catchUpHere(persistence, stillWanted) {
+  log.debug("Entering catchUpHere().");
+  const deadline = Date.now() + readBarrierTimeoutMs();
+  log.debug("Leaving catchUpHere().");
+  // A LOOP, NOT A CHAIN (tests/no_periodic_timers.js), as in barrier().
+  return (async function () {
+    for (;;) {
+      const began = Date.now();
+      const state = await persistence.syncNow();
+      if (!state || state.caughtUp !== false ||
+          state.coordinating === false) {
+        return true;
+      }
+      barrierRoundsMissed += 1;
+      if (Date.now() >= deadline || (stillWanted && !stillWanted())) {
+        return false;
+      }
+      const pause = Math.min(BARRIER_ROUND_SPACING_MS - (Date.now() - began),
+                             deadline - Date.now());
+      if (pause > 0) {
+        await new Promise(function (resolve) {
+          setTimeout(resolve, pause);
+        });
+      }
+    }
+  })();
+}
+
+/**
+ * Refuses a request the front process keeps when it could not catch up
+ * within `workers.readBarrierTimeoutMs` (STS-WORKER-0054).
+ *
+ * @param req - the request
+ * @param res - the response
+ * @param waitedMs - how long it waited
+ */
+function refuseBehindHere(req, res, waitedMs) {
+  log.debug("Entering refuseBehindHere().");
+  barrierRefusals += 1;
+  warnSparingly('STS-WORKER-0054',
+                'request_pool: ' + req.method + ' ' +
+                String(req.originalUrl || req.url || '').split('?')[0] +
+                ' was REFUSED with a 503: the front process had not caught ' +
+                'up with the change log after ' + waitedMs + 'ms ' +
+                '(workers.readBarrierTimeoutMs), and answering from its own ' +
+                'copy could answer wrongly. Its STS-STORE-0039 line says ' +
+                'where the pull\'s time is going.');
+  errorCodes.mark(res, 'STS-WORKER-0054');
+  res.status(503);
+  res.set('Retry-After', '5');
+  res.type('text/plain');
+  res.send('This service has not yet caught up with writes answered before ' +
+           'this request, so it was refused rather than answered from a ' +
+           'copy that may be stale. Try again shortly; the service log says ' +
+           'why.\n');
+  log.debug("Leaving refuseBehindHere().");
 }
 
 // ---------------------------------------------------------------------------
@@ -6984,13 +7282,27 @@ function middleware(options) {
       // a 401, because the session was answered and not committed.
       // `sts_realm_administrators` failed on it in `dispatch` mode. No worker
       // answers this request, so none is exempted (`servedBy` null).
+      // **AND A CATCH-UP THAT RUNS OUT IS A REFUSAL HERE TOO (2026-11-14)**,
+      // for the reason above barrier(): syncNow() gives up at its own
+      // deadline and says so (`caughtUp: false`), and answering then was
+      // answering from a copy it had just said was behind.
+      const keptSince = Date.now();
       awaitCommitConfirmations(null).then(function () {
-        return persistence.syncNow();
+        return catchUpHere(persistence, function () {
+          return !(res.destroyed || res.closed || res.writableEnded);
+        });
       }).catch(function (e) {
         log.debug('request_pool: the front process could not catch up before ' +
                   'answering ' + (req.originalUrl || req.url) + ': ' +
                   e.message);
-      }).then(function () {
+        return true;
+      }).then(function (caught) {
+        if (caught === false) {
+          if (!(res.destroyed || res.closed || res.writableEnded)) {
+            refuseBehindHere(req, res, Date.now() - keptSince);
+          }
+          return;
+        }
         // **AND A REALM THE CATCH-UP BROUGHT IS ENTERED NOW (2026-09-15).**
         // app.js placed this request in a realm before the wait above, so a
         // realm a worker created a moment ago was unknown then and the
@@ -7195,10 +7507,9 @@ function middleware(options) {
             proxy(entry, req, res, wanted, ticket, timing, body);
             return;
           }
-          return barrier(entry, wanted).then(function () {
-            timing.barrierDone = Date.now();
-            proxy(entry, req, res, wanted, ticket, timing, body);
-          });
+          // CAUGHT UP, OR REFUSED — never served behind (2026-11-14).
+          return proxyAfterBarrier(entry, req, res, wanted, ticket, timing,
+                                   body);
         });
       }
     }
@@ -8359,7 +8670,24 @@ function runOperation(kind, args, opts) {
     if (write) {
       writeBarriers.synced++;
     }
-    return barrier(entry, wanted).then(function () {
+    return barrier(entry, wanted).then(function (caught) {
+      if (!caught) {
+        // REFUSED, NOT SENT BEHIND (2026-11-14): the caller answers its
+        // protocol's unavailable reply for a rejection. Nothing reached the
+        // worker, so the ticket goes (ticketAbandoned()'s argument).
+        ticketAbandoned(entry, ticket);
+        barrierRefusals += 1;
+        warnSparingly('STS-WORKER-0053',
+                      'request_pool: the ' + kind + ' operation was ' +
+                      'REFUSED: worker ' + entry.pid + ' had not caught up ' +
+                      'with the writes answered before it within ' +
+                      'workers.readBarrierTimeoutMs, and running it there ' +
+                      'could answer wrongly.');
+        const refusal = new Error('the request worker had not caught up ' +
+                                  'with earlier writes in time');
+        errorCodes.mark(refusal, 'STS-WORKER-0053');
+        throw refusal;
+      }
       return sendOperation(entry, kind, args, ticket, options.onPartial);
     });
   });
@@ -9068,6 +9396,10 @@ function stats() {
     // (nothing to catch up on), `keyed` (handed `keysSent` keys in place of
     // the pull) or `synced` (the barrier, as every write before #626).
     syncRounds: syncRounds,
+    // READERS A RUN-OUT BARRIER REFUSED (2026-11-14), and rounds that came
+    // back with the worker (or this process) still behind.
+    barrier: { refused: barrierRefusals, roundsMissed: barrierRoundsMissed,
+               timeoutMs: readBarrierTimeoutMs() },
     writes: { current: writeBarriers.current, keyed: writeBarriers.keyed,
               synced: writeBarriers.synced, keysSent: writeBarriers.keysSent,
               lastSharedGeneration: lastSharedGeneration,
@@ -9221,6 +9553,8 @@ function reset() {
   keyLogFloor = 0;
   writeBarriers = { current: 0, keyed: 0, synced: 0, keysSent: 0 };
   syncRounds = 0;
+  barrierRefusals = 0;
+  barrierRoundsMissed = 0;
   ticketWaits = 0;
   localChangeMark = null;
   localChangeMarked = false;
@@ -9348,6 +9682,11 @@ module.exports = {
   // leaving releases its place needs a real socket and nothing else.
   barrier: barrier,
   receiveSync: receiveSync,
+  // And the 2026-11-14 change's two halves: a run-out barrier refuses, and
+  // the front's own catch-up loops, for tests/read_barrier_slow_apply.js.
+  proxyAfterBarrier: proxyAfterBarrier,
+  catchUpHere: catchUpHere,
+  roundCaughtUp: roundCaughtUp,
   proxy: proxy,
   WORKER_ANSWER_MAX_HEADER_BYTES: WORKER_ANSWER_MAX_HEADER_BYTES,
   // THE LISTENER'S RECONCILE, exported for tests/listener_branch_adoption.js

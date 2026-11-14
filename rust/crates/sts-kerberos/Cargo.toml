@@ -13,10 +13,6 @@ publish.workspace = true
 [dependencies]
 sts-core.workspace = true
 sts-crypto.workspace = true
-md4.workspace = true
-md-5.workspace = true
-rc4.workspace = true
-openssl.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

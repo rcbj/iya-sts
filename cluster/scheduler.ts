@@ -575,9 +575,12 @@ const EXPIRY_SLACK_MS = 2 * 60 * 60 * 1000;
 const PIN_AHEAD_MS = 60 * 60 * 1000;
 const PIN_FOR_MS = 24 * 60 * 60 * 1000;
 // The page's newest window (#883): a few rows per realm, and the list the
-// page actually draws. Filters apply to that window.
+// page actually draws. Filters apply to that window, and a job filter adds
+// the job's own last JOB_SLOTS_PER_REALM slots, read by id (2026-11-14,
+// `jobSlotRuns()`).
 const NEWEST_PER_REALM = 20;
 const NEWEST_WINDOW = 200;
+const JOB_SLOTS_PER_REALM = 20;
 
 /**
  * The one scheduler for every periodic job (#49): a cluster job runs once for
@@ -4472,11 +4475,26 @@ class Scheduler {
   // every resident row, uncapped, which is the whole history there. With
   // one, the resident rows win by id over a bounded window, and the page
   // draws at most NEWEST_WINDOW. The window is not written into the map.
+  //
+  // A JOB FILTER READS THAT JOB'S OWN SLOTS (2026-11-14). The newest window
+  // is twenty rows a realm across EVERY job, and the filter was applied to
+  // it afterwards, so in the default realm — where the one-second and
+  // two-second service jobs fill those twenty rows within seconds — a
+  // thirty-second job was almost never in it. Since #883 a finished
+  // interval run is not resident (the leader drops the body it wrote once
+  // the flush has it, a follower is never handed one), so the window was
+  // all `?job=authn.session-expiry` had: run 28's cluster crash takeover
+  // found no succeeded run of it on the new leader four seconds after it
+  // took over (step 3, `tests/tools/scheduler-takeover.js`), and from #883
+  // on the step had passed on two lucky slots where it once saw a hundred.
+  // A run's id is its slot's (`runIdFor()`), so the job's last slots are
+  // read by id, one batch per realm, beside the window.
   /**
    * Returns recent runs, newest first.
    *
    * @param opts - filters: `realm`, `job` and `outcome`
-   * @param at - accepted for the caller's convenience and not read
+   * @param at - the instant by the database's clock whose slots a job
+   *   filter reads back from; now when omitted
    * @returns a promise of the runs' views
    */
   async recentRuns(opts: Json, at?: number): Promise<Json[]> {
@@ -4523,6 +4541,9 @@ class Scheduler {
         windowed = false;
       }
     }
+    if (await this.jobSlotRuns(o, Number(at) || this.nowMs(), byId)) {
+      windowed = true;
+    }
     const out = Array.from(byId.values());
     out.sort(function (a: Json, b: Json): number {
       return String(b.startedAt || b.queuedAt || '').localeCompare(
@@ -4531,6 +4552,76 @@ class Scheduler {
     const shown = windowed ? out.slice(0, NEWEST_WINDOW) : out;
     log.debug("Leaving Scheduler.recentRuns(). " + shown.length + ".");
     return shown;
+  }
+
+  // The filtered job's last JOB_SLOTS_PER_REALM interval slots, read by id
+  // from the durable store into `byId` (see recentRuns()). Nothing for no
+  // job filter, a job not registered here, a per-process, cron or manual
+  // job (their finished rows carry no expiry and are resident), or no
+  // reader. Answers whether any read reached a store, so the caller caps
+  // the list. A failed read is that realm's loss only. Not cached.
+  private async jobSlotRuns(o: Json, at: number,
+                            byId: Map<string, Json>): Promise<boolean> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.jobSlotRuns().");
+    const read = this.deps.readRuns;
+    const job = o.job ? this.jobs.get(String(o.job)) : null;
+    if (!job || typeof read !== 'function' || job.kind === 'per-process' ||
+        job.cron || job.manualOnly) {
+      log.debug("Leaving Scheduler.jobSlotRuns(). Nothing to read.");
+      return false;
+    }
+    const slot = this.slotAt(job, at);
+    if (!slot || slot.slot === null || !(Number(slot.slot) >= 0)) {
+      log.debug("Leaving Scheduler.jobSlotRuns(). No slot.");
+      return false;
+    }
+    const wanted = new Set<string>(this.newestRealmIds(o));
+    const realmIds = this.realmIdsFor(job).filter(function (id: string) {
+      return wanted.has(id);
+    });
+    let reached = false;
+    for (const realmId of realmIds) {
+      const ids: string[] = [];
+      for (let k = 0; k < JOB_SLOTS_PER_REALM; k++) {
+        const n = Number(slot.slot) - k;
+        if (n < 0) {
+          break;
+        }
+        const id = this.runIdFor(job, realmId, n);
+        if (!byId.has(id)) {
+          ids.push(id);
+        }
+      }
+      if (!ids.length) {
+        continue;
+      }
+      let got: Map<string, Json> | null = null;
+      try {
+        got = await read(realmId, ids);
+      } catch (e) {
+        log.debug("Caught in Scheduler.jobSlotRuns(): " +
+                  (((e as Json) && (e as Json).message) || e));
+        continue;
+      }
+      if (!(got instanceof Map)) {
+        continue;
+      }
+      reached = true;
+      got.forEach(function (row: Json, id: string): void {
+        if (!row || byId.has(String(row.runId || id))) {
+          return;
+        }
+        const copy = Object.assign({}, row, { runId: row.runId || id });
+        if (!self.acceptsRun(copy, realmId, o)) {
+          return;
+        }
+        byId.set(String(copy.runId), self.runView(copy));
+      });
+    }
+    log.debug("Leaving Scheduler.jobSlotRuns(). " + reached);
+    return reached;
   }
 
   // One run by id, in whichever realm holds it. The map first, then the one

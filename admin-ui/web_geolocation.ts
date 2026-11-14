@@ -9,8 +9,15 @@
 // MONITORING → GEOLOCATION, DRAWN FROM ITS VIEW ALONE (#446, 2026-10-05).
 //
 // Draws Geolocation from the answer of `GET /admin-api/geolocation`: where
-// people signed in from, as a map laid out by the server and tables by
-// continent, country and city.
+// people signed in from, as a map and tables by continent, country and city.
+//
+// **THE MAP IS DRAWN HERE (#444 phase 2b, 2026-11-14)**, from the answer's
+// `drawing.map` — the level, the filled countries, the labels and the cities —
+// over the outlines the runtime fetched once from `/admin/geo-outlines.json`
+// (`countryOutlines`, the page row's `assets`; `outlines` is the answer's
+// own, the file's provenance the page credits), by `web_geo_map.ts`, the code the
+// server draws the answer's `picture.svg` with. A view with no outlines (the
+// fetch failed) says so where the map would be.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
@@ -20,6 +27,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
+import GeoMap = require('./web_geo_map');
 
 type Json = any;
 
@@ -36,7 +44,7 @@ const DEFAULT_WINDOW = 'live';
 
 /**
  * Draws Geolocation from the answer of `GET /admin-api/geolocation`: where
- * people signed in from, as a map laid out by the server and tables by
+ * people signed in from, as a map drawn from its data and tables by
  * continent, country and city.
  *
  * A static utility class; it holds no state and takes no dependencies.
@@ -98,6 +106,38 @@ class GeolocationPage {
 
   // The page's own address for a window and a place, the default window
   // left out. Root-relative: `app.js` puts it in the realm.
+  // THE MAP, from the answer's data (#444 phase 2b). Every country links
+  // one level down — a continent from the world, its own view from a
+  // continent — which the server's `linkFor` said, and which is worked out
+  // here the same way from the outlines' continents.
+  /**
+   * Draws the map from the view's `drawing.map` over the fetched outlines.
+   *
+   * @param v - the page's view, with `countryOutlines`
+   * @returns the map's SVG, or a sentence saying why there is none
+   */
+  static mapSvg(v: Json): string {
+    const map = v.drawing && v.drawing.map;
+    if (!map || !v.countryOutlines) {
+      // A failure, and English like the pictures' "The layout failed".
+      return '<p class="warn">The map could not be drawn: the country ' +
+        'outlines (<code>/admin/geo-outlines.json</code>) did not load. ' +
+        'The tables below are unaffected.</p>';
+    }
+    const byIso = GeoMap.countries(v.countryOutlines).byIso;
+    const linkFor = function (iso: string): string {
+      const c = byIso.get(iso);
+      if (!c) {
+        return '';
+      }
+      return v.level === 'world'
+        ? GeolocationPage.hrefOf(v.window, GeoMap.slugOf(c.continent))
+        : GeolocationPage.hrefOf(v.window, '', iso);
+    };
+    return GeoMap.render(Object.assign({}, map, { linkFor: linkFor }),
+                         v.countryOutlines).svg;
+  }
+
   /**
    * Answers the page's own root-relative address for a window and a place, the
    * default window left out.
@@ -328,7 +368,7 @@ class GeolocationPage {
         : (v.level === 'continent'
           ? t.html('consoleGeolocation.select.continent')
           : t.html('consoleGeolocation.select.country'))) + '</p>' +
-      drawn.picture.svg +
+      GeolocationPage.mapSvg(v) +
       (v.level === 'country'
         ? '<p><small>' + t.html('consoleGeolocation.circle') +
           '</small></p>'
