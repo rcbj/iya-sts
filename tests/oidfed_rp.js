@@ -24,8 +24,12 @@
 // cover the chain itself):
 //
 //   1. no `issuer`: the relationship is usable, its `fedOpIssuer` is the
-//      OP's Entity Identifier, and the request object's and the
-//      private_key_jwt's `aud` are that identifier;
+//      OP's Entity Identifier, and the request object's `aud` is that
+//      identifier; the private_key_jwt's `aud` is the OP's TOKEN ENDPOINT
+//      URL, one string (Connect Core 9 — the next run of the plan got past
+//      the login and every happy-path module failed the suite's
+//      ValidateClientAssertionClaims, which never takes the Entity
+//      Identifier at the token endpoint);
 //   2. an `issuer` naming another entity is still refused (STS-FED-0149);
 //   3. an `issuer` equal to the Entity Identifier is used as before.
 // ===========================================================================
@@ -146,10 +150,22 @@ async function run(t) {
     aud = JSON.parse(new URL(url).searchParams.get('request')).aud;
     assertionAud = JSON.parse(await rp.clientAssertion(got.record)).aud;
   }
-  t.check(aud === PEER && assertionAud === PEER,
-          '1b. the request object and the private_key_jwt are addressed ' +
-          'to the OP\'s Entity Identifier, never to "undefined"',
-          JSON.stringify([aud, assertionAud]));
+  t.check(aud === PEER,
+          '1b. the request object is addressed to the OP\'s Entity ' +
+          'Identifier alone (Federation 1.0, 12.1.1.1), never to ' +
+          '"undefined"', JSON.stringify(aud));
+  // The token endpoint's assertion is NOT the request object's audience:
+  // Federation 1.0 holds a client assertion to the Entity Identifier only
+  // at the PAR endpoint (12.1.1.2), and says nothing of the token endpoint,
+  // so Connect Core 9 governs ("SHOULD be the URL of the Authorization
+  // Server's Token Endpoint"). The suite's ValidateClientAssertionClaims
+  // refused the Entity Identifier there with "aud mismatch".
+  t.check(typeof assertionAud === 'string' &&
+          assertionAud === PEER + '/token',
+          '1c. the private_key_jwt at the token endpoint is addressed to ' +
+          'the token endpoint URL, as one string (Connect Core 9, ' +
+          'RFC 7523 3), not to the Entity Identifier',
+          JSON.stringify(assertionAud));
 
   t.log.info('=== 2. an issuer naming somebody else ===');
   const wrong = await rpOver(suiteMetadata(

@@ -368,11 +368,26 @@ class OidfedRp {
     return at + (at.indexOf('?') === -1 ? '?' : '&') + outer.toString();
   }
 
-  // The private_key_jwt for the token request (RFC 7523, 12.1.1.2): `iss`
-  // and `sub` this realm's client_id, `aud` the OP's Entity Identifier.
+  // The private_key_jwt for the token request (RFC 7523): `iss` and `sub`
+  // this realm's client_id, `aud` THE OP'S TOKEN ENDPOINT URL, a single
+  // string, never the Entity Identifier the request object is addressed to.
+  // OpenID Federation 1.0 section 12.1.1.2 holds a client assertion to the
+  // Entity Identifier only at the PUSHED AUTHORIZATION REQUEST endpoint,
+  // which this relying party does not use; of the token endpoint it says
+  // nothing (12.1.5 leaves other endpoints to other specifications), so
+  // OpenID Connect Core section 9 governs: the audience "SHOULD be the URL
+  // of the Authorization Server's Token Endpoint", which RFC 7523 section 3
+  // allows too. Addressed to the Entity Identifier, every happy-path module
+  // of the OpenID Foundation's joined-rp plans failed with
+  // "ValidateClientAssertionClaims: aud mismatch": at its token endpoint the
+  // suite (v5.3.1, OpenIDFederationClientTest.tokenResponse) accepts the
+  // token endpoint URL, never the OP's Entity Identifier. Only this federated
+  // path changes; a FAPI or plain OpenID Connect relationship signs its own
+  // assertion in `federation/fapi_client.ts`.
   /**
-   * Signs the `private_key_jwt` for the token request (RFC 7523, 12.1.1.2):
-   * `iss` and `sub` this realm's client_id, `aud` the OP's Entity Identifier.
+   * Signs the `private_key_jwt` for the token request (RFC 7523, Connect
+   * Core 9): `iss` and `sub` this realm's client_id, `aud` the OP's token
+   * endpoint URL.
    *
    * @param effective - `effectiveRecord()`'s record
    * @returns a promise of the assertion
@@ -386,7 +401,7 @@ class OidfedRp {
     // publishes, as the request object is.
     return signJwtAsAsync({ iss: effective.fedClientId,
                             sub: effective.fedClientId,
-                            aud: effective.fedOpIssuer,
+                            aud: String(effective.fedTokenUrl || ''),
                             jti: stsCrypto.randomUuid(), iat: iat,
                             exp: iat + 300 }, RP_ALG, null, {});
   }
