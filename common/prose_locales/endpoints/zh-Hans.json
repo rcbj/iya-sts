@@ -531,6 +531,10 @@
     "en": "cd6aeb9c9e8ebf8a",
     "text": "控制台的样式表"
   },
+  "endpoints.route./admin/geo-outlines.json.name": {
+    "en": "54575728e7ed9de1",
+    "text": "控制台地图的国家轮廓"
+  },
   "endpoints.route./portal.name": {
     "en": "5212610fe0e7c89a",
     "text": "个人自己的账户"

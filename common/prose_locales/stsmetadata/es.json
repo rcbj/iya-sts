@@ -1315,6 +1315,10 @@
     "en": "4750f8f23393c7dd",
     "text": "NO ESTÁNDAR. La única hoja de estilos de la consola (#446)."
   },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "NO ESTÁNDAR. Los países a 1:50m de Natural Earth, de dominio público, tal como los distribuye admin-ui/natural_earth/countries.json, que la consola obtiene una sola vez y sobre los que dibuja en el navegador el mapa de Monitoring → Geolocation (#444). Público, como el script."
+  },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
     "text": "NO ESTÁNDAR. LA PRIMERA SUPERFICIE DE ESTE SERVICIO QUE PERTENECE A LA PERSONA QUE LA MIRA, y una APLICACIÓN ESTÁTICA desde #568: esta ruta y todas las que cuelgan de ella responden el mismo documento, que carga el script y la hoja de estilos del portal. El script inicia sesión como el cliente público sts-user-portal (PKCE, tokens vinculados a DPoP guardados en memoria, account:manage) y dibuja cada página en el navegador a partir de /account-api, y cada acto que realiza es una operación de /account-api: el patrón de la consola de administración (#446). Nada aquí tiene control de acceso: el documento no lleva ningún dato ni ninguna credencial, y la API es el único control. Un método distinto de GET se responde con 404. Un /portal sin más en un servicio con dominios pregunta primero qué dominio (common/realm_chooser.ts)."
