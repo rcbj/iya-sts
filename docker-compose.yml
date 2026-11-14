@@ -271,6 +271,8 @@ services:
     ports:
       - "${XACML_PEP_HOST_PORT:-9090}:9090"
       - "${XACML_PEP_HTTPS_HOST_PORT:-9444}:9443"
+      - "${XACML_PEP_PROXY_HOST_PORT:-9180}:9180"
+      - "${XACML_PEP_PROXY_HTTPS_HOST_PORT:-9543}:9543"
     volumes:
       - ${XACML_PEP_CERT_DIR:-./xacml-pep/certs}:/certs:ro
     depends_on:
@@ -293,6 +295,9 @@ services:
       - PEP_POLL_INTERVAL_MS=${XACML_PEP_POLL_INTERVAL_MS:-15000}
       - PEP_HEARTBEAT_INTERVAL_MS=${XACML_PEP_HEARTBEAT_INTERVAL_MS:-60000}
       - PEP_LOG_LEVEL=${XACML_PEP_LOG_LEVEL:-info}
+      - PEP_PROXY_PORT=9180
+      - PEP_PROXY_HTTPS_PORT=9543
+      - PEP_PROXY_SESSION_RECHECK_MS=${XACML_PEP_PROXY_SESSION_RECHECK_MS:-5000}
 
   companion:
     container_name: ${STS_COMPANION_CONTAINER_NAME:-sts-companion}

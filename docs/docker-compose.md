@@ -103,6 +103,7 @@ so the service starts without the pinned management API secret.
 | 88, TCP and UDP | 88 | The Kerberos KDC, so `kinit` and a browser's SPNEGO sign-in work from the host ([Kerberos](#kerberos)) | `STS_KDC_HOST_PORT` |
 | 8444 | 8444 | The [embedded debugger](admin-console.md#the-embedded-protocol-debugger), signed in to through this service and open to console administrators only. **Both sides move together**, because its sign-in sends the browser back by the host and port it used | `STS_DEBUGGER_PORT` |
 | 9090, 9444 | 9090, 9443 | Remote PEP, HTTP and HTTPS (`xacml` profile only) | `XACML_PEP_HOST_PORT`, `XACML_PEP_HTTPS_HOST_PORT` |
+| 9180, 9543 | 9180, 9543 | The remote PEP's reverse proxy, HTTP and HTTPS (`xacml` profile only). It answers 404 until a proxy is configured for that PEP; 9543 serves the same certificate as 9443 | `XACML_PEP_PROXY_HOST_PORT`, `XACML_PEP_PROXY_HTTPS_HOST_PORT` |
 | 9700 | 9700 | The development companion, plain HTTP (`companion` profile only) | `COMPANION_HOST_PORT` (and `COMPANION_PUBLIC_URL`) |
 | 8888 | 8888 | The companion's Kerberos-protected TCP service (`companion` profile only) | `COMPANION_KRB5_HOST_PORT` |
 
@@ -228,6 +229,7 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_BAO_PRINT_CREDENTIALS` | `true` | Whether the seeder prints the operator token, and on the first run the recovery key |
 | `STS_KEYS_KEK_PROVIDER` | `vault-transit` | `vault` reads the key from KV (`STS_KEYS_KEK_REF=secret/data/sts`) instead of using the Transit key |
 | `OPENBAO_TAG` | `latest` | The OpenBao image tag |
+| `XACML_PEP_PROXY_SESSION_RECHECK_MS` | `5000` | How old the remote PEP's last answer about a proxy session's sign-on session may be before it asks the service again. `0` asks on every request, so a sign-out at the service ends access at once |
 | `STS_IMAGE`, `XACML_PEP_IMAGE`, `STS_COMPANION_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep`, `iya-sts-companion` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |
 | `GIT_COMMIT` | empty | Build argument: see [Which build am I running?](getting-started.md#which-build-am-i-running) |
 | `DEBUGGER_IMAGE` | `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3` | Build argument: the [embedded debugger](admin-console.md#the-embedded-protocol-debugger) the image carries, a tagged release of id-proto-debugger. `debugger-none` builds an image without one |
@@ -295,6 +297,15 @@ verifier's web site would:
   not served.
   [The companion dummy of each provider](federation-consumer-providers.md#the-companion-dummy-of-each-provider)
   lists the document each dummy follows.
+* **An application for the remote PEP to protect** (`/pep-app`). Point a
+  PEP's reverse proxy at `http://companion:9700` and route paths under
+  `/pep-app` (`/pep-app/public`, `/pep-app/protected`, `/pep-app/api/items`
+  for writes). Every page answers JSON: the method, the path, the query and
+  every header that reached it, including the identity headers the proxy
+  adds, and for a write the body's length and SHA-256.
+  `/pep-app/_hits` counts what reached each path; read it at the
+  companion directly, not through the proxy. It needs no service and no
+  secret.
 
 It calls `/admin-api` as an application of its own, `iya-sts-companion`,
 holding Admin Read and Admin Write. Give it either
