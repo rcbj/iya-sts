@@ -75,7 +75,7 @@ async fn a_realms_life_is_nodes() {
     let mode = Arc::new(Mode::new(settings.clone()));
     let registry =
         Arc::new(RealmRegistry::new(Arc::new(Env(settings.clone()))));
-    let life = RealmLifecycle::new(registry.clone(), settings, mode);
+    let life = RealmLifecycle::new(registry.clone(), settings.clone(), mode);
     let mut failures = Vec::new();
     let listed = |life: &RealmLifecycle| -> Json {
         json!(registry
@@ -87,6 +87,7 @@ async fn a_realms_life_is_nodes() {
                              "retiring": life.is_retiring(&r.id) }))
             .collect::<Vec<_>>())
     };
+    let mut results = Vec::new();
     for step in v["steps"].as_array().unwrap() {
         let id = s(step, "id");
         let got = match s(step, "op") {
@@ -128,8 +129,19 @@ async fn a_realms_life_is_nodes() {
                 answer(life.retire(id, None, None).await)
             }
             "remove" => answer(life.remove(id)),
+            // A setting of the service changed between steps (the cap).
+            "config" => {
+                let key = s(step, "key");
+                if step["raw"].is_null() {
+                    settings.clear_override(key);
+                } else {
+                    settings.set_override(key, step["raw"].clone()).unwrap();
+                }
+                json!({ "ok": true, "errors": [], "code": null })
+            }
             other => panic!("unknown step {}", other),
         };
+        results.push(got.clone());
         if got != step["result"] {
             failures.push(format!(
                 "{} {} {}:\n  rust {}\n  node {}",
@@ -142,6 +154,18 @@ async fn a_realms_life_is_nodes() {
         }
     }
     let after = listed(&life);
+    // Rust's answers, for `tests/rust_store_vectors.js` to hold to Node's.
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        std::fs::write(
+            std::path::Path::new(&dir).join("realm-lifecycle-rust.json"),
+            serde_json::to_string_pretty(
+                &json!({ "results": results, "after": after }),
+            )
+            .unwrap()
+                + "\n",
+        )
+        .unwrap();
+    }
     if after != v["after"] {
         failures
             .push(format!("after:\n  rust {}\n  node {}", after, v["after"]));

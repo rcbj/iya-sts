@@ -112,15 +112,24 @@ fn realms_as_node_answers() {
             ),
         );
     }
+    let mut rust = serde_json::Map::new();
+    let mut ids = Vec::new();
     for row in v["ids"].as_array().unwrap() {
         let id = row["id"].as_str().unwrap();
+        ids.push(
+            json!({ "id": id, "errors": registry.validate_id(id).sentences }),
+        );
         check(
             json!(registry.validate_id(id).sentences) == row["errors"],
             format!("validateId({})", id),
         );
     }
+    rust.insert("ids".into(), json!(ids));
+    let mut domains = Vec::new();
     for row in v["domains"].as_array().unwrap() {
         let n = normalize_domain(row["raw"].as_str().unwrap());
+        domains.push(json!({ "raw": row["raw"], "normalized": n,
+                             "errors": registry.validate_domain(&n, "new").sentences }));
         check(
             n == row["normalized"].as_str().unwrap(),
             format!("normalizeDomain({}) = {}", row["raw"], n),
@@ -131,10 +140,13 @@ fn realms_as_node_answers() {
             format!("validateDomain({})", n),
         );
     }
+    rust.insert("domains".into(), json!(domains));
+    let mut base_dns = Vec::new();
     for (r, row) in registry.list().iter().zip(v["baseDns"].as_array().unwrap())
     {
         let mine = json!({ "id": r.id, "domain": registry.domain_of(r), "baseDn": registry.base_dn_of(r),
                            "est": registry.est_label_path(r) });
+        base_dns.push(mine.clone());
         check(mine == *row, format!("realm {}: {} vs {}", r.id, mine, row));
     }
     let dev = registry.get("dev").unwrap();
@@ -148,6 +160,9 @@ fn realms_as_node_answers() {
         json!(mail) == v["mail"],
         format!("invented mail {:?}", mail),
     );
+    rust.insert("baseDns".into(), json!(base_dns));
+    rust.insert("mail".into(), json!(mail));
+    let mut by_segment = Vec::new();
 
     for case in v["bySegment"].as_array().unwrap() {
         *env.segment.lock().unwrap() =
@@ -162,12 +177,15 @@ fn realms_as_node_answers() {
             json!(prefixes) == case["prefixes"],
             format!("segment {}: prefixes {:?}", seg, prefixes),
         );
+        let mut matches = Vec::new();
         for m in case["matches"].as_array().unwrap() {
             let p = m["path"].as_str().unwrap();
             let mine = registry
                 .match_path(p)
                 .map(|x| json!({ "realm": x.realm.id, "rest": x.rest, "est": x.est_label }))
                 .unwrap_or(Json::Null);
+            matches.push(json!({ "path": p, "match": mine,
+                                 "unknown": registry.unknown_realm_path(p) }));
             check(
                 mine == m["match"],
                 format!("segment {}: matchPath({}) = {}", seg, p, mine),
@@ -196,6 +214,17 @@ fn realms_as_node_answers() {
             json!(hrefs) == case["hrefs"],
             format!("segment {}: href {:?}", seg, hrefs),
         );
+        by_segment.push(json!({ "segment": seg, "prefixes": prefixes,
+                                "matches": matches, "hrefs": hrefs }));
+    }
+    rust.insert("bySegment".into(), json!(by_segment));
+    // Rust's answers, for `tests/rust_store_vectors.js` to hold to Node's.
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        std::fs::write(
+            std::path::Path::new(&dir).join("realms-rust.json"),
+            serde_json::to_string_pretty(&Json::Object(rust)).unwrap() + "\n",
+        )
+        .unwrap();
     }
 
     assert!(

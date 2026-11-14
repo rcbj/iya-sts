@@ -320,6 +320,68 @@ fn the_scheduler_core_is_nodes() {
         }
     }
 
+    // Rust's answers, for `tests/rust_store_vectors.js`: the spans and the
+    // cron occurrences are computed again in Node, the rest held to Node's.
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        let jobs: Vec<Json> = v["jobs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|node| {
+                let id = node["id"].as_str().unwrap();
+                let job = sched.job(id).unwrap();
+                let off: Vec<String> = ["default", "acme"]
+                    .iter()
+                    .map(|r| sched.off_reason(job, r))
+                    .collect();
+                let run_ids: Vec<String> = [0i64, 1, 1767322800000]
+                    .iter()
+                    .map(|n| run_id_for(id, "acme", *n))
+                    .collect();
+                norm(json!({
+                    "id": id, "interval": sched.interval_ms(job), "text": sched.schedule_text(job),
+                    "off": off, "timeout": sched.timeout_ms_of(job), "nice": job.nice_of(),
+                    "onFront": job.on_front, "runIds": run_ids,
+                }))
+            })
+            .collect();
+        let spans: Vec<Json> = v["spans"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|ms| json!({ "ms": ms, "text": span(ms.as_f64().unwrap()) }))
+            .collect();
+        let cron: Vec<Json> = v["cron"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["valid"] == true)
+            .map(|c| {
+                let expr = c["expr"].as_str().unwrap();
+                let at: Vec<Json> = times
+                    .iter()
+                    .map(|t| {
+                        json!({ "t": t, "prev": cron_prev(expr, *t),
+                                "next": cron_next(expr, *t) })
+                    })
+                    .collect();
+                json!({ "expr": expr, "at": at })
+            })
+            .collect();
+        let whys: Vec<Json> = v["whys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|w| json!({ "result": w["result"], "why": why_of(&w["result"]) }))
+            .collect();
+        let out =
+            json!({ "jobs": jobs, "spans": spans, "cron": cron, "whys": whys });
+        std::fs::write(
+            std::path::Path::new(&dir).join("scheduler-rust.json"),
+            serde_json::to_string_pretty(&out).unwrap() + "\n",
+        )
+        .unwrap();
+    }
     assert!(
         failures.is_empty(),
         "{} of {} differ:\n{}",

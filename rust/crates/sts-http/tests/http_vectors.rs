@@ -137,6 +137,7 @@ async fn the_http_layer_is_nodes() {
     registry.insert(acme);
     let router = app(registry);
     let mut failures = Vec::new();
+    let mut answers = Vec::new();
     for want in v["answers"].as_array().unwrap() {
         let path = want["path"]
             .as_str()
@@ -175,6 +176,7 @@ async fn the_http_layer_is_nodes() {
         )
         .unwrap();
         let got = json!({ "path": want["path"], "status": status, "headers": headers, "body": body });
+        answers.push(got.clone());
         if got != *want {
             failures.push(format!(
                 "{}:\n  rust {}\n  node {}",
@@ -182,6 +184,8 @@ async fn the_http_layer_is_nodes() {
             ));
         }
     }
+    let mut csp_out = Vec::new();
+    let mut framed_out = Vec::new();
     let pairs = |o: &Json| -> Vec<(String, Option<String>)> {
         o.as_object()
             .unwrap()
@@ -196,6 +200,7 @@ async fn the_http_layer_is_nodes() {
             .map(|(k, v)| (k.as_str(), v.as_deref()))
             .collect();
         let got = csp::content_security_policy(&args);
+        csp_out.push(json!({ "overrides": c["overrides"], "value": got }));
         if json!(got) != c["value"] {
             failures.push(format!("csp {}: {}", c["overrides"], got));
         }
@@ -213,6 +218,10 @@ async fn the_http_layer_is_nodes() {
             .map(|(k, v)| (k.as_str(), v.as_deref()))
             .collect();
         let got = csp::framed_content_security_policy(&origins, &args);
+        framed_out.push(
+            json!({ "origins": c["origins"], "overrides": c["overrides"],
+                                "value": got }),
+        );
         if json!(got) != c["value"] {
             failures.push(format!("framed {}: {}", c["origins"], got));
         }
@@ -221,6 +230,17 @@ async fn the_http_layer_is_nodes() {
         && json!(csp::not_a_page_policy()) != v["notAPage"]
     {
         failures.push(format!("not a page: {}", csp::not_a_page_policy()));
+    }
+    // Rust's answers, for `tests/rust_store_vectors.js`: the builders are run
+    // again in Node, the answers held to Node's.
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        let out = json!({ "answers": answers, "csp": csp_out, "framed": framed_out,
+                          "notAPage": csp::not_a_page_policy() });
+        std::fs::write(
+            std::path::Path::new(&dir).join("http-rust.json"),
+            serde_json::to_string_pretty(&out).unwrap() + "\n",
+        )
+        .unwrap();
     }
     assert!(
         failures.is_empty(),

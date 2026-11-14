@@ -119,6 +119,14 @@ async fn the_ldif_store_is_nodes() {
         )
         .await
         .unwrap();
+    let mut written = serde_json::Map::new();
+    for one in std::fs::read_dir(&out).unwrap() {
+        let path = one.unwrap().path();
+        written.insert(
+            path.file_name().unwrap().to_string_lossy().into_owned(),
+            json!(std::fs::read_to_string(&path).unwrap()),
+        );
+    }
     for (name, text) in v["files"].as_object().unwrap() {
         let mine = std::fs::read_to_string(out.join(name)).unwrap_or_default();
         check(
@@ -150,6 +158,7 @@ async fn the_ldif_store_is_nodes() {
     );
     std::fs::remove_dir_all(&out).unwrap();
 
+    let mut parsed = Vec::new();
     for (text, node) in v["foreign"]
         .as_array()
         .unwrap()
@@ -160,12 +169,22 @@ async fn the_ldif_store_is_nodes() {
             .iter()
             .map(json_of)
             .collect();
+        parsed.push(json!(mine));
         check(
             json!(mine) == *node,
             format!("fromLdif:\n{}\n{}", json!(mine), node),
         );
     }
 
+    // Rust's files, for Node to read (`tests/rust_store_vectors.js`).
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        let out = json!({ "files": written, "parsed": parsed });
+        std::fs::write(
+            std::path::Path::new(&dir).join("ldif-rust.json"),
+            serde_json::to_string_pretty(&out).unwrap() + "\n",
+        )
+        .unwrap();
+    }
     assert!(
         failures.is_empty(),
         "{} differences:\n{}",

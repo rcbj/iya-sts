@@ -2853,6 +2853,21 @@ async function realmLifecycleVectors() {
     description: ' second ', domain: 'Prod2.Example.ORG.' });
   create('Bad_Id', {});
   create('dup', {}, { domain: 'prod2.example.org' });
+  // A name or description the store could never hold (#1463).
+  create('nul', {}, { name: 'a\u0000b', description: 'd\u0000' });
+  // The cluster's cap (#368): at the count, a create is refused.
+  const cap = function (raw) {
+    if (raw === null) {
+      config.clearOverride('realms.maxCount');
+    } else {
+      config.setOverride('realms.maxCount', raw);
+    }
+    steps.push({ op: 'config', key: 'realms.maxCount', raw: raw,
+                 result: { ok: true, errors: [], code: null } });
+  };
+  cap(realms.list().length);
+  create('full', {});
+  cap(null);
   const set = function (id, key, raw) {
     steps.push({ op: 'set', id: id, key: key, raw: raw,
                  result: answer(realms.setOverride(id, key, raw)) });
@@ -2878,6 +2893,7 @@ async function realmLifecycleVectors() {
   update('prod2', { overrides: { 'global.mode': 'product',
                                  [devOnlyKey]: true } });
   update('acme', { name: '  New Name ', description: ' d ' });
+  update('acme', { description: 'bad\u0000' });
   update('nosuch', { name: 'x' });
   const listed = function () {
     return realms.list().filter(function (r) { return !r.builtin; })
