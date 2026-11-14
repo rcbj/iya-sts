@@ -1668,6 +1668,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-audit"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-core",
+ "sts-crypto",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "sts-cache"
 version = "0.1.0"
 dependencies = [
@@ -1756,6 +1768,18 @@ dependencies = [
  "md4",
  "openssl",
  "rc4",
+ "serde",
+ "serde_json",
+ "sts-core",
+ "sts-crypto",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "sts-mail"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
  "sts-core",
