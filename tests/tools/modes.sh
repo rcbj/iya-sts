@@ -56,10 +56,11 @@
 # keeping and why the two production modes are separate.
 #
 # **AND THE COST IN TIME.** `cluster` is a whole run on two nodes of five
-# processes each, the heaviest stack this suite starts. CI runs it as a job
-# of its own (`.github/workflows/tests.yml`) beside `memory,single-node`,
-# both through `./run-tests.sh`, so each job's timeout still covers the modes
-# it runs (tests/teardown_bounds.js holds that arithmetic).
+# processes each, the heaviest stack this suite starts. CI runs every mode
+# of STS_ALL_MODES, this one included, on a runner of its own
+# (`.github/workflows/tests.yml`'s `mode` matrix, 2026-11-14), each through
+# `./run-tests.sh`, so each job's timeout still covers its mode
+# (tests/teardown_bounds.js holds that arithmetic).
 #
 # ---------------------------------------------------------------------------
 # SIX SINCE 2026-11-14, BY rcbj: "Make all six part of the standard test run."

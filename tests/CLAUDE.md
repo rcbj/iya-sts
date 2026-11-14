@@ -478,8 +478,8 @@ bound and compose layers, its jobs, and what it skips — is
   2026-11-06, with 10% fewer jobs), `cluster` 80–95, `cells` not yet measured
   on the whole list (32 min for 759 jobs on 2026-10-12; expect 60–90), and
   `fuzz` 126–155; plus the image build and a few minutes per mode for the
-  stack, the credentials, the logs and the teardown. CI is not a bare run: its
-  jobs name their modes, and `mariadb`, `cells` and `fuzz` have no CI job yet.
+  stack, the credentials, the logs and the teardown. CI is not a bare run: it
+  runs each of the six modes on a runner of its own (*CI*, below).
 
 **`./run-tests.sh --modes=schema-validation` (#1353, rcbj 2026-11-06) is one
 container holding the service, its stores, OpenBao, a balancer, the jobs, Chrome
@@ -4583,7 +4583,8 @@ uses), `logs/00-iya-sts-service-node-b.log` and `logs/00-load-balancer.log`.
 
 **IN A BARE RUN SINCE 2026-11-14** (it ran only when named,
 `./run-tests.sh --modes=cells`, until then), fifth of six, with the whole job
-list and a bound of its own (`STS_CELLS_MODE_TIMEOUT`); no CI job runs it yet.
+list and a bound of its own (`STS_CELLS_MODE_TIMEOUT`); CI runs it as the
+`cells` entry of `tests.yml`'s `mode` matrix (*CI*, below).
 `tests/tools/modes.sh` defines it and argues it. The nine `sts_cells_*.js`
 jobs prove #98 end to end over HTTP, and every other job run in it asserts
 what it always did against cell A. Its own jobs alone:
@@ -4916,7 +4917,7 @@ nothing** now.
 | `mirror` | `.github/scripts/mirror-images.sh missing` — the one job with `packages: write`, for the PRIVATE mirror | 30 |
 | `build` | `./run-tests.sh --build-only` (every image, the SAML peers' profile on), then `.github/scripts/stack-images.sh save` → the artifact `stack-images`, one day | 50 |
 | `unit` | the tests image, `run-report.js --no-protocol --unit-concurrency=4`, no stack | 90 |
-| `mode` (matrix) | `./run-tests.sh --no-build --modes=<mode> --protocol=only`, memory / single-node / cluster, one runner each, fail-fast off; the matrix hands each its bound (3600 / 7200 / 9000 s) | 100 / 160 / 180 |
+| `mode` (matrix) | `./run-tests.sh --no-build --modes=<mode> --protocol=only`, all six modes of `STS_ALL_MODES` (memory / single-node / mariadb / cluster / cells / fuzz), one runner each, fail-fast off; the matrix hands each its bound (6000 / 11400 / 13200 / 13200 / 12000 / 18000 s), from run 43622250478's measurements (memory 69 min, single-node 133, both within minutes of the first bounds) or the laptop's times ×1.5 plus about 40% | 150 / 240 / 250 / 250 / 230 / 330 |
 | `openid-conformance`, `-oidcc` | the plans, by lane, `--no-build` | 355 |
 | `openapi-breaking` | pull requests: `tests/tools/oasdiff-gate.sh`, logged in (it was a 401 on every PR) | 75 |
 | `dependency-windows` | the lockfile's advisory windows | 10 |
@@ -4936,7 +4937,12 @@ nothing** now.
   (`.github/scripts/runner-host.sh`): about 25-30 GB back, and
   `tests/report/runner/resources.log` (memory, disk, vmstat every 30 s) in
   its `test-report-<job>` artifact, so a lost runner can be told from a full
-  disk.
+  disk; every five minutes it adds each container's memory. **The mode jobs
+  also `harden-memory`** (an 8 GB swap file, systemd-oomd stopped, the
+  runner's own processes at `oom_score_adj` -1000) and print a `pulse` line
+  to the job log every two minutes, because the `cluster` runner of run
+  43622250478 stopped answering 105 minutes in and its artifact was never
+  uploaded: the job log is what survives a lost runner.
 * **`STS_TEST_ATTACH_RUNNER_ONLY=1`** puts only the runner's output on the
   job log (`up --attach tests`); the service logs are captured into the
   report as always. It cost 20-38 MB of log per job. The trade is in

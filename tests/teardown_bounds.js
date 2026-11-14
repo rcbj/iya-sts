@@ -517,10 +517,13 @@ function checkTheJobTimeoutIsAboveOurs(t) {
       (inModeList(modePeers, entry.mode) ? peersBound : 0) +
       (modeRunsConformance ? conformanceBound : 0);
     const worst = loadAllowance + modeBound + teardownBound * 2;
-    t.check(entry.minutes * 60 > worst && entry.minutes <= 240,
+    // At most 330 minutes, half an hour inside GitHub's six (2026-11-14):
+    // `fuzz` measured 126-155 minutes on the development laptop and the
+    // protocol half runs about 1.5 times slower on a hosted runner.
+    t.check(entry.minutes * 60 > worst && entry.minutes <= 330,
             'the `' + entry.mode + '` job timeout (' + entry.minutes +
               'm) is above loading the images, its mode\'s bound and two ' +
-              'teardowns (' + Math.ceil(worst / 60) + 'm), and at most 240m',
+              'teardowns (' + Math.ceil(worst / 60) + 'm), and at most 330m',
             'if the job\'s number is the smaller one then the bound that ' +
             'fires is the one that cannot explain itself, which is exactly ' +
             'the 2026-09-10 outcome with extra machinery in front of it');

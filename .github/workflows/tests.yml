@@ -27,8 +27,9 @@
 #                  not depend on the mode (run-report.js strips the mode
 #                  variables from a unit job), so running it per mode only
 #                  repeated it.
-#   mode (matrix)  memory, single-node, cluster: ./run-tests.sh --no-build
-#                  --modes=<mode> --protocol=only, one runner each.
+#   mode (matrix)  memory, single-node, mariadb, cluster, cells, fuzz:
+#                  ./run-tests.sh --no-build --modes=<mode> --protocol=only,
+#                  one runner each.
 #   openid-conformance, openid-conformance-oidcc
 #                  the OpenID Foundation plans, split by lane, --no-build.
 #   openapi-breaking  pull requests only: the published APIs did not break.
@@ -292,28 +293,37 @@ jobs:
           retention-days: 30
 
   # ---------------------------------------------------------------------------
-  # THE PROTOCOL HALF, ONE MODE PER RUNNER (2026-11-14). The three modes of
+  # THE PROTOCOL HALF, ONE MODE PER RUNNER (2026-11-14). All six modes of
   # tests/tools/modes.sh's STS_ALL_MODES, each on a runner of its own: one
   # mode per machine is what fits it (the `cluster` stack is two production
   # nodes, postgres, OpenBao, HAProxy and a runner with Chrome), the launcher's
   # container names are machine-wide, and a red mode names itself. Red in
   # `cluster` and green in `single-node`, the same deployment on one node, is
   # a CLUSTER defect, which is why both run every time. fail-fast is off: one
-  # mode's failure says nothing about another's.
+  # mode's failure says nothing about another's. `fuzz` runs its own jobs only
+  # (modes.sh, stsModeJobFilter()), which the launcher applies itself.
   #
   # THE BOUNDS. `minutes` is the job's timeout and `bound` the launcher's own
   # bound for the mode, in seconds, handed over through the variable that
   # mode reads (STS_MODE_TIMEOUT for memory, STS_SINGLE_NODE_MODE_TIMEOUT,
-  # STS_CLUSTER_MODE_TIMEOUT; the others are ignored by a run of one mode).
+  # STS_CLUSTER_MODE_TIMEOUT for cluster and mariadb, STS_CELLS_MODE_TIMEOUT,
+  # STS_FUZZ_MODE_TIMEOUT; the others are ignored by a run of one mode).
   # The launcher adds STS_SAML_PEERS_TIMEOUT (15m) in memory and single-node.
   # The job's number sits above the bound, the peers, a teardown for the mode
   # and one for the stack before it, and ten minutes to download and load the
   # images, so the bound that fires is the one that can explain itself
-  # (tests/teardown_bounds.js). The bounds are below the launcher's defaults
-  # for a whole mode because the in-process half is not in them: the
-  # protocol half of memory took about an hour in run 42934501375 beside a
-  # serial unit pool, and the estimates for the others are 80-110 minutes
-  # (single-node) and 90-120 (cluster).
+  # (tests/teardown_bounds.js), and every job is under GitHub's six hours
+  # with half an hour to spare.
+  #
+  # MEASURED ON THIS RUNNER, run 43622250478 (protocol half only, wallMs):
+  # memory 69 minutes against a bound of 60 + 15, single-node 133 against
+  # 120 + 15 — both within minutes of being cut off — and cluster 201 of 275
+  # jobs in 105 minutes when its runner stopped answering. The protocol half
+  # runs about 1.5 times slower here than on the development laptop, so the
+  # bounds are the measured time (or the laptop's times in tests/CLAUDE.md
+  # times 1.5 for the modes not yet run here: mariadb ~80, cells 60-90, fuzz
+  # 126-155) with about forty per cent on top. A bound that fires here is a
+  # finding to measure, not a number to raise blind.
   #
   # STS_TEST_CONFORMANCE_MODES EMPTY (#187): the OpenID conformance plans are
   # the two `openid-conformance*` jobs'; here they are reported SKIPPED with
@@ -332,14 +342,23 @@ jobs:
       matrix:
         include:
           - mode: memory
-            minutes: 100
-            bound: 3600
+            minutes: 150
+            bound: 6000
           - mode: single-node
-            minutes: 160
-            bound: 7200
+            minutes: 240
+            bound: 11400
+          - mode: mariadb
+            minutes: 250
+            bound: 13200
           - mode: cluster
-            minutes: 180
-            bound: 9000
+            minutes: 250
+            bound: 13200
+          - mode: cells
+            minutes: 230
+            bound: 12000
+          - mode: fuzz
+            minutes: 330
+            bound: 18000
     steps:
       # See the build job: recursive, for the nested node-ldapjs submodule,
       # which the launcher's preflight checks even with --no-build.
@@ -352,11 +371,18 @@ jobs:
       - name: Free disk
         run: .github/scripts/runner-host.sh free-disk
 
+      # Swap, and the runner's own processes kept out of the OOM killer's
+      # reach: see runner-host.sh. The `cluster` runner of run 43622250478
+      # stopped reporting 105 minutes in and was cancelled at its timeout
+      # with no step after it run, the fifth such loss.
+      - name: Keep the runner alive under memory pressure
+        run: .github/scripts/runner-host.sh harden-memory
+
       - name: Sample the runner's memory and disk
         run: nohup .github/scripts/runner-host.sh sample tests/report/runner/resources.log > /dev/null 2>&1 &
 
       # See the build job: the stack's third-party images (postgres, OpenBao,
-      # HAProxy, mailpit) come from the private mirror at `up`.
+      # HAProxy, mailpit, MariaDB) come from the private mirror at `up`.
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -376,7 +402,17 @@ jobs:
           STS_MODE_TIMEOUT: ${{ matrix.bound }}
           STS_SINGLE_NODE_MODE_TIMEOUT: ${{ matrix.bound }}
           STS_CLUSTER_MODE_TIMEOUT: ${{ matrix.bound }}
-        run: ./run-tests.sh --no-build --modes=${{ matrix.mode }} --protocol=only
+          STS_CELLS_MODE_TIMEOUT: ${{ matrix.bound }}
+          STS_FUZZ_MODE_TIMEOUT: ${{ matrix.bound }}
+        # The pulse is stopped here rather than left to the job's orphan
+        # clean-up, so that the step's end is the launcher's.
+        run: |
+          .github/scripts/runner-host.sh pulse &
+          pulsePid=$!
+          status=0
+          ./run-tests.sh --no-build --modes=${{ matrix.mode }} --protocol=only || status=$?
+          kill "${pulsePid}" 2> /dev/null || true
+          exit "${status}"
 
       # See the unit job.
       - name: Normalize report permissions
