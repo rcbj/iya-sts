@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5571** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5573** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -52,7 +52,7 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 108
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 52
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 54
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
@@ -301,7 +301,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0024` | The service refused to start: workers.dispatch names paths to hand to request workers but the process is not coordinating through a store, which would make workers answer from divergent private copies. | — |
 | `STS-WORKER-0025` | Not one request worker started, so every request is being handled in the front process. | — |
 | `STS-WORKER-0026` | Only some of the configured request workers started. | — |
-| `STS-WORKER-0027` | A request worker did not answer a read barrier in time, so the request was served from whatever that worker holds, possibly stale. | — |
+| `STS-WORKER-0027` | A request worker had not caught up after one read-barrier round (it did not answer within 5 s, or answered that its change pull was still running). The request keeps waiting, for up to workers.readBarrierTimeoutMs in all, and is refused (STS-WORKER-0053) rather than served stale if the worker never catches up. | — |
 | `STS-WORKER-0028` | A request matched workers.dispatch while a pool is configured but no request worker was serving, so it was refused rather than answered from the front process. | HTTP 503 (Retry-After: 5), plain text |
 | `STS-WORKER-0029` | A request worker's answer failed mid-stream, so the client's connection was destroyed with a truncated response. | connection reset (truncated response) |
 | `STS-WORKER-0030` | A request worker could not answer a dispatched request (it went away or the proxy connection failed). | HTTP 502, plain text (or a destroyed connection if headers were already sent) |
@@ -327,6 +327,8 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0050` | After giving up, the pool scheduled another attempt to start one worker, after workers.giveUpRetryMs (doubled after each failed attempt, and never longer than an hour). Until a worker is ready, requests stay in the front process, or the hosted surfaces stay on the protocol workers. | — |
 | `STS-WORKER-0051` | A request worker took longer than workers.startTimeoutMs to start and is still starting (#820). The pool stops waiting for it and does not replace it; it joins when it reports ready. Only after four times the limit is it reported as failed (STS-WORKER-0017) and replaced. | — |
 | `STS-WORKER-0052` | A request worker revoked something a refresh token rests on (a session, a token, a refresh family, a grant or an account) after the answer's headers had gone, so the front process could not file it for the refresh grant's wait before the client saw the answer (the review of #879). The revocation stands; a refresh routed to a worker that has not applied it may be answered until the workers converge. Logged at the first and every hundredth. | Nothing: the request is answered as it was |
+| `STS-WORKER-0053` | A dispatched request or operation was refused because its request worker had not caught up with the writes answered before it within workers.readBarrierTimeoutMs; answering from what that worker held could have been wrong. The worker's STS-STORE-0039 line says where its change pull's time went. | HTTP 503 (Retry-After: 5), plain text; an LDAP operation LDAP_UNAVAILABLE, a Kerberos message KDC_ERR_SVC_UNAVAILABLE |
+| `STS-WORKER-0054` | A request the front process answers itself was refused because that process had not caught up with the change log within workers.readBarrierTimeoutMs; answering from its own copy could have been wrong. | HTTP 503 (Retry-After: 5), plain text |
 
 ## STS-STORE
 
@@ -374,8 +376,8 @@ Raised from: persistence/.
 | `STS-STORE-0036` | The postgres LISTEN connection for change notifications could not connect; the poll still converges. | — |
 | `STS-STORE-0037` | The change log could not be read at startup, so this process runs uncoordinated and keeps retrying. | — |
 | `STS-STORE-0038` | A pull of other processes' changes from the change log failed; this process is behind until a retry succeeds. | — |
-| `STS-STORE-0039` | A read barrier gave up before catching up with the change log; the request is answered from this process's copy. | — |
-| `STS-STORE-0040` | A read barrier could not read the change log; the request is answered from this process's copy. | — |
+| `STS-STORE-0039` | A read barrier gave up before catching up with the change log and told its caller so; a request pool barrier asks again and refuses once workers.readBarrierTimeoutMs has passed. The line breaks the pull's time down: reading pages, the rows by kind, preparing, the event loop's turns, and the rest. | — |
+| `STS-STORE-0040` | A read barrier could not read the change log and told its caller it did not catch up; a request pool barrier asks again and refuses once workers.readBarrierTimeoutMs has passed. | — |
 | `STS-STORE-0041` | Preparing a page of replicated rows of one kind failed; they are applied one at a time. | — |
 | `STS-STORE-0042` | One replicated change could not be applied in this process; the rest of the page is unaffected. | — |
 | `STS-STORE-0043` | Clearing an applier's per-page replication state failed. | — |

@@ -2371,6 +2371,14 @@
     "en": "232dadd8bb312926",
     "text": "請求背景工作在回應之前，是否必須趕上透過其他背景工作所做的寫入。協調使背景工作在半秒到一秒內收斂，但這不是 read-your-write。`session`（預設）：在其位址中帶有工作階段 Cookie、集區 Cookie 或登入流程的請求，等待帶有相同內容的先前請求的寫入、不帶有其中任何一項的請求的每一次寫入，以及前端程序自己的寫入；不帶有其中任何一項的請求，例如來自用戶端伺服器的權杖請求、SCIM 或帶 bearer 權杖的管理 API 呼叫，會等待在它之前已回應的每一次寫入。因此瀏覽器會立即看到自己的寫入和每個後端通道的寫入，而另一個瀏覽器的寫入只有在背景工作收斂後才能看到。`global`：每個請求都等待在它之前已回應的每一次寫入，在負載下每個請求要多花數十毫秒。`off`：沒有請求等待，呼叫方可能找不到自己的寫入。`true` 表示 `session`，`false` 表示 `off`。對於介面集區（workers.surfaceCount），不得將其關閉。"
   },
+  "workers.readBarrierTimeoutMs|label": {
+    "en": "3b71b70cca1bcc7d",
+    "text": "讀取屏障等待時間（毫秒）"
+  },
+  "workers.readBarrierTimeoutMs|description": {
+    "en": "5de72cbc57b2e8dc",
+    "text": "當 workers.readYourWrite 要求時，一個請求總共可以等待多久，讓其請求 worker（或前端程序，對於它自己回應的請求）追上在它之前已回應的寫入。在追上之前，每五秒會再次詢問該 worker。超過這段等待時間後，請求會以 HTTP 503 和 Retry-After 被拒絕（LDAP、Kerberos 或 SPIFFE 操作則以其協定的無法使用回應拒絕），而不是以可能已經過時的副本回應。在硬體較慢、worker 套用一批寫入（一次全域登出、一次大量載入）可能需要更長時間的地方調高它；在快速拒絕比長時間等待更適合呼叫端的地方調低它。每個請求都會讀取。"
+  },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
     "text": "請求背景工作通訊端目錄"

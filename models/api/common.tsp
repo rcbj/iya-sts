@@ -867,7 +867,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithAtCredentialTypeDiscoveredAt {`at`?: string; `credentialType`?: string; `discoveredAt`?: numeric}
 
-@hoisted model WithWidthHeightFailed { `width`?: numeric; `height`?: numeric; `failed`?: NullableString }
+@hoisted model WithWidthHeightFailed { `width`?: numeric; `height`?: numeric; `failed`?: NullableString; @js(#{`description`:"Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444)."}) `verifiesCredentials`?: boolean }
 
 @hoisted model WithIdentifierAudienceRegistered {`identifier`?: string; `audience`?: string; `registered`?: boolean}
 

@@ -5296,6 +5296,32 @@ const SETTINGS = [
                  '`true` means `session` and `false` means `off`. It must ' +
                  'not be off for a surface pool (workers.surfaceCount).' },
 
+  // ---------------------------------------------------------------------
+  // HOW LONG A READ BARRIER MAY HOLD A REQUEST BEFORE IT IS REFUSED
+  // (2026-11-14). It was a hard-coded 5,000 ms after which the request was
+  // SERVED from what a behind worker had — a wrong answer, which
+  // request_pool.js's A BARRIER THAT RUNS OUT IS A REFUSAL argues against.
+  // The default is past the 22 s the slowest apply took in the run that
+  // found it; there is no 0, because "never wait" is the stale answer.
+  // ---------------------------------------------------------------------
+  { key: 'workers.readBarrierTimeoutMs', group: 'Global',
+    label: 'Read barrier wait (ms)',
+    env: 'STS_WORKERS_READ_BARRIER_TIMEOUT_MS', type: 'int', dflt: 30000,
+    min: 1000, max: 600000, runtime: true, perProcess: true,
+    description: 'How long a request may wait, in all, for its request ' +
+                 'worker (or the front process, for a request it answers ' +
+                 'itself) to catch up with the writes answered before it, ' +
+                 'when workers.readYourWrite says it must. The worker is ' +
+                 'asked again every five seconds until it has caught up. ' +
+                 'Past this wait the request is refused with HTTP 503 and ' +
+                 'Retry-After (an LDAP, Kerberos or SPIFFE operation with ' +
+                 'its protocol\'s unavailable answer) rather than answered ' +
+                 'from a copy that may be stale. Raise it where a worker ' +
+                 'can take longer to apply a burst of writes (a global ' +
+                 'logout, a bulk load) on slow hardware; lower it where a ' +
+                 'quick refusal suits the callers better than a long wait. ' +
+                 'Read for each request.' },
+
   { key: 'workers.socketDir', group: 'Global',
     label: 'Request worker socket directory',
     env: 'STS_WORKERS_SOCKET_DIR', type: 'string', dflt: '',

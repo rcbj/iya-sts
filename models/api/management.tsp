@@ -12610,7 +12610,16 @@ op `getGeolocation`(@js(#{`examples`:#["7d"]}) `parameters/0/schema`: "live" | "
     };
     `drawing`?: {
       `picture`?: {`svg`?: string; `width`?: numeric; `height`?: numeric};
-      `legend`?: ({`colour`?: string; `from`?: numeric; `to`?: numeric})[]
+      `legend`?: ({`colour`?: string; `from`?: numeric; `to`?: numeric})[];
+      @js(#{`description`:"The map as data, which the console projects and draws over Natural Earth's outlines (`/admin/geo-outlines.json`) with the code that draws `picture` here (#444): the level, the continent's slug or the country's code, each counted country's step on the scale and what it says, the labels and the cities, each where it is."}) `map`?: {
+        `level`?: string;
+        `continent`?: string;
+        `iso`?: string;
+        @js(#{`description`:"Each counted country by ISO 3166-1 code: its step on the scale (1 to 5) and its tooltip."}) `areas`?: Record<{`bucket`?: integer; `title`?: string; `href`?: string}>;
+        `labels`?: ({`lon`?: numeric; `lat`?: numeric; `text`?: string; `href`?: string})[];
+        `cities`?: ({`lon`?: numeric; `lat`?: numeric; `name`?: string; `people`?: integer; `title`?: string})[];
+        `title`?: string
+      }
     };
     `noDataColour`?: string
   },

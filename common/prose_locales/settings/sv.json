@@ -2371,6 +2371,14 @@
     "en": "232dadd8bb312926",
     "text": "Om en begäransarbetare måste komma ikapp med skrivningar som gjorts genom de andra arbetarna innan den svarar. Koordinering får arbetarna att konvergera på en halv sekund till en sekund, och det är inte read-your-write. `session` (standard): en begäran som bär en sessionskaka, poolkakan eller ett inloggningsflöde i sin adress väntar på skrivningarna från tidigare begäranden som bar samma sak, på varje skrivning från en begäran som inte bar något av dem, och på frontprocessens egna skrivningar; en begäran som inte bär något av dem, till exempel en tokenbegäran från en klients server, SCIM eller ett anrop till hanterings-API:t med en bearer-token, väntar på varje skrivning som besvarats före den. En webbläsare ser alltså direkt sina egna skrivningar och varje bakkanals, och en annan webbläsares först när arbetarna har konvergerat. `global`: varje begäran väntar på varje skrivning som besvarats före den, vilket kostar tiotals millisekunder per begäran under last. `off`: ingen begäran väntar, och en anropare kanske inte hittar sin egen skrivning. `true` betyder `session` och `false` betyder `off`. Den får inte vara avstängd för en ytpool (workers.surfaceCount)."
   },
+  "workers.readBarrierTimeoutMs|label": {
+    "en": "3b71b70cca1bcc7d",
+    "text": "Väntetid för läsbarriären (ms)"
+  },
+  "workers.readBarrierTimeoutMs|description": {
+    "en": "5de72cbc57b2e8dc",
+    "text": "Hur länge en begäran totalt får vänta på att dess request worker (eller frontprocessen, för en begäran som den själv besvarar) ska komma ikapp med de skrivningar som besvarats före den, när workers.readYourWrite kräver det. Workern tillfrågas igen var femte sekund tills den har kommit ikapp. Efter denna väntetid avvisas begäran med HTTP 503 och Retry-After (en LDAP-, Kerberos- eller SPIFFE-operation med sitt protokolls svar om att tjänsten inte är tillgänglig) i stället för att besvaras från en kopia som kan vara inaktuell. Höj den där en worker kan behöva längre tid för att tillämpa en skur av skrivningar (en global utloggning, en massinläsning) på långsam hårdvara; sänk den där ett snabbt avslag passar anroparna bättre än en lång väntan. Läses för varje begäran."
+  },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
     "text": "Socketkatalog för begärandearbetare"

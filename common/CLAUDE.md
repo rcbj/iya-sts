@@ -2275,8 +2275,9 @@ each mode guarantees, exactly:
   the workers converge** (0.5–1 s). A suite job that writes as one client and
   reads as another at once needs `global`.
 * **Kept as they were**: the reaper, the 2,000 ms ticket bound and the
-  5,000 ms barrier bound (a keyed waiter times out and reaps exactly as a
-  global one), client-gone handling, both pools, and `runOperation()` with
+  barrier bound (a keyed waiter times out and reaps exactly as a
+  global one — since 2026-11-14 that bound is `workers.readBarrierTimeoutMs`
+  and a reader past it is REFUSED, below), client-gone handling, both pools, and `runOperation()` with
   #626's narrowing, which still waits globally.
 * **Bounded without a timer**: at most 20,000 keys, least recently used
   first; each dispatch drops up to four of the oldest that hold no ticket and
@@ -2286,6 +2287,48 @@ each mode guarantees, exactly:
   read. A sync round now stamps the worker with the generation at the round's
   START (`startSyncRound()`), which the sharing rule already allowed, so a
   keyed round leaves no worker looking behind. `tests/request_ryw_session.js`.
+
+**A RUN-OUT BARRIER IS A REFUSAL, NEVER A STALE ANSWER (2026-11-14).**
+The barrier gave up at a hard-coded 5,000 ms and SERVED the request "from what
+that worker has", on the argument that reaching it meant the store was unwell.
+GitHub Actions run 43622250478 (single-node, a slower runner) disproved it: a
+worker spent 7–22 s applying a global logout's 8,000 minted rows, missed
+fifteen barriers (STS-WORKER-0027), and `sts_realm_administrators` got a 404
+for a realm created a moment before while `sts_scope_policy` got a SCIM 403
+for a scope just declared. The store was well; the worker was behind — the
+case this repository's rule names: dispatch without coordination answers
+WRONGLY rather than slowly. **A second path served stale silently**: the
+worker answers a round with `syncNow()`'s result, which gives up at 4.6 s
+with `caughtUp: false`, and the front read only `ok` — so it stamped the
+worker current, proxied the request, and sent every later reader at that
+generation there with no barrier at all. Now:
+
+* **A round counts only when the worker says it caught up**
+  (`roundCaughtUp()`: `ok`, and not `caughtUp: false` from a store that
+  coordinates); `request_worker.ts` sends `coordinating` beside `caughtUp`.
+* **A reader asks again**, a round at a time (still one round per worker
+  shared by every reader it covers; BARRIER_ROUND_MS, 5 s, bounds one reply
+  and decides no answer), for up to `workers.readBarrierTimeoutMs` (30 s by
+  default, read per request, 1,000 to 600,000; no 0, because "never wait" is
+  the stale answer). Each missed round is STS-WORKER-0027, sparingly.
+* **Then it is refused**: `proxyAfterBarrier()` answers 503 with
+  `Retry-After: 5` (STS-WORKER-0053) and drops the ticket, since no byte
+  reached a worker; `runOperation()` rejects with the same code, which LDAP,
+  the KDC and SPIFFE already answer as their protocol's unavailable reply.
+  A client that left while it waited is handed to `proxy()`, which drops it.
+* **The front's own kept requests** (`catchUpHere()`) call `syncNow()` until
+  it says it caught up and refuse past the same bound (STS-WORKER-0054).
+* **Not sent to another worker that is current**, which was weighed: a
+  request's worker is chosen by affinity and a pin is honoured because
+  worker-local state rides on it (`oidc_rp.ts`'s back channel), the ticket
+  wait exempts a worker's own answered writes so another worker would owe a
+  stricter wait this request has not done, and the other workers are
+  applying the same burst.
+* `stats().barrier` has `refused`, `roundsMissed` and `timeoutMs`.
+  `tests/read_barrier_slow_apply.js` holds it: a real replication instance
+  whose `prepare` outlasts syncNow()'s deadline, behind the real `proxy()`
+  over a unix socket — the answer is the new value, not the old one — and a
+  worker that never answers refused 503 with nothing proxied.
 
 **WHERE A DISPATCHED REQUEST'S TIME GOES (2026-10-22, #820)**:
 `common/request_phases.js`.

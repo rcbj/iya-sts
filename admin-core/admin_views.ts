@@ -5753,6 +5753,14 @@ class AdminViews {
   // server), and the markup of the drawing. So the answer is the page's own
   // JSON — the graph, the filter, the counts — with `looks` and `svg` added.
   //
+  // SINCE #444's PHASE 2b (2026-11-14) THE BROWSER LAYS IT OUT: the console
+  // hands `nodes`, `edges` (`graph` on the other six pictures) and `looks` to
+  // `admin-ui/web_delegation_map.ts`, the code `delegationMap.render()` runs
+  // here, so the one fact about the realm that code needs is answered as
+  // data — `drawing.verifiesCredentials`, the mode's answer, which one
+  // tooltip sentence turns on. `svg` is still answered, drawn by the same
+  // code, for whoever reads it; the console no longer does.
+  //
   // IT IS THE SAME FOUR CALLS THE PAGE'S ROUTE MAKES, in its order, and
   // deliberately not yet the route's own source of them: the route is left as
   // it is until its page is converted (#446 step 3), when both will be this.
@@ -5788,7 +5796,8 @@ class AdminViews {
       held: view.summary.held,
       summary: view.summary,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks,
       label: label,
       svg: drawn.svg
@@ -5861,7 +5870,8 @@ class AdminViews {
       acts: acts, graph: graph,
       held: summary.held, maxRecords: summary.maxRecords,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
@@ -5946,7 +5956,8 @@ class AdminViews {
       held: summary.held, maxRecords: summary.maxRecords,
       roles: delegation.ROLES,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
@@ -6069,7 +6080,8 @@ class AdminViews {
       // False when `users` is not every identity (#820): the reader is told.
       usersComplete: listed.complete,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
@@ -6154,7 +6166,8 @@ class AdminViews {
       graph: graph,
       maxGenerations: credentialGraph.MAX_GENERATIONS,
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     const credential = model.credential;
@@ -6302,7 +6315,8 @@ class AdminViews {
       groupCounts: groups.counts,
       groupsPaging: this.pagingJson(groupPage.paging),
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
@@ -6359,7 +6373,8 @@ class AdminViews {
       this.permissionGroupsView(query || {}, permissions), {
         asked: asked, graph: graph,
         drawing: { width: drawn.width, height: drawn.height,
-                   failed: drawn.failed || null },
+                   failed: drawn.failed || null,
+                   verifiesCredentials: mode.verifiesCredentials() },
         looks: look.looks, label: label, svg: drawn.svg
       });
     if (!(options && options.links === false)) {
@@ -6634,6 +6649,15 @@ class AdminViews {
   // on the server. The page's own JSON, with the vocabulary its filter
   // offers, the drawing, its size, and the key — markup drawn by the
   // diagram's own renderer, as `delegationMapKey()` is.
+  //
+  // THE BROWSER LAYS IT OUT SINCE #444's PHASE 2b (2026-11-14), with
+  // `admin-ui/web_federation_diagram.ts`, the code `render()` runs here. So
+  // the answer carries everything that code reads off the graph: each node's
+  // `realm` and `realmName` (the hexagon) or `application` and `peer` (a
+  // partner), each edge's relationship row by its `relationship` (in
+  // `relationships`), where each box links (`looks`, as the delegation
+  // pictures answer it), and the realm's mode (`drawing.verifiesCredentials`).
+  // `svg` is still answered, drawn by the same code.
   // ---------------------------------------------------------------------------
   /**
    * Builds `/admin/federation/map`'s answer.
@@ -6665,8 +6689,17 @@ class AdminViews {
       empty: graph.empty, filtered: graph.filtered,
       relationships: graph.relationships,
       nodes: graph.nodes.map(function (node) {
-        return { id: node.id, kind: node.kind, label: node.label,
-                 relationships: node.relationships || [] };
+        const one: any = { id: node.id, kind: node.kind, label: node.label,
+                           relationships: node.relationships || [] };
+        // What the drawing reads off a box beyond those (#444 phase 2b),
+        // only where the graph has it.
+        ['realm', 'realmName', 'application', 'peer'].forEach(
+          function (name) {
+            if (typeof node[name] === 'string') {
+              one[name] = node[name];
+            }
+          });
+        return one;
       }),
       edges: graph.edges.map(function (edge) {
         return { id: edge.id, from: edge.from, to: edge.to,
@@ -6676,8 +6709,9 @@ class AdminViews {
                  use: edge.use || null };
       }),
       drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
-      label: label, svg: drawn.svg
+                 failed: drawn.failed || null,
+                 verifiesCredentials: mode.verifiesCredentials() },
+      looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
       model.roles = federation.ROLES;

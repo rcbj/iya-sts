@@ -5142,6 +5142,13 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'The console\'s stylesheet',
     specs: [],
     what: 'NON-SPEC. The console\'s one stylesheet (#446).' },
+  { path: '/admin/geo-outlines.json', group: 'Admin',
+    name: 'The country outlines of the console\'s map',
+    specs: [],
+    what: 'NON-SPEC. Natural Earth\'s public-domain 1:50m countries, as ' +
+          'admin-ui/natural_earth/countries.json ships them, which the ' +
+          'console fetches once and draws Monitoring → Geolocation\'s ' +
+          'map over in the browser (#444). Public, like the script.' },
   { path: '/portal', group: 'User portal',
     name: 'A person\'s own account',
     specs: [],

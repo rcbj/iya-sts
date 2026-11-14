@@ -303,8 +303,6 @@ async function thePageAndTheApiAgree(consoleClient) {
     const readStarted = Date.now();
     json = await report();
     pageJson = await consoleClient.get("/admin/scheduler?format=json&per=200");
-    readEndedMs = Date.now();
-    readGapMs = readEndedMs - readStarted;
     // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of
     // all the API's jobs with one page of the console's would fail on a
     // service with more than 200 job rows, about pages drawing exactly what
@@ -317,6 +315,20 @@ async function thePageAndTheApiAgree(consoleClient) {
       pageJson.body.jobs = pageJson.body.jobs.concat((more.body || {}).jobs ||
                                                      []);
     }
+    // THE READS END WITH THE PAGE'S LAST JSON PAGE, NOT ITS FIRST (run 29,
+    // memory, 2026-11-14). The nextRunAt check compares every job of both
+    // sides, and a job on page two or later of the console's JSON was read
+    // by that later request. The stamp was taken after page one, so
+    // process.memory-report (5 min, a per-process job whose nextRunAt is
+    // the next slot boundary after the instant asked, `slotAt()`) read
+    // 21:25:00 on the API, before the boundary, and 21:30:00 on a later
+    // page of the console's JSON, fetched after it — while readEndedMs said
+    // 21:24:56.6, so `earlier <= readEndedMs` was false and a correct pair
+    // of answers failed. The service was right both times; the window was
+    // short. The HTML pages below are not compared by that check, so they
+    // stay outside it.
+    readEndedMs = Date.now();
+    readGapMs = readEndedMs - readStarted;
     // **`per=200` HERE TOO, AND IT IS THE POINT RATHER THAN A CONVENIENCE**
     // (2026-09-22). The jobs table is PAGED now — `admin-ui/CLAUDE.md`, *every
     // list that can grow without a bound is paged*; a REALM job has a row per

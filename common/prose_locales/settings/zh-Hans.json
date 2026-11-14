@@ -2371,6 +2371,14 @@
     "en": "232dadd8bb312926",
     "text": "请求工作线程在响应之前，是否必须赶上通过其他工作线程所做的写入。协调使工作线程在半秒到一秒内收敛，但这不是 read-your-write。`session`（默认）：在其地址中带有会话 Cookie、池 Cookie 或登录流程的请求，等待带有相同内容的先前请求的写入、不带有其中任何一项的请求的每一次写入，以及前端进程自己的写入；不带有其中任何一项的请求，例如来自客户端服务器的令牌请求、SCIM 或带 bearer 令牌的管理 API 调用，会等待在它之前已应答的每一次写入。因此浏览器会立即看到自己的写入和每个后端通道的写入，而另一个浏览器的写入只有在工作线程收敛后才能看到。`global`：每个请求都等待在它之前已应答的每一次写入，在负载下每个请求要多花几十毫秒。`off`：没有请求等待，调用方可能找不到自己的写入。`true` 表示 `session`，`false` 表示 `off`。对于界面池（workers.surfaceCount），不得将其关闭。"
   },
+  "workers.readBarrierTimeoutMs|label": {
+    "en": "3b71b70cca1bcc7d",
+    "text": "读屏障等待时间（毫秒）"
+  },
+  "workers.readBarrierTimeoutMs|description": {
+    "en": "5de72cbc57b2e8dc",
+    "text": "当 workers.readYourWrite 要求时，一个请求总共可以等待多长时间，让其请求 worker（或者前端进程，对于它自己应答的请求）追上在它之前已应答的写入。在追上之前，每五秒会再次询问该 worker。超过这一等待时间后，请求会以 HTTP 503 和 Retry-After 被拒绝（LDAP、Kerberos 或 SPIFFE 操作则以其协议的不可用应答拒绝），而不是用可能已经过时的副本来应答。在硬件较慢、worker 应用一批写入（一次全局注销、一次批量加载）可能需要更长时间的地方调高它；在快速拒绝比长时间等待更适合调用方的地方调低它。每个请求都会读取。"
+  },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
     "text": "请求工作线程套接字目录"
