@@ -934,7 +934,17 @@ impl Settings {
 
     /// The value as one line.
     pub fn text(&self, key: Key) -> String {
-        Settings::row_of(key.as_str()).text(&self.value(key))
+        self.text_named(key.as_str())
+    }
+
+    /// `sourceOf()` for a key given as text, already known to be a row.
+    pub fn source_named(&self, key: &str) -> Source {
+        self.resolve(key).1
+    }
+
+    /// `text()` for a key given as text, already known to be a row.
+    pub fn text_named(&self, key: &str) -> String {
+        Settings::row_of(key).text(&self.value_of(key))
     }
 
     /// The management API's base URL as the process knows it without a
