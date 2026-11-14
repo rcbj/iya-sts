@@ -17,6 +17,9 @@
 //! serves. Rust never loops: it reports [`Fault::Stalled`] where Node
 //! would hang, and the front treats it as a destroyed connection. That
 //! difference is deliberate; `tests/node_vectors.rs` pins every case.
+//!
+//! Its functions are a hot path — every refusal of every decode — and
+//! carry no span (rust/DESIGN.md D3, section 4.5).
 
 use std::fmt;
 

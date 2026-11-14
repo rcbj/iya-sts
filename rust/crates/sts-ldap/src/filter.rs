@@ -19,9 +19,10 @@
 //! byte above 0x7f into the Latin-1 character of that code point.
 //!
 //! The string parser counts positions in UTF-16 code units, as JavaScript
-//! does; the BER reader is [`crate::ber::Reader`]. Its functions are a hot
-//! path — every search request — and carry no span (rust/DESIGN.md D3,
-//! section 4.5).
+//! does; the BER reader is [`crate::ber::Reader`].
+//!
+//! Its functions are a hot path — every search request — and carry no
+//! span (rust/DESIGN.md D3, section 4.5).
 
 use crate::ber::{Reader, Writer};
 use crate::fault::{pass_limit, too_deep, Fault, Outcome, MAX_FILTER_DEPTH};
