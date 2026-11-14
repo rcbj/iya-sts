@@ -228,8 +228,15 @@ function theRemotePep(t) {
   t.check(/AuthorizationRequest::default\(\)/.test(service),
           'E1. the remote PEP builds its request through the ' +
           'AuthorizationRequest of rust/crates/sts-xacml');
-  const builder = fs.readFileSync(
+  const source = fs.readFileSync(
     path.join(ROOT, 'rust/crates/sts-xacml/src/builder.rs'), 'utf8');
+  // ITS `vocabulary` MODULE, and the whole of it since #444's phase 2b:
+  // the module declares every identifier VOCABULARY holds, so the rest of
+  // the file is free to declare constants of its own (the FGA and UMA
+  // action-ids) that are not identifiers of facts.
+  const start = source.indexOf('pub mod vocabulary {');
+  const end = start < 0 ? -1 : source.indexOf('\n}\n', start);
+  const builder = start < 0 || end < 0 ? '' : source.slice(start, end);
   const rust = {};
   const pattern = /pub const ([A-Z_]+): &str =\s*"([^"]+)";/g;
   let found = pattern.exec(builder);
@@ -240,10 +247,15 @@ function theRemotePep(t) {
   const V = xacmlRequest.VOCABULARY;
   const differing = Object.keys(rust).filter(function (name) {
     return V[name] !== rust[name];
-  });
+  }).concat(Object.keys(V).filter(function (name) {
+    return !(name in rust);
+  }).map(function (name) {
+    return name + ' (not declared)';
+  }));
   t.check(Object.keys(rust).length >= 10 && differing.length === 0,
-          'E2. every identifier the Rust builder declares is spelt as ' +
-          'VOCABULARY spells it', differing.join(', '));
+          'E2. the Rust builder\'s vocabulary declares every identifier ' +
+          'VOCABULARY holds, spelt as VOCABULARY spells it',
+          differing.join(', '));
   log.debug("Leaving theRemotePep().");
 }
 

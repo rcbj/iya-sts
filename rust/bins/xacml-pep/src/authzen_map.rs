@@ -524,6 +524,9 @@ pub fn request(evaluation: &Evaluation, trusted: &Trusted) -> Request {
         application: trusted.application.to_string(),
         supplied: evaluation.supplied.clone(),
         attributes: evaluation.attributes.clone(),
+        // An approved access request is the service's to carry (#1180);
+        // this edge PDP keeps no approvals.
+        approval: None,
     };
     AuthorizationRequest::default().authzen(&facts).build()
 }
