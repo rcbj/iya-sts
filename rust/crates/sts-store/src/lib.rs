@@ -25,6 +25,7 @@ pub mod memory;
 pub mod merge;
 pub mod minted;
 pub mod model;
+pub mod origin;
 pub mod persistence;
 pub mod postgres;
 pub mod replication;

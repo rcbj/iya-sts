@@ -202,6 +202,7 @@ impl SessionIndex {
     /// `sessionIndexParams()`: what is written, an expiry that is not a
     /// positive number kept SQL NULL (`Number(null)` is 0, which would
     /// publish a session as already expired).
+    // Hot path (every row a flush writes): no span.
     pub fn params(&self) -> SessionIndex {
         SessionIndex {
             expires_at: self.expires_at.filter(|e| *e > 0),
@@ -212,6 +213,7 @@ impl SessionIndex {
     }
 
     /// The completion mark's row (`SESSION_INDEX_MARK`).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn mark() -> SessionIndex {
         SessionIndex {
             chosen: false,
@@ -250,6 +252,7 @@ pub struct IndexHooks {
 
 impl IndexHooks {
     /// The sign-on session store's: [`SessionIndex::of`].
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn sessions() -> IndexHooks {
         IndexHooks {
             index_of: Some(Arc::new(SessionIndex::of)),
@@ -258,11 +261,13 @@ impl IndexHooks {
     }
 
     /// `isIndexed()`: whether a deleted row has index rows to remove.
+    // Hot path (every row a flush writes): no span.
     pub fn indexed(&self) -> bool {
         self.lookups_of.is_some() || self.sort_of.is_some()
     }
 
     /// `sortAtFor()`: the sort value as a whole number, or `None`.
+    // Hot path (every row a flush writes): no span.
     pub fn sort_at(&self, value: &Json, key: &str) -> Option<i64> {
         let answer = self.sort_of.as_ref()?(value, key)?;
         let n = match &answer {
@@ -275,6 +280,7 @@ impl IndexHooks {
 
     /// `indexKeysFor()`: the digests a flush files the row under, an empty
     /// list for a store that only sorts, `None` for neither.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn lookups(
         &self,
         keys: &DataKeys,
@@ -306,6 +312,7 @@ impl IndexHooks {
 
 /// The index rows one upsert files (`ixnew_*`): each lookup digest once,
 /// and the sort row where there is a sort value.
+// Hot path (every row a flush writes): no span.
 pub fn filed(
     handle: &str,
     realm: &str,

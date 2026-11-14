@@ -58,6 +58,10 @@ use crate::merge::{merge_entry, Outcome};
 use crate::model::{
     DirectoryChange, DirectoryOutcome, DirectoryUpsert, StoredEntry,
 };
+use crate::origin::{
+    fence_lock_name, fenced, AdoptOptions, Adopted, Holder, Origin,
+    OriginClaim, OriginEngine, ScopeClaim, ORIGIN_SCOPE,
+};
 use crate::schema::POSTGRES;
 use crate::shadow::{AppconfigDelta, RealmsDelta};
 use crate::side::{filed, IndexRow, SessionIndex, SESSIONS_HANDLE};
@@ -174,6 +178,20 @@ const CLAIM_WRITE: &str = crate::written!(
     expires_at
 );
 
+/// The triggers that keep the directory's counts (`postgres/schema.sql`).
+const COUNT_TRIGGERS: [&str; 10] = [
+    "sts_ldap_entries_count_insert",
+    "sts_ldap_entries_count_update",
+    "sts_ldap_entries_count_delete",
+    "sts_ldap_entries_count_truncate",
+    "sts_ldap_count_deltas_fold_sharded",
+    "sts_ldap_entries_dek_insert",
+    "sts_ldap_entries_dek_update",
+    "sts_ldap_entries_dek_delete",
+    "sts_ldap_entries_dek_truncate",
+    "sts_ldap_dek_deltas_fold_sharded",
+];
+
 /// `sts_sessions`' fifteen columns (`SESSION_INDEX_UPSERT`).
 pub(crate) const SESSION_COLUMNS: &str = crate::written!(
     POSTGRES,
@@ -213,8 +231,9 @@ fn err(e: impl std::fmt::Display) -> StoreError {
 /// The postgres store.
 pub struct PostgresDriver {
     pool: Pool,
-    /// This process's name in the change log.
-    origin: String,
+    /// This process's name in the change log, and the claim on a stable
+    /// one (`origin.rs`).
+    origin: Origin,
     /// The data keys entries are sealed under (#391), adopted when the
     /// keystore starts; held weakly, because the keystore holds this
     /// driver. Until then, and where nothing durable seals, the plaintext
@@ -260,16 +279,9 @@ impl PostgresDriver {
             .max_size(pool_max.max(2))
             .build()
             .map_err(err)?;
-        let mut id = [0u8; 9];
-        openssl::rand::rand_bytes(&mut id).map_err(err)?;
-        let origin = format!(
-            "rs-{}-{}",
-            std::process::id(),
-            id.iter().map(|b| format!("{:02x}", b)).collect::<String>()
-        );
         Ok(PostgresDriver {
             pool,
-            origin,
+            origin: Origin::new()?,
             keys: std::sync::RwLock::new(std::sync::Weak::new()),
         })
     }
@@ -293,7 +305,7 @@ impl PostgresDriver {
                  $3::text[], $4::text[]) WITH ORDINALITY AS u(k, r, y, n) ORDER BY n",
                 change_write = CHANGE_WRITE
             ),
-                &[&self.origin, &kinds, &realms, &keys],
+                &[&self.origin.id(), &kinds, &realms, &keys],
             )
             .await
             .map_err(err)?;
@@ -301,7 +313,7 @@ impl PostgresDriver {
         let mut kinds: Vec<&str> = rows.iter().map(|r| r.0).collect();
         kinds.dedup();
         let payload =
-            json!({ "from": self.origin, "kinds": kinds, "rows": rows.len() })
+            json!({ "from": self.origin.id(), "kinds": kinds, "rows": rows.len() })
                 .to_string();
         tx.execute("SELECT pg_notify($1, $2)", &[&CHANNEL, &payload])
             .await
@@ -572,6 +584,7 @@ impl PostgresDriver {
 
 /// What the store lacks of the model: a table named once, a column as
 /// `table.column`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub(crate) fn missing_of(
     schema: &crate::schema::Schema,
     held: &std::collections::HashSet<(String, String)>,
@@ -650,6 +663,7 @@ impl Driver for PostgresDriver {
         Box::pin(async move {
             let mut client = self.client().await?;
             let tx = client.transaction().await.map_err(err)?;
+            self.check_origin_fence(&tx).await?;
             tx.execute(
                 &format!("INSERT INTO sts_keys ({key_write}) VALUES ($1, $2, now()) ON CONFLICT (realm) DO \
                  UPDATE SET material = EXCLUDED.material, written_at = now()",
@@ -740,6 +754,7 @@ impl Driver for PostgresDriver {
             let mut decided = MintedDecided::default();
             let mut client = self.client().await?;
             let tx = client.transaction().await.map_err(err)?;
+            self.check_origin_fence(&tx).await?;
             let mut changes: Vec<(String, String, String)> = Vec::new();
             for (mut row, upsert) in statements {
                 let change_key = format!(
@@ -1035,6 +1050,7 @@ impl Driver for PostgresDriver {
         Box::pin(async move {
             let mut client = self.client().await?;
             let tx = client.transaction().await.map_err(err)?;
+            self.check_origin_fence(&tx).await?;
             let current: Option<String> = tx
                 .query_opt(
                     "SELECT material FROM sts_keys WHERE realm = $1 FOR UPDATE",
@@ -1119,6 +1135,34 @@ impl Driver for PostgresDriver {
                      unqualified, and the script sets it on the database.",
                     tag(codes::STS_STORE_0029),
                     missing.join(", ")
+                )));
+            }
+            // THE COUNTS ARE THE DATABASE'S ON THIS ENGINE (#618, #623):
+            // `sts_ldap_counts` and `sts_ldap_dek_counts` are kept by the
+            // statement triggers `postgres/schema.sql` installs, and this
+            // driver writes entries counting on them, as Node does. Node's
+            // open() installs a missing one where its role may; this runtime
+            // changes no schema, so a store without them is refused.
+            let triggers = client
+                .query(
+                    "SELECT tgname::text FROM pg_trigger WHERE NOT tgisinternal AND tgname = ANY($1::text[])",
+                    &[&COUNT_TRIGGERS.as_slice()],
+                )
+                .await
+                .map_err(err)?;
+            let found: Vec<String> =
+                triggers.iter().map(|r| r.get(0)).collect();
+            let absent: Vec<&str> = COUNT_TRIGGERS
+                .iter()
+                .filter(|t| !found.iter().any(|f| f == *t))
+                .copied()
+                .collect();
+            if !absent.is_empty() {
+                return Err(StoreError::new(format!(
+                    "{}persistence: the postgres store could not be opened — it is missing the counting \
+                     trigger(s) {}. Build them with postgres/schema.sql, run by the owner of the database.",
+                    tag(codes::STS_STORE_0029),
+                    absent.join(", ")
                 )));
             }
             // A DIRECTORY TABLE FROM BEFORE SCHEMA VERSION 14 has its lookups
@@ -1292,6 +1336,7 @@ impl Driver for PostgresDriver {
             }
             let mut client = self.client().await?;
             let tx = client.transaction().await.map_err(err)?;
+            self.check_origin_fence(&tx).await?;
             let id = |realm: &str, key: &str| format!("{}\n{}", realm, key);
             // Every row this flush changes is locked, in key order.
             let mut locking: Vec<(String, String)> = change
@@ -1464,6 +1509,7 @@ impl PostgresDriver {
     ) -> StoreResult<()> {
         let mut client = self.client().await?;
         let tx = client.transaction().await.map_err(err)?;
+        self.check_origin_fence(&tx).await?;
         for id in &delta.removed {
             tx.execute("DELETE FROM sts_realms WHERE id = $1", &[id])
                 .await
@@ -1518,6 +1564,7 @@ impl PostgresDriver {
     async fn write_overrides(&self, delta: &AppconfigDelta) -> StoreResult<()> {
         let mut client = self.client().await?;
         let tx = client.transaction().await.map_err(err)?;
+        self.check_origin_fence(&tx).await?;
         if !delta.cleared.is_empty() {
             tx.execute(
                 "DELETE FROM sts_appconfig WHERE key = ANY($1::text[])",
@@ -1820,7 +1867,7 @@ fn change_row(r: &Row) -> ChangeRow {
 
 impl ChangeLog for PostgresDriver {
     fn origin(&self) -> String {
-        self.origin.clone()
+        self.origin.id()
     }
 
     fn latest_change_seq(&self) -> StoreFuture<'_, i64> {
@@ -1894,6 +1941,309 @@ impl ChangeLog for PostgresDriver {
                     ))
                 }),
             }
+        })
+    }
+}
+
+impl PostgresDriver {
+    /// `checkOriginFence()`: in every write transaction, before it writes —
+    /// the fence lock share-locked, then the claim read. A lock that is
+    /// gone is a successor's claim; a claim that lapsed under our lock is
+    /// extended on another connection and read again.
+    async fn check_origin_fence(
+        &self,
+        tx: &deadpool_postgres::Transaction<'_>,
+    ) -> StoreResult<()> {
+        let Some(held) = self.origin.held() else {
+            return Ok(());
+        };
+        let lock = fence_lock_name("origin", &held.key, &held.reservation);
+        let locked = tx
+            .query_opt(
+                "SELECT 1 FROM sts_cluster_locks WHERE name = $1 FOR SHARE",
+                &[&lock],
+            )
+            .await
+            .map_err(err)?;
+        if locked.is_none() {
+            return Err(fenced(&format!(
+                "this process no longer holds its origin {} (its fence lock is gone, so another process took \
+                 the claim), so it may not write.",
+                held.key
+            )));
+        }
+        let live = format!(
+            "SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = '' AND key = $2 AND reservation = \
+             $3 AND expires_at > {}",
+            DB_NOW
+        );
+        let args: [&(dyn tokio_postgres::types::ToSql + Sync); 3] =
+            [&ORIGIN_SCOPE, &held.key, &held.reservation];
+        if tx.query_opt(&live, &args).await.map_err(err)?.is_some() {
+            return Ok(());
+        }
+        // LAPSED IS NOT TAKEN: the lock is still ours, so nobody wrote
+        // under this origin in between.
+        if !OriginEngine::reassert(self, &held).await? {
+            return Err(fenced(&format!(
+                "this process no longer holds its origin {} (another process took it after the claim \
+                 lapsed), so it may not write.",
+                held.key
+            )));
+        }
+        if tx.query_opt(&live, &args).await.map_err(err)?.is_none() {
+            return Err(fenced(&format!(
+                "this process no longer holds its origin {} (the claim was not live after it was extended), \
+                 so it may not write.",
+                held.key
+            )));
+        }
+        Ok(())
+    }
+
+    /// `swapOriginLock()`: this reservation's fence lock in, every other
+    /// of the key's out.
+    async fn swap_origin_lock(
+        tx: &deadpool_postgres::Transaction<'_>,
+        claim: &OriginClaim,
+    ) -> StoreResult<()> {
+        let name = fence_lock_name("origin", &claim.key, &claim.reservation);
+        let prefix = format!("fence:origin:{}:", claim.key);
+        tx.execute(
+            "INSERT INTO sts_cluster_locks (name) VALUES ($1) ON CONFLICT (name) DO NOTHING",
+            &[&name],
+        )
+        .await
+        .map_err(err)?;
+        tx.execute(
+            "DELETE FROM sts_cluster_locks WHERE left(name, char_length($1)) = $1 AND name <> $2",
+            &[&prefix, &name],
+        )
+        .await
+        .map_err(err)?;
+        Ok(())
+    }
+
+    /// `adoptOrigin()` (`origin.rs`).
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn adopt_origin(
+        &self,
+        opts: &AdoptOptions,
+    ) -> StoreResult<Adopted> {
+        self.origin.adopt(self, opts).await
+    }
+
+    /// `renewOrigin()`.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn renew_origin(&self, ttl_ms: i64) -> StoreResult<bool> {
+        self.origin.renew(self, ttl_ms).await
+    }
+
+    /// `releaseOrigin()`.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn release_origin(&self) -> StoreResult<bool> {
+        self.origin.release(self).await
+    }
+
+    /// `claimsOfScope()` (#884): the live claims of one scope, every realm.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn claims_of_scope(
+        &self,
+        scope: &str,
+    ) -> StoreResult<Vec<ScopeClaim>> {
+        let rows = self
+            .client()
+            .await?
+            .query(
+                &format!(
+                    "SELECT scope, realm, key, reservation, origin FROM sts_cluster_claims WHERE scope = $1 AND \
+                     expires_at > {}",
+                    DB_NOW
+                ),
+                &[&scope],
+            )
+            .await
+            .map_err(err)?;
+        Ok(rows
+            .iter()
+            .map(|r| ScopeClaim {
+                scope: r.get("scope"),
+                realm: r.get("realm"),
+                key: r.get("key"),
+                reservation: r.get("reservation"),
+                origin: r
+                    .get::<_, Option<String>>("origin")
+                    .unwrap_or_default(),
+            })
+            .collect())
+    }
+}
+
+impl OriginEngine for PostgresDriver {
+    fn claim_origin<'a>(
+        &'a self,
+        claim: &'a OriginClaim,
+        holder: &'a str,
+    ) -> StoreFuture<'a, Result<(), Holder>> {
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            let tx = client.transaction().await.map_err(err)?;
+            let won = tx
+                .query_opt(
+                    &format!(
+                        "INSERT INTO sts_cluster_claims ({claim_write}) VALUES ($1, '', $2, $3, $4, {now}, \
+                         {now} + $5) ON CONFLICT (scope, realm, key) DO UPDATE SET reservation = \
+                         EXCLUDED.reservation, origin = EXCLUDED.origin, claimed_at = EXCLUDED.claimed_at, \
+                         expires_at = EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at <= \
+                         EXCLUDED.claimed_at RETURNING claimed_at",
+                        claim_write = CLAIM_WRITE,
+                        now = DB_NOW
+                    ),
+                    &[&ORIGIN_SCOPE, &claim.key, &claim.reservation, &holder, &claim.ttl_ms],
+                )
+                .await
+                .map_err(err)?;
+            if won.is_some() {
+                PostgresDriver::swap_origin_lock(&tx, claim).await?;
+                tx.commit().await.map_err(err)?;
+                return Ok(Ok(()));
+            }
+            let row = tx
+                .query_opt(
+                    "SELECT origin, expires_at FROM sts_cluster_claims WHERE scope = $1 AND realm = '' AND key = \
+                     $2",
+                    &[&ORIGIN_SCOPE, &claim.key],
+                )
+                .await
+                .map_err(err)?;
+            tx.commit().await.map_err(err)?;
+            Ok(Err(row.map_or_else(Holder::default, |r| Holder {
+                origin: r
+                    .get::<_, Option<String>>("origin")
+                    .unwrap_or_default(),
+                expires_at: r.get("expires_at"),
+            })))
+        })
+    }
+
+    fn take_over_from_gone<'a>(
+        &'a self,
+        claim: &'a OriginClaim,
+        holder: &'a str,
+        node_id: &'a str,
+    ) -> StoreFuture<'a, bool> {
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            let tx = client.transaction().await.map_err(err)?;
+            let n = tx
+                .execute(
+                    &format!(
+                        "UPDATE sts_cluster_claims c SET reservation = $3, origin = $4, claimed_at = {now}, \
+                         expires_at = {now} + $5 WHERE c.scope = $1 AND c.realm = '' AND c.key = $2 AND \
+                         position('@' in c.origin) > 0 AND split_part(c.origin, '@', 2) <> $6 AND EXISTS \
+                         (SELECT 1 FROM sts_cluster_nodes n WHERE n.node_id = split_part(c.origin, '@', 2) AND \
+                         (n.left_at > 0 OR n.expires_at <= {now}))",
+                        now = DB_NOW
+                    ),
+                    &[&ORIGIN_SCOPE, &claim.key, &claim.reservation, &holder, &claim.ttl_ms, &node_id],
+                )
+                .await
+                .map_err(err)?;
+            if n == 0 {
+                tx.commit().await.map_err(err)?;
+                return Ok(false);
+            }
+            PostgresDriver::swap_origin_lock(&tx, claim).await?;
+            tx.commit().await.map_err(err)?;
+            Ok(true)
+        })
+    }
+
+    fn renew_live<'a>(
+        &'a self,
+        claim: &'a OriginClaim,
+    ) -> StoreFuture<'a, bool> {
+        Box::pin(async move {
+            let n = self
+                .client()
+                .await?
+                .execute(
+                    &format!(
+                        "UPDATE sts_cluster_claims SET expires_at = {now} + $4 WHERE scope = $1 AND realm = '' \
+                         AND key = $2 AND reservation = $3 AND expires_at > {now}",
+                        now = DB_NOW
+                    ),
+                    &[&ORIGIN_SCOPE, &claim.key, &claim.reservation, &claim.ttl_ms],
+                )
+                .await
+                .map_err(err)?;
+            Ok(n > 0)
+        })
+    }
+
+    fn reassert<'a>(&'a self, claim: &'a OriginClaim) -> StoreFuture<'a, bool> {
+        Box::pin(async move {
+            let n = self
+                .client()
+                .await?
+                .execute(
+                    &format!(
+                        "UPDATE sts_cluster_claims SET expires_at = {} + $4 WHERE scope = $1 AND realm = '' AND \
+                         key = $2 AND reservation = $3",
+                        DB_NOW
+                    ),
+                    &[&ORIGIN_SCOPE, &claim.key, &claim.reservation, &claim.ttl_ms],
+                )
+                .await
+                .map_err(err)?;
+            if n > 0 {
+                tracing::debug!(
+                    "persistence: the claim on origin {} had lapsed with nobody else taking it, and was extended.",
+                    claim.key
+                );
+            }
+            Ok(n > 0)
+        })
+    }
+
+    fn release<'a>(&'a self, claim: &'a OriginClaim) -> StoreFuture<'a, bool> {
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            let tx = client.transaction().await.map_err(err)?;
+            let n = tx
+                .execute(
+                    "DELETE FROM sts_cluster_claims WHERE scope = $1 AND realm = '' AND key = $2 AND reservation = \
+                     $3",
+                    &[&ORIGIN_SCOPE, &claim.key, &claim.reservation],
+                )
+                .await
+                .map_err(err)?;
+            if n > 0 {
+                tx.execute(
+                    "DELETE FROM sts_cluster_locks WHERE name = $1",
+                    &[&fence_lock_name(
+                        "origin",
+                        &claim.key,
+                        &claim.reservation,
+                    )],
+                )
+                .await
+                .map_err(err)?;
+            }
+            tx.commit().await.map_err(err)?;
+            Ok(n > 0)
+        })
+    }
+
+    fn clock(&self) -> StoreFuture<'_, i64> {
+        Box::pin(async move {
+            let row = self
+                .client()
+                .await?
+                .query_one(&format!("SELECT {} AS now", DB_NOW), &[])
+                .await
+                .map_err(err)?;
+            Ok(row.get("now"))
         })
     }
 }

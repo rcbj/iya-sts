@@ -147,6 +147,7 @@ impl Schema {
     }
 
     /// The names of every table, in the model's order.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn table_names(&self) -> Vec<&'static str> {
         self.tables.iter().map(|t| t.name).collect()
     }
@@ -252,7 +253,7 @@ mod tests {
     fn both_engines_come_from_the_model() {
         assert_eq!(POSTGRES.engine, "postgres");
         assert_eq!(MARIADB.engine, "mariadb");
-        assert!(POSTGRES.version >= 32);
+        const { assert!(POSTGRES.version >= 32) };
         assert_eq!(POSTGRES.version, MARIADB.version);
         // The tables only MariaDB has: its stand-in for GIN.
         assert!(MARIADB.table("sts_ldap_entry_keys").is_some());

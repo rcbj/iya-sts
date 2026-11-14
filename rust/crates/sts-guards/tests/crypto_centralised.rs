@@ -193,7 +193,6 @@ const PENDING: &[(&str, &str)] = &[
         "crates/sts-store/src/keystore.rs|sign",
         "store slice: keystore",
     ),
-    ("crates/sts-store/src/postgres.rs|rand", "store slice"),
     // The runtime's stand-in listener certificate (main.rs: "until the TLS
     // module is ported, its certificate is a self-signed stand-in made at
     // start"): a P-256 key generated and a certificate read. It belongs in
