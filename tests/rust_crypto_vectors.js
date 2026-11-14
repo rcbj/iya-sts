@@ -293,7 +293,8 @@ async function pqX509FromRust(t, rows) {
 }
 
 // SECRETS: every scrypt hash Rust made verifies here (and a wrong secret
-// does not), every envelope Rust sealed opens under its data key, and every
+// does not), so does every password hash it made under a password policy's
+// spec — argon2id and scrypt (#847, #872) — every envelope Rust sealed opens under its data key, and every
 // data key Rust wrapped unwraps under the key-encryption key and AAD.
 /**
  * @param {any} t - the runner's check collector
@@ -306,6 +307,14 @@ function secretsFromRust(t, vectors) {
             !crypto.verifySecret(row.plain + 'x', row.stored),
             'a scrypt hash Rust made verifies in Node, and only for its ' +
             'secret');
+  });
+  (vectors.passwords || []).forEach(function (row) {
+    t.check(crypto.verifySecret(row.plain, row.stored) &&
+            !crypto.verifySecret(row.plain + 'x', row.stored) &&
+            crypto.storedSecretMatchesSpec(row.stored, row.ask),
+            'a password hash Rust made under ' + JSON.stringify(row.ask) +
+            ' verifies in Node, only for its password, and is what Node ' +
+            'would write under that spec');
   });
   vectors.envelopes.forEach(function (row) {
     let opened = null;

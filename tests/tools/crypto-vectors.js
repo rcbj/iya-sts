@@ -820,9 +820,83 @@ function secrets() {
              credential: crypto.deriveSharedCredential.apply(null,
                [row[0], row[1]].concat(row[2])) };
   });
-  return { hotp: hotp, hashes: hashes, envelopes: envelopes, wraps: wraps,
-           derived: derived, kekRefusals: kekRefusals,
-           credentials: credentials };
+  return Object.assign({ hotp: hotp, hashes: hashes, envelopes: envelopes,
+                         wraps: wraps, derived: derived,
+                         kekRefusals: kekRefusals,
+                         credentials: credentials }, passwordVectors());
+}
+
+// A PERSON'S PASSWORD (#847, #872): what the password policy's spec becomes,
+// hashes under each algorithm, and what the upgrade on sign-in asks of a
+// stored value — its parameters, whether it matches a spec, whether it is
+// weaker. The asks include out-of-range and missing values, because
+// passwordHashSpec() clamps; the stored values include forms this service
+// writes, the pre-#872 cost, and argon2id strings outside the bounds a
+// verification will compute.
+function passwordVectors() {
+  const asks = [
+    {}, { algorithm: 'scrypt' }, { algorithm: 'argon2id' },
+    { algorithm: 'scrypt', logN: 13 }, { algorithm: 'scrypt', logN: 14 },
+    { algorithm: 'scrypt', logN: 16, p: 1 }, { algorithm: 'scrypt', logN: 17 },
+    { algorithm: 'scrypt', logN: 99, r: 1, p: 99 },
+    { algorithm: 'scrypt', logN: 15.9, r: 12.5, p: '' },
+    { algorithm: 'argon2id', memory: 1, passes: 1, parallelism: 0 },
+    { algorithm: 'argon2id', memory: 65536, passes: 3, parallelism: 4 },
+    { algorithm: 'argon2id', memory: 9e9, passes: 99, parallelism: 99 },
+    { algorithm: 'bcrypt' }
+  ];
+  const specs = asks.map(function (ask) {
+    return { ask: ask, spec: crypto.passwordHashSpec(ask) };
+  });
+  const plains = ['', 'password', 'pässwörd 🔑'];
+  const passwords = [];
+  [{ algorithm: 'argon2id' },
+   { algorithm: 'argon2id', memory: 20000, passes: 3, parallelism: 2 },
+   {}, { algorithm: 'scrypt', logN: 14 }].forEach(function (ask) {
+    plains.forEach(function (plain) {
+      passwords.push({ ask: ask, plain: plain,
+                       stored: crypto.hashPassword(plain, ask) });
+    });
+  });
+  const salt = nodeCrypto.randomBytes(16).toString('base64')
+    .replace(/=+$/, '');
+  const tag = nodeCrypto.randomBytes(32).toString('base64')
+    .replace(/=+$/, '');
+  const stored = passwords.map(function (row) {
+    return row.stored;
+  }).concat([
+    crypto.hashSecret('legacy'),
+    '$argon2id$v=19$m=4194304,t=2,p=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=19456,t=17,p=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=16,t=1,p=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=15,t=1,p=2$' + salt + '$' + tag,
+    '$argon2id$v=18$m=19456,t=2,p=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=19456,t=2,p=1,x=1$' + salt + '$' + tag,
+    '$argon2id$v=19$m=19456,t=2,p=1$' + salt + '=$' + tag,
+    '$argon2id$v=19$m=19456,t=2,p=1$AAAA$' + tag,
+    '$scrypt$30000$8$1$' + salt + '$' + tag,
+    '$scrypt$x$8$1$' + salt + '$' + tag,
+    'plain-text', '', '{SSHA}abc'
+  ]);
+  const storedRows = stored.map(function (one) {
+    return {
+      stored: one,
+      hashed: crypto.isHashedSecret(one),
+      parameters: crypto.storedSecretParameters(one),
+      matches: asks.map(function (ask) {
+        return crypto.storedSecretMatchesSpec(one, ask);
+      }),
+      weaker: asks.map(function (ask) {
+        return crypto.storedSecretIsWeaker(one, ask);
+      })
+    };
+  });
+  const digests = ['', 'an authorization code', 'é 中 🔑',
+                   'x'.repeat(1000)].map(function (value) {
+    return { value: value, digest: crypto.credentialDigest(value) };
+  });
+  return { passwordAsks: asks, passwordSpecs: specs, passwords: passwords,
+           storedSecrets: storedRows, credentialDigests: digests };
 }
 
 // KERBEROS, SESSION STATE AND DKIM: all deterministic, so Rust must

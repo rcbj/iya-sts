@@ -19,6 +19,14 @@
 //!   `/admin/encryption`, process-wide, as Node's tally does.
 //! * [`derive_shared_credential`] — the credential several processes reach
 //!   independently.
+//! * [`hash_password`] and the stored-hash questions (#847, #872): a
+//!   PERSON'S password under the password policy's spec, argon2id in the
+//!   PHC form or scrypt at OWASP's pairs (2^15, r=8, p=3 by default), and
+//!   what the upgrade on sign-in asks of a stored value
+//!   ([`stored_secret_parameters`], [`stored_secret_matches_spec`],
+//!   [`stored_secret_is_weaker`]). [`verify_secret`] reads both forms.
+//! * [`credential_digest`] (#614) — the name a store keeps in place of a
+//!   bearer credential it only looks up, spends or compares.
 //!
 //! **ONE DIFFERENCE FROM NODE, AND IT IS A FIX.** Node's `constantTimeEquals()`
 //! converts both sides to UTF-8 strings, so `verifySecret()` compares the
@@ -204,9 +212,10 @@ pub fn hash_secret(plaintext: &str, cost: ScryptCost) -> CryptoResult<String> {
     ))
 }
 
-/// Whether a stored value is one of this service's scrypt forms.
+/// `isHashedSecret()`: whether a stored value is one of this service's hash
+/// forms — scrypt, or argon2id since #847.
 pub fn is_hashed_secret(stored: &str) -> bool {
-    stored.starts_with("$scrypt$")
+    stored.starts_with("$scrypt$") || stored.starts_with("$argon2id$")
 }
 
 /// JavaScript's `parseInt(s, 10)` as a finite number.
@@ -247,46 +256,523 @@ fn lenient_b64(text: &str) -> Vec<u8> {
     .unwrap_or_default()
 }
 
-/// `verifySecret()`: whether a presented secret matches a stored scrypt
-/// form, in constant time. `false` — never an error — for no match, a value
-/// this service did not write, or parameters it cannot compute.
-pub fn verify_secret(plaintext: &str, stored: &str) -> bool {
+/// A stored hash, read back (`decodeStoredSecret()`): the parameters it
+/// names, its salt and the value it holds.
+struct Decoded {
+    params: StoredParameters,
+    salt: Vec<u8>,
+    expected: Vec<u8>,
+}
+
+/// `decodeStoredSecret()`: the scrypt or argon2id form, or `None` for a
+/// value this service did not write or will not compute.
+fn decode_stored_secret(stored: &str) -> Option<Decoded> {
+    if stored.is_empty() {
+        return None;
+    }
     let parts: Vec<&str> = stored.split('$').collect();
+    if parts.get(1) == Some(&"argon2id") {
+        return decode_argon2_secret(&parts);
+    }
     if parts.len() != 7 || parts[1] != "scrypt" {
-        return false;
+        return None;
     }
     let (Some(n), Some(r), Some(p)) = (
         parse_int(parts[2]),
         parse_int(parts[3]),
         parse_int(parts[4]),
     ) else {
-        return false;
+        return None;
     };
     let salt = lenient_b64(parts[5]);
     let expected = lenient_b64(parts[6]);
     if expected.is_empty() {
-        return false;
+        return None;
     }
-    match scrypt(
-        plaintext.as_bytes(),
-        &salt,
-        n,
-        r,
-        p,
-        128u64.saturating_mul(n).saturating_mul(r).saturating_mul(2),
-        expected.len(),
-    ) {
-        Ok(derived) => constant_time_equals(&derived, &expected),
-        Err(e) => {
+    Some(Decoded {
+        params: StoredParameters::Scrypt {
+            n,
+            r,
+            p,
+            keylen: expected.len(),
+        },
+        salt,
+        expected,
+    })
+}
+
+/// Whether every character of a PHC field is in the standard base64
+/// alphabet, unpadded (`/^[A-Za-z0-9+/]+$/`).
+fn phc_field(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+}
+
+/// `decodeArgon2Secret()`. The bounds are RFC 9106's below (m at least
+/// 8 KiB per lane, t at least 1) and this module's ceilings above: a stored
+/// value is verified at the cost it names, which may be lower than a NEW
+/// hash's floor, but a hand-written `m=4194304` must not make every sign-in
+/// allocate four gibibytes.
+fn decode_argon2_secret(parts: &[&str]) -> Option<Decoded> {
+    // ['', 'argon2id', 'v=19', 'm=…,t=…,p=…', salt, hash]
+    if parts.len() != 6 || parts[2] != format!("v={}", ARGON2_VERSION) {
+        return None;
+    }
+    let field = |text: &str, name: &str, most: usize| -> Option<u64> {
+        let digits = text.strip_prefix(name)?;
+        if digits.is_empty()
+            || digits.len() > most
+            || !digits.bytes().all(|b| b.is_ascii_digit())
+        {
+            return None;
+        }
+        digits.parse().ok()
+    };
+    let params: Vec<&str> = parts[3].split(',').collect();
+    let (Some(memory), Some(passes), Some(parallelism)) = (
+        params.first().and_then(|t| field(t, "m=", 8)),
+        params.get(1).and_then(|t| field(t, "t=", 3)),
+        params.get(2).and_then(|t| field(t, "p=", 3)),
+    ) else {
+        return None;
+    };
+    if params.len() != 3 || !phc_field(parts[4]) || !phc_field(parts[5]) {
+        return None;
+    }
+    let salt = lenient_b64(parts[4]);
+    let expected = lenient_b64(parts[5]);
+    if parallelism < 1
+        || parallelism > ARGON2_LIMITS.parallelism.max
+        || passes < 1
+        || passes > ARGON2_LIMITS.passes.max
+        || memory < 8 * parallelism
+        || memory > ARGON2_LIMITS.memory.max
+        || salt.len() < 8
+        || expected.len() < 4
+    {
+        tracing::warn!(
+            "{}crypto: a stored argon2id hash names parameters outside what \
+             this service will compute (m={} KiB, t={}, p={}) and is being \
+             treated as no match.",
+            sts_core::log::tag(codes::STS_KEYS_0156),
+            memory,
+            passes,
+            parallelism
+        );
+        return None;
+    }
+    Some(Decoded {
+        params: StoredParameters::Argon2id {
+            memory,
+            passes,
+            parallelism,
+            keylen: expected.len(),
+        },
+        salt,
+        expected,
+    })
+}
+
+/// `verifySecret()`: whether a presented secret matches a stored scrypt or
+/// argon2id form, in constant time. `false` — never an error — for no
+/// match, a value this service did not write, or parameters it cannot
+/// compute.
+pub fn verify_secret(plaintext: &str, stored: &str) -> bool {
+    let Some(spec) = decode_stored_secret(stored) else {
+        return false;
+    };
+    let derived = match spec.params {
+        StoredParameters::Argon2id {
+            memory,
+            passes,
+            parallelism,
+            keylen,
+        } => {
+            argon2id(plaintext, &spec.salt, memory, passes, parallelism, keylen)
+                .map_err(|e| {
+                    tracing::warn!(
+                    "{}crypto: a stored argon2id hash could not be computed \
+                     here and is being treated as no match: {}",
+                    sts_core::log::tag(codes::STS_KEYS_0156),
+                    e
+                );
+                })
+        }
+        StoredParameters::Scrypt { n, r, p, keylen } => scrypt(
+            plaintext.as_bytes(),
+            &spec.salt,
+            n,
+            r,
+            p,
+            128u64.saturating_mul(n).saturating_mul(r).saturating_mul(2),
+            keylen,
+        )
+        .map_err(|e| {
             tracing::warn!(
                 "{}crypto: a stored secret names scrypt parameters this \
                  process cannot compute and is being treated as no match: {}",
                 sts_core::log::tag(codes::STS_KEYS_0005),
                 e
             );
-            false
+        }),
+    };
+    derived.is_ok_and(|d| constant_time_equals(&d, &spec.expected))
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S PASSWORD (#847, #872): argon2id or scrypt under the password
+// policy's spec. `hash_secret()` above stays scrypt at the settings' cost for
+// every other secret — a client secret, a reset token, a recovery code, an
+// app password — which was rcbj's decision 3 on #847.
+//
+// Node falls back to scrypt (STS-KEYS-0155) on a runtime with no argon2;
+// OpenSSL 3.2 and later always has one, and this crate builds 3.6, so that
+// branch has nothing to port.
+// ---------------------------------------------------------------------------
+
+pub const ARGON2_SALT_BYTES: usize = 16;
+pub const ARGON2_TAG_BYTES: usize = 32;
+pub const ARGON2_VERSION: u32 = 19;
+
+/// One parameter's bounds and default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Limit {
+    pub min: u64,
+    pub max: u64,
+    pub dflt: u64,
+}
+
+/// `ARGON2_LIMITS`: OWASP's floor (m=19 MiB, t=2, p=1) and the ceilings.
+pub struct Argon2Limits {
+    pub memory: Limit,
+    pub passes: Limit,
+    pub parallelism: Limit,
+}
+
+pub const ARGON2_LIMITS: Argon2Limits = Argon2Limits {
+    memory: Limit {
+        min: 19456,
+        max: 1_048_576,
+        dflt: 19456,
+    },
+    passes: Limit {
+        min: 2,
+        max: 16,
+        dflt: 2,
+    },
+    parallelism: Limit {
+        min: 1,
+        max: 16,
+        dflt: 1,
+    },
+};
+
+/// `SCRYPT_PASSWORD_LIMITS`: the default is 2^15, r=8, p=3 (#872), one of
+/// OWASP's pairs; p's field minimum stays 1 so a stored p=1 hash verifies.
+pub struct ScryptPasswordLimits {
+    pub log_n: Limit,
+    pub r: Limit,
+    pub p: Limit,
+}
+
+pub const SCRYPT_PASSWORD_LIMITS: ScryptPasswordLimits = ScryptPasswordLimits {
+    log_n: Limit {
+        min: 13,
+        max: 20,
+        dflt: 15,
+    },
+    r: Limit {
+        min: 8,
+        max: 16,
+        dflt: 8,
+    },
+    p: Limit {
+        min: 1,
+        max: 16,
+        dflt: 3,
+    },
+};
+
+/// `PASSWORD_HASH_ALGORITHMS`, scrypt first: the default (rcbj,
+/// 2026-10-22).
+pub const PASSWORD_HASH_ALGORITHMS: [&str; 2] = ["scrypt", "argon2id"];
+
+/// `scryptOwaspMinP()`: the least p OWASP's table lists at r=8 for a cost.
+pub fn scrypt_owasp_min_p(log_n: u64) -> u64 {
+    match log_n {
+        17.. => 1,
+        16 => 2,
+        15 => 3,
+        14 => 5,
+        13 => 10,
+        _ => 10,
+    }
+}
+
+/// What a password policy asks a new hash to be written under: the
+/// algorithm's name and each parameter as the policy holds it (`None` for
+/// one it leaves out). Every number is clamped, so a value that reached a
+/// policy some way its checks did not see cannot make this module write a
+/// hash cheaper than OWASP's minimum.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PasswordHashAsk {
+    pub algorithm: Option<String>,
+    pub memory: Option<f64>,
+    pub passes: Option<f64>,
+    pub parallelism: Option<f64>,
+    pub log_n: Option<f64>,
+    pub r: Option<f64>,
+    pub p: Option<f64>,
+}
+
+/// The hash a new password is written under (`passwordHashSpec()`'s
+/// answer).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PasswordHashSpec {
+    Argon2id {
+        memory: u64,
+        passes: u64,
+        parallelism: u64,
+    },
+    Scrypt {
+        log_n: u64,
+        r: u64,
+        p: u64,
+    },
+}
+
+/// `clampInt()`: absent or not finite is the fallback; otherwise floored and
+/// held to the bounds.
+fn clamp_int(value: Option<f64>, limit: Limit) -> u64 {
+    match value {
+        Some(v) if v.is_finite() => {
+            (v.floor().max(limit.min as f64).min(limit.max as f64)) as u64
+        }
+        _ => limit.dflt,
+    }
+}
+
+/// `passwordHashSpec()`: argon2id when asked for, scrypt otherwise, each
+/// clamped to its floors and ceilings; scrypt's p raised to OWASP's table
+/// for its N.
+pub fn password_hash_spec(ask: &PasswordHashAsk) -> PasswordHashSpec {
+    if ask.algorithm.as_deref() == Some("argon2id") {
+        let l = &ARGON2_LIMITS;
+        return PasswordHashSpec::Argon2id {
+            memory: clamp_int(ask.memory, l.memory),
+            passes: clamp_int(ask.passes, l.passes),
+            parallelism: clamp_int(ask.parallelism, l.parallelism),
+        };
+    }
+    let l = &SCRYPT_PASSWORD_LIMITS;
+    let log_n = clamp_int(ask.log_n, l.log_n);
+    let r = clamp_int(ask.r, l.r);
+    let asked_p = clamp_int(ask.p, l.p);
+    let p = l.p.max.min(asked_p.max(scrypt_owasp_min_p(log_n)));
+    PasswordHashSpec::Scrypt { log_n, r, p }
+}
+
+fn argon2id(
+    plaintext: &str,
+    salt: &[u8],
+    memory: u64,
+    passes: u64,
+    parallelism: u64,
+    keylen: usize,
+) -> CryptoResult<Vec<u8>> {
+    let narrow = |v: u64| {
+        u32::try_from(v).map_err(|_| err("an argon2id parameter is too large"))
+    };
+    let mut out = vec![0u8; keylen];
+    openssl::kdf::argon2id(
+        None,
+        plaintext.as_bytes(),
+        salt,
+        None,
+        None,
+        narrow(passes)?,
+        narrow(parallelism)?,
+        narrow(memory)?,
+        &mut out,
+    )?;
+    Ok(out)
+}
+
+/// A PHC base64 field: the standard alphabet, no padding.
+fn phc_b64(bytes: &[u8]) -> String {
+    STANDARD.encode(bytes).trim_end_matches('=').to_string()
+}
+
+/// `hashPassword()`: a PERSON'S password under the policy's spec, as
+/// `$argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>$<salt>$<hash>` or
+/// `$scrypt$N$r$p$salt$hash`. It blocks for the whole derivation; an async
+/// caller runs it under `spawn_blocking` (`hashPasswordAsync()`).
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn hash_password(
+    plaintext: &str,
+    ask: &PasswordHashAsk,
+) -> CryptoResult<String> {
+    match password_hash_spec(ask) {
+        PasswordHashSpec::Argon2id {
+            memory,
+            passes,
+            parallelism,
+        } => {
+            let salt = random(ARGON2_SALT_BYTES)?;
+            let tag = argon2id(
+                plaintext,
+                &salt,
+                memory,
+                passes,
+                parallelism,
+                ARGON2_TAG_BYTES,
+            )?;
+            Ok(format!(
+                "$argon2id$v={}$m={},t={},p={}${}${}",
+                ARGON2_VERSION,
+                memory,
+                passes,
+                parallelism,
+                phc_b64(&salt),
+                phc_b64(&tag)
+            ))
+        }
+        PasswordHashSpec::Scrypt { log_n, r, p } => {
+            let n = 1u64 << log_n;
+            let salt = random(SCRYPT_SALT_BYTES)?;
+            let derived = scrypt(
+                plaintext.as_bytes(),
+                &salt,
+                n,
+                r,
+                p,
+                2 * 128 * r * (n + p),
+                SCRYPT_KEYLEN,
+            )?;
+            Ok(format!(
+                "$scrypt${}${}${}${}${}",
+                n,
+                r,
+                p,
+                STANDARD.encode(&salt),
+                STANDARD.encode(&derived)
+            ))
         }
     }
+}
+
+/// What a stored hash names (`storedSecretParameters()`), never its salt or
+/// value. scrypt's N is kept as written: Node's `logN` is `Math.log2(N)`,
+/// which is not a whole number for an N that is not a power of two.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StoredParameters {
+    Argon2id {
+        memory: u64,
+        passes: u64,
+        parallelism: u64,
+        keylen: usize,
+    },
+    Scrypt {
+        n: u64,
+        r: u64,
+        p: u64,
+        keylen: usize,
+    },
+}
+
+/// `storedSecretParameters()`, or `None` for a value this module did not
+/// write.
+pub fn stored_secret_parameters(stored: &str) -> Option<StoredParameters> {
+    decode_stored_secret(stored).map(|d| d.params)
+}
+
+/// `storedSecretMatchesSpec()`: whether a stored password hash is already
+/// what a new one would be under this spec — the same algorithm, every
+/// parameter the same, and the output length this module writes.
+pub fn stored_secret_matches_spec(stored: &str, ask: &PasswordHashAsk) -> bool {
+    match (stored_secret_parameters(stored), password_hash_spec(ask)) {
+        (
+            Some(StoredParameters::Argon2id {
+                memory,
+                passes,
+                parallelism,
+                keylen,
+            }),
+            PasswordHashSpec::Argon2id {
+                memory: m,
+                passes: t,
+                parallelism: p,
+            },
+        ) => {
+            memory == m
+                && passes == t
+                && parallelism == p
+                && keylen == ARGON2_TAG_BYTES
+        }
+        (
+            Some(StoredParameters::Scrypt { n, r, p, keylen }),
+            PasswordHashSpec::Scrypt {
+                log_n,
+                r: wr,
+                p: wp,
+            },
+        ) => {
+            log_n < 64
+                && n == 1u64 << log_n
+                && r == wr
+                && p == wp
+                && keylen == SCRYPT_KEYLEN
+        }
+        _ => false,
+    }
+}
+
+/// `storedSecretIsWeaker()`: whether a stored password hash costs strictly
+/// less than a new one under this spec (N·r·p for scrypt, memory·passes for
+/// argon2id), or names the other algorithm. An unreadable value is not
+/// weaker, and an equal cost under other parameters is not either (#872):
+/// a stronger hash is never rewritten down.
+pub fn stored_secret_is_weaker(stored: &str, ask: &PasswordHashAsk) -> bool {
+    let Some(held) = stored_secret_parameters(stored) else {
+        return false;
+    };
+    // Node's arithmetic is in doubles; so is this, so a huge stored N
+    // compares as Node compares it rather than overflowing.
+    match (held, password_hash_spec(ask)) {
+        (
+            StoredParameters::Argon2id { memory, passes, .. },
+            PasswordHashSpec::Argon2id {
+                memory: m,
+                passes: t,
+                ..
+            },
+        ) => (memory as f64) * (passes as f64) < (m as f64) * (t as f64),
+        (
+            StoredParameters::Scrypt { n, r, p, .. },
+            PasswordHashSpec::Scrypt {
+                log_n,
+                r: wr,
+                p: wp,
+            },
+        ) => {
+            (n as f64) * (r as f64) * (p as f64)
+                < 2f64.powi(log_n as i32) * (wr as f64) * (wp as f64)
+        }
+        _ => true,
+    }
+}
+
+/// `credentialDigest()` (#614): the base64url SHA-256 a store keeps in
+/// place of a bearer credential — an authorization code, a device code, a
+/// `request_uri`, an artifact handle, a nonce or a token — so that a heap
+/// snapshot, a replicated change or a sealed row yields nothing that can
+/// be presented. 43 characters.
+pub fn credential_digest(value: &str) -> CryptoResult<String> {
+    let digest =
+        openssl::hash::hash(MessageDigest::sha256(), value.as_bytes())?;
+    Ok(URL_SAFE_NO_PAD.encode(digest))
 }
 
 // ---------------------------------------------------------------------------

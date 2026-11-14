@@ -17,7 +17,10 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value as Json};
-use sts_crypto::secrets::{self, KekInput, ScryptCost};
+use sts_crypto::secrets::{
+    self, KekInput, PasswordHashAsk, PasswordHashSpec, ScryptCost,
+    StoredParameters,
+};
 
 fn s(v: &Json) -> &str {
     v.as_str().unwrap()
@@ -25,6 +28,69 @@ fn s(v: &Json) -> &str {
 
 fn b64(v: &Json) -> Vec<u8> {
     STANDARD.decode(s(v)).unwrap()
+}
+
+/// A policy's number as `clampInt()` reads it: absent, null or empty is no
+/// value; anything else is JavaScript's `Number()` of it.
+fn number(v: &Json) -> Option<f64> {
+    match v {
+        Json::Null => None,
+        Json::Number(n) => n.as_f64(),
+        Json::String(t) if t.is_empty() => None,
+        Json::String(t) => Some(t.trim().parse().unwrap_or(f64::NAN)),
+        _ => Some(f64::NAN),
+    }
+}
+
+fn ask_of(v: &Json) -> PasswordHashAsk {
+    PasswordHashAsk {
+        algorithm: v["algorithm"].as_str().map(str::to_string),
+        memory: number(&v["memory"]),
+        passes: number(&v["passes"]),
+        parallelism: number(&v["parallelism"]),
+        log_n: number(&v["logN"]),
+        r: number(&v["r"]),
+        p: number(&v["p"]),
+    }
+}
+
+fn spec_json(spec: PasswordHashSpec) -> Json {
+    match spec {
+        PasswordHashSpec::Argon2id {
+            memory,
+            passes,
+            parallelism,
+        } => json!({ "algorithm": "argon2id", "memory": memory,
+                     "passes": passes, "parallelism": parallelism }),
+        PasswordHashSpec::Scrypt { log_n, r, p } => {
+            json!({ "algorithm": "scrypt", "logN": log_n, "r": r, "p": p })
+        }
+    }
+}
+
+fn params_match(params: Option<StoredParameters>, node: &Json) -> bool {
+    match params {
+        None => node.is_null(),
+        Some(StoredParameters::Argon2id {
+            memory,
+            passes,
+            parallelism,
+            keylen,
+        }) => {
+            *node
+                == json!({ "algorithm": "argon2id", "memory": memory,
+                           "passes": passes, "parallelism": parallelism,
+                           "keylen": keylen })
+        }
+        Some(StoredParameters::Scrypt { n, r, p, keylen }) => {
+            node["algorithm"] == "scrypt"
+                && ((n as f64).log2() - node["logN"].as_f64().unwrap()).abs()
+                    < 1e-12
+                && node["r"] == r
+                && node["p"] == p
+                && node["keylen"] == keylen
+        }
+    }
 }
 
 #[test]
@@ -148,11 +214,79 @@ fn secrets_match_node() {
         );
     }
 
+    // A PERSON'S PASSWORD (#847, #872).
+    let asks: Vec<PasswordHashAsk> = v["passwordAsks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(ask_of)
+        .collect();
+    for row in v["passwordSpecs"].as_array().unwrap() {
+        let spec = secrets::password_hash_spec(&ask_of(&row["ask"]));
+        check(
+            spec_json(spec) == row["spec"],
+            format!("passwordHashSpec({}) = {:?}", row["ask"], spec),
+        );
+    }
+    let mut passwords = Vec::new();
+    for row in v["passwords"].as_array().unwrap() {
+        let plain = s(&row["plain"]);
+        let stored = s(&row["stored"]);
+        check(
+            secrets::verify_secret(plain, stored),
+            format!("Node's password hash {:?}", &stored[..20]),
+        );
+        check(
+            !secrets::verify_secret(&format!("{}x", plain), stored),
+            format!("a wrong password against {:?}", &stored[..20]),
+        );
+        let ask = ask_of(&row["ask"]);
+        let ours = secrets::hash_password(plain, &ask).unwrap();
+        check(
+            secrets::stored_secret_matches_spec(&ours, &ask),
+            format!("Rust's hash under {} matches its own spec", row["ask"]),
+        );
+        passwords
+            .push(json!({ "ask": row["ask"], "plain": plain, "stored": ours }));
+    }
+    for row in v["storedSecrets"].as_array().unwrap() {
+        let stored = s(&row["stored"]);
+        check(
+            secrets::is_hashed_secret(stored) == row["hashed"],
+            format!("isHashedSecret({:?})", stored),
+        );
+        let params = secrets::stored_secret_parameters(stored);
+        check(
+            params_match(params, &row["parameters"]),
+            format!("storedSecretParameters({:?}) = {:?}", stored, params),
+        );
+        for (i, ask) in asks.iter().enumerate() {
+            check(
+                secrets::stored_secret_matches_spec(stored, ask)
+                    == row["matches"][i],
+                format!("storedSecretMatchesSpec({:?}, {:?})", stored, ask),
+            );
+            check(
+                secrets::stored_secret_is_weaker(stored, ask)
+                    == row["weaker"][i],
+                format!("storedSecretIsWeaker({:?}, {:?})", stored, ask),
+            );
+        }
+    }
+    for row in v["credentialDigests"].as_array().unwrap() {
+        check(
+            secrets::credential_digest(s(&row["value"])).unwrap()
+                == s(&row["digest"]),
+            format!("credentialDigest({:?})", s(&row["value"])),
+        );
+    }
+
     if std::env::var("STS_WRITE_VECTORS").is_ok() {
         std::fs::write(
             dir.join("secrets-rust.json"),
             serde_json::to_string_pretty(&json!({
                 "hashes": hashes, "envelopes": envelopes, "wraps": wraps,
+                "passwords": passwords,
             }))
             .unwrap(),
         )
