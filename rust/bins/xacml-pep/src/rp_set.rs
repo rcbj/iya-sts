@@ -85,7 +85,8 @@ impl Party {
         let Some(receiver) = &self.receiver else {
             return false;
         };
-        let healthy = receiver.health().is_healthy(self.stale_ms as f64 / 1000.0);
+        let healthy =
+            receiver.health().is_healthy(self.stale_ms as f64 / 1000.0);
         let was_stale = self.stale.swap(!healthy, Ordering::SeqCst);
         if !healthy && !was_stale {
             let health = receiver.health();

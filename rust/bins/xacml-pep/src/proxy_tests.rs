@@ -67,6 +67,8 @@ struct ServiceState {
     introspect_calls: u32,
     jwks_fetches: u32,
     polls: u32,
+    /// The poll stream answers 503 (a stream that died after start).
+    poll_down: bool,
     /// D11: what the identity endpoint answered, by route.
     identity_calls: Vec<(String, Value)>,
     /// The lifetime of the next jwt-mode token, seconds (0: 300).
@@ -339,9 +341,18 @@ async fn service(
         async move {
             let mut g = s.lock().unwrap();
             g.polls += 1;
+            if g.poll_down {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({ "error": "temporarily_unavailable" })),
+                );
+            }
             let sets: serde_json::Map<String, Value> =
                 g.queued.drain(..).map(|(j, t)| (j, json!(t))).collect();
-            Json(json!({ "sets": sets, "moreAvailable": false }))
+            (
+                StatusCode::OK,
+                Json(json!({ "sets": sets, "moreAvailable": false })),
+            )
         }
     };
     let s1 = state.clone();
@@ -702,6 +713,9 @@ async fn harness() -> Harness {
     // The mock provider is plain http on loopback.
     options.proxy_rp_allow_insecure = true;
     options.proxy_signals_poll_ms = 100;
+    // Short enough for the stale-stream test, long enough that a busy
+    // machine never makes a working stream look stale.
+    options.proxy_signals_stale_ms = 2000;
     let client = PdpClient::new(&options).unwrap();
     let sync = Arc::new(Sync::new(client.clone(), options.clone()));
     sync.load_for_test(&json!({ "syncToken": "1", "policies": [
@@ -1444,6 +1458,67 @@ async fn a_caep_session_revoked_ends_access() {
     assert!(
         h.sync.proxy_json()["answered"]["sessionsEnded"].as_u64() >= Some(1)
     );
+}
+
+/// SIGNALS ON, THE STREAM DIES AFTER START: with no successful poll within
+/// `PEP_PROXY_SIGNALS_STALE_MS` the receiver's health says so, its signals
+/// stop deciding, and the service's session endpoint is asked — which
+/// here says the session is dead, so access ends although no signal could
+/// arrive. `GET /` reports the stream stale, then healthy again.
+#[tokio::test]
+async fn a_stream_that_stops_answering_falls_back_to_the_session_endpoint() {
+    let h = harness().await;
+    let q = h.send_to_sign_in("/live/page", "sid-stale").await;
+    let pair = cookie_of(&h.come_back("stale-1", &member(&q, "state")).await);
+    let r = h
+        .get("/live/page")
+        .header("cookie", pair.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "healthy: the library's cache decides");
+    let signals = h.sync.proxy_json()["signals"].clone();
+    assert_eq!(signals["receivers"], 1, "{}", signals);
+    assert_eq!(signals["healthy"], 1, "{}", signals);
+    assert_eq!(signals["staleAfterMs"], 2000);
+    assert_eq!(signals["librarySessions"]["max"], 20000, "twice the bound");
+    assert!(signals["librarySessions"]["held"].as_u64() >= Some(1));
+    h.service.lock().unwrap().poll_down = true;
+    let mut status = 200;
+    for _ in 0..200 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        status = h
+            .get("/live/page")
+            .header("cookie", pair.clone())
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16();
+        if status != 200 {
+            break;
+        }
+    }
+    assert_eq!(status, 401, "the session endpoint said dead");
+    let signals = h.sync.proxy_json()["signals"].clone();
+    assert_eq!(signals["stale"], 1, "{}", signals);
+    assert!(signals["mostConsecutiveFailures"].as_u64() >= Some(1));
+    assert!(
+        !signals.to_string().contains("127.0.0.1"),
+        "no URL or error text on GET /"
+    );
+    h.service.lock().unwrap().poll_down = false;
+    let mut healthy = 0;
+    for _ in 0..200 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        healthy = h.sync.proxy_json()["signals"]["healthy"]
+            .as_u64()
+            .unwrap_or(0);
+        if healthy == 1 {
+            break;
+        }
+    }
+    assert_eq!(healthy, 1, "the stream answers again");
 }
 
 /// SIGNALS ON: each access asks the LIBRARY whether the session is still

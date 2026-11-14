@@ -1077,9 +1077,8 @@ dependencies = [
 
 [[package]]
 name = "oidc-caep-risc"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae3e701572f5a3af109bb3514166e22efa261dc16640c4ed03632add9daeb58d"
+version = "0.3.0"
+source = "git+https://github.com/rcbj/oidc-caep-risc-rust?rev=3303482760add1eb74b5841cbe27acbc6528c6bf#3303482760add1eb74b5841cbe27acbc6528c6bf"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -1094,6 +1093,7 @@ dependencies = [
  "sha2 0.10.9",
  "signature 2.2.0",
  "tiny_http",
+ "tokio",
  "ureq",
  "url",
 ]

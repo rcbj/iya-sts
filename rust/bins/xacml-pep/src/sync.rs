@@ -410,7 +410,7 @@ struct State {
 
 /// What `GET /` asks the proxy's relying parties about their CAEP/RISC
 /// streams (`rp_set::RpSet::signals_json`), set by the proxy at start.
-pub type SignalsReporter = Arc<dyn Fn() -> Value + Send + Sync>;
+pub type SignalsReporter = Arc<dyn Fn() -> Value + Send + std::marker::Sync>;
 
 /// The register / pull / heartbeat client and what it holds.
 pub struct Sync {
