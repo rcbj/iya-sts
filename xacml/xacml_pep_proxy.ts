@@ -1319,7 +1319,8 @@ class PepProxy {
       introspect: at + '/xacml/pep/introspect',
       basic: at + '/xacml/pep/basic',
       saml: at + '/xacml/pep/saml',
-      session: at + '/xacml/pep/session'
+      session: at + '/xacml/pep/session',
+      identity: at + '/xacml/pep/identity'
     };
   }
 

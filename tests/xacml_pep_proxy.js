@@ -542,9 +542,11 @@ async function childBody() {
             JSON.stringify([AUDIENCE]) &&
           /\/oauth2\/jwks$/.test(body.realm.jwksUri) &&
           body.realm.samlIssuer === body.realm.issuer &&
-          /\/realm\/pepproxy\/xacml\/pep\/basic$/.test(body.validation.basic),
+          /\/realm\/pepproxy\/xacml\/pep\/basic$/.test(body.validation.basic) &&
+          /\/realm\/pepproxy\/xacml\/pep\/identity$/
+            .test(body.validation.identity),
           'C3. a configured PEP pulls the document, the realm facts and ' +
-          'the four validation URLs', brief(pulled));
+          'the five validation URLs', brief(pulled));
   t.check(pulled.headers.etag === '"' + body.syncToken + '"',
           'C4. the ETag is the sync token', pulled.headers.etag);
   r = await request(port, 'GET', PULL + '?since=' +
