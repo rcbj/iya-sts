@@ -871,7 +871,7 @@ own file:
 | Refused | Because | Argued in |
 |---|---|---|
 | federation's outbound HTTP-POST binding | a person LEAVING this service gets a real form and a real button | `federation/CLAUDE.md` |
-| the delegation and federation pictures | laid out on the server, arriving as ordinary markup | `admin-ui/CLAUDE.md` |
+| the delegation and federation pictures | ~~laid out on the server~~ — since #444's phase 2b (2026-11-14) laid out by the console's own bundle, a static surface, so no argument is owed | `admin-ui/CLAUDE.md` |
 | the console's collapsible prose | a `<details>` needs no script | `admin-ui/CLAUDE.md` |
 | the console's account menu | `<details>`/`<summary>`; the cost (it does not close on an outside click) is stated on the page | `admin-ui/CLAUDE.md` |
 | the certificate details dialog | a link and a server-drawn overlay, a round trip per open | `admin-ui/CLAUDE.md` |

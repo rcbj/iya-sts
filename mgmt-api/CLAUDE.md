@@ -1433,6 +1433,16 @@ work out —
 * `svg`, the drawing, laid out by dagre on the server, with its links;
 * `summary`, the counts the filter's choices show.
 
+**SINCE #444's PHASE 2b (2026-11-14) THE CONSOLE LAYS THE PICTURES OUT
+ITSELF** from the graph and `looks`, with the very code `svg` is drawn with
+(`admin-ui/web_delegation_map.ts`, `web_federation_diagram.ts`,
+`web_geo_map.ts`), so the answers ADDED what that code reads and the server
+had kept to itself — `drawing.verifiesCredentials` on every picture, the
+federation map's node names and `looks`, Geolocation's `drawing.map` — and
+removed nothing. `svg`, `picture.svg` and `format=svg` are still answered and
+the console no longer reads them; `admin-ui/CLAUDE.md`, *The pictures are
+laid out in the browser*, has the rest and the question of retiring them.
+
 `format=svg` answers the document alone with no links, as the page's own
 `?format=svg` does. The five filter parameters are declared once
 (`delegationFilter`) for it and for `GET /admin-api/delegation`.

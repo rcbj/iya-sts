@@ -7,11 +7,11 @@ say; the rest are listed after the table and argued in their own sections.
 |---|---|
 | `admin.ts` | Every page, every form, the shell they are drawn in, and the GATE in front of all of them. The largest file in the repository, because every page's HTML and every page's JSON view are built in the same function — deliberately, for the reason `../mgmt-api/CLAUDE.md` gives. |
 | `admin_rbac.ts` | **Who may use it.** Two roles, held as two ordinary groups in the embedded directory. A library (rule 3): it registers nothing. |
-| `delegation_map.ts` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. A library (rule 3): it registers nothing, requires nothing in this service but `helpers.js`, and is HANDED what each box is. |
+| `delegation_map.ts`, `web_delegation_map.ts` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. **Since #444's phase 2b (2026-11-14) the layout and drawing are `web_delegation_map.ts`, which the console's script bundles (dagre with it) and lays the picture out with in the browser; `delegation_map.ts` is the server's wrapper over the same code** (the `svg` answers still carry, the key) — see *The pictures are laid out in the browser*, below. A library (rule 3): it registers nothing and is HANDED what each box is. |
 | `pki_admin.ts` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate Workbench**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.ts`) and is required at **18a**, which is why it needs no slot. |
 | `crypto_metadata.ts` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.ts`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
-| `federation_diagram.ts` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.ts`'s palette, hexagon and text metric. |
-| `geo_map.ts` | **The geolocation picture** (#255), for `/admin/geolocation`: the world, a continent or a country as a server-drawn SVG in the Equal Earth projection over Natural Earth's outlines (`natural_earth/countries.json`), countries filled on a five-step scale, cities as circles. The THIRD drawing and a THIRD renderer, and it uses no dagre — see *`/admin/geolocation` is the third drawing* below. A library on `federation_diagram.ts`'s terms: `helpers.js`, and `delegation_map.ts`'s palette and text metric. |
+| `federation_diagram.ts`, `web_federation_diagram.ts` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the delegation one is made. Its layout and drawing are `web_federation_diagram.ts` since #444's phase 2b, laid out in the browser; `federation_diagram.ts` wraps it for the server. It takes only the delegation picture's palette, hexagon and text metric. |
+| `geo_map.ts`, `web_geo_map.ts` | **The geolocation picture** (#255), for `/admin/geolocation`: the world, a continent or a country in the Equal Earth projection over Natural Earth's outlines (`natural_earth/countries.json`), countries filled on a five-step scale, cities as circles. The THIRD drawing and a THIRD renderer, and it uses no dagre — see *`/admin/geolocation` is the third drawing* below. Since #444's phase 2b the geometry is `web_geo_map.ts` and the console draws the map in the browser from the answer's `drawing.map` over `/admin/geo-outlines.json`; `geo_map.ts` reads the outlines from disk and wraps it for the server. |
 | `geolocation_admin.ts` | **Monitoring → Geolocation** (#255): the realm's assessments counted by place (`risk_store.geography()` through `risk_engine.geography()`), small counts suppressed, and the page; `GET /admin-api/geolocation` answers its `geoView()`. At 18j-ii. |
 
 The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
@@ -2773,6 +2773,57 @@ Four things about it are decisions rather than defaults:
   is exactly that.
 
 ---
+
+## THE PICTURES ARE LAID OUT IN THE BROWSER (#444 phase 2b, 2026-11-14)
+
+**Every drawing this console shows is laid out by the console's own script
+from data `/admin-api` answers**, so the Rust runtime (#444, `rust/DESIGN.md`
+section 5.1 item 3) never ports a graph-layout engine. The sections below
+argue each picture's design as it was written, on the server; what moved is
+WHERE the code runs, not what it draws.
+
+* **ONE COPY, TWO PLACES.** The geometry of each picture is a `web_` module —
+  `web_delegation_map.ts`, `web_federation_diagram.ts`, `web_geo_map.ts` —
+  moved verbatim from `delegation_map.ts`, `federation_diagram.ts` and
+  `geo_map.ts`, less their Entering/Leaving lines. Those three are now the
+  server's wrappers over it: the logger, the error code a failed layout is
+  logged under (`STS-ADMIN-0600`, `-0601`), the realm's mode, the outlines
+  read from disk. So the `svg` an answer still carries and the picture a
+  browser draws are one code path, and `tests/console_web_bundle.js`
+  (D1-pictures, D1-map) holds the bundle's drawing of every picture to the
+  answer's own `svg`, to the byte.
+* **WHAT THE ANSWER CARRIES FOR IT.** The delegation pictures already
+  answered the graph (`graph`, or the map's `nodes` and `edges`) and `looks`;
+  they add `drawing.verifiesCredentials`, the one fact about the realm a
+  tooltip sentence turns on. The federation map adds each node's `realm`,
+  `realmName`, `application` and `peer`, `looks` (each box's link) and the
+  same `drawing.verifiesCredentials`; an edge's relationship row is found in
+  `relationships` by its `relationship`. Geolocation adds `drawing.map`: the
+  level, the counted countries' steps and tooltips, the labels and the
+  cities, each with its coordinates, which on a map are data.
+* **dagre IS BUNDLED.** `@dagrejs/dagre` is the one package a `web_` module
+  requires (`console_web_bundle.js` A2 names it, for the two modules that
+  lay a graph out); it is pure JavaScript, uses `structuredClone` (which the
+  test sandbox is given, as every browser has it) and leaves no `require()`
+  in the bundle. The CSP is unchanged: `script-src 'self'`, no inline script.
+* **THE OUTLINES ARE A STATIC FILE**, `GET /admin/geo-outlines.json`, the
+  1.3 MB `natural_earth/countries.json` as it ships (precompressed by the
+  image build), which the runtime fetches once per load (a page row's
+  `assets`, into the view's `countryOutlines`) rather than in every answer. A view without them says the map
+  could not be drawn and draws the tables.
+* **`?format=svg` IS DRAWN IN THE BROWSER TOO**, from the answer in hand
+  (`WebPages.documentOf()`, a page row's `document`), and saved as a file.
+  The API's own `format=svg` and every answer's `svg` and `picture.svg` are
+  still answered — nothing an existing caller reads changed — but the console
+  no longer reads them. Whether to retire them is rcbj's decision: the
+  console operations' `svg` is console-only markup (`mgmt-api/CLAUDE.md`
+  3cc), while `getCredentialLineage`'s `svg` and `format=svg` and
+  `getGeolocation`'s `picture.svg` are on management operations.
+* **THE KEYS ARE STILL DRAWN ON THE SERVER** (`mapKey`): fixed markup — the
+  delegation key out of the glyph functions, the federation key out of
+  one-box graphs put through the real renderer — whose sentences the server
+  translates as a filled template (#543). They depend on no data; moving them
+  means moving their sentences into the console's catalogs.
 
 ## `/admin/delegation/map` IS THE FIRST DRAWING IN THIS SERVICE
 
@@ -8083,7 +8134,7 @@ module always was, and imports the kit by its relative path.
 | `web_listeners.ts` | The body of `/admin/listeners`, a tab per group of settings drawn by `SettingsForms.forms()` from the view's `settings`, which `listenersView()` carries since #446. Each listener's tab opens with what is in force there, its TLS policy and its HTTP pooling (the view's `http`, `tls_server.js`'s `httpPolicyFor()`), and a TLS listener's shows *HTTP/2 offered* and, since #1304, the stream cap beside it (`http2MaxConcurrentStreams`, `consoleListeners.rowHttp2Streams`); `tests/main_port_http2.js` 15. |
 | `web_scheduler.ts` | The body of `/admin/scheduler`, the list and one run, its Run now buttons drawn only when `ctx.write` says so. It draws both lists' paging from the view's `jobsPaging` and `runsPaging` — the page had read two paging objects hidden from JSON — and its view carries `settings` unless the reader is a realm's own administrator. `firstOf()` and `STATE_WORDS` are its; `span()` is the kit's, which `Scheduler.span()` calls. |
 | `web_mail.ts`, `web_mail_outbox.ts` | The bodies of `/admin/mail` (the channel, or one template) and `/admin/mail/outbox` (the list, or one message), each a renderer of its own because each is a page of its own. The outbox's paging is drawn from `rowsPaging`; the page had read a paging object JSON never carried. |
-| `web_geolocation.ts` | The body of `/admin/geolocation`. **The map is laid out by the server and arrives in the view** as `drawing` (the SVG and its legend) with `noDataColour`, as `/admin-api/delegation/map` answers its picture: the outlines and the projection are `geo_map.ts`'s and stay on the server. `hrefOf()`, `countText()` (told the minimum count by the view), `WINDOW_LABELS` and `DEFAULT_WINDOW` are the renderer's, read back by `geolocation_admin.ts`. |
+| `web_geolocation.ts` | The body of `/admin/geolocation`. **The map is drawn here since #444's phase 2b**, from the view's `drawing.map` over the outlines the runtime fetched (`countryOutlines`), by `web_geo_map.ts`; the view still carries the server's drawing (`picture`), the legend and `noDataColour`. `hrefOf()`, `countText()` (told the minimum count by the view), `WINDOW_LABELS` and `DEFAULT_WINDOW` are the renderer's, read back by `geolocation_admin.ts`. |
 | `../oauth-oidc/web_claims_providers.ts` | The body of `/admin/claim-providers`, the redirect URI read from the view's `redirectUri` (which the API always answered and the page computed again). |
 | `../oauth-oidc/web_provider_commands.ts` | The bodies of `/admin/commands` (`render()`) and `/admin/deliveries` (`deliveriesBody()`, whose state filter is the render context's), sharing the delivery row and its Retry form. |
 | `../oidfed/web_oidfed.ts` | The body of `/admin/oidfed`. Its view and `GET /admin-api/oidfed`'s are one function since #446 (`oidfedView()`, the federation view with the page's `settings`); a resolution the reader just asked for is drawn from the view's `resolution`, which only the action's redraw sets. |
