@@ -205,7 +205,7 @@ async function test() {
   });
 
   log.info("=== e. a person, out and back in ===");
-  await ok(fromApi + "/users/create", { username: PERSON, invent: "no",
+  await ok(fromApi + "/users/create", { username: PERSON, invent: false,
     attributes: { cn: "LDIF Person", sn: "Person", givenName: "LDIF",
                   mail: PERSON + "@example.net", title: "Engineer" },
     credential: "password", password: PASSWORD },
