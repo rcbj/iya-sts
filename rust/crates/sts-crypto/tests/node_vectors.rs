@@ -141,13 +141,22 @@ fn jwe_private(
     }
 }
 
+/// Every JWE Node encrypted opens here through the door Node's own callers
+/// use (`decryptJweCompactAsync()`, [`decrypt_compact_derived`]); and every
+/// refusal row — PBES2 handed to a synchronous door, or a `p2c` outside the
+/// bounds — is refused here in Node's words. The generator runs in
+/// development mode, whose answers [`JwePolicy::DEVELOPMENT`] carries.
 #[test]
 fn every_node_jwe_decrypts_here() {
-    use sts_crypto::jwe::{decrypt_compact, DecryptOptions};
+    use sts_crypto::jwe::{
+        decrypt_compact, decrypt_compact_derived, encrypt_compact,
+        DecryptOptions, EncryptOptions, JwePolicy,
+    };
     let Some(rows) = read("jwe-node.json") else {
         return;
     };
     assert!(rows.len() >= sts_crypto::jwe::algs().len());
+    let mut refusals = 0;
     for row in &rows {
         let alg = row["alg"].as_str().unwrap();
         let secret = row["secret"]
@@ -156,27 +165,60 @@ fn every_node_jwe_decrypts_here() {
         let private_key = row["privateJwk"]
             .as_object()
             .and_then(|_| jwe_private(&row["privateJwk"]));
-        let out = decrypt_compact(
-            row["compact"].as_str().unwrap(),
-            &DecryptOptions {
-                private_key: private_key.as_ref(),
-                private_jwk: row["privateJwk"]
-                    .as_object()
-                    .map(|_| &row["privateJwk"]),
-                secret: secret.as_deref(),
-                ..DecryptOptions::default()
-            },
-        )
-        .unwrap_or_else(|e| panic!("{} {}: {}", alg, row["enc"], e));
+        let options = DecryptOptions {
+            private_key: private_key.as_ref(),
+            private_jwk: row["privateJwk"]
+                .as_object()
+                .map(|_| &row["privateJwk"]),
+            secret: secret.as_deref(),
+            pbes2_min_iterations: row["minIterations"].as_u64().unwrap_or(0),
+            policy: JwePolicy::DEVELOPMENT,
+            ..DecryptOptions::default()
+        };
+        if let Some(refusal) = row["refusal"].as_str() {
+            refusals += 1;
+            let door = row["door"].as_str().unwrap();
+            let refused = match door {
+                "sync-encrypt" => encrypt_compact(
+                    br#"{"sub":"alice"}"#,
+                    &EncryptOptions {
+                        alg: Some(alg),
+                        enc: row["enc"].as_str().unwrap(),
+                        secret: secret.as_deref(),
+                        policy: JwePolicy::DEVELOPMENT,
+                        ..EncryptOptions::default()
+                    },
+                )
+                .map(|_| ()),
+                "sync" => {
+                    decrypt_compact(row["compact"].as_str().unwrap(), &options)
+                        .map(|_| ())
+                }
+                _ => decrypt_compact_derived(
+                    row["compact"].as_str().unwrap(),
+                    &options,
+                )
+                .map(|_| ()),
+            };
+            match refused {
+                Ok(()) => panic!("{} {}: Rust did not refuse", alg, door),
+                Err(e) => assert_eq!(e.0, refusal, "{} {}", alg, door),
+            }
+            continue;
+        }
+        let out =
+            decrypt_compact_derived(row["compact"].as_str().unwrap(), &options)
+                .unwrap_or_else(|e| panic!("{} {}: {}", alg, row["enc"], e));
         assert_eq!(out.plaintext, br#"{"sub":"alice"}"#, "{}", alg);
     }
+    assert!(refusals >= 15, "the PBES2 refusals are in the vectors");
 }
 
 #[test]
 fn write_the_rust_jwe_vectors_when_asked() {
     use sts_crypto::jwe::{
-        algs, encrypt_compact, generate_kem_key_pair, AlgKind, EncryptOptions,
-        ENCS,
+        algs, encrypt_compact_derived, generate_kem_key_pair, AlgKind,
+        EncryptOptions, JwePolicy, ENCS,
     };
     if std::env::var("STS_WRITE_VECTORS").as_deref() != Ok("1") {
         return;
@@ -236,13 +278,14 @@ fn write_the_rust_jwe_vectors_when_asked() {
         if let Some(secret) = &secret {
             row["secret"] = json!(sts_crypto::b64::encode(secret));
         }
-        row["compact"] = json!(encrypt_compact(
+        row["compact"] = json!(encrypt_compact_derived(
             br#"{"sub":"alice"}"#,
             &EncryptOptions {
                 alg: Some(&name),
                 enc,
                 jwk: public.as_ref(),
                 secret: secret.as_deref(),
+                policy: JwePolicy::DEVELOPMENT,
                 ..EncryptOptions::default()
             },
         )

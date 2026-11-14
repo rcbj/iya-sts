@@ -21,13 +21,11 @@ use base64::Engine;
 use serde_json::{json, Value as Json};
 use sts_crypto::pq_x509::{self, PrivateForm};
 
-/// THE ONE KNOWN NODE DEFECT HERE: `@noble/curves` 1.4.0 writes and reads
-/// a DER ECDSA signature with a SHORT-FORM length only, so a P-521
-/// signature — the one over 127 bytes — is `30 87 …` where DER is
-/// `30 81 87 …`. Every composite Node signs with this algorithm is refused
-/// by OpenSSL and every strict verifier, and Node refuses correct ones.
-/// Rust writes and reads DER.
-const NOBLE_P521: &str = "mldsa87-ecdsa-p521-sha512";
+// Node's P-521 composite was the one known defect here until #445: its
+// ECDSA half came from `@noble/curves` 1.4.0's DER codec, which writes the
+// SEQUENCE length as one byte, so every signature over 127 bytes was
+// `30 87 ...` where DER is `30 81 87 ...`. `pqc_x509.js` now writes and
+// reads that DER itself, so every row, P-521 included, verifies both ways.
 
 fn b64(v: &Json) -> Vec<u8> {
     STANDARD.decode(v.as_str().unwrap()).unwrap()
@@ -106,18 +104,7 @@ fn post_quantum_x509_matches_node() {
             let theirs = b64(sig);
             let verified =
                 pq_x509::verify(id, &theirs, &message, &public).unwrap();
-            if id == NOBLE_P521 {
-                // Node's ECDSA half is not DER (see NOBLE_P521): refused
-                // here, as OpenSSL refuses it. When Node is fixed this
-                // fails, and the exception goes.
-                let trad = &theirs[4627..];
-                check(
-                    !verified && trad[0] == 0x30 && trad[1] > 0x81,
-                    "Node's short-form P-521 DER is refused",
-                );
-            } else {
-                check(verified, "Node's signature verifies");
-            }
+            check(verified, "Node's signature verifies");
             let ours = pq_x509::sign(id, &message, &private).unwrap();
             written.push(json!({
                 "id": id, "pub": row["pub"], "message": row["message"],

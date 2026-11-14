@@ -139,7 +139,13 @@ function jweRecipient(alg) {
   return crypto.generateJweKemKeyPair(alg, 'node-1');
 }
 
-function jwe() {
+// PBES2 IS DERIVED OFF THE EVENT LOOP (ASVS 5.0.0 11.4.4): the synchronous
+// door refuses a PBES2 JWE, so every row is made with
+// `encryptJweCompactAsync()`, which is the synchronous door for every other
+// alg. After the rows, the refusals Rust must make in the same words: the
+// synchronous door handed a PBES2 JWE, and the asynchronous one handed a
+// `p2c` below the floor or above the ceiling.
+async function jwe() {
   const cases = crypto.JWE_ALGS.map(function (alg) {
     return { alg: alg, enc: 'A256GCM' };
   }).concat(Object.keys(crypto.JWE_ENCS).map(function (enc) {
@@ -147,18 +153,75 @@ function jwe() {
   }), Object.keys(crypto.JWE_ENCS).map(function (enc) {
     return { alg: 'dir', enc: enc };
   }));
-  return cases.map(function (one) {
+  const rows = [];
+  for (const one of cases) {
     const recipient = jweRecipient(one.alg);
     const secret = recipient ? null : jweSecretFor(one.alg, one.enc);
-    const compact = crypto.encryptJweCompact('{"sub":"alice"}', {
+    const compact = await crypto.encryptJweCompactAsync('{"sub":"alice"}', {
       alg: one.alg, enc: one.enc,
       jwk: recipient ? recipient.publicJwk : undefined,
       secret: secret || undefined });
-    return { alg: one.alg, enc: one.enc,
-             privateJwk: recipient ? recipient.privateJwk : null,
-             secret: secret ? secret.toString('base64url') : null,
-             compact: compact };
-  });
+    rows.push({ alg: one.alg, enc: one.enc,
+                privateJwk: recipient ? recipient.privateJwk : null,
+                secret: secret ? secret.toString('base64url') : null,
+                compact: compact });
+  }
+  return rows.concat(await jweRefusals());
+}
+
+// A PBES2 JWE with its header's `p2c` replaced: the ciphertext no longer
+// matters, because the count is refused before anything is derived.
+function withP2c(compact, p2c) {
+  const parts = compact.split('.');
+  const header = JSON.parse(Buffer.from(parts[0], 'base64url')
+    .toString('utf8'));
+  header.p2c = p2c;
+  parts[0] = Buffer.from(JSON.stringify(header), 'utf8')
+    .toString('base64url');
+  return parts.join('.');
+}
+
+async function jweRefusals() {
+  const out = [];
+  const secret = Buffer.from('a password for PBES2', 'utf8');
+  for (const alg of crypto.JWE_ALGS.filter(function (a) {
+    return /^PBES2-/.test(a);
+  })) {
+    const compact = await crypto.encryptJweCompactAsync('{"sub":"alice"}',
+      { alg: alg, enc: 'A256GCM', secret: secret });
+    const refused = async function (door, text, minIterations) {
+      try {
+        if (door === 'sync') {
+          crypto.decryptJweCompact(text, { secret: secret });
+        } else {
+          await crypto.decryptJweCompactAsync(text, { secret: secret });
+        }
+      } catch (e) {
+        out.push({ alg: alg, enc: 'A256GCM', door: door,
+                   secret: secret.toString('base64url'), compact: text,
+                   minIterations: minIterations,
+                   refusal: (e && e.message) || String(e) });
+        return;
+      }
+      throw new Error(alg + ': the ' + door + ' door did not refuse');
+    };
+    let syncEncrypt = null;
+    try {
+      crypto.encryptJweCompact('{"sub":"alice"}',
+                               { alg: alg, enc: 'A256GCM', secret: secret });
+    } catch (e) {
+      syncEncrypt = (e && e.message) || String(e);
+    }
+    out.push({ alg: alg, enc: 'A256GCM', door: 'sync-encrypt',
+               secret: secret.toString('base64url'), compact: null,
+               refusal: syncEncrypt });
+    await refused('sync', compact, null);
+    // npm-tests runs in development, whose floor is RFC 7518's 1000.
+    await refused('async', withP2c(compact, 999), 1000);
+    await refused('async', withP2c(compact, '12x'), 1000);
+    await refused('async', withP2c(compact, 1000001), 1000);
+  }
+  return out;
 }
 
 // CANONICAL XML: every element of every document, in all four forms, as
@@ -859,7 +922,7 @@ function kerberosAndDkim() {
 // DER and so must be Rust's bytes; Rust must verify every signature, and
 // Node verifies Rust's (tests/rust_crypto_vectors.js).
 async function pqX509() {
-  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+  const pqcX509 = require(path.join(ROOT, 'common', 'crypto_impl',
                                     'pqc_x509.js'));
   const message = Buffer.from('a certificate\'s to-be-signed bytes');
   const out = [];
@@ -898,7 +961,7 @@ async function pqX509() {
 // which Rust activates; and CMS SignedData made by the openssl command
 // line, with the signer's certificate embedded and (AWS's shape) without.
 async function rawSignatures() {
-  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+  const pqcX509 = require(path.join(ROOT, 'common', 'crypto_impl',
                                     'pqc_x509.js'));
   const data = Buffer.from('a challenge the attestor signs');
   const spkiOf = function (pub) {
@@ -1227,7 +1290,7 @@ function webauthn() {
   };
   // A CSR attestation bundle with a tcg-attest-tpm-certify statement.
   const certDer = new nodeCrypto.X509Certificate(
-    require(path.join(ROOT, 'common', 'vendored', 'xmldsig.js'))
+    require(path.join(ROOT, 'common', 'crypto_impl', 'xmldsig.js'))
       .generateKeyPair(1024, 'bundle').certPem).raw;
   const stmt = new asn1js.Sequence({ value: [
     new asn1js.OctetString({ valueHex: sized(attest) }),
@@ -1263,7 +1326,7 @@ function webauthn() {
 // tampered signature, odd hex and thresholds Number() reads oddly; Rekor
 // SETs good, tampered and from an unknown log; DSSE PAE and the two hashes.
 async function sigstore() {
-  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+  const pqcX509 = require(path.join(ROOT, 'common', 'crypto_impl',
                                     'pqc_x509.js'));
   const values = [
     null, true, 0, -0, 1, -17, 1e21, 1e20, 0.1, 1.5e-7, 123.456,

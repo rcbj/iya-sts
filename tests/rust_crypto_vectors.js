@@ -79,11 +79,26 @@ function run(t) {
             row.alg + ': a token Rust signed with a key Rust generated ' +
             'verifies in Node', why);
   });
-  const jwes = read('jwe-rust.json');
+  log.debug("Leaving run(). The JWE checks are asynchronous.");
+  return jwesFromRust(t, read('jwe-rust.json')).then(function () {
+    return afterJwes(t);
+  });
+}
+
+// JWE: every JWE Rust encrypted decrypts in Node, through the door Node's
+// own callers use — `decryptJweCompactAsync()`, which derives a PBES2 key
+// off the event loop and is `decryptJweCompact()` for every other alg.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} jwes - jwe-rust.json
+ * @returns {Promise<void>} when every row is checked
+ */
+async function jwesFromRust(t, jwes) {
+  log.debug("Entering jwesFromRust().");
   t.check(jwes.length >= crypto.JWE_ALGS.length,
           'there is a Rust JWE vector for every alg Node speaks',
           jwes.length + ' / ' + crypto.JWE_ALGS.length);
-  jwes.forEach(function (row) {
+  for (const row of jwes) {
     const options = {};
     if (row.secret) {
       options.secret = Buffer.from(row.secret, 'base64url');
@@ -97,25 +112,37 @@ function run(t) {
     let opened = null;
     let why = '';
     try {
-      opened = crypto.decryptJweCompact(row.compact, options);
+      opened = await crypto.decryptJweCompactAsync(row.compact, options);
     } catch (e) {
-      log.debug("Caught in run(): " + ((e && e.message) || e));
+      log.debug("Caught in jwesFromRust(): " + ((e && e.message) || e));
       why = (e && e.message) || String(e);
     }
     t.check(!!opened && opened.plaintext === '{"sub":"alice"}',
             row.alg + ' ' + row.enc + ': a JWE Rust encrypted decrypts in ' +
             'Node', why);
-  });
+  }
+  log.debug("Leaving jwesFromRust().");
+}
+
+/**
+ * The checks after the JWE ones.
+ *
+ * @param {any} t - the runner's check collector
+ * @returns {Promise<void>|undefined} when the asynchronous checks are done
+ */
+function afterJwes(t) {
+  log.debug("Entering afterJwes().");
   if (fs.existsSync(path.join(VECTORS, 'xmldsig-rust.json'))) {
     xmlSignatures(t, read('xmldsig-rust.json'));
   }
   if (fs.existsSync(path.join(VECTORS, 'pq-x509-rust.json'))) {
-    log.debug("Leaving run(). The post-quantum checks are asynchronous.");
+    log.debug("Leaving afterJwes(). The post-quantum checks are " +
+              "asynchronous.");
     return pqX509FromRust(t, read('pq-x509-rust.json')).then(function () {
       return restOfRun(t);
     });
   }
-  log.debug("Leaving run().");
+  log.debug("Leaving afterJwes().");
   return restOfRun(t);
 }
 
@@ -240,12 +267,9 @@ async function sigstoreFromRust(t, v) {
   log.debug("Leaving sigstoreFromRust().");
 }
 
-// The composite whose ECDSA half is P-521: @noble/curves 1.4.0 writes and
-// reads its DER with a short-form length, which is not DER.
-const NOBLE_P521 = 'mldsa87-ecdsa-p521-sha512';
-
 // POST-QUANTUM KEYS IN X.509: every signature Rust made verifies with
-// pqc_x509.js, the engine every post-quantum certificate here is checked by.
+// pqc_x509.js, the engine every post-quantum certificate here is checked by
+// — the P-521 composite too, since #445 made that engine's ECDSA half DER.
 /**
  * @param {any} t - the runner's check collector
  * @param {any} rows - pq-x509-rust.json
@@ -253,7 +277,7 @@ const NOBLE_P521 = 'mldsa87-ecdsa-p521-sha512';
  */
 async function pqX509FromRust(t, rows) {
   log.debug("Entering pqX509FromRust().");
-  const pqcX509 = require('../common/vendored/pqc_x509.js');
+  const pqcX509 = require('../common/crypto_impl/pqc_x509.js');
   for (const row of rows) {
     let ok = false;
     try {
@@ -262,14 +286,6 @@ async function pqX509FromRust(t, rows) {
                                 Buffer.from(row.pub, 'base64'));
     } catch (e) {
       log.debug("Caught in pqX509FromRust(): " + ((e && e.message) || e));
-    }
-    if (row.id === NOBLE_P521) {
-      // The known defect: @noble/curves 1.4.0 reads a DER ECDSA signature
-      // with a short-form length only, so a correct P-521 one is refused.
-      // When Node is fixed this fails, and the exception goes.
-      t.check(!ok, row.id + ': Node refuses a correct (long-form DER) P-521 ' +
-              'signature — the known @noble/curves 1.4.0 defect');
-      continue;
     }
     t.check(ok, row.id + ': a signature Rust made verifies in Node');
   }
