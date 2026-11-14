@@ -23813,6 +23813,16 @@ const CODES = [
       'session whose relying party or access token could not be had ' +
       '(#1760, D11).',
     spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0099',
+    summary: 'The CAEP/RISC stream of a session route\'s relying party ' +
+      'has not answered a poll within PEP_PROXY_SIGNALS_STALE_MS (the ' +
+      'library\'s receiver health: no successful poll, the failures and ' +
+      'the last error in the log line), so its signals no longer decide ' +
+      'whether a proxy session is live: the service\'s session endpoint ' +
+      '(POST /xacml/pep/session) is asked instead until the stream answers ' +
+      'again. Logged once when it goes stale; the recovery is logged ' +
+      'without a code (#1760).',
+    spec: 'none; the fallback decides liveness' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

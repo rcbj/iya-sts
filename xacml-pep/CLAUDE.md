@@ -452,6 +452,13 @@ console.
 | `PEP_PROXY_UPSTREAM_INSECURE` | `false` | Do not verify an `https` upstream's certificate. |
 | `PEP_PROXY_RP_ALLOW_INSECURE` | `false` | The session mechanism's relying party may talk to an `http` issuer (the library's `allowInsecure`): a development provider only. It never relaxes the redirect URI, which the library holds to https or loopback. |
 | `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | How often the CAEP/RISC receiver polls the service's stream (at least 100). |
+| `PEP_PROXY_SIGNALS_STALE_MS` | `60000` | How long a receiver may go without a successful poll before its signals stop deciding whether a proxy session is live, and the service's session endpoint is asked instead (`STS-XPEP-0099`). Never less than three polls. |
+
+`PEP_PROXY_MAX_SESSIONS` and `PEP_PROXY_SESSION_TTL_MS` also bound the
+LIBRARY's session store (one per client): twice the first as entries, the
+second as each entry's life after it was last written. Not settings of their
+own, because the two stores hold the same set and two numbers that must
+agree would one day not.
 
 **The compose service, beyond the table** (moved from `docker-compose.yml`'s
 comments on 2026-10-07): it is under `profiles: [xacml]`, so a plain `up` never
@@ -1029,7 +1036,9 @@ too.
 party ON BEHALF OF THE APPLICATION BEHIND IT** — an ordinary CONFIDENTIAL
 client the administrator registered in iya-sts, with
 `<publicBaseUrl>/.iya-pep/callback` among its redirect URIs — **and it is
-implemented with rcbj's crate `oidc-caep-risc` (0.2.1, crates.io, MIT)**,
+implemented with rcbj's crate `oidc-caep-risc` (0.3.0, MIT; a git dependency pinned
+to a commit until rcbj publishes 0.3.0 to crates.io, then `version =
+"0.3.0"`, `features = ["tokio"]`)**,
 never a relying party written here (`rust/DESIGN.md` section 7). The
 hand-written PKCE, nonce, token exchange and ID Token check of the first
 draft are gone; `jwt.rs` stays for the `oauth2` mechanism.
@@ -1053,11 +1062,18 @@ drops what it no longer does; a request also builds one on demand. **No
 secret is logged, kept in a `Debug` line (`RpClient`'s is redacted) or shown
 on `GET /`**, which counts relying parties and receivers only.
 
-**THE LIBRARY IS BLOCKING** (ureq): `create`, `authorize`,
-`complete_session` and a receiver's `start` run on `spawn_blocking`, never on
-the runtime's threads; a receiver's `stop`, which waits up to twenty seconds
-for its poll thread, runs on a thread of its own and is never awaited; the
-receiver polls on a thread the library spawns.
+**THE LIBRARY'S ASYNC API** (its `tokio` feature): `create_async`,
+`authorize_async`, `complete_session_async`, `session_access_token_async`
+and a receiver's `start_async` are awaited; the library runs each on tokio's
+blocking pool, never on the runtime's threads. Its HTTP client is still
+`ureq`, so each call in flight holds one blocking-pool thread (at most the
+library's 15 s timeout per request) and a dropped future does not cancel it.
+That is the cost the proxy paid with its own `spawn_blocking` until 0.3.0,
+and the library pays it now. Sign-ins are the only such calls on a request;
+access checks (`session()`, `health()`) are map reads. A receiver's
+`stop_async`, which waits only for a transmitter call in flight, runs as a
+task of its own and is never awaited on a request; the receiver polls on its
+one thread.
 
 **A browser** — a GET or HEAD whose `Accept` holds `text/html` — on a
 `session` route with no live proxy session of THAT application is sent
@@ -1113,28 +1129,44 @@ clears the cookie, and sends the browser to the library's
 `end_session_url()` (the provider's `end_session_endpoint` from discovery,
 with `id_token_hint` and `client_id`).
 
-**What the library does not offer that the proxy would use**, worked
-around rather than patched:
+**What the library offered too little of, and what 0.3.0 changed**
+(rcbj/oidc-caep-risc-rust PR #44; each gap confirmed here first):
 
-* **A non-blocking API.** Every call is wrapped in `spawn_blocking`.
-* **Log integration.** A failed poll and a refused SET are written to
-  stderr with `eprintln!`, not through `sts-core::log`, so they carry no
-  `STS-XPEP` code; the proxy logs what it sees of them (a receiver that
-  will not start, a session it ends).
-* **A receiver's health.** There is no "is the poll stream working" query;
-  a receiver that started and then fails every poll goes on backing off on
-  its thread, and access keeps being decided by the library's cache — so a
-  stream that dies after start is NOT noticed here, and a sign-out the
-  service signals while it is down ends nothing until it recovers. (The
-  service's session endpoint is not asked as well, deliberately, or signals
-  would buy nothing.)
-* **A separate transmitter URL.** The receiver is pointed at the realm's
-  issuer; the pull names no SSF transmitter.
-* **A bounded session store.** `MemorySessionStore` has no bound; the proxy
-  bounds its own sessions (`PEP_PROXY_MAX_SESSIONS`) and removes the
-  library's entry whenever it ends one, so the two are the same set.
-* **Insecure TLS for development.** There is no option to skip verification;
-  `tlsCa` is the pulled chain, which is why the pull carries it.
+* **A non-blocking API.** The `tokio` feature's `_async` calls, above.
+* **A receiver's health.** `SignalsReceiver::health()`: running, the last
+  successful poll, the last error, failures in a row, counters. **A stream
+  that stops answering after start IS noticed now**: with no successful poll
+  within `PEP_PROXY_SIGNALS_STALE_MS`, `Party::signals_live()` is false, so
+  that client's routes ask the service's session endpoint (on
+  `PEP_PROXY_SESSION_RECHECK_MS`) until a poll succeeds again, and a
+  sign-out signalled while the stream is down is still caught.
+  `STS-XPEP-0099` is logged when it goes stale and the recovery once, never
+  per request. The service is not asked while the stream is healthy, or
+  signals would buy nothing. `GET /`'s `proxy.signals` reports it:
+  receivers, healthy, stale, the oldest last-success age, the most failures
+  in a row, SETs accepted and refused, sessions ended, and the library
+  stores' held / max / evicted / expired. Counts and ages only, no client
+  id, URL or error text. The service does not record it yet: that needs a
+  directory attribute on the PEP's row, its model and a console column.
+* **Log integration.** `ReceiverOptions::on_error` takes the library's own
+  lines (a failed poll, a refused SET), written to this log at debug; the
+  state change that matters is the one `STS-XPEP-0099` line.
+* **A bounded session store.** `MemorySessionStore::new(max, ttl)`, from
+  `PEP_PROXY_MAX_SESSIONS` (twice it) and `PEP_PROXY_SESSION_TTL_MS`. The
+  proxy's own store is still the admission rule and still removes the
+  library's entry whenever it ends a session. The library's bound keeps
+  memory finite when an entry is not removed (a proxy session that simply
+  expired), and the headroom keeps such an entry from pushing a live one
+  out.
+* **Insecure TLS for development: deliberately NOT added.** The real need
+  was trusting a CA the development stack regenerates on every start, and
+  `tlsCa` already meets it: the pull carries the service's current listener
+  chain on every poll, the library adds every certificate in it as an anchor
+  and checks the host name, and a changed chain changes the digest and
+  rebuilds the relying party. Skipping verification would trust whatever
+  answers.
+* **Still not offered: a separate transmitter URL.** The receiver is pointed
+  at the realm's issuer; the pull names no SSF transmitter.
 
 **In memory, bounded, purged at the insert, never on a timer**
 (`rp_session.rs`): a proxy session lives at most `PEP_PROXY_SESSION_TTL_MS`;

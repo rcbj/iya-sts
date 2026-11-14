@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5573** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5574** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 157
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 98
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 99
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5190,6 +5190,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0096` | A value the reverse proxy would have sent as identity was refused: a claim holding CR, LF or NUL, a list member holding the route's separator, an object, or a token or cookie that is not a header value (#1760, D11). | HTTP 502, bad_gateway |
 | `STS-XPEP-0097` | The reverse proxy could not establish the application's session for a saml-mode route: the ACS the service named is not an absolute http(s) URL, could not be reached, answered 400 or more, or set no cookie (#1760, D11). | HTTP 502, bad_gateway |
 | `STS-XPEP-0098` | The reverse proxy had no evidence to ask the identity endpoint with: a Basic answer that carried no ticket, or a proxy session whose relying party or access token could not be had (#1760, D11). | HTTP 502, bad_gateway |
+| `STS-XPEP-0099` | The CAEP/RISC stream of a session route's relying party has not answered a poll within PEP_PROXY_SIGNALS_STALE_MS (the library's receiver health: no successful poll, the failures and the last error in the log line), so its signals no longer decide whether a proxy session is live: the service's session endpoint (POST /xacml/pep/session) is asked instead until the stream answers again. Logged once when it goes stale; the recovery is logged without a code (#1760). | none; the fallback decides liveness |
 
 ## STS-AUTHZEN
 

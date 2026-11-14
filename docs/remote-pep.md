@@ -928,6 +928,7 @@ and a PEP has none.
 | `PEP_PROXY_MAX_SESSIONS` | `10000` | the most proxy sessions held. A new one past it is refused `503` |
 | `PEP_PROXY_JWKS_TTL_MS` | `300000` | how long the realm's JWKS is kept |
 | `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | how often the CAEP and RISC stream is polled |
+| `PEP_PROXY_SIGNALS_STALE_MS` | `60000` | how long the stream may go without a successful poll. After that, sessions are checked with the service's session endpoint until it answers again. `GET /` shows the stream's state under `proxy.signals` |
 | `PEP_PROXY_UPSTREAM_CA` | — | a path: anchors for an `https` upstream |
 | `PEP_PROXY_UPSTREAM_INSECURE` | `false` | do not verify an `https` upstream |
 | `PEP_PROXY_RP_ALLOW_INSECURE` | `false` | let the relying party use an `http` issuer, for development only. Redirect URIs stay https |

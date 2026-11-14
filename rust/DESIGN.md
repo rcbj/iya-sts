@@ -514,7 +514,7 @@ the vectors are checked in.
 | QR codes | `qrcode` | Server-drawn SVG, as today |
 | Zip (risk datasets) | `zip` | |
 | User-agent, bot detection | `woothee`; the bot list decided in the risk phase | Today's `bowser` and `isbot` |
-| OpenID Connect relying party, CAEP/RISC receiver | `oidc-caep-risc` (crates.io, MIT, rcbj's) | The remote PEP's reverse proxy (#1760): below |
+| OpenID Connect relying party, CAEP/RISC receiver | `oidc-caep-risc` (MIT, rcbj's; a git commit until 0.3.0 is on crates.io) | The remote PEP's reverse proxy (#1760): below |
 
 **`oidc-caep-risc` IS THE ONE CRATE ADDED FOR A PROTOCOL RATHER THAN A
 PRIMITIVE, AND IT WAS rcbj'S DECISION (#1760, D5 revised).** The reverse
