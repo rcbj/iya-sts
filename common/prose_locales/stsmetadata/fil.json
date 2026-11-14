@@ -3994,5 +3994,29 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "isang parameter"
+  },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "Ang ipinapatupad ng xacml-pep container kapag nakatayo ito sa harap ng isang application (#1760): ang upstream na pinagpapasahan nito, ang nakaayos na mga route kasama ang mga mekanismong tinatanggap ng bawat isa at ang XACML resource at action na tinutumbasan ng bawat isa, ang application ng bawat route na nalutas mula sa registry, ang mga realm fact na ginagamit nito sa lokal na validation (issuer, JWKS, ang mga sign-in endpoint, ang mga SAML signing certificate, ang chain ng listener, ang mga client ng mga session route) at ang apat na validation URL sa ibaba, sa ilalim ng sarili nitong sync token; sumasagot ng 304 ang ?since=<token>. Ang PEP na walang configuration ay configured: false at tinatanggihan ng proxy nito ang lahat. Nangangailangan ng REMOTE_PEPS, tulad ng policy pull; walang nudge."
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "Ang sariling RFC 7662 na pagbasa ng authorization server sa isang OAuth 2.0 access token na hindi ma-verify ng proxy (isang opaque token, o key na wala sa JWKS), sa pamamagitan ng mutual TLS ng PEP sa halip na sariling client registration. Nangangailangan ng REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "Ang username at password ng isang tao, bina-verify dito at hindi kailanman sa PEP, sa likod ng sariling mga limit ng sign-in (429 na may retryAfterS); ang pagtanggi ay { valid: false } at wala nang iba pang sinasabi. Nangangailangan ng REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "Isang assertion na inilabas ng realm na ito, sinusuri dito kapag hindi ito masuri ng proxy: ang enveloped signature sa root assertion laban sa mga XML signing certificate ng realm, ang issuer, ang mga condition at ang audience ng route. Tinatanggihan ang EncryptedAssertion. Nangangailangan ng REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "Kung buhay pa ang sign-on session na pinangangalanan ng sid ng isang ID Token, kaya tinatapos ng pag-sign out dito ang sariling session ng proxy sa susunod nitong pagsusuri. Nangangailangan ng REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "Para sa route ng nagtatanong na PEP, ang pagkakakilanlang pinangangalanan ng ebidensya nito (isang access token, isang SAML assertion o isang Basic ticket, bina-validate muli), sa mode ng route: mga claim para sa mga header nito, isang access token para sa application, o isang nilagdaang SAML Response sa assertion consumer service nito. Nangangailangan ng REMOTE_PEPS."
   }
 }

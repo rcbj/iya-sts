@@ -250,8 +250,8 @@ function childMain() {
                wrong: errorCodes.codeOf(wrongVerdict) }));
       }
       const doors = credentials.passwordOnlyDoors(ENROLLED);
-      note(doors.refused.join(',') === DOORS.join(','),
-           'B5. PRODUCT: passwordOnlyDoors() names all five for the enrolled ' +
+      note(doors.refused.join(',') === DOORS.concat(['xacml-pep']).join(','),
+           'B5. PRODUCT: passwordOnlyDoors() names all six for the enrolled ' +
            'person', JSON.stringify(doors.refused));
     } finally {
       config.clearOverride('global.mode');

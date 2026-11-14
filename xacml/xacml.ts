@@ -170,6 +170,11 @@ import validate = require('./xacml_validate');
 import mtls = require('../oauth-oidc/mtls');
 import peps = require('./xacml_pep_registry');
 import pepHttp = require('./xacml_pep_http');
+// The remote PEP's reverse proxy (#1760): its configuration grammar, the
+// pull's body and the four validation doors. A LIBRARY: it registers no
+// route, and what it asks of `oauth2`, `authn` and the registry it requires
+// lazily, so its position here is not a position.
+import pepProxy = require('./xacml_pep_proxy');
 // The decision counters behind /admin/xacml/monitor. A LEAF (rule 3): it
 // registers no route, so its position here is not a position, and it requires
 // nothing that requires it back.
@@ -318,6 +323,7 @@ interface XacmlSurfaceDeps {
   mtls: typeof mtls;
   peps: typeof peps;
   pepHttp: typeof pepHttp;
+  pepProxy: typeof pepProxy;
   monitor: typeof monitor;
   roles: typeof roles;
   accessGate: typeof accessGate;
@@ -459,6 +465,7 @@ class XacmlSurface {
       mtls: mtls,
       peps: peps,
       pepHttp: pepHttp,
+      pepProxy: pepProxy,
       monitor: monitor,
       roles: roles,
       accessGate: accessGate,
@@ -1477,6 +1484,107 @@ class XacmlSurface {
       ' xacml.enforceAccess turns this layer off.');
     log.debug('Leaving XacmlSurface.pepAccess(). Refused.');
     return { allowed: false };
+  }
+
+  // ===========================================================================
+  // THE REVERSE PROXY'S DOORS (#1760). The PEP is named the registration's
+  // way: by the certificate where there is one, by the caller's own `name`
+  // only where there is none (`xacml.pepRequireCertificate` off).
+  // ===========================================================================
+  /**
+   * The register name of the PEP a request comes from.
+   *
+   * @param identity - what the connection carried
+   * @param given - the name the caller sent, read only with no certificate
+   * @returns the folded name, '' when none is usable
+   */
+  pepNameOf(identity: CallerIdentity | undefined, given: string): string {
+    const { log, peps } = this.deps;
+    log.debug('Entering XacmlSurface.pepNameOf().');
+    const raw = identity && identity.authenticated
+      ? (identity.commonName || identity.dn) : given;
+    const out = peps.nameFrom(raw);
+    log.debug('Leaving XacmlSurface.pepNameOf(). ' + out);
+    return out;
+  }
+
+  /**
+   * Answers one of the four validation doors: the rate limit, the gate, the
+   * question, the audit row and the closed answer.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param what - `introspect`, `basic`, `saml` or `session`
+   * @param ask - the question, answered by `xacml_pep_proxy.ts`
+   * @returns a promise settled once the answer is sent
+   */
+  async validationDoor(req: Req, res: Res, what: string,
+                       ask: (body: any, pep: string) => any): Promise<void> {
+    const self = this;
+    const { log, config, errorCodes, websecurity, audit, parseBody,
+            accessGate } = this.deps;
+    log.debug('Entering XacmlSurface.validationDoor(). ' + what);
+    try {
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving XacmlSurface.validationDoor(). Off.');
+        return;
+      }
+      const identity = self.callerIdentity(req);
+      const within = await websecurity.attemptShared('xacml-pep-validate',
+        req, identity.verified ? identity.dn : '',
+        config.value('xacml.pipMaxPerWindow'));
+      if (!within.ok) {
+        res.set('Retry-After', String(within.retryAfterS));
+        errorCodes.mark(res, 'STS-XACML-0215');
+        self.fail(res, 429, 'too_many_requests',
+          'Too many validation calls from this remote PEP. ' + within.detail +
+          ' The limit is xacml.pipMaxPerWindow per ' +
+          'security.rateLimitWindowS, the PIP\'s.');
+        log.debug('Leaving XacmlSurface.validationDoor(). Rate limited.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP ' + what + ' validation',
+                                    identity);
+      if (!access.allowed) {
+        log.debug('Leaving XacmlSurface.validationDoor(). The access ' +
+                  'policy refused.');
+        return;
+      }
+      const body = parseBody(req);
+      // The PEP is named before it is asked: a Basic ticket is bound to it,
+      // and an identity request may name only its own routes (D11).
+      const pep = self.pepNameOf(identity, String((body || {}).name || ''));
+      const answer = await Promise.resolve(ask(body, pep));
+      audit.audit({
+        action: 'xacml.pep.validate',
+        actor: identity.dn || pep,
+        protocol: 'XACML',
+        errorCode: answer.code || undefined,
+        detail: 'Remote PEP "' + pep + '" asked ' + what + ' about ' +
+                (answer.actor ? '"' + answer.actor + '"' : 'a credential') +
+                ': ' + (answer.reason || ('HTTP ' + answer.status)) + '.'
+      });
+      if (answer.code) {
+        errorCodes.mark(res, answer.code);
+      }
+      if (answer.status === 429 && answer.body &&
+          answer.body.retryAfterS) {
+        res.set('Retry-After', String(answer.body.retryAfterS));
+      }
+      res.status(answer.status).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify(answer.body, null, 2));
+      log.debug('Leaving XacmlSurface.validationDoor(). ' + answer.status);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-XACML-0216') + 'xacml: the remote PEP ' +
+                what + ' validation failed: ' + ((e && e.stack) || e));
+      if (!res.headersSent) {
+        errorCodes.mark(res, 'STS-XACML-0216');
+        self.fail(res, 500, 'server_error', 'The validation failed.');
+      }
+      log.debug('Leaving XacmlSurface.validationDoor(). It threw.');
+    }
   }
 
   // ===========================================================================
@@ -2727,6 +2835,104 @@ class XacmlSurface {
          .send(JSON.stringify(callers.body, null, 2));
       log.debug('Leaving GET /xacml/pep/authzen-callers. ' +
                 callers.body.callers.length + ' caller(s).');
+    });
+
+    // -------------------------------------------------------------------------
+    // GET /xacml/pep/proxy — THE REVERSE PROXY'S CONFIGURATION (#1760).
+    //
+    // ADDITIVE, as the two AuthZEN pulls were: the same gate (`pepAccess()`,
+    // REMOTE_PEPS on `xacml-pep-api`), its own sync token with an ETag and
+    // `?since=` 304, `no-store`, and NO NUDGE — the proxy converges on its
+    // poll. The PEP is found by the name its certificate gives it, the
+    // registration's own rule; `xacml_pep_proxy.ts` builds the body.
+    // -------------------------------------------------------------------------
+    app.get('/xacml/pep/proxy', function (req, res) {
+      log.debug('Entering GET /xacml/pep/proxy.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving GET /xacml/pep/proxy. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP proxy configuration pull');
+      if (!access.allowed) {
+        log.debug('Leaving GET /xacml/pep/proxy. The access policy refused.');
+        return;
+      }
+      const name = self.pepNameOf(access.identity,
+                                  String(req.query.name || ''));
+      const row = name ? peps.read(name) : null;
+      const pulled = self.deps.pepProxy.pull(baseUrlOf(req), row, name);
+      const since = String(req.query.since || '');
+      if (since && since === pulled.token) {
+        res.status(304)
+           .set('Cache-Control', 'no-store')
+           .set('ETag', '"' + pulled.token + '"')
+           .end();
+        log.debug('Leaving GET /xacml/pep/proxy. Unchanged.');
+        return;
+      }
+      res.status(200).type('application/json').set('Cache-Control', 'no-store')
+         .set('ETag', '"' + pulled.token + '"')
+         .send(JSON.stringify(pulled.body, null, 2));
+      log.debug('Leaving GET /xacml/pep/proxy. configured=' +
+                pulled.body.configured);
+    });
+
+    // -------------------------------------------------------------------------
+    // THE FOUR VALIDATION DOORS (#1760, D4): what the proxy cannot establish
+    // itself, asked back over the PEP's mutual TLS. Each is `pepAccess()`'s
+    // READ, rate limited per PEP BEFORE the access check (`/xacml/pip`'s
+    // ordering and its ceiling, `xacml.pipMaxPerWindow`, because a busy
+    // proxy asks per request), `no-store`, audited as `xacml.pep.validate`
+    // naming the PEP, the mechanism and the outcome — never the credential.
+    // -------------------------------------------------------------------------
+    app.post('/xacml/pep/introspect', function (req, res) {
+      log.debug('Entering POST /xacml/pep/introspect.');
+      self.validationDoor(req, res, 'introspect', function (body) {
+        return self.deps.pepProxy.introspect(body);
+      });
+      log.debug('Leaving POST /xacml/pep/introspect.');
+    });
+
+    app.post('/xacml/pep/basic', function (req, res) {
+      log.debug('Entering POST /xacml/pep/basic.');
+      self.validationDoor(req, res, 'basic', function (body, pep) {
+        return self.deps.pepProxy.basic(req, body, pep);
+      });
+      log.debug('Leaving POST /xacml/pep/basic.');
+    });
+
+    app.post('/xacml/pep/saml', function (req, res) {
+      log.debug('Entering POST /xacml/pep/saml.');
+      self.validationDoor(req, res, 'saml', function (body) {
+        return self.deps.pepProxy.saml(body, baseUrlOf(req));
+      });
+      log.debug('Leaving POST /xacml/pep/saml.');
+    });
+
+    app.post('/xacml/pep/session', function (req, res) {
+      log.debug('Entering POST /xacml/pep/session.');
+      self.validationDoor(req, res, 'session', function (body) {
+        return self.deps.pepProxy.session(body);
+      });
+      log.debug('Leaving POST /xacml/pep/session.');
+    });
+
+    // -------------------------------------------------------------------------
+    // POST /xacml/pep/identity (#1760, D11): what a route forwards to its
+    // application about the caller the proxy established — claims for its
+    // headers, an access token, or a signed SAML Response. The fifth door,
+    // through the same `validationDoor()`; the evidence is validated again
+    // here, and the route must be one of this PEP's own.
+    // -------------------------------------------------------------------------
+    app.post('/xacml/pep/identity', function (req, res) {
+      log.debug('Entering POST /xacml/pep/identity.');
+      self.validationDoor(req, res, 'identity', function (body, pep) {
+        return self.deps.pepProxy.identity(body, pep,
+                                           pep ? peps.read(pep) : null,
+                                           baseUrlOf(req));
+      });
+      log.debug('Leaving POST /xacml/pep/identity.');
     });
 
     // -------------------------------------------------------------------------

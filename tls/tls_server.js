@@ -6736,6 +6736,39 @@ function answerCertificateSignIn(req, res) {
   log.debug('Leaving answerCertificateSignIn().');
 }
 
+// THE LISTENER'S CHAIN AS ONE PEM BUNDLE: every leaf the main port presents,
+// their issuers, and the anchors a client installs (the argument is inside
+// `GET /tls/server-certificate`, which answers it). A remote PEP's reverse
+// proxy pulls the same bundle (#1760, `realm.tlsCaChain`), so the two cannot
+// disagree.
+/**
+ * The PEM bundle `GET /tls/server-certificate` publishes: leaves, chain,
+ * anchors.
+ *
+ * @returns the PEM text
+ */
+function listenerChainPem() {
+  log.debug("Entering listenerChainPem().");
+  const chain = [];
+  SERVER_CERTIFICATES.forEach(function (one) {
+    (one.chainPem || []).forEach(function (pemText) {
+      if (chain.indexOf(pemText) < 0) {
+        chain.push(pemText);
+      }
+    });
+  });
+  const pem = SERVER_CERTIFICATES.map(function (one) {
+    return one.certPem;
+  }).concat(chain).concat(trustAnchorPems().filter(function (anchorPem) {
+    // The self-signed case answers the leaf here, and it is already above.
+    return SERVER_CERTIFICATES.every(function (one) {
+      return one.certPem !== anchorPem;
+    });
+  })).join('');
+  log.debug("Leaving listenerChainPem().");
+  return pem;
+}
+
 app.get('/tls/server-certificate', function (req, res) {
   log.debug('Entering GET /tls/server-certificate.');
   // no-store for the same reason every document describing the signing key
@@ -6764,22 +6797,7 @@ app.get('/tls/server-certificate', function (req, res) {
   // THE LEAVES STAY FIRST. `tests/tools/trust.js` reads the first certificate
   // in this document to compute the SPKI pin the browser job uses, and a
   // reader looking for "the server certificate" should find it at the top.
-  const chain = [];
-  SERVER_CERTIFICATES.forEach(function (one) {
-    (one.chainPem || []).forEach(function (pemText) {
-      if (chain.indexOf(pemText) < 0) {
-        chain.push(pemText);
-      }
-    });
-  });
-  const pem = SERVER_CERTIFICATES.map(function (one) {
-    return one.certPem;
-  }).concat(chain).concat(trustAnchorPems().filter(function (anchorPem) {
-    // The self-signed case answers the leaf here, and it is already above.
-    return SERVER_CERTIFICATES.every(function (one) {
-      return one.certPem !== anchorPem;
-    });
-  })).join('');
+  const pem = listenerChainPem();
   res.status(200).type('text/plain').set('Cache-Control', 'no-store')
      .send(pem);
   log.debug('Leaving GET /tls/server-certificate. ' +
@@ -7336,6 +7354,8 @@ module.exports = {
   // leaf of the same TLS Issuing CA now, and this is where that is visible.
   // Every leaf the main port presents, as the socket presents it (#248).
   presentedCertificatePems: presentedCertificatePems,
+  // The listener's chain as one PEM bundle (#1760).
+  listenerChainPem: listenerChainPem,
   /**
    * Returns every certificate the TLS sockets present, with its chain and
    * nothing private.

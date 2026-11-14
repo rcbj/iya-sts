@@ -3407,7 +3407,8 @@ class AdminActions {
       // checkbox per door (`door_ldap=on`, ...) — a form parser keeps the
       // last of a repeated name, so the boxes are named apart.
       const doors = [].concat(body.doors === undefined ? [] : body.doors)
-        .concat(['ldap', 'wstrust', 'scim', 'ssf', 'est'].filter(function (
+        .concat(['ldap', 'wstrust', 'scim', 'ssf', 'est',
+                   'xacml-pep'].filter(function (
           door) {
           return ['on', 'true', '1', 'yes'].indexOf(
             String(body['door_' + door] || '')) >= 0;

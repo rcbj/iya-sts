@@ -20206,6 +20206,28 @@ class OAuth2Server {
   // RFC 7662 section 2.2 permits and RFC 9701 section 5 REQUIRES of the JWT, so
   // the one function serves both shapes of response. It does not rate-limit:
   // the caller (`introspectRequest`) counts a miss.
+  // THE REMOTE PEP'S DOOR ONTO THE SAME READING (#1760): `POST
+  // /xacml/pep/introspect` asks this, over the PEP's mutual TLS, so a PEP
+  // needs no client registration and secret of its own to introspect. It is
+  // `introspectionOf()` and nothing else: no client authentication (the
+  // PEP's certificate and REMOTE_PEPS were the gate) and no section 5
+  // narrowing (the PEP holds its route's audience and checks `aud` itself).
+  /**
+   * The RFC 7662 answer for one token, as the authorization server reads it,
+   * for the remote PEP's introspection door.
+   *
+   * @param token - the presented token
+   * @returns `{ active: false }`, or the active token's members
+   */
+  introspectionFor(token: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.introspectionFor().");
+    const answer = this.introspectionOf(token);
+    log.debug("Leaving OAuth2Server.introspectionFor(). active=" +
+              !!(answer && answer.active));
+    return answer;
+  }
+
   private introspectionOf(token: Json): Json {
     const { log, stats, refreshTokenCrypto } = this.deps;
     log.debug("Entering OAuth2Server.introspectionOf().");
@@ -23287,6 +23309,8 @@ export = {
   // Native SSO (#130): whether a device secret's session still lives, for
   // the console and the portal's device lists.
   sessionIsLive: slot.forward('sessionIsLive'),
+  // The remote PEP's introspection door (#1760).
+  introspectionFor: slot.forward('introspectionFor'),
   // CIBA (#131): a push's tokens, for `ciba.ts`.
   cibaPushTokens: slot.forward('cibaPushTokens'),
   ownTokenKind: slot.forward('ownTokenKind'),

@@ -7846,7 +7846,12 @@ class AdminApi {
           { action: 'enable-pep', operationId: 'enableXacmlPep' },
           { action: 'forget-pep', operationId: 'forgetXacmlPep' },
           { action: 'issue-pep-certificate',
-            operationId: 'issueXacmlPepCertificate' }
+            operationId: 'issueXacmlPepCertificate' },
+          // The remote PEP's reverse proxy (#1760).
+          { action: 'set-pep-proxy', operationId: 'setXacmlPepProxy' },
+          { action: 'clear-pep-proxy', operationId: 'clearXacmlPepProxy' },
+          { action: 'set-pep-route-identity',
+            operationId: 'setXacmlPepRouteIdentity' }
         ] }),
 
       { method: 'GET', path: BASE + '/ssf', tag: 'Shared Signals',

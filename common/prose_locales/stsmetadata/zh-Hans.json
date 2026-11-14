@@ -3994,5 +3994,29 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一个参数"
+  },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "xacml-pep 容器位于应用程序之前时执行的内容（#1760）：它转发到的上游、有序的路由及每条路由接受的机制和对应的 XACML 资源与操作、从注册表解析的每条路由的应用程序、它在本地验证所用的领域信息（颁发者、JWKS、登录端点、SAML 签名证书、监听器的证书链、会话路由的客户端）以及下面四个验证 URL，带有自己的同步令牌；?since=<token> 回答 304。未配置的 PEP 为 configured: false，其代理拒绝一切。与策略拉取一样需要 REMOTE_PEPS；不发送提示。"
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "授权服务器自身按 RFC 7662 对代理无法自行验证的 OAuth 2.0 访问令牌（不透明令牌，或密钥不在 JWKS 中）的读取，通过 PEP 的双向 TLS，而不是其自己的客户端注册。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "一个人的用户名和密码，在此处验证，从不在 PEP 中验证，受登录自身限制保护（429，附 retryAfterS）；拒绝为 { valid: false }，不再说明其他。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "此领域签发的断言，在代理无法自行检查时于此处检查：根断言上的封装签名对照领域的 XML 签名证书、颁发者、条件以及路由的受众。EncryptedAssertion 会被拒绝。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "ID Token 的 sid 指明的登录会话是否仍然有效，因此在此处注销会在代理下次检查时结束代理自己的会话。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "对于发出请求的 PEP 的一条路由，其凭证（访问令牌、SAML 断言或 Basic 票据，均再次验证）所指明的身份，按路由的模式给出：其请求头的声明、用于该应用程序的访问令牌，或发往其断言使用者服务的已签名 SAML 响应。需要 REMOTE_PEPS。"
   }
 }

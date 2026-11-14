@@ -950,8 +950,207 @@ class XacmlPage {
         '<p>' + t.html('consoleXacml.peps.numbers1') +
         '</p><p>' + t.html('consoleXacml.peps.numbers2') +
         '</p>',
-        t.text('consoleXacml.peps.numbersLabel'));
+        t.text('consoleXacml.peps.numbersLabel')) +
+      self.proxySections(ctx, json);
     return body;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REVERSE PROXY (#1760). One section per registered PEP: what it pulls
+  // from GET /xacml/pep/proxy, the routes as a table, and the document as the
+  // editor. The document is edited WHOLE — a route is added, removed or
+  // moved by editing the list, first match wins — because the service
+  // validates it whole and refuses any part of it by name; a save sends
+  // set-pep-proxy, whose refusal the console draws like every other.
+  // ---------------------------------------------------------------------------
+  static proxyTemplate(): Json {
+    return {
+      enabled: true,
+      upstream: 'http://app.example:8080',
+      publicBaseUrl: '',
+      upstreamTimeoutMs: 10000,
+      maxBodyBytes: 1048576,
+      routes: [
+        { id: 'public', path: '/public', match: 'prefix',
+          methods: ['GET', 'HEAD'], public: true },
+        { id: 'api', path: '/api', match: 'prefix', methods: [],
+          mechanisms: ['oauth2'], application: 'my-api',
+          resource: '', action: '',
+          identity: { mode: 'headers',
+                      headers: [{ name: 'X-Remote-User',
+                                  claim: 'username' }],
+                      separator: ',' },
+          forwardCredentials: false }
+      ]
+    };
+  }
+
+  static proxyRoutesTable(t: Json, proxy: Json, resolution: Json[]): string {
+    const statusOf: Json = {};
+    (resolution || []).forEach(function (one: Json) {
+      statusOf[one.route] = one;
+    });
+    const rows = (proxy.routes || []).map(function (route: Json) {
+      const status = statusOf[route.id];
+      const decision = route.public
+        ? t.html('consoleXacml.proxy.public')
+        : esc(route.resource || t.text('consoleXacml.proxy.thePath')) +
+          ' / ' + esc(route.action || t.text('consoleXacml.proxy.theMethod'));
+      // HOW THE IDENTITY REACHES THE APPLICATION (D11): the header=claim
+      // pairs, or the token or assertion the proxy forwards instead.
+      const identity = route.identity || { mode: 'headers', headers: [] };
+      const headers = identity.mode === 'headers'
+        ? (identity.headers || []).map(function (one: Json) {
+            return one.name + '=' + one.claim;
+          })
+        : [identity.mode === 'saml'
+            ? t.text('consoleXacml.proxy.identity.cell.saml')
+            : t.text('consoleXacml.proxy.identity.cell.jwt')];
+      return '<tr><td><code>' + esc(route.id) + '</code></td><td><code>' +
+        esc(route.path) + '</code> (' + esc(route.match) + ')</td><td>' +
+        (route.methods.length ? esc(route.methods.join(', '))
+                              : t.html('consoleXacml.proxy.any')) +
+        '</td><td>' + (route.public ? t.html('consoleXacml.proxy.public')
+          : esc(route.mechanisms.join(', ')) +
+            // THE APPLICATION IT FRONTS (D10), linked; what each mechanism
+            // needs is read off that entry by the pull.
+            '<div class="sub"><a href="/admin/applications?application=' +
+            encodeURIComponent(route.application) + '"><code>' +
+            esc(route.application) + '</code></a></div>' +
+            (status && !status.usable
+              ? '<div class="sub xacml-alert">' +
+                t.html('consoleXacml.proxy.unusable') + ' ' +
+                esc(status.why || '') + '</div>'
+              : '')) +
+        '</td><td>' + decision + '</td><td>' +
+        (headers.length ? '<code>' + esc(headers.join(', ')) + '</code>'
+                        : t.html('consoleXacml.proxy.noHeaders')) +
+        '</td><td>' + (route.forwardCredentials
+          ? t.html('consoleXacml.proxy.yes')
+          : t.html('consoleXacml.proxy.no')) + '</td></tr>';
+    }).join('');
+    return '<table><tr><th>' + t.html('consoleXacml.proxy.th.id') +
+      '</th><th>' + t.html('consoleXacml.proxy.th.path') + '</th><th>' +
+      t.html('consoleXacml.proxy.th.methods') + '</th><th>' +
+      t.html('consoleXacml.proxy.th.mechanisms') + '</th><th>' +
+      t.html('consoleXacml.proxy.th.decision') + '</th><th>' +
+      t.html('consoleXacml.proxy.th.headers') + '</th><th>' +
+      t.html('consoleXacml.proxy.th.forward') + '</th></tr>' + rows +
+      '</table>';
+  }
+
+  // ONE ROUTE'S IDENTITY, AS A FORM (D11): the mode, and for mode headers
+  // a table of header and claim — the route's rows and enough empty ones to
+  // add to, up to the sixteen the grammar allows — and the separator. It
+  // posts set-pep-route-identity, which saves the whole document through
+  // the same checks as set-pep-proxy.
+  static identityForm(t: Json, name: string, route: Json): string {
+    const self = this;
+    const identity = route.identity || { mode: 'headers', headers: [],
+                                         separator: ',' };
+    const claims = ['sub', 'username', 'email', 'name', 'given_name',
+                    'family_name', 'groups', 'mechanism', 'acr', 'amr'];
+    const rows = (identity.headers || []).slice();
+    const blank = Math.min(16 - rows.length, 2);
+    for (let i = 0; i < blank; i++) {
+      rows.push({ name: '', claim: '' });
+    }
+    // Each label by its own key, so the catalogs' check finds them.
+    const labels: Json = {
+      headers: t.html('consoleXacml.proxy.identity.mode.headers'),
+      saml: t.html('consoleXacml.proxy.identity.mode.saml'),
+      jwt: t.html('consoleXacml.proxy.identity.mode.jwt')
+    };
+    const modes = ['headers', 'saml', 'jwt'].map(function (mode) {
+      return '<option value="' + mode + '"' +
+        (identity.mode === mode ? ' selected' : '') + '>' + labels[mode] +
+        '</option>';
+    }).join('');
+    const table = rows.map(function (one: Json) {
+      const options = ['<option value="">' +
+        t.html('consoleXacml.proxy.identity.none') + '</option>']
+        .concat(claims.map(function (claim) {
+          return '<option value="' + claim + '"' +
+            (one.claim === claim ? ' selected' : '') + '>' + claim +
+            '</option>';
+        })).join('');
+      return '<tr><td><input type="text" name="headerName" value="' +
+        esc(one.name || '') + '"></td><td><select name="headerClaim">' +
+        options + '</select></td></tr>';
+    }).join('');
+    return '<form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'set-pep-route-identity') +
+      self.hidden('name', name) + self.hidden('route', route.id) +
+      '<h4>' + t.html('consoleXacml.proxy.identity.heading',
+                      { route: route.id }) + '</h4>' +
+      '<label>' + t.html('consoleXacml.proxy.identity.mode') +
+      ' <select name="mode">' + modes + '</select></label>' +
+      '<table><tr><th>' + t.html('consoleXacml.proxy.identity.thName') +
+      '</th><th>' + t.html('consoleXacml.proxy.identity.thClaim') +
+      '</th></tr>' + table + '</table>' +
+      '<label>' + t.html('consoleXacml.proxy.identity.separator') +
+      ' <input type="text" name="separator" maxlength="1" size="2" value="' +
+      esc(identity.separator || ',') + '"></label>' +
+      '<div class="sub">' + t.html('consoleXacml.proxy.identity.note') +
+      '</div><button type="submit">' +
+      t.html('consoleXacml.proxy.identity.save') + '</button></form>';
+  }
+
+  static proxySections(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const sections = (json.peps || []).map(function (row: Json) {
+      const proxy = row.proxy || null;
+      const state = proxy
+        ? '<p>' + t.html('consoleXacml.proxy.configured', {
+            upstream: proxy.upstream, n: proxy.routes.length }) + ' ' +
+          (proxy.enabled ? t.html('consoleXacml.proxy.enabled')
+                         : '<strong>' + t.html('consoleXacml.proxy.disabled') +
+                           '</strong>') + '</p>' +
+          self.proxyRoutesTable(t, proxy, row.proxyRoutes)
+        : '<p>' + t.html('consoleXacml.proxy.none') + '</p>';
+      const problem = row.proxyProblem
+        ? '<div class="sub xacml-alert">' +
+          t.html('consoleXacml.proxy.problem') + ' ' +
+          esc(row.proxyProblem) + '</div>'
+        : '';
+      const editor = ctx.write
+        ? '<form method="post" action="/admin/xacml/peps">' +
+          self.hidden('action', 'set-pep-proxy') +
+          self.hidden('name', row.name) +
+          '<label>' + t.html('consoleXacml.proxy.editLabel') +
+          '<br><textarea name="proxy" rows="18" cols="88">' +
+          esc(JSON.stringify(proxy || self.proxyTemplate(), null, 2)) +
+          '</textarea></label><div class="sub">' +
+          t.html('consoleXacml.proxy.editNote') + '</div>' +
+          '<button type="submit">' + t.html('consoleXacml.proxy.save') +
+          '</button></form>' +
+          (proxy
+            ? '<form method="post" action="/admin/xacml/peps" ' +
+              'class="inline">' +
+              self.hidden('action', 'clear-pep-proxy') +
+              self.hidden('name', row.name) +
+              '<button type="submit">' + t.html('consoleXacml.proxy.clear') +
+              '</button></form>'
+            : '')
+        : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
+      const identities = ctx.write && proxy
+        ? proxy.routes.filter(function (route: Json) {
+            return !route.public;
+          }).map(function (route: Json) {
+            return self.identityForm(t, row.name, route);
+          }).join('')
+        : '';
+      return '<h3>' + t.html('consoleXacml.proxy.heading',
+                             { name: row.name }) + '</h3>' + state + problem +
+        identities + editor;
+    }).join('');
+    if (!sections) {
+      return '';
+    }
+    return '<h2>' + t.html('consoleXacml.proxy.label') + '</h2>' +
+      kit.note('<p>' + t.html('consoleXacml.proxy.p1') + '</p>',
+               t.text('consoleXacml.proxy.label')) + sections;
   }
 
   /**

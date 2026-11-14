@@ -1982,6 +1982,12 @@ Scope: `admin:read`.
 | `paging.param` | string |  |  |
 | `paging.perPage` | integer |  |  |
 | `paging.total` | integer |  |  |
+| `pepRoutes` | list |  | The routes of this realm's remote PEPs that front this application (#1760): the reference only. |
+| `pepRoutes[].mechanisms` | list |  |  |
+| `pepRoutes[].mechanisms[]` | string |  |  |
+| `pepRoutes[].path` | string |  |  |
+| `pepRoutes[].pep` | string |  |  |
+| `pepRoutes[].route` | string |  |  |
 | `perPage` | integer |  |  |
 | `protocols` | list |  |  |
 | `protocols[]` | object, or string |  |  |

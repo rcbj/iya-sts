@@ -3994,5 +3994,29 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un parámetro"
+  },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "Lo que el contenedor xacml-pep aplica cuando se sitúa delante de una aplicación (#1760): el destino al que reenvía, las rutas ordenadas con los mecanismos que acepta cada una y el recurso y la acción XACML a los que corresponde, la aplicación de cada ruta resuelta desde el registro, los datos del reino con los que valida localmente (emisor, JWKS, los puntos de conexión de inicio de sesión, los certificados de firma SAML, la cadena del servicio de escucha, los clientes de las rutas de sesión) y las cuatro URL de validación siguientes, bajo un token de sincronización propio; ?since=<token> responde 304. Un PEP sin configurar es configured: false y su proxy lo deniega todo. Requiere REMOTE_PEPS, como la obtención de políticas; sin aviso."
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "La lectura RFC 7662 del propio servidor de autorización de un token de acceso OAuth 2.0 que el proxy no pudo verificar por sí mismo (un token opaco, o una clave que no está en el JWKS), por el TLS mutuo del PEP en lugar de un registro de cliente propio. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "El nombre de usuario y la contraseña de una persona, verificados aquí y nunca en el PEP, tras los límites del propio inicio de sesión (429 con retryAfterS); un rechazo es { valid: false } y no dice nada más. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "Una aserción que emitió este reino, comprobada aquí cuando el proxy no pudo comprobarla por sí mismo: la firma envuelta en la aserción raíz contra los certificados de firma XML del reino, el emisor, las condiciones y la audiencia de la ruta. Se rechaza una EncryptedAssertion. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "Si la sesión de inicio de sesión que nombra el sid de un ID Token sigue activa, de modo que un cierre de sesión aquí termina la sesión propia del proxy en su siguiente comprobación. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "Para una ruta del PEP que pregunta, la identidad que nombra su prueba (un token de acceso, una aserción SAML o un ticket Basic, validados de nuevo), en el modo de la ruta: notificaciones para sus cabeceras, un token de acceso para la aplicación o una respuesta SAML firmada a su servicio consumidor de aserciones. Requiere REMOTE_PEPS."
   }
 }

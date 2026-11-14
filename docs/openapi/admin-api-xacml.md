@@ -1880,6 +1880,109 @@ Scope: `admin:write`.
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 
+## POST /admin-api/xacml/clear-pep-proxy
+
+`clearXacmlPepProxy`
+
+**Remove a remote PEP's reverse-proxy configuration**
+
+Removes a registered remote PEP's reverse-proxy configuration (#1760). From its next pull the PEP's proxy answers 404 to everything. The applications its routes named are untouched.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `name` | string | yes | The registered PEP's name. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
 ## POST /admin-api/xacml/create-from-template
 
 `createXacmlPolicy`
@@ -3561,6 +3664,38 @@ Scope: `admin:read`.
 | `peps[].notifyProblem` | string, or null |  |  |
 | `peps[].notifyUrl` | string |  |  |
 | `peps[].policyCount` | number, or null |  |  |
+| `peps[].proxy` | object |  |  |
+| `peps[].proxy.enabled` | boolean |  |  |
+| `peps[].proxy.maxBodyBytes` | integer |  |  |
+| `peps[].proxy.publicBaseUrl` | string |  |  |
+| `peps[].proxy.routes` | list |  |  |
+| `peps[].proxy.routes[].action` | string |  |  |
+| `peps[].proxy.routes[].application` | string |  |  |
+| `peps[].proxy.routes[].forwardCredentials` | boolean |  |  |
+| `peps[].proxy.routes[].id` | string |  |  |
+| `peps[].proxy.routes[].identity` | object |  |  |
+| `peps[].proxy.routes[].identity.headers` | list |  |  |
+| `peps[].proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `peps[].proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `peps[].proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `peps[].proxy.routes[].identity.separator` | string |  |  |
+| `peps[].proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `peps[].proxy.routes[].mechanisms` | list |  |  |
+| `peps[].proxy.routes[].mechanisms[]` | string |  |  |
+| `peps[].proxy.routes[].methods` | list |  |  |
+| `peps[].proxy.routes[].methods[]` | string |  |  |
+| `peps[].proxy.routes[].path` | string |  |  |
+| `peps[].proxy.routes[].public` | boolean |  |  |
+| `peps[].proxy.routes[].resource` | string |  |  |
+| `peps[].proxy.routes[].signals` | boolean |  |  |
+| `peps[].proxy.upstream` | string |  |  |
+| `peps[].proxy.upstreamTimeoutMs` | integer |  |  |
+| `peps[].proxyProblem` | string, or null |  |  |
+| `peps[].proxyRoutes` | list |  |  |
+| `peps[].proxyRoutes[].application` | string |  |  |
+| `peps[].proxyRoutes[].route` | string |  |  |
+| `peps[].proxyRoutes[].usable` | boolean |  |  |
+| `peps[].proxyRoutes[].why` | string, or null |  |  |
 | `peps[].refused` | number, or null |  |  |
 | `peps[].registeredAt` | string |  |  |
 | `peps[].resource` | string |  |  |
@@ -4056,6 +4191,227 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/set-pep-proxy
+
+`setXacmlPepProxy`
+
+**Configure a registered remote PEP as a reverse proxy in front of an application**
+
+Sets the configuration a registered remote PEP pulls from GET /xacml/pep/proxy (#1760) and enforces as a reverse proxy in front of one application: `enabled`, the `upstream` it forwards to (absolute http or https, no user name, query or fragment — fixed per PEP, so no request can choose where it is forwarded), the `publicBaseUrl` a browser reaches the proxy at (an origin; required when a route uses the session mechanism, https in product mode), `upstreamTimeoutMs` (1 to 120000, default 10000), `maxBodyBytes` (0 to 104857600, default 1048576) and the ORDERED `routes`, first match wins, at most 64. A route has a unique `id`, a `path` (starting with /, no . or .. segment, no //, %, backslash, ? or #), `match` (`prefix` at a segment boundary, or `exact`), `methods` (empty for any), `public` (no credential and no XACML decision) or at least one of `mechanisms` `session`, `oauth2`, `saml2` and `basic`, the `application` it fronts (an identifier in this realm's registry; refused on a public route), the XACML `resource` and `action` (empty for the path and the method), how the identity reaches the application, `identity` (`mode` `headers` with up to 16 `headers` of { `name`, `claim` } and a one-character `separator`, `saml` for a signed SAML Response to the application's registered assertion consumer service, or `jwt` for an access token addressed to it; refused on a public route; the proxy strips a client's own identity headers), `forwardCredentials` (false by default: the Authorization header and the proxy's cookie are stripped) and `signals` (true by default: a session route's sign-out reaches the proxy through CAEP/RISC, else through POST /xacml/pep/session).
+
+THE DOCUMENT IS VALIDATED WHOLE AND IS CLOSED: a member the grammar does not name is refused by name, and nothing is written unless all of it is right. What is stored is the document normalised, every member present, which is what the pull sends.
+
+EACH ROUTE NAMES AN APPLICATION AND NOTHING IS COPIED FROM IT: the pull reads what each mechanism needs off the application's entry — the audiences of its access tokens (`oauthAudience`, `oauthPermissionBaseUri`), its SAML entity ID, its confidential OIDC client — so a save is refused, by code, for an unknown application, an oauth2 route whose application has no audience, a saml2 route whose application has no entity ID, and a session route whose application is not a confidential client (client_secret_basic or client_secret_post), does not allow authorization_code, does not register `<publicBaseUrl>/.iya-pep/callback`, or holds no unexpired secret. A session route needs an https publicBaseUrl.
+
+The PEP must be REGISTERED in this realm (its row is where the configuration lives); the proxy picks a change up on its next pull — there is no nudge.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `proxy` | map | yes | The configuration document. Validated whole by the handler, which refuses a member it does not name, so this schema leaves its shape to that refusal. |
+| `proxy.{key}` | any JSON |  |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/set-pep-route-identity
+
+`setXacmlPepRouteIdentity`
+
+**Set how one reverse-proxy route forwards the identity to its application**
+
+Replaces one route's `identity` in a registered remote PEP's reverse-proxy configuration (#1760, D11) and saves the document through the same checks as set-pep-proxy. `mode` is `headers` (the claims in `headerName` and `headerClaim`, row by row; a row with no name is unused; at most 16; each name an RFC 9110 token that is not hop-by-hop, framing, Authorization, Cookie, Host, Forwarded or X-Forwarded-*, each claim one of sub, username, email, name, given_name, family_name, groups, mechanism, acr and amr; `separator` one printable ASCII character that is not a letter or a digit, `,` by default), `saml` (a signed SAML Response to the application's registered assertion consumer service; its entity ID and ACS are required) or `jwt` (an access token addressed to the application; an audience is required). A public route forwards nobody.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `headerClaim` | list |  | Mode headers: the claim each row's header carries, by position. |
+| `headerClaim[]` | string |  |  |
+| `headerName` | list |  | Mode headers: the header names, one per row of the console's table. |
+| `headerName[]` | string |  |  |
+| `mode` | one of `headers`, `saml`, `jwt` | yes | How the identity reaches the application. |
+| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `route` | string | yes | The route's `id` in that PEP's configuration. |
+| `separator` | string |  | Mode headers: the one character a list claim (groups, amr) is joined with. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
 

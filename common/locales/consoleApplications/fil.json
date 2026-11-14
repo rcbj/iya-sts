@@ -949,5 +949,11 @@
   "fga.pepsNone": "Walang tao, service account o application sa realm na ito ang may hawak ng REMOTE_PEPS.",
   "fga.pepsUnlocated": "Mga miyembro ng grupo na walang pinapangalanang entry, kaya hindi mabibigyan: {n}.",
   "fga.pepsRegrant": "Bigyan muli ang mga remote PEP",
-  "fga.pepsRegrantTip": "Ipatupad muli: bawat may hawak ng REMOTE_PEPS na wala sa AuthZEN group o walang application na ito sa scope ay binibigyan ng dalawa. Wala nang ibang nagbabago."
+  "fga.pepsRegrantTip": "Ipatupad muli: bawat may hawak ng REMOTE_PEPS na wala sa AuthZEN group o walang application na ito sa scope ay binibigyan ng dalawa. Wala nang ibang nagbabago.",
+  "pepRoutes.tab": "Reverse proxy",
+  "pepRoutes.lead": "Nakatayo sa harap ng application na ito ang mga route na ito ng mga remote PEP ng realm na ito. Binabasa ng bawat isa mula sa entry na ito ang kailangan ng mekanismo nito kapag kinuha ng PEP ang configuration nito, kaya umaabot sa proxy ang pagbabago rito sa susunod nitong pagkuha.",
+  "pepRoutes.thPep": "Remote PEP",
+  "pepRoutes.thRoute": "Route",
+  "pepRoutes.thPath": "Path",
+  "pepRoutes.thMechanisms": "Mga mekanismo"
 }

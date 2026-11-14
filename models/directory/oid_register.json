@@ -743,6 +743,7 @@
   "xacmlPepLastSeen": 730,
   "xacmlPepNotifyUrl": 731,
   "xacmlPepPolicyCount": 732,
+  "xacmlPepProxy": 752,
   "xacmlPepRefused": 733,
   "xacmlPepRegisteredAt": 734,
   "xacmlPepResource": 735,

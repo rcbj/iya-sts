@@ -1240,8 +1240,8 @@
     "text": "Puertas de solo contraseña que aceptan únicamente una contraseña"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "Solo en modo producto. Una lista separada por comas de las puertas de solo contraseña — ldap, wstrust, scim, ssf, est — en las que una persona que tiene o debe tener un segundo factor SE SIGUE aceptando con su propia contraseña. Vacío, el valor predeterminado, rechaza esa contraseña en las cinco (respondida como contraseña incorrecta) y allí solo acepta una contraseña de aplicación. **ADVERTENCIA: cada puerta de la lista reduce a cada una de esas personas a UN factor en esa puerta** (NIST SP 800-63B sección 4.2: AAL2 pasa a AAL1), así que una contraseña robada la abre sin el segundo factor. Prefiera las contraseñas de aplicación; incluya una puerta solo para un cliente al que no se le pueda dar una. El desarrollo no comprueba ninguna contraseña en ninguna parte e ignora esto."
+    "en": "a01fe4fce9df1599",
+    "text": "Solo en modo producto. Una lista separada por comas de las puertas de solo contraseña — ldap, wstrust, scim, ssf, est, xacml-pep — en las que una persona que tiene o debe tener un segundo factor SE SIGUE aceptando con su propia contraseña. Vacío, el valor predeterminado, rechaza esa contraseña en las seis (respondida como contraseña incorrecta) y allí solo acepta una contraseña de aplicación. **ADVERTENCIA: cada puerta de la lista reduce a cada una de esas personas a UN factor en esa puerta** (NIST SP 800-63B sección 4.2: AAL2 pasa a AAL1), así que una contraseña robada la abre sin el segundo factor. Prefiera las contraseñas de aplicación; incluya una puerta solo para un cliente al que no se le pueda dar una. El desarrollo no comprueba ninguna contraseña en ninguna parte e ignora esto."
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",

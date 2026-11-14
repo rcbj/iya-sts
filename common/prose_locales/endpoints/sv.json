@@ -2498,5 +2498,29 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (ett klientcertifikat begärs, krävs aldrig)"
+  },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "Konfigurationen för omvänd proxy, för en fjärr-PEP att TILLÄMPA"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "Tokenintrospektion, för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic, validerat för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "En SAML 2.0-försäkran, validerad för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "Är en inloggningssession aktiv, för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "Det som en fjärr-PEP:s väg vidarebefordrar till sitt program"
   }
 }

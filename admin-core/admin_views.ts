@@ -11319,6 +11319,31 @@ class AdminViews {
    */
   // #488: an application's wstrustJwtScope warnings, or none when the policy
   // cannot be asked (a view must still draw).
+  /**
+   * The routes of this realm's remote PEPs that front an application (#1760).
+   *
+   * @param identifier - the application
+   * @returns `{ pep, route, path, mechanisms }` rows; none where the XACML
+   *   family is not loaded
+   */
+  pepRoutesFronting(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.pepRoutesFronting().");
+    let out = [];
+    try {
+      // Lazily: the XACML family is 23c, after this module.
+      out = require('../xacml/xacml_pep_proxy').routesFronting(
+        String(identifier || ''));
+    } catch (e) {
+      log.debug("Caught in AdminViews.pepRoutesFronting(): " +
+                ((e && e.message) || e));
+      // No XACML family in this process: no PEP fronts anything.
+      out = [];
+    }
+    log.debug("Leaving AdminViews.pepRoutesFronting(). " + out.length);
+    return out;
+  }
+
   applicationScopeWarnings(identifier) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationScopeWarnings().");
@@ -11575,6 +11600,10 @@ class AdminViews {
     // ITS OWNERS (#604), resolved, for the Owners tab.
     (out as any).owners = applications.ownersOf(row);
     (out as any).maxOwners = applications.MAX_OWNERS;
+    // THE REMOTE PEP ROUTES THAT FRONT IT (#1760, D10): the reference only —
+    // which PEP, which route, its path and mechanisms — never what the pull
+    // reads off this entry for them.
+    (out as any).pepRoutes = self.pepRoutesFronting(row.identifier);
     // Closed to its owners, and why (#607).
     (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length
@@ -16393,6 +16422,7 @@ export = {
   installInstance: (instance: AdminViews): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   logoutInventoryFor: slot.forward('logoutInventoryFor'),
+  pepRoutesFronting: slot.forward('pepRoutesFronting'),
   logoutFamilies: slot.forward('logoutFamilies'),
   logoutJson: slot.forward('logoutJson'),
   mfaRosterJson: slot.forward('mfaRosterJson'),

@@ -158,6 +158,9 @@ interface PepRow {
   refused: number;
   undischargeable: number;
   lastNotify: string;
+  // The reverse-proxy configuration (#1760) as stored: the JSON text, or ''
+  // when none was ever set. Read and validated by `xacml_pep_proxy.ts`.
+  proxy: string;
   current: boolean;
   stale: boolean;
 }
@@ -576,6 +579,7 @@ class PepRegistry {
         refused: pep.refused || 0,
         undischargeable: pep.undischargeable || 0,
         lastNotify: pep.lastNotify || '',
+        proxy: pep.proxy || '',
         // DERIVED, not stored, and both of them for the same reason: a
         // stored "current" would be a second copy of a comparison, and it
         // would be wrong the moment somebody edited a policy without this row
@@ -706,6 +710,13 @@ class PepRegistry {
       // reconnecting.
       xacmlPepEnabled: existing && !existing.enabled ? 'FALSE' : 'TRUE'
     };
+    // THE PROXY CONFIGURATION IS KEPT (#1760): it is an administrator's, set
+    // through `setProxy()`, and a PEP that re-registers must not be able to
+    // drop or replace what it is told to enforce by reconnecting — the
+    // disabled flag's argument above.
+    if (existing && existing.proxy) {
+      attributes.xacmlPepProxy = existing.proxy;
+    }
     if (given.description) {
       attributes.description = String(given.description);
     } else if (existing && existing.description) {
@@ -864,6 +875,41 @@ class PepRegistry {
   }
 
   // -------------------------------------------------------------------------
+  // THE REVERSE-PROXY CONFIGURATION (#1760). The text is written as given:
+  // `xacml_pep_proxy.ts` validates it before this is called, and again when
+  // the pull is built, because `ldapmodify` reaches this attribute too.
+  // -------------------------------------------------------------------------
+  /**
+   * Sets or clears a registered PEP's reverse-proxy configuration.
+   * @param name - the PEP's entry name
+   * @param text - the validated JSON document, or null to remove it
+   * @returns true when written
+   */
+  setProxy(name: string, text: string | null): boolean {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.setProxy(). name=' + name);
+    if (!this.haveDirectory()) {
+      log.debug('Leaving PepRegistry.setProxy(). No directory.');
+      return false;
+    }
+    const existing = this.read(name);
+    if (!existing) {
+      log.debug('Leaving PepRegistry.setProxy(). Not registered.');
+      return false;
+    }
+    const attributes: Record<string, unknown> =
+      this.attributesOf(Object.assign({}, existing, { proxy: '' })) as
+        Record<string, unknown>;
+    if (text) {
+      attributes.xacmlPepProxy = text;
+    }
+    const written = directory.writePep(name, attributes);
+    log.debug('Leaving PepRegistry.setProxy(). ' +
+              (written ? 'Written.' : 'Refused.'));
+    return written;
+  }
+
+  // -------------------------------------------------------------------------
   // THE WHOLE ENTRY AS ATTRIBUTES, with an override or two applied.
   //
   // `writePep()` REPLACES rather than merges — `writePolicy()`'s decision,
@@ -899,6 +945,11 @@ class PepRegistry {
     };
     if (row.description) {
       attributes.description = row.description;
+    }
+    // Only when set, so an entry that never had one is written exactly as it
+    // always was (#1760); `setProxy(name, null)` passes it as an override.
+    if (row.proxy) {
+      attributes.xacmlPepProxy = row.proxy;
     }
     log.debug("Leaving PepRegistry.attributesOf().");
     return Object.assign(attributes, overrides || {});
@@ -992,6 +1043,7 @@ export = {
   heartbeat: slot.forward('heartbeat'),
   recordNotify: slot.forward('recordNotify'),
   setEnabled: slot.forward('setEnabled'),
+  setProxy: slot.forward('setProxy'),
   remove: slot.forward('remove'),
   notifiable: slot.forward('notifiable')
 };

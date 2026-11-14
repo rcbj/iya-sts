@@ -3994,5 +3994,29 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一個參數"
+  },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "xacml-pep 容器位於應用程式之前時執行的內容（#1760）：它轉送到的上游、有序的路由及每條路由接受的機制和對應的 XACML 資源與動作、從登錄解析的每條路由的應用程式、它在本機驗證所用的領域資訊（簽發者、JWKS、登入端點、SAML 簽署憑證、監聽器的憑證鏈、工作階段路由的用戶端）以及下面四個驗證 URL，帶有自己的同步權杖；?since=<token> 回答 304。未設定的 PEP 為 configured: false，其代理拒絕一切。與原則拉取一樣需要 REMOTE_PEPS；不傳送提示。"
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "授權伺服器本身依 RFC 7662 對代理無法自行驗證的 OAuth 2.0 存取權杖（不透明權杖，或金鑰不在 JWKS 中）的讀取，透過 PEP 的雙向 TLS，而不是其自己的用戶端註冊。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "一個人的使用者名稱和密碼，在此處驗證，從不在 PEP 中驗證，受登入本身限制保護（429，附 retryAfterS）；拒絕為 { valid: false }，不再說明其他。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "此領域簽發的判斷提示，在代理無法自行檢查時於此處檢查：根判斷提示上的封裝簽章對照領域的 XML 簽署憑證、簽發者、條件以及路由的對象。EncryptedAssertion 會被拒絕。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "ID Token 的 sid 指明的登入工作階段是否仍然有效，因此在此處登出會在代理下次檢查時結束代理自己的工作階段。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "對於發出請求的 PEP 的一條路由，其憑證（存取權杖、SAML 判斷提示或 Basic 票證，均再次驗證）所指明的身分，依路由的模式給出：其請求標頭的宣告、用於該應用程式的存取權杖，或送往其判斷提示取用者服務的已簽署 SAML 回應。需要 REMOTE_PEPS。"
   }
 }

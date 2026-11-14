@@ -2026,5 +2026,9 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 注册时关于自身所说的任何内容。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "远程 PEP 从 GET /xacml/pep/proxy 拉取的反向代理配置（#1760）：一个 JSON 文档——enabled、上游应用程序的基本 URL、浏览器访问代理的公共基本 URL、超时以及有序的路由表，每条路由包含其路径、方法、身份验证机制、它所保护的领域注册表中的应用程序，以及 XACML 资源和操作。由控制台和管理 API 的 set-pep-proxy 操作写入，在那里整体验证，并在构建拉取时再次验证，因此 ldapmodify 写入的未通过验证的值会以 configured: false 被拉取。在注册和心跳中保留；随该行一起删除。"
   }
 }

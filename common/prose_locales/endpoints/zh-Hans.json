@@ -2498,5 +2498,29 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（请求客户端证书，但从不强制要求）"
+  },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "反向代理配置，供远程 PEP 执行"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "令牌自省，供远程 PEP 的代理使用"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic，为远程 PEP 的代理验证"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "SAML 2.0 断言，为远程 PEP 的代理验证"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "登录会话是否仍然有效，供远程 PEP 的代理使用"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "远程 PEP 的路由转发给其应用程序的内容"
   }
 }

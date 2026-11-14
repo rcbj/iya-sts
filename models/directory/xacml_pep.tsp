@@ -118,6 +118,12 @@ model XacmlPep {
   })
   xacmlPepLastNotify?: string;
   @attr(#{
+    kind: "single",
+    jsonBlob: true,
+    what: "The reverse-proxy configuration the remote PEP pulls from GET /xacml/pep/proxy (#1760): one JSON document — enabled, the upstream application's base URL, the public base URL a browser reaches the proxy at, the timeouts and the ordered route table, each route with its path, methods, authentication mechanisms, the application in the realm's registry it fronts, and XACML resource and action. Written by the set-pep-proxy action of the console and the management API, validated whole there and again when the pull is built, so a value an ldapmodify wrote that does not validate is pulled as configured: false. Kept across a registration and a heartbeat; removed with the row."
+  })
+  xacmlPepProxy?: string;
+  @attr(#{
     what: "Whatever the PEP said about itself when it registered."
   })
   description?: (string)[];
