@@ -327,3 +327,19 @@ pub fn certificate_for(
     }
     issue_for_hostnames(material, one.hostnames.clone())
 }
+
+/// WHERE AN APPLICATION'S URLS ARE BUILT (#472, `listener_map.js`'s
+/// `advertisedBase()`), the settings' slot: the advertised listener's
+/// `publicBaseUrl`, or empty for `main`, which the settings answer with
+/// `global.publicBaseUrl`. Which application is on which listener is
+/// `listeners.applications`, not ported yet (its routing is phase 4's), so
+/// every application is on `main` — what a service with no mapping is.
+pub struct AdvertisedListeners {
+    pub definitions: Vec<ListenerDefinition>,
+}
+
+impl sts_core::settings::AdvertisedBase for AdvertisedListeners {
+    fn advertised_base(&self, _surface: &str) -> String {
+        String::new()
+    }
+}

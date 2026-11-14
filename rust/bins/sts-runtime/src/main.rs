@@ -6,9 +6,10 @@
 //!
 //! THE ORDER IS `server.js`'s, and each step says what in Node it is:
 //!
-//! 1. the logger, then the appconfig layer `CONFIG_FILE` names (`env/*.json`,
-//!    the data Node's `env/*.js` hold; a `.js` path is read as the `.json`
-//!    beside it) over the compiled defaults (`common/config_file.js`);
+//! 1. the appconfig layer `CONFIG_FILE` names (`sts_core::appconfig`,
+//!    `common/config_file.js`), the logger at its level (`STS_LOG_LEVEL`
+//!    overrides), the settings, the secrets delivered as files, and every
+//!    check `config.js` makes as it loads — each refusal exit 1;
 //! 2. what `tls/tls_server.js` checks at REQUIRE time, each fatal: the TLS
 //!    policy's write rules over the values the process was given
 //!    (`checkProtocolOptions()`, `STS-TLS-0042`) and the client truststore's
@@ -36,11 +37,13 @@
 //!    ([`SocketOwners`]);
 //! 8. on SIGTERM or Ctrl-C, what is pending is written and the store closed.
 //!
-//! WHAT IS WIRED, AND WHAT IS A SEAM. The store, the scheduler (with this
-//! module's `tls.listener-renew` job) and the HTTP layer are the phase-3
-//! crates as they stand on `feature/444`. The settings' change notification
-//! (`config.onOverridesChanged()`, the `config` slice) is to call
-//! `Listeners::reapply(true)`; the truststore doors (`/admin-api/tls/trust`,
+//! WHAT IS WIRED, AND WHAT IS A SEAM. The store, the cluster, the
+//! scheduler (with this module's `tls.listener-renew` job), the caches,
+//! the HTTP layer and the settings are the phase-3 crates as merged on
+//! `feature/444`. `Settings` offers no change notification
+//! (`config.onOverridesChanged()`): whoever writes a setting through
+//! `set_override()` — the management API, phase 4 — calls
+//! `Listeners::reapply(true)` after it; the truststore doors (`/admin-api/tls/trust`,
 //! phase 4) call `Truststore::add`/`remove` and then `reapply(false)`; a
 //! rebuilt hierarchy (`build-root`, phase 6) replaces `Listeners::material`
 //! and calls `reapply(false)` — the front-process reconcile, with no worker
@@ -54,12 +57,11 @@ mod listeners;
 mod solo;
 mod stack;
 
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
-use serde_json::Value as Json;
 use sts_core::errors::codes;
 use sts_core::log::{self, tag};
 use sts_core::settings::Settings;
@@ -75,26 +77,10 @@ use crate::listener::TlsListener;
 use crate::listeners::{certificate_for, Listeners};
 use crate::stack::Stack;
 
-/// The appconfig file `CONFIG_FILE` names, as JSON; `Null` when unset.
-fn appconfig() -> Result<(Json, Option<PathBuf>), String> {
-    let Ok(named) = std::env::var("CONFIG_FILE") else {
-        return Ok((Json::Null, None));
-    };
-    let mut path = PathBuf::from(&named);
-    if path.extension().is_some_and(|e| e == "js") {
-        path.set_extension("json");
-    }
-    let text = std::fs::read_to_string(&path).map_err(|e| {
-        format!(
-            "CONFIG_FILE is \"{}\" and {} could not be read: {}",
-            named,
-            path.display(),
-            e
-        )
-    })?;
-    let parsed = serde_json::from_str(&text)
-        .map_err(|e| format!("{} is not JSON: {}", path.display(), e))?;
-    Ok((parsed, Some(path)))
+/// A start that cannot go on, its sentence already tagged: exit 1.
+fn fatal_line(message: &str) -> ! {
+    tracing::error!("{}", message);
+    std::process::exit(1);
 }
 
 /// A start that cannot go on: the code, Node's sentence, exit 1.
@@ -330,6 +316,9 @@ async fn run(settings: Arc<Settings>) -> Result<(), String> {
             ),
         ),
     };
+    settings.set_advertised_base(Arc::new(listeners::AdvertisedListeners {
+        definitions: custom.clone(),
+    }));
     register_renew_job(&stack, &listeners)?;
     // 6.
     let host = settings.value_of("global.host").as_str().to_string();
@@ -340,6 +329,13 @@ async fn run(settings: Arc<Settings>) -> Result<(), String> {
     };
     let port = settings.value_of("global.port").as_int();
     let https = settings.value_of("global.https").as_bool();
+    // A product process does not serve its main port in cleartext
+    // (#1457): server.js's refusal, before anything binds.
+    if let Some(refused) =
+        sts_core::startup::cleartext_refusal(&stack.mode, https)
+    {
+        fatal_line(&refused);
+    }
     let bind = format!("{}:{}", host, port);
     let router = stack.router();
     let mut tasks = tokio::task::JoinSet::new();
@@ -461,23 +457,42 @@ async fn run(settings: Arc<Settings>) -> Result<(), String> {
 }
 
 fn main() {
-    let level = std::env::var("STS_LOG_LEVEL").unwrap_or_default();
-    log::install(
-        "sts-runtime",
-        log::parse_level(if level.is_empty() { "info" } else { &level }),
-    );
-    let (operator, from) = match appconfig() {
-        Ok(found) => found,
-        Err(e) => fatal(codes::STS_CORE_0093, &format!("runtime: {}", e)),
+    // 1. The appconfig layer (`common/config_file.js`): CONFIG_FILE,
+    // resolved against the package root and then the working directory,
+    // evaluated as the module it is. A file that cannot be loaded is
+    // config.js's STS-CORE-0001 on stderr, and exit 1.
+    let root = std::env::current_dir().unwrap_or_default();
+    let mut env: HashMap<String, String> = std::env::vars().collect();
+    let app = match sts_core::appconfig::load(&root, &env) {
+        Ok(app) => app,
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
     };
-    tracing::info!(
-        "runtime: settings from {} over the compiled defaults.",
-        from.as_deref()
-            .map_or("no CONFIG_FILE".to_string(), |p: &Path| p
-                .display()
-                .to_string())
-    );
-    let settings = Arc::new(Settings::from_process(operator));
+    // The bootstrap logger at the file's level; STS_LOG_LEVEL overrides.
+    let level = env
+        .get("STS_LOG_LEVEL")
+        .filter(|l| !l.is_empty())
+        .cloned()
+        .unwrap_or_else(|| app.log_level());
+    log::install("sts-runtime", log::parse_level(&level));
+    let settings = Arc::new(Settings::new(app.operator.clone(), env.clone()));
+    // Secrets delivered as files (`*_FILE`), read and deleted before
+    // anything reads them, then every check config.js makes as it loads.
+    if let Err(e) = sts_core::startup::deliver_secrets(
+        &settings,
+        &mut env,
+        &sts_core::startup::RealFiles,
+    ) {
+        fatal_line(&e);
+    }
+    if let Err(e) = sts_core::startup::check_settings(
+        &settings,
+        &sts_core::startup::Files::new(app.config_file.clone(), &root),
+    ) {
+        fatal_line(&e);
+    }
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(r) => r,
         Err(e) => fatal(

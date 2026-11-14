@@ -226,7 +226,7 @@ impl Stack {
     /// started here; [`Stack::start`] does that.
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn build(settings: Arc<Settings>) -> Result<Stack, String> {
-        let mode = Arc::new(Mode::new(settings.clone()));
+        let mode = Mode::shared(settings.clone());
         let environment =
             Arc::new(SettingsEnvironment::new(settings.clone(), Vec::new()));
         let registry = Arc::new(RealmRegistry::new(environment));
