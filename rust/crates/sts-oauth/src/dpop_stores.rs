@@ -23,6 +23,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde_json::Value as Json;
+use sts_core::errors::codes;
 use sts_core::log::tag;
 use sts_core::realm;
 use sts_core::realm_lifecycle::RealmLifecycle;
@@ -219,7 +220,7 @@ impl ProofContext for DpopStores {
                 tracing::warn!(
                     "{}Cache dpop.proof-ids is full ({} of {} live entries) and refuses new ones rather than \
                      forgetting a live one. Raise oauth2.dpopReplayCacheSize. Logged at most once a minute.",
-                    tag("STS-CORE-0097"),
+                    tag(codes::STS_CORE_0097),
                     self.seen.len(),
                     max
                 );

@@ -12,6 +12,7 @@ publish.workspace = true
 
 [dependencies]
 sts-core.workspace = true
+sts-crypto.workspace = true
 sts-cluster.workspace = true
 sts-http.workspace = true
 sts-pki.workspace = true

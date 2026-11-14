@@ -9,10 +9,10 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use openssl::hash::{hash, MessageDigest};
 use serde::Serialize;
 use sts_core::errors::codes;
 use sts_core::log::tag;
+use sts_crypto::jws_alg::Hash;
 
 /// One bound for the whole process, or one per realm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -486,9 +486,11 @@ pub fn digest_key(text: &str) -> String {
         }
         _ => "",
     };
-    let digest = hash(MessageDigest::sha256(), text.as_bytes())
-        .map(|d| d.iter().map(|b| format!("{:02x}", b)).collect::<String>())
-        .unwrap_or_default();
+    let digest = Hash::Sha256
+        .digest(text.as_bytes())
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
     format!("{}sha256:{}…", kind, &digest[..12.min(digest.len())])
 }
 

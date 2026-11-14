@@ -29,6 +29,7 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
 const DATA = path.join(ROOT, 'rust', 'crates', 'sts-core', 'tables');
+const CRYPTO_DATA = path.join(ROOT, 'rust', 'crates', 'sts-crypto', 'tables');
 
 // Each export: the file it writes and the document it holds. Key order is
 // the table's, so a diff of the export reads like a diff of the table.
@@ -52,11 +53,49 @@ function errorCodes() {
 
 // The settings table (`common/config.js`'s SETTINGS) and the keys it
 // refuses by name because they were replaced (REPLACED_SETTINGS). A row is
-// data except for the four `derived` defaults, which are FUNCTIONS of other
-// settings: those export `dflt: null` and `derivedDefault: true`, and
-// `sts-core::settings` computes them in Rust (a function cannot be data).
-// Loading config.js needs its npm dependencies, so this export runs where
-// they are installed — the tests image, or a checkout after `npm install`.
+// data except where its default is a FUNCTION: those export `dflt: null`
+// and `derivedDefault: true`, and `sts-core::settings` computes them in Rust
+// (a function cannot be data). Loading config.js needs its npm dependencies,
+// so this export runs where they are installed — the tests image, or a
+// checkout after `npm install`.
+//
+// TWO KINDS OF FUNCTION (#1491). Four are expressions of other settings,
+// ported by hand (DERIVED_BY_HAND). Every other one is config.js's
+// `strongerInProduct(product, development)` — a closure over two values,
+// one per mode — and those two values ARE data: the export reads them by
+// calling the default once in each mode and carries them as `byMode`. A
+// function that is neither is refused here, so a new kind of derived
+// default stops the export rather than reaching Rust as a null.
+const DERIVED_BY_HAND = ['global.https', 'adminApi.audience',
+                         'oid4vp.walletUrl', 'krb5.serviceDomains'];
+const STRONGER_IN_PRODUCT =
+  /^function \(\) \{\s*return value\('global\.mode'\) === 'product' \? product : development;\s*\}$/;
+
+// The two values of a `strongerInProduct()` default, read with `global.mode`
+// pinned in the environment layer (which `resolve()` reads live). Run where
+// nothing above that layer holds the mode: an override or a realm would win.
+function byMode(config, row) {
+  const saved = process.env.STS_MODE;
+  const out = {};
+  try {
+    ['product', 'development'].forEach(function (mode) {
+      process.env.STS_MODE = mode;
+      if (config.value('global.mode') !== mode) {
+        throw new Error('export-rust-tables: global.mode is not ' + mode +
+                        ' with STS_MODE set; run with no override of it');
+      }
+      out[mode] = row.dflt();
+    });
+  } finally {
+    if (saved === undefined) {
+      delete process.env.STS_MODE;
+    } else {
+      process.env.STS_MODE = saved;
+    }
+  }
+  return out;
+}
+
 function settings() {
   const config = require(path.join(ROOT, 'common', 'config.js'));
   return {
@@ -67,6 +106,19 @@ function settings() {
           out[key] = null;
           if (key === 'dflt') {
             out.derivedDefault = true;
+            if (DERIVED_BY_HAND.indexOf(row.key) < 0) {
+              const source = row.dflt.toString().split('\n').filter(
+                function (line) {
+                  return !/log\.debug/.test(line);
+                }).join('\n');
+              if (!STRONGER_IN_PRODUCT.test(source)) {
+                throw new Error('export-rust-tables: ' + row.key + '\'s ' +
+                  'default is a function of a kind sts-core does not ' +
+                  'compute; port it to sts-core::settings and name it in ' +
+                  'DERIVED_BY_HAND');
+              }
+              out.byMode = byMode(config, row);
+            }
           }
           return;
         }
@@ -82,9 +134,10 @@ function settings() {
 // method of `sts-core::mode::Mode`, and a Rust test fails on a name it does
 // not answer — the sentence each one's write refusal ends with, and the two
 // tables `/admin/mode` draws, REQUIREMENTS and NOT_YET.
+// `prose` is the #543 harvest of the module's sentences, not a predicate.
 const MODE_HELPERS = ['current', 'isProduct', 'isDevelopment', 'allowsValue',
                       'valueInForce', 'inForce', 'writeRefusalReason',
-                      'report'];
+                      'report', 'prose'];
 
 function modeTable() {
   const mode = require(path.join(ROOT, 'common', 'mode.js'));
@@ -109,10 +162,41 @@ function modeTable() {
   };
 }
 
+// THE SIGNATURE ALGORITHM REGISTRY (#1368, #1374): every signature algorithm
+// this service knows, once, with its spelling on each surface — what
+// `sts-crypto::algorithms` reads. The rows as the registry indexes them
+// (`pki` renamed `x509`, every surface present, the httpsig JWS aliases of
+// RFC 9421 section 3.3.7), each surface's and consumer's recorded order, and
+// the tables kept beside the rows. RECORDED is not exported by the module, so
+// its consumers are named here; `recorded()` answers [] for any other.
+const RECORDED_NAMES = ['jose', 'cose', 'cose.status', 'cose.mdoc', 'xml',
+                        'x509', 'httpsig', 'cms', 'dkim', 'tls', 'di'];
+
+function algorithmRegistry() {
+  const registry = require(path.join(ROOT, 'common', 'crypto_impl',
+                                     'algorithm_registry.js'));
+  const recorded = {};
+  RECORDED_NAMES.forEach(function (name) {
+    recorded[name] = registry.recorded(name);
+  });
+  return {
+    surfaces: registry.SURFACES,
+    rawSignatureFamilies: registry.RAW_SIGNATURE_FAMILIES,
+    rows: JSON.parse(JSON.stringify(registry.ROWS)),
+    recorded: recorded,
+    xmlRefused: registry.xmlSignaturesRefused(),
+    xmlDigests: registry.xmlDigestMethods(),
+    xmlDigestsRefused: registry.xmlDigestsRefused(),
+    pkiKeyAlgorithms: registry.pkiKeyAlgorithms()
+  };
+}
+
 const EXPORTS = [
   { file: 'error_codes.json', build: errorCodes },
   { file: 'settings.json', build: settings },
-  { file: 'mode.json', build: modeTable }
+  { file: 'mode.json', build: modeTable },
+  { file: 'algorithm_registry.json', dir: CRYPTO_DATA,
+    build: algorithmRegistry }
 ];
 
 // THE APPCONFIG LAYERS (#444, rust/DESIGN.md section 8): `env/*.js` are data,
@@ -133,7 +217,7 @@ function appconfig(name) {
 // The text each export should hold.
 function rendered() {
   return EXPORTS.map(function (one) {
-    return { file: path.join(DATA, one.file),
+    return { file: path.join(one.dir || DATA, one.file),
              text: JSON.stringify(one.build(), null, 1) + '\n' };
   }).concat(APPCONFIG.map(function (name) {
     return { file: path.join(ROOT, 'env', name + '.json'),
@@ -168,6 +252,7 @@ if (require.main === module) {
     console.log('the Rust tables are current');
   } else {
     fs.mkdirSync(DATA, { recursive: true });
+    fs.mkdirSync(CRYPTO_DATA, { recursive: true });
     // A file under env/ is written only where its directory exists.
     rendered().forEach(function (one) {
       fs.writeFileSync(one.file, one.text);

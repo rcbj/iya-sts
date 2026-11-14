@@ -18,6 +18,11 @@
 //!   so a page that set its own carelessly is not framable. The one framed
 //!   page (the OP iframe) narrows the clause through
 //!   [`csp::framed_content_security_policy`] instead.
+//! * **A response that is not a page** (JSON, XML other than SVG, plain
+//!   text) still holding the base policy is narrowed at the flush to
+//!   [`csp::not_a_page_policy`]; a text or XML type is given its charset;
+//!   every response names the browser features it may use
+//!   ([`PERMISSIONS_POLICY`]).
 //! * **The 404 body is Express's** — `Cannot GET /path` — because the
 //!   endpoint drift check tells an unrouted path from an endpoint answering
 //!   404 by it. Do not make it prettier.
@@ -274,6 +279,12 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
     );
+    if !headers.contains_key("permissions-policy") {
+        headers.insert(
+            "permissions-policy",
+            HeaderValue::from_static(PERMISSIONS_POLICY),
+        );
+    }
     let base = HeaderValue::from_str(&csp::base_policy());
     let own = headers
         .get(header::CONTENT_SECURITY_POLICY)
@@ -303,10 +314,67 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
             );
         }
     }
+    // NOT A PAGE: read after the line above, so a policy just put back is
+    // narrowed too; a route's own policy is left alone.
+    let shown = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let holds_base = headers
+        .get(header::CONTENT_SECURITY_POLICY)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|p| p == csp::base_policy());
+    if holds_base && csp::not_a_page_type(&shown) {
+        if let Ok(v) = HeaderValue::from_str(&csp::not_a_page_policy()) {
+            headers.insert(header::CONTENT_SECURITY_POLICY, v);
+        }
+    }
+    // A CHARSET ON EVERY TEXT AND XML TYPE (ASVS 5.0.0 4.1.1, #1439):
+    // `text/*`, `application/xml` and `*/*+xml`; JSON registers none.
+    if charset_owed(&shown) {
+        if let Ok(v) =
+            HeaderValue::from_str(&format!("{}; charset=utf-8", shown))
+        {
+            headers.insert(header::CONTENT_TYPE, v);
+        }
+    }
     if let Some(code) = code_of(&response) {
         tracing::debug!("{}http: refused.", sts_core::log::tag(code));
     }
     response
+}
+
+/// The browser features a page of this service may use (Qualys QID 150248,
+/// `PERMISSIONS_POLICY`): WebAuthn, the Digital Credentials API, the
+/// clipboard and full screen for this origin, nothing else for anybody.
+pub const PERMISSIONS_POLICY: &str = "publickey-credentials-get=(self), \
+     publickey-credentials-create=(self), digital-credentials-get=(self), \
+     clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), \
+     geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), \
+     midi=(), display-capture=(), accelerometer=(), gyroscope=(), \
+     magnetometer=(), browsing-topics=()";
+
+/// Whether a `Content-Type` is owed `; charset=utf-8` (`CHARSET_TYPES`):
+/// a `text/*`, `application/xml` or `*/*+xml` type that names none.
+fn charset_owed(content_type: &str) -> bool {
+    let mut parts = content_type.split(';');
+    let essence = parts.next().unwrap_or("").trim().to_ascii_lowercase();
+    if parts.any(|p| p.trim().to_ascii_lowercase().starts_with("charset=")) {
+        return false;
+    }
+    let Some((top, sub)) = essence.split_once('/') else {
+        return false;
+    };
+    let plain = |s: &str| {
+        !s.is_empty() && !s.contains(char::is_whitespace) && !s.contains('/')
+    };
+    if !plain(top) || !plain(sub) {
+        return false;
+    }
+    top == "text"
+        || essence == "application/xml"
+        || (sub.ends_with("+xml") && sub.len() > 4)
 }
 
 /// Wraps a router in the layer every route sits behind, in Node's order:

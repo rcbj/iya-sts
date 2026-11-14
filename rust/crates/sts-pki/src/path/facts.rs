@@ -181,6 +181,11 @@ pub struct PathFacts {
     pub common_names: Vec<String>,
     /// `md`, `sha1` or empty.
     pub weak_signature: &'static str,
+    /// The signature algorithm's OID (#1368's accept list reads it).
+    pub signature_oid: String,
+    /// RSASSA-PSS's hash by node digest name, the part of the algorithm its
+    /// own OID does not name; empty for every other algorithm.
+    pub signature_hash: &'static str,
     pub policies: Option<Vec<String>>,
     pub policy_mappings: Option<Vec<PolicyMapping>>,
     pub require_explicit_policy: Option<i64>,
@@ -224,6 +229,17 @@ fn declared_length_overruns(bytes: &[u8]) -> bool {
         )
     };
     header + len > bytes.len()
+}
+
+/// `PATH_PSS_HASHES`: RSASSA-PSS's hash by OID, as node names it.
+fn pss_hash_name(oid: &str) -> &'static str {
+    match oid {
+        "1.3.14.3.2.26" => "sha1",
+        "2.16.840.1.101.3.4.2.1" => "sha256",
+        "2.16.840.1.101.3.4.2.2" => "sha384",
+        "2.16.840.1.101.3.4.2.3" => "sha512",
+        _ => "",
+    }
 }
 
 /// JavaScript's `\s`.
@@ -637,6 +653,7 @@ fn read_facts(cert_der: &[u8], facts: &mut PathFacts) -> R<()> {
         return Err("its EC key names no named curve (RFC 5480 section 2.1.1 forbids specifiedCurve and implicitCurve)".to_string());
     }
     let signed_with = cert.signature_oid.as_str();
+    facts.signature_oid = signed_with.to_string();
     facts.weak_signature = if MD_SIGNATURES.contains(&signed_with) {
         "md"
     } else if SHA1_SIGNATURES.contains(&signed_with) {
@@ -654,6 +671,7 @@ fn read_facts(cert_der: &[u8], facts: &mut PathFacts) -> R<()> {
                     })
             })
             .unwrap_or_else(|| SHA1.to_string());
+        facts.signature_hash = pss_hash_name(&hash);
         if hash == SHA1 {
             "sha1"
         } else {

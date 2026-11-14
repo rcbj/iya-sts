@@ -24,7 +24,7 @@ use base64::Engine;
 use serde_json::{Map, Value as Json};
 use sts_core::errors::{codes, ErrorCode};
 use sts_crypto::jws::{verify_compact, VerifyOptions};
-use sts_crypto::jws_alg::{Family, JwsAlg, ALGS};
+use sts_crypto::jws_alg::{Family, Hash, JwsAlg, ALGS};
 use sts_crypto::keys::{JwsKey, KeyPolicy};
 
 /// The `typ` a proof must carry.
@@ -75,14 +75,14 @@ pub fn thumbprint(jwk: &Json) -> Option<String> {
             .filter(|v| !v.is_null() && v.as_str() != Some(""))?;
         parts.push(format!("\"{}\":{}", m, value));
     }
-    Some(URL_SAFE_NO_PAD.encode(openssl::sha::sha256(
-        format!("{{{}}}", parts.join(",")).as_bytes(),
-    )))
+    Some(URL_SAFE_NO_PAD.encode(
+        Hash::Sha256.digest(format!("{{{}}}", parts.join(",")).as_bytes()),
+    ))
 }
 
 /// `ath` (section 4.2): base64url(SHA-256(ASCII(access token))).
 pub fn ath_of(access_token: &str) -> String {
-    URL_SAFE_NO_PAD.encode(openssl::sha::sha256(access_token.as_bytes()))
+    URL_SAFE_NO_PAD.encode(Hash::Sha256.digest(access_token.as_bytes()))
 }
 
 /// `normalizeHtu()`: scheme and host lower-cased, the scheme's default port

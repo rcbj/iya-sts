@@ -35,7 +35,7 @@ use openssl::x509::store::X509StoreBuilder;
 use openssl::x509::X509;
 
 use crate::error::{CryptoError, CryptoResult};
-use crate::keys::{rsa_key_problem, KeyPolicy};
+use crate::keys::{rsa_key_problem, JwsKey, KeyPolicy, Material};
 use crate::pq_x509;
 use crate::random::random_bytes;
 
@@ -269,6 +269,61 @@ pub fn verify_raw_signature(
         })
     };
     attempt().unwrap_or(false)
+}
+
+/// The pq family with the algorithm NAMED (`scheme.alg`, #1368): for a
+/// caller that holds the key's raw bytes — a Data Integrity proof's AKP key
+/// — rather than a SubjectPublicKeyInfo to read both from. Node hands these
+/// to `pq_jose.js`, the JOSE post-quantum engine; here that is
+/// [`crate::jws::verify_input`] over the same AKP key, so the JOSE names
+/// (ML-DSA, SLH-DSA, the composites) are the names it takes. `false` for an
+/// unknown name or a key that does not load, as for every family.
+pub fn verify_raw_signature_named(
+    alg: &str,
+    public: &[u8],
+    data: &[u8],
+    signature: &[u8],
+) -> bool {
+    let key = JwsKey::of(Material::Akp {
+        alg: Some(alg.to_string()),
+        public: public.to_vec(),
+        private: None,
+    });
+    crate::jws_alg::JwsAlg::by_name(alg)
+        .is_some_and(|row| row.is_post_quantum())
+        && crate::jws::verify_input(
+            alg,
+            &key,
+            data,
+            signature,
+            KeyPolicy::LENIENT,
+        )
+        .unwrap_or(false)
+}
+
+/// `signRawSignature()` for the pq family, the algorithm named and the
+/// private key's raw bytes (`pqPrivateBytes()`: an ML-DSA seed, an SLH-DSA
+/// secret key, a composite's concatenation). Blocks; `signRawSignatureAsync()`
+/// is this under `spawn_blocking`.
+pub fn sign_raw_signature_named(
+    alg: &str,
+    private: &[u8],
+    data: &[u8],
+) -> CryptoResult<Vec<u8>> {
+    if !crate::jws_alg::JwsAlg::by_name(alg)
+        .is_some_and(|row| row.is_post_quantum())
+    {
+        return Err(CryptoError::new(format!(
+            "signRawSignature: \"{}\" is not a post-quantum algorithm.",
+            alg
+        )));
+    }
+    let key = JwsKey::of(Material::Akp {
+        alg: Some(alg.to_string()),
+        public: Vec::new(),
+        private: Some(private.to_vec()),
+    });
+    crate::jws::sign_input(alg, &key, data)
 }
 
 /// `signRawSignature()`: ECDSA (r||s unless DER is asked for) or EdDSA, for

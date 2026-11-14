@@ -29,6 +29,7 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{json, Value as Json};
+use sts_core::errors::codes;
 use sts_core::log::tag;
 use sts_core::realm;
 use sts_core::realm_lifecycle::RealmLifecycle;
@@ -189,7 +190,7 @@ impl RevokedTokens {
                 "{}admin: the revoked-token register reached oauth2.maxRevokedJtis ({}) with nothing expired \
                  in it, so {} revocation(s) of unexpired tokens were forgotten, the soonest to expire first \
                  (the latest was {}). Raise the setting.",
-                tag("STS-OAUTH-0787"),
+                tag(codes::STS_OAUTH_0787),
                 cap,
                 count.0,
                 forgotten.last().map(String::as_str).unwrap_or("")

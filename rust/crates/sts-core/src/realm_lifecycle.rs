@@ -668,6 +668,11 @@ impl RealmLifecycle {
         if !errors.sentences.is_empty() {
             return Err(errors);
         }
+        if let Some(r) =
+            RealmLifecycle::text_problems(Some(name), Some(description))
+        {
+            return Err(r);
+        }
         let errors = self.check_overrides(overrides);
         if !errors.sentences.is_empty() {
             return Err(errors);
@@ -685,6 +690,9 @@ impl RealmLifecycle {
                 after.insert(k.clone(), v.clone());
             }
             if let Some(r) = self.rule_problem(&id, &after, &Overrides::new()) {
+                return Err(r);
+            }
+            if let Some(r) = self.count_problem() {
                 return Err(r);
             }
         }
@@ -739,6 +747,46 @@ impl RealmLifecycle {
         Ok(realm)
     }
 
+    /// `realmTextErrors()` (#1463): a name or description the store could
+    /// never hold — a NUL, or half of a surrogate pair, which a Rust string
+    /// cannot carry — is refused before it is written, rather than wedging
+    /// every later flush.
+    fn text_problems(
+        name: Option<&str>,
+        description: Option<&str>,
+    ) -> Option<Refused> {
+        let errors: Vec<String> = [("name", name), ("description", description)]
+            .iter()
+            .filter(|(_, v)| v.is_some_and(|t| t.contains('\0')))
+            .map(|(field, _)| {
+                format!(
+                    "A realm's {} may not hold a NUL character or half of a surrogate pair.",
+                    field
+                )
+            })
+            .collect();
+        (!errors.is_empty()).then(|| refused(codes::STS_CORE_0171, errors))
+    }
+
+    /// `refusedForCount()` (#368): a cluster holds at most
+    /// `realms.maxCount` realms, the default one included.
+    fn count_problem(&self) -> Option<Refused> {
+        let limit = self.settings.value_of("realms.maxCount").as_int();
+        let held = self.registry.count() as i64;
+        (held >= limit).then(|| {
+            refused(
+                codes::STS_CORE_0161,
+                vec![format!(
+                    "This cluster already holds {} trust realm(s), which is realms.maxCount ({}). The count \
+                     includes the default realm. A service administrator raises the limit in the default realm \
+                     — /admin/realms, or POST /admin-api/config/set with no realm prefix — and lowering it \
+                     does not remove realms that already exist.",
+                    held, limit
+                )],
+            )
+        })
+    }
+
     fn not_defined(id: &str) -> Refused {
         refused(
             codes::STS_CORE_0013,
@@ -775,6 +823,9 @@ impl RealmLifecycle {
                     )],
                 ));
             }
+        }
+        if let Some(r) = RealmLifecycle::text_problems(name, description) {
+            return Err(r);
         }
         let before = self.overrides(&realm.id).unwrap_or_default();
         if let Some(next) = overrides {

@@ -23,6 +23,7 @@ import { documents, everyOperation, projections, renderApiTypes }
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
+import { renderRustApi, renderRustDomain } from '../lib/rust_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
 import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
@@ -123,6 +124,8 @@ async function generate() {
   fs.writeFileSync(path.join(out, 'domain.d.ts'), renderTypes(concepts));
   fs.writeFileSync(path.join(out, 'domain_classes.txt'),
     renderClasses(concepts));
+  // The same concepts as Rust data types, for the Rust runtime (#444, D15).
+  fs.writeFileSync(path.join(out, 'domain.rs'), renderRustDomain(concepts));
   const scim = readScim(program);
   const scimProblems = checkScim(scim, objects);
   if (scimProblems.length > 0) {
@@ -213,6 +216,10 @@ async function generate() {
       JSON.stringify(served[name]));
   });
   fs.writeFileSync(path.join(out, 'api.d.ts'), renderApiTypes(served));
+  // The same requests and answers as Rust data types (#444, D15).
+  const rust = renderRustApi(served);
+  fs.writeFileSync(path.join(out, 'api.rs'), rust.api);
+  fs.writeFileSync(path.join(out, 'unions.rs'), rust.unions);
   const projected = projections(program);
   const conceptNames = new Set(concepts.map(function (one) {
     return one.name;

@@ -4,22 +4,22 @@
 //! Canonical XML against Node, byte for byte: every element of every
 //! document `tests/tools/crypto-vectors.js` wrote into `c14n-node.json`, in
 //! the four forms (exclusive and inclusive, each with and without comments)
-//! `common/vendored/xmldsig.js` computes.
+//! `common/crypto_impl/xmldsig.js` computes.
 //!
 //! The corpus is the hand-written edge cases in that script and, when it ran
 //! with `STS_C14N_CORPUS`, every XML file of a directory — the repository's
-//! own 1460 (the OASIS XACML suite, mostly) is what it has been run over;
+//! own 1461 (the OASIS XACML suite, mostly) is what it has been run over;
 //! the W3C interop corpus is the one to add where the network allows it.
 //!
 //! The directory is `STS_CRYPTO_VECTORS`; with it unset this test says so
 //! and passes.
 //!
-//! **ONE DELIBERATE DIFFERENCE: a DOCTYPE.** Node's xmldom accepts one and
-//! resolves no entity it declares (`common/validation.js` measured that, and
-//! refuses the unresolved reference as an error); this DOM refuses every
-//! DOCTYPE outright, the refusal `validation.js` says a parser must make.
-//! A document carrying one is therefore required to be REFUSED here, whatever
-//! Node made of it.
+//! **A DOCUMENT NODE REFUSES IS REFUSED HERE, AND THE OTHER WAY ROUND.**
+//! Until 2026-11-10 Node's xmldom accepted a DOCTYPE and this DOM did not,
+//! the one difference this test allowed. Node's `common/xml_parser.js` now
+//! refuses a `<!DOCTYPE` or `<!ENTITY` anywhere in the text, and
+//! `sts_xml::dom::declaration_in()` is the same test, so a declaration's
+//! refusal is required to be Node's in its words too.
 
 #![allow(clippy::unwrap_used)] // a test file
 
@@ -48,16 +48,24 @@ fn every_node_canonical_form_is_reproduced() {
         let name = case["name"].as_str().unwrap();
         let xml = case["xml"].as_str().unwrap();
         let parsed = Document::parse(xml);
-        if xml.contains("<!DOCTYPE") {
-            assert!(parsed.is_err(), "{}: a DOCTYPE was accepted", name);
-            continue;
-        }
-        if case.get("refused").is_some() {
-            assert!(
-                parsed.is_err(),
-                "{}: Node refused it, this accepted",
-                name
-            );
+        if let Some(refusal) = case.get("refused").and_then(Json::as_str) {
+            match &parsed {
+                Ok(_) => failures
+                    .push(format!("{}: Node refused it, this accepted", name)),
+                // A declaration's words are xml_parser.js's, and are
+                // compared; any other refusal's are the parser's own.
+                Err(e) if refusal.contains("> declaration, which") => {
+                    checked += 1;
+                    if !refusal.ends_with(&format!("XML: {}", e)) {
+                        failures.push(format!(
+                            "{}: refused in other words:\n node: {}\n \
+                             rust: {}",
+                            name, refusal, e
+                        ));
+                    }
+                }
+                Err(_) => checked += 1,
+            }
             continue;
         }
         let doc = match parsed {

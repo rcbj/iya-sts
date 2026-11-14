@@ -91,6 +91,17 @@ pub trait Driver: Send + Sync {
         None
     }
 
+    /// The process's data keys, handed over the moment the keystore has
+    /// started (`persistence.start()`): a driver that seals what it writes
+    /// (the postgres driver's directory entries, #391) takes them; the rest
+    /// ignore them. A late binding, because the keystore reads its rows
+    /// through the driver it is handed to.
+    fn adopt_data_keys(
+        &self,
+        _keys: &std::sync::Arc<crate::keystore::DataKeys>,
+    ) {
+    }
+
     /// `memory`, `ldif` or `postgres`.
     fn name(&self) -> &'static str;
     /// Opens the store. A failure here is FATAL to the service, where every

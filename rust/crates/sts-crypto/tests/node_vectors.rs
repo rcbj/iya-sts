@@ -19,9 +19,10 @@
 use std::path::PathBuf;
 
 use serde_json::{json, Map, Value as Json};
+use sts_crypto::algorithms::AcceptAll;
 use sts_crypto::jws::{
-    generate_key, sign_input, sign_jws, verify_compact, verify_input,
-    SignOptions, VerifyOptions,
+    generate_key, sign_input, sign_jws, verify_compact,
+    verify_compact_with_certificate, verify_input, SignOptions, VerifyOptions,
 };
 use sts_crypto::jws_alg::{id_token_half_hash, ALGS};
 use sts_crypto::keys::{JwsKey, KeyPolicy};
@@ -42,10 +43,67 @@ fn read(name: &str) -> Option<Vec<Json>> {
 
 #[test]
 fn every_node_jws_verifies_here() {
-    let Some(rows) = read("jws-node.json") else {
+    let Some(all) = read("jws-node.json") else {
         return;
     };
+    let (certified, rows): (Vec<Json>, Vec<Json>) = all
+        .into_iter()
+        .partition(|row| row["certificateRow"] == true);
     assert_eq!(rows.len(), ALGS.len(), "one vector per algorithm");
+    // A JWS verified with the key in a certificate (#1713): Node's verdict
+    // with the certificate as PEM and as bare base64 DER, under another
+    // certificate's key, and Node's words for what is not a certificate.
+    assert!(
+        certified.len() >= 5,
+        "the certificate rows are in the vectors"
+    );
+    for row in &certified {
+        let alg = row["alg"].as_str().unwrap();
+        let options = VerifyOptions {
+            algorithms: &[alg],
+            empty_payload: false,
+            policy: KeyPolicy::STRICT,
+        };
+        let token = row["token"].as_str().unwrap();
+        let answer = |certificate: &str| {
+            verify_compact_with_certificate(
+                token,
+                certificate,
+                &options,
+                &AcceptAll,
+            )
+        };
+        let certificate = row["certificate"].as_str().unwrap();
+        match (answer(certificate), &row["pem"]) {
+            (Ok(v), node) if node["ok"] == true => {
+                assert_eq!(v.claims.unwrap()["sub"], node["sub"], "{}", alg)
+            }
+            (Err(e), node) if node["ok"] == false => {
+                assert_eq!(e.0, node["refusal"].as_str().unwrap(), "{}", alg)
+            }
+            (mine, node) => {
+                panic!("{}: Rust {:?}, Node {}", alg, mine.map(|_| ()), node)
+            }
+        }
+        if row["der"].is_object() {
+            let der: String = certificate
+                .lines()
+                .filter(|l| !l.starts_with("-----"))
+                .collect();
+            assert_eq!(
+                answer(&der).is_ok(),
+                row["der"]["ok"] == true,
+                "{} as bare DER",
+                alg
+            );
+        }
+        if let Some(other) = row.get("wrongCertificate") {
+            // Another certificate's key: Node's words there are its
+            // libraries', so the verdict is the check.
+            let mine = answer(row["otherCertificate"].as_str().unwrap());
+            assert_eq!(mine.is_ok(), other["ok"] == true, "{}", alg);
+        }
+    }
     for row in &rows {
         let alg = row["alg"].as_str().unwrap();
         let key = JwsKey::from_jwk(&row["jwk"])
@@ -141,13 +199,22 @@ fn jwe_private(
     }
 }
 
+/// Every JWE Node encrypted opens here through the door Node's own callers
+/// use (`decryptJweCompactAsync()`, [`decrypt_compact_derived`]); and every
+/// refusal row — PBES2 handed to a synchronous door, or a `p2c` outside the
+/// bounds — is refused here in Node's words. The generator runs in
+/// development mode, whose answers [`JwePolicy::DEVELOPMENT`] carries.
 #[test]
 fn every_node_jwe_decrypts_here() {
-    use sts_crypto::jwe::{decrypt_compact, DecryptOptions};
+    use sts_crypto::jwe::{
+        decrypt_compact, decrypt_compact_derived, encrypt_compact,
+        DecryptOptions, EncryptOptions, JwePolicy,
+    };
     let Some(rows) = read("jwe-node.json") else {
         return;
     };
     assert!(rows.len() >= sts_crypto::jwe::algs().len());
+    let mut refusals = 0;
     for row in &rows {
         let alg = row["alg"].as_str().unwrap();
         let secret = row["secret"]
@@ -156,27 +223,60 @@ fn every_node_jwe_decrypts_here() {
         let private_key = row["privateJwk"]
             .as_object()
             .and_then(|_| jwe_private(&row["privateJwk"]));
-        let out = decrypt_compact(
-            row["compact"].as_str().unwrap(),
-            &DecryptOptions {
-                private_key: private_key.as_ref(),
-                private_jwk: row["privateJwk"]
-                    .as_object()
-                    .map(|_| &row["privateJwk"]),
-                secret: secret.as_deref(),
-                ..DecryptOptions::default()
-            },
-        )
-        .unwrap_or_else(|e| panic!("{} {}: {}", alg, row["enc"], e));
+        let options = DecryptOptions {
+            private_key: private_key.as_ref(),
+            private_jwk: row["privateJwk"]
+                .as_object()
+                .map(|_| &row["privateJwk"]),
+            secret: secret.as_deref(),
+            pbes2_min_iterations: row["minIterations"].as_u64().unwrap_or(0),
+            policy: JwePolicy::DEVELOPMENT,
+            ..DecryptOptions::default()
+        };
+        if let Some(refusal) = row["refusal"].as_str() {
+            refusals += 1;
+            let door = row["door"].as_str().unwrap();
+            let refused = match door {
+                "sync-encrypt" => encrypt_compact(
+                    br#"{"sub":"alice"}"#,
+                    &EncryptOptions {
+                        alg: Some(alg),
+                        enc: row["enc"].as_str().unwrap(),
+                        secret: secret.as_deref(),
+                        policy: JwePolicy::DEVELOPMENT,
+                        ..EncryptOptions::default()
+                    },
+                )
+                .map(|_| ()),
+                "sync" => {
+                    decrypt_compact(row["compact"].as_str().unwrap(), &options)
+                        .map(|_| ())
+                }
+                _ => decrypt_compact_derived(
+                    row["compact"].as_str().unwrap(),
+                    &options,
+                )
+                .map(|_| ()),
+            };
+            match refused {
+                Ok(()) => panic!("{} {}: Rust did not refuse", alg, door),
+                Err(e) => assert_eq!(e.0, refusal, "{} {}", alg, door),
+            }
+            continue;
+        }
+        let out =
+            decrypt_compact_derived(row["compact"].as_str().unwrap(), &options)
+                .unwrap_or_else(|e| panic!("{} {}: {}", alg, row["enc"], e));
         assert_eq!(out.plaintext, br#"{"sub":"alice"}"#, "{}", alg);
     }
+    assert!(refusals >= 15, "the PBES2 refusals are in the vectors");
 }
 
 #[test]
 fn write_the_rust_jwe_vectors_when_asked() {
     use sts_crypto::jwe::{
-        algs, encrypt_compact, generate_kem_key_pair, AlgKind, EncryptOptions,
-        ENCS,
+        algs, encrypt_compact_derived, generate_kem_key_pair, AlgKind,
+        EncryptOptions, JwePolicy, ENCS,
     };
     if std::env::var("STS_WRITE_VECTORS").as_deref() != Ok("1") {
         return;
@@ -236,13 +336,14 @@ fn write_the_rust_jwe_vectors_when_asked() {
         if let Some(secret) = &secret {
             row["secret"] = json!(sts_crypto::b64::encode(secret));
         }
-        row["compact"] = json!(encrypt_compact(
+        row["compact"] = json!(encrypt_compact_derived(
             br#"{"sub":"alice"}"#,
             &EncryptOptions {
                 alg: Some(&name),
                 enc,
                 jwk: public.as_ref(),
                 secret: secret.as_deref(),
+                policy: JwePolicy::DEVELOPMENT,
                 ..EncryptOptions::default()
             },
         )

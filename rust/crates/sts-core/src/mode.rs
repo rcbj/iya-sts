@@ -21,14 +21,15 @@
 //! here is caught before the cutover.
 
 use std::collections::HashSet;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
 use serde_json::{json, Value as Json};
 
 use crate::errors::codes;
 use crate::log::tag;
 use crate::settings::{
-    keys, row, rows, DefaultValue, Refusal, SettingRow, SettingValue, Settings,
+    js_string, js_trim, keys, row, rows, DefaultValue, Key, Refusal,
+    SettingRow, SettingValue, Settings,
 };
 
 /// `global.mode`'s two values.
@@ -41,17 +42,21 @@ static TABLE: LazyLock<Json> = LazyLock::new(|| {
         .unwrap_or(Json::Null)
 });
 
-/// Defines the predicates that are the mode and nothing else: `product`
-/// answers true in product mode, `development` in development mode. Each
-/// also answers to its `mode.js` name through [`Mode::predicate`], which
+/// Defines the predicates that are the mode, or the mode and one boolean
+/// setting: `product` answers true in product mode, `development` in
+/// development mode; `product_unless(KEY)` is product unless an operator
+/// turned KEY on (an opt-out), `development_or(KEY)` development or KEY on
+/// (an opt-in), and `product_and(KEY)` product with KEY on. Each reads its
+/// setting as `config.value(KEY) === true`: only a boolean `true` counts.
+/// Each also answers to its `mode.js` name through [`Mode::answer`], which
 /// is how a settings row's `onlyWhile` marker names one.
 macro_rules! predicates {
-    ($($method:ident = $name:literal, $when:ident;)*) => {
+    ($($method:ident = $name:literal, $when:ident $(($key:ident))?;)*) => {
         impl Mode {
             $(
                 #[doc = concat!("`", $name, "` in `common/mode.js`.")]
                 pub fn $method(&self) -> bool {
-                    predicates!(@answer self, $when)
+                    predicates!(@answer self, $when $(, $key)?)
                 }
             )*
 
@@ -65,6 +70,50 @@ macro_rules! predicates {
     };
     (@answer $self:ident, product) => { $self.is_product() };
     (@answer $self:ident, development) => { !$self.is_product() };
+    (@answer $self:ident, product_unless, $key:ident) => {
+        $self.is_product() && !$self.is_on(keys::$key)
+    };
+    (@answer $self:ident, development_or, $key:ident) => {
+        !$self.is_product() || $self.is_on(keys::$key)
+    };
+    (@answer $self:ident, product_and, $key:ident) => {
+        $self.is_product() && $self.is_on(keys::$key)
+    };
+}
+
+/// What `oauth-oidc/oauth2_bcp.js`'s `waivers()` answers: the rows of RFC
+/// 9700 an administrator waived in the ambient realm (#1295), as data. The
+/// report carries them on its `oauth-security-bcp` row. Node requires that
+/// module LAZILY from `report()`; `sts-core` cannot depend on the crate
+/// that will own it, so it is a slot, filled by the OAuth crate when
+/// `oauth2_bcp` is ported — and EMPTY until then, which answers no waiver.
+pub trait OAuthBcpWaivers: Send + Sync {
+    fn waivers(&self) -> Vec<Json>;
+}
+
+/// A signing key `pki.pinnedSigners` off would demote (#263): what
+/// `pki.js`'s `pinsBlockingSignersOff()` lists.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockingPin {
+    pub unit: String,
+    pub kid: String,
+    pub realm: String,
+    /// `active` (signing) or anything else (published, not yet signing).
+    pub role: String,
+}
+
+/// The certificate authority's half of the pinned-signer rule. Node reads
+/// `pki.js` out of `require.cache` — a process that never loaded the
+/// certificate authority holds no pin to protect — so here it is a slot,
+/// and an EMPTY slot refuses nothing, as that process does.
+pub trait PinnedSigners: Send + Sync {
+    /// The pins blocking `pki.pinnedSigners` off in `realm`; `process` is
+    /// true where no realm is ambient (the write lands process-wide).
+    fn blocking_signers_off(
+        &self,
+        realm: &str,
+        process: bool,
+    ) -> Vec<BlockingPin>;
 }
 
 /// The mode, over the settings it reads.
@@ -74,38 +123,41 @@ pub struct Mode {
     /// per process (STS-CORE-0106): bounded by the table's rows and the
     /// attributes that override them, never by how many entries carry one.
     announced: Mutex<HashSet<String>>,
+    bcp_waivers: OnceLock<Arc<dyn OAuthBcpWaivers>>,
+    pinned_signers: OnceLock<Arc<dyn PinnedSigners>>,
 }
 
 predicates! {
     verifies_credentials = "verifiesCredentials", product;
+    auto_creates = "autoCreates", development;
     believes_asserted_selectors = "believesAssertedSelectors", development;
     requires_workload_attestation = "requiresWorkloadAttestation", product;
-    serves_unattested_workload_tcp = "servesUnattestedWorkloadTcp", development;
-    registers_unidentifying_entries =
-        "registersUnidentifyingEntries", development;
     serves_unattested_entries = "servesUnattestedEntries", development;
     accepts_credentials_without_status =
         "acceptsCredentialsWithoutStatus", development;
+    serves_unattested_workload_tcp = "servesUnattestedWorkloadTcp", development;
+    registers_unidentifying_entries =
+        "registersUnidentifyingEntries", development;
     trusts_unverified_local_socket = "trustsUnverifiedLocalSocket", development;
     spoils_on_purpose = "spoilsOnPurpose", development;
-    uses_broken_algorithms = "usesBrokenAlgorithms", development;
-    issues_unsigned_assertions = "issuesUnsignedAssertions", development;
-    serves_without_security_header = "servesWithoutSecurityHeader", development;
-    auto_creates = "autoCreates", development;
     requires_confidential_client_authentication =
         "requiresConfidentialClientAuthentication", product;
     enforces_oauth_security_bcp = "enforcesOauthSecurityBcp", product;
+    opens_management_api = "opensManagementApi", development;
     seeds_demo_data = "seedsDemoData", development;
+    describes_itself_as_test_double =
+        "describesItselfAsTestDouble", development;
     rotates_signing_keys = "rotatesSigningKeys", product;
     rotates_kerberos_keys = "rotatesKerberosKeys", product;
     derives_krbtgt_from_password = "derivesKrbtgtFromPassword", development;
+    generates_acceptor_key = "generatesAcceptorKey", product;
     refuses_expired_client_secrets = "refusesExpiredClientSecrets", product;
-    lists_realms_before_sign_in = "listsRealmsBeforeSignIn", development;
     invents_claim_values = "inventsClaimValues", development;
+    creates_incomplete_people = "createsIncompletePeople", development;
     accepts_unregistered_addresses =
         "acceptsUnregisteredAddresses", development;
-    opens_test_controls = "opensTestControls", development;
     requires_cell_kek = "requiresCellKek", product;
+    opens_test_controls = "opensTestControls", development;
     opens_console_to_anyone = "opensConsoleToAnyone", development;
     authorizes_directory_writes = "authorizesDirectoryWrites", product;
     authorizes_directory_reads = "authorizesDirectoryReads", product;
@@ -120,6 +172,7 @@ predicates! {
         "refusesUnknownRevocationStatus", product;
     refuses_unrevocable_certificates =
         "refusesUnrevocableCertificates", product;
+    enforces_paranoid_pki = "enforcesParanoidPki", product;
     requires_pki_for_gnap_mtls = "requiresPkiForGnapMtls", product;
     requires_enrollment_tls = "requiresEnrollmentTls", product;
     opens_introspection = "opensIntrospection", development;
@@ -134,21 +187,34 @@ predicates! {
     grants_uncatalogued_access = "grantsUncataloguedAccess", development;
     honours_ungranted_permissions = "honoursUngrantedPermissions", development;
     enrols_keys_on_first_use = "enrolsKeysOnFirstUse", development;
+    pins_self_issued_keys_on_first_use =
+        "pinsSelfIssuedKeysOnFirstUse", development;
+    mints_person_dids_on_request_address =
+        "mintsPersonDidsOnRequestAddress", development;
+    mints_photo_addresses_on_request_address =
+        "mintsPhotoAddressesOnRequestAddress", development;
     accepts_unverified_attestation =
         "acceptsUnverifiedAttestation", development;
     accepts_unattested_device_keys = "acceptsUnattestedDeviceKeys", development;
+    refuses_unchecked_attestation_revocation =
+        "refusesUncheckedAttestationRevocation",
+        product_and(DEVICES_ANDROID_REVOCATION_REQUIRED);
+    requires_fresh_key_attestation = "requiresFreshKeyAttestation", product;
     accepts_password_alone_from_second_factor_accounts =
         "acceptsPasswordAloneFromSecondFactorAccounts", development;
     issues_tickets_on_password_alone =
         "issuesTicketsOnPasswordAlone", development;
+    requires_sid_filtering_on_trusts = "requiresSidFilteringOnTrusts", product;
+    recovers_weaker_than_passkeys = "recoversWeakerThanPasskeys", development;
     matches_federated_names = "matchesFederatedNames", development;
+    defaults_federated_autocreate = "defaultsFederatedAutocreate", development;
     accepts_unsigned_federated_logout =
         "acceptsUnsignedFederatedLogout", development;
     accepts_unencrypted_federated_assertions =
         "acceptsUnencryptedFederatedAssertions", development;
-    certifies_request_host = "certifiesRequestHost", development;
     accepts_unsigned_request_objects =
         "acceptsUnsignedRequestObjects", development;
+    certifies_request_host = "certifiesRequestHost", development;
     accepts_loose_request_uris = "acceptsLooseRequestUris", development;
     accepts_unsigned_saml_requests = "acceptsUnsignedSamlRequests", development;
     encrypts_to_observed_certificates =
@@ -156,18 +222,76 @@ predicates! {
     registers_from_metadata_query = "registersFromMetadataQuery", development;
     publishes_metadata_for_unregistered_providers =
         "publishesMetadataForUnregisteredProviders", development;
+    issues_to_unregistered_applications =
+        "issuesToUnregisteredApplications", development;
     limits_debugger_destinations = "limitsDebuggerDestinations", product;
     dials_internal_addresses = "dialsInternalAddresses", development;
     skips_outbound_tls_verification =
         "skipsOutboundTlsVerification", development;
     dials_plain_http_outbound = "dialsPlainHttpOutbound", development;
     captures_mail = "capturesMail", development;
+    accepts_file_secret_destinations =
+        "acceptsFileSecretDestinations", development;
     mails_links_from_listener_address =
         "mailsLinksFromListenerAddress", development;
     accepts_nonconforming_resource_metadata =
         "acceptsNonconformingResourceMetadata", development;
-    gates_management_api = "gatesManagementApi", product;
     observes_risk_only = "observesRiskOnly", development;
+    uses_broken_algorithms = "usesBrokenAlgorithms", development;
+    omits_strict_transport_security =
+        "omitsStrictTransportSecurity", development;
+    fails_open_on_policy_fault = "failsOpenOnPolicyFault", development;
+    restricts_unscoped_people =
+        "restrictsUnscopedPeople",
+        product_unless(SECURITY_ALLOW_UNSCOPED_PEOPLE);
+    confines_named_files = "confinesNamedFiles", product;
+    allows_cbc_jwe = "allowsCbcJwe", development_or(CRYPTO_ALLOW_CBC_JWE);
+    requires_pkce_of_every_client =
+        "requiresPkceOfEveryClient",
+        product_unless(OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE);
+    requires_second_factor_of_everyone =
+        "requiresSecondFactorOfEveryone",
+        product_unless(AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR);
+    requires_tls_to_malware_scanner =
+        "requiresTlsToMalwareScanner",
+        product_unless(MALWARE_SCAN_ALLOW_CLEARTEXT);
+    refuses_token_for_gone_subject = "refusesTokenForGoneSubject", product;
+    refuses_assertion_without_audience =
+        "refusesAssertionWithoutAudience",
+        product_unless(FEDERATION_ALLOW_ASSERTION_WITHOUT_AUDIENCE);
+    warns_without_audit_destination = "warnsWithoutAuditDestination", product;
+    omits_unapproved_signing_curves = "omitsUnapprovedSigningCurves", product;
+    refuses_plain_syslog =
+        "refusesPlainSyslog", product_unless(AUDIT_ALLOW_PLAIN_SYSLOG);
+    refuses_default_database_password =
+        "refusesDefaultDatabasePassword",
+        product_unless(PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD);
+    requires_secret_store =
+        "requiresSecretStore", product_unless(SECRETS_ALLOW_LOCAL_SECRETS);
+    redacts_request_log = "redactsRequestLog", product;
+    requires_typed_logout_token =
+        "requiresTypedLogoutToken",
+        product_unless(FEDERATION_ALLOW_UNTYPED_LOGOUT_TOKEN);
+    hides_failure_detail = "hidesFailureDetail", product;
+    requires_trusted_proxy_ranges = "requiresTrustedProxyRanges", product;
+    refuses_repeated_token_parameters =
+        "refusesRepeatedTokenParameters", product;
+    requires_evidence_to_clear_factor =
+        "requiresEvidenceToClearFactor", product;
+    hides_step_ids = "hidesStepIds", product;
+    allows_legacy_hashes =
+        "allowsLegacyHashes", development_or(CRYPTO_ALLOW_LEGACY_HASHES);
+    binds_sign_in_steps = "bindsSignInSteps", product;
+    generates_bootstrap_name =
+        "generatesBootstrapName", product_unless(ADMIN_ALLOW_DEFAULT_USERNAME);
+    revokes_access_tokens_at_sign_out = "revokesAccessTokensAtSignOut", product;
+    narrows_undeclared_grants =
+        "narrowsUndeclaredGrants",
+        product_unless(OAUTH2_ALLOW_UNDECLARED_GRANTS);
+    answers_scep = "answersScep", development_or(SCEP_ALLOW_IN_PRODUCT);
+    prefixes_cookies = "prefixesCookies", product;
+    issues_unsigned_assertions = "issuesUnsignedAssertions", development;
+    serves_without_security_header = "servesWithoutSecurityHeader", development;
 }
 
 impl Mode {
@@ -175,7 +299,19 @@ impl Mode {
         Mode {
             settings,
             announced: Mutex::new(HashSet::new()),
+            bcp_waivers: OnceLock::new(),
+            pinned_signers: OnceLock::new(),
         }
+    }
+
+    /// Fills the RFC 9700 waivers slot, once.
+    pub fn set_bcp_waivers(&self, slot: Arc<dyn OAuthBcpWaivers>) -> bool {
+        self.bcp_waivers.set(slot).is_ok()
+    }
+
+    /// Fills the pinned-signer slot, once.
+    pub fn set_pinned_signers(&self, slot: Arc<dyn PinnedSigners>) -> bool {
+        self.pinned_signers.set(slot).is_ok()
     }
 
     /// The ambient realm's mode: `product`, or `development` for anything
@@ -191,6 +327,11 @@ impl Mode {
     // Private on purpose: see the module's header.
     fn is_product(&self) -> bool {
         self.current() == PRODUCT
+    }
+
+    /// `config.value(key) === true`.
+    fn is_on(&self, key: Key) -> bool {
+        self.settings.value(key) == SettingValue::Bool(true)
     }
 
     /// Whether the embedded protocol debugger is served: `debugger.enabled`
@@ -227,37 +368,135 @@ impl Mode {
     /// Whether a received SET that does not verify is refused: always in
     /// product, and in development where `ssf.receiveRequireSignature` says.
     pub fn refuses_unverified_signals(&self) -> bool {
-        self.is_product()
-            || self
-                .settings
-                .value(keys::SSF_RECEIVE_REQUIRE_SIGNATURE)
-                .as_bool()
+        self.is_product() || self.is_on(keys::SSF_RECEIVE_REQUIRE_SIGNATURE)
     }
 
     /// Whether received signals are recorded and not acted on: development,
     /// unless `ssf.actOnSignalsInDevelopment` is on.
     pub fn observes_signals_only(&self) -> bool {
         !self.is_product()
-            && !self
-                .settings
-                .value(keys::SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT)
-                .as_bool()
+            && !self.is_on(keys::SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT)
     }
 
-    /// A predicate by its `mode.js` name — a settings row's `onlyWhile`.
-    pub fn predicate(&self, name: &str) -> Option<bool> {
-        match name {
-            "embedsProtocolDebugger" => Some(self.embeds_protocol_debugger()),
-            "gatesConsole" => Some(self.gates_console()),
-            "gatesScim" => Some(self.gates_scim()),
-            "gatesSharedSignals" => Some(self.gates_shared_signals()),
-            "gatesSpireServerApi" => Some(self.gates_spire_server_api()),
-            "refusesUnverifiedSignals" => {
-                Some(self.refuses_unverified_signals())
-            }
-            "observesSignalsOnly" => Some(self.observes_signals_only()),
-            other => self.simple_predicate(other),
+    /// `minScryptParallelism()`: the least scrypt parallelism a new password
+    /// is hashed with.
+    pub fn min_scrypt_parallelism(&self) -> i64 {
+        if self.is_product() {
+            3
+        } else {
+            1
         }
+    }
+
+    /// `defaultRsaBits()`: the size of a new RSA key no setting names.
+    pub fn default_rsa_bits(&self) -> i64 {
+        if self.is_product() {
+            3072
+        } else {
+            2048
+        }
+    }
+
+    /// `expiredAssertionGraceS()`: the grace on an expired GNAP user
+    /// assertion, in seconds — the setting, or 0 in product where nobody set
+    /// it (its source is `defaults` or `default`).
+    pub fn expired_assertion_grace_s(&self) -> i64 {
+        let key = keys::GNAP_ASSERTION_MAX_AGE_S;
+        let source = self.settings.source_of(key).as_str();
+        if self.is_product() && source.starts_with("default") {
+            return 0;
+        }
+        self.settings.value(key).as_int()
+    }
+
+    /// `cleartextStartupProblem(useHttps)`: why this process must not start,
+    /// where product mode has the main port in cleartext; empty where it may.
+    pub fn cleartext_startup_problem(&self, use_https: bool) -> String {
+        if self.is_product() && !use_https {
+            return "global.https is off, and product mode serves its main \
+                    port over TLS only (ASVS 5.0.0 12.2.1). Unset STS_HTTPS, \
+                    or use development mode."
+                .to_string();
+        }
+        String::new()
+    }
+
+    /// `certificateWaivers()`: the public-certificate requirement waived
+    /// while no `tls.certificateFile` is named.
+    pub fn certificate_waivers(&self) -> Vec<Json> {
+        // JavaScript's truthiness of a string: anything but "".
+        if !self
+            .settings
+            .value(keys::TLS_CERTIFICATE_FILE)
+            .as_str()
+            .is_empty()
+        {
+            return Vec::new();
+        }
+        vec![json!({
+            "requirement": "public-certificate",
+            "section": "ASVS 5.0.0 12.2.2",
+            "level": "MUST",
+            "setting": "tls.certificateFile",
+        })]
+    }
+
+    /// `accessEnforcementWaivers()`: each of the two access switches an
+    /// administrator turned off (`=== false`).
+    pub fn access_enforcement_waivers(&self) -> Vec<Json> {
+        [keys::XACML_ENFORCE_ACCESS, keys::ROLES_ENFORCE_ISSUANCE]
+            .into_iter()
+            .filter(|key| {
+                self.settings.value(*key) == SettingValue::Bool(false)
+            })
+            .map(|key| {
+                json!({
+                    "requirement": "access-by-policy",
+                    "section": "ASVS 5.0.0 8.2.1",
+                    "level": "MUST",
+                    "setting": key.as_str(),
+                })
+            })
+            .collect()
+    }
+
+    /// What `mode.js` exports by `name` answers, called with no argument —
+    /// `cleartextStartupProblem()` is then asked about a port that is not
+    /// HTTPS, as Node's `undefined` is falsy. `None` for a name it does not
+    /// export.
+    pub fn answer(&self, name: &str) -> Option<Json> {
+        let answer = match name {
+            "embedsProtocolDebugger" => json!(self.embeds_protocol_debugger()),
+            "gatesConsole" => json!(self.gates_console()),
+            "gatesScim" => json!(self.gates_scim()),
+            "gatesSharedSignals" => json!(self.gates_shared_signals()),
+            "gatesSpireServerApi" => json!(self.gates_spire_server_api()),
+            "refusesUnverifiedSignals" => {
+                json!(self.refuses_unverified_signals())
+            }
+            "observesSignalsOnly" => json!(self.observes_signals_only()),
+            "minScryptParallelism" => json!(self.min_scrypt_parallelism()),
+            "defaultRsaBits" => json!(self.default_rsa_bits()),
+            "expiredAssertionGraceS" => {
+                json!(self.expired_assertion_grace_s())
+            }
+            "cleartextStartupProblem" => {
+                json!(self.cleartext_startup_problem(false))
+            }
+            "certificateWaivers" => json!(self.certificate_waivers()),
+            "accessEnforcementWaivers" => {
+                json!(self.access_enforcement_waivers())
+            }
+            other => json!(self.simple_predicate(other)?),
+        };
+        Some(answer)
+    }
+
+    /// A predicate by its `mode.js` name, as `allowsValue()` reads one — a
+    /// settings row's `onlyWhile`: `!!predicate()`, so an answer that is not
+    /// a boolean counts by JavaScript's truthiness.
+    pub fn predicate(&self, name: &str) -> Option<bool> {
+        self.answer(name).map(|answer| js_truthy(&answer))
     }
 
     /// Whether the mode allows `key` to hold `value`: true for a row with
@@ -349,17 +588,30 @@ impl Mode {
     }
 
     /// The mode's half of a write's check (`config.js`'s
-    /// `modeWriteProblem()` and `modeWriteCode()`): the capture transport
-    /// in product, and a development-only value. The pinned-signer rule is
-    /// the certificate authority's, added as a [`crate::settings::WriteRule`].
+    /// `modeWriteProblem()` and `modeWriteCode()`): a write that would turn
+    /// a live pinned signer off, the capture transport in product, and a
+    /// development-only value.
     pub fn write_problem(&self, key: &str, raw: &Json) -> Option<Refusal> {
+        let row = row(key);
+        if key == "pki.pinnedSigners" {
+            if let Some(row) = row.filter(|row| row.check(raw).is_none()) {
+                if let Some(problem) =
+                    self.pinned_signer_problem(&row.parse(Some(raw)))
+                {
+                    return Some(Refusal {
+                        problem,
+                        code: codes::STS_PKI_0215,
+                    });
+                }
+            }
+        }
+        // `String(raw == null ? '' : raw).trim()`.
         let as_text = match raw {
             Json::Null => String::new(),
-            Json::String(text) => text.clone(),
-            other => other.to_string(),
+            other => js_string(other),
         };
         if key == "mail.transport"
-            && as_text.trim() == "capture"
+            && js_trim(&as_text) == "capture"
             && !self.captures_mail()
         {
             return Some(Refusal {
@@ -373,7 +625,7 @@ impl Mode {
                 code: codes::STS_MAIL_0003,
             });
         }
-        let row = row(key)?;
+        let row = row?;
         let predicate = row.only_while?;
         if row.check(raw).is_some() {
             return None;
@@ -385,7 +637,8 @@ impl Mode {
         let verb = match parsed {
             SettingValue::Bool(true) => "turned on".to_string(),
             SettingValue::Bool(false) => "turned off".to_string(),
-            _ => format!("set to {}", js_text(raw)),
+            // `'set to ' + raw`: JavaScript's String() of the raw value.
+            _ => format!("set to {}", js_string(raw)),
         };
         Some(Refusal {
             problem: format!(
@@ -397,6 +650,51 @@ impl Mode {
             ),
             code: codes::STS_CORE_0103,
         })
+    }
+
+    /// `pinnedSignerWriteProblem()` (#263): `pki.pinnedSigners` turned off
+    /// while the realm the write lands in holds a live or pending pinned
+    /// signing key would make the generated key sign again with no
+    /// `signing-key-rotated`.
+    fn pinned_signer_problem(&self, parsed: &SettingValue) -> Option<String> {
+        if *parsed != SettingValue::Bool(false) {
+            return None;
+        }
+        let slot = self.pinned_signers.get()?;
+        let in_realm = self.settings.ambient_realm();
+        let realm = if in_realm {
+            crate::realm::current_id()
+        } else {
+            "default".to_string()
+        };
+        let pins = slot.blocking_signers_off(&realm, !in_realm);
+        if pins.is_empty() {
+            return None;
+        }
+        let named: Vec<String> = pins
+            .iter()
+            .map(|one| {
+                format!(
+                    "{} {} ({} realm, {})",
+                    one.unit,
+                    one.kid,
+                    one.realm,
+                    if one.role == "active" {
+                        "signing"
+                    } else {
+                        "published, not yet signing"
+                    }
+                )
+            })
+            .collect();
+        Some(format!(
+            "\"pki.pinnedSigners\" cannot be turned off while a pinned \
+             signing key is live or pending: {}. Turning it off would make \
+             the generated key sign again with no signing-key-rotated sent. \
+             Unpin first — on /admin/pki, or POST /admin-api/pki/unpin-key — \
+             and then turn it off.",
+            named.join(", ")
+        ))
     }
 
     /// `checkWrite()`: the settings' own check, then the mode's — for the
@@ -444,9 +742,28 @@ impl Mode {
     }
 
     /// The whole answer for `/admin/mode`, `GET /admin-api/mode` and the
-    /// metadata report.
+    /// metadata report. A requirement carries `waived` where an
+    /// administrator waived part of it in this realm (#1295): the RFC 9700
+    /// rows on `oauth-security-bcp` (whatever the mode), and in product the
+    /// access switches on `access-decisions-fail-closed` and the missing
+    /// certificate on `public-certificate`.
     pub fn report(&self) -> Json {
         let product = self.is_product();
+        let bcp = self
+            .bcp_waivers
+            .get()
+            .map(|slot| slot.waivers())
+            .unwrap_or_default();
+        let access = if product {
+            self.access_enforcement_waivers()
+        } else {
+            Vec::new()
+        };
+        let certificate = if product {
+            self.certificate_waivers()
+        } else {
+            Vec::new()
+        };
         let requirements: Vec<Json> = requirements()
             .iter()
             .map(|one| {
@@ -460,6 +777,15 @@ impl Mode {
                     for (k, v) in fields {
                         row.insert(k.clone(), v.clone());
                     }
+                }
+                let waived = match one.get("id").and_then(Json::as_str) {
+                    Some("oauth-security-bcp") => &bcp,
+                    Some("access-decisions-fail-closed") => &access,
+                    Some("public-certificate") => &certificate,
+                    _ => &Vec::new(),
+                };
+                if !waived.is_empty() {
+                    row.insert("waived".into(), json!(waived));
                 }
                 Json::Object(row)
             })
@@ -594,15 +920,14 @@ fn to_json(value: &SettingValue) -> Json {
     }
 }
 
-/// `'set to ' + raw`: a raw value as JavaScript concatenates it.
-fn js_text(raw: &Json) -> String {
-    match raw {
-        Json::String(text) => text.clone(),
-        Json::Array(items) => {
-            items.iter().map(js_text).collect::<Vec<_>>().join(",")
-        }
-        Json::Null => "null".to_string(),
-        other => other.to_string(),
+/// JavaScript's truthiness of a predicate's answer: `!!answer`.
+fn js_truthy(answer: &Json) -> bool {
+    match answer {
+        Json::Null => false,
+        Json::Bool(b) => *b,
+        Json::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        Json::String(text) => !text.is_empty(),
+        Json::Array(_) | Json::Object(_) => true,
     }
 }
 
@@ -620,10 +945,10 @@ mod tests {
     #[test]
     fn every_node_predicate_is_answered() {
         let names = predicate_names();
-        assert_eq!(names.len(), 78);
+        assert_eq!(names.len(), 126);
         let m = mode(PRODUCT);
         let missing: Vec<&&str> =
-            names.iter().filter(|n| m.predicate(n).is_none()).collect();
+            names.iter().filter(|n| m.answer(n).is_none()).collect();
         assert!(missing.is_empty(), "{:?}", missing);
         for row in rows() {
             if let Some(p) = row.only_while {
@@ -698,13 +1023,40 @@ mod tests {
     fn the_report() {
         let report = mode(PRODUCT).report();
         assert_eq!(report["mode"], "product");
-        assert_eq!(report["requirements"].as_array().map(Vec::len), Some(72));
+        assert_eq!(report["requirements"].as_array().map(Vec::len), Some(112));
         assert_eq!(
             report["requirements"][0]["inForce"],
             report["requirements"][0]["product"]
         );
         assert!(report["developmentOnlySettings"]
             .as_array()
-            .is_some_and(|rows| rows.len() == 26));
+            .is_some_and(|rows| rows.len() == 34));
+        // No certificate file is named, so product waives the requirement.
+        let certificate = report["requirements"]
+            .as_array()
+            .and_then(|rows| {
+                rows.iter().find(|r| r["id"] == "public-certificate")
+            })
+            .cloned()
+            .unwrap_or(Json::Null);
+        assert_eq!(certificate["waived"][0]["setting"], "tls.certificateFile");
+        let development = mode(DEVELOPMENT).report();
+        assert!(development["requirements"].as_array().is_some_and(|rows| {
+            rows.iter().all(|r| r.get("waived").is_none())
+        }));
+    }
+
+    #[test]
+    fn the_answers_that_are_not_booleans() {
+        let product = mode(PRODUCT);
+        let development = mode(DEVELOPMENT);
+        assert_eq!(product.answer("defaultRsaBits"), Some(json!(3072)));
+        assert_eq!(development.answer("minScryptParallelism"), Some(json!(1)));
+        assert_eq!(product.expired_assertion_grace_s(), 0);
+        assert!(product.cleartext_startup_problem(false).contains("ASVS"));
+        assert!(product.cleartext_startup_problem(true).is_empty());
+        assert!(development.cleartext_startup_problem(false).is_empty());
+        assert_eq!(product.predicate("certificateWaivers"), Some(true));
+        assert_eq!(product.answer("prose"), None);
     }
 }

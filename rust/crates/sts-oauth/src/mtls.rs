@@ -23,6 +23,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde_json::Value as Json;
 use sts_core::errors::codes;
+use sts_crypto::jws_alg::Hash;
 
 use crate::jwt_access_token::Refusal;
 
@@ -32,7 +33,7 @@ pub const CONFIRMATION_MEMBER: &str = "x5t#S256";
 /// `certificateThumbprint()`: SHA-256 over the certificate's DER,
 /// base64url without padding — `x5t#S256`'s form.
 pub fn certificate_thumbprint(der: &[u8]) -> String {
-    URL_SAFE_NO_PAD.encode(openssl::sha::sha256(der))
+    URL_SAFE_NO_PAD.encode(Hash::Sha256.digest(der))
 }
 
 /// `boundThumbprintOf()`: the token's `cnf["x5t#S256"]`, or `""`.

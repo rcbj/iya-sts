@@ -31,6 +31,7 @@
 //! anything; the code, the status and the decision are the contract.
 
 use serde_json::{json, Map, Value};
+use sts_core::errors::{codes, ErrorCode};
 use sts_xacml::builder::{
     AuthorizationRequest, AuthzenAttribute, AuthzenFacts,
 };
@@ -57,7 +58,7 @@ const MAX_BAG: usize = 256;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Refusal {
     pub status: u16,
-    pub code: &'static str,
+    pub code: ErrorCode,
     pub message: String,
 }
 
@@ -93,7 +94,7 @@ pub struct Outcome {
     pub advice: Vec<Value>,
 }
 
-fn refused(code: &'static str, message: String) -> Refusal {
+fn refused(code: ErrorCode, message: String) -> Refusal {
     Refusal {
         status: 400,
         code,
@@ -106,7 +107,7 @@ fn refused(code: &'static str, message: String) -> Refusal {
 pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
     let Some(given) = body.as_object() else {
         return Err(refused(
-            "STS-AUTHZEN-0001",
+            codes::STS_AUTHZEN_0001,
             "An access evaluation request is a JSON object with subject, \
              action, resource and optionally context."
                 .into(),
@@ -126,7 +127,7 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
         let Some(object) = given.get(name) else {
             let joined = required.join(&format!(" and {}.", name));
             return Err(refused(
-                "STS-AUTHZEN-0002",
+                codes::STS_AUTHZEN_0002,
                 format!(
                     "The request has no {}, which AuthZEN requires ({}.{}).",
                     name, name, joined
@@ -135,7 +136,7 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
         };
         let Some(object) = object.as_object() else {
             return Err(refused(
-                "STS-AUTHZEN-0003",
+                codes::STS_AUTHZEN_0003,
                 format!("{} must be a JSON object.", name),
             ));
         };
@@ -149,7 +150,7 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
             };
             if missing {
                 return Err(refused(
-                    "STS-AUTHZEN-0002",
+                    codes::STS_AUTHZEN_0002,
                     format!(
                         "{}.{} is required, and a non-empty string.",
                         name, member
@@ -162,7 +163,7 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
                 }
                 _ => {
                     return Err(refused(
-                        "STS-AUTHZEN-0003",
+                        codes::STS_AUTHZEN_0003,
                         format!(
                             "{}.{} must be a string of at most {} characters.",
                             name, member, MAX_TEXT
@@ -174,7 +175,7 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
         if let Some(properties) = object.get("properties") {
             if !properties.is_object() {
                 return Err(refused(
-                    "STS-AUTHZEN-0003",
+                    codes::STS_AUTHZEN_0003,
                     format!("{}.properties must be a JSON object.", name),
                 ));
             }
@@ -187,7 +188,7 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
         Some(Value::Object(map)) => map,
         Some(_) => {
             return Err(refused(
-                "STS-AUTHZEN-0003",
+                codes::STS_AUTHZEN_0003,
                 "context must be a JSON object.".into(),
             ))
         }
@@ -200,7 +201,7 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
             }
             _ => {
                 return Err(refused(
-                    "STS-AUTHZEN-0003",
+                    codes::STS_AUTHZEN_0003,
                     "context.application must be a non-empty string naming \
                      one of the applications this caller is scoped to."
                         .into(),
@@ -310,7 +311,7 @@ fn walk(
             });
         if row.is_none() && !(branch && member.is_object()) {
             return Err(refused(
-                "STS-AUTHZEN-0004",
+                codes::STS_AUTHZEN_0004,
                 format!(
                     "{} is not in this realm's AuthZEN attribute catalogue, \
                      and an undeclared property is refused in every mode. An \
@@ -322,7 +323,7 @@ fn walk(
         }
         if member.is_null() {
             return Err(refused(
-                "STS-AUTHZEN-0005",
+                codes::STS_AUTHZEN_0005,
                 format!(
                     "{} is null, which is neither an empty value nor an \
                      absent one. Leave the member out, or send a value.",
@@ -334,7 +335,7 @@ fn walk(
         let Some(row) = row else {
             if depth + 1 > 8 {
                 return Err(refused(
-                    "STS-AUTHZEN-0008",
+                    codes::STS_AUTHZEN_0008,
                     format!("{} is nested too deeply.", js_slice(&named, 200)),
                 ));
             }
@@ -373,7 +374,7 @@ fn values_of(
     let shown = js_slice(named, 200);
     if member.is_object() {
         return Err(refused(
-            "STS-AUTHZEN-0008",
+            codes::STS_AUTHZEN_0008,
             format!(
                 "{} is an object, and its row sends one {}. A nested object \
                  reaches a request only through rows for its own members \
@@ -390,7 +391,7 @@ fn values_of(
     }
     if member.is_array() && row.multiplicity != "bag" {
         return Err(refused(
-            "STS-AUTHZEN-0007",
+            codes::STS_AUTHZEN_0007,
             format!(
                 "{} is an array, and its row sends a single value. A row \
                  whose multiplicity is bag takes an array.",
@@ -404,7 +405,7 @@ fn values_of(
     };
     if list.len() > MAX_BAG {
         return Err(refused(
-            "STS-AUTHZEN-0007",
+            codes::STS_AUTHZEN_0007,
             format!("{} carries more than {} values.", shown, MAX_BAG),
         ));
     }
@@ -412,13 +413,13 @@ fn values_of(
     for one in list {
         if one.is_null() {
             return Err(refused(
-                "STS-AUTHZEN-0005",
+                codes::STS_AUTHZEN_0005,
                 format!("{} holds a null, which is not a value.", shown),
             ));
         }
         if one.is_object() || one.is_array() {
             return Err(refused(
-                "STS-AUTHZEN-0008",
+                codes::STS_AUTHZEN_0008,
                 format!(
                     "{} holds an object or an array; a bag is of scalars.",
                     shown
@@ -427,7 +428,7 @@ fn values_of(
         }
         let Some(text) = lexical_of(&row.data_type, one) else {
             return Err(refused(
-                "STS-AUTHZEN-0006",
+                codes::STS_AUTHZEN_0006,
                 format!(
                     "{} is a JSON {}, and its row sends {}. {}",
                     shown,
@@ -439,7 +440,7 @@ fn values_of(
         };
         if let Err(error) = DataTypes::standard().parse(&row.data_type, &text) {
             return Err(refused(
-                "STS-AUTHZEN-0006",
+                codes::STS_AUTHZEN_0006,
                 format!(
                     "{} is not a valid {}: {}",
                     shown,
@@ -524,6 +525,9 @@ pub fn request(evaluation: &Evaluation, trusted: &Trusted) -> Request {
         application: trusted.application.to_string(),
         supplied: evaluation.supplied.clone(),
         attributes: evaluation.attributes.clone(),
+        // An approved access request is the service's to carry (#1180);
+        // this edge PDP keeps no approvals.
+        approval: None,
     };
     AuthorizationRequest::default().authzen(&facts).build()
 }
@@ -652,7 +656,7 @@ pub(crate) mod tests {
             let read = read(&case["body"], &rows);
             let code = match &read {
                 Ok(_) => "",
-                Err(refusal) => refusal.code,
+                Err(refusal) => refusal.code.as_str(),
             };
             assert_eq!(
                 code,

@@ -720,6 +720,17 @@ impl DataKeys {
         }
     }
 
+    /// `ensureDek()`: the DEK a value of this label in this realm will be
+    /// sealed under, made now where there is none, so a writer can store
+    /// its row ([`DataKeys::settle`]) before anything sealed under it.
+    /// Whether one is held.
+    pub fn ensure_dek(&self, label: &str, realm: &str) -> bool {
+        self.kek.is_some()
+            && self
+                .active("service", &dek_realm(realm), &dek_class(label))
+                .is_some()
+    }
+
     /// `open()`: text `seal()` sealed, or `None` when it will not open. A
     /// DEK this process does not hold is said once, and the stored rows are
     /// worth reading again ([`DataKeys::needs_reload`]).

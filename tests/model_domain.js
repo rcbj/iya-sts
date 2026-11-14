@@ -127,6 +127,18 @@ function declarations(t) {
     'utf8');
   t.check(fs.readFileSync(path.join(ROOT, 'types', 'api.generated.d.ts'),
     'utf8') === api, 'types/api.generated.d.ts is what the model generates');
+  // THE SAME OBJECTS AS RUST (#444, D15): sts-model's three files are the
+  // model's too, written by the same script, so a model change that is not
+  // regenerated fails here rather than in a Rust build that reads stale
+  // types.
+  ['domain', 'api', 'unions'].forEach(function (name) {
+    const rust = fs.readFileSync(path.join(ROOT, 'models', 'generated',
+      name + '.rs'), 'utf8');
+    t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-model',
+      'src', 'generated', name + '.rs'), 'utf8') === rust,
+    'rust/crates/sts-model/src/generated/' + name + '.rs is what the model ' +
+      'generates (tests/tools/regenerate-model-docs.sh)');
+  });
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');

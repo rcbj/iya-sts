@@ -185,12 +185,15 @@ async fn the_postgres_store() {
         .unwrap();
     flush(&a).await;
     b.lifecycle
-        .set_override("acme", "wsfed.entityId", json!("urn:b"))
+        .set_override("acme", "saml.organizationDisplayName", json!("urn:b"))
         .unwrap();
     flush(&b).await;
     let realms = raw.load_realms().await.unwrap().unwrap();
     assert_eq!(realms[0]["overrides"]["saml.organizationName"], "urn:a");
-    assert_eq!(realms[0]["overrides"]["wsfed.entityId"], "urn:b");
+    assert_eq!(
+        realms[0]["overrides"]["saml.organizationDisplayName"],
+        "urn:b"
+    );
 
     // The cluster tables.
     raw.join("n1", 3000.0, json!({ "name": "one" }))
@@ -255,10 +258,14 @@ async fn the_postgres_store() {
     a.persistence
         .directory_changed(Some("uid=dora,dc=example,dc=com"));
     a.lifecycle
-        .set_override("acme", "saml11.providerId", json!("urn:a11"))
+        .set_override(
+            "acme",
+            "saml.organizationUrl",
+            json!("https://a11.example"),
+        )
         .unwrap();
     a.settings
-        .set_override("wstrust.issuer", json!("urn:wst"))
+        .set_override("saml.organizationName", json!("Org WST"))
         .unwrap();
     a.persistence.config_changed(None);
     flush(&a).await;
@@ -275,10 +282,13 @@ async fn the_postgres_store() {
         vec!["dora"]
     );
     assert_eq!(
-        b.lifecycle.overrides("acme").unwrap()["saml11.providerId"],
-        "urn:a11"
+        b.lifecycle.overrides("acme").unwrap()["saml.organizationUrl"],
+        "https://a11.example"
     );
-    assert_eq!(b.settings.value_of("wstrust.issuer").as_str(), "urn:wst");
+    assert_eq!(
+        b.settings.value_of("saml.organizationName").as_str(),
+        "Org WST"
+    );
     // B's own unwritten change to the group meets A's committed one.
     let mut on_b = b.dir.entry_at("default", key).unwrap();
     on_b.attributes.insert(

@@ -23,7 +23,21 @@
 //! compressed request (no `zip_values_supported` is advertised), a PBES2
 //! iteration count above 1,000,000 (a caller choosing it would be choosing
 //! how long the process blocks), a key of the wrong size for an AES key
-//! wrap (RFC 7518 4.4 has no key derivation).
+//! wrap (RFC 7518 4.4 has no key derivation); and, unless the caller's
+//! [`JwePolicy`] says its mode allows them, AES-CBC content encryption
+//! (`mode.allowsCbcJwe()`, #1486) and RSA-OAEP over SHA-1
+//! (`mode.allowsLegacyHashes()`, #1469).
+//!
+//! **PBES2 IS NEVER DERIVED BY THE TWO PLAIN DOORS** (ASVS 5.0.0 11.4.4).
+//! Node's `encryptJweCompact()` and `decryptJweCompact()` refuse a PBES2 JWE
+//! that arrives without a key derived beforehand, because 600,000 PBKDF2
+//! iterations on the thread that answers every other request is a stall;
+//! `encryptJweCompactAsync()` and `decryptJweCompactAsync()` derive on
+//! libuv's thread pool and hand the key in. Here the same split is
+//! [`encrypt_compact`] / [`decrypt_compact`], which refuse in Node's words,
+//! and [`encrypt_compact_derived`] / [`decrypt_compact_derived`], which
+//! derive and BLOCK: an async caller runs them under
+//! `tokio::task::spawn_blocking`, never on a reactor thread.
 
 use openssl::aes::{unwrap_key, wrap_key, AesKey};
 use openssl::bn::BigNum;
@@ -256,8 +270,196 @@ pub fn alg(name: &str) -> Option<JweAlg> {
     algs().into_iter().find(|a| a.name == name)
 }
 
-const PBES2_MAX_ITERATIONS: u64 = 1_000_000;
-const PBES2_DEFAULT_ITERATIONS: u64 = 8192;
+/// RFC 7518 section 4.8.1.2 gives no ceiling and says a recipient SHOULD
+/// pick one (`PBES2_MAX_ITERATIONS`).
+pub const PBES2_MAX_ITERATIONS: u64 = 1_000_000;
+/// OWASP's figure for PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4), what every
+/// PBES2 JWE this service makes is stretched by (`PBES2_DEFAULT_ITERATIONS`,
+/// 8192 until #1512).
+pub const PBES2_DEFAULT_ITERATIONS: u64 = 600_000;
+/// RFC 7518 section 4.8.1.2: "A minimum iteration count of 1000 is
+/// RECOMMENDED" — the floor `security.pbes2MinIterations` cannot go below.
+pub const PBES2_MIN_ITERATIONS: u64 = 1000;
+
+/// What the caller's mode lets JWE do. sts-crypto reads no settings, so the
+/// two `common/mode.js` questions are answered at the call site and handed
+/// in: `cbc` is `mode.allowsCbcJwe()` (#1486, ASVS 5.0.0 11.3.2) and
+/// `legacy_hashes` is `mode.allowsLegacyHashes()` (#1469, ASVS 5.0.0
+/// 11.4.1). The default is product's answer with neither setting on, so a
+/// caller that forgets to ask is refused rather than let through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JwePolicy {
+    pub cbc: bool,
+    pub legacy_hashes: bool,
+}
+
+impl JwePolicy {
+    /// Product mode with `crypto.allowCbcJwe` and `crypto.allowLegacyHashes`
+    /// both off, their defaults.
+    pub const PRODUCT: JwePolicy = JwePolicy {
+        cbc: false,
+        legacy_hashes: false,
+    };
+
+    /// Development mode, where both answers are yes.
+    pub const DEVELOPMENT: JwePolicy = JwePolicy {
+        cbc: true,
+        legacy_hashes: true,
+    };
+}
+
+impl Default for JwePolicy {
+    fn default() -> Self {
+        JwePolicy::PRODUCT
+    }
+}
+
+/// `refuseCbcJwe()`: an AES-CBC `enc` unless the mode allows it. Node tests
+/// the name for `CBC`, so an unknown name containing it is refused here
+/// before it is refused as unknown.
+fn refuse_cbc(enc: &str, policy: JwePolicy) -> CryptoResult<()> {
+    if enc.contains("CBC") && !policy.cbc {
+        return Err(err(format!(
+            "enc \"{}\" is AES-CBC, which needs crypto.allowCbcJwe on.",
+            enc
+        )));
+    }
+    Ok(())
+}
+
+/// The refusal of RSA-OAEP (OAEP over SHA-1) when legacy hashes are off.
+fn refuse_legacy_oaep(alg: &JweAlg, policy: JwePolicy) -> CryptoResult<()> {
+    if matches!(alg.kind, AlgKind::RsaOaep { sha256: false })
+        && !policy.legacy_hashes
+    {
+        return Err(err("alg \"RSA-OAEP\" is OAEP over SHA-1, which needs \
+             crypto.allowLegacyHashes on."));
+    }
+    Ok(())
+}
+
+/// A PBES2 key derived before the plain doors run — what Node's async
+/// doors hand `symmetricKek()` as `options.pbes2`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pbes2Key {
+    pub alg: String,
+    /// The `p2s` salt input (not the PBKDF2 salt, which prefixes the alg).
+    pub salt: Vec<u8>,
+    pub iterations: u64,
+    pub key: Vec<u8>,
+}
+
+/// JavaScript's `Number(value)` over a JSON member, for the `p2c` a sender
+/// wrote: a string of digits is a number to Node, so it is one here.
+fn js_number(value: Option<&Json>) -> f64 {
+    match value {
+        None => f64::NAN,
+        Some(Json::Null) => 0.0,
+        Some(Json::Bool(b)) => f64::from(u8::from(*b)),
+        Some(Json::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
+        Some(Json::String(text)) => js_string_to_number(text),
+        Some(Json::Array(items)) => match items.as_slice() {
+            [] => 0.0,
+            [one] => js_string_to_number(&js_string(Some(one))),
+            _ => f64::NAN,
+        },
+        Some(Json::Object(_)) => f64::NAN,
+    }
+}
+
+/// ECMAScript's StringToNumber: trimmed, empty is 0, decimal with an
+/// optional sign and exponent, `Infinity`, or an unsigned 0x/0o/0b integer.
+/// Rust's own float parser also takes `inf` and `NaN`, which Node does not.
+fn js_string_to_number(text: &str) -> f64 {
+    let t = text.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    if t.is_empty() {
+        return 0.0;
+    }
+    for (prefix, radix) in [("0x", 16), ("0X", 16), ("0o", 8), ("0O", 8)]
+        .into_iter()
+        .chain([("0b", 2), ("0B", 2)])
+    {
+        if let Some(digits) = t.strip_prefix(prefix) {
+            return if !digits.is_empty()
+                && digits.chars().all(|c| c.is_digit(radix))
+            {
+                digits.chars().fold(0.0, |acc, c| {
+                    acc * f64::from(radix)
+                        + f64::from(c.to_digit(radix).unwrap_or(0))
+                })
+            } else {
+                f64::NAN
+            };
+        }
+    }
+    let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
+    if unsigned == "Infinity" {
+        return if t.starts_with('-') {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
+    }
+    let (mantissa, exponent) = match unsigned.find(['e', 'E']) {
+        Some(at) => (&unsigned[..at], Some(&unsigned[at + 1..])),
+        None => (unsigned, None),
+    };
+    let digits_ok = {
+        let mut parts = mantissa.splitn(2, '.');
+        let whole = parts.next().unwrap_or("");
+        let fraction = parts.next().unwrap_or("");
+        (!whole.is_empty() || !fraction.is_empty())
+            && whole.chars().all(|c| c.is_ascii_digit())
+            && fraction.chars().all(|c| c.is_ascii_digit())
+    };
+    let exponent_ok = exponent.is_none_or(|e| {
+        let e = e.strip_prefix(['+', '-']).unwrap_or(e);
+        !e.is_empty() && e.chars().all(|c| c.is_ascii_digit())
+    });
+    if !digits_ok || !exponent_ok {
+        return f64::NAN;
+    }
+    t.parse::<f64>().unwrap_or(f64::NAN)
+}
+
+/// JavaScript's `String(value)` over a JSON member, for quoting what a
+/// sender wrote in a refusal exactly as Node quotes it.
+fn js_string(value: Option<&Json>) -> String {
+    match value {
+        None => "undefined".into(),
+        Some(Json::Null) => "null".into(),
+        Some(Json::Bool(b)) => b.to_string(),
+        Some(Json::Number(n)) => match n.as_f64() {
+            Some(f) => js_number_text(f),
+            None => n.to_string(),
+        },
+        Some(Json::String(text)) => text.clone(),
+        Some(Json::Array(items)) => items
+            .iter()
+            .map(|item| match item {
+                Json::Null => String::new(),
+                other => js_string(Some(other)),
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Some(Json::Object(_)) => "[object Object]".into(),
+    }
+}
+
+/// A number as JavaScript prints it, for the integers and plain decimals a
+/// `p2c` holds (the exponent forms above 1e21 aside).
+fn js_number_text(f: f64) -> String {
+    if f.is_nan() {
+        return "NaN".into();
+    }
+    if f.is_infinite() {
+        return if f > 0.0 { "Infinity" } else { "-Infinity" }.into();
+    }
+    if f.fract() == 0.0 && f.abs() < 1e21 {
+        return format!("{}", f as i128);
+    }
+    format!("{}", f)
+}
 
 // ---------------------------------------------------------------------------
 // Content encryption.
@@ -493,56 +695,40 @@ fn symmetric_kek(
     secret: &[u8],
     header: &mut Map<String, Json>,
     for_encrypt: bool,
+    prepared: Option<&Pbes2Key>,
 ) -> CryptoResult<Vec<u8>> {
     match alg.kind {
-        AlgKind::Pbes2 { kw, sha } => {
-            let (salt, iterations) = if for_encrypt {
-                let salt = random(16)?;
-                header.insert("p2s".into(), Json::from(b64::encode(&salt)));
-                header
-                    .insert("p2c".into(), Json::from(PBES2_DEFAULT_ITERATIONS));
-                (salt, PBES2_DEFAULT_ITERATIONS)
-            } else {
-                let salt = header
-                    .get("p2s")
-                    .and_then(Json::as_str)
-                    .filter(|s| !s.is_empty())
-                    .ok_or_else(|| {
-                        err(format!(
-                            "a {} JWE carries its PBKDF2 salt in the header as \
-                             `p2s` (RFC 7518 section 4.8.1.1) and this one has \
-                             none.",
-                            alg.name
-                        ))
-                    })?;
-                let salt = b64::decode_loose(salt)?;
-                let count =
-                    header.get("p2c").and_then(Json::as_f64).unwrap_or(0.0);
-                let count = count.floor();
-                if count.is_nan() || count < 1.0 {
-                    return Err(err(format!(
-                        "a {} JWE carries its PBKDF2 iteration count in the \
-                         header as `p2c` and this one says \"{}\".",
-                        alg.name,
-                        header
-                            .get("p2c")
-                            .map(Json::to_string)
-                            .unwrap_or_default()
-                    )));
-                }
-                if count > PBES2_MAX_ITERATIONS as f64 {
-                    return Err(err(format!(
-                        "this JWE asks for {} PBKDF2 iterations and this \
-                         service performs at most {}. RFC 7518 section \
-                         4.8.1.2 leaves the ceiling to the recipient, and a \
-                         caller choosing this number is a caller choosing how \
-                         long this process blocks.",
-                        count, PBES2_MAX_ITERATIONS
-                    )));
-                }
-                (salt, count as u64)
+        AlgKind::Pbes2 { .. } => {
+            // THE KEY WAS DERIVED BEFORE THIS RAN (`symmetricKek()`): the
+            // plain doors never stretch a password, and a PBES2 JWE that
+            // reaches one without a derived key is refused in Node's words.
+            let Some(prepared) = prepared else {
+                return Err(err(format!(
+                    "a {} JWE needs its key derived off the event loop: this \
+                     caller must use encryptJweCompactAsync() or \
+                     decryptJweCompactAsync().",
+                    alg.name
+                )));
             };
-            pbes2_key(&alg.name, kw, sha, secret, &salt, iterations)
+            if for_encrypt {
+                header.insert(
+                    "p2s".into(),
+                    Json::from(b64::encode(&prepared.salt)),
+                );
+                header.insert("p2c".into(), Json::from(prepared.iterations));
+            } else {
+                let count = js_number(header.get("p2c")).floor();
+                if js_string(header.get("p2s")) != b64::encode(&prepared.salt)
+                    || count != prepared.iterations as f64
+                    || prepared.alg != alg.name
+                {
+                    return Err(err(
+                        "the PBES2 key derived for this JWE does not match \
+                         its header.",
+                    ));
+                }
+            }
+            Ok(prepared.key.clone())
         }
         AlgKind::Dir => Ok(secret.to_vec()),
         AlgKind::AesKw(need) | AlgKind::AesGcmKw(need) => {
@@ -677,7 +863,13 @@ fn kem_private_key(alg: &JweAlg, jwk: Option<&Json>) -> CryptoResult<Vec<u8>> {
                 "alg \"{}\" is decrypted with an AKP key for that algorithm, \
                  and the key held is {}",
                 alg.name,
-                if text("kty") == "AKP" {
+                // Each of the three ways this fails is named, rather than
+                // an AKP key with no alg quoted as for "".
+                if text("kty") == "AKP" && text("alg") == alg.name {
+                    "that algorithm's, with no private part".to_string()
+                } else if text("kty") == "AKP" && text("alg").is_empty() {
+                    "an AKP key naming no algorithm".to_string()
+                } else if text("kty") == "AKP" {
                     format!("for \"{}\"", text("alg"))
                 } else {
                     format!(
@@ -784,7 +976,7 @@ fn rsa_public_from_jwk(jwk: &Json) -> CryptoResult<PKey<Public>> {
 // ---------------------------------------------------------------------------
 
 /// What to encrypt to, and how.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct EncryptOptions<'a> {
     /// RSA-OAEP-256 when not given.
     pub alg: Option<&'a str>,
@@ -805,6 +997,10 @@ pub struct EncryptOptions<'a> {
     pub recipient_extra_info: &'a [u8],
     /// Integrated Encryption's HPKE `info`.
     pub hpke_info: &'a [u8],
+    /// A PBES2 key derived beforehand ([`encrypt_compact_derived`]).
+    pub pbes2: Option<&'a Pbes2Key>,
+    /// What the caller's mode allows.
+    pub policy: JwePolicy,
 }
 
 fn deflate(body: &[u8]) -> CryptoResult<Vec<u8>> {
@@ -908,7 +1104,7 @@ fn wrap_cek(
         | AlgKind::Pbes2 { .. }
         | AlgKind::Dir => {
             let secret = options.secret.unwrap_or(&[]);
-            let kek = symmetric_kek(alg, secret, header, true)?;
+            let kek = symmetric_kek(alg, secret, header, true, options.pbes2)?;
             match alg.kind {
                 AlgKind::Dir => {
                     if kek.len() != content.cek_bytes {
@@ -947,6 +1143,7 @@ fn wrap_cek(
         AlgKind::RsaOaep { sha256 } => {
             let jwk = options.jwk.ok_or_else(|| err("no recipient key"))?;
             let public = rsa_public_from_jwk(jwk)?;
+            refuse_legacy_oaep(alg, options.policy)?;
             let md = if sha256 {
                 MessageDigest::sha256()
             } else {
@@ -1040,6 +1237,7 @@ pub fn encrypt_compact(
             b64::encode(&ct)
         ));
     }
+    refuse_cbc(options.enc, options.policy)?;
     let content = enc(options.enc).ok_or_else(|| {
         err(format!(
             "encryptJweCompact: unsupported enc \"{}\"; this service encrypts \
@@ -1067,6 +1265,45 @@ pub fn encrypt_compact(
     .join("."))
 }
 
+/// `encryptJweCompactAsync()`: [`encrypt_compact`], with a PBES2 key
+/// derived first — a new 16-byte salt and [`PBES2_DEFAULT_ITERATIONS`].
+/// Every other alg goes straight to [`encrypt_compact`].
+///
+/// **This blocks for the whole PBKDF2 stretch.** An async caller runs it
+/// under `spawn_blocking`, as Node runs the derivation on libuv's pool.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn encrypt_compact_derived(
+    plaintext: &[u8],
+    options: &EncryptOptions,
+) -> CryptoResult<String> {
+    let alg_name = options.alg.unwrap_or("RSA-OAEP-256");
+    let Some(found) = alg(alg_name) else {
+        return encrypt_compact(plaintext, options);
+    };
+    let AlgKind::Pbes2 { kw, sha } = found.kind else {
+        return encrypt_compact(plaintext, options);
+    };
+    // RFC 7518 section 4.8.1.1: a new salt for every encryption.
+    let salt = random(16)?;
+    let key = pbes2_key(
+        &found.name,
+        kw,
+        sha,
+        options.secret.unwrap_or(&[]),
+        &salt,
+        PBES2_DEFAULT_ITERATIONS,
+    )?;
+    let prepared = Pbes2Key {
+        alg: found.name.clone(),
+        salt,
+        iterations: PBES2_DEFAULT_ITERATIONS,
+        key,
+    };
+    let mut derived = options.clone();
+    derived.pbes2 = Some(&prepared);
+    encrypt_compact(plaintext, &derived)
+}
+
 // ---------------------------------------------------------------------------
 // Decrypt.
 // ---------------------------------------------------------------------------
@@ -1075,7 +1312,7 @@ pub fn encrypt_compact(
 pub type PskLookup<'a> = &'a dyn Fn(&[u8]) -> Option<Vec<u8>>;
 
 /// What to decrypt with, and what to accept.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DecryptOptions<'a> {
     /// RSA-OAEP and ECDH-ES.
     pub private_key: Option<&'a PKey<Private>>,
@@ -1089,6 +1326,14 @@ pub struct DecryptOptions<'a> {
     pub psk: Option<PskLookup<'a>>,
     pub recipient_extra_info: &'a [u8],
     pub hpke_info: &'a [u8],
+    /// A PBES2 key derived beforehand ([`decrypt_compact_derived`]).
+    pub pbes2: Option<&'a Pbes2Key>,
+    /// `security.pbes2MinIterations`: the fewest PBKDF2 iterations a PBES2
+    /// JWE may name. 0 is RFC 7518's 1000, and the value is held to
+    /// 1000..=1,000,000 as `pbes2MinIterations()` holds it.
+    pub pbes2_min_iterations: u64,
+    /// What the caller's mode allows.
+    pub policy: JwePolicy,
 }
 
 /// What a JWE decrypted to.
@@ -1126,7 +1371,8 @@ fn unwrap_cek(
             ))
             })?;
         let mut header = header.clone();
-        let kek = symmetric_kek(alg, secret, &mut header, false)?;
+        let kek =
+            symmetric_kek(alg, secret, &mut header, false, options.pbes2)?;
         return match alg.kind {
             AlgKind::Dir => Ok(kek),
             AlgKind::AesGcmKw(_) => {
@@ -1224,6 +1470,7 @@ fn unwrap_cek(
                     alg.name
                 ))
             })?;
+            refuse_legacy_oaep(alg, options.policy)?;
             let md = if sha256 {
                 MessageDigest::sha256()
             } else {
@@ -1425,6 +1672,7 @@ pub fn decrypt_compact(
         });
     }
     let enc_name = header.get("enc").and_then(Json::as_str).unwrap_or("");
+    refuse_cbc(&js_string(header.get("enc")), options.policy)?;
     let default_encs: Vec<&str> = ENCS.iter().map(|e| e.name).collect();
     let allowed = options.allowed_enc.unwrap_or(&default_encs);
     if !allowed.contains(&enc_name) {
@@ -1476,6 +1724,107 @@ pub fn decrypt_compact(
         ))
     })?;
     Ok(Decrypted { header, plaintext })
+}
+
+/// `pbes2MinIterations()`: the caller's floor, held to RFC 7518's
+/// recommended minimum below and to the ceiling above.
+fn pbes2_min_iterations(asked: u64) -> u64 {
+    if asked < PBES2_MIN_ITERATIONS {
+        PBES2_MIN_ITERATIONS
+    } else {
+        asked.min(PBES2_MAX_ITERATIONS)
+    }
+}
+
+/// `decryptJweCompactAsync()`: [`decrypt_compact`], with a PBES2 key
+/// derived first for a JWE this caller would open. Its refusals come first
+/// and in Node's order: no `p2s`, a `p2c` below
+/// [`DecryptOptions::pbes2_min_iterations`], one above
+/// [`PBES2_MAX_ITERATIONS`]. A JWE it is going to refuse anyway (another
+/// alg, one the caller does not allow, no secret to derive from) is not
+/// derived for: the refusal is [`decrypt_compact`]'s.
+///
+/// **This blocks for the whole PBKDF2 stretch**; see
+/// [`encrypt_compact_derived`].
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn decrypt_compact_derived(
+    compact: &str,
+    options: &DecryptOptions,
+) -> CryptoResult<Decrypted> {
+    let parts: Vec<&str> = compact.trim().split('.').collect();
+    // Node reads the header leniently here (`Buffer.from(…, 'base64url')`);
+    // a header that does not parse is left to decrypt_compact() to refuse.
+    let header: Option<Map<String, Json>> = b64::decode_loose(parts[0])
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Json>(&bytes).ok())
+        .and_then(|value| match value {
+            Json::Object(map) => Some(map),
+            _ => None,
+        });
+    let alg_name = header
+        .as_ref()
+        .map(|h| js_string(h.get("alg")))
+        .unwrap_or_default();
+    let pbes2 = alg(&alg_name).and_then(|a| match a.kind {
+        AlgKind::Pbes2 { kw, sha } => Some((a, kw, sha)),
+        _ => None,
+    });
+    let allowed = options
+        .allowed_alg
+        .is_none_or(|list| list.contains(&alg_name.as_str()));
+    let secret = options.secret.filter(|s| !s.is_empty());
+    let (Some(header), Some((found, kw, sha)), true, Some(secret), 5) =
+        (header, pbes2, allowed, secret, parts.len())
+    else {
+        return decrypt_compact(compact, options);
+    };
+    let p2s = header.get("p2s");
+    let p2s_truthy = match p2s {
+        None | Some(Json::Null) | Some(Json::Bool(false)) => false,
+        Some(Json::String(text)) => !text.is_empty(),
+        Some(Json::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
+        Some(_) => true,
+    };
+    if !p2s_truthy {
+        return Err(err(format!(
+            "a {} JWE carries its PBKDF2 salt in the header as `p2s` (RFC \
+             7518 section 4.8.1.1) and this one has none.",
+            found.name
+        )));
+    }
+    let salt = b64::decode_loose(&js_string(p2s)).unwrap_or_default();
+    let iterations = js_number(header.get("p2c")).floor();
+    let floor = pbes2_min_iterations(options.pbes2_min_iterations);
+    if !iterations.is_finite() || iterations < floor as f64 {
+        return Err(err(format!(
+            "a {} JWE carries its PBKDF2 iteration count in the header as \
+             `p2c`, and this service accepts at least {}; this one says \
+             \"{}\".",
+            found.name,
+            floor,
+            js_string(header.get("p2c"))
+        )));
+    }
+    if iterations > PBES2_MAX_ITERATIONS as f64 {
+        return Err(err(format!(
+            "this JWE asks for {} PBKDF2 iterations and this service \
+             performs at most {}. RFC 7518 section 4.8.1.2 leaves the \
+             ceiling to the recipient.",
+            js_number_text(iterations),
+            PBES2_MAX_ITERATIONS
+        )));
+    }
+    let iterations = iterations as u64;
+    let key = pbes2_key(&found.name, kw, sha, secret, &salt, iterations)?;
+    let prepared = Pbes2Key {
+        alg: found.name.clone(),
+        salt,
+        iterations,
+        key,
+    };
+    let mut derived = options.clone();
+    derived.pbes2 = Some(&prepared);
+    decrypt_compact(compact, &derived)
 }
 
 // ---------------------------------------------------------------------------
@@ -1627,24 +1976,26 @@ mod tests {
                     AlgKind::EcdhEs(_) => (Some(&ec_jwk), Some(&ec)),
                     _ => (None, None),
                 };
-                let compact = encrypt_compact(
+                let compact = encrypt_compact_derived(
                     b"payload",
                     &EncryptOptions {
                         alg: Some(&alg.name),
                         enc: content.name,
                         jwk,
                         secret: Some(&secret),
+                        policy: JwePolicy::DEVELOPMENT,
                         ..EncryptOptions::default()
                     },
                 )
                 .unwrap_or_else(|e| {
                     panic!("{} {}: {}", alg.name, content.name, e)
                 });
-                let out = decrypt_compact(
+                let out = decrypt_compact_derived(
                     &compact,
                     &DecryptOptions {
                         private_key: key,
                         secret: Some(&secret),
+                        policy: JwePolicy::DEVELOPMENT,
                         ..DecryptOptions::default()
                     },
                 )
@@ -1664,5 +2015,131 @@ mod tests {
             &DecryptOptions::default(),
         );
         assert!(refused.is_err_and(|e| e.0.contains("does not decrypt RSA1_5")));
+    }
+
+    #[test]
+    fn product_refuses_cbc_and_oaep_over_sha1() {
+        let secret = [5u8; 32];
+        let refused = encrypt_compact(
+            b"x",
+            &EncryptOptions {
+                alg: Some("dir"),
+                enc: "A128CBC-HS256",
+                secret: Some(&secret),
+                ..EncryptOptions::default()
+            },
+        );
+        assert_eq!(
+            refused.unwrap_err().0,
+            "enc \"A128CBC-HS256\" is AES-CBC, which needs \
+             crypto.allowCbcJwe on."
+        );
+        let rsa =
+            PKey::from_rsa(openssl::rsa::Rsa::generate(2048).unwrap()).unwrap();
+        let jwk = crate::keys::JwsKey::of(crate::keys::Material::Private(
+            rsa.clone(),
+        ))
+        .public_jwk()
+        .unwrap()
+        .unwrap();
+        let refused = encrypt_compact(
+            b"x",
+            &EncryptOptions {
+                alg: Some("RSA-OAEP"),
+                enc: "A256GCM",
+                jwk: Some(&jwk),
+                ..EncryptOptions::default()
+            },
+        );
+        assert_eq!(
+            refused.unwrap_err().0,
+            "alg \"RSA-OAEP\" is OAEP over SHA-1, which needs \
+             crypto.allowLegacyHashes on."
+        );
+        let made = encrypt_compact(
+            b"x",
+            &EncryptOptions {
+                alg: Some("RSA-OAEP"),
+                enc: "A256GCM",
+                jwk: Some(&jwk),
+                policy: JwePolicy::DEVELOPMENT,
+                ..EncryptOptions::default()
+            },
+        )
+        .unwrap();
+        let refused = decrypt_compact(
+            &made,
+            &DecryptOptions {
+                private_key: Some(&rsa),
+                ..DecryptOptions::default()
+            },
+        );
+        assert_eq!(
+            refused.unwrap_err().0,
+            "the content encryption key could not be unwrapped: alg \
+             \"RSA-OAEP\" is OAEP over SHA-1, which needs \
+             crypto.allowLegacyHashes on."
+        );
+    }
+
+    #[test]
+    fn pbes2_needs_the_derived_door_and_is_held_to_its_header() {
+        let made = encrypt_compact_derived(
+            b"x",
+            &EncryptOptions {
+                alg: Some("PBES2-HS256+A128KW"),
+                enc: "A256GCM",
+                secret: Some(b"pw"),
+                ..EncryptOptions::default()
+            },
+        )
+        .unwrap();
+        let header: Json = serde_json::from_slice(
+            &b64::decode_loose(made.split('.').next().unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(header["p2c"], 600_000);
+        let opened = decrypt_compact_derived(
+            &made,
+            &DecryptOptions {
+                secret: Some(b"pw"),
+                ..DecryptOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(opened.plaintext, b"x");
+        // A key derived for one salt does not open a header naming another.
+        let other = Pbes2Key {
+            alg: "PBES2-HS256+A128KW".into(),
+            salt: vec![1; 16],
+            iterations: 600_000,
+            key: vec![0; 16],
+        };
+        let refused = decrypt_compact(
+            &made,
+            &DecryptOptions {
+                secret: Some(b"pw"),
+                pbes2: Some(&other),
+                ..DecryptOptions::default()
+            },
+        );
+        assert_eq!(
+            refused.unwrap_err().0,
+            "the content encryption key could not be unwrapped: the PBES2 \
+             key derived for this JWE does not match its header."
+        );
+    }
+
+    #[test]
+    fn javascript_numbers_and_strings() {
+        assert_eq!(js_number(Some(&json!("1500"))), 1500.0);
+        assert_eq!(js_number(Some(&json!(" 0x10 "))), 16.0);
+        assert!(js_number(Some(&json!("12x"))).is_nan());
+        assert!(js_number(Some(&json!("inf"))).is_nan());
+        assert!(js_number(None).is_nan());
+        assert_eq!(js_number(Some(&json!(null))), 0.0);
+        assert_eq!(js_string(Some(&json!(1000.0))), "1000");
+        assert_eq!(js_string(None), "undefined");
+        assert_eq!(js_string(Some(&json!([1, null, "a"]))), "1,,a");
     }
 }

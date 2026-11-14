@@ -496,3 +496,61 @@ async fn a_made_key_set_is_whole() {
     )
     .unwrap();
 }
+
+/// The other direction: with `STS_WRITE_VECTORS=1`, values sealed HERE —
+/// under Node's data keys and under one made here — with the rows this
+/// process stored and its digests, in `keystore-rust.json`, which
+/// `tests/rust_store_vectors.js` opens with Node's keystore.
+#[tokio::test]
+async fn rust_seals_for_node() {
+    if std::env::var("STS_WRITE_VECTORS").as_deref() != Ok("1") {
+        return;
+    }
+    let Some((dir, v)) = vectors() else {
+        return;
+    };
+    let (kek, _) = DataKeys::read_kek_file(
+        dir.join(v["kekFile"].as_str().unwrap()).to_str().unwrap(),
+    )
+    .unwrap();
+    let driver = store_of(&v, "rust-seals").await;
+    let keys =
+        DataKeys::durable(kek.clone(), true, driver.clone(), None).unwrap();
+    keys.load(true).await.unwrap();
+    let mut sealed = Vec::new();
+    for (label, realm) in [
+        ("authn-sessions", ""),
+        ("totp-secret", "acme"),
+        ("directory", ""),
+        ("made-by-rust", "acme"),
+        ("", ""),
+    ] {
+        let text = format!("sealed by Rust: {} in [{}] é", label, realm);
+        let cipher = keys.seal(&text, label, realm).unwrap();
+        sealed.push(json!({ "label": label, "realm": realm, "text": text,
+                            "cipher": cipher }));
+    }
+    keys.settle().await;
+    let digests: Vec<Json> = ["cluster-fingerprint", "directory-index", ""]
+        .iter()
+        .map(|l| {
+            json!({ "label": l, "text": "hunter2",
+                    "digest": keys.keyed_digest(l, "hunter2") })
+        })
+        .collect();
+    let rows: Vec<Json> = driver
+        .load_keys()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(
+            |(realm, material)| json!({ "realm": realm, "material": material }),
+        )
+        .collect();
+    let out = json!({ "sealed": sealed, "digests": digests, "rows": rows });
+    std::fs::write(
+        dir.join("keystore-rust.json"),
+        serde_json::to_string_pretty(&out).unwrap() + "\n",
+    )
+    .unwrap();
+}

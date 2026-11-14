@@ -78,6 +78,36 @@ fn strings(value: Option<&serde_json::Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// A `dflt` (or one of a `byMode` pair) as a `DefaultValue` expression.
+fn default_literal(
+    key: &str,
+    value: Option<&serde_json::Value>,
+) -> Result<String, Box<dyn Error>> {
+    Ok(match value {
+        Some(serde_json::Value::Bool(b)) => {
+            format!("DefaultValue::Bool({})", b)
+        }
+        Some(serde_json::Value::Number(n)) => match n.as_i64() {
+            Some(n) => format!("DefaultValue::Int({})", n),
+            None => return Err(format!("{}: a fractional default", key).into()),
+        },
+        Some(serde_json::Value::String(s)) => {
+            format!("DefaultValue::Text({:?})", s)
+        }
+        Some(serde_json::Value::Array(list)) => format!(
+            "DefaultValue::List(&[{}])",
+            list.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| format!("{:?}", s))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        _ => {
+            return Err(format!("{}: no default", key).into());
+        }
+    })
+}
+
 fn settings(out: &mut String) -> Result<(), Box<dyn Error>> {
     println!("cargo::rerun-if-changed=tables/settings.json");
     let source = fs::read_to_string("tables/settings.json")?;
@@ -124,33 +154,17 @@ fn settings(out: &mut String) -> Result<(), Box<dyn Error>> {
         let dflt = if flag(row, "derivedDefault") {
             "DefaultValue::Derived".to_string()
         } else {
-            match row.get("dflt") {
-                Some(serde_json::Value::Bool(b)) => {
-                    format!("DefaultValue::Bool({})", b)
-                }
-                Some(serde_json::Value::Number(n)) => match n.as_i64() {
-                    Some(n) => format!("DefaultValue::Int({})", n),
-                    None => {
-                        return Err(
-                            format!("{}: a fractional default", key).into()
-                        )
-                    }
-                },
-                Some(serde_json::Value::String(s)) => {
-                    format!("DefaultValue::Text({:?})", s)
-                }
-                Some(serde_json::Value::Array(list)) => format!(
-                    "DefaultValue::List(&[{}])",
-                    list.iter()
-                        .filter_map(|v| v.as_str())
-                        .map(|s| format!("{:?}", s))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-                _ => {
-                    return Err(format!("{}: no default", key).into());
-                }
-            }
+            default_literal(key, row.get("dflt"))?
+        };
+        // A `strongerInProduct()` default (#1491): its two values, which
+        // the export read by calling it in each mode.
+        let by_mode = match row.get("byMode") {
+            Some(pair) => format!(
+                "Some(ByMode {{ product: {}, development: {} }})",
+                default_literal(key, pair.get("product"))?,
+                default_literal(key, pair.get("development"))?
+            ),
+            None => "None".to_string(),
         };
         let notes = row
             .get("csvValueNotes")
@@ -223,7 +237,8 @@ fn settings(out: &mut String) -> Result<(), Box<dyn Error>> {
              csv_value_notes: &[{}], ordered: {}, derived: {}, \
              per_process: {}, path: {}, secret: {}, only_while: {}, \
              only_while_values: {}, only_while_values_unless: {}, \
-             max_length: {}, absolute_uri: {}, select_all: {} }},",
+             max_length: {}, absolute_uri: {}, select_all: {}, \
+             by_mode: {} }},",
             key,
             text(row, "group"),
             text(row, "label"),
@@ -252,7 +267,8 @@ fn settings(out: &mut String) -> Result<(), Box<dyn Error>> {
             unless,
             option_int(key, "maxLength", row.get("maxLength"))?,
             flag(row, "absoluteUri"),
-            select_all
+            select_all,
+            by_mode
         )?;
     }
     writeln!(out, "];")?;

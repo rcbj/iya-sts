@@ -472,7 +472,55 @@ fn read_policy_set(node: Node<'_, '_>) -> XacmlResult<PolicySet> {
     })
 }
 
+/// `<!DOCTYPE` or `<!ENTITY` anywhere — a declaration the prolog would hold,
+/// or one smuggled into a comment or CDATA, which no document here carries
+/// either: `common/xml_parser.js`'s `DECLARATION`, `/<!\s*(DOCTYPE|ENTITY)\b/i`,
+/// as a scan rather than a pattern, so there is no compiled pattern whose
+/// absence could let a declaration through. The word, upper case, when
+/// there is one.
+fn declaration_in(xml: &str) -> Option<&'static str> {
+    let mut rest = xml;
+    while let Some(at) = rest.find("<!") {
+        rest = &rest[at + 2..];
+        let word = rest.trim_start();
+        for name in ["DOCTYPE", "ENTITY"] {
+            let Some(head) = word.get(..name.len()) else {
+                continue;
+            };
+            let bounded = word[name.len()..]
+                .chars()
+                .next()
+                .is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_'));
+            if head.eq_ignore_ascii_case(name) && bounded {
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+/// THE ONE XML PARSER REFUSES A DOCUMENT TYPE DECLARATION (ASVS 5.0.0 1.5.2,
+/// `common/xml_parser.js`): the declaration itself is refused before the
+/// document is read, rather than trusting what a parser does with it, and
+/// in Node's sentence. roxmltree refuses a DTD on its own, but not an
+/// `<!ENTITY` inside a comment, which Node's check refuses too. Node's
+/// refusal is a plain error marked STS-CORE-0174 rather than a XACML
+/// status; here it is a syntax error, the status every other document that
+/// will not read gets (this crate has no error-code table to mark it with).
+fn refuse_declaration(xml: &str) -> XacmlResult<()> {
+    match declaration_in(xml) {
+        None => Ok(()),
+        Some(found) => Err(XacmlError::syntax(format!(
+            "the document carries a <!{}> declaration, which this service \
+             never accepts: SOAP 1.2 forbids a Document Type Declaration, \
+             and none of the XML this service reads needs one.",
+            found
+        ))),
+    }
+}
+
 fn parse_document(xml: &str) -> XacmlResult<Document<'_>> {
+    refuse_declaration(xml)?;
     Document::parse(xml).map_err(|error| {
         XacmlError::syntax(format!(
             "The document is not well-formed XML: {}",
@@ -638,4 +686,26 @@ pub fn parse_response(xml: &str) -> XacmlResult<ExpectedResponse> {
         })
         .collect();
     Ok(ExpectedResponse { results })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::declaration_in;
+
+    #[test]
+    fn a_declaration_is_found_where_nodes_pattern_finds_one() {
+        assert_eq!(declaration_in("<!DOCTYPE a><a/>"), Some("DOCTYPE"));
+        assert_eq!(
+            declaration_in("<a><!-- <!entity x> --></a>"),
+            Some("ENTITY")
+        );
+        assert_eq!(declaration_in("<! \n doctype a>"), Some("DOCTYPE"));
+        assert_eq!(declaration_in("<!DOCTYPE"), Some("DOCTYPE"));
+        // `\b` is ASCII in the JavaScript pattern: a longer word is no
+        // declaration, and a non-ASCII letter ends one.
+        assert_eq!(declaration_in("<!DOCTYPES a>"), None);
+        assert_eq!(declaration_in("<!ENTITY_x>"), None);
+        assert_eq!(declaration_in("<!ENTITYé>"), Some("ENTITY"));
+        assert_eq!(declaration_in("<a><!-- c --><![CDATA[x]]></a>"), None);
+    }
 }
