@@ -194,6 +194,18 @@
 //      another process is visible on this console at all.
 //   8. **A PDP OUTAGE DENYING EVERYTHING**, which is the trade `sync.js` argues
 //      and section 9 is the only place that has ever checked.
+//   9. **THE CONTAINER AS A REVERSE PROXY (#1760, section 10)**: the
+//      configuration saved at `/admin-api` naming registered applications
+//      and pulled, each mechanism (session as the application's own
+//      confidential client, OAuth 2.0 JWT and opaque, Basic, SAML 2.0)
+//      allowed and refused in front of the companion's `/pep-app`, a
+//      sign-out at the service ending the proxy session (by CAEP, and by
+//      the liveness door), a rotated secret and a deleted application
+//      reaching the PEP, and deny-by-default — with the
+//      application's own counter saying what reached it. The launchers
+//      hand it `XACML_PEP_PROXY_URL`, `XACML_PEP_PROXY_HTTPS_URL` and
+//      `XACML_PEP_UPSTREAM_URL`; started here, the job builds and starts
+//      the companion beside its own PEP.
 //
 // ---------------------------------------------------------------------------
 // THREE THINGS IT DELIBERATELY DOES NOT ASSERT, each because somewhere else
@@ -612,7 +624,15 @@ var pep = { url: "", network: "", mode: "", pdpUrl: "", created: false,
             // The HTTPS listener (2026-09-13): where this job dials it, and the
             // directory it writes the issued pair into — the PEP's
             // `/certs/server`, as THIS process sees it.
-            httpsUrl: "", serverCertDir: "", httpsContainerPort: 9443 };
+            httpsUrl: "", serverCertDir: "", httpsContainerPort: 9443,
+            // The reverse proxy (#1760, section 10): its two listeners as
+            // this job reaches them, the application behind it as the PEP
+            // dials it (`upstreamUrl`) and as this job reads it directly
+            // (`upstreamDirectUrl`), the anchor section 1b's pair chains to,
+            // and the companion container this job started, if it did.
+            proxyUrl: "", proxyHttpsUrl: "", upstreamUrl: "",
+            upstreamDirectUrl: "", listenerAnchorPem: "",
+            companionCreated: false };
 
 // The last of the container's own log. Every failure message below ends with
 // this, because the interesting failures here are ones where the PEP said
@@ -757,6 +777,19 @@ function freePort() {
       });
     });
   });
+}
+
+// The loopback port docker published a container port of the PEP's on
+// (#1760: the proxy's two listeners, beside 9090 and 9443 above).
+function publishedPort(containerPort) {
+  log.debug("Entering publishedPort(). " + containerPort);
+  const mapped = docker(["port", PEP_NAME, containerPort],
+                        "reading the PEP's published port " + containerPort);
+  const parsed = /:(\d+)\s*$/.exec(mapped.split("\n")[0] || "");
+  assert.ok(parsed, "docker port said \"" + mapped + "\" for " +
+            containerPort + ", which carries no port this job can dial");
+  log.debug("Leaving publishedPort(). " + parsed[1]);
+  return parsed[1];
 }
 
 // ---------------------------------------------------------------------------
@@ -982,7 +1015,12 @@ async function startThePep() {
     // the pair only once the PEP has registered, and this job writes it.
     PEP_HTTPS_CERT: "/certs/server/pep-server.crt",
     PEP_HTTPS_KEY: "/certs/server/pep-server.key",
-    PEP_HTTPS_RELOAD_INTERVAL_MS: "1000"
+    PEP_HTTPS_RELOAD_INTERVAL_MS: "1000",
+    // THE REVERSE PROXY'S LISTENERS (#1760), as the launchers set them, and
+    // the session recheck at zero for section 10's sign-out.
+    PEP_PROXY_PORT: "9180",
+    PEP_PROXY_HTTPS_PORT: "9543",
+    PEP_PROXY_SESSION_RECHECK_MS: "0"
   };
 
   pep.certDir = await mintTheContainersCredential();
@@ -1004,6 +1042,8 @@ async function startThePep() {
     // demonstration container `docker compose --profile xacml up` starts.
     create.push("--publish", "127.0.0.1::9090");
     create.push("--publish", "127.0.0.1::9443");
+    create.push("--publish", "127.0.0.1::9180");
+    create.push("--publish", "127.0.0.1::9543");
     // The PDP dials this across the bridge by the container's own name.
     environment.PEP_NOTIFY_URL = "http://" + PEP_NAME + ":9090/notify";
   } else {
@@ -1012,6 +1052,12 @@ async function startThePep() {
     environment.PEP_PORT = String(pep.containerPort);
     pep.httpsContainerPort = await freePort();
     environment.PEP_HTTPS_PORT = String(pep.httpsContainerPort);
+    const proxyPort = await freePort();
+    const proxyHttpsPort = await freePort();
+    environment.PEP_PROXY_PORT = String(proxyPort);
+    environment.PEP_PROXY_HTTPS_PORT = String(proxyHttpsPort);
+    pep.proxyUrl = "http://127.0.0.1:" + proxyPort;
+    pep.proxyHttpsUrl = "https://localhost:" + proxyHttpsPort;
     // On the host network the service is a process on this same loopback, so
     // this is the address it dials — and it is still a real outbound request
     // made by the PDP to a listener it does not share a process with.
@@ -1041,6 +1087,8 @@ async function startThePep() {
     assert.ok(parsedHttps, "docker port said \"" + mappedHttps + "\" for " +
               "9443, which carries no port this job can dial");
     pep.httpsUrl = "https://localhost:" + parsedHttps[1];
+    pep.proxyUrl = "http://127.0.0.1:" + publishedPort("9180");
+    pep.proxyHttpsUrl = "https://localhost:" + publishedPort("9543");
   } else {
     pep.httpsUrl = "https://localhost:" + pep.httpsContainerPort;
   }
@@ -1063,6 +1111,7 @@ async function startThePep() {
 
 function stopThePep() {
   log.debug("Entering stopThePep().");
+  stopTheCompanion();
   if (!pep.created) {
     // WHOEVER STARTED IT STOPS IT. A launcher-provided container belongs to the
     // launcher's teardown, which also collects its log into the run's report
@@ -1751,6 +1800,9 @@ async function theListenerServesARealmCertificate() {
     assert.ok(String(register.text).indexOf("PRIVATE KEY") < 0,
       "and no private key anywhere in that reply");
   });
+
+  // Kept for section 10 (#1760): the proxy's https listener serves this pair.
+  pep.listenerAnchorPem = String(got.anchorPem || "");
 
   // WHAT AN OPERATOR DOES WITH THE REPLY: two files on the container's mount.
   fs.writeFileSync(path.join(pep.serverCertDir, "pep-server.crt"),
@@ -2901,6 +2953,1722 @@ async function itKeepsEnforcingWhenThePdpIsGone() {
   log.debug("Leaving itKeepsEnforcingWhenThePdpIsGone().");
 }
 
+// ===========================================================================
+// 10. THE CONTAINER AS A REVERSE PROXY IN FRONT OF AN APPLICATION (#1760).
+//
+// The PEP can stand in front of an application: an administrator gives a
+// registered PEP an upstream and an ordered list of routes through
+// `POST /admin-api/xacml/set-pep-proxy`, the PEP pulls that configuration
+// over its mutual TLS (`GET /xacml/pep/proxy`), and on its own two
+// listeners (9180 plain, 9543 over section 1b's pair) it authenticates
+// each request by the route's mechanism, asks its own engine, and forwards
+// what is allowed. The issue's decisions D1–D9 are the contract this
+// section is written against.
+//
+// **THE APPLICATION IS THE COMPANION'S `/pep-app`** (rcbj on #1760:
+// `companion/pep_app.js`, development only), which echoes what reached it
+// as JSON — method, raw path, query, every header — so each sub-case below
+// asserts what the proxy FORWARDED, not only what it answered. Its own hit
+// counter (`/pep-app/_hits`) is read DIRECTLY, never through the proxy, so
+// "refused and the application never reached" is a fact this job sees.
+//
+// **THE DECISION IS THE REALM'S OWN POLICY**, the widened RBAC document of
+// section 4 that is still the root: an `admin` may do anything, `staff`
+// GET, HEAD and DELETE, anyone else nothing — the subject the proxy builds
+// is the person's USERNAME, and the PIP reads `employeeType` off their
+// entry exactly as section 3 showed. So ADMIN_PERSON is permitted, a staff
+// POST and an outsider's GET are XACML refusals (403), and no new policy
+// is deployed — every section after this one counts two.
+//
+// **IN DEVELOPMENT MODE, AND BACK.** The proxy is driven with credentials
+// a development realm makes cheap: the password grant for a person's own
+// JWT, an RFC 8707 `resource` naming an audience nobody registered, any
+// password but the reserved `invalid` at the Basic door, a WS-Trust
+// UsernameToken for a SAML 2.0 assertion. A product realm refuses the
+// first and holds the second to a registered target, so the realm is put
+// in development for the section and returned to what it was — the
+// product half of the proxy is the PEP's (`cargo test -p xacml-pep`) and
+// the service's own validation doors', not this section's.
+//
+// **A ROUTE NAMES AN APPLICATION (D10)**, and the job registers them first
+// through `/admin-api/applications/create`: `pep-app`, the application
+// behind the proxy — a confidential OpenID Connect client with the proxy's
+// callback registered, the session routes' relying party (D5 revised: the
+// PEP is the RP OF that application, through the `oidc-caep-risc` crate),
+// and the API route's audience; `pep-app-saml`, the SAML SP whose entity ID
+// is the assertion's Audience; `pep-app-scratch`, deleted in 10i; and a
+// public client and a callback-less one that a session route must refuse.
+// No secret of theirs may appear in an `/admin-api` answer the proxy's
+// configuration travels in. **The session routes need the https listener**
+// (the relying party refuses a non-loopback http redirect URI), so with no
+// pair from section 1b they are left out and their sub-cases skipped.
+// ===========================================================================
+const http = require("http");
+const nodeCrypto = require("crypto");
+const authnSignin = require("./authn_signin");
+const ssfRoles = require("./ssf_roles.js");
+
+const OUTSIDER_PERSON = "pep-outsider-person";
+const PROXY_API_AUDIENCE = "https://pep-app.example.test/api";
+const PROXY_SAML_AUDIENCE = "https://pep-app.example.test/saml";
+const PROXY_OTHER_AUDIENCE = "https://somebody-else.example.test/api";
+const PROXY_TIMEOUT_MS = 3000;
+// THE APPLICATIONS THE ROUTES NAME (D10), in this run's realm.
+const PROXY_APP = "pep-app";
+const PROXY_SAML_APP = "pep-app-saml";
+const PROXY_SCRATCH_APP = "pep-app-scratch";
+const PROXY_PUBLIC_APP = "pep-app-public-client";
+const PROXY_NO_CALLBACK_APP = "pep-app-no-callback";
+// The client secrets this job registered or was handed: never logged, and
+// held to every /admin-api answer the proxy's configuration travels in.
+const PROXY_SECRETS = [];
+// How long a sign-out at the service may take to reach the relying party's
+// CAEP poll stream: the library polls every 5 s by default, plus the
+// transmitter's own delivery.
+const PROXY_SIGNAL_MS = 45000;
+// D11's `headers` mode, on every route that forwards headers: who, how, and
+// three of the person's claims.
+const PROXY_IDENTITY_HEADERS = {
+  mode: "headers", separator: ",",
+  headers: [{ name: "X-Remote-User", claim: "username" },
+            { name: "X-Remote-Auth", claim: "mechanism" },
+            { name: "X-Iya-User", claim: "sub" },
+            { name: "X-Iya-Email", claim: "email" },
+            { name: "X-Iya-Groups", claim: "groups" }]
+};
+const PROXY_MAX_BODY = 4096;
+const COMPANION_IMAGE = "rcbj/iya-sts-companion:test";
+const SAML2_TOKEN_TYPE =
+  "http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0";
+
+// The companion this job starts beside its own PEP, by the PEP's name so two
+// runs on one machine do not meet.
+function companionName() {
+  log.debug("Entering companionName().");
+  log.debug("Leaving companionName().");
+  return "companion-" + PEP_NAME;
+}
+
+// THE APPLICATION, WHEN THIS JOB STARTED THE PEP: the companion image built
+// from this tree and run where the PEP can dial it — on the PEP's network
+// by name, or on the host network on a free port. The launchers start it
+// themselves (`docker-compose-run-tests.yml`'s `companion`). This is the
+// simplest arrangement that keeps the two paths one deployment: the same
+// image, the same application, a name the PEP dials.
+async function startTheCompanion() {
+  log.debug("Entering startTheCompanion().");
+  const started = Date.now();
+  docker(["build", "--quiet", "--tag", COMPANION_IMAGE,
+          path.join(REPO_ROOT, "companion")],
+         "building the companion image, whose /pep-app the proxy protects");
+  log.info("Built " + COMPANION_IMAGE + " in " + (Date.now() - started) +
+           "ms.");
+  const name = companionName();
+  const create = ["create", "--name", name, "--hostname", name,
+                  "--network", pep.network,
+                  "--env", "COMPANION_KRB5_SERVICE_PORT=off",
+                  "--env", "COMPANION_STS_TLS_INSECURE=true",
+                  "--env", "COMPANION_LOG_LEVEL=" +
+                           (appconfig.LOG_LEVEL || "info")];
+  let port = 9700;
+  if (pep.mode === "bridge") {
+    create.push("--publish", "127.0.0.1::9700");
+    create.push("--env", "COMPANION_PORT=9700");
+  } else {
+    port = await freePort();
+    create.push("--env", "COMPANION_PORT=" + port);
+  }
+  create.push(COMPANION_IMAGE);
+  dockerQuiet(["rm", "-f", name]);
+  docker(create, "creating the companion container");
+  pep.companionCreated = true;
+  docker(["start", name], "starting the companion container");
+  if (pep.mode === "bridge") {
+    const mapped = docker(["port", name, "9700"],
+                          "reading the companion's published port");
+    const parsed = /:(\d+)\s*$/.exec(mapped.split("\n")[0] || "");
+    assert.ok(parsed, "docker port said \"" + mapped + "\" for the " +
+              "companion, which carries no port this job can dial");
+    pep.upstreamUrl = "http://" + name + ":9700";
+    pep.upstreamDirectUrl = "http://127.0.0.1:" + parsed[1];
+  } else {
+    pep.upstreamUrl = "http://127.0.0.1:" + port;
+    pep.upstreamDirectUrl = pep.upstreamUrl;
+  }
+  log.info("The companion " + name + " is the proxy's upstream at " +
+           pep.upstreamUrl + "; this job reads it at " +
+           pep.upstreamDirectUrl + ".");
+  log.debug("Leaving startTheCompanion().");
+}
+
+function stopTheCompanion() {
+  log.debug("Entering stopTheCompanion().");
+  if (!pep.companionCreated) {
+    log.debug("Leaving stopTheCompanion(). Nothing was created here.");
+    return;
+  }
+  const tail = dockerQuiet(["logs", "--tail", "80", companionName()]);
+  log.debug("The companion container's log:\n" +
+            (tail.out || tail.err || "(none)"));
+  const removed = dockerQuiet(["rm", "-f", companionName()]);
+  if (!removed.ok) {
+    log.warn("Could not remove the companion container " + companionName() +
+             ": " + removed.err);
+  }
+  pep.companionCreated = false;
+  log.debug("Leaving stopTheCompanion().");
+}
+
+// ONE REQUEST TO THE PROXY OR THE APPLICATION, WITH THE PATH SENT AS
+// WRITTEN. `fetch` resolves `..` and `%2e%2e` away before a byte leaves this
+// process, which would make the traversal cases ask about a path nobody
+// sent; `http.request` sends the target verbatim. HTTPS trusts ONLY the
+// anchor section 1b's pair chains to, with the host name checked.
+function proxyRequest(method, url, options) {
+  log.debug("Entering proxyRequest(). " + method + " " + url);
+  const o = options || {};
+  const m = /^(https?):\/\/([^/:]+)(?::(\d+))?(\/.*)?$/.exec(String(url));
+  assert.ok(m, "proxyRequest() was handed " + url + ", which it cannot send");
+  const secure = m[1] === "https";
+  const headers = Object.assign({}, o.headers || {});
+  const body = o.body === undefined ? null : Buffer.from(o.body);
+  if (body) {
+    headers["content-length"] = String(body.length);
+  }
+  log.debug("Leaving proxyRequest().");
+  return new Promise(function (resolve) {
+    const started = Date.now();
+    const request = (secure ? https : http).request({
+      host: m[2], port: m[3] || (secure ? 443 : 80), path: m[4] || "/",
+      method: method, headers: headers, agent: false,
+      ca: secure && pep.listenerAnchorPem ? [pep.listenerAnchorPem]
+                                          : undefined,
+      servername: secure ? m[2] : undefined
+    }, function (response) {
+      const chunks = [];
+      response.on("data", function (chunk) {
+        chunks.push(chunk);
+      });
+      response.on("end", function () {
+        const text = Buffer.concat(chunks).toString("utf8");
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in a callback in proxyRequest(): " +
+                    ((e && e.message) || e));
+          json = null;
+        }
+        resolve({ status: response.statusCode, headers: response.headers,
+                  text: text, json: json, ms: Date.now() - started });
+      });
+    });
+    request.setTimeout(o.timeoutMs || 20000, function () {
+      request.destroy(new Error("no answer within " +
+                                (o.timeoutMs || 20000) + "ms"));
+    });
+    request.on("error", function (e) {
+      resolve({ status: 0, headers: {}, text: "", json: null,
+                error: e.message, ms: Date.now() - started });
+    });
+    request.end(body || undefined);
+  });
+}
+
+// What reached the application, by path, read off it directly.
+async function upstreamHits() {
+  log.debug("Entering upstreamHits().");
+  const r = await proxyRequest("GET", pep.upstreamDirectUrl +
+                               "/pep-app/_hits");
+  assert.strictEqual(r.status, 200,
+    "GET " + pep.upstreamDirectUrl + "/pep-app/_hits should answer the " +
+    "companion's hit counter; it answered " + r.status + " " +
+    (r.error || r.text.slice(0, 200)) + ". The companion is the " +
+    "application behind the proxy; `docker logs` on it says why.");
+  log.debug("Leaving upstreamHits().");
+  return (r.json && r.json.byPath) || {};
+}
+
+function hitsOn(byPath, p) {
+  log.debug("Entering hitsOn().");
+  log.debug("Leaving hitsOn().");
+  return Number(byPath[p] || 0);
+}
+
+// A short description of a proxy answer for a failure message.
+function told(r) {
+  log.debug("Entering told().");
+  log.debug("Leaving told().");
+  return r.status + " " + (r.error || String(r.text || "").slice(0, 300)) +
+         " (www-authenticate: " +
+         JSON.stringify((r.headers || {})["www-authenticate"] || null) +
+         ", location: " + JSON.stringify((r.headers || {}).location || null) +
+         ")";
+}
+
+// The echo's identity header, which the route names `X-Remote-User`.
+function echoedUser(r) {
+  log.debug("Entering echoedUser().");
+  log.debug("Leaving echoedUser().");
+  return String(((r.json || {}).headers || {})["x-remote-user"] || "");
+}
+
+function echoedMechanism(r) {
+  log.debug("Entering echoedMechanism().");
+  log.debug("Leaving echoedMechanism().");
+  return String(((r.json || {}).headers || {})["x-remote-auth"] || "");
+}
+
+// A realm setting's value in force, read fresh (`service_facts.js` caches).
+async function realmSetting(key) {
+  log.debug("Entering realmSetting(). " + key);
+  const r = await get(api("/config"));
+  assert.strictEqual(r.status, 200,
+    "GET /admin-api/config answered " + r.status);
+  let found;
+  ((r.body || {}).groups || []).forEach(function (group) {
+    (group.settings || []).forEach(function (row) {
+      if (row.key === key) {
+        found = row.value;
+      }
+    });
+  });
+  log.debug("Leaving realmSetting(). " + found);
+  return found;
+}
+
+// A person's own access token from this realm, by the password grant, for
+// the RFC 8707 resource asked — a JWT, or an opaque handle when the realm
+// issues those.
+async function personsToken(username, resource) {
+  log.debug("Entering personsToken(). " + username + " " + resource);
+  const r = await fetchJson(realmUrl("/oauth2/token"), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "password", username: username,
+                                password: "pep-proxy-" + username,
+                                client_id: "pep-proxy-test-client",
+                                scope: "openid", resource: resource })
+      .toString() });
+  assert.ok(r.status === 200 && r.body && r.body.access_token,
+    "the password grant for " + username + " with resource " + resource +
+    " should issue an access token in this development realm; it " +
+    "answered " + r.status + " " + String(r.text).slice(0, 300));
+  log.debug("Leaving personsToken().");
+  return String(r.body.access_token);
+}
+
+function basic(username, password) {
+  log.debug("Entering basic().");
+  log.debug("Leaving basic().");
+  return "Basic " + Buffer.from(username + ":" + password).toString("base64");
+}
+
+// A SAML 2.0 assertion THIS REALM ISSUED, for the audience asked: WS-Trust's
+// Issue with a UsernameToken (any password but `invalid` in development)
+// and AppliesTo naming the audience, the assertion cut out of the RSTR as
+// the bytes the service signed.
+async function realmAssertion(username, audience) {
+  log.debug("Entering realmAssertion(). " + username + " " + audience);
+  const rst = '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">' +
+    '<soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/' +
+    '2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
+    '<wsse:UsernameToken><wsse:Username>' + username + '</wsse:Username>' +
+    '<wsse:Password>pep-proxy-' + username + '</wsse:Password>' +
+    '</wsse:UsernameToken></wsse:Security></soap:Header>' +
+    '<soap:Body><wst:RequestSecurityToken ' +
+    'xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">' +
+    '<wst:RequestType>' +
+    'http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType>' +
+    '<wst:TokenType>' + SAML2_TOKEN_TYPE + '</wst:TokenType>' +
+    '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy">' +
+    '<wsa:EndpointReference ' +
+    'xmlns:wsa="http://www.w3.org/2005/08/addressing"><wsa:Address>' +
+    audience + '</wsa:Address></wsa:EndpointReference></wsp:AppliesTo>' +
+    '</wst:RequestSecurityToken></soap:Body></soap:Envelope>';
+  const r = await fetch(realmUrl("/sts"), {
+    method: "POST", headers: { "content-type": "application/soap+xml" },
+    body: rst });
+  const text = await r.text();
+  assert.strictEqual(r.status, 200,
+    "WS-Trust Issue at " + realmUrl("/sts") + " should issue a SAML 2.0 " +
+    "assertion for " + username + "; it answered " + r.status + " " +
+    text.slice(0, 300));
+  const m = /<((?:[A-Za-z0-9_-]+:)?)Assertion[\s>][\s\S]*?<\/\1Assertion>/
+    .exec(text);
+  assert.ok(m && /urn:oasis:names:tc:SAML:2\.0:assertion/.test(m[0]),
+    "the RSTR should carry a SAML 2.0 Assertion that declares its own " +
+    "namespace, so it stands alone; it carries " + text.slice(0, 400));
+  log.debug("Leaving realmAssertion().");
+  return m[0];
+}
+
+// THE BROWSER: one jar per origin, the proxy reached with `proxyRequest()`
+// (it may be https under section 1b's anchor) and the service with `fetch`
+// (the run's trust bundle), every redirect followed, and the service's
+// sign-in and consent screens answered over `/authn-api` as their pages do.
+function browserJars() {
+  log.debug("Entering browserJars().");
+  log.debug("Leaving browserJars().");
+  return {};
+}
+
+function originOf(url) {
+  log.debug("Entering originOf().");
+  const m = /^(https?:\/\/[^/]+)/.exec(String(url));
+  log.debug("Leaving originOf().");
+  return m ? m[1].toLowerCase() : "";
+}
+
+function jarHeader(jars, url) {
+  log.debug("Entering jarHeader().");
+  const jar = jars[originOf(url)] || {};
+  log.debug("Leaving jarHeader().");
+  return Object.keys(jar).map(function (name) {
+    return name + "=" + jar[name];
+  }).join("; ");
+}
+
+function jarTake(jars, url, lines) {
+  log.debug("Entering jarTake().");
+  const origin = originOf(url);
+  jars[origin] = jars[origin] || {};
+  [].concat(lines || []).forEach(function (line) {
+    const pair = String(line).split(";")[0];
+    const at = pair.indexOf("=");
+    if (at <= 0) {
+      return;
+    }
+    const name = pair.slice(0, at).trim();
+    const value = pair.slice(at + 1).trim();
+    if (value === "" || /Max-Age=0|Expires=Thu, 01 Jan 1970/i.test(line)) {
+      delete jars[origin][name];
+    } else {
+      jars[origin][name] = value;
+    }
+  });
+  log.debug("Leaving jarTake().");
+}
+
+function isProxyUrl(url) {
+  log.debug("Entering isProxyUrl().");
+  const origin = originOf(url);
+  log.debug("Leaving isProxyUrl().");
+  return origin === originOf(pep.proxyUrl) ||
+         (!!pep.proxyHttpsUrl && origin === originOf(pep.proxyHttpsUrl));
+}
+
+async function browserGet(jars, url) {
+  log.debug("Entering browserGet(). " + url);
+  const cookie = jarHeader(jars, url);
+  const headers = { accept: "text/html,application/xhtml+xml" };
+  if (cookie) {
+    headers.cookie = cookie;
+  }
+  if (isProxyUrl(url)) {
+    const r = await proxyRequest("GET", url, { headers: headers });
+    jarTake(jars, url, r.headers["set-cookie"]);
+    log.debug("Leaving browserGet(). The proxy: " + r.status);
+    return { status: r.status, location: r.headers.location || "",
+             text: r.text, json: r.json, headers: r.headers, url: url };
+  }
+  const r = await fetch(url, { redirect: "manual", headers: headers });
+  jarTake(jars, url, r.headers.getSetCookie ? r.headers.getSetCookie() : []);
+  const text = r.status >= 300 && r.status < 400 ? "" : await r.text();
+  log.debug("Leaving browserGet(). The service: " + r.status);
+  return { status: r.status, location: r.headers.get("location") || "",
+           text: text, json: null, headers: {}, url: url };
+}
+
+// From `url`, through every redirect and screen, until an answer that is
+// neither. Answers the last response and every address it passed.
+async function browse(jars, url, username) {
+  log.debug("Entering browse(). " + url);
+  const passed = [];
+  let at = url;
+  let r = await browserGet(jars, at);
+  for (let n = 0; n < 25; n += 1) {
+    passed.push(r.status + " " + at.replace(/([?&](code|state)=)[^&]+/g,
+                                             "$1…"));
+    if (r.status >= 300 && r.status < 400 && r.location) {
+      at = new URL(r.location, at).toString();
+      r = await browserGet(jars, at);
+      continue;
+    }
+    if (r.status === 200 && /\/authn\/signin\.js/.test(r.text || "")) {
+      const answer = await authnSignin.submit(realmUrl(""), at,
+        { action: "login", username: username,
+          password: "pep-proxy-" + username },
+        { cookie: jarHeader(jars, at) });
+      jarTake(jars, at, answer.headers.getSetCookie());
+      assert.strictEqual(answer.next, "redirect",
+        "signing " + username + " in at the service's screen should send " +
+        "the browser on; it answered " + answer.status + " " +
+        JSON.stringify(answer.json).slice(0, 300));
+      at = answer.location;
+      r = await browserGet(jars, at);
+      continue;
+    }
+    if (r.status === 200 && authnSignin.isConsent(at)) {
+      const answer = await authnSignin.consentFor(at, jarHeader(jars, at));
+      jarTake(jars, at, answer.headers.getSetCookie());
+      assert.strictEqual(answer.next, "redirect",
+        "the consent screen should send the browser on; it answered " +
+        answer.status);
+      at = answer.location;
+      r = await browserGet(jars, at);
+      continue;
+    }
+    break;
+  }
+  log.debug("Leaving browse(). " + r.status);
+  return { r: r, url: at, passed: passed };
+}
+
+// THE CONFIGURATION, D2's document as D10 shapes it: every non-public route
+// names an APPLICATION of this realm's registry and copies nothing of it —
+// the audience, the SAML SP entity and the OIDC client are resolved from
+// the application's entry at the pull. First match wins. The two session
+// routes are there only when the https listener is (the relying party
+// refuses a non-loopback http redirect URI, D5).
+function proxyConfiguration(publicBaseUrl, withSession) {
+  log.debug("Entering proxyConfiguration().");
+  // D11: the identity reaches the application in one of three modes. Most
+  // routes use `headers`, naming five claims; the jwt and saml-app routes
+  // below are the other two modes.
+  const identity = { forwardCredentials: false, resource: "", action: "",
+                     identity: PROXY_IDENTITY_HEADERS };
+  const routes = [
+    { id: "public", path: "/pep-app/public", match: "prefix",
+      methods: ["GET", "HEAD"], public: true },
+    { id: "slow", path: "/pep-app/slow", match: "exact",
+      methods: ["GET"], public: true }
+  ];
+  if (withSession) {
+    routes.push(Object.assign({ id: "protected-fallback",
+                                path: "/pep-app/protected-fallback",
+                                match: "prefix", methods: ["GET", "HEAD"],
+                                mechanisms: ["session"],
+                                application: PROXY_APP, signals: false },
+                              identity));
+    routes.push(Object.assign({ id: "protected", path: "/pep-app/protected",
+                                match: "prefix", methods: ["GET", "HEAD"],
+                                mechanisms: ["session"],
+                                application: PROXY_APP, signals: true },
+                              identity));
+  }
+  routes.push(Object.assign({ id: "api", path: "/pep-app/api",
+                              match: "prefix", methods: ["GET", "POST"],
+                              mechanisms: ["oauth2", "basic"],
+                              application: PROXY_APP }, identity));
+  routes.push(Object.assign({ id: "saml", path: "/pep-app/saml",
+                              match: "prefix", methods: ["GET"],
+                              mechanisms: ["saml2"],
+                              application: PROXY_SAML_APP }, identity));
+  routes.push({ id: "jwt", path: "/pep-app/jwt", match: "prefix",
+                methods: ["GET"], mechanisms: ["oauth2", "basic"],
+                application: PROXY_APP, forwardCredentials: false,
+                resource: "", action: "", identity: { mode: "jwt" } });
+  routes.push({ id: "saml-app", path: "/pep-app/saml-app", match: "prefix",
+                methods: ["GET"], mechanisms: ["basic"],
+                application: PROXY_SAML_APP, forwardCredentials: false,
+                resource: "", action: "", identity: { mode: "saml" } });
+  routes.push(Object.assign({ id: "scratch", path: "/pep-app/scratch",
+                              match: "prefix", methods: ["GET"],
+                              mechanisms: ["basic"],
+                              application: PROXY_SCRATCH_APP }, identity));
+  log.debug("Leaving proxyConfiguration().");
+  return {
+    enabled: true,
+    upstream: pep.upstreamUrl,
+    publicBaseUrl: publicBaseUrl,
+    upstreamTimeoutMs: PROXY_TIMEOUT_MS,
+    maxBodyBytes: PROXY_MAX_BODY,
+    routes: routes
+  };
+}
+
+// The callback every session route's application must register (D10).
+function proxyCallback() {
+  log.debug("Entering proxyCallback().");
+  log.debug("Leaving proxyCallback().");
+  return (pep.proxyHttpsUrl || "https://pep-app.example.test") +
+         "/.iya-pep/callback";
+}
+
+// A text with every secret this job holds taken out, for a failure message.
+function withoutSecrets(text) {
+  log.debug("Entering withoutSecrets().");
+  let out = String(text || "");
+  PROXY_SECRETS.forEach(function (one) {
+    if (one) {
+      out = out.split(one).join("<client secret>");
+    }
+  });
+  log.debug("Leaving withoutSecrets().");
+  return out;
+}
+
+// No secret this job registered may appear in an answer of /admin-api's
+// that is not the secret's own door.
+function carriesNoSecret(text) {
+  log.debug("Entering carriesNoSecret().");
+  const t = String(text || "");
+  log.debug("Leaving carriesNoSecret().");
+  return PROXY_SECRETS.every(function (one) {
+    return !one || t.indexOf(one) < 0;
+  });
+}
+
+// `ssf_roles.js`'s poster shape over this file's `postJson()`.
+async function ssfPost(url, body) {
+  log.debug("Entering ssfPost().");
+  const r = await postJson(url, body);
+  log.debug("Leaving ssfPost().");
+  return { status: r.status, text: r.text, json: r.body };
+}
+
+async function createApplication(identifier, protocols, fields, what) {
+  log.debug("Entering createApplication(). " + identifier);
+  const r = await postJson(api("/applications/create"), {
+    identifier: identifier, name: identifier, protocols: protocols,
+    fields: fields });
+  assert.ok(r.status === 200 && r.body && r.body.ok !== false,
+    "POST /admin-api/applications/create should register " + identifier +
+    " (" + what + "); it answered " + r.status + " " +
+    withoutSecrets(r.text).slice(0, 300));
+  log.debug("Leaving createApplication().");
+}
+
+// THE APPLICATIONS THE ROUTES NAME (D10), registered as an administrator
+// registers any application: the application behind the proxy as an
+// ordinary CONFIDENTIAL OpenID Connect client — the session routes'
+// relying party, with the proxy's callback among its redirect URIs, and,
+// for the library's CAEP/RISC poll stream, the client credentials grant,
+// the two Shared Signals scopes and their roles, as the library's own
+// `scripts/configure_iya_sts.py` registers its demonstration — whose
+// `oauthAudience` is the API route's audience; a SAML 2.0 service provider
+// whose entity ID (and WS-Trust AppliesTo) is the assertion's Audience; a
+// scratch application section 10i deletes; and two a session route must
+// refuse — a PUBLIC client, and a confidential one without the callback.
+async function registerTheApplications() {
+  log.debug("Entering registerTheApplications().");
+  PROXY_SECRETS.length = 0;
+  PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
+  PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
+  PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
+  const callback = proxyCallback();
+  await createApplication(PROXY_APP, ["oauth2", "oidc"], {
+    oauthClientId: [PROXY_APP], oauthClientSecret: PROXY_SECRETS[0],
+    oauthRedirectUri: [callback], oauthResponseType: ["code"],
+    oauthGrantType: ["authorization_code", "refresh_token",
+                     "client_credentials"],
+    oauthAllowedScope: ["openid", "profile", "email", "offline_access",
+                        "ssf.read", "ssf.manage"],
+    oauthTokenEndpointAuthMethod: "client_secret_basic",
+    oauthIdTokenSignedResponseAlg: "RS256",
+    oauthAudience: [PROXY_API_AUDIENCE]
+  }, "the confidential client behind the proxy");
+  await createApplication(PROXY_SAML_APP, ["saml2", "wstrust"], {
+    samlEntityId: [PROXY_SAML_AUDIENCE],
+    // THE APPLICATION'S OWN ACS (D11's `saml` mode): the companion's, as the
+    // PEP dials it, where the proxy POSTs the assertion server-side.
+    samlAssertionConsumerService: [pep.upstreamUrl + "/pep-app/saml/acs"],
+    wstrustAppliesTo: [PROXY_SAML_AUDIENCE]
+  }, "the SAML 2.0 service provider the saml route names");
+  await createApplication(PROXY_SCRATCH_APP, ["oauth2"], {
+    oauthClientId: [PROXY_SCRATCH_APP], oauthClientSecret: PROXY_SECRETS[1],
+    oauthTokenEndpointAuthMethod: "client_secret_basic",
+    oauthAudience: ["https://pep-app.example.test/scratch"]
+  }, "the scratch application section 10i deletes");
+  await createApplication(PROXY_PUBLIC_APP, ["oauth2", "oidc"], {
+    oauthClientId: [PROXY_PUBLIC_APP], oauthRedirectUri: [callback],
+    oauthResponseType: ["code"], oauthGrantType: ["authorization_code"],
+    oauthTokenEndpointAuthMethod: "none"
+  }, "a public client a session route must refuse");
+  await createApplication(PROXY_NO_CALLBACK_APP, ["oauth2", "oidc"], {
+    oauthClientId: [PROXY_NO_CALLBACK_APP],
+    oauthClientSecret: PROXY_SECRETS[2],
+    oauthRedirectUri: ["https://elsewhere.example.test/callback"],
+    oauthResponseType: ["code"], oauthGrantType: ["authorization_code"],
+    oauthTokenEndpointAuthMethod: "client_secret_basic"
+  }, "a confidential client without the callback or an audience");
+  // THE SHARED SIGNALS THE RELYING PARTY'S POLL STREAM NEEDS: the
+  // transmitter and CAEP on in this realm (both default on; set so the
+  // section rests on no other job's leavings), the client in SSF_READ and
+  // SSF_MANAGE, and the person in the two groups, as the library's own
+  // registration script does for its test user.
+  await setSetting("ssf.enabled", true);
+  await setSetting("caep.enabled", true);
+  await ssfRoles.mapApplication(ssfPost, api(""), PROXY_APP,
+                                "ssf.read ssf.manage");
+  for (const group of ["ssf-read", "ssf-manage"]) {
+    const r = await postJson(api("/groups/add-member"),
+                             { group: group, member: ADMIN_PERSON });
+    assert.ok(r.status === 200 || /already/.test(String(r.text)),
+      "adding " + ADMIN_PERSON + " to " + group + " answered " + r.status +
+      " " + String(r.text).slice(0, 300));
+  }
+  log.info("Registered " + PROXY_APP + " (confidential; its callback " +
+           callback + "), " + PROXY_SAML_APP + ", " + PROXY_SCRATCH_APP +
+           " and the two a session route must refuse.");
+  log.debug("Leaving registerTheApplications().");
+}
+
+// Where this job reaches the proxy and the application, from the launcher
+// or from what `startThePep()` and `startTheCompanion()` made. Answers why
+// the section cannot run, or "".
+async function findTheProxy() {
+  log.debug("Entering findTheProxy().");
+  if (LAUNCHER_STARTED_IT) {
+    pep.proxyUrl = String(process.env.XACML_PEP_PROXY_URL || "")
+      .replace(/\/+$/, "");
+    pep.proxyHttpsUrl = String(process.env.XACML_PEP_PROXY_HTTPS_URL || "")
+      .replace(/\/+$/, "");
+    pep.upstreamUrl = String(process.env.XACML_PEP_UPSTREAM_URL || "")
+      .replace(/\/+$/, "");
+    pep.upstreamDirectUrl = pep.upstreamUrl;
+    if (!pep.proxyUrl || !pep.upstreamUrl) {
+      log.debug("Leaving findTheProxy(). Not named.");
+      return "the launcher named no proxy listener (XACML_PEP_PROXY_URL=\"" +
+             pep.proxyUrl + "\") or no application to put behind it " +
+             "(XACML_PEP_UPSTREAM_URL=\"" + pep.upstreamUrl + "\"). " +
+             "./run-tests.sh names both in every local mode and starts " +
+             "the companion; a stack brought up some other way has no " +
+             "application for the proxy to protect.";
+    }
+  } else {
+    await startTheCompanion();
+  }
+  if (!pep.listenerAnchorPem) {
+    // Section 1b wrote no pair, so 9543 does not listen.
+    pep.proxyHttpsUrl = "";
+  }
+  log.debug("Leaving findTheProxy().");
+  return "";
+}
+
+async function itProxiesAnApplication() {
+  log.debug("Entering itProxiesAnApplication().");
+  log.info("=== The container as a reverse proxy in front of an " +
+           "application (#1760) ===");
+  const why = await findTheProxy();
+  if (why) {
+    log.warn("[proxy] SKIPPED — " + why);
+    log.debug("Leaving itProxiesAnApplication(). Skipped.");
+    return;
+  }
+  await until("the application behind the proxy to answer",
+              async function () {
+    const r = await proxyRequest("GET", pep.upstreamDirectUrl +
+                                 "/pep-app/_hits");
+    return { ok: r.status === 200,
+             note: "GET /pep-app/_hits said " + told(r) };
+  });
+
+  // WHAT THE APPLICATION TRUSTS (D11): its ACS checks the realm's SAML
+  // signature, read from the realm's IdP metadata, for the SP entity the
+  // saml-app route's application is; its echo checks a Bearer JWT against
+  // the realm's JWKS. Both as the COMPANION reaches the service.
+  const realmAsTheCompanionSees = LAUNCHER_STARTED_IT ? realmUrl("")
+                                                      : pep.pdpUrl;
+  const setUp = await proxyRequest("POST", pep.upstreamDirectUrl +
+    "/pep-app/saml/_setup", {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      audience: PROXY_SAML_AUDIENCE,
+      metadataUrl: realmAsTheCompanionSees + "/saml2/metadata",
+      jwksUrl: realmAsTheCompanionSees + "/oauth2/jwks" }) });
+  assert.ok(setUp.status === 200 && setUp.json &&
+            setUp.json.certificates > 0,
+    "POST /pep-app/saml/_setup should read the realm's signing " +
+    "certificate from " + realmAsTheCompanionSees + "/saml2/metadata; it " +
+    "answered " + told(setUp));
+  const modeBefore = await realmSetting("global.mode");
+  if (modeBefore !== "development") {
+    await setSetting("global.mode", "development");
+  }
+  try {
+    await createTheOutsider();
+    await registerTheApplications();
+    await theProxyIsConfigured();
+    await theProxyRefusesWhatIsNotRouted();
+    await theProxyTakesAnAccessToken();
+    await theProxyTakesBasic();
+    await theProxyTakesAnAssertion();
+    await theProxyForwardsTheIdentity();
+    if (pep.proxyHttpsUrl) {
+      await theProxyHoldsASession();
+    } else {
+      log.warn("[proxy] the SESSION sub-cases are SKIPPED: the proxy's " +
+               "https listener is not available (section 1b wrote no " +
+               "pair, or the launcher named no XACML_PEP_PROXY_HTTPS_URL), " +
+               "and the relying party refuses a non-loopback http " +
+               "redirect URI (D5).");
+    }
+    await theProxyGuardsTheWire();
+    await theProxyLosesAnApplication();
+    await theProxyIsCleared();
+  } finally {
+    if (modeBefore !== "development") {
+      await setSetting("global.mode", String(modeBefore));
+    }
+  }
+  log.info("[proxy] OK — the PEP stood in front of " + pep.upstreamUrl +
+           " on " + pep.proxyUrl + (pep.proxyHttpsUrl ? " and " +
+           pep.proxyHttpsUrl : "") + ", by session, OAuth 2.0, Basic and " +
+           "SAML 2.0, deciding each request in its own engine.");
+  log.debug("Leaving itProxiesAnApplication().");
+}
+
+// A THIRD PERSON, whom the RBAC policy grants nothing: employeeType
+// `contractor`, read off the entry by the PIP like the other two.
+async function createTheOutsider() {
+  log.debug("Entering createTheOutsider().");
+  const r = await postJson(api("/users/create"), {
+    username: OUTSIDER_PERSON, invent: false,
+    attributes: { cn: "Remote PEP Outsider Person", givenName: "Remote",
+                  sn: "Outsider Person", displayName: "Remote PEP Outsider",
+                  mail: OUTSIDER_PERSON + "@xacml-remote-pep.test",
+                  employeeType: "contractor" }
+  });
+  assert.ok(r.status === 200 && r.body && r.body.ok,
+    "POST /admin-api/users/create should put " + OUTSIDER_PERSON +
+    " (employeeType=contractor) in " + REALM + "; it answered " + r.status +
+    " " + String(r.text).slice(0, 300));
+  log.debug("Leaving createTheOutsider().");
+}
+
+// 10a. NOTHING BEFORE A CONFIGURATION; THE CONFIGURATION SAVED, REFUSED BY
+// NAME WHEN WRONG, PULLED, AND IN FORCE.
+async function theProxyIsConfigured() {
+  log.debug("Entering theProxyIsConfigured().");
+  const before = await pepRow();
+  const unconfigured = await proxyRequest("GET", pep.proxyUrl +
+                                          "/pep-app/public/");
+  check("before a configuration the proxy answers 404 and the row holds " +
+        "none", function () {
+    assert.ok(before.row && !before.row.proxy,
+      "GET /admin-api/xacml/peps should list " + PEP_NAME + " with no " +
+      "proxy yet; its row holds " +
+      JSON.stringify(before.row && before.row.proxy));
+    assert.strictEqual(unconfigured.status, 404,
+      "an unconfigured PEP's proxy answers 404 to everything (D3); " +
+      "GET /pep-app/public/ answered " + told(unconfigured) + pepLog());
+  });
+
+  const withSession = !!pep.proxyHttpsUrl;
+  const publicBase = pep.proxyHttpsUrl || pep.proxyUrl;
+  const config = proxyConfiguration(publicBase, withSession);
+  const savedAnswer = await postJson(api("/xacml/set-pep-proxy"),
+                                     { name: PEP_NAME, proxy: config });
+  assert.ok(savedAnswer.status === 200 && savedAnswer.body &&
+            savedAnswer.body.ok !== false,
+    "POST /admin-api/xacml/set-pep-proxy should save the configuration " +
+    "for " + PEP_NAME + "; it answered " + savedAnswer.status + " " +
+    withoutSecrets(savedAnswer.text).slice(0, 400));
+  const saved = await pepRow();
+  const listed = await get(api("/xacml/peps"));
+  check("the configuration names applications and carries no client secret",
+        function () {
+    assert.ok(carriesNoSecret(savedAnswer.text) &&
+              carriesNoSecret(listed.text),
+      "set-pep-proxy's answer and GET /admin-api/xacml/peps must carry no " +
+      "client secret of an application a route names (D10: resolved at the " +
+      "pull, over mutual TLS, never on /admin-api)");
+    ((((saved.row || {}).proxy || {}).routes) || []).forEach(function (one) {
+      assert.ok(!("clientSecret" in one) && !("audience" in one) &&
+                !("clientId" in one),
+        "a saved route holds a reference, never copied fields; route " +
+        one.id + " holds " + JSON.stringify(Object.keys(one)));
+    });
+  });
+  check("the PEP's row carries the configuration it was given", function () {
+    const p = (saved.row || {}).proxy || {};
+    assert.strictEqual(p.upstream, config.upstream,
+      "the row's proxy should name the upstream; it holds " +
+      JSON.stringify(p).slice(0, 400));
+    assert.strictEqual((p.routes || []).length, config.routes.length,
+      "and its " + config.routes.length + " routes, in order");
+    assert.deepStrictEqual((p.routes || []).map(function (one) {
+      return one.id;
+    }), config.routes.map(function (one) {
+      return one.id;
+    }), "in the order they were given: first match wins");
+  });
+
+  const refusals = [
+    { what: "a route path with a dot segment",
+      body: { name: PEP_NAME, proxy: Object.assign({}, config, {
+        routes: [{ id: "bad", path: "/pep-app/../admin", match: "prefix",
+                   methods: ["GET"], public: true }] }) } },
+    { what: "an upstream carrying userinfo",
+      body: { name: PEP_NAME, proxy: Object.assign({}, config, {
+        upstream: "http://someone:secret@companion:9700" }) } },
+    { what: "a route naming no application",
+      body: { name: PEP_NAME, proxy: Object.assign({}, config, {
+        routes: [{ id: "noapp", path: "/pep-app/api", match: "prefix",
+                   methods: ["GET"], mechanisms: ["oauth2"] }] }) } },
+    { what: "a route naming an application this realm does not hold",
+      body: { name: PEP_NAME, proxy: Object.assign({}, config, {
+        routes: [{ id: "unknown", path: "/pep-app/api", match: "prefix",
+                   methods: ["GET"], mechanisms: ["oauth2"],
+                   application: "no-such-application-" + PEP_NAME }] }) } },
+    { what: "an OAuth 2.0 route whose application has no audience",
+      body: { name: PEP_NAME, proxy: Object.assign({}, config, {
+        routes: [{ id: "noaud", path: "/pep-app/api", match: "prefix",
+                   methods: ["GET"], mechanisms: ["oauth2"],
+                   application: PROXY_NO_CALLBACK_APP }] }) } },
+    { what: "a SAML 2.0 route whose application has no SP entity ID",
+      body: { name: PEP_NAME, proxy: Object.assign({}, config, {
+        routes: [{ id: "nosp", path: "/pep-app/saml", match: "prefix",
+                   methods: ["GET"], mechanisms: ["saml2"],
+                   application: PROXY_SCRATCH_APP }] }) } },
+    { what: "a PEP that never registered",
+      body: { name: "no-such-pep-" + PEP_NAME, proxy: config } }
+  ];
+  if (withSession) {
+    const sessionRoute = function (application) {
+      log.debug("Entering sessionRoute().");
+      log.debug("Leaving sessionRoute().");
+      return { name: PEP_NAME, proxy: Object.assign({}, config, {
+        routes: [{ id: "session", path: "/pep-app/protected",
+                   match: "prefix", methods: ["GET"],
+                   mechanisms: ["session"], application: application }] }) };
+    };
+    refusals.push(
+      { what: "a session route whose application is a public client",
+        body: sessionRoute(PROXY_PUBLIC_APP) },
+      { what: "a session route whose application does not register the " +
+              "proxy's callback",
+        body: sessionRoute(PROXY_NO_CALLBACK_APP) },
+      { what: "a session route naming an unknown application",
+        body: sessionRoute("no-such-application-" + PEP_NAME) },
+      { what: "a session route with a plain-http publicBaseUrl",
+        body: Object.assign(sessionRoute(PROXY_APP), {
+          proxy: Object.assign(sessionRoute(PROXY_APP).proxy,
+                               { publicBaseUrl: pep.proxyUrl }) }) });
+  }
+  for (const one of refusals) {
+    const r = await postJson(api("/xacml/set-pep-proxy"), one.body);
+    check("set-pep-proxy refuses " + one.what, function () {
+      assert.ok(r.status >= 400 || (r.body && r.body.ok === false),
+        "POST /admin-api/xacml/set-pep-proxy with " + one.what + " should " +
+        "be refused by name; it answered " + r.status + " " +
+        String(r.text).slice(0, 300));
+      assert.ok(String(r.text).indexOf("STS-") < 0,
+        "and no error code reaches the caller; it said " +
+        String(r.text).slice(0, 300));
+    });
+  }
+  const unchanged = await pepRow();
+  check("a refused configuration changes nothing", function () {
+    assert.strictEqual(((unchanged.row || {}).proxy || {}).upstream,
+                       config.upstream,
+      "the saved upstream should still stand; the row holds " +
+      JSON.stringify((unchanged.row || {}).proxy).slice(0, 300));
+  });
+
+  const arrived = await until("the PEP to pull its proxy configuration " +
+                              "and serve the public route",
+                              async function () {
+    const r = await proxyRequest("GET", pep.proxyUrl + "/pep-app/public/");
+    return { ok: r.status === 200,
+             note: "GET /pep-app/public/ through the proxy said " + told(r) };
+  });
+  log.info("The PEP converged on its proxy configuration in " + arrived.ms +
+           "ms (its poll is " + POLL_MS + "ms).");
+
+  const hitsBefore = await upstreamHits();
+  const open = await proxyRequest("GET", pep.proxyUrl +
+                                  "/pep-app/public/page?x=1");
+  const hitsAfter = await upstreamHits();
+  check("a public route needs no credential and reaches the application",
+        function () {
+    assert.strictEqual(open.status, 200, "GET /pep-app/public/page " +
+                       "answered " + told(open));
+    assert.ok(open.json && open.json.app === "pep-app" &&
+              open.json.page === "public" &&
+              open.json.path === "/pep-app/public/page" &&
+              open.json.query.x === "1",
+      "the echo should be the application's public page with the path " +
+      "and query forwarded; it is " + open.text.slice(0, 300));
+    assert.strictEqual(hitsOn(hitsAfter, "/pep-app/public/page"),
+                       hitsOn(hitsBefore, "/pep-app/public/page") + 1,
+      "and the application counted exactly that one request");
+    assert.ok(!echoedUser(open),
+      "a public route names nobody to the application; X-Remote-User " +
+      "arrived as " + echoedUser(open));
+  });
+  if (pep.proxyHttpsUrl) {
+    const secure = await proxyRequest("GET", pep.proxyHttpsUrl +
+                                      "/pep-app/public/");
+    check("the proxy's https listener serves the realm's pair", function () {
+      assert.ok(secure.status === 200 && secure.json &&
+                secure.json.page === "public",
+        "GET " + pep.proxyHttpsUrl + "/pep-app/public/ trusting only the " +
+        "service Root should reach the application; it answered " +
+        told(secure));
+    });
+  } else {
+    log.warn("[proxy] the https listener is not checked: section 1b " +
+             "wrote no pair, or the launcher named no " +
+             "XACML_PEP_PROXY_HTTPS_URL. The configuration carries no " +
+             "session route, and the session sub-cases are skipped.");
+  }
+  log.debug("Leaving theProxyIsConfigured().");
+}
+
+// 10b. DENY BY DEFAULT: AN UNROUTED PATH, A TRAVERSAL, A METHOD THE ROUTE
+// DOES NOT TAKE — EACH REFUSED, AND THE APPLICATION NEVER REACHED.
+async function theProxyRefusesWhatIsNotRouted() {
+  log.debug("Entering theProxyRefusesWhatIsNotRouted().");
+  const token = await personsToken(ADMIN_PERSON, PROXY_API_AUDIENCE);
+  const before = await upstreamHits();
+  const unrouted = await proxyRequest("GET", pep.proxyUrl +
+                                      "/pep-app/secret");
+  const counter = await proxyRequest("GET", pep.proxyUrl +
+                                     "/pep-app/_hits");
+  const traversal = await proxyRequest("GET", pep.proxyUrl +
+                                       "/pep-app/public/../protected");
+  const encoded = await proxyRequest("GET", pep.proxyUrl +
+                                     "/pep-app/public/%2e%2e/protected");
+  const put = await proxyRequest("PUT", pep.proxyUrl + "/pep-app/api/items",
+    { headers: { authorization: "Bearer " + token,
+                 "content-type": "application/json" }, body: "{}" });
+  const after = await upstreamHits();
+  check("an unrouted path is 404 and never reaches the application",
+        function () {
+    assert.strictEqual(unrouted.status, 404,
+      "GET /pep-app/secret matches no route; it answered " + told(unrouted));
+    assert.strictEqual(counter.status, 404,
+      "and the application's own counter is not routed either; " +
+      "GET /pep-app/_hits through the proxy answered " + told(counter));
+    assert.strictEqual(hitsOn(after, "/pep-app/secret"),
+                       hitsOn(before, "/pep-app/secret"),
+      "the application must never see an unrouted request");
+  });
+  check("a path that does not normalise is 400, plain or percent-encoded",
+        function () {
+    assert.strictEqual(traversal.status, 400,
+      "GET /pep-app/public/../protected answered " + told(traversal));
+    assert.strictEqual(encoded.status, 400,
+      "GET /pep-app/public/%2e%2e/protected answered " + told(encoded));
+    assert.strictEqual(hitsOn(after, "/pep-app/protected"),
+                       hitsOn(before, "/pep-app/protected"),
+      "and neither reached the protected page");
+  });
+  check("a method the route does not take is 405 with Allow", function () {
+    assert.strictEqual(put.status, 405,
+      "PUT /pep-app/api/items on a GET, POST route answered " + told(put));
+    const allow = String(put.headers.allow || "").toUpperCase();
+    assert.ok(/\bGET\b/.test(allow) && /\bPOST\b/.test(allow),
+      "with an Allow header naming GET and POST; it sent " +
+      JSON.stringify(put.headers.allow || null));
+    assert.strictEqual(hitsOn(after, "/pep-app/api/items"),
+                       hitsOn(before, "/pep-app/api/items"),
+      "and the application saw nothing");
+  });
+  log.debug("Leaving theProxyRefusesWhatIsNotRouted().");
+}
+
+// 10c. OAUTH 2.0: A JWT CHECKED IN THE CONTAINER, AN OPAQUE HANDLE ASKED OF
+// THE SERVICE, THE AUDIENCE HELD, THE CREDENTIAL STRIPPED, THE IDENTITY
+// PASSED, AND THE DECISION THE POLICY'S.
+async function theProxyTakesAnAccessToken() {
+  log.debug("Entering theProxyTakesAnAccessToken().");
+  const admin = await personsToken(ADMIN_PERSON, PROXY_API_AUDIENCE);
+  const staff = await personsToken(STAFF_PERSON, PROXY_API_AUDIENCE);
+  const outsider = await personsToken(OUTSIDER_PERSON, PROXY_API_AUDIENCE);
+  const elsewhere = await personsToken(ADMIN_PERSON, PROXY_OTHER_AUDIENCE);
+  const items = pep.proxyUrl + "/pep-app/api/items";
+
+  const allowed = await proxyRequest("GET", items, {
+    headers: { authorization: "Bearer " + admin,
+               "x-remote-user": "mallory", "x-remote-auth": "forged",
+               "x-forwarded-for": "203.0.113.66" } });
+  check("a JWT for the route's audience is allowed for a permitted person",
+        function () {
+    assert.ok(admin.split(".").length === 3,
+      "the realm should have issued a JWT here (RFC 9068)");
+    assert.strictEqual(allowed.status, 200,
+      "GET /pep-app/api/items with " + ADMIN_PERSON + "'s token answered " +
+      told(allowed) + pepLog());
+    assert.strictEqual((allowed.json || {}).page, "items",
+      "and the application's items page answered it");
+  });
+  check("the token is not forwarded; the identity is, and the client's own " +
+        "identity and forwarding headers are overwritten", function () {
+    const h = (allowed.json || {}).headers || {};
+    assert.ok(!("authorization" in h),
+      "forwardCredentials is false, so Authorization must not reach the " +
+      "application; it arrived as " + JSON.stringify(h.authorization));
+    assert.strictEqual(echoedUser(allowed), ADMIN_PERSON,
+      "X-Remote-User is the person the token names, never what the client " +
+      "sent (mallory); it arrived as " + JSON.stringify(echoedUser(allowed)));
+    assert.ok(echoedMechanism(allowed) && echoedMechanism(allowed) !==
+              "forged" && /oauth/i.test(echoedMechanism(allowed)),
+      "X-Remote-Auth names the OAuth 2.0 mechanism; it arrived as " +
+      JSON.stringify(echoedMechanism(allowed)));
+    assert.ok(String(h["x-forwarded-for"] || "").indexOf("203.0.113.66") < 0,
+      "a client-supplied X-Forwarded-For is not passed on; it arrived as " +
+      JSON.stringify(h["x-forwarded-for"] || null));
+  });
+
+  const before = await upstreamHits();
+  const none = await proxyRequest("GET", items);
+  const wrongAudience = await proxyRequest("GET", items, {
+    headers: { authorization: "Bearer " + elsewhere } });
+  const forged = await proxyRequest("GET", items, {
+    headers: { authorization: "Bearer " + admin.slice(0, -4) + "AAAA" } });
+  const denied = await proxyRequest("GET", items, {
+    headers: { authorization: "Bearer " + outsider } });
+  const after = await upstreamHits();
+  check("no credential is 401 with a challenge for each mechanism",
+        function () {
+    assert.strictEqual(none.status, 401, "GET with nothing: " + told(none));
+    const challenge = String(none.headers["www-authenticate"] || "");
+    assert.ok(/Bearer/i.test(challenge) && /Basic/i.test(challenge),
+      "WWW-Authenticate should offer Bearer and Basic, the route's two " +
+      "mechanisms; it sent " + JSON.stringify(challenge));
+  });
+  check("a token for another audience is 401", function () {
+    assert.strictEqual(wrongAudience.status, 401,
+      "a token issued for " + PROXY_OTHER_AUDIENCE + " answered " +
+      told(wrongAudience));
+  });
+  check("a token whose signature does not verify is 401", function () {
+    assert.strictEqual(forged.status, 401,
+      "a JWT with its signature altered answered " + told(forged));
+  });
+  check("the policy's Deny for somebody it grants nothing is 403",
+        function () {
+    assert.strictEqual(denied.status, 403,
+      OUTSIDER_PERSON + " (employeeType contractor) answered " +
+      told(denied));
+    assert.strictEqual(hitsOn(after, "/pep-app/api/items"),
+                       hitsOn(before, "/pep-app/api/items"),
+      "and none of the four refusals reached the application");
+  });
+
+  const body = JSON.stringify({ name: "widget", made: names.runStamp(),
+                                note: "written through the remote PEP" });
+  const digest = nodeCrypto.createHash("sha256").update(body).digest("hex");
+  const wrote = await proxyRequest("POST", items, {
+    headers: { authorization: "Bearer " + admin,
+               "content-type": "application/json" }, body: body });
+  const beforeRefusedWrite = await upstreamHits();
+  const refusedWrite = await proxyRequest("POST", items, {
+    headers: { authorization: "Bearer " + staff,
+               "content-type": "application/json" }, body: body });
+  const tooLarge = await proxyRequest("POST", items, {
+    headers: { authorization: "Bearer " + admin,
+               "content-type": "application/octet-stream" },
+    body: Buffer.alloc(PROXY_MAX_BODY * 2, 0x61) });
+  const afterWrites = await upstreamHits();
+  check("a write by a permitted person reaches the application whole",
+        function () {
+    assert.strictEqual(wrote.status, 201,
+      "POST /pep-app/api/items by " + ADMIN_PERSON + " answered " +
+      told(wrote));
+    const got = (wrote.json || {}).body || {};
+    assert.ok(got.length === Buffer.byteLength(body) && got.sha256 === digest,
+      "the application should have received the body byte for byte (" +
+      Buffer.byteLength(body) + " bytes, " + digest + "); it got " +
+      JSON.stringify(got));
+  });
+  check("a write by somebody the policy limits to reads is 403",
+        function () {
+    assert.strictEqual(refusedWrite.status, 403,
+      "POST by " + STAFF_PERSON + " (staff: GET, HEAD, DELETE) answered " +
+      told(refusedWrite));
+    assert.strictEqual(hitsOn(afterWrites, "/pep-app/api/items"),
+                       hitsOn(beforeRefusedWrite, "/pep-app/api/items"),
+      "and the refused write never reached the application");
+  });
+  check("a body over maxBodyBytes is 413", function () {
+    assert.strictEqual(tooLarge.status, 413,
+      "a " + (PROXY_MAX_BODY * 2) + "-byte body against a " + PROXY_MAX_BODY +
+      "-byte bound answered " + told(tooLarge));
+  });
+
+  // AN OPAQUE ACCESS TOKEN (3cw), which the container cannot read and asks
+  // the service about (`POST /xacml/pep/introspect`, D7).
+  const formatBefore = await realmSetting("oauth2.accessTokenFormat");
+  const switched = await postJson(api("/config/set"),
+    { key: "oauth2.accessTokenFormat", value: "opaque" });
+  if (switched.status !== 200 ||
+      (switched.body && switched.body.ok === false)) {
+    log.warn("[proxy] the opaque-token case is SKIPPED: this realm would " +
+             "not issue opaque access tokens (oauth2.accessTokenFormat " +
+             "answered " + switched.status + " " +
+             String(switched.text).slice(0, 200) + ").");
+  } else {
+    try {
+      const opaque = await personsToken(ADMIN_PERSON, PROXY_API_AUDIENCE);
+      const viaService = await proxyRequest("GET", items, {
+        headers: { authorization: "Bearer " + opaque } });
+      const opaqueElsewhere = await personsToken(ADMIN_PERSON,
+                                                 PROXY_OTHER_AUDIENCE);
+      const refusedOpaque = await proxyRequest("GET", items, {
+        headers: { authorization: "Bearer " + opaqueElsewhere } });
+      check("an opaque access token is allowed through the service's " +
+            "introspection", function () {
+        assert.ok(opaque.indexOf(".") < 0,
+          "the realm should have issued an opaque handle; it issued a " +
+          "token with " + opaque.split(".").length + " parts");
+        assert.strictEqual(viaService.status, 200,
+          "GET with an opaque token answered " + told(viaService));
+        assert.strictEqual(echoedUser(viaService), ADMIN_PERSON,
+          "naming the person the service's introspection gave");
+      });
+      check("an opaque access token for another audience is 401",
+            function () {
+        assert.strictEqual(refusedOpaque.status, 401,
+          "an opaque token for " + PROXY_OTHER_AUDIENCE + " answered " +
+          told(refusedOpaque));
+      });
+    } finally {
+      await setSetting("oauth2.accessTokenFormat",
+                       String(formatBefore || "jwt"));
+    }
+  }
+  log.debug("Leaving theProxyTakesAnAccessToken().");
+}
+
+// 10d. HTTP BASIC: NEVER CHECKED IN THE CONTAINER, ALWAYS AT THE SERVICE.
+async function theProxyTakesBasic() {
+  log.debug("Entering theProxyTakesBasic().");
+  const items = pep.proxyUrl + "/pep-app/api/items";
+  const right = await proxyRequest("GET", items, {
+    headers: { authorization: basic(ADMIN_PERSON,
+                                    "pep-proxy-" + ADMIN_PERSON) } });
+  const before = await upstreamHits();
+  const wrong = await proxyRequest("GET", items, {
+    headers: { authorization: basic(ADMIN_PERSON, "invalid") } });
+  const staffWrite = await proxyRequest("POST", items, {
+    headers: { authorization: basic(STAFF_PERSON,
+                                    "pep-proxy-" + STAFF_PERSON),
+               "content-type": "application/json" }, body: "{}" });
+  const after = await upstreamHits();
+  check("Basic with a password the service accepts is allowed", function () {
+    assert.strictEqual(right.status, 200,
+      "GET with Basic for " + ADMIN_PERSON + " answered " + told(right));
+    assert.strictEqual(echoedUser(right), ADMIN_PERSON,
+      "naming the person to the application");
+    assert.ok(/basic/i.test(echoedMechanism(right)),
+      "and X-Remote-Auth names Basic; it arrived as " +
+      JSON.stringify(echoedMechanism(right)));
+    assert.ok(!("authorization" in ((right.json || {}).headers || {})),
+      "and the password does not reach the application");
+  });
+  check("Basic with the reserved refused password is 401", function () {
+    assert.strictEqual(wrong.status, 401,
+      "the password `invalid` is refused in development (authn/CLAUDE.md); " +
+      "it answered " + told(wrong));
+    assert.ok(/Basic/i.test(String(wrong.headers["www-authenticate"] || "")),
+      "with a Basic challenge");
+  });
+  check("Basic for somebody the policy limits to reads cannot write",
+        function () {
+    assert.strictEqual(staffWrite.status, 403,
+      "POST with Basic for " + STAFF_PERSON + " answered " +
+      told(staffWrite));
+    assert.strictEqual(hitsOn(after, "/pep-app/api/items"),
+                       hitsOn(before, "/pep-app/api/items"),
+      "and neither refusal reached the application");
+  });
+  log.debug("Leaving theProxyTakesBasic().");
+}
+
+// 10e. SAML 2.0: AN ASSERTION THIS REALM SIGNED, FOR THE ROUTE'S AUDIENCE.
+async function theProxyTakesAnAssertion() {
+  log.debug("Entering theProxyTakesAnAssertion().");
+  const page = pep.proxyUrl + "/pep-app/saml/document";
+  const assertion = await realmAssertion(ADMIN_PERSON, PROXY_SAML_AUDIENCE);
+  const encoded = Buffer.from(assertion, "utf8").toString("base64");
+  const allowed = await proxyRequest("GET", page, {
+    headers: { authorization: "SAML " + encoded } });
+  // ONE VALUE CHANGED IN THE SIGNED BYTES — the person's name where the
+  // assertion carries it, else its IssueInstant — so the signature no
+  // longer verifies, locally or at the service.
+  const altered = assertion.indexOf(ADMIN_PERSON) >= 0
+    ? assertion.split(ADMIN_PERSON).join(STAFF_PERSON)
+    : assertion.replace(/IssueInstant="(\d)/, function (all, digit) {
+      return 'IssueInstant="' + (digit === "1" ? "2" : "1");
+    });
+  const tampered = Buffer.from(altered, "utf8").toString("base64");
+  const otherAudience = Buffer.from(await realmAssertion(ADMIN_PERSON,
+    PROXY_OTHER_AUDIENCE), "utf8").toString("base64");
+  const before = await upstreamHits();
+  const refused = await proxyRequest("GET", page, {
+    headers: { authorization: "SAML " + tampered } });
+  const elsewhere = await proxyRequest("GET", page, {
+    headers: { authorization: "SAML " + otherAudience } });
+  const after = await upstreamHits();
+  check("an assertion this realm issued for the route's audience is " +
+        "allowed", function () {
+    assert.strictEqual(allowed.status, 200,
+      "GET /pep-app/saml/document with Authorization: SAML answered " +
+      told(allowed) + pepLog());
+    assert.strictEqual(echoedUser(allowed), ADMIN_PERSON,
+      "naming the person the assertion is about");
+    assert.ok(/saml/i.test(echoedMechanism(allowed)),
+      "and X-Remote-Auth names SAML; it arrived as " +
+      JSON.stringify(echoedMechanism(allowed)));
+    assert.ok(!("authorization" in ((allowed.json || {}).headers || {})),
+      "and the assertion does not reach the application");
+  });
+  check("a tampered assertion is 401", function () {
+    assert.ok(tampered !== encoded, "the tampering changed the bytes");
+    assert.strictEqual(refused.status, 401,
+      "an assertion whose signed NameID was altered answered " +
+      told(refused));
+  });
+  check("an assertion for another audience is 401", function () {
+    assert.strictEqual(elsewhere.status, 401,
+      "an assertion for " + PROXY_OTHER_AUDIENCE + " answered " +
+      told(elsewhere));
+    assert.strictEqual(hitsOn(after, "/pep-app/saml/document"),
+                       hitsOn(before, "/pep-app/saml/document"),
+      "and neither refusal reached the application");
+  });
+  log.debug("Leaving theProxyTakesAnAssertion().");
+}
+
+// 10e-ii. HOW THE IDENTITY REACHES THE APPLICATION (D11), in each of the
+// three modes, and what a client may not put there itself.
+async function theProxyForwardsTheIdentity() {
+  log.debug("Entering theProxyForwardsTheIdentity().");
+  const admin = await personsToken(ADMIN_PERSON, PROXY_API_AUDIENCE);
+  const adminSub = String((jwsPayloadOf(admin) || {}).sub || "");
+  const items = pep.proxyUrl + "/pep-app/api/items";
+
+  // HEADERS MODE: the five claims, and a client's own copy of one of them —
+  // in an odd case, sent twice — removed before the proxy adds its own.
+  const viaHeaders = await proxyRequest("GET", items, {
+    headers: { authorization: "Bearer " + admin,
+               "X-iYa-UsEr": ["forged-one", "forged-two"],
+               "x-iya-email": "mallory@evil.test" } });
+  const h = (viaHeaders.json || {}).headers || {};
+  check("headers mode: the configured claims reach the application",
+        function () {
+    assert.strictEqual(viaHeaders.status, 200,
+      "GET /pep-app/api/items answered " + told(viaHeaders));
+    assert.ok(adminSub, "the realm's JWT carries a sub");
+    assert.strictEqual(h["x-iya-user"], adminSub,
+      "X-Iya-User is the person's sub; it arrived as " +
+      JSON.stringify(h["x-iya-user"]));
+    assert.strictEqual(h["x-iya-email"],
+                       ADMIN_PERSON + "@xacml-remote-pep.test",
+      "X-Iya-Email is the entry's mail; it arrived as " +
+      JSON.stringify(h["x-iya-email"]));
+    assert.ok(String(h["x-iya-groups"] || "").split(",")
+      .indexOf("ssf-read") >= 0,
+      "X-Iya-Groups lists the person's groups, joined by the separator; it " +
+      "arrived as " + JSON.stringify(h["x-iya-groups"]));
+  });
+  check("headers mode: a client's own identity header is removed whatever " +
+        "its case and however often it was sent", function () {
+    assert.ok(String(h["x-iya-user"]).indexOf("forged") < 0 &&
+              String(h["x-iya-email"]).indexOf("mallory") < 0,
+      "the client sent X-iYa-UsEr twice and x-iya-email once; the " +
+      "application saw " + JSON.stringify({ user: h["x-iya-user"],
+                                            email: h["x-iya-email"] }));
+  });
+
+  // JWT MODE: a token the service issued for the application's audience.
+  const byBasic = await proxyRequest("GET", pep.proxyUrl + "/pep-app/jwt/a",
+    { headers: { authorization: basic(ADMIN_PERSON,
+                                      "pep-proxy-" + ADMIN_PERSON) } });
+  const byToken = await proxyRequest("GET", pep.proxyUrl + "/pep-app/jwt/b",
+    { headers: { authorization: "Bearer " + admin } });
+  const issued = function (r) {
+    log.debug("Entering issued().");
+    log.debug("Leaving issued().");
+    return ((r.json || {}).jwt) || {};
+  };
+  check("jwt mode: the application is sent a Bearer token the service " +
+        "issued for its audience, about the person", function () {
+    assert.strictEqual(byBasic.status, 200,
+      "GET /pep-app/jwt/a with Basic answered " + told(byBasic));
+    const sent = String(((byBasic.json || {}).headers || {}).authorization ||
+                        "");
+    assert.ok(/^Bearer\s+\S+\.\S+\.\S+$/.test(sent),
+      "Authorization reaching the application is a Bearer JWT, not the " +
+      "client's Basic credential; it is " + sent.slice(0, 20));
+    const jwt = issued(byBasic);
+    assert.strictEqual(jwt.verified, true,
+      "and it verifies against the realm's JWKS: " + jwt.why);
+    assert.strictEqual(String((jwt.payload || {}).sub), adminSub,
+      "its sub is the person's; it is " + JSON.stringify(jwt.payload));
+    assert.ok([].concat((jwt.payload || {}).aud || [])
+      .indexOf(PROXY_API_AUDIENCE) >= 0,
+      "its aud is the application's audience " + PROXY_API_AUDIENCE);
+  });
+  check("jwt mode: the client's own Authorization is gone", function () {
+    assert.strictEqual(byToken.status, 200,
+      "GET /pep-app/jwt/b with a Bearer token answered " + told(byToken));
+    const sent = String(((byToken.json || {}).headers || {}).authorization ||
+                        "");
+    assert.ok(sent && sent !== "Bearer " + admin,
+      "the application must be sent the token the service issued for it, " +
+      "never the client's own");
+    assert.strictEqual(issued(byToken).verified, true,
+      "and that token verifies: " + issued(byToken).why);
+  });
+
+  // SAML MODE: the proxy POSTs the service's assertion to the
+  // application's ACS server-side and forwards the request with the
+  // application's cookie, which the browser never sees.
+  const hitsBefore = await upstreamHits();
+  const viaSaml = await proxyRequest("GET", pep.proxyUrl +
+    "/pep-app/saml-app/page", { headers: { authorization:
+      basic(ADMIN_PERSON, "pep-proxy-" + ADMIN_PERSON) } });
+  const hitsAfter = await upstreamHits();
+  check("saml mode: the application's ACS was sent an assertion about the " +
+        "person and the request arrives in that session", function () {
+    assert.strictEqual(viaSaml.status, 200,
+      "GET /pep-app/saml-app/page answered " + told(viaSaml) + pepLog());
+    const saml = (viaSaml.json || {}).saml || {};
+    const nameId = String(saml.nameId || "");
+    assert.ok(nameId && (nameId === ADMIN_PERSON || nameId === adminSub ||
+                         nameId.indexOf(ADMIN_PERSON) >= 0),
+      "the echo's saml.nameId names the person; the echo holds " +
+      JSON.stringify(viaSaml.json && viaSaml.json.saml));
+    assert.ok(hitsOn(hitsAfter, "/pep-app/saml/acs") >
+              hitsOn(hitsBefore, "/pep-app/saml/acs"),
+      "and the ACS was posted to");
+  });
+  check("saml mode: the browser never receives the application's cookie",
+        function () {
+    const set = [].concat(viaSaml.headers["set-cookie"] || []).join(" ");
+    assert.ok(set.indexOf("pep_app_saml") < 0,
+      "the proxy keeps the application's cookie in a jar of its own; it " +
+      "sent the client " + JSON.stringify(set));
+  });
+  log.debug("Leaving theProxyForwardsTheIdentity().");
+}
+
+// The payload of a compact JWS this job holds, unverified.
+function jwsPayloadOf(token) {
+  log.debug("Entering jwsPayloadOf().");
+  try {
+    const part = String(token || "").split(".")[1] || "";
+    const out = JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+    log.debug("Leaving jwsPayloadOf().");
+    return out;
+  } catch (e) {
+    log.debug("Caught in jwsPayloadOf(): " + ((e && e.message) || e));
+    log.debug("Leaving jwsPayloadOf(). Not a JWS.");
+    return null;
+  }
+}
+
+// 10f. THE SESSION MECHANISM (D5 revised, D10): THE PROXY IS THE RELYING
+// PARTY OF THE APPLICATION BEHIND IT. Signed in through the service as
+// that confidential client, kept by the proxy's own cookie, and ended by a
+// sign-out at the service — through the library's CAEP poll stream on a
+// `signals: true` route, and through `POST /xacml/pep/session` on a
+// `signals: false` one.
+
+// One person signed in through the proxy at `page` with a fresh browser.
+async function signInThroughTheProxy(page) {
+  log.debug("Entering signInThroughTheProxy(). " + page);
+  const jars = browserJars();
+  const walked = await browse(jars, page, ADMIN_PERSON);
+  log.debug("Leaving signInThroughTheProxy(). " + walked.r.status);
+  return { jars: jars, walked: walked };
+}
+
+async function signOutAtTheService(jars) {
+  log.debug("Entering signOutAtTheService().");
+  const serviceJarUrl = realmUrl("/logout");
+  const out = await authnSignin.signOut(realmUrl(""), { scope: "global" },
+    { cookie: jarHeader(jars, serviceJarUrl) });
+  jarTake(jars, serviceJarUrl, out.setCookies);
+  assert.strictEqual(out.status, 200,
+    "the global sign-out at the service answered " + out.status + " " +
+    String(out.text).slice(0, 200));
+  log.debug("Leaving signOutAtTheService().");
+}
+
+function signedInOn(walked, page) {
+  log.debug("Entering signedInOn().");
+  assert.strictEqual(walked.r.status, 200,
+    "the sign-in should end on " + page + "; it ended " + walked.r.status +
+    " at " + walked.url + " after " + JSON.stringify(walked.passed) + " " +
+    withoutSecrets(walked.r.text).slice(0, 300) + pepLog());
+  assert.ok(walked.passed.some(function (one) {
+    return one.indexOf("/.iya-pep/callback") >= 0;
+  }), "through the proxy's callback; it passed " +
+      JSON.stringify(walked.passed));
+  assert.strictEqual(echoedUser(walked.r), ADMIN_PERSON,
+    "naming the person who signed in to the application");
+  assert.ok(/session/i.test(echoedMechanism(walked.r)),
+    "by the session mechanism; X-Remote-Auth arrived as " +
+    JSON.stringify(echoedMechanism(walked.r)));
+  log.debug("Leaving signedInOn().");
+}
+
+async function theProxyHoldsASession() {
+  log.debug("Entering theProxyHoldsASession().");
+  const origin = pep.proxyHttpsUrl;
+  const protectedPage = origin + "/pep-app/protected/report";
+  const before = await upstreamHits();
+  const machine = await proxyRequest("GET", protectedPage, {
+    headers: { accept: "application/json" } });
+  const jars = browserJars();
+  const first = await browserGet(jars, protectedPage);
+  const afterFirst = await upstreamHits();
+  check("a browser with no session is sent to sign in at the service as " +
+        "the application's own client", function () {
+    assert.ok(machine.status === 401 || machine.status === 302,
+      "a request with no session and no browser Accept is refused; it " +
+      "answered " + told(machine));
+    assert.strictEqual(first.status, 302,
+      "GET " + protectedPage + " as a browser should be a 302 to sign in " +
+      "(D8); it answered " + first.status + " " +
+      String(first.text).slice(0, 200));
+    const to = new URL(first.location, protectedPage);
+    assert.ok(/\/oauth2\/authorize$/.test(to.pathname) &&
+              to.pathname.indexOf("/realm/" + REALM + "/") >= 0,
+      "to this realm's authorization endpoint; it is " + to.pathname);
+    assert.strictEqual(to.searchParams.get("client_id"), PROXY_APP,
+      "as the confidential client the route's application is (D10); it " +
+      "asked as " + to.searchParams.get("client_id"));
+    assert.strictEqual(to.searchParams.get("redirect_uri"),
+                       origin + "/.iya-pep/callback",
+      "returning to the proxy's reserved callback under publicBaseUrl");
+    assert.strictEqual(to.searchParams.get("code_challenge_method"), "S256",
+      "with PKCE S256, which the relying party library requires");
+    assert.ok(carriesNoSecret(first.location),
+      "and no client secret in the address");
+    assert.strictEqual(hitsOn(afterFirst, "/pep-app/protected/report"),
+                       hitsOn(before, "/pep-app/protected/report"),
+      "and the application saw neither request");
+  });
+
+  const walked = await browse(jars, protectedPage, ADMIN_PERSON);
+  const proxyCookies = Object.assign({}, jars[originOf(origin)] || {});
+  check("signed in at the service, the browser reaches the protected page " +
+        "with the identity headers and a proxy session of its own",
+        function () {
+    signedInOn(walked, protectedPage);
+    assert.strictEqual((walked.r.json || {}).page, "protected",
+      "the application's protected page answered");
+    assert.ok(Object.keys(proxyCookies).length > 0,
+      "and the proxy set a cookie on its own origin");
+    const forwarded = String(((walked.r.json || {}).headers || {}).cookie ||
+                             "");
+    Object.keys(proxyCookies).forEach(function (name) {
+      assert.ok(forwarded.indexOf(name + "=" + proxyCookies[name]) < 0,
+        "the proxy's own cookie " + name + " must not reach the " +
+        "application; it forwarded " + JSON.stringify(forwarded));
+    });
+  });
+
+  const again = await browserGet(jars, protectedPage);
+  check("the proxy session carries the next access without a sign-in",
+        function () {
+    assert.ok(again.status === 200 && echoedUser(again) === ADMIN_PERSON,
+      "a second GET with the proxy's cookie answered " + again.status);
+  });
+
+  // THE SIGN-OUT, BY CAEP (D5 revised): the relying party's poll stream is
+  // sent `session-revoked` for the session it signed in under, and the
+  // library removes that session. Polled for a bounded time, because the
+  // library polls on an interval of its own.
+  await signOutAtTheService(jars);
+  const revoked = await until("the PEP's relying party to end the proxy " +
+                              "session on the CAEP session-revoked",
+                              async function () {
+    const r = await browserGet(jars, protectedPage);
+    return { ok: r.status === 302 || r.status === 401,
+             note: "GET " + protectedPage + " still answered " + r.status };
+  }, PROXY_SIGNAL_MS);
+  log.info("The CAEP session-revoked ended the proxy session " +
+           revoked.ms + "ms after the sign-out at the service.");
+  const beforeEnded = await upstreamHits();
+  const ended = await browserGet(jars, protectedPage);
+  const afterEnded = await upstreamHits();
+  check("a sign-out at the service ends the proxy session through the CAEP " +
+        "poll stream, and nothing reaches the application after it",
+        function () {
+    assert.ok(ended.status === 302 || ended.status === 401,
+      "the access after the session-revoked must stay refused; it " +
+      "answered " + ended.status + pepLog());
+    assert.strictEqual(hitsOn(afterEnded, "/pep-app/protected/report"),
+                       hitsOn(beforeEnded, "/pep-app/protected/report"),
+      "and the application saw nothing");
+  });
+
+  // THE FALLBACK (`signals: false`): no poll stream; the PEP asks
+  // `POST /xacml/pep/session` before each access
+  // (PEP_PROXY_SESSION_RECHECK_MS=0 in this stack), so the very next access
+  // after a sign-out is refused.
+  const fallbackPage = origin + "/pep-app/protected-fallback/report";
+  const viaFallback = await signInThroughTheProxy(fallbackPage);
+  check("a signals:false session route signs in the same way", function () {
+    signedInOn(viaFallback.walked, fallbackPage);
+  });
+  await signOutAtTheService(viaFallback.jars);
+  const beforeFallback = await upstreamHits();
+  const fallbackEnded = await browserGet(viaFallback.jars, fallbackPage);
+  const afterFallback = await upstreamHits();
+  check("on a signals:false route the next access after a sign-out is " +
+        "refused, asked of the service", function () {
+    assert.ok(fallbackEnded.status === 302 || fallbackEnded.status === 401,
+      "with PEP_PROXY_SESSION_RECHECK_MS=0 the PEP asks " +
+      "POST /xacml/pep/session before this access; it answered " +
+      fallbackEnded.status + pepLog());
+    assert.strictEqual(
+      hitsOn(afterFallback, "/pep-app/protected-fallback/report"),
+      hitsOn(beforeFallback, "/pep-app/protected-fallback/report"),
+      "and the application saw nothing");
+  });
+
+  // A ROTATED SECRET (D10): `regenerate-secret` replaces the client secret
+  // at once, which moves the pull's sync token; after the next pull a new
+  // sign-in through the proxy works with the new one.
+  const rotated = await postJson(api("/applications/regenerate-secret"),
+                                 { application: PROXY_APP });
+  assert.ok(rotated.status === 200 && rotated.body &&
+            rotated.body.ok !== false && rotated.body.clientSecret,
+    "POST /admin-api/applications/regenerate-secret for " + PROXY_APP +
+    " answered " + rotated.status + " " +
+    withoutSecrets(rotated.text).slice(0, 200));
+  PROXY_SECRETS.push(String(rotated.body.clientSecret));
+  const listedAfter = await get(api("/xacml/peps"));
+  check("the regenerated secret is not on the PEP's row either",
+        function () {
+    assert.ok(carriesNoSecret(listedAfter.text),
+      "GET /admin-api/xacml/peps must carry no client secret");
+  });
+  const afterRotation = await until("a new sign-in through the proxy to " +
+                                    "work with the regenerated secret",
+                                    async function () {
+    const one = await signInThroughTheProxy(protectedPage);
+    return { ok: one.walked.r.status === 200 &&
+                 echoedUser(one.walked.r) === ADMIN_PERSON,
+             note: "the sign-in ended " + one.walked.r.status + " after " +
+                   JSON.stringify(one.walked.passed) };
+  }, CONVERGE_MS);
+  log.info("A sign-in worked " + afterRotation.ms + "ms after the secret " +
+           "was regenerated (the PEP's poll is " + POLL_MS + "ms).");
+  check("after a secret rotation and a pull, a new sign-in works",
+        function () {
+    assert.ok(afterRotation.ok, "the sign-in worked");
+  });
+  log.debug("Leaving theProxyHoldsASession().");
+}
+
+// 10i. AN APPLICATION A ROUTE NAMES IS DELETED: the route is refused (403)
+// after the next pull — never admitted on a stale copy — and the PEP's row
+// says the route is unusable (D10).
+async function theProxyLosesAnApplication() {
+  log.debug("Entering theProxyLosesAnApplication().");
+  const page = pep.proxyUrl + "/pep-app/scratch/page";
+  const credential = { authorization: basic(ADMIN_PERSON,
+                                            "pep-proxy-" + ADMIN_PERSON) };
+  const before = await proxyRequest("GET", page, { headers: credential });
+  check("a route whose application exists is served", function () {
+    assert.strictEqual(before.status, 200,
+      "GET /pep-app/scratch/page with Basic answered " + told(before));
+  });
+  const forgot = await postJson(api("/applications/forget"),
+                                { application: PROXY_SCRATCH_APP });
+  assert.ok(forgot.status === 200 && forgot.body && forgot.body.ok !== false,
+    "POST /admin-api/applications/forget for " + PROXY_SCRATCH_APP +
+    " answered " + forgot.status + " " + String(forgot.text).slice(0, 200));
+  const refused = await until("the PEP to refuse the route whose " +
+                              "application was deleted", async function () {
+    const r = await proxyRequest("GET", page, { headers: credential });
+    return { ok: r.status === 403,
+             note: "GET /pep-app/scratch/page answered " + told(r) };
+  });
+  log.info("The PEP refused the scratch route " + refused.ms + "ms after " +
+           "its application was deleted.");
+  const hitsBefore = await upstreamHits();
+  const still = await proxyRequest("GET", page, { headers: credential });
+  const hitsAfter = await upstreamHits();
+  const row = await pepRow();
+  check("a route whose application is gone is refused and reaches nothing",
+        function () {
+    assert.strictEqual(still.status, 403,
+      "the route stays refused; it answered " + told(still));
+    assert.strictEqual(hitsOn(hitsAfter, "/pep-app/scratch/page"),
+                       hitsOn(hitsBefore, "/pep-app/scratch/page"),
+      "and the application saw nothing");
+  });
+  check("the PEP's row says the route is unusable", function () {
+    const route = ((((row.row || {}).proxy || {}).routes) || [])
+      .filter(function (one) {
+        return one.id === "scratch";
+      })[0] || {};
+    const resolved = route.resolved || {};
+    assert.ok(resolved.usable === false || route.usable === false,
+      "GET /admin-api/xacml/peps should mark the scratch route unusable " +
+      "(D10); it holds " + JSON.stringify(route).slice(0, 300));
+  });
+  log.debug("Leaving theProxyLosesAnApplication().");
+}
+
+// 10g. WHAT THE PROXY DOES WITH THE WIRE: A SLOW UPSTREAM AND A RESPONSE'S
+// HOP-BY-HOP HEADERS.
+async function theProxyGuardsTheWire() {
+  log.debug("Entering theProxyGuardsTheWire().");
+  const slow = await proxyRequest("GET", pep.proxyUrl +
+    "/pep-app/slow?ms=" + (PROXY_TIMEOUT_MS * 3), { timeoutMs: 30000 });
+  check("an upstream slower than upstreamTimeoutMs is 504", function () {
+    assert.strictEqual(slow.status, 504,
+      "GET /pep-app/slow?ms=" + (PROXY_TIMEOUT_MS * 3) + " against a " +
+      PROXY_TIMEOUT_MS + "ms timeout answered " + told(slow));
+    assert.ok(slow.ms < PROXY_TIMEOUT_MS * 3,
+      "and answered before the upstream would have (" + slow.ms + "ms)");
+  });
+  const hop = await proxyRequest("GET", pep.proxyUrl + "/pep-app/public/hop");
+  check("the application's hop-by-hop headers stop at the proxy",
+        function () {
+    assert.strictEqual(hop.status, 200, "GET /pep-app/public/hop answered " +
+                       told(hop));
+    assert.ok(!("x-upstream-secret" in hop.headers),
+      "X-Upstream-Secret is named by the application's Connection header, " +
+      "so it is hop-by-hop (RFC 9110 section 7.6.1) and must not be " +
+      "forwarded; the proxy sent " + JSON.stringify(hop.headers));
+    assert.ok(String(hop.headers.connection || "").toLowerCase()
+      .indexOf("x-upstream-secret") < 0,
+      "nor the application's Connection header itself");
+    assert.ok(!("keep-alive" in hop.headers) ||
+              !/timeout=5/.test(String(hop.headers["keep-alive"])),
+      "nor its Keep-Alive");
+    assert.strictEqual(hop.headers["x-upstream-visible"], "end-to-end",
+      "while an end-to-end header passes untouched");
+  });
+  log.debug("Leaving theProxyGuardsTheWire().");
+}
+
+// 10h. CLEARED, THE PROXY ANSWERS NOTHING AGAIN.
+async function theProxyIsCleared() {
+  log.debug("Entering theProxyIsCleared().");
+  await act("clear-pep-proxy", { name: PEP_NAME },
+            "cleared the proxy configuration of " + PEP_NAME);
+  const row = await pepRow();
+  check("a cleared PEP's row holds no proxy", function () {
+    assert.ok(row.row && !row.row.proxy,
+      "the row still holds " + JSON.stringify(row.row && row.row.proxy));
+  });
+  const gone = await until("the PEP to drop its proxy configuration",
+                           async function () {
+    const r = await proxyRequest("GET", pep.proxyUrl + "/pep-app/public/");
+    return { ok: r.status === 404,
+             note: "GET /pep-app/public/ through the proxy said " + told(r) };
+  });
+  log.info("The PEP stopped proxying " + gone.ms + "ms after the clear.");
+  log.debug("Leaving theProxyIsCleared().");
+}
+
 // ---------------------------------------------------------------------------
 // THE REALM, AND WHY IT IS LEFT STANDING (2026-09-06).
 //
@@ -3149,6 +4917,10 @@ async function test() {
       await theNudgeIsDelivered(polledMs);
       await thePdpSeesWhatItNeverSaw();
       await theNudgeCarriesNothing();
+      // Section 10 (#1760) BEFORE section 9, which takes the PDP away for
+      // good: the proxy pulls its configuration and validates credentials
+      // at the service, so it needs the seam section 9 cuts.
+      await itProxiesAnApplication();
       await itKeepsEnforcingWhenThePdpIsGone();
     } finally {
       stopThePep();
