@@ -21,11 +21,15 @@
 // second node answer requests at all:
 //
 //   1. **A REQUEST IS SERVED AFTER ITS NODE HAS APPLIED EVERYTHING COMMITTED
-//      BEFORE IT ARRIVED.** The serving process reads the change log's head
-//      (`latestBlockingChangeSeq()`) and pulls until it has applied it, using
-//      the same `syncNow()` the in-container barrier uses. Concurrent requests
-//      share one read of the head when they arrived before it was taken — a
-//      read taken before a request arrived cannot stand in for one taken after.
+//      BEFORE IT ARRIVED.** The serving process waits, through the same
+//      `syncNow()` the in-container barrier uses, for a pull of the change log
+//      that STARTED after the request arrived: such a pull reads with
+//      snapshots taken after it, so it applies every row committed before it.
+//      There is no read of the log's head since 2026-09-14 — the pull is the
+//      proof (`persistence/persistence_replication.js`, `syncNow()`).
+//      Concurrent requests share one pull when they arrived before it
+//      started — a pull begun before a request arrived cannot stand in for
+//      one begun after.
 //   2. **A REQUEST THAT WROTE IS ANSWERED ONLY ONCE ITS WRITES HAVE COMMITTED.**
 //      Without this rule 1 is a race: A answers the redirect, the browser is at
 //      B before A's flush lands, and B's read of the head does not include it.
