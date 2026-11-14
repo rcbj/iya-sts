@@ -166,7 +166,19 @@ directory:
 | BSD-3-Clause OR GPL-2.0 | node-forge, used under BSD-3-Clause |
 | Unlicense | isbot |
 
-Their transitive dependencies, and the optional packages under
+## Runtime dependencies in the remote PEP image
+
+The remote XACML PEP (`xacml-pep/`) is a Rust binary, and its crates are
+compiled into it from crates.io at the versions `rust/Cargo.lock` pins. Each
+carries its own licence in the Cargo registry. One of them is named here
+because it was added for a protocol rather than a primitive (#1760,
+`rust/DESIGN.md` section 7):
+
+| Licence | Crate |
+|---|---|
+| MIT | `oidc-caep-risc` 0.2.1 (crates.io; source github.com/rcbj/oidc-caep-risc-rust, the same owner): the reverse proxy's OpenID Connect relying party and CAEP/RISC receiver |
+
+The npm packages' transitive dependencies, and the optional packages under
 `peerDependencies` — the cloud SDKs, and the attribute sources' database
 drivers `mysql2` and `tedious` (MIT) and `oracledb` (Apache-2.0 OR UPL-1.0) —
 carry their licences the same way. The test suite's

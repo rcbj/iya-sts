@@ -66,8 +66,13 @@ pub struct HttpsListener {
     status: Mutex<Status>,
     acceptor: RwLock<Option<Arc<SslAcceptor>>>,
     /// The authorities a caller's certificate must chain to (#1179); none
-    /// means no certificate is asked for.
+    /// means no certificate is asked for — unless `ask_any`.
     client_ca: Vec<X509>,
+    /// The reverse proxy's listener (#1760): ask EVERY client for a
+    /// certificate, verify none against an authority, require none. The
+    /// handshake alone proves possession of the key, which is all a
+    /// certificate-bound token's `cnf.x5t#S256` asks.
+    ask_any: bool,
 }
 
 /// The certificate a caller presented on an HTTPS connection: the SHA-256
@@ -87,6 +92,9 @@ pub struct Peer {
 pub struct Transport {
     pub https: bool,
     pub peer: Option<Peer>,
+    /// The address the connection came from: the reverse proxy's
+    /// `X-Forwarded-For` (#1760). Never a header a client sent.
+    pub remote: Option<std::net::SocketAddr>,
 }
 
 /// The caller's certificate on an accepted connection, read with the
@@ -223,6 +231,7 @@ fn acceptor_for(
     cert: &[u8],
     key: &[u8],
     client_ca: &[X509],
+    ask_any: bool,
 ) -> Result<(SslAcceptor, X509), String> {
     let chain = X509::stack_from_pem(cert).map_err(|e| e.to_string())?;
     let mut chain = chain.into_iter();
@@ -272,6 +281,14 @@ fn acceptor_for(
         builder
             .set_session_id_context(b"xacml-pep-authzen")
             .map_err(|e| e.to_string())?;
+    } else if ask_any {
+        // ASKED OF EVERYBODY, CHECKED AGAINST NOBODY: the proxy reads the
+        // presented certificate's digest for `cnf.x5t#S256` and nothing
+        // else, and a client with none still completes the handshake.
+        builder.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
+        builder
+            .set_session_id_context(b"xacml-pep-proxy")
+            .map_err(|e| e.to_string())?;
     }
     Ok((builder.build(), leaf))
 }
@@ -292,7 +309,28 @@ impl HttpsListener {
             status: Mutex::new(Status::default()),
             acceptor: RwLock::new(None),
             client_ca: client_authorities(client_ca),
+            ask_any: false,
         }
+    }
+
+    /// The reverse proxy's HTTPS listener (#1760): the same pair, re-read
+    /// on the same interval, on a port of its own, asking every client for
+    /// a certificate and requiring none.
+    pub fn for_proxy(
+        cert_path: &str,
+        key_path: &str,
+        port: u16,
+        reload_interval_ms: u64,
+    ) -> HttpsListener {
+        let mut listener = HttpsListener::new(
+            cert_path,
+            key_path,
+            port,
+            reload_interval_ms,
+            None,
+        );
+        listener.ask_any = true;
+        listener
     }
 
     /// Whether this listener asks callers for a certificate (#1179).
@@ -399,14 +437,14 @@ impl HttpsListener {
         if digest == self.status().digest {
             return false;
         }
-        let (acceptor, leaf) = match acceptor_for(&cert, &key, &self.client_ca)
-        {
-            Ok(built) => built,
-            Err(error) => {
-                let listening = self.status().listening;
-                self.problem(
-                    "STS-XPEP-0030",
-                    format!(
+        let (acceptor, leaf) =
+            match acceptor_for(&cert, &key, &self.client_ca, self.ask_any) {
+                Ok(built) => built,
+                Err(error) => {
+                    let listening = self.status().listening;
+                    self.problem(
+                        "STS-XPEP-0030",
+                        format!(
                         "the HTTPS certificate and key were not used: {}. {}",
                         error,
                         if listening {
@@ -415,11 +453,11 @@ impl HttpsListener {
                             "The listener starts when a usable pair is written."
                         }
                     ),
-                    false,
-                );
-                return false;
-            }
-        };
+                        false,
+                    );
+                    return false;
+                }
+            };
         let (served, from, to) = describe_served(&leaf);
         let now = Utc::now();
         if from.is_some_and(|f| now < f) || to.is_some_and(|t| now > t) {
@@ -614,9 +652,18 @@ mod tests {
         client_ca: &[X509],
         presented: Option<&(Vec<u8>, Vec<u8>)>,
     ) -> Option<Peer> {
+        handshake_with(client_ca, presented, false)
+    }
+
+    fn handshake_with(
+        client_ca: &[X509],
+        presented: Option<&(Vec<u8>, Vec<u8>)>,
+        ask_any: bool,
+    ) -> Option<Peer> {
         use openssl::ssl::{SslConnector, SslVerifyMode};
         let (cert, key) = pair();
-        let (acceptor, _) = acceptor_for(&cert, &key, client_ca).unwrap();
+        let (acceptor, _) =
+            acceptor_for(&cert, &key, client_ca, ask_any).unwrap();
         let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = server.local_addr().unwrap().port();
         let thread = std::thread::spawn(move || {
@@ -672,5 +719,25 @@ mod tests {
         assert!(!other.why.is_empty());
         assert!(handshake(&ca, None).is_none());
         assert!(handshake(&[], Some(&caller)).is_none());
+    }
+
+    /// The reverse proxy's listener (#1760): it asks EVERY client for a
+    /// certificate with no authority to check it against, reads the one
+    /// presented (for `cnf.x5t#S256`), and lets a client with none in.
+    #[test]
+    fn the_proxy_listener_asks_everybody_and_requires_nobody() {
+        let caller = pair();
+        let peer = handshake_with(&[], Some(&caller), true).unwrap();
+        let expected = X509::from_pem(&caller.0)
+            .unwrap()
+            .digest(MessageDigest::sha256())
+            .unwrap()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
+        assert_eq!(peer.sha256, expected);
+        assert!(handshake_with(&[], None, true).is_none());
+        let proxy = HttpsListener::for_proxy("c", "k", 9543, 100);
+        assert!(proxy.ask_any && !proxy.asks_for_client_certificates());
     }
 }

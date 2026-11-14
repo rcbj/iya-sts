@@ -15,6 +15,12 @@
 
 version = 1
 
+# Third-party CRATES are not files in this tree, so they take no annotation
+# here (and one naming a path that does not exist fails
+# tests/copyright_notices.js). rust/Cargo.lock pins them; LICENSE.md, *Runtime
+# dependencies in the remote PEP image*, names oidc-caep-risc 0.2.1 (MIT,
+# crates.io), the reverse proxy's relying party (#1760).
+
 # Everything this project wrote: the Business Source License 1.1 since
 # 2026-09-30 (LICENSE.md; what was published before that stays MIT).
 [[annotations]]

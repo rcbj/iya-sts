@@ -34,6 +34,11 @@ pub struct Answer {
     /// refused connection for the AuthZEN forward (#564), which answers 504
     /// for the one and 502 for the other.
     pub timed_out: bool,
+    /// The answer's `ETag`, for the proxy pull's `If-None-Match` (#1760).
+    pub etag: Option<String>,
+    /// The answer's `Retry-After`, passed on with a 429 from the service's
+    /// Basic door (#1760).
+    pub retry_after: Option<String>,
 }
 
 impl Answer {
@@ -150,9 +155,25 @@ impl PdpClient {
         timeout: Option<Duration>,
     ) -> Answer {
         let url = format!("{}{}", self.base, path);
+        self.call_url(method, &url, body, headers, timeout).await
+    }
+
+    /// One call to an ABSOLUTE URL the PDP named in a pull (#1760: the
+    /// realm's JWKS and token endpoint, the four validation endpoints) —
+    /// through the same client, so the same certificate and the same
+    /// verification of whoever answers. Never a URL from a request.
+    #[tracing::instrument(level = "debug", skip(self, body, headers))]
+    pub async fn call_url(
+        &self,
+        method: Method,
+        url: &str,
+        body: Option<Body>,
+        headers: &[(&str, String)],
+        timeout: Option<Duration>,
+    ) -> Answer {
         let mut request = self
             .http
-            .request(method, &url)
+            .request(method, url)
             .header("Accept", "application/json");
         for (name, value) in headers {
             request = request.header(*name, value.as_str());
@@ -173,6 +194,15 @@ impl PdpClient {
             Err(error) => return Answer::failed_by(&error),
         };
         let status = response.status().as_u16();
+        let header = |name: &str| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string)
+        };
+        let etag = header("etag");
+        let retry_after = header("retry-after");
         let mut bytes = Vec::new();
         loop {
             match response.chunk().await {
@@ -199,6 +229,8 @@ impl PdpClient {
             json,
             error: None,
             timed_out: false,
+            etag,
+            retry_after,
         }
     }
 }
