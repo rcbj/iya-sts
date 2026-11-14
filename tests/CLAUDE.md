@@ -2613,7 +2613,10 @@ is fixed in the service.
     `client_auth_type=private_key_jwt`, `fapi_auth_request_method=by_value`,
     `fapi_response_mode=plain_response`, `fapi_client_type=oidc`;
     `fedResponseMode=fragment` (the hybrid answer comes back in the
-    fragment).
+    fragment; the suite's document offers no form_post). Until 2026-11-14
+    the client decided the fragment page on the stored `code`, so every
+    positive module timed out and every negative passed for nothing
+    (`federation/CLAUDE.md`, *WHAT THE SECOND RUN FOUND*).
   * `fapi1adv-mtls` — the same with `client_auth_type=mtls` and
     `fedTokenAuth=tls_client_auth`.
   * `fapi2sp` — `fapi2-security-profile-final-client-test-plan`,
