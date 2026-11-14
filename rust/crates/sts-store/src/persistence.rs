@@ -909,6 +909,11 @@ impl Persistence {
             self.driver.clone(),
         )
         .await?;
+        // The driver seals what it writes under these keys (#391) and opens
+        // what it reads, the directory below included.
+        if let Some(driver) = self.driver.as_ref() {
+            driver.adopt_data_keys(&keys);
+        }
         // EVERY STORED KEY SET IS CHECKED HERE, before anything binds: the
         // wrong key-encryption key stops the start rather than the first
         // signature (STS-KEYS-0029).

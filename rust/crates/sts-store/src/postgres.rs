@@ -22,9 +22,15 @@
 //! * **The cluster's time is the database's** (`clock_timestamp()` in
 //!   milliseconds), for membership, leases and claims alike.
 //!
-//! Not yet here: the change log other processes replay, the minted stores,
-//! the sealed entry form, and the queries a windowed worker asks. Until the
-//! change log is, one node writes and the others read at start only.
+//! * **Entries are sealed where a durable key is held** (#391): the driver
+//!   adopts the process's data keys when the keystore starts and writes
+//!   through [`EntryCodec`], `dek_keys` included, exactly as Node does.
+//! * **The schema is Node's, version [`SCHEMA_VERSION`]**: a store a 1.x
+//!   install wrote is opened as it is (the cutover upgrades in place).
+//!
+//! Not yet here: the side tables a windowed process reads
+//! (`sts_sessions`, `sts_minted_index`, the counts), and the queries a
+//! windowed worker asks.
 
 use std::sync::Arc;
 
@@ -42,7 +48,7 @@ use sts_core::errors::codes;
 use sts_core::log::tag;
 use tokio_postgres::Row;
 
-use crate::codec;
+use crate::codec::EntryCodec;
 use crate::driver::{
     ChangeLog, ChangeRow, Directory, Driver, KeyMerge, MintedDecided,
     MintedFilter, MintedRow, MintedWrite, PurgeKind, StoreError, StoreFuture,
@@ -62,11 +68,22 @@ const TABLES: &[&str] = &[
     "sts_ldap_entries",
     "sts_realms",
     "sts_appconfig",
+    "sts_keys",
     "sts_minted",
+    "sts_changes",
     "sts_cluster_nodes",
     "sts_cluster_leases",
     "sts_cluster_claims",
+    "sts_schema",
 ];
+
+/// The schema this driver speaks (`SCHEMA_VERSION`): `postgres/schema.sql`
+/// as the Node service of the same release creates it, so a store a 1.x
+/// install wrote is the store this runtime opens (rcbj, 2026-11-14: the
+/// cutover upgrades in place). Written to `sts_schema` on every open, as
+/// Node writes it; `ON CONFLICT DO NOTHING` makes the script's row and
+/// this one harmless together.
+pub const SCHEMA_VERSION: i32 = 32;
 
 const ENTRY_COLUMNS: &str =
     "realm, dn_key, dn, attrs, origin, created_at, modified_at";
@@ -80,6 +97,11 @@ pub struct PostgresDriver {
     pool: Pool,
     /// This process's name in the change log.
     origin: String,
+    /// The data keys entries are sealed under (#391), adopted when the
+    /// keystore starts; held weakly, because the keystore holds this
+    /// driver. Until then, and where nothing durable seals, the plaintext
+    /// form.
+    keys: std::sync::RwLock<std::sync::Weak<crate::keystore::DataKeys>>,
 }
 
 /// The channel a commit's NOTIFY goes out on, so another process pulls at
@@ -127,7 +149,11 @@ impl PostgresDriver {
             std::process::id(),
             id.iter().map(|b| format!("{:02x}", b)).collect::<String>()
         );
-        Ok(PostgresDriver { pool, origin })
+        Ok(PostgresDriver {
+            pool,
+            origin,
+            keys: std::sync::RwLock::new(std::sync::Weak::new()),
+        })
     }
 
     /// Records what a transaction changed in the change log, and nudges the
@@ -167,9 +193,19 @@ impl PostgresDriver {
         self.pool.get().await.map_err(err)
     }
 
-    fn entry_of(row: &Row) -> Option<StoredEntry> {
+    /// The codec over the adopted data keys (`entryCodec`).
+    fn codec(&self) -> EntryCodec {
+        self.keys
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .upgrade()
+            .map_or_else(EntryCodec::plain, EntryCodec::new)
+    }
+
+    fn entry_of(codec: &EntryCodec, row: &Row) -> Option<StoredEntry> {
         let attrs: Json = row.get("attrs");
-        let attributes = codec::open_attributes(&attrs)?;
+        let key: String = row.get("dn_key");
+        let attributes = codec.open_attributes(&key, &attrs)?;
         let created: Option<String> = row.get("created_at");
         let modified: Option<String> = row.get("modified_at");
         let origin: Option<String> = row.get("origin");
@@ -185,27 +221,33 @@ impl PostgresDriver {
         })
     }
 
+    /// One entry written (`entryParams()`): the attributes sealed, the six
+    /// lookups, and `dek_keys` (#623) from the attributes as written and
+    /// the blob they were sealed in.
     async fn write_entry(
+        codec: &EntryCodec,
         tx: &deadpool_postgres::Transaction<'_>,
         realm: &str,
         key: &str,
         entry: &StoredEntry,
         insert_only: bool,
     ) -> StoreResult<u64> {
-        let index = codec::index_of(&entry.attributes);
-        let attrs = codec::seal_attributes(&entry.attributes);
+        let index = codec.index_of(&entry.attributes);
+        let attrs = codec.seal_attributes(realm, key, &entry.attributes);
+        let dek_keys = EntryCodec::dek_keys_of(&entry.attributes, &attrs);
         let conflict = if insert_only {
             "ON CONFLICT (realm, dn_key) DO NOTHING"
         } else {
             "ON CONFLICT (realm, dn_key) DO UPDATE SET dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, origin = \
              EXCLUDED.origin, created_at = EXCLUDED.created_at, modified_at = EXCLUDED.modified_at, name_keys = \
              EXCLUDED.name_keys, mail_keys = EXCLUDED.mail_keys, uuid_keys = EXCLUDED.uuid_keys, class_keys = \
-             EXCLUDED.class_keys, value_keys = EXCLUDED.value_keys, attr_names = EXCLUDED.attr_names"
+             EXCLUDED.class_keys, value_keys = EXCLUDED.value_keys, attr_names = EXCLUDED.attr_names, dek_keys = \
+             EXCLUDED.dek_keys"
         };
         let sql = format!(
             "INSERT INTO sts_ldap_entries (realm, dn_key, dn, attrs, origin, created_at, modified_at, name_keys, \
-             mail_keys, uuid_keys, class_keys, value_keys, attr_names) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, \
-             $10, $11, $12, $13) {}",
+             mail_keys, uuid_keys, class_keys, value_keys, attr_names, dek_keys) VALUES ($1, $2, $3, $4, $5, $6, $7, \
+             $8, $9, $10, $11, $12, $13, $14) {}",
             conflict
         );
         tx.execute(
@@ -224,6 +266,7 @@ impl PostgresDriver {
                 &json!(index.class_keys),
                 &json!(index.value_keys),
                 &json!(index.attr_names),
+                &dek_keys,
             ],
         )
         .await
@@ -232,6 +275,7 @@ impl PostgresDriver {
 
     /// One upsert, merged against what the store holds (`settle()`).
     async fn settle(
+        codec: &EntryCodec,
         tx: &deadpool_postgres::Transaction<'_>,
         row: &DirectoryUpsert,
         theirs: Option<StoredEntry>,
@@ -265,19 +309,24 @@ impl PostgresDriver {
             return Ok(());
         };
         if theirs.is_some() {
-            PostgresDriver::write_entry(tx, &row.realm, &row.key, entry, false)
-                .await?;
+            PostgresDriver::write_entry(
+                codec, tx, &row.realm, &row.key, entry, false,
+            )
+            .await?;
             return Ok(());
         }
-        let inserted =
-            PostgresDriver::write_entry(tx, &row.realm, &row.key, entry, true)
-                .await?;
+        let inserted = PostgresDriver::write_entry(
+            codec, tx, &row.realm, &row.key, entry, true,
+        )
+        .await?;
         if inserted > 0 {
             return Ok(());
         }
         if !again {
-            PostgresDriver::write_entry(tx, &row.realm, &row.key, entry, false)
-                .await?;
+            PostgresDriver::write_entry(
+                codec, tx, &row.realm, &row.key, entry, false,
+            )
+            .await?;
             return Ok(());
         }
         // Another node inserted it since the lock was asked for: merged
@@ -290,8 +339,11 @@ impl PostgresDriver {
             .await
             .map_err(err)?;
         outcomes.retain(|o| !(o.realm == row.realm && o.key == row.key));
-        let now = found.as_ref().and_then(PostgresDriver::entry_of);
-        Box::pin(PostgresDriver::settle(tx, row, now, false, outcomes)).await
+        let now = found
+            .as_ref()
+            .and_then(|f| PostgresDriver::entry_of(codec, f));
+        Box::pin(PostgresDriver::settle(codec, tx, row, now, false, outcomes))
+            .await
     }
 }
 
@@ -314,6 +366,14 @@ fn minted_row(row: &Row) -> MintedRow {
 impl Driver for PostgresDriver {
     fn name(&self) -> &'static str {
         "postgres"
+    }
+
+    fn adopt_data_keys(&self, keys: &Arc<crate::keystore::DataKeys>) {
+        *self
+            .keys
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Arc::downgrade(keys);
     }
 
     fn load_keys(&self) -> StoreFuture<'_, Vec<(String, String)>> {
@@ -742,13 +802,70 @@ impl Driver for PostgresDriver {
                 .map(|(_, t)| *t)
                 .collect();
             if !missing.is_empty() {
+                // Node creates what is missing where its role may, and says
+                // STS-STORE-0029 where it may not; this runtime never
+                // changes the schema, so it is always the second case.
                 return Err(StoreError::new(format!(
-                    "the postgres store is missing {} — apply postgres/schema.sql to it (the database container \
-                     does, with the least-privilege role this service connects as)",
+                    "{}persistence: the postgres store could not be opened — it is missing {}. This role may \
+                     not create what is missing, which is how it is meant to be: build the schema once with \
+                     postgres/schema.sql, run by a superuser or by the owner of the database. If the objects ARE \
+                     there, check the search path: this driver names them unqualified, and the script sets it \
+                     on the database.",
+                    tag(codes::STS_STORE_0029),
                     missing.join(", ")
                 )));
             }
-            tracing::info!("persistence: the postgres store is open and its schema is in place.");
+            // A DIRECTORY TABLE FROM BEFORE SCHEMA VERSION 14 has its lookups
+            // GENERATED from plaintext attributes, beside a sealed blob the
+            // database cannot read: refused, as Node refuses it (#391's
+            // rule is that such a store is recreated, not migrated).
+            let generated = client
+                .query_opt(
+                    "SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND \
+                     table_name = 'sts_ldap_entries' AND column_name = 'name_keys' AND upper(is_generated) = \
+                     'ALWAYS'",
+                    &[],
+                )
+                .await
+                .map_err(err)?;
+            if generated.is_some() {
+                return Err(StoreError::new(format!(
+                    "{}the store's sts_ldap_entries was built before schema version 14: its lookup columns are \
+                     generated from plaintext attributes, and this build seals every entry (#391). Recreate the \
+                     database (and run postgres/schema.sql as its owner); it is not migrated.",
+                    tag(codes::STS_STORE_0074)
+                )));
+            }
+            // `dek_keys` (#623, version 17) is the newest column this driver
+            // writes; a store without it is one the script has not brought
+            // level.
+            let dek_keys = client
+                .query_opt(
+                    "SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND \
+                     table_name = 'sts_ldap_entries' AND column_name = 'dek_keys'",
+                    &[],
+                )
+                .await
+                .map_err(err)?;
+            if dek_keys.is_none() {
+                return Err(StoreError::new(format!(
+                    "{}persistence: the postgres store could not be opened — sts_ldap_entries has no dek_keys \
+                     column (schema version 17). Bring it level with postgres/schema.sql and \
+                     postgres/upgrade-1.0.0.sql, run by the owner of the database.",
+                    tag(codes::STS_STORE_0029)
+                )));
+            }
+            client
+                .execute(
+                    "INSERT INTO sts_schema (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+                    &[&SCHEMA_VERSION],
+                )
+                .await
+                .map_err(err)?;
+            tracing::info!(
+                "persistence: the postgres store is open; schema version {} is present.",
+                SCHEMA_VERSION
+            );
             Ok(())
         })
     }
@@ -772,8 +889,9 @@ impl Driver for PostgresDriver {
             }
             let mut out = Directory::new();
             let mut unreadable = 0;
+            let codec = self.codec();
             for row in &rows {
-                match PostgresDriver::entry_of(row) {
+                match PostgresDriver::entry_of(&codec, row) {
                     Some(entry) => out
                         .entry(row.get::<_, String>("realm"))
                         .or_default()
@@ -850,6 +968,20 @@ impl Driver for PostgresDriver {
         change: &'a DirectoryChange,
     ) -> StoreFuture<'a, Vec<DirectoryOutcome>> {
         Box::pin(async move {
+            // THE KEYS FIRST (`prepareKeys()`, 2026-10-27): each realm's
+            // `directory` data key made, and its row written, before any
+            // entry sealed under it — a key first made inside the write
+            // would commit after the entries, and every other process's
+            // reader would drop them (STS-STORE-0042/0072).
+            let codec = self.codec();
+            if codec.sealing() {
+                let mut realms: Vec<String> =
+                    change.upserts.iter().map(|u| u.realm.clone()).collect();
+                realms.sort();
+                realms.dedup();
+                codec.prepare_keys(&realms);
+                codec.keys().settle().await;
+            }
             let mut client = self.client().await?;
             let tx = client.transaction().await.map_err(err)?;
             let id = |realm: &str, key: &str| format!("{}\n{}", realm, key);
@@ -886,7 +1018,7 @@ impl Driver for PostgresDriver {
                     .map_err(err)?;
                 for row in &rows {
                     let key = id(row.get("realm"), row.get("dn_key"));
-                    match PostgresDriver::entry_of(row) {
+                    match PostgresDriver::entry_of(&codec, row) {
                         Some(entry) => {
                             stored.insert(key, entry);
                         }
@@ -906,8 +1038,15 @@ impl Driver for PostgresDriver {
             let mut outcomes = Vec::new();
             for row in upserts {
                 let theirs = stored.get(&id(&row.realm, &row.key)).cloned();
-                PostgresDriver::settle(&tx, row, theirs, true, &mut outcomes)
-                    .await?;
+                PostgresDriver::settle(
+                    &codec,
+                    &tx,
+                    row,
+                    theirs,
+                    true,
+                    &mut outcomes,
+                )
+                .await?;
             }
             for d in &change.deletes {
                 tx.execute("DELETE FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2", &[&d.realm, &d.key])
@@ -1421,7 +1560,7 @@ impl ChangeLog for PostgresDriver {
                 .map_err(err)?;
             match row {
                 None => Ok(None),
-                Some(r) => PostgresDriver::entry_of(&r).map(Some).ok_or_else(|| {
+                Some(r) => PostgresDriver::entry_of(&self.codec(), &r).map(Some).ok_or_else(|| {
                     StoreError::new(format!(
                         "{}the directory entry {} is sealed and does not open in this process",
                         tag(codes::STS_STORE_0072),
