@@ -2944,12 +2944,13 @@ const SETTINGS = [
     path: 'authn.passwordAloneDoors', env: 'STS_AUTHN_PASSWORD_ALONE_DOORS',
     type: 'csv', dflt: '', runtime: true,
     // Mirrors common/app_passwords.ts's DOOR_IDS (the reader lower-cases).
-    csvValues: ['ldap', 'wstrust', 'scim', 'ssf', 'est'],
+    csvValues: ['ldap', 'wstrust', 'scim', 'ssf', 'est', 'xacml-pep'],
     description: 'Product mode only. A comma-separated list of the ' +
-                 'password-only doors — ldap, wstrust, scim, ssf, est — at ' +
+                 'password-only doors — ldap, wstrust, scim, ssf, est, ' +
+                 'xacml-pep — at ' +
                  'which a person who holds or must hold a second factor is ' +
                  'STILL accepted with their own password. Empty, the ' +
-                 'default, refuses that password at all five (answered as ' +
+                 'default, refuses that password at all six (answered as ' +
                  'a wrong password) and accepts only an app password there. ' +
                  '**WARNING: every door listed lowers every such person to ' +
                  'ONE factor at that door** (NIST SP 800-63B section 4.2: ' +

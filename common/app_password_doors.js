@@ -7,7 +7,7 @@
 // File: app_password_doors.js
 //
 // ---------------------------------------------------------------------------
-// THE FIVE DOORS AN APP PASSWORD MAY BE SCOPED TO, AS DATA AND NOTHING ELSE
+// THE SIX DOORS AN APP PASSWORD MAY BE SCOPED TO, AS DATA AND NOTHING ELSE
 // (#1579).
 //
 // Each is a place a person's password is taken with no way to ask for more;
@@ -33,8 +33,8 @@
  */
 
 /**
- * The five password-only doors an app password may be scoped to: LDAP bind,
- * WS-Trust, SCIM, Shared Signals and EST.
+ * The six password-only doors an app password may be scoped to: LDAP bind,
+ * WS-Trust, SCIM, Shared Signals, EST and a remote PEP's reverse proxy.
  *
  * @type {AppPasswordDoor[]}
  */
@@ -48,7 +48,12 @@ const DOORS = [
   { id: 'ssf', label: 'Shared Signals',
     what: 'HTTP Basic at the /ssf endpoints (RFC 7617)' },
   { id: 'est', label: 'EST',
-    what: 'HTTP Basic at /.well-known/est (RFC 7030 section 3.2.3)' }
+    what: 'HTTP Basic at /.well-known/est (RFC 7030 section 3.2.3)' },
+  // A remote XACML PEP's reverse proxy (#1760): HTTP Basic at the proxy,
+  // checked here at POST /xacml/pep/basic and never in the PEP.
+  { id: 'xacml-pep', label: 'Remote PEP proxy',
+    what: 'HTTP Basic at a remote XACML PEP\'s reverse proxy, checked at ' +
+          'POST /xacml/pep/basic' }
 ];
 
 /**

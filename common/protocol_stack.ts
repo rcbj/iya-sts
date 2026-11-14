@@ -1987,6 +1987,8 @@ class ProtocolStack {
                'AlfaLanguage');
     this.build('xacml/xacml_pep_tls', require('../xacml/xacml_pep_tls'),
                'PepTls');
+    this.build('xacml/xacml_pep_proxy', require('../xacml/xacml_pep_proxy'),
+               'PepProxy');
     this.build('xacml/xacml_admin', require('../xacml/xacml_admin'),
                'XacmlAdmin');
     this.build('xacml/xacml_role_pep', require('../xacml/xacml_role_pep'),

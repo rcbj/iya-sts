@@ -5,6 +5,7 @@
   "door.scim": "HTTP Basic på /scim/v2 (RFC 7617)",
   "door.ssf": "HTTP Basic på /ssf-slutpunkterna (RFC 7617)",
   "door.est": "HTTP Basic på /.well-known/est (RFC 7030 avsnitt 3.2.3)",
+  "door.xacml-pep": "HTTP Basic vid en fjärr-XACML-PEP:s omvända proxy, kontrollerat vid POST /xacml/pep/basic",
   "fresh.heading": "Ditt nya applösenord",
   "fresh.copyNow": "<strong>Kopiera det nu.</strong> Det visas en gång på den här sidan och kan inte visas igen — tjänsten sparar bara en hash av det.",
   "fresh.note": "Ange det i klienten i stället för ditt lösenord, med ditt vanliga användarnamn. Det fungerar bara vid ingångarna ovan och aldrig på inloggningssidan. Bindestrecken är valfria.",

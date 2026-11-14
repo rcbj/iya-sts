@@ -1926,5 +1926,17 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "Isang test event na ipinadala sa isang destinasyon ng audit export"
+  },
+  "audit.actions.xacml.pep.proxy.set.label": {
+    "en": "b27a6eab052ea9fa",
+    "text": "Itinakda ang reverse-proxy configuration ng isang remote PEP"
+  },
+  "audit.actions.xacml.pep.proxy.clear.label": {
+    "en": "faee586bfee3cbf0",
+    "text": "Inalis ang reverse-proxy configuration ng isang remote PEP"
+  },
+  "audit.actions.xacml.pep.validate.label": {
+    "en": "c3a780c6921b5dd8",
+    "text": "Humiling ang proxy ng isang remote PEP na i-validate ang isang credential"
   }
 }

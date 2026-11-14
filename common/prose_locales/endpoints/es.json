@@ -2498,5 +2498,29 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (se pide un certificado de cliente, nunca se exige)"
+  },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "La configuración de proxy inverso, para que un PEP remoto la APLIQUE"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "Introspección de tokens, para el proxy de un PEP remoto"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic, validado para el proxy de un PEP remoto"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "Una aserción SAML 2.0, validada para el proxy de un PEP remoto"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "¿Sigue activa una sesión de inicio de sesión?, para el proxy de un PEP remoto"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "Lo que la ruta de un PEP remoto reenvía a su aplicación"
   }
 }

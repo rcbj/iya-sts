@@ -2026,5 +2026,9 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Vad PEP:en än sade om sig själv när den registrerade sig."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "Konfigurationen för omvänd proxy som fjärr-PEP:en hämtar från GET /xacml/pep/proxy (#1760): ett JSON-dokument — enabled, uppströmsprogrammets bas-URL, den publika bas-URL som en webbläsare når proxyn på, tidsgränserna och den ordnade vägtabellen, varje väg med sin sökväg, sina metoder, sina autentiseringsmekanismer, programmet i realmens register som den står framför samt XACML-resurs och åtgärd. Skrivs av åtgärden set-pep-proxy i konsolen och hanterings-API:et, valideras helt där och igen när hämtningen byggs, så ett värde som ldapmodify skrev och som inte validerar hämtas som configured: false. Behålls vid en registrering och ett hjärtslag; tas bort med raden."
   }
 }

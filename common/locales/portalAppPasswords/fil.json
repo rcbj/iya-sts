@@ -5,6 +5,7 @@
   "door.scim": "HTTP Basic sa /scim/v2 (RFC 7617)",
   "door.ssf": "HTTP Basic sa mga /ssf endpoint (RFC 7617)",
   "door.est": "HTTP Basic sa /.well-known/est (RFC 7030 section 3.2.3)",
+  "door.xacml-pep": "HTTP Basic sa reverse proxy ng isang remote XACML PEP, sinusuri sa POST /xacml/pep/basic",
   "fresh.heading": "Ang bago mong app password",
   "fresh.copyNow": "<strong>Kopyahin mo na ngayon.</strong> Isang beses lang ito ipinapakita sa page na ito at hindi na maipapakita ulit — hash lang nito ang itinatago ng serbisyong ito.",
   "fresh.note": "Ilagay mo ito sa client kapalit ng iyong password, kasama ang karaniwan mong username. Gumagana lang ito sa mga daanang nasa itaas at hindi kailanman sa sign-in screen. Opsyonal ang mga gitling.",

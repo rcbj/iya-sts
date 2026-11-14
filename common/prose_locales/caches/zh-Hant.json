@@ -1694,5 +1694,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "已失效：該認證資料已被否認"
+  },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "遠端 PEP 的 Basic 票證"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "有效的 POST /xacml/pep/basic 交給遠端 PEP 的票證，依各自的 SHA-256 保存；票證本身不儲存。"
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "強制執行：每個領域 10000 個，捨棄最舊的；PEP 會再次驗證 Basic 認證。"
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "依摘要找到了一個票證"
   }
 }

@@ -1240,8 +1240,8 @@
     "text": "Portes à mot de passe seul qui acceptent un mot de passe sans second facteur"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "Mode produit uniquement. Une liste, séparée par des virgules, des portes à mot de passe seul — ldap, wstrust, scim, ssf, est — auxquelles une personne qui détient ou doit détenir un second facteur est MALGRÉ TOUT acceptée avec son propre mot de passe. Vide, la valeur par défaut, refuse ce mot de passe aux cinq (comme un mot de passe erroné) et n’y accepte qu’un mot de passe d’application. **AVERTISSEMENT : chaque porte listée ramène chacune de ces personnes à UN SEUL facteur à cette porte** (NIST SP 800-63B section 4.2 : AAL2 devient AAL1), si bien qu’un mot de passe volé l’ouvre sans le second facteur. Préférez les mots de passe d’application ; ne listez une porte que pour un client auquel on ne peut pas en donner un. Le développement ne vérifie aucun mot de passe nulle part et ignore ce paramètre."
+    "en": "a01fe4fce9df1599",
+    "text": "Mode produit uniquement. Une liste, séparée par des virgules, des portes à mot de passe seul — ldap, wstrust, scim, ssf, est, xacml-pep — auxquelles une personne qui détient ou doit détenir un second facteur est MALGRÉ TOUT acceptée avec son propre mot de passe. Vide, la valeur par défaut, refuse ce mot de passe aux six (comme un mot de passe erroné) et n’y accepte qu’un mot de passe d’application. **AVERTISSEMENT : chaque porte listée ramène chacune de ces personnes à UN SEUL facteur à cette porte** (NIST SP 800-63B section 4.2 : AAL2 devient AAL1), si bien qu’un mot de passe volé l’ouvre sans le second facteur. Préférez les mots de passe d’application ; ne listez une porte que pour un client auquel on ne peut pas en donner un. Le développement ne vérifie aucun mot de passe nulle part et ignore ce paramètre."
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",

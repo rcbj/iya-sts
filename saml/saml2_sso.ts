@@ -4531,6 +4531,78 @@ class Saml2Sso {
     return caller;
   }
 
+  // ---------------------------------------------------------------------------
+  // A RESPONSE A REMOTE PEP'S PROXY CARRIES TO THE APPLICATION IT FRONTS
+  // (#1760, D11). The proxy established who the caller is — a token, an
+  // assertion or a Basic ticket this service validated a moment ago — and a
+  // route whose identity mode is `saml` hands the application a signed
+  // Response about that person, as an unsolicited Response would be: the
+  // same assertion builder, the same issuance policy at the same kind
+  // (SAML_ASSERTION, family saml2), the same signing and encryption rules,
+  // and no InResponseTo. What differs is that nothing is delivered from
+  // here: the PEP posts it to the application's registered ACS itself.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the signed Response a remote PEP forwards for a route in
+   * `identity.mode` saml.
+   *
+   * @param opts - `session` (the record the assertion is about: `user`, `id`,
+   *   `authTime`, `amr`), `spEntityId` and `acsUrl` (the application's own)
+   * @returns `{ ok: true, xml, notOnOrAfter }`, or `{ ok: false, policy,
+   *   why }` — `policy` true for the issuance policy's refusal
+   */
+  pepProxyResponse(opts: any): any {
+    const { mode } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.pepProxyResponse(). sp=" + opts.spEntityId);
+    const session = opts.session;
+    const spEntityId = String(opts.spEntityId || '');
+    const acsUrl = String(opts.acsUrl || '');
+    const idpEntityId = this.idpEntityId();
+    const roleAnswer = gate.check({
+      application: spEntityId,
+      kind: gate.ISSUANCE.SAML_ASSERTION,
+      protocolFamilies: ['saml2'],
+      subject: { kind: 'user',
+                 name: String((session.user || {}).username || ''),
+                 authenticated: true },
+      claims: null,
+      session: session
+    });
+    if (!roleAnswer.allowed) {
+      log.debug("Leaving Saml2Sso.pepProxyResponse(). Refused by policy.");
+      return { ok: false, policy: true, why: roleAnswer.why };
+    }
+    const built = this.buildAssertionFor({ id: '', requestedAuthnContexts: [] },
+                                         session, spEntityId, idpEntityId,
+                                         acsUrl);
+    const expiry = /NotOnOrAfter="([^"]+)"/.exec(built);
+    const wantsEncryption = !!this.settingFor(spEntityId,
+                                              'saml2.encryptAssertion') ||
+      String(this.fieldsOf(spEntityId).samlSpWantAssertionsEncrypted ||
+             '') === 'TRUE';
+    const sealed: any = wantsEncryption
+      ? this.encryptFor(spEntityId, built, 'saml:EncryptedAssertion',
+                        'assertion')
+      : { xml: built, encrypted: false };
+    if (wantsEncryption && !sealed.encrypted &&
+        (sealed.refused || !mode.sendsWeakerThanAsked())) {
+      log.debug("Leaving Saml2Sso.pepProxyResponse(). Encryption required " +
+                "and not possible.");
+      return { ok: false, policy: false,
+               why: 'the assertion for "' + spEntityId + '" is configured ' +
+                    'to be encrypted and could not be (' +
+                    (sealed.why || 'unknown') + ')' };
+    }
+    const response = this.buildResponse({
+      issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
+      inResponseTo: '', status: STATUS_SUCCESS, assertion: sealed.xml
+    });
+    log.debug("Leaving Saml2Sso.pepProxyResponse(). Built.");
+    return { ok: true, xml: response.xml,
+             notOnOrAfter: expiry ? expiry[1] : '' };
+  }
+
   private issueSignInResponse(res, ctx) {
     const { errorCodes, mode } = this.deps;
     const { noteSessionChanged } = this.deps.authn;
@@ -6342,5 +6414,7 @@ export = {
   // The LogoutRequests one session is owed. Read by ../logout/logout.ts so that
   // a global sign-out names exactly what Single Logout names — see the block
   // above logoutTargetsFor().
-  logoutTargetsFor: slot.forward('logoutTargetsFor')
+  logoutTargetsFor: slot.forward('logoutTargetsFor'),
+  // A remote PEP's proxy, for a route forwarding a SAML Response (#1760).
+  pepProxyResponse: slot.forward('pepProxyResponse')
 };

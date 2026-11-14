@@ -3994,5 +3994,29 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un paramètre"
+  },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "Ce que le conteneur xacml-pep applique quand il se place devant une application (#1760) : la destination vers laquelle il transmet, les routes ordonnées avec les mécanismes que chacune accepte et la ressource et l’action XACML auxquelles chacune correspond, l’application de chaque route résolue depuis le registre, les éléments du royaume avec lesquels il valide localement (émetteur, JWKS, les points de terminaison de connexion, les certificats de signature SAML, la chaîne de l’écouteur, les clients des routes de session) et les quatre URL de validation ci-dessous, sous un jeton de synchronisation propre ; ?since=<token> répond 304. Un PEP non configuré est configured: false et son proxy refuse tout. Exige REMOTE_PEPS, comme la récupération des politiques ; aucune notification."
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "La lecture RFC 7662 du serveur d’autorisation lui-même d’un jeton d’accès OAuth 2.0 que le proxy n’a pas pu vérifier (un jeton opaque, ou une clé absente du JWKS), par le TLS mutuel du PEP plutôt que par un enregistrement de client propre. Exige REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "Le nom d’utilisateur et le mot de passe d’une personne, vérifiés ici et jamais dans le PEP, derrière les limites propres de la connexion (429 avec retryAfterS) ; un refus est { valid: false } et n’en dit pas plus. Exige REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "Une assertion émise par ce royaume, vérifiée ici quand le proxy n’a pas pu la vérifier : la signature enveloppée de l’assertion racine contre les certificats de signature XML du royaume, l’émetteur, les conditions et l’audience de la route. Une EncryptedAssertion est refusée. Exige REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "Si la session d’authentification que désigne le sid d’un ID Token est toujours active, si bien qu’une déconnexion ici met fin à la session propre du proxy à sa prochaine vérification. Exige REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "Pour une route du PEP qui demande, l’identité que nomme sa preuve (un jeton d’accès, une assertion SAML ou un ticket Basic, validés de nouveau), selon le mode de la route : des revendications pour ses en-têtes, un jeton d’accès pour l’application ou une réponse SAML signée à son service consommateur d’assertions. Exige REMOTE_PEPS."
   }
 }

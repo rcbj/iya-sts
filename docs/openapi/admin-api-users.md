@@ -2715,7 +2715,7 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `doors` | list | yes | The doors it is accepted at. At least one. |
-| `doors[]` | one of `ldap`, `wstrust`, `scim`, `ssf`, `est` |  |  |
+| `doors[]` | one of `ldap`, `wstrust`, `scim`, `ssf`, `est`, `xacml-pep` |  |  |
 | `name` | string | yes | What it is for — the client it goes in. At most 64 characters, unique among this person's. |
 | `user` | string | yes | The person, as /admin-api/users names them. |
 | `username` | string |  | Accepted for `user`. |

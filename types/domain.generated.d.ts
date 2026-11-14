@@ -1155,6 +1155,7 @@ declare namespace IyaDomain {
     undischargeable?: number;
     version?: string;
     lastNotify?: string;
+    proxy?: string;
     description?: string[];
   }
 

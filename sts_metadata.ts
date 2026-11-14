@@ -3767,6 +3767,58 @@ const ENDPOINTS: EndpointEntry[] = [
           'role can read who may ask the PDP (rcbj on #1189). Additive: ' +
           '/xacml/pep/policies and /xacml/pep/authzen-catalogue are ' +
           'unchanged.' },
+  { path: '/xacml/pep/proxy', group: 'XACML',
+    name: 'The reverse-proxy configuration, for a remote PEP to ENFORCE',
+    specs: ['xacml30'],
+    what: 'What the xacml-pep container enforces when it stands in front ' +
+          'of an application (#1760): the upstream it forwards to, the ' +
+          'ordered routes with the mechanisms each accepts and the XACML ' +
+          'resource and action each maps to, each route\'s application ' +
+          'resolved from the registry, the realm facts it validates ' +
+          'locally with (issuer, JWKS, the sign-in endpoints, the SAML ' +
+          'signing certificates, the listener\'s chain, the session ' +
+          'routes\' clients) and the four validation URLs below, under a ' +
+          'sync token of its own; ' +
+          '?since=<token> answers 304. An unconfigured PEP is configured: ' +
+          'false and its proxy denies everything. Requires REMOTE_PEPS, as ' +
+          'the policy pull does; no nudge.' },
+  { path: '/xacml/pep/introspect', group: 'XACML',
+    name: 'Token introspection, for a remote PEP\'s proxy',
+    specs: ['xacml30', 'rfc7662'],
+    what: 'The authorization server\'s own RFC 7662 reading of an OAuth ' +
+          '2.0 access token the proxy could not verify itself (an opaque ' +
+          'token, or a key not in the JWKS), over the PEP\'s mutual TLS ' +
+          'rather than a client registration of its own. Requires ' +
+          'REMOTE_PEPS.' },
+  { path: '/xacml/pep/basic', group: 'XACML',
+    name: 'HTTP Basic, validated for a remote PEP\'s proxy',
+    specs: ['xacml30', 'rfc7617'],
+    what: 'A person\'s username and password, verified here and never in ' +
+          'the PEP, behind the sign-in\'s own limits (429 with ' +
+          'retryAfterS); a refusal is { valid: false } and says nothing ' +
+          'more. Requires REMOTE_PEPS.' },
+  { path: '/xacml/pep/saml', group: 'XACML',
+    name: 'A SAML 2.0 assertion, validated for a remote PEP\'s proxy',
+    specs: ['xacml30', 'saml2'],
+    what: 'An assertion this realm issued, checked here when the proxy ' +
+          'could not check it itself: the enveloped signature on the root ' +
+          'assertion against the realm\'s XML signing certificates, the ' +
+          'issuer, the conditions and the route\'s audience. An ' +
+          'EncryptedAssertion is refused. Requires REMOTE_PEPS.' },
+  { path: '/xacml/pep/session', group: 'XACML',
+    name: 'Is a sign-on session live, for a remote PEP\'s proxy',
+    specs: ['xacml30', 'oidc'],
+    what: 'Whether the sign-on session an ID Token\'s sid names is still ' +
+          'live, so a sign-out here ends the proxy\'s own session at its ' +
+          'next check. Requires REMOTE_PEPS.' },
+  { path: '/xacml/pep/identity', group: 'XACML',
+    name: 'What a remote PEP\'s route forwards to its application',
+    specs: ['xacml30', 'rfc9068', 'saml2'],
+    what: 'For a route of the asking PEP, the identity its evidence (an ' +
+          'access token, a SAML assertion or a Basic ticket, validated ' +
+          'again) names, in the route\'s mode: claims for its headers, an ' +
+          'access token for the application, or a signed SAML Response to ' +
+          'its assertion consumer service. Requires REMOTE_PEPS.' },
   { path: '/xacml/pep/heartbeat', group: 'XACML',
     name: 'What a remote PEP has enforced', specs: ['xacml30'],
     what: 'Its cumulative counters and the sync token it holds — which is ' +

@@ -2026,5 +2026,9 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Ce que le PEP a dit de lui-même lors de son enregistrement."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "La configuration de proxy inverse que le PEP distant récupère de GET /xacml/pep/proxy (#1760) : un document JSON — enabled, l’URL de base de l’application en amont, l’URL de base publique par laquelle un navigateur atteint le proxy, les délais et la table ordonnée des routes, chacune avec son chemin, ses méthodes, ses mécanismes d’authentification, l’application du registre du royaume qu’elle protège, et la ressource et l’action XACML. Écrite par l’action set-pep-proxy de la console et de l’API de gestion, validée entière là et de nouveau à la construction de la récupération : une valeur écrite par ldapmodify qui n’est pas valide est récupérée comme configured: false. Conservée par un enregistrement et un battement de cœur ; supprimée avec la ligne."
   }
 }

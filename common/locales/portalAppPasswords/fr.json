@@ -5,6 +5,7 @@
   "door.scim": "HTTP Basic sur /scim/v2 (RFC 7617)",
   "door.ssf": "HTTP Basic sur les points de terminaison /ssf (RFC 7617)",
   "door.est": "HTTP Basic sur /.well-known/est (RFC 7030, section 3.2.3)",
+  "door.xacml-pep": "HTTP Basic au proxy inverse d’un PEP XACML distant, vérifié à POST /xacml/pep/basic",
   "fresh.heading": "Votre nouveau mot de passe d’application",
   "fresh.copyNow": "<strong>Copiez-le maintenant.</strong> Il n’est affiché qu’une fois sur cette page et ne pourra plus l’être — ce service n’en conserve qu’une empreinte.",
   "fresh.note": "Saisissez-le dans le client à la place de votre mot de passe, avec votre nom d’utilisateur habituel. Il ne fonctionne qu’aux accès ci-dessus, jamais sur l’écran de connexion. Les tirets sont facultatifs.",

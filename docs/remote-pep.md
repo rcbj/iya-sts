@@ -772,6 +772,68 @@ authenticated, its build, its policy count, its sync token and the decision
 counters it reported. **Those counters arrive on the heartbeat**, once a minute
 by default, so a freshly started PEP reads as zeroes for up to a minute.
 
+## In front of an application: the reverse proxy (#1760)
+
+A registered PEP can stand in front of an application as a reverse proxy.
+What it enforces is a configuration the service holds for it, set on the
+**Remote PEPs** tab of `/admin/xacml` or with
+`POST /admin-api/xacml/set-pep-proxy` (`clear-pep-proxy` removes it). The PEP
+pulls it over its mutual TLS from `GET /xacml/pep/proxy`, which answers `304`
+to `?since=<syncToken>` while nothing changed.
+
+The document names the upstream, the `publicBaseUrl` a browser reaches the
+proxy at (https in product mode, and always for a session route), the
+timeouts, and an ordered list of routes; the first route that matches wins and
+a request no route matches is refused `404`. Each route that is not `public`
+names the **application** in the realm's registry that it fronts. Nothing is
+copied from the application: what each mechanism needs is read from its entry
+when the configuration is saved and again at every pull.
+
+| Mechanism | The application must have |
+|---|---|
+| `oauth2` | an audience (`oauthAudience` or `oauthPermissionBaseUri`) |
+| `saml2` | a SAML entity ID (`samlEntityId`) |
+| `session` | a confidential OpenID Connect client: `client_secret_basic` or `client_secret_post`, the `authorization_code` grant, `<publicBaseUrl>/.iya-pep/callback` registered as a redirect URI, and an unexpired client secret |
+| `basic` | nothing |
+
+A rotated client secret or an edited application reaches the PEP on its next
+pull; a deleted one leaves its route `usable: false`. The application's own
+page lists the PEP routes in front of it.
+
+### How the identity reaches the application
+
+Each route's `identity` says what the proxy forwards about the caller:
+
+* **`headers`** (the default): up to 16 request headers, each carrying one of
+  `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`,
+  `mechanism`, `acr` or `amr`. A list (`groups`, `amr`) is joined with the
+  route's `separator`, `,` by default. A header may not be a hop-by-hop or
+  framing header, `Authorization`, `Cookie`, `Host`, `Forwarded` or
+  `X-Forwarded-*`, and the proxy strips a client's own copy of each.
+* **`saml`**: a signed SAML 2.0 Response about the caller, for the
+  application's registered assertion consumer service. The application needs
+  `samlEntityId` and `samlAssertionConsumerService`.
+* **`jwt`**: an access token about the caller, issued to the application and
+  addressed to its audience.
+
+On the Remote PEPs tab each route has its own small form for this: a mode, a
+table of header and claim, and the separator
+(`POST /admin-api/xacml/set-pep-route-identity`).
+
+### What the PEP asks the service
+
+Everything the proxy cannot decide by itself it asks over its mutual TLS, and
+every such request needs `REMOTE_PEPS` and is audited as
+`xacml.pep.validate`:
+
+| Endpoint | Answers |
+|---|---|
+| `POST /xacml/pep/introspect` | RFC 7662 introspection of an access token |
+| `POST /xacml/pep/basic` | whether a Basic username and password are valid, and a `ticket` for the identity request (opaque, bound to this PEP and the person, 120 seconds). In product mode a person presents an app password scoped to `xacml-pep` |
+| `POST /xacml/pep/saml` | whether a SAML assertion this realm issued is valid for the route's audience |
+| `POST /xacml/pep/session` | whether a sign-on session is still live |
+| `POST /xacml/pep/identity` | for one of this PEP's routes and the caller's evidence (an access token, a SAML assertion or a Basic ticket, each validated again), the claims, access token or SAML Response the route forwards. The issuance policy decides the last two; a refusal is `403`, and what cannot be issued is `422` |
+
 ## Configuration
 
 All of it from the environment — there is no appconfig file and no settings

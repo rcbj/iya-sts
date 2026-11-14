@@ -949,5 +949,11 @@
   "fga.pepsNone": "Ingen person, inget tjänstekonto och ingen applikation i den här sfären innehar REMOTE_PEPS.",
   "fga.pepsUnlocated": "Medlemmar i gruppen som inte namnger någon post och därför inte kan beviljas: {n}.",
   "fga.pepsRegrant": "Bevilja fjärr-PEP:erna igen",
-  "fga.pepsRegrantTip": "Tillämpa igen: varje innehavare av REMOTE_PEPS utan AuthZEN-gruppen eller utan den här applikationen i sitt omfång beviljas båda. Inget annat ändras."
+  "fga.pepsRegrantTip": "Tillämpa igen: varje innehavare av REMOTE_PEPS utan AuthZEN-gruppen eller utan den här applikationen i sitt omfång beviljas båda. Inget annat ändras.",
+  "pepRoutes.tab": "Omvänd proxy",
+  "pepRoutes.lead": "De här vägarna hos den här realmens fjärr-PEP:ar står framför det här programmet. Var och en läser det dess mekanism behöver från den här posten när PEP:en hämtar sin konfiguration, så en ändring här når proxyn vid nästa hämtning.",
+  "pepRoutes.thPep": "Fjärr-PEP",
+  "pepRoutes.thRoute": "Väg",
+  "pepRoutes.thPath": "Sökväg",
+  "pepRoutes.thMechanisms": "Mekanismer"
 }

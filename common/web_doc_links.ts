@@ -223,6 +223,8 @@ const EXACT: Record<string, string> = {
     'admin-console.html#verifier-request-tab--adminvcvc-tab-verifier-request',
   'xacml-tab-settings': 'configure-xacml.html',
   'xacml-tab-peps': 'remote-pep.html',
+  // An application's page: the remote PEP routes in front of it (#1760).
+  'tab-pep-routes': 'remote-pep.html',
   'xacml-tab-authzen': 'authzen.html',
   'ssf-tab-caep': 'caep-events.html',
   'ssf-tab-risc': 'signals-received.html',

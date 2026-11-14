@@ -69,6 +69,9 @@ model XacmlPep {
   @fromAttr(#{attr: "xacmlPepLastNotify"})
   `lastNotify`?: string;
 
+  @fromAttr(#{attr: "xacmlPepProxy"})
+  `proxy`?: string;
+
   @fromAttr(#{attr: "description"})
   `description`?: string[];
 }

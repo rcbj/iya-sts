@@ -1251,6 +1251,107 @@ out; what belongs here is the door.
   reason; `/admin/sts-metadata` and `/admin/xacml`'s protocol-endpoint table
   do.
 
+## The remote PEP as a reverse proxy (#1760, phase 1)
+
+A registered PEP may stand in front of an application. Its configuration is
+ONE attribute on its own `ou=peps` entry, `xacmlPepProxy` (OID 752, a JSON
+document; the concept's `proxy`), so a registration and a heartbeat carry it
+(`register()` keeps the existing value, `attributesOf()` writes it when set)
+and Forget removes it with the row. `xacml_pep_proxy.ts` is everything the
+service decides about it; `xacml.ts` answers the doors and `xacml_admin.ts`
+the two actions.
+
+* **ONE GRAMMAR, ASKED TWICE.** `validate()` is the issue's D2, closed (a
+  member it does not name is refused by name), each refusal its own code
+  (`STS-XACML-0184`–`0199`). `set-pep-proxy` stores what it normalised; the
+  pull validates the stored text again, so a value an `ldapmodify` wrote that
+  does not validate is pulled as `configured: false` and logged
+  (`STS-XACML-0200`). In product `publicBaseUrl` must be https
+  (`mode.servesProxyBrowsersInTheClear()`).
+* **HOW THE IDENTITY REACHES THE APPLICATION IS A ROUTE'S `identity` (D11)**,
+  `{ mode, headers: [{ name, claim }], separator }`, default mode `headers`
+  with no header (`subjectHeader` and `mechanismHeader` are gone, refused as
+  members the grammar does not name). At most 16 headers; a name is an RFC
+  9110 token, unique without case, and not a hop-by-hop or framing header,
+  `Authorization`, `Cookie`, `Set-Cookie`, `Host`, `Forwarded` or
+  `X-Forwarded-*`; a claim is one of `sub`, `username`, `email`, `name`,
+  `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr`; the
+  separator one printable ASCII character that is not a letter or a
+  number (`STS-XACML-0224`-`0227`). Mode `saml` names no header and needs
+  the application's `samlEntityId` and a registered
+  `samlAssertionConsumerService` (`0228`), mode `jwt` an audience (`0218`).
+  The normalised form keeps an empty `headers` in every mode, so a saved
+  document validates again; a public route accepts only that default.
+* **`GET /xacml/pep/proxy`** is the AuthZEN pulls' shape: `pepAccess()` READ,
+  its own sync token over exactly the body (ETag, `?since=` 304), `no-store`,
+  no nudge. The PEP is named by its certificate, the registration's rule.
+  A policy write does not move the token.
+* **THE FOUR DOORS** (`introspect`, `basic`, `saml`, `session`, all POST) go
+  through `validationDoor()`: the PIP's rate limit and ceiling
+  (`xacml.pipMaxPerWindow`, before the gate), `pepAccess()` READ, one audit
+  row `xacml.pep.validate` naming the PEP, the mechanism and the outcome and
+  never the credential, `no-store`, and a closed answer. Basic is
+  `credentials.verifyAsync()` behind door limits `xacml-pep-basic` (they
+  count only where passwords are verified, product) and the password door
+  `xacml-pep`, the sixth app-password door: in product a person who holds or
+  owes a second factor (everybody, by default) presents an app password
+  scoped to `xacml-pep`, never their own password. Introspection is
+  `oauth2.introspectionFor()` (`introspectionOf()`, no client
+  authentication and no section 5 narrowing — the PEP checks `aud`). SAML
+  requires the signature at the ROOT assertion with its reference naming the
+  root's ID, so a signed assertion nested in an unsigned one is refused.
+* **A ROUTE NAMES AN APPLICATION (D10)** by its identifier in the realm's
+  registry (`application`, required on a non-public route, refused on a
+  public one) and the configuration copies nothing from it: `resolveRoute()`
+  reads, at the save and again at every pull, the audiences an access token
+  for it carries (`oauthAudience` and `oauthPermissionBaseUri`; there is no
+  `audience` member), its `samlEntityId`, and for a session route its
+  confidential OIDC client (`client_secret_basic` or `client_secret_post`,
+  the code grant, `<publicBaseUrl>/.iya-pep/callback` registered, an
+  unexpired secret; `STS-XACML-0217`–`0223`). The pull carries each route's
+  `resolved` and `realm.clients[clientId] = { clientSecret,
+  tokenEndpointAuthMethod, redirectUri, scopes }` with the secret OPENED, and
+  `realm.tlsCaChain` (`tls_server.listenerChainPem()`, the bundle
+  `GET /tls/server-certificate` answers). The token is a digest of that
+  body, so a rotated secret or an edited application reaches the PEP on its
+  poll; an application deleted or no longer qualifying leaves its route
+  `usable: false`. The secret is on no console page and in no `/admin-api`
+  answer: a PEP's row carries `proxyRoutes` (`route`, `application`,
+  `usable`, `why`), and the application's page (`pepRoutes`) the routes
+  that front it. Nothing is created for a PEP; a session route needs an
+  https `publicBaseUrl`, and `signals` (default true) says whether its
+  sign-out reaches the proxy by CAEP/RISC or by `POST /xacml/pep/session`.
+* **THE BASIC TICKET AND `POST /xacml/pep/identity` (D11).** A valid Basic
+  answers `ticket` as well: 256 random bits, kept under its SHA-256 in
+  `xacml.pepTickets` (a `realms.map`, persisted and cell-tier, its expiry on
+  the row, 10000 per realm with the oldest dropped, on `/admin/caches` as
+  `xacml.pep-tickets`), bound to the PEP and the subject, 120 s, not
+  single-use. The fifth door, through `validationDoor()`, takes `{ route,
+  evidence: { kind, value }, claims? }`: the route must be a non-public route
+  of THIS PEP's stored configuration (`0230`), and the evidence is validated
+  again: an access token active in this realm and issued to or for the
+  route's application, a SAML assertion through `saml()` with the
+  application's entity ID as the audience, or a ticket handed to this PEP and
+  unexpired (`0231`, `0232`). Mode headers answers `{ claims }` off the
+  directory entry (`saml/person_attributes.ts`, `groupsOfUser()` as a
+  list), narrowed by `claims` to the route's own (`0229` otherwise); mode jwt
+  `{ accessToken, tokenType: "Bearer", expiresIn }` through
+  `oauth2.accessTokenAsync()` after `gate.check()` at `issue-access-token`
+  (so it is in the token register); mode saml `{ samlResponse, acsUrl,
+  notOnOrAfter }` from `saml2_sso.pepProxyResponse()`, the unsolicited
+  Response's builder, policy and encryption rules with no InResponseTo. A
+  policy refusal is 403 (`0234`), anything that cannot be issued 422
+  (`0233`, `0235`); every answer is audited as `xacml.pep.validate`.
+* **THE CONSOLE EDITS THE DOCUMENT WHOLE**: the Remote PEPs tab draws each
+  PEP's routes as a table and the document in a textarea; a route is added,
+  removed or moved by editing the list. **Each non-public route's identity
+  has a form of its own**: a mode choice, a header/claim table (the route's
+  rows and two empty ones) and the separator, posting
+  `set-pep-route-identity`, which replaces that route's `identity` and saves
+  the whole document through `set-pep-proxy`'s checks.
+
+`tests/xacml_pep_proxy.js` holds all of it in a child process.
+
 ## What the console page is NOT
 
 `/admin/xacml/peps` reaches into no other process. "Stop nudging" stops this

@@ -1240,8 +1240,8 @@
     "text": "Mga password-only na pinto na tumatanggap ng password lang"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "Product mode lang. Isang listahang pinaghihiwalay ng kuwit ng mga password-only na pinto — ldap, wstrust, scim, ssf, est — kung saan ang taong may hawak o dapat may hawak ng second factor ay TINATANGGAP PA RIN gamit ang sarili nilang password. Ang walang laman, ang default, ay tumatanggi sa password na iyon sa lahat ng lima (sinasagot bilang maling password) at app password lang ang tinatanggap doon. **BABALA: ang bawat pintong nakalista ay nagbababa sa bawat ganoong tao sa IISANG factor sa pintong iyon** (NIST SP 800-63B section 4.2: nagiging AAL1 ang AAL2), kaya mabubuksan ito ng ninakaw na password nang walang second factor. Mas mainam ang mga app password; maglista lang ng pinto para sa client na hindi mabibigyan ng isa. Walang password na sinusuri ang development kahit saan at binabalewala ito."
+    "en": "a01fe4fce9df1599",
+    "text": "Product mode lang. Isang listahang pinaghihiwalay ng kuwit ng mga password-only na pinto — ldap, wstrust, scim, ssf, est, xacml-pep — kung saan ang taong may hawak o dapat may hawak ng second factor ay TINATANGGAP PA RIN gamit ang sarili nilang password. Ang walang laman, ang default, ay tumatanggi sa password na iyon sa lahat ng anim (sinasagot bilang maling password) at app password lang ang tinatanggap doon. **BABALA: ang bawat pintong nakalista ay nagbababa sa bawat ganoong tao sa IISANG factor sa pintong iyon** (NIST SP 800-63B section 4.2: nagiging AAL1 ang AAL2), kaya mabubuksan ito ng ninakaw na password nang walang second factor. Mas mainam ang mga app password; maglista lang ng pinto para sa client na hindi mabibigyan ng isa. Walang password na sinusuri ang development kahit saan at binabalewala ito."
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",

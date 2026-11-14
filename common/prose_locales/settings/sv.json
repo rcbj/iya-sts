@@ -1240,8 +1240,8 @@
     "text": "Lösenordsdörrar som godtar enbart ett lösenord"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "Endast produktionsläge. En kommaseparerad lista över de dörrar som bara tar lösenord — ldap, wstrust, scim, ssf, est — där en person som har eller måste ha en andra faktor ÄNDÅ godtas med sitt eget lösenord. Tomt, standardvärdet, vägrar det lösenordet vid alla fem (besvaras som ett felaktigt lösenord) och godtar där bara ett applösenord. **VARNING: varje listad dörr sänker varje sådan person till EN faktor vid den dörren** (NIST SP 800-63B avsnitt 4.2: AAL2 blir AAL1), så ett stulet lösenord öppnar den utan den andra faktorn. Föredra applösenord; lista en dörr bara för en klient som inte kan få ett. Utvecklingsläget kontrollerar inga lösenord någonstans och ignorerar detta."
+    "en": "a01fe4fce9df1599",
+    "text": "Endast produktionsläge. En kommaseparerad lista över de dörrar som bara tar lösenord — ldap, wstrust, scim, ssf, est, xacml-pep — där en person som har eller måste ha en andra faktor ÄNDÅ godtas med sitt eget lösenord. Tomt, standardvärdet, vägrar det lösenordet vid alla sex (besvaras som ett felaktigt lösenord) och godtar där bara ett applösenord. **VARNING: varje listad dörr sänker varje sådan person till EN faktor vid den dörren** (NIST SP 800-63B avsnitt 4.2: AAL2 blir AAL1), så ett stulet lösenord öppnar den utan den andra faktorn. Föredra applösenord; lista en dörr bara för en klient som inte kan få ett. Utvecklingsläget kontrollerar inga lösenord någonstans och ignorerar detta."
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",

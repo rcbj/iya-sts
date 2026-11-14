@@ -55,7 +55,7 @@ Do not edit it by hand.
 | [Signer trust anchor](#signer-trust-anchor) | `SignerTrustAnchor` | ou=signerTrustAnchors | 5 |
 | [SPIFFE](#spiffe) | `Spiffe` | ou=spiffe | 30 |
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
-| [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 19 |
+| [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 20 |
 | [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 10 |
 
 ## Application
@@ -1302,6 +1302,7 @@ Recorded in `../xacml/xacml_pep_registry`.
 | `xacmlPepLastSeen` | one | this service | `1.3.6.1.4.1.67607.1.1.730` | The last heartbeat or pull. xacml.pepStaleAfterS is how long since this before the console says "stale" — which changes nothing this service does, deliberately. |
 | `xacmlPepNotifyUrl` | one | this service | `1.3.6.1.4.1.67607.1.1.731` | Where to POST the change nudge, if the PEP gave one. THE NUDGE IS NEVER THE MECHANISM — a PEP pulls on its own interval and converges without this — so an absent, refused or unreachable URL costs latency and nothing else. |
 | `xacmlPepPolicyCount` | one | this service | `1.3.6.1.4.1.67607.1.1.732` | How many policies the PEP says it loaded from that pull. A count that disagrees with this repository's is the signature of a PEP that pulled successfully and then refused a document. |
+| `xacmlPepProxy` | one | this service | `1.3.6.1.4.1.67607.1.1.752` | The reverse-proxy configuration the remote PEP pulls from GET /xacml/pep/proxy (#1760): one JSON document — enabled, the upstream application's base URL, the public base URL a browser reaches the proxy at, the timeouts and the ordered route table, each route with its path, methods, authentication mechanisms, the application in the realm's registry it fronts, and XACML resource and action. Written by the set-pep-proxy action of the console and the management API, validated whole there and again when the pull is built, so a value an ldapmodify wrote that does not validate is pulled as configured: false. Kept across a registration and a heartbeat; removed with the row. |
 | `xacmlPepRefused` | one | this service | `1.3.6.1.4.1.67607.1.1.733` | How many it REFUSED, including Permits refused for an obligation it could not discharge (section 7.2). |
 | `xacmlPepRegisteredAt` | one | this service | `1.3.6.1.4.1.67607.1.1.734` | When this PEP first registered. Kept across a re-registration, because a component that restarts hourly is a fact worth seeing and an entry whose age reset on every restart could never show it. |
 | `xacmlPepResource` | one | this service | `1.3.6.1.4.1.67607.1.1.735` | What the remote PEP says it is guarding. Free text from the PEP, shown as its own claim about itself. |

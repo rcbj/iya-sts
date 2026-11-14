@@ -23025,6 +23025,237 @@ const CODES = [
     summary: 'The issuance gate refused because no decision could be ' +
       'made, in product (ASVS 5.0.0 16.5.3).',
     spec: 'the token is not issued' },
+  { code: 'STS-XACML-0184',
+    summary: 'A remote PEP\'s reverse-proxy configuration (#1760) is not ' +
+      'JSON, or not a JSON object.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0185',
+    summary: 'A remote PEP\'s reverse-proxy configuration, or one of its ' +
+      'routes, carries a member the grammar does not name (the document is ' +
+      'closed).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0186',
+    summary: 'A reverse-proxy configuration\'s `enabled` is not true or ' +
+      'false.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0187',
+    summary: 'A reverse-proxy configuration\'s `upstream` is not an ' +
+      'absolute http(s) URL with no userinfo, query or fragment.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0188',
+    summary: 'A reverse-proxy configuration\'s `publicBaseUrl` is not an ' +
+      'http(s) origin, is not https in product mode or for a session route, ' +
+      'or is missing while a route uses the session mechanism.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0189',
+    summary: 'A reverse-proxy configuration\'s `upstreamTimeoutMs` is not ' +
+      'an integer from 1 to 120000.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0190',
+    summary: 'A reverse-proxy configuration\'s `maxBodyBytes` is not an ' +
+      'integer from 0 to 104857600.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0191',
+    summary: 'A reverse-proxy configuration\'s `routes` is not a list of ' +
+      'at most 64 objects.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0192',
+    summary: 'A reverse-proxy route\'s `id` is not 1 to 64 letters, ' +
+      'digits, dots, dashes or underscores, or two routes share one.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0193',
+    summary: 'A reverse-proxy route\'s `path` does not start with /, or ' +
+      'holds a . or .. segment, //, %, a backslash, ?, # or a control ' +
+      'character.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0194',
+    summary: 'A reverse-proxy route\'s `match` is not prefix or exact.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0195',
+    summary: 'A reverse-proxy route\'s `methods` is not a list of distinct ' +
+      'methods from GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0196',
+    summary: 'A reverse-proxy route\'s `mechanisms` names an unknown or ' +
+      'repeated mechanism, a public route names one, or a route that is not ' +
+      'public names none.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0197',
+    summary: 'A reverse-proxy route that is not public names no ' +
+      '`application`, or a public route names one (#1760, D10).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0198',
+    summary: 'A reverse-proxy route\'s identity header name is not an RFC ' +
+      '9110 token, or names a header the proxy itself writes or strips ' +
+      '(hop-by-hop, framing, Authorization, Cookie, Host, Forwarded, ' +
+      'X-Forwarded-*).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0199',
+    summary: 'A reverse-proxy route\'s `public`, `forwardCredentials`, ' +
+      '`signals`, `resource` or `action` is of the wrong type or too long.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0200',
+    summary: 'The reverse-proxy configuration stored on a remote PEP\'s ' +
+      'entry (written by ldapmodify, or before a rule changed) does not ' +
+      'validate; the pull answers configured: false and the proxy denies ' +
+      'everything.',
+    spec: 'GET /xacml/pep/proxy answers 200 with configured: false' },
+  { code: 'STS-XACML-0201',
+    summary: 'set-pep-proxy was sent with no `proxy` document.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0202',
+    summary: 'The directory refused to write or remove a remote PEP\'s ' +
+      'reverse-proxy configuration.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0203',
+    summary: 'The reverse-proxy configuration was saved and the session ' +
+      'mechanism\'s public OpenID Connect client (xacml-pep-<name>) could ' +
+      'not be created or its redirect URI updated. Retired before ' +
+      'release: a session route names an existing application (#1760).',
+    spec: '', retired: true },
+  { code: 'STS-XACML-0204',
+    summary: 'POST /xacml/pep/basic was not { username, password } of the ' +
+      'right shape.',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0205',
+    summary: 'POST /xacml/pep/basic: the username or the address is past ' +
+      'the sign-in door\'s limit (door xacml-pep-basic).',
+    spec: 'HTTP 429 with { valid: false, retryAfterS }' },
+  { code: 'STS-XACML-0206',
+    summary: 'POST /xacml/pep/basic: the credential was refused (no such ' +
+      'person, a wrong password, a disabled account, a second factor owed); ' +
+      'the reason is in the log and the audit row only.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0207',
+    summary: 'POST /xacml/pep/introspect was not { token } of the right ' +
+      'shape.',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0208',
+    summary: 'POST /xacml/pep/saml was not { assertion, audience }, the ' +
+      'assertion not base64 of a SAML 2.0 Assertion, or larger than 256 ' +
+      'KiB.',
+    spec: 'HTTP 400 invalid_request, or 200 { valid: false } for a ' +
+      'document that is not an assertion' },
+  { code: 'STS-XACML-0209',
+    summary: 'POST /xacml/pep/saml was given an EncryptedAssertion, which ' +
+      'neither the PEP nor this service can decrypt.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0210',
+    summary: 'POST /xacml/pep/saml: the assertion is not signed at its ' +
+      'root, or the signature does not verify against this realm\'s XML ' +
+      'signing certificates.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0211',
+    summary: 'POST /xacml/pep/saml: the assertion\'s Issuer is not this ' +
+      'realm\'s issuer.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0212',
+    summary: 'POST /xacml/pep/saml: the assertion is outside its ' +
+      'Conditions\' NotBefore / NotOnOrAfter (with oauth2.clockSkewS), or ' +
+      'names no NotOnOrAfter.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0213',
+    summary: 'POST /xacml/pep/saml: an AudienceRestriction does not hold ' +
+      'the route\'s audience, or the assertion has none.',
+    spec: 'HTTP 200 { valid: false }' },
+  { code: 'STS-XACML-0214',
+    summary: 'POST /xacml/pep/session was not { sid } of the right shape.',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0215',
+    summary: 'A remote PEP\'s validation calls (/xacml/pep/introspect, ' +
+      'basic, saml, session) are past xacml.pipMaxPerWindow for the window.',
+    spec: 'HTTP 429 too_many_requests with Retry-After' },
+  { code: 'STS-XACML-0216',
+    summary: 'One of a remote PEP\'s validation doors (/xacml/pep/' +
+      'introspect, basic, saml, session) threw: a defect, logged with ' +
+      'its stack.',
+    spec: 'HTTP 500 server_error' },
+  { code: 'STS-XACML-0217',
+    summary: 'A reverse-proxy route names an application this realm\'s ' +
+      'registry does not hold (#1760, D10).',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0218',
+    summary: 'A reverse-proxy route accepts oauth2 and its application ' +
+      'declares no audience (oauthAudience or oauthPermissionBaseUri).',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0219',
+    summary: 'A reverse-proxy route accepts saml2 and its application has ' +
+      'no SAML entity ID (samlEntityId).',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0220',
+    summary: 'A reverse-proxy session route\'s application is not a ' +
+      'confidential OpenID Connect client (client_secret_basic or ' +
+      'client_secret_post).',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0221',
+    summary: 'A reverse-proxy session route\'s application does not allow ' +
+      'the authorization_code grant.',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0222',
+    summary: 'A reverse-proxy session route\'s application does not ' +
+      'register <publicBaseUrl>/.iya-pep/callback among its redirect URIs.',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0223',
+    summary: 'A reverse-proxy session route\'s application holds no ' +
+      'unexpired client secret.',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0224',
+    summary: 'A reverse-proxy route\'s `identity` is not an object, names ' +
+      'an unknown mode, carries headers or a separator in mode saml or jwt, ' +
+      'or is set on a public route (#1760, D11).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0225',
+    summary: 'A reverse-proxy route\'s `identity.headers` is not a list of ' +
+      'at most 16 { name, claim }, a row names no header, or one name ' +
+      'appears twice (compared without case).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0226',
+    summary: 'A reverse-proxy route\'s identity header names a claim that ' +
+      'is not sub, username, email, name, given_name, family_name, groups, ' +
+      'mechanism, acr or amr.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0227',
+    summary: 'A reverse-proxy route\'s `identity.separator` is not one ' +
+      'printable ASCII character other than a letter or a digit.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0228',
+    summary: 'A reverse-proxy route forwards the identity as a SAML ' +
+      'assertion and its application has no SAML entity ID or no registered ' +
+      'assertion consumer service.',
+    spec: 'HTTP 400 on /admin-api; the route usable: false at the pull' },
+  { code: 'STS-XACML-0229',
+    summary: 'POST /xacml/pep/identity was not { route, evidence: { kind, ' +
+      'value }, claims? } of the right shape, or `claims` names a claim the ' +
+      'route\'s headers do not.',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0230',
+    summary: 'POST /xacml/pep/identity named a route that is not a ' +
+      'non-public route of the asking PEP\'s own proxy configuration.',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0231',
+    summary: 'POST /xacml/pep/identity\'s evidence did not validate: an ' +
+      'access token not active in this realm or issued neither to nor for ' +
+      'the route\'s application, or a SAML assertion this realm did not ' +
+      'issue for it.',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0232',
+    summary: 'POST /xacml/pep/identity\'s ticket is unknown, was handed to ' +
+      'another PEP, or has expired.',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0233',
+    summary: 'POST /xacml/pep/identity cannot answer: the route is not ' +
+      'usable, its application has no SAML entity ID for an assertion, or ' +
+      'the directory holds no entry for the person.',
+    spec: 'HTTP 422 invalid_request' },
+  { code: 'STS-XACML-0234',
+    summary: 'POST /xacml/pep/identity: the issuance policy refused the ' +
+      'access token or SAML assertion a route forwards.',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0235',
+    summary: 'POST /xacml/pep/identity: the access token or SAML Response ' +
+      'could not be issued (for example an assertion that must be encrypted ' +
+      'and cannot be).',
+    spec: 'HTTP 422 invalid_request' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

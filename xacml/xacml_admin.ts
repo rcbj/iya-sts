@@ -120,6 +120,9 @@ import pepHttp = require('./xacml_pep_http');
 // A remote PEP's HTTPS listener certificate (2026-09-13). A LIBRARY over
 // `common/pki.js` and the register above, registering nothing.
 import pepTls = require('./xacml_pep_tls');
+// The remote PEP's reverse proxy (#1760): the grammar `set-pep-proxy` is
+// held to and the session mechanism's client. A LIBRARY, registering nothing.
+import pepProxy = require('./xacml_pep_proxy');
 import pki = require('../common/pki');
 import monitor = require('./xacml_monitor');
 
@@ -179,6 +182,7 @@ interface XacmlAdminDeps {
   peps: any;
   pepHttp: any;
   pepTls: any;
+  pepProxy: any;
   pki: any;
   monitor: any;
   // Required at the moment they are needed, never at load.
@@ -207,8 +211,11 @@ interface XacmlAdminDeps {
 // the other three, and every caller settles it with `Promise.resolve()`. The
 // three synchronous ones stay synchronous because two in-process test files
 // call `combinedAction()` without awaiting.
+// `set-pep-proxy` and `clear-pep-proxy` (#1760) are the reverse proxy's:
+// the configuration the PEP pulls from `GET /xacml/pep/proxy`.
 const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep',
-                     'issue-pep-certificate'];
+                     'issue-pep-certificate', 'set-pep-proxy',
+                     'clear-pep-proxy', 'set-pep-route-identity'];
 
 // ---------------------------------------------------------------------------
 // THE ACTIONS BEHIND THAT PAGE.
@@ -309,6 +316,7 @@ class XacmlAdmin {
       peps: peps,
       pepHttp: pepHttp,
       pepTls: pepTls,
+      pepProxy: pepProxy,
       pki: pki,
       monitor: monitor,
       loadXacml: function (): XacmlRoutes {
@@ -516,10 +524,34 @@ class XacmlAdmin {
    * @returns the remote PEP view as JSON
    */
   pepsJson(): Record<string, any> {
-    const { log, config, peps, pepHttp, pepTls, pki } = this.deps;
+    const { log, config, peps, pepHttp, pepTls, pki,
+            pepProxy } = this.deps;
     log.debug('Entering XacmlAdmin.pepsJson().');
     const rows = peps.all().map(function (row) {
       const view = Object.assign({}, row);
+      // THE REVERSE PROXY (#1760), read through the validator the pull
+      // uses, so the page shows what the PEP would be sent: the document,
+      // or null with the reason a stored value is refused. The stored text
+      // itself is not answered.
+      // Each route's application resolved as the pull would (D10), as the
+      // REFERENCE and whether it is usable — never what was read off the
+      // application, which is the pull's alone (its secret above all).
+      view.proxy = null;
+      view.proxyProblem = null;
+      view.proxyRoutes = [];
+      if (row.proxy) {
+        const checked = pepProxy.validate(row.proxy);
+        if (checked.ok) {
+          view.proxy = checked.proxy;
+          view.proxyRoutes = checked.proxy.routes.map(function (route) {
+            const one = pepProxy.resolveRoute(route, checked.proxy).resolved;
+            return { route: route.id, application: route.application,
+                     usable: one.usable, why: one.usable ? null : one.why };
+          });
+        } else {
+          view.proxyProblem = checked.why;
+        }
+      }
       // THE NOTIFY URL'S PROBLEM IS COMPUTED RATHER THAN REMEMBERED, so that
       // changing `xacml.pepNotifyAllowedHosts` changes what this page says
       // about a PEP registered an hour ago. A stored verdict would have been
@@ -713,6 +745,11 @@ class XacmlAdmin {
                     'and GET /admin-api/xacml/peps lists it.' },
                'STS-XACML-0038');
     }
+    if (action === 'set-pep-proxy' || action === 'clear-pep-proxy' ||
+        action === 'set-pep-route-identity') {
+      log.debug('Leaving XacmlAdmin.pepAction(). The reverse proxy.');
+      return this.proxyAction(action, name, body);
+    }
     if (action === 'forget-pep') {
       const gone = peps.remove(name);
       audit.audit({ action: 'xacml.pep.forget', actor: '', protocol: 'XACML',
@@ -752,6 +789,151 @@ class XacmlAdmin {
                  'policy, and it will go on pulling and deciding. What this ' +
                  'changed is that this service no longer dials it, so it now ' +
                  'converges only on its own polling interval.' };
+  }
+
+  // ===========================================================================
+  // THE REVERSE PROXY'S TWO ACTIONS (#1760).
+  //
+  // `set-pep-proxy` validates the WHOLE document (`xacml_pep_proxy.ts`),
+  // resolves every route's APPLICATION in the realm's registry (D10) and
+  // refuses one that does not qualify, and writes what the validator
+  // normalised. Nothing is created: the application behind the proxy is
+  // an ordinary entry an administrator configured, and the pull reads what
+  // each mechanism needs off it.
+  //
+  // `clear-pep-proxy` removes the configuration; the applications its routes
+  // named are untouched.
+  // ===========================================================================
+  // The stored proxy document with one route's identity replaced, or a
+  // refusal: `set-pep-route-identity`'s first half.
+  private withRouteIdentity(name: string, body: any): any {
+    const { log, errorCodes, peps, pepProxy } = this.deps;
+    log.debug('Entering XacmlAdmin.withRouteIdentity().');
+    const row = peps.read(name);
+    const checked = row && row.proxy ? pepProxy.validate(row.proxy) : null;
+    if (!checked || !checked.ok) {
+      log.debug('Leaving XacmlAdmin.withRouteIdentity(). No document.');
+      return errorCodes.mark({ ok: false,
+               why: '"' + name + '" holds no valid reverse-proxy ' +
+                    'configuration to edit a route of; save one with ' +
+                    'set-pep-proxy first.' }, 'STS-XACML-0201');
+    }
+    const routeId = String(body.route || '');
+    const proxy = JSON.parse(JSON.stringify(checked.proxy));
+    const route = proxy.routes.filter(function (one: any) {
+      return one.id === routeId;
+    })[0];
+    if (!route) {
+      log.debug('Leaving XacmlAdmin.withRouteIdentity(). No such route.');
+      return errorCodes.mark({ ok: false,
+               why: '"' + name + '" has no route "' + routeId + '".' },
+               'STS-XACML-0230');
+    }
+    const list = function (value: unknown): string[] {
+      log.debug('Entering list().');
+      log.debug('Leaving list().');
+      return (Array.isArray(value) ? value : (value === undefined ||
+                                              value === null ? [] : [value]))
+        .map(function (one: unknown) {
+          return String(one).trim();
+        });
+    };
+    const names = list(body.headerName);
+    const claims = list(body.headerClaim);
+    const headers: Array<{ name: string; claim: string }> = [];
+    names.forEach(function (one, i) {
+      if (one) {
+        headers.push({ name: one, claim: claims[i] || '' });
+      }
+    });
+    const mode = String(body.mode || 'headers');
+    route.identity = mode === 'headers'
+      ? { mode: mode, headers: headers,
+          separator: String(body.separator === undefined ||
+                            body.separator === '' ? ',' : body.separator) }
+      : { mode: mode };
+    log.debug('Leaving XacmlAdmin.withRouteIdentity().');
+    return { ok: true, proxy: proxy };
+  }
+
+  private proxyAction(action: string, name: string, body: any): any {
+    const { log, audit, errorCodes, peps, pepProxy } = this.deps;
+    log.debug('Entering XacmlAdmin.proxyAction(). ' + action);
+    if (action === 'clear-pep-proxy') {
+      const cleared = peps.setProxy(name, null);
+      if (!cleared) {
+        log.debug('Leaving XacmlAdmin.proxyAction(). Not cleared.');
+        return errorCodes.mark({ ok: false,
+                                 why: 'The directory refused the change.' },
+                               'STS-XACML-0202');
+      }
+      audit.audit({ action: 'xacml.pep.proxy.clear', actor: '',
+                    protocol: 'XACML',
+                    detail: 'Removed the reverse-proxy configuration of ' +
+                            'remote PEP "' + name + '".' });
+      log.debug('Leaving XacmlAdmin.proxyAction(). Cleared.');
+      return { ok: true,
+               what: '"' + name + '" holds no reverse-proxy configuration; ' +
+                     'its proxy answers 404 to everything from its next ' +
+                     'pull. The applications its routes named are ' +
+                     'unchanged.' };
+    }
+    let given = (body || {}).proxy;
+    if (action === 'set-pep-route-identity') {
+      // ONE ROUTE'S IDENTITY (D11), from the console's mode choice and its
+      // header/claim table: the stored document with that route's
+      // `identity` replaced, then saved through the same checks as a whole
+      // document. A row with no header name is an unused row of the table.
+      const built = this.withRouteIdentity(name, body || {});
+      if (!built.ok) {
+        log.debug('Leaving XacmlAdmin.proxyAction(). No route.');
+        return built;
+      }
+      given = built.proxy;
+    }
+    if (given === undefined || given === null || given === '') {
+      log.debug('Leaving XacmlAdmin.proxyAction(). No document.');
+      return errorCodes.mark({ ok: false,
+               why: 'set-pep-proxy takes `proxy`, the configuration ' +
+                    'document: upstream, publicBaseUrl, the timeouts and ' +
+                    'the ordered routes. clear-pep-proxy removes one.' },
+               'STS-XACML-0201');
+    }
+    const checked = pepProxy.validate(given);
+    if (!checked.ok) {
+      log.debug('Leaving XacmlAdmin.proxyAction(). Refused: ' + checked.code);
+      return errorCodes.mark({ ok: false, why: checked.why }, checked.code);
+    }
+    // EVERY ROUTE'S APPLICATION MUST RESOLVE NOW (D10): an unknown one, a
+    // session route's client that is not confidential, lacks the code grant
+    // or the callback, an oauth2 route's with no audience, a saml2 route's
+    // with no entity ID — each refused by its code. The pull asks again.
+    const unusable = pepProxy.resolutionProblem(checked.proxy);
+    if (unusable) {
+      log.debug('Leaving XacmlAdmin.proxyAction(). Unresolved: ' +
+                unusable.code);
+      return errorCodes.mark({ ok: false, why: unusable.why },
+                             unusable.code);
+    }
+    const written = peps.setProxy(name, JSON.stringify(checked.proxy));
+    if (!written) {
+      log.debug('Leaving XacmlAdmin.proxyAction(). Not written.');
+      return errorCodes.mark({ ok: false,
+                               why: 'The directory refused the change.' },
+                             'STS-XACML-0202');
+    }
+    audit.audit({ action: 'xacml.pep.proxy.set', actor: '',
+                  protocol: 'XACML',
+                  detail: 'Set the reverse-proxy configuration of remote ' +
+                          'PEP "' + name + '": ' +
+                          checked.proxy.routes.length + ' route(s), ' +
+                          (checked.proxy.enabled ? 'enabled' : 'disabled') +
+                          '.' });
+    log.debug('Leaving XacmlAdmin.proxyAction(). Saved.');
+    return { ok: true, proxy: checked.proxy,
+             what: '"' + name + '"\'s reverse-proxy configuration is saved ' +
+                   '(' + checked.proxy.routes.length + ' route(s)); the ' +
+                   'proxy picks it up on its next pull.' };
   }
 
   /**

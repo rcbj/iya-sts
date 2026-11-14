@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5482** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5533** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 105
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 157
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -5029,6 +5029,58 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0181` | The access gate had no decider, or its decider answered nothing: refused in product mode, allowed in development (#1450). | — |
 | `STS-XACML-0182` | An access check named no resource or no action, a defect at the call site: refused in product mode, allowed in development (#1450). | — |
 | `STS-XACML-0183` | The issuance gate refused because no decision could be made, in product (ASVS 5.0.0 16.5.3). | the token is not issued |
+| `STS-XACML-0184` | A remote PEP's reverse-proxy configuration (#1760) is not JSON, or not a JSON object. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0185` | A remote PEP's reverse-proxy configuration, or one of its routes, carries a member the grammar does not name (the document is closed). | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0186` | A reverse-proxy configuration's `enabled` is not true or false. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0187` | A reverse-proxy configuration's `upstream` is not an absolute http(s) URL with no userinfo, query or fragment. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0188` | A reverse-proxy configuration's `publicBaseUrl` is not an http(s) origin, is not https in product mode or for a session route, or is missing while a route uses the session mechanism. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0189` | A reverse-proxy configuration's `upstreamTimeoutMs` is not an integer from 1 to 120000. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0190` | A reverse-proxy configuration's `maxBodyBytes` is not an integer from 0 to 104857600. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0191` | A reverse-proxy configuration's `routes` is not a list of at most 64 objects. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0192` | A reverse-proxy route's `id` is not 1 to 64 letters, digits, dots, dashes or underscores, or two routes share one. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0193` | A reverse-proxy route's `path` does not start with /, or holds a . or .. segment, //, %, a backslash, ?, # or a control character. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0194` | A reverse-proxy route's `match` is not prefix or exact. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0195` | A reverse-proxy route's `methods` is not a list of distinct methods from GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0196` | A reverse-proxy route's `mechanisms` names an unknown or repeated mechanism, a public route names one, or a route that is not public names none. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0197` | A reverse-proxy route that is not public names no `application`, or a public route names one (#1760, D10). | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0198` | A reverse-proxy route's identity header name is not an RFC 9110 token, or names a header the proxy itself writes or strips (hop-by-hop, framing, Authorization, Cookie, Host, Forwarded, X-Forwarded-*). | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0199` | A reverse-proxy route's `public`, `forwardCredentials`, `signals`, `resource` or `action` is of the wrong type or too long. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0200` | The reverse-proxy configuration stored on a remote PEP's entry (written by ldapmodify, or before a rule changed) does not validate; the pull answers configured: false and the proxy denies everything. | GET /xacml/pep/proxy answers 200 with configured: false |
+| `STS-XACML-0201` | set-pep-proxy was sent with no `proxy` document. | HTTP 400 on /admin-api |
+| `STS-XACML-0202` | The directory refused to write or remove a remote PEP's reverse-proxy configuration. | HTTP 400 on /admin-api |
+| `STS-XACML-0203` *(retired)* | The reverse-proxy configuration was saved and the session mechanism's public OpenID Connect client (xacml-pep-<name>) could not be created or its redirect URI updated. Retired before release: a session route names an existing application (#1760). | — |
+| `STS-XACML-0204` | POST /xacml/pep/basic was not { username, password } of the right shape. | HTTP 400 invalid_request |
+| `STS-XACML-0205` | POST /xacml/pep/basic: the username or the address is past the sign-in door's limit (door xacml-pep-basic). | HTTP 429 with { valid: false, retryAfterS } |
+| `STS-XACML-0206` | POST /xacml/pep/basic: the credential was refused (no such person, a wrong password, a disabled account, a second factor owed); the reason is in the log and the audit row only. | HTTP 200 { valid: false } |
+| `STS-XACML-0207` | POST /xacml/pep/introspect was not { token } of the right shape. | HTTP 400 invalid_request |
+| `STS-XACML-0208` | POST /xacml/pep/saml was not { assertion, audience }, the assertion not base64 of a SAML 2.0 Assertion, or larger than 256 KiB. | HTTP 400 invalid_request, or 200 { valid: false } for a document that is not an assertion |
+| `STS-XACML-0209` | POST /xacml/pep/saml was given an EncryptedAssertion, which neither the PEP nor this service can decrypt. | HTTP 200 { valid: false } |
+| `STS-XACML-0210` | POST /xacml/pep/saml: the assertion is not signed at its root, or the signature does not verify against this realm's XML signing certificates. | HTTP 200 { valid: false } |
+| `STS-XACML-0211` | POST /xacml/pep/saml: the assertion's Issuer is not this realm's issuer. | HTTP 200 { valid: false } |
+| `STS-XACML-0212` | POST /xacml/pep/saml: the assertion is outside its Conditions' NotBefore / NotOnOrAfter (with oauth2.clockSkewS), or names no NotOnOrAfter. | HTTP 200 { valid: false } |
+| `STS-XACML-0213` | POST /xacml/pep/saml: an AudienceRestriction does not hold the route's audience, or the assertion has none. | HTTP 200 { valid: false } |
+| `STS-XACML-0214` | POST /xacml/pep/session was not { sid } of the right shape. | HTTP 400 invalid_request |
+| `STS-XACML-0215` | A remote PEP's validation calls (/xacml/pep/introspect, basic, saml, session) are past xacml.pipMaxPerWindow for the window. | HTTP 429 too_many_requests with Retry-After |
+| `STS-XACML-0216` | One of a remote PEP's validation doors (/xacml/pep/introspect, basic, saml, session) threw: a defect, logged with its stack. | HTTP 500 server_error |
+| `STS-XACML-0217` | A reverse-proxy route names an application this realm's registry does not hold (#1760, D10). | HTTP 400 on /admin-api; the route usable: false at the pull |
+| `STS-XACML-0218` | A reverse-proxy route accepts oauth2 and its application declares no audience (oauthAudience or oauthPermissionBaseUri). | HTTP 400 on /admin-api; the route usable: false at the pull |
+| `STS-XACML-0219` | A reverse-proxy route accepts saml2 and its application has no SAML entity ID (samlEntityId). | HTTP 400 on /admin-api; the route usable: false at the pull |
+| `STS-XACML-0220` | A reverse-proxy session route's application is not a confidential OpenID Connect client (client_secret_basic or client_secret_post). | HTTP 400 on /admin-api; the route usable: false at the pull |
+| `STS-XACML-0221` | A reverse-proxy session route's application does not allow the authorization_code grant. | HTTP 400 on /admin-api; the route usable: false at the pull |
+| `STS-XACML-0222` | A reverse-proxy session route's application does not register <publicBaseUrl>/.iya-pep/callback among its redirect URIs. | HTTP 400 on /admin-api; the route usable: false at the pull |
+| `STS-XACML-0223` | A reverse-proxy session route's application holds no unexpired client secret. | HTTP 400 on /admin-api; the route usable: false at the pull |
+| `STS-XACML-0224` | A reverse-proxy route's `identity` is not an object, names an unknown mode, carries headers or a separator in mode saml or jwt, or is set on a public route (#1760, D11). | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0225` | A reverse-proxy route's `identity.headers` is not a list of at most 16 { name, claim }, a row names no header, or one name appears twice (compared without case). | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0226` | A reverse-proxy route's identity header names a claim that is not sub, username, email, name, given_name, family_name, groups, mechanism, acr or amr. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0227` | A reverse-proxy route's `identity.separator` is not one printable ASCII character other than a letter or a digit. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0228` | A reverse-proxy route forwards the identity as a SAML assertion and its application has no SAML entity ID or no registered assertion consumer service. | HTTP 400 on /admin-api; the route usable: false at the pull |
+| `STS-XACML-0229` | POST /xacml/pep/identity was not { route, evidence: { kind, value }, claims? } of the right shape, or `claims` names a claim the route's headers do not. | HTTP 400 invalid_request |
+| `STS-XACML-0230` | POST /xacml/pep/identity named a route that is not a non-public route of the asking PEP's own proxy configuration. | HTTP 403 access_denied |
+| `STS-XACML-0231` | POST /xacml/pep/identity's evidence did not validate: an access token not active in this realm or issued neither to nor for the route's application, or a SAML assertion this realm did not issue for it. | HTTP 403 access_denied |
+| `STS-XACML-0232` | POST /xacml/pep/identity's ticket is unknown, was handed to another PEP, or has expired. | HTTP 403 access_denied |
+| `STS-XACML-0233` | POST /xacml/pep/identity cannot answer: the route is not usable, its application has no SAML entity ID for an assertion, or the directory holds no entry for the person. | HTTP 422 invalid_request |
+| `STS-XACML-0234` | POST /xacml/pep/identity: the issuance policy refused the access token or SAML assertion a route forwards. | HTTP 403 access_denied |
+| `STS-XACML-0235` | POST /xacml/pep/identity: the access token or SAML Response could not be issued (for example an assertion that must be encrypted and cannot be). | HTTP 422 invalid_request |
 
 ## STS-XPEP
 
