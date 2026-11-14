@@ -234,8 +234,10 @@ rust/
                                  error codes, the realm context, version, logging
     sts-crypto/                  every algorithm (section 6) behind traits; no I/O
     sts-pki/                     CA hierarchy, X.509, CRL, OCSP, CMS, PKCS#10/#12
-    sts-store/                   Store trait: memory, ldif, postgres; RealmMap<T>;
-                                 the change log; minted state; sealing with DEKs
+    sts-store/                   Store trait: memory, ldif, postgres, mariadb behind
+                                 one Dialect; tables and columns from the model;
+                                 RealmMap<T>; the change log and origin claim;
+                                 minted state and its side tables; sealing with DEKs
     sts-cluster/                 membership, leases, fencing, claims, barrier, Scheduler
     sts-cache/                   CacheRegistry and the bounded caches it describes
     sts-http/                    the HTTP application: realm layer, CSP, CORS, bodies,

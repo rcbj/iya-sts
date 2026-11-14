@@ -593,34 +593,7 @@ fn entry_write(
     let index = codec.index_of(&entry.attributes);
     let sealed = codec.seal_attributes(realm, key, &entry.attributes);
     let dek_keys = EntryCodec::dek_keys_of(&entry.attributes, &sealed);
-    let mut keys = Vec::new();
-    let mut seen = HashSet::new();
-    let mut add = |kind: &str, k: String| {
-        if seen.insert(format!("{}\n{}", kind, k)) {
-            keys.push((kind.to_string(), k));
-        }
-    };
-    for (kind, list) in [
-        ("name", &index.name_keys),
-        ("mail", &index.mail_keys),
-        ("uuid", &index.uuid_keys),
-        ("class", &index.class_keys),
-        ("value", &index.value_keys),
-    ] {
-        for one in list {
-            add(kind, table_key(one));
-        }
-    }
-    for name in &index.attr_names {
-        if ASKED_ATTRIBUTES.contains(&name.as_str()) {
-            add("attr", table_key(name));
-        }
-    }
-    if let Json::Object(deks) = &dek_keys {
-        for id in deks.keys() {
-            add("dek", table_key(id));
-        }
-    }
+    let keys = entry_key_rows(codec, &entry.attributes, &dek_keys);
     let values = vec![
         Value::from(realm),
         Value::from(key),
@@ -647,6 +620,47 @@ fn entry_write(
             dek_keys: Some(dek_keys),
         },
     }
+}
+
+/// An entry's `sts_ldap_entry_keys` rows (`entryWrite()`'s keys): its
+/// names, mails, UUIDs, group classes and values, the asked attribute
+/// names and the data keys its blob names, each once, as `(kind, k)`.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn entry_key_rows(
+    codec: &EntryCodec,
+    attributes: &indexmap::IndexMap<String, Vec<String>>,
+    dek_keys: &Json,
+) -> Vec<(String, String)> {
+    let index = codec.index_of(attributes);
+    let mut keys = Vec::new();
+    let mut seen = HashSet::new();
+    let mut add = |kind: &str, k: String| {
+        if seen.insert(format!("{}\n{}", kind, k)) {
+            keys.push((kind.to_string(), k));
+        }
+    };
+    for (kind, list) in [
+        ("name", &index.name_keys),
+        ("mail", &index.mail_keys),
+        ("uuid", &index.uuid_keys),
+        ("class", &index.class_keys),
+        ("value", &index.value_keys),
+    ] {
+        for one in list {
+            add(kind, table_key(one));
+        }
+    }
+    for name in &index.attr_names {
+        if ASKED_ATTRIBUTES.contains(&name.as_str()) {
+            add("attr", table_key(name));
+        }
+    }
+    if let Json::Object(deks) = dek_keys {
+        for id in deks.keys() {
+            add("dek", table_key(id));
+        }
+    }
+    keys
 }
 
 /// A locked row as `contribute()` reads it (`stateOfRow()`).
