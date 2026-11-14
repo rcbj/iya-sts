@@ -37,8 +37,6 @@
 #   * the service's JavaScript tree, `node_modules`, `/opt/sts-sdk` and
 #     `NODE_PATH`, `NODE_ENV`, and both SBOMs (`sbom.cdx.json`,
 #     `sbom-sdks.cdx.json`, npm's): a Cargo SBOM is phase 10's;
-#   * `version.json` stamped at build: the runtime reports its version
-#     from `sts-core` and gains `--stamp` with the version surfaces;
 #   * the embedded debugger's tree (`debugger/embedded/`): its listener is
 #     not ported (phase 9);
 #   * `os-packages.txt` is written, as the Node image writes it.
@@ -55,22 +53,32 @@ COPY tests/package*.json ./tests/
 RUN npm ci --prefix ./tests && npm cache clean --force
 COPY . ./
 RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip
-# What the runtime serves: each surface's two bundles, the catalogs the
-# browser translates from (/web/locales), and the favicon.
-RUN mkdir -p /out \
- && for f in admin-ui/console.bundle.js admin-ui/console.js \
-             portal/portal.bundle.js portal/portal-spa.js \
-             report/report.bundle.js report/report-spa.js \
-             home/home.bundle.js home/home-spa.js \
-             authn/authn.bundle.js authn/authn-spa.js \
-             gnap/gnap-interaction.bundle.js gnap/gnap-interaction-spa.js \
-             logout/signout.bundle.js logout/signout-spa.js \
-             federation/federation-pages.bundle.js \
-             federation/federation-pages-spa.js \
-             common/description-pages.bundle.js \
-             common/description-pages-spa.js common/favicon.ico; do \
-      test -s "$f" || { echo "rust/Dockerfile: no $f" >&2; exit 1; }; \
-      mkdir -p "/out/$(dirname "$f")" && cp "$f" "/out/$f"; \
+# What the runtime serves, at the paths the Node image has them under
+# /usr/src/sts (sts-http's `WebRoot`, `STS_WEB_ROOT`): every file the build
+# packed — each surface's runtime and the map data, found by the `.br`
+# beside it — with its `.br` and `.gz`, the catalogs the browser
+# translates from (/web/locales), the favicon, and version.json, stamped
+# here as the Node image stamps it (`common/version.js --stamp`).
+ARG GIT_COMMIT=
+ARG STS_RELEASE=
+ARG BUILD_NUMBER=
+ARG STS_VERSION_RELEASE=
+RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
+    BUILD_NUMBER="${BUILD_NUMBER}" \
+    STS_VERSION_RELEASE="${STS_VERSION_RELEASE}" \
+    node common/version.js --stamp . \
+ && mkdir -p /out \
+ && find . -path ./node_modules -prune -o -path ./tests -prune -o \
+      -name '*.br' -print | while read -r br; do \
+      f="${br%.br}"; \
+      for one in "$f" "$f.br" "$f.gz"; do \
+        mkdir -p "/out/$(dirname "$one")" && cp "$one" "/out/$one"; \
+      done; \
+    done \
+ && for f in admin-ui/console.js portal/portal-spa.js home/home-spa.js \
+             authn/authn-spa.js common/favicon.ico version.json; do \
+      test -s "/out/$f" || { test -s "$f" && cp "$f" "/out/$f"; } \
+        || { echo "rust/Dockerfile: no $f" >&2; exit 1; }; \
     done \
  && cp -r common/locales /out/common/locales
 
@@ -99,9 +107,11 @@ RUN apt-get update \
 WORKDIR /usr/src/sts
 COPY --from=build /usr/src/rust/target/release/sts-runtime \
      /usr/local/bin/sts-runtime
-COPY --from=typescript /out/ ./static/
+COPY --from=typescript /out/ ./
 COPY env ./env
 COPY VERSION ./VERSION
+# Where the static surfaces' built files are (sts-http's WebRoot).
+ENV STS_WEB_ROOT=/usr/src/sts
 RUN dpkg-query -W -f='${Package} ${Version}\n' > /usr/src/sts/os-packages.txt
 ARG GIT_COMMIT=
 LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
