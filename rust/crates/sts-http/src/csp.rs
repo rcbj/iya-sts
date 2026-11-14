@@ -14,6 +14,7 @@ const BASE: &[(&str, &str)] = &[
     ("img-src", "'self' data:"),
     ("base-uri", "'none'"),
     ("frame-ancestors", "'none'"),
+    ("object-src", "'none'"),
 ];
 
 /// What no caller can turn off.
@@ -65,6 +66,75 @@ pub fn content_security_policy(overrides: &[(&str, Option<&str>)]) -> String {
     render(directives)
 }
 
+/// The policy a response that is not a page gets at the flush (Qualys QID
+/// 150207, 2026-11-10, `NOT_A_PAGE_POLICY`): the base without `style-src`
+/// and `img-src`, which permit nothing a JSON answer, a metadata document
+/// or a plain-text refusal wanted.
+pub fn not_a_page_policy() -> String {
+    content_security_policy(&[("style-src", None), ("img-src", None)])
+}
+
+/// Whether a `Content-Type` is one [`not_a_page_policy`] is for
+/// (`NOT_A_PAGE_TYPES`): JSON, XML (`application/…+xml`, `text/xml`) or
+/// plain text. An SVG is XML that may style itself, and keeps the base.
+pub fn not_a_page_type(content_type: &str) -> bool {
+    let essence = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if essence.contains(char::is_whitespace) {
+        return false;
+    }
+    if essence == "text/plain" || essence == "text/xml" {
+        return true;
+    }
+    let Some(sub) = essence.strip_prefix("application/") else {
+        return false;
+    };
+    let last = sub.rsplit('+').next().unwrap_or(sub);
+    (last == "json" || last == "xml")
+        && !sub.is_empty()
+        && (sub == last || !sub[..sub.len() - last.len() - 1].is_empty())
+}
+
+/// A `script-src` narrowed to the sources that name a script exactly
+/// (`exactScriptSources()`, #1297): `'none'`, `'self'` and hash sources;
+/// `'none'` when nothing else is left.
+fn exact_script_sources(value: Option<&str>) -> String {
+    let value = value.unwrap_or("'none'");
+    let exact = |one: &str| {
+        if one == "'none'" || one == "'self'" {
+            return true;
+        }
+        let Some(inner) =
+            one.strip_prefix('\'').and_then(|o| o.strip_suffix('\''))
+        else {
+            return false;
+        };
+        let Some((alg, b64)) = inner.split_once('-') else {
+            return false;
+        };
+        let body = b64.trim_end_matches('=');
+        matches!(alg, "sha256" | "sha384" | "sha512")
+            && !body.is_empty()
+            && b64.len() - body.len() <= 2
+            && body
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'+' || c == b'/')
+    };
+    let sources: Vec<&str> = value
+        .split_whitespace()
+        .filter(|one| exact(one) && *one != "'none'")
+        .collect();
+    if sources.is_empty() {
+        "'none'".to_string()
+    } else {
+        sources.join(" ")
+    }
+}
+
 /// Whether an origin may frame the one framed page: an http(s) origin and
 /// nothing more (no path, no wildcard).
 fn framing_origin(origin: &str) -> bool {
@@ -82,7 +152,8 @@ fn framing_origin(origin: &str) -> bool {
 
 /// The policy for the OP iframe (#121): `frame-ancestors` narrowed to the
 /// named origins, `'none'` when none is an http(s) origin. `*` cannot be
-/// reached through it.
+/// reached through it, and its `script-src` names scripts exactly or not
+/// at all (#1297): never `'unsafe-inline'`.
 pub fn framed_content_security_policy(
     origins: &[&str],
     overrides: &[(&str, Option<&str>)],
@@ -96,6 +167,9 @@ pub fn framed_content_security_policy(
     for (name, value) in directives.iter_mut() {
         if name == "base-uri" {
             *value = base_of(name).map(str::to_string);
+        }
+        if name == "script-src" {
+            *value = Some(exact_script_sources(value.as_deref()));
         }
         if name == "frame-ancestors" {
             *value = Some(if allowed.is_empty() {

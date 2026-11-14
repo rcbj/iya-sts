@@ -283,6 +283,9 @@ async fn the_history_and_the_report_are_nodes() {
     diff("status", &status, &v["status"], &mut failures);
     let acme = norm(sched.status(Some("acme")).await);
     diff("acme", &acme, &v["acme"], &mut failures);
+    let mut rust = serde_json::Map::new();
+    rust.insert("status".into(), status.clone());
+    rust.insert("acme".into(), acme.clone());
     for q in v["recent"].as_array().unwrap() {
         let query = &q["query"];
         let ids: Vec<Json> = sched
@@ -361,6 +364,17 @@ async fn the_history_and_the_report_are_nodes() {
         &v["settles"],
         &mut failures,
     );
+    // Rust's report and purge, for `tests/rust_store_vectors.js` to hold to
+    // Node's.
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        rust.insert("purged".into(), norm(purged.to_json()));
+        rust.insert("pinned".into(), json!(pinned));
+        std::fs::write(
+            std::path::Path::new(&dir).join("scheduler-history-rust.json"),
+            serde_json::to_string_pretty(&Json::Object(rust)).unwrap() + "\n",
+        )
+        .unwrap();
+    }
 
     assert!(
         failures.is_empty(),

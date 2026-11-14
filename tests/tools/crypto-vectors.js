@@ -3222,13 +3222,17 @@ function schedulerVectors() {
     { id: 'c.seconds', cron: '*/20 * * * * *' },
     { id: 'd.manual', manualOnly: true },
     { id: 'x.listed', everyMs: 1000 },
-    { id: 'x.throws', everyMs: 5000, offThrows: 'no store' }
+    { id: 'x.throws', everyMs: 5000, offThrows: 'no store' },
+    // Where a body runs and how patient it is (#408).
+    { id: 'f.front', everyMs: 60000, onFront: 'it holds a socket' },
+    { id: 'n.patient', everyMs: 60000, nice: 19 },
+    { id: 'n.manual', manualOnly: true, nice: 7 }
   ];
   const specOf = function (d) {
     const spec = { id: d.id, title: 'T ' + d.id, describe: 'D', owner: 'O',
                    run: function () { return null; } };
     ['kind', 'scope', 'quiet', 'cron', 'manualOnly', 'everySetting',
-     'timeoutS'].forEach(function (k) {
+     'timeoutS', 'onFront', 'nice'].forEach(function (k) {
       if (d[k] !== undefined) {
         spec[k] = d[k];
       }
@@ -3264,6 +3268,8 @@ function schedulerVectors() {
         return sched.offReason(job, r);
       }),
       timeout: sched.timeoutMsOf(job),
+      nice: job.nice,
+      onFront: job.onFront || null,
       slots: times.map(function (t) { return sched.slotAt(job, t); }),
       runIds: [0, 1, 1767322800000].map(function (slot) {
         return sched.runIdFor(job, 'acme', slot);
@@ -3279,6 +3285,14 @@ function schedulerVectors() {
     pool = n;
     return sched.maxConcurrentRuns();
   });
+  // The default cap (the setting at 0) with no request workers: two, the
+  // floor (2026-11-10), still never every store connection.
+  settings['scheduler.maxConcurrentRuns'] = 0;
+  const concurrencyDefault = [0, 1, 2, 3, 10].map(function (n) {
+    pool = n;
+    return sched.maxConcurrentRuns();
+  });
+  settings['scheduler.maxConcurrentRuns'] = 4;
   const refused = [
     { id: 'Bad', title: '', describe: 'd', owner: 'o', everyMs: 1 },
     { id: 'one', title: 't', describe: 'd', owner: 'o', everyMs: 1 },
@@ -3288,7 +3302,17 @@ function schedulerVectors() {
       quiet: true },
     { id: 'p.manual', title: 't', describe: 'd', owner: 'o',
       kind: 'per-process', manualOnly: true },
-    { id: 'a.seconds', title: 't', describe: 'd', owner: 'o', everyMs: 1 }
+    { id: 'a.seconds', title: 't', describe: 'd', owner: 'o', everyMs: 1 },
+    { id: 'f.empty', title: 't', describe: 'd', owner: 'o', everyMs: 1,
+      onFront: '  ' },
+    { id: 'f.process', title: 't', describe: 'd', owner: 'o', everyMs: 1,
+      kind: 'per-process', onFront: 'a reason' },
+    { id: 'n.high', title: 't', describe: 'd', owner: 'o', everyMs: 1,
+      nice: 20 },
+    { id: 'n.half', title: 't', describe: 'd', owner: 'o', everyMs: 1,
+      nice: 2.5 },
+    { id: 'n.low', title: 't', describe: 'd', owner: 'o', everyMs: 1,
+      nice: -1 }
   ].map(function (d) {
     try {
       sched.register(specOf(d));
@@ -3351,8 +3375,13 @@ function schedulerVectors() {
   });
   return { settings: settings, descriptors: descriptors, times: times,
            jobs: jobs, delays: delays, concurrency: concurrency,
+           concurrencyDefault: concurrencyDefault,
            refused: refused, rows: rows, expiries: expiries, ranks: ranks,
            cron: cron,
+           whys: [null, 'text', { why: '' }, { why: 7 }, { why: 'short' },
+                  { why: 'w'.repeat(600) }, ['why']].map(function (r) {
+             return { result: r, why: S.whyOf(r) };
+           }),
            spans: [0, 499, 500, 1000, 59499, 59500, 60000, 252000, 3600000,
                    3660000, 7500000, 86400000, 7776000000, 90061000, -5],
            spanText: [0, 499, 500, 1000, 59499, 59500, 60000, 252000,
@@ -3543,13 +3572,20 @@ async function schedulerHistoryVectors() {
   const acme = await sched.status({ realm: 'acme' });
   const queries = [{}, { job: 'a.every' }, { outcome: 'failed' },
                    { realm: 'acme' }, { realm: 'acme', job: 'a.every' }];
-  const recent = queries.map(function (q) {
-    return { query: q, runs: sched.recentRuns(q, now).map(function (r) {
-      return r.runId;
-    }) };
-  });
-  const found = ['e1', 'process|p.pull|default|n1|41', 'leader', 'nope']
-    .map(function (id) { return sched.findRun(id); });
+  // recentRuns() and findRun() answer promises since the run store became
+  // windowed (they may read a realm's partition from the store).
+  const recent = [];
+  for (const q of queries) {
+    recent.push({ query: q, runs: (await sched.recentRuns(q, now))
+      .map(function (r) {
+        return r.runId;
+      }) });
+  }
+  const found = [];
+  for (const id of ['e1', 'process|p.pull|default|n1|41', 'leader',
+                    'nope']) {
+    found.push(await sched.findRun(id));
+  }
   const expiries = rows.map(function (one) {
     return sched.expiryOf(one.row);
   });
@@ -3621,6 +3657,21 @@ async function realmLifecycleVectors() {
     description: ' second ', domain: 'Prod2.Example.ORG.' });
   create('Bad_Id', {});
   create('dup', {}, { domain: 'prod2.example.org' });
+  // A name or description the store could never hold (#1463).
+  create('nul', {}, { name: 'a\u0000b', description: 'd\u0000' });
+  // The cluster's cap (#368): at the count, a create is refused.
+  const cap = function (raw) {
+    if (raw === null) {
+      config.clearOverride('realms.maxCount');
+    } else {
+      config.setOverride('realms.maxCount', raw);
+    }
+    steps.push({ op: 'config', key: 'realms.maxCount', raw: raw,
+                 result: { ok: true, errors: [], code: null } });
+  };
+  cap(realms.list().length);
+  create('full', {});
+  cap(null);
   const set = function (id, key, raw) {
     steps.push({ op: 'set', id: id, key: key, raw: raw,
                  result: answer(realms.setOverride(id, key, raw)) });
@@ -3646,6 +3697,7 @@ async function realmLifecycleVectors() {
   update('prod2', { overrides: { 'global.mode': 'product',
                                  [devOnlyKey]: true } });
   update('acme', { name: '  New Name ', description: ' d ' });
+  update('acme', { description: 'bad\u0000' });
   update('nosuch', { name: 'x' });
   const listed = function () {
     return realms.list().filter(function (r) { return !r.builtin; })
@@ -3705,6 +3757,22 @@ async function httpVectors() {
   app.get('/probe/realm', function (req, res) {
     res.type('text').send('realm=' + realms.currentId());
   });
+  // Bodies that are not pages (Qualys QID 150207) and types owed a charset
+  // (#1439), each written with the bare type so the flush is what adds it.
+  const raw = function (type, body) {
+    return function (req, res) {
+      res.setHeader('Content-Type', type);
+      res.end(body);
+    };
+  };
+  app.get('/probe/json', raw('application/json', '{"a":1}'));
+  app.get('/probe/jrd', raw('application/jrd+json', '{}'));
+  app.get('/probe/xml', raw('application/samlmetadata+xml', '<x/>'));
+  app.get('/probe/text-xml', raw('text/xml', '<x/>'));
+  app.get('/probe/svg', raw('image/svg+xml', '<svg/>'));
+  app.get('/probe/css', raw('text/css', 'a{}'));
+  app.get('/probe/named', raw('text/plain; charset=iso-8859-1', 'x'));
+  app.get('/probe/octets', raw('application/octet-stream', 'x'));
   const server = http.createServer(app);
   await new Promise(function (resolve) {
     server.listen(0, '127.0.0.1', resolve);
@@ -3714,7 +3782,9 @@ async function httpVectors() {
                  '/realm/acme/probe/redirect', '/probe/own-csp',
                  '/probe/relaxed', '/probe/framed', '/probe/realm',
                  '/realm/acme/probe/realm?x=1', '/nope', '/realm/nope/x',
-                 '/realm/acme/nope', '/probe/<script>'];
+                 '/realm/acme/nope', '/probe/<script>', '/probe/json',
+                 '/probe/jrd', '/probe/xml', '/probe/text-xml', '/probe/svg',
+                 '/probe/css', '/probe/named', '/probe/octets'];
   const answers = [];
   for (const p of paths) {
     const got = await new Promise(function (resolve, reject) {
@@ -3725,7 +3795,8 @@ async function httpVectors() {
         res.on('end', function () {
           const h = {};
           ['content-type', 'content-security-policy', 'x-frame-options',
-           'x-content-type-options', 'referrer-policy', 'location']
+           'x-content-type-options', 'referrer-policy', 'location',
+           'permissions-policy']
             .forEach(function (k) {
               h[k] = res.headers[k] === undefined ? null : res.headers[k];
             });
@@ -3747,8 +3818,20 @@ async function httpVectors() {
     }),
     framed: [[], ['https://a.example', 'https://b.example:8443'],
              ['*', 'data:', 'https://ok.example/path']].map(function (o) {
-      return { origins: o, value: app.framedContentSecurityPolicy(o) };
-    })
+      return { origins: o, overrides: {},
+               value: app.framedContentSecurityPolicy(o) };
+    }).concat([
+      // `script-src` names scripts exactly or not at all (#1297).
+      { 'script-src': "'unsafe-inline' 'self' 'sha256-AbC+/9=' nonce-x" },
+      { 'script-src': "'unsafe-inline' 'unsafe-eval' * https://x" },
+      { 'script-src': "'none' 'sha384-q' 'sha512-a===' 'sha1-abc'" },
+      { 'script-src': null, 'connect-src': "'self'" }
+    ].map(function (o) {
+      return { origins: ['https://rp.example'], overrides: o,
+               value: app.framedContentSecurityPolicy(['https://rp.example'],
+                                                      o) };
+    })),
+    notAPage: app.NOT_A_PAGE_POLICY || null
   };
 }
 

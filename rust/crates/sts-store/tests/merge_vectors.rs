@@ -7,6 +7,10 @@
 //! every `mergeValues()` over a set of lists, and `canonicalJson()`. Each
 //! answer must be Node's, key order included.
 //!
+//! With `STS_WRITE_VECTORS=1` it also writes Rust's answers to
+//! `merge-rust.json`, which `tests/rust_store_vectors.js` holds to
+//! `directory_merge.js` run again in Node.
+//!
 //! The directory is `STS_CRYPTO_VECTORS`, never committed; with it unset
 //! this test says so and passes.
 
@@ -75,11 +79,16 @@ fn the_merge_is_nodes() {
             );
         }
     }
+    let mut rust_cases = Vec::new();
+    let mut rust_values = Vec::new();
+    let mut rust_canonical = Vec::new();
     for c in v["cases"].as_array().unwrap() {
         let at = |k: &str| pool[c[k].as_u64().unwrap() as usize].as_ref();
         let got = merge_entry(at("base"), at("mine"), at("theirs"));
         let mine = json!({ "outcome": got.outcome.as_str(),
                            "entry": got.entry.as_ref().map(json_of) });
+        rust_cases.push(json!({ "base": c["base"], "mine": c["mine"],
+                                "theirs": c["theirs"], "result": mine }));
         // As text: key order is part of Node's answer and `Value`'s `==`
         // ignores it.
         #[allow(clippy::cmp_owned)]
@@ -96,6 +105,8 @@ fn the_merge_is_nodes() {
         let (b, m, t) =
             (list(&c["base"]), list(&c["mine"]), list(&c["theirs"]));
         let got = merge_values(b.as_deref(), m.as_deref(), t.as_deref());
+        rust_values.push(json!({ "base": c["base"], "mine": c["mine"],
+                                 "theirs": c["theirs"], "merged": got }));
         check(
             json!(got) == c["merged"],
             format!(
@@ -106,12 +117,22 @@ fn the_merge_is_nodes() {
     }
     for (entry, node) in pool.iter().zip(v["canonical"].as_array().unwrap()) {
         let got = entry.as_ref().map(merge::canonical_json);
+        rust_canonical.push(json!(got));
         check(
             json!(got) == *node,
             format!("canonicalJson: {:?} vs {}", got, node),
         );
     }
 
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        let out = json!({ "cases": rust_cases, "values": rust_values,
+                          "canonical": rust_canonical });
+        std::fs::write(
+            std::path::Path::new(&dir).join("merge-rust.json"),
+            serde_json::to_string_pretty(&out).unwrap() + "\n",
+        )
+        .unwrap();
+    }
     assert!(
         failures.is_empty(),
         "{} of {} differ:\n{}",

@@ -178,6 +178,56 @@ struct Flight {
     realm: String,
     timed_out: AtomicBool,
     realm_gone: AtomicBool,
+    /// The reason the job was switched off while this ran, or `''` (#1305):
+    /// latched by the run's watch, read by `still_owner` and by the row.
+    switched_off: Mutex<String>,
+}
+
+impl Flight {
+    fn new(realm: &str) -> Flight {
+        Flight {
+            realm: realm.to_string(),
+            timed_out: AtomicBool::new(false),
+            realm_gone: AtomicBool::new(false),
+            switched_off: Mutex::new(String::new()),
+        }
+    }
+
+    fn switched_off(&self) -> String {
+        self.switched_off
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+}
+
+/// A row's `pid` as JavaScript's `'' + pid` writes it.
+fn pid_text(row: &Json) -> String {
+    match row.get("pid") {
+        None => "undefined".to_string(),
+        Some(Json::String(s)) => s.clone(),
+        Some(other) => other.to_string(),
+    }
+}
+
+/// How often a run in flight is looked at for a switch-off (`RUN_CHECK_MS`,
+/// #1305).
+const RUN_CHECK_MS: u64 = 5_000;
+
+/// The `why` a body that succeeded answered beside its result (#1313,
+/// `whyOf()`): a string member `why` of an object result, at most 500
+/// characters, or `''`.
+pub fn why_of(result: &Json) -> String {
+    match result.get("why") {
+        Some(Json::String(text)) if !text.is_empty() => {
+            if text.chars().count() > 500 {
+                format!("{}...", text.chars().take(497).collect::<String>())
+            } else {
+                text.clone()
+            }
+        }
+        _ => String::new(),
+    }
 }
 
 struct State {
@@ -186,6 +236,8 @@ struct State {
     leading_since: f64,
     leader_token: u64,
     in_flight: HashMap<String, Arc<Flight>>,
+    /// The runIds an orphan's claim is out for (`orphanClaims`).
+    orphan_claims: std::collections::HashSet<String>,
     waiting: bool,
     process_slots: HashMap<String, i64>,
     quiet_recorded: HashMap<String, (String, f64)>,
@@ -282,6 +334,7 @@ impl Scheduler {
                 leading_since: 0.0,
                 leader_token: 0,
                 in_flight: HashMap::new(),
+                orphan_claims: std::collections::HashSet::new(),
                 waiting: false,
                 process_slots: HashMap::new(),
                 quiet_recorded: HashMap::new(),
@@ -631,7 +684,7 @@ impl Scheduler {
                 line.push((job, realm, row));
             }
         }
-        let mut scheduled: Vec<(JobSpec, String, Json)> = Vec::new();
+        let mut scheduled: Vec<(JobSpec, String, Json, f64)> = Vec::new();
         let mut since = 0usize;
         for job in self.jobs_of(Kind::Cluster) {
             let slot = {
@@ -644,7 +697,7 @@ impl Scheduler {
             let Some(Slot {
                 slot: Some(slot),
                 starts_at,
-                ..
+                next_at,
             }) = slot
             else {
                 continue;
@@ -673,11 +726,25 @@ impl Scheduler {
                             "requestedBy": "", "state": "queued", "attempt": 0, "fenceAt": 0,
                             "queuedAt": at })
                 });
-                scheduled.push((job.clone(), realm_id, row));
+                scheduled.push((
+                    job.clone(),
+                    realm_id,
+                    row,
+                    next_at.unwrap_or(f64::INFINITY),
+                ));
             }
         }
-        scheduled
-            .sort_by(|a, b| num(&a.2, "dueAt").total_cmp(&num(&b.2, "dueAt")));
+        // THE RUN WHOSE SLOT ENDS FIRST GOES FIRST (2026-11-13), then the
+        // lower `nice`, then the older. Oldest-due first starved every job
+        // with a short interval once the line was longer than the cap could
+        // clear: a run not started before its slot ends is never started, so
+        // the slot's end is the deadline the order is for.
+        scheduled.sort_by(|a, b| {
+            a.3.total_cmp(&b.3)
+                .then(a.0.nice_of().total_cmp(&b.0.nice_of()))
+                .then(num(&a.2, "dueAt").total_cmp(&num(&b.2, "dueAt")))
+        });
+        let scheduled = scheduled.into_iter().map(|(j, r, row, _)| (j, r, row));
         let cap = self.schedules().max_concurrent_runs();
         self.state().waiting = false;
         for (job, realm, row) in line.into_iter().chain(scheduled) {
@@ -694,7 +761,139 @@ impl Scheduler {
             }
             self.attempt(job, realm, row);
         }
+        self.abandon_orphans(at);
         Ok(())
+    }
+
+    /// A RUN A DEAD NODE LEFT RUNNING IN A SLOT THAT HAS PASSED
+    /// (`abandonOrphans()`, 2026-11-03). A takeover happens only when a tick
+    /// attempts the row again, and a tick attempts only the CURRENT slot's
+    /// run; a crash's claim outlives many short slots, so such a row stayed
+    /// `running` for good. So the leader looks at every scheduled run of a
+    /// cluster job left running, attempted by nobody here, whose slot is not
+    /// the current one and which is past its expected end; its claim is
+    /// asked for — the proof that the runner's claim has lapsed — and, if
+    /// the row is still that attempt, it is recorded ABANDONED
+    /// (`STS-SCHED-0011`) and the claim given back. The slot is not run
+    /// again. Node keeps an index of the running rows; this port reads the
+    /// realm's rows, as its `queued_manual_runs()` does (#623's index is not
+    /// here yet).
+    fn abandon_orphans(&self, at: f64) {
+        let mut found: Vec<(String, Json, JobSpec)> = Vec::new();
+        for realm_id in self.deps.realms.ids() {
+            for row in self.deps.rows.rows(&realm_id) {
+                if text(&row, "kind") != "run"
+                    || text(&row, "state") != "running"
+                    || text(&row, "trigger") != "schedule"
+                {
+                    continue;
+                }
+                let run_id = text(&row, "runId").to_string();
+                {
+                    let st = self.state();
+                    if st.in_flight.contains_key(&run_id)
+                        || st.orphan_claims.contains(&run_id)
+                    {
+                        continue;
+                    }
+                }
+                let Some(job) = self.job(text(&row, "jobId")) else {
+                    continue;
+                };
+                if job.kind != Kind::Cluster {
+                    continue;
+                }
+                let schedules = self.schedules();
+                if at
+                    < num(&row, "startedAt")
+                        + schedules.timeout_ms_of(&job)
+                        + 1000.0
+                {
+                    continue;
+                }
+                if let Some(Slot {
+                    slot: Some(slot), ..
+                }) = schedules.slot_at(&job, at as i64)
+                {
+                    if run_id_for(&job.id, &realm_id, slot) == run_id {
+                        continue;
+                    }
+                }
+                drop(schedules);
+                found.push((realm_id.clone(), row, job));
+            }
+        }
+        for (realm_id, row, job) in found {
+            let run_id = text(&row, "runId").to_string();
+            self.state().orphan_claims.insert(run_id.clone());
+            let Some(me) = self.arc() else {
+                return;
+            };
+            tokio::spawn(async move {
+                let answer = me
+                    .deps
+                    .claims
+                    .claim(RUN_SCOPE, &run_id, &realm_id, 30_000.0)
+                    .await;
+                match answer {
+                    Ok(claim) => {
+                        let stored = me.deps.rows.get(&realm_id, &run_id);
+                        if let Some(stored) = stored.filter(|s| {
+                            text(s, "state") == "running"
+                                && num(s, "fenceAt") == num(&row, "fenceAt")
+                        }) {
+                            me.record_orphan(&realm_id, &job, &stored);
+                        }
+                        me.deps.claims.release(&claim.handle).await;
+                    }
+                    Err(ClaimRefused::Held) => {}
+                    Err(ClaimRefused::Store(why)) => tracing::error!(
+                        "{}scheduler: run {} of {} could not be checked for an abandoned attempt ({}).",
+                        tag(codes::STS_SCHED_0013),
+                        run_id,
+                        job.id,
+                        why
+                    ),
+                }
+                me.state().orphan_claims.remove(&run_id);
+            });
+        }
+    }
+
+    /// Records an orphaned run abandoned, as `abandonOrphans()` does.
+    fn record_orphan(&self, realm_id: &str, job: &JobSpec, stored: &Json) {
+        let by = [text(stored, "nodeName"), text(stored, "node")]
+            .into_iter()
+            .find(|s| !s.is_empty())
+            .unwrap_or("?")
+            .to_string();
+        let run_id = text(stored, "runId").to_string();
+        self.write_row(
+            realm_id,
+            assign(
+                stored,
+                json!({ "state": "abandoned", "endedAt": self.now_ms(),
+                        "errorCode": "STS-SCHED-0011",
+                        "why": format!("The attempt on {} (pid {}) stopped holding its claim before it finished, \
+                                        and its slot passed; the job's next slot runs instead.", by,
+                                       pid_text(stored)),
+                        "abandonedOf": run_id }),
+            ),
+        );
+        self.deps.audit.record(json!({
+            "action": "scheduler.run", "protocol": "scheduler", "channel": "internal",
+            "target": job.id, "errorCode": "STS-SCHED-0011", "outcome": "failure", "summarised": true,
+            "summary": format!("Scheduler run {} of {} was abandoned: its node stopped and its slot passed.",
+                               run_id, job.id),
+            "detail": { "runId": run_id, "realm": realm_id, "node": stored.get("node"),
+                        "pid": stored.get("pid") } }));
+        tracing::warn!(
+            "{}scheduler: run {} of {} was left running on {} and its slot has passed; it is recorded abandoned.",
+            tag(codes::STS_SCHED_0011),
+            run_id,
+            job.id,
+            by
+        );
     }
 
     /// Every queued manual run in every realm, oldest first.
@@ -728,14 +927,8 @@ impl Scheduler {
                 return;
             }
             // Held while the claim is asked, so the next tick does not ask.
-            st.in_flight.insert(
-                run_id.clone(),
-                Arc::new(Flight {
-                    realm: realm_id.clone(),
-                    timed_out: AtomicBool::new(false),
-                    realm_gone: AtomicBool::new(false),
-                }),
-            );
+            st.in_flight
+                .insert(run_id.clone(), Arc::new(Flight::new(&realm_id)));
         }
         let Some(me) = self.arc() else {
             return;
@@ -838,14 +1031,13 @@ impl Scheduler {
             json!({ "state": "running", "fenceAt": fence, "attempt": num(&stored, "attempt") + 1.0,
                     "node": node, "nodeName": name, "host": self.deps.host, "pid": self.deps.pid,
                     "startedAt": self.now_ms(), "endedAt": 0, "errorCode": "", "why": "",
-                    "result": null, "takenOver": text(&stored, "state") == "running" }),
+                    "result": null, "takenOver": text(&stored, "state") == "running",
+                    // Where the body ran (#408): always here, which is what
+                    // Node writes for a run it has no worker for.
+                    "ranIn": "front", "deferredMs": 0 }),
         );
         self.write_row(&realm_id, running.clone());
-        let flight = Arc::new(Flight {
-            realm: realm_id.clone(),
-            timed_out: AtomicBool::new(false),
-            realm_gone: AtomicBool::new(false),
-        });
+        let flight = Arc::new(Flight::new(&realm_id));
         self.state()
             .in_flight
             .insert(run_id.clone(), flight.clone());
@@ -870,6 +1062,7 @@ impl Scheduler {
                     me.is_leading()
                         && !flight.timed_out.load(Ordering::SeqCst)
                         && !flight.realm_gone.load(Ordering::SeqCst)
+                        && flight.switched_off().is_empty()
                         && live.is_some_and(|l| num(&l, "fenceAt") == fence)
                 })
             },
@@ -891,6 +1084,40 @@ impl Scheduler {
         // Its own task: a run past its time limit is fenced out, not
         // cancelled mid-step, and the scheduler does not wait on it.
         let work = tokio::spawn(realm::run(realm, run(ctx)));
+        // THE RUN'S WATCH (#1305, `watchRun()`): every RUN_CHECK_MS, whether
+        // the job was switched off while it runs. Not a failure: the body is
+        // told it no longer owns the run (`still_owner`) and stops at its
+        // next step, and the row says why it may have done less. A check
+        // inside one operation, which ends with it, not a periodic job.
+        let watch = {
+            let (me, job, flight, run_id) =
+                (me.clone(), job.clone(), flight.clone(), run_id.clone());
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        RUN_CHECK_MS,
+                    ))
+                    .await;
+                    if !flight.switched_off().is_empty() {
+                        continue;
+                    }
+                    let off = me.schedules().service_off_reason(&job);
+                    if !off.is_empty() {
+                        tracing::info!(
+                            "scheduler: {} was switched off ({}) while run {} ran; it no longer owns the run, \
+                             and stops at its next step.",
+                            job.id,
+                            off.trim_end_matches('.'),
+                            run_id
+                        );
+                        *flight
+                            .switched_off
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) = off;
+                    }
+                }
+            })
+        };
         let outcome = match tokio::time::timeout(
             std::time::Duration::from_millis(timeout_ms as u64),
             work,
@@ -901,6 +1128,7 @@ impl Scheduler {
             Ok(Ok(answer)) => Ok(answer),
             Ok(Err(join)) => Ok(Err(format!("it panicked: {}", join))),
         };
+        watch.abort();
         if outcome.is_err() {
             flight.timed_out.store(true, Ordering::SeqCst);
         }
@@ -972,31 +1200,55 @@ impl Scheduler {
             Ok(Ok(result)) => {
                 fields.insert("state".into(), json!("succeeded"));
                 fields.insert("result".into(), summary_of(&result));
+                // A SUCCESS THAT DID LESS THAN A WHOLE RUN SAYS SO (#1313).
+                fields.insert("why".into(), json!(why_of(&result)));
                 ""
             }
         };
+        // SWITCHED OFF WHILE IT RAN (#1305): not a failure, but the row says
+        // why it may have done less than a whole run.
+        let switched = flight.switched_off();
+        if !switched.is_empty() {
+            let why = fields.get("why").and_then(Json::as_str).unwrap_or("");
+            if why.is_empty() || error_code.is_empty() {
+                let text = format!(
+                    "It was switched off while it ran ({}), and its body was told it no longer owned the run.{}",
+                    switched.trim_end_matches('.'),
+                    if why.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" {}", why)
+                    }
+                );
+                fields.insert("why".into(), json!(text));
+            }
+        }
         fields.insert("errorCode".into(), json!(error_code));
         let last = assign(&live, Json::Object(fields));
         let last = self.write_row(&realm_id, last);
         let state = text(&last, "state").to_string();
+        // A success is the run row (#1263): the audit row is what the syslog
+        // destination exports, so a run that succeeded writes none. A
+        // failure does, and an abandonment is recorded where it is found.
+        if error_code.is_empty() {
+            return;
+        }
         self.deps.audit.record(json!({
             "action": "scheduler.run", "protocol": "scheduler", "channel": "internal", "target": job.id,
-            "errorCode": error_code, "outcome": if error_code.is_empty() { "success" } else { "failure" },
-            "summarised": !error_code.is_empty(),
+            "errorCode": error_code, "outcome": "failure",
+            "summarised": true,
             "summary": format!("Scheduler run {} of {}{} {} ({}, attempt {}).", run_id, job.id,
                                if realm_id != DEFAULT_ID { format!(" in \"{}\"", realm_id) } else { String::new() },
                                state, text(&last, "trigger"), num(&last, "attempt")),
             "detail": { "runId": run_id, "realm": realm_id, "trigger": last.get("trigger"),
                         "attempt": last.get("attempt"), "durationMs": last.get("durationMs"),
                         "why": text(&last, "why") } }));
-        if !error_code.is_empty() {
-            tracing::warn!(
-                "{}scheduler: {} failed: {}",
-                tag(error_code),
-                job.id,
-                text(&last, "why")
-            );
-        }
+        tracing::warn!(
+            "{}scheduler: {} failed: {}",
+            tag(error_code),
+            job.id,
+            text(&last, "why")
+        );
     }
 
     /// A removed realm: forget this process's memory of it and fence out
