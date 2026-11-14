@@ -413,6 +413,11 @@ store without a change log refused before anything binds, `STS-WORKER-0024`),
 the per-process versus cluster job split of the scheduler, and the two-node
 test (`sts-cluster/tests/two_nodes.rs`): two processes on one PostgreSQL store,
 a cluster job run on exactly one of them and moving when that one dies.
+Beside it `sts-cluster/tests/node_interop.rs` runs the Node service's own
+postgres driver (`tests/tools/cluster-interop-node.js`) next to a Rust node
+on the same store: the two never run together in production (D11), but they
+must read and write the cluster tables' rows alike, and they agree on who
+leads at every token.
 
 ## 5. The management API is the console's and the portal's only door
 
