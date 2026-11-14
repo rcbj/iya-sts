@@ -47,20 +47,23 @@ use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
 use axum::http::{
-    header, HeaderMap, HeaderValue, Request, Response, StatusCode,
+    header, HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode,
 };
 use hyper::body::{Body as HttpBody, Frame, SizeHint};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
-use serde_json::json;
+use serde_json::{json, Value};
 use sts_core::log::tag;
 use tokio::net::TcpListener;
 
+use crate::identity::{self, Jar, Jars, Tokens};
 use crate::listener::{peer_of, HttpsListener, Transport};
 use crate::pdp_client::PdpClient;
-use crate::proxy_auth::{Authenticator, Identity, Refusal};
-use crate::proxy_config::{Mechanism, ProxyConfig, Pulled, Route};
+use crate::proxy_auth::{self, Authenticator, Identity, Refusal};
+use crate::proxy_config::{
+    IdentityMode, Mechanism, ProxyConfig, Pulled, Route,
+};
 use crate::proxy_request::{
     cookie_value, forward_headers, is_browser, normalise_path,
     response_headers, SESSION_COOKIE,
@@ -68,6 +71,7 @@ use crate::proxy_request::{
 use crate::rp_session::{self, Pending, Session};
 use crate::rp_set::{self, RpSet};
 use crate::service::Pep;
+use crate::sync::encode;
 use oidc_caep_risc::EndSessionOptions;
 
 pub const CALLBACK_PATH: &str = "/.iya-pep/callback";
@@ -81,6 +85,23 @@ pub struct Proxy {
     upstream: Mutex<Option<(u64, reqwest::Client)>>,
     /// The session mechanism's relying parties (`rp_set.rs`).
     rps: RpSet,
+    /// Mode `jwt`'s tokens and mode `saml`'s jars (D11, `identity.rs`).
+    tokens: Tokens,
+    jars: Jars,
+}
+
+/// What a route sends the application about who is asking (D11).
+enum Delivery {
+    /// A public route, or mode `headers` with none configured.
+    Nothing,
+    Headers(Vec<(HeaderName, HeaderValue)>),
+    /// The service's access token for the route's application.
+    Bearer(String),
+    /// The application's own session, established at its ACS.
+    Jar {
+        key: String,
+        jar: Jar,
+    },
 }
 
 /// What a request was, for its log line and its refusal.
@@ -262,6 +283,8 @@ impl Proxy {
             auth: Authenticator::new(client, ttl),
             upstream: Mutex::new(None),
             rps,
+            tokens: Tokens::default(),
+            jars: Jars::default(),
         }
     }
 
@@ -542,20 +565,69 @@ impl Proxy {
                 return (self.refuse(&refusal, &asked, &pulled), false);
             }
         }
-        match self
+        // D11: the identity the route sends, established BEFORE anything is
+        // forwarded — a request is never sent without it.
+        let delivery = match self
+            .deliver(route, &pulled, config, identity.as_ref())
+            .await
+        {
+            Ok(delivery) => delivery,
+            Err(refusal) => {
+                return (self.refuse(&refusal, &asked, &pulled), false)
+            }
+        };
+        let replayable = !parts.headers.contains_key(header::CONTENT_LENGTH)
+            && !parts.headers.contains_key(header::TRANSFER_ENCODING);
+        let forwarded = self
             .forward(
                 route,
                 config,
+                &pulled,
                 &parts,
                 body,
                 &path,
                 query.as_deref(),
                 &transport,
-                identity.as_ref(),
+                &delivery,
             )
-            .await
-        {
-            Ok(response) => (response, true),
+            .await;
+        match forwarded {
+            // The application's session ended (a 401, or a redirect to its
+            // ACS or the identity provider): established again ONCE, and a
+            // request with no body sent again. One with a body cannot be
+            // replayed; its answer goes back and the next request starts
+            // with the new session.
+            Ok((_, true))
+                if replayable && matches!(delivery, Delivery::Jar { .. }) =>
+            {
+                let again = self
+                    .deliver(route, &pulled, config, identity.as_ref())
+                    .await;
+                let retried = match again {
+                    Ok(delivery) => {
+                        self.forward(
+                            route,
+                            config,
+                            &pulled,
+                            &parts,
+                            Body::empty(),
+                            &path,
+                            query.as_deref(),
+                            &transport,
+                            &delivery,
+                        )
+                        .await
+                    }
+                    Err(refusal) => Err(refusal),
+                };
+                match retried {
+                    Ok((response, _)) => (response, true),
+                    Err(refusal) => {
+                        (self.refuse(&refusal, &asked, &pulled), false)
+                    }
+                }
+            }
+            Ok((response, _)) => (response, true),
             Err(refusal) => (self.refuse(&refusal, &asked, &pulled), false),
         }
     }
@@ -744,11 +816,13 @@ impl Proxy {
                 .await;
         }
         let current = stores.get(&id).unwrap_or(session);
-        Established::Who(Identity {
-            sub: current.sub.clone(),
-            username: current.username.clone(),
-            mechanism: Mechanism::Session,
-        })
+        let mut who = proxy_auth::identity(
+            &current.sub,
+            &current.username,
+            Mechanism::Session,
+        );
+        who.session_id = Some(id.clone());
+        Established::Who(who)
     }
 
     /// Ends a proxy session here and in the library (its cache, and the
@@ -1101,19 +1175,252 @@ impl Proxy {
         Ok(client)
     }
 
-    /// The request, to the application: streamed both ways, bounded.
+    /// What the subject was established from, for the identity endpoint:
+    /// the credential's own evidence, or — for a proxy session — the
+    /// access token the library holds for it (`session_access_token`,
+    /// which refreshes it when it is near its end).
+    async fn evidence(
+        &self,
+        who: &Identity,
+        route: &Route,
+    ) -> Result<(&'static str, String), Refusal> {
+        if let Some((kind, value)) = &who.evidence {
+            return Ok((kind, value.clone()));
+        }
+        let none = |why: &str| Refusal::new(502, "STS-XPEP-0098", why);
+        let Some(id) = who.session_id.clone() else {
+            return Err(none(
+                "the credential gave no evidence the identity endpoint takes \
+                 (a Basic answer without a ticket)",
+            ));
+        };
+        let Some(party) = self.rps.held(&route.resolved.client_id) else {
+            return Err(none("the session's relying party is no longer held"));
+        };
+        let rp = party.rp.clone();
+        match tokio::task::spawn_blocking(move || rp.session_access_token(&id))
+            .await
+        {
+            Ok(Ok(access)) if !access.access_token.is_empty() => {
+                Ok(("access_token", access.access_token))
+            }
+            Ok(Ok(_)) => Err(none("the session holds no access token")),
+            Ok(Err(error)) => Err(none(&format!(
+                "the session's access token could not be had ({})",
+                error.code
+            ))),
+            Err(error) => Err(none(&format!(
+                "the session's access token could not be had: {}",
+                error
+            ))),
+        }
+    }
+
+    /// The identity a route sends (D11), or the refusal that stops the
+    /// request: NEVER forwarded without the identity it was configured to
+    /// send.
+    async fn deliver(
+        &self,
+        route: &Route,
+        pulled: &Pulled,
+        config: &ProxyConfig,
+        identity: Option<&Identity>,
+    ) -> Result<Delivery, Refusal> {
+        let Some(who) = identity else {
+            return Ok(Delivery::Nothing);
+        };
+        let spec = &route.identity;
+        match spec.mode {
+            IdentityMode::Headers => {
+                if spec.headers.is_empty() {
+                    return Ok(Delivery::Nothing);
+                }
+                let mut claims = who.claims.clone();
+                claims
+                    .insert("mechanism".into(), json!(who.mechanism.as_str()));
+                let want = identity::missing(spec, &claims);
+                if !want.is_empty() {
+                    let evidence = self.evidence(who, route).await?;
+                    let said = self
+                        .auth
+                        .identity(
+                            route,
+                            (evidence.0, &evidence.1),
+                            Some(&want),
+                            pulled,
+                        )
+                        .await?;
+                    let Some(given) =
+                        said.get("claims").and_then(Value::as_object)
+                    else {
+                        return Err(Refusal::new(
+                            502,
+                            "STS-XPEP-0095",
+                            "the identity endpoint answered no claims",
+                        ));
+                    };
+                    for name in &want {
+                        if let Some(value) = given.get(name) {
+                            claims.insert(name.clone(), value.clone());
+                        }
+                    }
+                }
+                identity::render(spec, &claims)
+                    .map(Delivery::Headers)
+                    .map_err(|why| {
+                        Refusal::new(
+                            502,
+                            "STS-XPEP-0096",
+                            &format!(
+                                "an identity header was not sent: {}",
+                                why
+                            ),
+                        )
+                    })
+            }
+            IdentityMode::Jwt => {
+                let key = who.cache_key(&route.application);
+                if let Some(token) = self.tokens.get(&key) {
+                    return Ok(Delivery::Bearer(token));
+                }
+                let evidence = self.evidence(who, route).await?;
+                let said = self
+                    .auth
+                    .identity(route, (evidence.0, &evidence.1), None, pulled)
+                    .await?;
+                let token = said["accessToken"].as_str().unwrap_or("");
+                let bearer = said["tokenType"]
+                    .as_str()
+                    .is_some_and(|t| t.eq_ignore_ascii_case("bearer"));
+                let lifetime = said["expiresIn"].as_u64().filter(|s| *s > 0);
+                let (false, true, Some(lifetime)) =
+                    (token.is_empty(), bearer, lifetime)
+                else {
+                    return Err(Refusal::new(
+                        502,
+                        "STS-XPEP-0095",
+                        "the identity endpoint answered no usable Bearer \
+                         token for the route",
+                    ));
+                };
+                self.tokens.put(
+                    &key,
+                    token.to_string(),
+                    Duration::from_secs(lifetime),
+                );
+                Ok(Delivery::Bearer(token.to_string()))
+            }
+            IdentityMode::Saml => {
+                let key = who.cache_key(&route.application);
+                if let Some(jar) = self.jars.get(&key) {
+                    return Ok(Delivery::Jar { key, jar });
+                }
+                let jar =
+                    self.establish_saml(route, pulled, config, who).await?;
+                self.jars.put(&key, jar.clone());
+                Ok(Delivery::Jar { key, jar })
+            }
+        }
+    }
+
+    /// Mode `saml`: an assertion the service issues for the route's
+    /// application, POSTed to its ACS SERVER-SIDE as the HTTP-POST binding
+    /// would, and the cookies it sets kept in a jar of our own.
+    async fn establish_saml(
+        &self,
+        route: &Route,
+        pulled: &Pulled,
+        config: &ProxyConfig,
+        who: &Identity,
+    ) -> Result<Jar, Refusal> {
+        let failed = |why: String| Refusal::new(502, "STS-XPEP-0097", &why);
+        let evidence = self.evidence(who, route).await?;
+        let said = self
+            .auth
+            .identity(route, (evidence.0, &evidence.1), None, pulled)
+            .await?;
+        let response = said["samlResponse"].as_str().unwrap_or("");
+        let acs_url = said["acsUrl"].as_str().unwrap_or("").to_string();
+        let until = said["notOnOrAfter"]
+            .as_str()
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+            .map(|t| t.with_timezone(&chrono::Utc));
+        let (false, Some(until)) = (response.is_empty(), until) else {
+            return Err(Refusal::new(
+                502,
+                "STS-XPEP-0095",
+                "the identity endpoint answered no samlResponse or \
+                 notOnOrAfter",
+            ));
+        };
+        let acs = reqwest::Url::parse(&acs_url).ok().filter(|u| {
+            (u.scheme() == "http" || u.scheme() == "https")
+                && u.host_str().is_some()
+        });
+        let Some(acs) = acs else {
+            return Err(failed(
+                "the identity endpoint named an ACS that is not an absolute \
+                 http(s) URL"
+                    .into(),
+            ));
+        };
+        let client = self.upstream_client(config.upstream_timeout_ms)?;
+        let posted = client
+            .post(acs)
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(format!("SAMLResponse={}", encode(response)))
+            .timeout(Duration::from_millis(config.upstream_timeout_ms))
+            .send()
+            .await
+            .map_err(|e| {
+                failed(format!(
+                    "the application's ACS could not be reached: {}",
+                    e
+                ))
+            })?;
+        if posted.status().as_u16() >= 400 {
+            return Err(failed(format!(
+                "the application's ACS answered {} to the assertion",
+                posted.status().as_u16()
+            )));
+        }
+        let cookies = identity::set_cookies(posted.headers());
+        if cookies.is_empty() {
+            return Err(failed(
+                "the application's ACS set no cookie, so there is no session \
+                 to forward with"
+                    .into(),
+            ));
+        }
+        tracing::info!(
+            "xacml-pep: proxy: an application session was established at its \
+             ACS for route {} ({} cookie(s) kept here).",
+            route.id,
+            cookies.len()
+        );
+        Ok(Jar {
+            cookies,
+            not_on_or_after: until,
+            acs_url,
+        })
+    }
+
+    /// The request, to the application: streamed both ways, bounded, with
+    /// the route's identity. Answers the response and whether the
+    /// application said its session (a jar's) ended.
     #[allow(clippy::too_many_arguments)]
     async fn forward(
         &self,
         route: &Route,
         config: &ProxyConfig,
+        pulled: &Pulled,
         parts: &axum::http::request::Parts,
         body: Body,
         path: &str,
         query: Option<&str>,
         transport: &Transport,
-        identity: Option<&Identity>,
-    ) -> Result<Response<Body>, Refusal> {
+        delivery: &Delivery,
+    ) -> Result<(Response<Body>, bool), Refusal> {
         let target = format!(
             "{}{}{}",
             config.upstream,
@@ -1138,7 +1445,11 @@ impl Proxy {
         {
             return Err(off_origin());
         }
-        let mut headers = forward_headers(&parts.headers, route);
+        let mut headers = forward_headers(
+            &parts.headers,
+            route.forward_credentials,
+            &config.identity_header_names(),
+        );
         if let Some(remote) = transport.remote.map(|r: SocketAddr| r.ip()) {
             if let Ok(v) = HeaderValue::from_str(&remote.to_string()) {
                 headers.insert("x-forwarded-for", v);
@@ -1161,24 +1472,47 @@ impl Proxy {
         if let Some(host) = host {
             headers.insert("x-forwarded-host", host);
         }
-        if let Some(identity) = identity {
-            if let Some(name) = &route.subject_header {
-                let Ok(value) = HeaderValue::from_str(identity.subject())
-                else {
-                    return Err(Refusal::new(
-                        403,
-                        "STS-XPEP-0087",
-                        "the subject cannot be carried in the route's \
-                         subject header",
-                    ));
-                };
-                headers.insert(name.clone(), value);
+        match delivery {
+            Delivery::Nothing => {}
+            Delivery::Headers(list) => {
+                for (name, value) in list {
+                    headers.insert(name.clone(), value.clone());
+                }
             }
-            if let Some(name) = &route.mechanism_header {
-                headers.insert(
-                    name.clone(),
-                    HeaderValue::from_static(identity.mechanism.as_str()),
+            Delivery::Bearer(token) => {
+                // The client's own Authorization goes whatever
+                // forwardCredentials says: the token is the identity.
+                headers.remove(header::AUTHORIZATION);
+                let value = HeaderValue::from_str(&format!("Bearer {}", token))
+                    .map_err(|_| {
+                        Refusal::new(
+                            502,
+                            "STS-XPEP-0096",
+                            "the access token is not a header value",
+                        )
+                    })?;
+                headers.insert(header::AUTHORIZATION, value);
+            }
+            Delivery::Jar { jar, .. } => {
+                let client: Vec<String> = headers
+                    .get_all(header::COOKIE)
+                    .iter()
+                    .filter_map(|v| v.to_str().ok().map(str::to_string))
+                    .collect();
+                headers.remove(header::COOKIE);
+                let joined = client.join("; ");
+                let text = identity::cookie_header(
+                    Some(joined.as_str()).filter(|t| !t.is_empty()),
+                    jar,
                 );
+                let value = HeaderValue::from_str(&text).map_err(|_| {
+                    Refusal::new(
+                        502,
+                        "STS-XPEP-0096",
+                        "the application's cookies are not a header value",
+                    )
+                })?;
+                headers.insert(header::COOKIE, value);
             }
         }
         let client = self.upstream_client(config.upstream_timeout_ms)?;
@@ -1226,12 +1560,35 @@ impl Proxy {
             }
         };
         let status = upstream.status();
-        let headers = response_headers(upstream.headers());
+        let mut headers = response_headers(upstream.headers());
+        let mut ended = false;
+        if let Delivery::Jar { key, jar } = delivery {
+            // THE JAR NEVER REACHES THE BROWSER: the application's
+            // Set-Cookie for a jar cookie updates the jar and is removed.
+            let names = jar.names();
+            let set: Vec<(String, String)> = identity::set_cookies(&headers)
+                .into_iter()
+                .filter(|(n, _)| names.contains(n))
+                .collect();
+            self.jars.update(key, &set);
+            headers = identity::without_set_cookies(&headers, &names);
+            let location =
+                headers.get(header::LOCATION).and_then(|v| v.to_str().ok());
+            ended = identity::session_ended(
+                status.as_u16(),
+                location,
+                &jar.acs_url,
+                &pulled.realm.issuer,
+            );
+            if ended {
+                self.jars.forget(key);
+            }
+        }
         let mut response =
             Response::new(Body::new(reqwest::Body::from(upstream)));
         *response.status_mut() = status;
         *response.headers_mut() = headers;
-        Ok(response)
+        Ok((response, ended))
     }
 }
 

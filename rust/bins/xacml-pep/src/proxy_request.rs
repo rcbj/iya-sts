@@ -20,8 +20,6 @@
 
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 
-use crate::proxy_config::Route;
-
 /// The proxy's own session cookie (D5).
 pub const SESSION_COOKIE: &str = "iya_pep_session";
 
@@ -164,15 +162,18 @@ pub fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
 
 /// The request headers that may reach the application: hop-by-hop gone,
 /// every forwarding header the CLIENT sent gone (they are set fresh by the
-/// caller), `Host` gone (the upstream's is the client library's), any
-/// header named like the route's identity headers gone, and — unless the
-/// route forwards credentials — `Authorization` and the proxy's own cookie.
-pub fn forward_headers(incoming: &HeaderMap, route: &Route) -> HeaderMap {
+/// caller), `Host` gone (the upstream's is the client library's), every
+/// header named like an identity header of ANY route gone — whatever its
+/// case (a header name is case-insensitive and arrives lower-cased) and
+/// however many times it came (D11) — and, unless the route forwards
+/// credentials, `Authorization` and the proxy's own cookie.
+pub fn forward_headers(
+    incoming: &HeaderMap,
+    forward_credentials: bool,
+    identity: &[HeaderName],
+) -> HeaderMap {
     let listed = hop_by_hop(incoming);
-    let identity: Vec<&str> = [&route.subject_header, &route.mechanism_header]
-        .iter()
-        .filter_map(|h| h.as_ref().map(HeaderName::as_str))
-        .collect();
+    let identity: Vec<&str> = identity.iter().map(HeaderName::as_str).collect();
     let mut out = HeaderMap::new();
     for (name, value) in incoming {
         let n = name.as_str();
@@ -184,7 +185,7 @@ pub fn forward_headers(incoming: &HeaderMap, route: &Route) -> HeaderMap {
         {
             continue;
         }
-        if !route.forward_credentials {
+        if !forward_credentials {
             if n == "authorization" {
                 continue;
             }
@@ -231,7 +232,6 @@ pub fn is_browser(method: &str, headers: &HeaderMap) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::proxy_config::{Match, Mechanism};
 
     #[test]
     fn traversal_and_its_spellings_are_refused() {
@@ -272,23 +272,11 @@ mod tests {
         assert_eq!(normalise_path("/a.b/.c").unwrap(), "/a.b/.c");
     }
 
-    fn route(forward: bool) -> Route {
-        Route {
-            id: "api".into(),
-            path: "/api".into(),
-            matching: Match::Prefix,
-            methods: Vec::new(),
-            public: false,
-            mechanisms: vec![Mechanism::OAuth2],
-            application: "a".into(),
-            signals: true,
-            resolved: Default::default(),
-            resource: String::new(),
-            action: String::new(),
-            subject_header: Some(HeaderName::from_static("x-remote-user")),
-            mechanism_header: Some(HeaderName::from_static("x-remote-auth")),
-            forward_credentials: forward,
-        }
+    fn identity_names() -> Vec<HeaderName> {
+        vec![
+            HeaderName::from_static("x-remote-user"),
+            HeaderName::from_static("x-remote-auth"),
+        ]
     }
 
     #[test]
@@ -311,6 +299,7 @@ mod tests {
             ("host", "pep"),
             ("x-remote-user", "admin"),
             ("X-Remote-Auth", "basic"),
+            ("X-REMOTE-USER", "admin2"),
             ("accept", "application/json"),
             ("content-length", "4"),
         ] {
@@ -319,17 +308,17 @@ mod tests {
                 HeaderValue::from_static(v),
             );
         }
-        let out = forward_headers(&h, &route(false));
+        let out = forward_headers(&h, false, &identity_names());
         let names: Vec<&str> = out.keys().map(HeaderName::as_str).collect();
         assert_eq!(names, ["cookie", "accept", "content-length"], "{:?}", out);
         assert_eq!(out["cookie"], "a=1; b=2");
-        let kept = forward_headers(&h, &route(true));
+        let kept = forward_headers(&h, true, &identity_names());
         assert_eq!(kept["authorization"], "Bearer secret");
         assert!(kept["cookie"].to_str().unwrap().contains("iya_pep_session"));
         assert!(kept.get("x-remote-user").is_none());
         let mut only = HeaderMap::new();
         only.insert("cookie", HeaderValue::from_static("iya_pep_session=1"));
-        assert!(forward_headers(&only, &route(false))
+        assert!(forward_headers(&only, false, &identity_names())
             .get("cookie")
             .is_none());
     }

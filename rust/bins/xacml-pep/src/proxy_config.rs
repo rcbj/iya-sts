@@ -95,9 +95,163 @@ pub struct Route {
     pub resolved: Resolved,
     pub resource: String,
     pub action: String,
-    pub subject_header: Option<HeaderName>,
-    pub mechanism_header: Option<HeaderName>,
+    /// How the identity reaches the application (D11).
+    pub identity: IdentitySpec,
     pub forward_credentials: bool,
+}
+
+/// D11's three ways of telling the application who is asking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityMode {
+    /// Headers carrying claims of the subject.
+    Headers,
+    /// An assertion the service issues, POSTed to the application's ACS.
+    Saml,
+    /// An access token the service issues, as `Authorization: Bearer`.
+    Jwt,
+}
+
+/// The claims an identity header may carry (D11).
+pub const IDENTITY_CLAIMS: [&str; 10] = [
+    "sub",
+    "username",
+    "email",
+    "name",
+    "given_name",
+    "family_name",
+    "groups",
+    "mechanism",
+    "acr",
+    "amr",
+];
+
+/// The most identity headers a route may name.
+pub const MAX_IDENTITY_HEADERS: usize = 16;
+
+/// A route's `identity` (D11).
+#[derive(Debug, Clone, PartialEq)]
+pub struct IdentitySpec {
+    pub mode: IdentityMode,
+    /// (header, claim), for mode `headers`.
+    pub headers: Vec<(HeaderName, String)>,
+    /// Joins a list claim's members.
+    pub separator: char,
+}
+
+impl Default for IdentitySpec {
+    fn default() -> IdentitySpec {
+        IdentitySpec {
+            mode: IdentityMode::Headers,
+            headers: Vec::new(),
+            separator: ',',
+        }
+    }
+}
+
+/// A header name an identity header may not take: what frames or routes
+/// the request, a credential, or a forwarding header (D11).
+pub fn reserved_identity_name(name: &str) -> bool {
+    matches!(
+        name,
+        "connection"
+            | "keep-alive"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+            | "content-length"
+            | "authorization"
+            | "cookie"
+            | "host"
+            | "forwarded"
+    ) || name.starts_with("x-forwarded-")
+        || name.starts_with("proxy-")
+}
+
+fn identity_of(said: &Value, what: &str) -> Result<IdentitySpec, String> {
+    let at = format!("{}.identity", what);
+    if said.is_null() {
+        return Ok(IdentitySpec::default());
+    }
+    if !said.is_object() {
+        return Err(format!("{} is not an object", at));
+    }
+    let mode = match string_member(said, "mode", &at)?.as_str() {
+        "" | "headers" => IdentityMode::Headers,
+        "saml" => IdentityMode::Saml,
+        "jwt" => IdentityMode::Jwt,
+        _ => return Err(format!("{}.mode is not headers, saml or jwt", at)),
+    };
+    let separator_text = string_member(said, "separator", &at)?;
+    let separator = if separator_text.is_empty() {
+        ','
+    } else {
+        let mut chars = separator_text.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None)
+                if (' '..='~').contains(&c) && !c.is_ascii_alphanumeric() =>
+            {
+                c
+            }
+            _ => {
+                return Err(format!(
+                    "{}.separator is not one printable ASCII character other \
+                     than a letter or digit",
+                    at
+                ))
+            }
+        }
+    };
+    let mut headers: Vec<(HeaderName, String)> = Vec::new();
+    match said.get("headers") {
+        None | Some(Value::Null) => {}
+        Some(Value::Array(list)) => {
+            if list.len() > MAX_IDENTITY_HEADERS {
+                return Err(format!(
+                    "{}.headers holds more than {}",
+                    at, MAX_IDENTITY_HEADERS
+                ));
+            }
+            for (i, one) in list.iter().enumerate() {
+                let here = format!("{}.headers[{}]", at, i);
+                let name = string_member(one, "name", &here)?;
+                if !is_token(&name) {
+                    return Err(format!("{}.name is not a header name", here));
+                }
+                let header =
+                    HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
+                        format!("{}.name is not a header name", here)
+                    })?;
+                if reserved_identity_name(header.as_str()) {
+                    return Err(format!(
+                        "{}.name is a header an identity may not take",
+                        here
+                    ));
+                }
+                if headers.iter().any(|(h, _)| *h == header) {
+                    return Err(format!("{}.name is named twice", here));
+                }
+                let claim = string_member(one, "claim", &here)?;
+                if !IDENTITY_CLAIMS.contains(&claim.as_str()) {
+                    return Err(format!(
+                        "{}.claim is not one of {}",
+                        here,
+                        IDENTITY_CLAIMS.join(" ")
+                    ));
+                }
+                headers.push((header, claim));
+            }
+        }
+        Some(_) => return Err(format!("{}.headers is not an array", at)),
+    }
+    if mode != IdentityMode::Headers && !headers.is_empty() {
+        return Err(format!("{} names headers and is not mode headers", at));
+    }
+    Ok(IdentitySpec {
+        mode,
+        headers,
+        separator,
+    })
 }
 
 impl Route {
@@ -157,6 +311,20 @@ impl ProxyConfig {
     pub fn route_for(&self, path: &str) -> Option<&Route> {
         self.routes.iter().find(|r| r.matches(path))
     }
+
+    /// Every identity header ANY route names: removed from every request
+    /// whatever its route, so a client can inject none of them anywhere.
+    pub fn identity_header_names(&self) -> Vec<HeaderName> {
+        let mut out: Vec<HeaderName> = Vec::new();
+        for route in &self.routes {
+            for (name, _) in &route.identity.headers {
+                if !out.contains(name) {
+                    out.push(name.clone());
+                }
+            }
+        }
+        out
+    }
 }
 
 /// What the PEP needs to know about its realm.
@@ -203,6 +371,8 @@ pub struct ValidationUrls {
     pub basic: String,
     pub saml: String,
     pub session: String,
+    /// `POST /xacml/pep/identity` (D11).
+    pub identity: String,
 }
 
 /// One pull's answer, read whole.
@@ -342,26 +512,6 @@ fn integer_member(
     }
 }
 
-fn header_member(
-    said: &Value,
-    key: &str,
-    what: &str,
-) -> Result<Option<HeaderName>, String> {
-    let text = string_member(said, key, what)?;
-    if text.is_empty() {
-        return Ok(None);
-    }
-    if !is_token(&text) {
-        return Err(format!(
-            "{}.{} is not a header name (an RFC 9110 token)",
-            what, key
-        ));
-    }
-    HeaderName::from_bytes(text.as_bytes())
-        .map(Some)
-        .map_err(|_| format!("{}.{} is not a header name", what, key))
-}
-
 fn route_of(
     said: &Value,
     index: usize,
@@ -471,8 +621,7 @@ fn route_of(
         resolved,
         resource: string_member(said, "resource", &what)?,
         action: string_member(said, "action", &what)?,
-        subject_header: header_member(said, "subjectHeader", &what)?,
-        mechanism_header: header_member(said, "mechanismHeader", &what)?,
+        identity: identity_of(&said["identity"], &what)?,
         forward_credentials: bool_member(
             said,
             "forwardCredentials",
@@ -707,6 +856,7 @@ fn validation_of(said: &Value) -> Result<ValidationUrls, String> {
         basic: url("basic")?,
         saml: url("saml")?,
         session: url("session")?,
+        identity: url("identity")?,
     })
 }
 
@@ -780,8 +930,9 @@ mod tests {
                   "resolved": { "usable": true,
                                 "audiences": ["https://app.example/api"] },
                   "resource": "", "action": "",
-                  "subjectHeader": "X-Remote-User",
-                  "mechanismHeader": "X-Remote-Auth",
+                  "identity": { "mode": "headers", "separator": ";",
+                    "headers": [ { "name": "X-Remote-User", "claim": "username" },
+                                 { "name": "X-Remote-Auth", "claim": "mechanism" } ] },
                   "forwardCredentials": false },
                 { "id": "app", "path": "/app/", "match": "exact",
                   "mechanisms": ["session"], "application": "pep-app",
@@ -815,8 +966,20 @@ mod tests {
         assert!(api.signals, "signals defaults to true");
         assert_eq!(api.resolved.audiences, ["https://app.example/api"]);
         assert_eq!(
-            api.subject_header.as_ref().map(HeaderName::as_str),
-            Some("x-remote-user")
+            api.identity
+                .headers
+                .first()
+                .map(|(h, c)| (h.as_str(), c.as_str())),
+            Some(("x-remote-user", "username"))
+        );
+        assert_eq!(api.identity.separator, ';');
+        assert_eq!(config.routes[2].identity, IdentitySpec::default());
+        assert_eq!(
+            config.identity_header_names(),
+            [
+                HeaderName::from_static("x-remote-user"),
+                HeaderName::from_static("x-remote-auth")
+            ]
         );
         assert_eq!(config.routes[2].path, "/app", "the trailing / is dropped");
         assert!(config.routes[2].methods.is_empty());
@@ -904,9 +1067,59 @@ mod tests {
             "no samlAudience",
         );
         refused(&|d| d["routes"][2]["signals"] = json!("no"), "boolean");
+        // D11: the identity, read strictly.
+        let ident = |v: Value| {
+            move |d: &mut Value| d["routes"][1]["identity"] = v.clone()
+        };
+        refused(&ident(json!({ "mode": "oidc" })), "mode is not");
         refused(
-            &|d| d["routes"][1]["subjectHeader"] = json!("X Remote"),
-            "header name",
+            &ident(
+                json!({ "headers": [{ "name": "X Remote", "claim": "sub" }] }),
+            ),
+            "not a header name",
+        );
+        for reserved in [
+            "Authorization",
+            "Cookie",
+            "Host",
+            "Forwarded",
+            "X-Forwarded-User",
+            "Content-Length",
+            "Connection",
+            "Proxy-User",
+            "Transfer-Encoding",
+        ] {
+            refused(
+                &ident(
+                    json!({ "headers": [{ "name": reserved, "claim": "sub" }] }),
+                ),
+                "may not take",
+            );
+        }
+        refused(
+            &ident(json!({ "headers": [{ "name": "X-A", "claim": "sub" },
+                                       { "name": "x-a", "claim": "email" }] })),
+            "named twice",
+        );
+        refused(
+            &ident(
+                json!({ "headers": [{ "name": "X-A", "claim": "password" }] }),
+            ),
+            "claim is not one of",
+        );
+        refused(
+            &ident(
+                json!({ "headers": (0..17).map(|i| json!({ "name": format!("x-{}", i), "claim": "sub" })).collect::<Vec<_>>() }),
+            ),
+            "more than 16",
+        );
+        refused(&ident(json!({ "separator": "a" })), "separator");
+        refused(&ident(json!({ "separator": ",;" })), "separator");
+        refused(
+            &ident(
+                json!({ "mode": "jwt", "headers": [{ "name": "X-A", "claim": "sub" }] }),
+            ),
+            "not mode headers",
         );
         refused(&|d| d["publicBaseUrl"] = json!(""), "publicBaseUrl");
         refused(&|d| d["enabled"] = json!("yes"), "boolean");

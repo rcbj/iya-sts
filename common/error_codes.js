@@ -23487,10 +23487,11 @@ const CODES = [
       'the subject, resource and action (#1760).',
     spec: 'HTTP 403, access_denied' },
   { code: 'STS-XPEP-0087',
-    summary: 'The reverse proxy could not carry the subject in the route\'s ' +
-      'subject header (not a valid header value), so the request is ' +
-      'refused rather than forwarded without the identity (#1760).',
-    spec: 'HTTP 403, access_denied' },
+    summary: 'The reverse proxy could not carry the subject in a route\'s ' +
+      'subjectHeader. Retired before release with that member: a route\'s ' +
+      'identity (D11) replaced it, and a value an identity header cannot ' +
+      'carry is STS-XPEP-0096 (#1760).',
+    spec: '', retired: true },
   { code: 'STS-XPEP-0088',
     summary: 'The reverse proxy could not fetch the realm\'s JWKS. The keys ' +
       'fetched before are kept; with none, a JWT access token is asked of ' +
@@ -23534,6 +23535,33 @@ const CODES = [
       'proxy sessions are checked with POST /xacml/pep/session instead ' +
       'until a later pull rebuilds it (#1760).',
     spec: 'none; the fallback decides liveness' },
+  { code: 'STS-XPEP-0095',
+    summary: 'The service\'s identity endpoint (POST /xacml/pep/identity) ' +
+      'did not give the identity a reverse proxy route sends: it refused ' +
+      '(403: the policy or the issuance said no), answered something that ' +
+      'is not an answer (no claims, no Bearer token, no samlResponse or ' +
+      'notOnOrAfter), could not be reached, or the pull named no such ' +
+      'endpoint. The request is refused, NEVER forwarded without the ' +
+      'identity (#1760, D11).',
+    spec: 'HTTP 403 when the service said 403, otherwise HTTP 502' },
+  { code: 'STS-XPEP-0096',
+    summary: 'A value the reverse proxy would have sent as identity was ' +
+      'refused: a claim holding CR, LF or NUL, a list member holding the ' +
+      'route\'s separator, an object, or a token or cookie that is not a ' +
+      'header value (#1760, D11).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0097',
+    summary: 'The reverse proxy could not establish the application\'s ' +
+      'session for a saml-mode route: the ACS the service named is not an ' +
+      'absolute http(s) URL, could not be reached, answered 400 or more, or ' +
+      'set no cookie (#1760, D11).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0098',
+    summary: 'The reverse proxy had no evidence to ask the identity ' +
+      'endpoint with: a Basic answer that carried no ticket, or a proxy ' +
+      'session whose relying party or access token could not be had ' +
+      '(#1760, D11).',
+    spec: 'HTTP 502, bad_gateway' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

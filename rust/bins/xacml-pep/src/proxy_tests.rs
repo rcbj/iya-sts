@@ -67,12 +67,27 @@ struct ServiceState {
     introspect_calls: u32,
     jwks_fetches: u32,
     polls: u32,
+    /// D11: what the identity endpoint answered, by route.
+    identity_calls: Vec<(String, Value)>,
+    /// The lifetime of the next jwt-mode token, seconds (0: 300).
+    jwt_lifetime: u64,
+    /// Where the application's ACS is.
+    acs_url: String,
+}
+
+/// What the application has seen of its SAML sessions.
+#[derive(Default)]
+struct UpState {
+    /// The application sessions it holds.
+    valid: HashSet<String>,
+    acs_posts: u32,
 }
 
 struct Harness {
     proxy: String,
     proxied: Arc<Proxy>,
     service: Arc<Mutex<ServiceState>>,
+    app: Arc<Mutex<UpState>>,
     key: Arc<PKey<Private>>,
     sync: Arc<Sync>,
     http: reqwest::Client,
@@ -103,38 +118,91 @@ async fn serve(router: axum::Router) -> u16 {
 
 /// The application: echoes the method, path, query, headers and body
 /// length; `/pep-app/slow` takes two seconds and `/pep-app/public/away`
-/// redirects elsewhere.
-async fn upstream() -> u16 {
-    let echo = |request: Request| async move {
-        let (parts, body) = request.into_parts();
-        let bytes = axum::body::to_bytes(body, 10_000_000).await.unwrap();
-        if parts.uri.path() == "/pep-app/slow" {
-            tokio::time::sleep(Duration::from_millis(2000)).await;
-        }
-        if parts.uri.path() == "/pep-app/public/away" {
-            return axum::response::Response::builder()
-                .status(302)
-                .header("location", "http://elsewhere.example/")
-                .body(axum::body::Body::empty())
-                .unwrap();
-        }
-        let mut headers = serde_json::Map::new();
-        for (name, value) in &parts.headers {
-            headers.insert(
-                name.as_str().to_string(),
-                json!(value.to_str().unwrap_or("")),
-            );
-        }
-        let said = json!({ "method": parts.method.as_str(),
+/// redirects elsewhere. `/pep-app/acs` is its SAML ACS, which sets a
+/// session cookie, and `/pep-app/sso/...` answers 401 without one it holds.
+async fn upstream(app: Arc<Mutex<UpState>>) -> u16 {
+    let echo = move |request: Request| {
+        let app = app.clone();
+        async move {
+            let (parts, body) = request.into_parts();
+            let bytes = axum::body::to_bytes(body, 10_000_000).await.unwrap();
+            if parts.uri.path() == "/pep-app/acs" {
+                let form = String::from_utf8_lossy(&bytes).to_string();
+                let mut g = app.lock().unwrap();
+                if !form.starts_with("SAMLResponse=") {
+                    return axum::response::Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(axum::body::Body::empty())
+                        .unwrap();
+                }
+                g.acs_posts += 1;
+                let session = format!("sess-{}", g.acs_posts);
+                g.valid.insert(session.clone());
+                return axum::response::Response::builder()
+                    .status(302)
+                    .header("location", "/pep-app/")
+                    .header(
+                        "set-cookie",
+                        format!("app_session={}; Path=/; HttpOnly", session),
+                    )
+                    .body(axum::body::Body::empty())
+                    .unwrap();
+            }
+            if parts.uri.path().starts_with("/pep-app/sso") {
+                let cookie = parts
+                    .headers
+                    .get("cookie")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                let held = app.lock().unwrap().valid.iter().any(|s| {
+                    cookie
+                        .split("; ")
+                        .any(|c| c == format!("app_session={}", s))
+                });
+                if !held {
+                    return axum::response::Response::builder()
+                        .status(StatusCode::UNAUTHORIZED)
+                        .body(axum::body::Body::empty())
+                        .unwrap();
+                }
+            }
+            if parts.uri.path() == "/pep-app/slow" {
+                tokio::time::sleep(Duration::from_millis(2000)).await;
+            }
+            if parts.uri.path() == "/pep-app/public/away" {
+                return axum::response::Response::builder()
+                    .status(302)
+                    .header("location", "http://elsewhere.example/")
+                    .body(axum::body::Body::empty())
+                    .unwrap();
+            }
+            let mut headers = serde_json::Map::new();
+            for (name, value) in &parts.headers {
+                headers.insert(
+                    name.as_str().to_string(),
+                    json!(value.to_str().unwrap_or("")),
+                );
+            }
+            let said = json!({ "method": parts.method.as_str(),
             "path": parts.uri.path(), "query": parts.uri.query(),
             "headers": headers, "bodyLength": bytes.len() });
-        axum::response::Response::builder()
-            .status(200)
-            .header("content-type", "application/json")
-            .header("connection", "x-upstream-private")
-            .header("x-upstream-private", "1")
-            .body(axum::body::Body::from(said.to_string()))
-            .unwrap()
+            let mut answer = axum::response::Response::builder()
+                .status(200)
+                .header("content-type", "application/json")
+                .header("connection", "x-upstream-private")
+                .header("x-upstream-private", "1");
+            if parts.uri.path().starts_with("/pep-app/sso") {
+                // A cookie of the jar's name, which must not reach the
+                // browser, and one of the application's own, which may.
+                answer = answer
+                    .header("set-cookie", "app_session=refreshed; Path=/")
+                    .header("set-cookie", "theme=dark; Path=/");
+            }
+            answer
+                .body(axum::body::Body::from(said.to_string()))
+                .unwrap()
+        }
     };
     serve(axum::Router::new().fallback(echo)).await
 }
@@ -317,7 +385,8 @@ async fn service(
                 StatusCode::OK,
                 Json(
                     json!({ "valid": true, "sub": format!("urn:uuid:{}", user),
-                             "username": user }),
+                             "username": user,
+                             "ticket": format!("tk-{}", user) }),
                 ),
             ),
             _ => (StatusCode::OK, Json(json!({ "valid": false }))),
@@ -418,7 +487,82 @@ async fn service(
             )
         }
     };
+    let s6 = state.clone();
+    let identity = move |Json(body): Json<Value>| {
+        let s = s6.clone();
+        async move {
+            let mut g = s.lock().unwrap();
+            let route = body["route"].as_str().unwrap_or("").to_string();
+            g.identity_calls
+                .push((route.clone(), body["evidence"].clone()));
+            // The evidence is re-validated here: a ticket names its subject.
+            let who = match (
+                body["evidence"]["kind"].as_str(),
+                body["evidence"]["value"].as_str(),
+            ) {
+                (Some("ticket"), Some(t)) => {
+                    t.trim_start_matches("tk-").to_string()
+                }
+                (Some("access_token"), Some(t)) if !t.is_empty() => {
+                    "carol".into()
+                }
+                _ => {
+                    return (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        Json(json!({ "code": "STS-XACML-0300" })),
+                    )
+                }
+            };
+            if who == "denied" {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "code": "STS-XACML-0301" })),
+                );
+            }
+            match route.as_str() {
+                "hdr" => {
+                    let email = if who == "evil" {
+                        "x\r\nX-Injected: 1".to_string()
+                    } else {
+                        format!("{}@example.org", who)
+                    };
+                    (
+                        StatusCode::OK,
+                        Json(json!({ "claims": { "email": email,
+                            "groups": ["g1", "g2"] } })),
+                    )
+                }
+                "tok" | "apptok" => {
+                    let n = g.identity_calls.len();
+                    let lifetime = if g.jwt_lifetime == 0 {
+                        300
+                    } else {
+                        g.jwt_lifetime
+                    };
+                    (
+                        StatusCode::OK,
+                        Json(json!({ "accessToken": format!("svc-at-{}", n),
+                            "tokenType": "Bearer", "expiresIn": lifetime })),
+                    )
+                }
+                "sso" => {
+                    let until = (chrono::Utc::now()
+                        + chrono::Duration::minutes(5))
+                    .to_rfc3339();
+                    (
+                        StatusCode::OK,
+                        Json(json!({
+                            "samlResponse": openssl::base64::encode_block(
+                                format!("<samlp:Response>{}</samlp:Response>", who).as_bytes()),
+                            "acsUrl": g.acs_url, "notOnOrAfter": until })),
+                    )
+                }
+                _ => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({}))),
+            }
+        }
+    };
     let router = axum::Router::new()
+        .route("/identity", post(identity))
         .route("/.well-known/openid-configuration", get(discovery))
         .route("/.well-known/ssf-configuration", get(ssf_configuration))
         .route("/ssf/streams", get(streams_list).post(streams_create))
@@ -462,24 +606,29 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
             "maxBodyBytes": 64,
             "routes": [
                 { "id": "public", "path": "/public", "methods": ["GET", "HEAD"],
-                  "public": true, "subjectHeader": "X-Remote-User" },
+                  "public": true, "identity": { "mode": "headers", "headers": [
+                    { "name": "X-Remote-User", "claim": "username" } ] } },
                 { "id": "api", "path": "/api", "methods": ["GET", "POST"],
                   "mechanisms": ["oauth2", "basic"], "application": "api-app",
                   "resolved": resolved_for(true, false, ""),
-                  "subjectHeader": "X-Remote-User",
-                  "mechanismHeader": "X-Remote-Auth" },
+                  "identity": { "mode": "headers", "headers": [
+                    { "name": "X-Remote-User", "claim": "username" },
+                    { "name": "X-Remote-Auth", "claim": "mechanism" } ] } },
                 { "id": "saml", "path": "/saml", "mechanisms": ["saml2"],
                   "application": "saml-app",
                   "resolved": resolved_for(false, true, ""),
-                  "subjectHeader": "X-Remote-User" },
+                  "identity": { "mode": "headers", "headers": [
+                    { "name": "X-Remote-User", "claim": "username" } ] } },
                 { "id": "app", "path": "/app", "mechanisms": ["session"],
                   "application": CLIENT, "signals": false,
                   "resolved": resolved_for(false, false, CLIENT),
-                  "subjectHeader": "X-Remote-User" },
+                  "identity": { "mode": "headers", "headers": [
+                    { "name": "X-Remote-User", "claim": "username" } ] } },
                 { "id": "live", "path": "/live", "mechanisms": ["session"],
                   "application": LIVE_CLIENT,
                   "resolved": resolved_for(false, false, LIVE_CLIENT),
-                  "subjectHeader": "X-Remote-User" },
+                  "identity": { "mode": "headers", "headers": [
+                    { "name": "X-Remote-User", "claim": "username" } ] } },
                 { "id": "fwd", "path": "/fwd", "mechanisms": ["basic"],
                   "application": "fwd-app", "forwardCredentials": true,
                   "resolved": resolved_for(false, false, "") },
@@ -493,7 +642,28 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
                                 "why": "the application was deleted",
                                 "code": "STS-XACML-0999" } },
                 { "id": "slow", "path": "/slow", "match": "exact",
-                  "public": true }
+                  "public": true },
+                { "id": "hdr", "path": "/hdr", "mechanisms": ["basic"],
+                  "application": "hdr-app",
+                  "resolved": resolved_for(false, false, ""),
+                  "identity": { "mode": "headers", "separator": ",",
+                    "headers": [
+                      { "name": "X-Iya-Email", "claim": "email" },
+                      { "name": "X-Iya-Groups", "claim": "groups" },
+                      { "name": "X-Iya-Via", "claim": "mechanism" } ] } },
+                { "id": "tok", "path": "/tok", "mechanisms": ["basic"],
+                  "application": "tok-app",
+                  "resolved": resolved_for(false, false, ""),
+                  "identity": { "mode": "jwt" } },
+                { "id": "apptok", "path": "/apptok",
+                  "mechanisms": ["session"], "application": CLIENT,
+                  "signals": false,
+                  "resolved": resolved_for(false, false, CLIENT),
+                  "identity": { "mode": "jwt" } },
+                { "id": "sso", "path": "/sso", "mechanisms": ["basic"],
+                  "application": "sso-app",
+                  "resolved": resolved_for(false, false, ""),
+                  "identity": { "mode": "saml" } }
             ]
         },
         "realm": {
@@ -507,7 +677,8 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
             "introspect": format!("{}/introspect", service),
             "basic": format!("{}/basic", service),
             "saml": format!("{}/saml", service),
-            "session": format!("{}/session", service)
+            "session": format!("{}/session", service),
+            "identity": format!("{}/identity", service)
         }
     })
 }
@@ -518,10 +689,12 @@ async fn harness() -> Harness {
         jwks: json!({ "keys": [jwk_of(&key, "k1")] }),
         ..ServiceState::default()
     }));
-    let up = upstream().await;
+    let app = Arc::new(Mutex::new(UpState::default()));
+    let up = upstream(app.clone()).await;
     let svc = service(state.clone(), key.clone()).await;
     let service_base = format!("http://127.0.0.1:{}", svc);
     let upstream_base = format!("http://127.0.0.1:{}/pep-app", up);
+    state.lock().unwrap().acs_url = format!("{}/acs", upstream_base);
     let mut options = Options::from_env("0.0.0");
     options.pdp_url = service_base.clone();
     options.pip_enabled = false;
@@ -557,6 +730,7 @@ async fn harness() -> Harness {
         proxy: format!("http://127.0.0.1:{}", port),
         proxied: proxy,
         service: state,
+        app,
         key,
         sync,
         http: reqwest::Client::builder()
@@ -1393,10 +1567,226 @@ async fn the_configuration_is_pulled_with_its_token_and_etag() {
         overview["active"], true,
         "kept through a 304, a 500 and a document refused whole"
     );
-    assert_eq!(overview["routes"], 9);
+    assert_eq!(overview["routes"], 13);
     assert_eq!(overview["lastPullOk"], false);
     assert!(overview["lastPullWhy"]
         .as_str()
         .unwrap()
         .contains("refused whole"));
+}
+
+/// D11, mode `headers`: claims the credential does not hold are asked of
+/// the service with the Basic answer's ticket; a client's own copy of an
+/// identity header — any case, any number of times — never survives; a
+/// dangerous value is refused, never forwarded; the service's 403 is a 403.
+#[tokio::test]
+async fn identity_headers_from_the_service() {
+    let h = harness().await;
+    let said = echoed(
+        h.get("/hdr/x")
+            .basic_auth("alice", Some("right"))
+            .header("X-IYA-EMAIL", "forged@evil")
+            .header("x-iya-email", "again@evil")
+            .header("x-remote-user", "admin")
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    let headers = &said["headers"];
+    assert_eq!(headers["x-iya-email"], "alice@example.org");
+    assert_eq!(headers["x-iya-groups"], "g1,g2");
+    assert_eq!(headers["x-iya-via"], "basic");
+    assert!(
+        headers.get("x-remote-user").is_none(),
+        "another route's identity header is stripped here too"
+    );
+    {
+        let g = h.service.lock().unwrap();
+        let (route, evidence) = g.identity_calls.last().unwrap();
+        assert_eq!(route, "hdr");
+        assert_eq!(evidence["kind"], "ticket");
+        assert_eq!(evidence["value"], "tk-alice", "never the password");
+    }
+    let r = h
+        .get("/hdr/x")
+        .basic_auth("evil", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 502, "a CR LF value is refused, not forwarded");
+    let r = h
+        .get("/hdr/x")
+        .basic_auth("denied", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    // Claims the credential holds are not asked for (a public route's
+    // headers are stripped and nothing is sent).
+    let before = h.service.lock().unwrap().identity_calls.len();
+    let said = echoed(
+        h.get("/api/x")
+            .basic_auth("alice", Some("right"))
+            .header("X-Remote-Auth", "forged")
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(said["headers"]["x-remote-user"], "alice");
+    assert_eq!(said["headers"]["x-remote-auth"], "basic");
+    assert_eq!(h.service.lock().unwrap().identity_calls.len(), before);
+}
+
+/// D11, mode `jwt`: the service's token for the route's application as
+/// `Authorization: Bearer`, the client's own Authorization gone; cached
+/// until thirty seconds before it expires.
+#[tokio::test]
+async fn identity_as_a_service_token() {
+    let h = harness().await;
+    let first = echoed(
+        h.get("/tok/x")
+            .basic_auth("alice", Some("right"))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(first["headers"]["authorization"], "Bearer svc-at-1");
+    let again = echoed(
+        h.get("/tok/x")
+            .basic_auth("alice", Some("right"))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        again["headers"]["authorization"], "Bearer svc-at-1",
+        "cached"
+    );
+    assert_eq!(h.service.lock().unwrap().identity_calls.len(), 1);
+    // Another subject: its own token.
+    let other = echoed(
+        h.get("/tok/x")
+            .basic_auth("bob", Some("right"))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(other["headers"]["authorization"], "Bearer svc-at-2");
+    // A token within thirty seconds of its end is never used.
+    h.service.lock().unwrap().jwt_lifetime = 20;
+    let short = |n: usize| format!("Bearer svc-at-{}", n);
+    let a = echoed(
+        h.get("/tok/x")
+            .basic_auth("carol", Some("right"))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(a["headers"]["authorization"], short(3));
+    let b = echoed(
+        h.get("/tok/x")
+            .basic_auth("carol", Some("right"))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(b["headers"]["authorization"], short(4), "not reused");
+}
+
+/// D11, mode `saml`: the service's assertion POSTed to the application's
+/// ACS server-side, its cookie kept in the proxy's jar and sent with the
+/// request, never to the browser; a 401 from the application establishes
+/// the session again.
+#[tokio::test]
+async fn identity_as_an_application_session() {
+    let h = harness().await;
+    let r = h
+        .get("/sso/page")
+        .basic_auth("alice", Some("right"))
+        .header("cookie", "app_session=forged; mine=1")
+        .send()
+        .await
+        .unwrap();
+    let set: Vec<String> = r
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .map(|v| v.to_str().unwrap().to_string())
+        .collect();
+    assert!(
+        set.iter().all(|c| !c.starts_with("app_session=")),
+        "the jar never reaches the browser: {:?}",
+        set
+    );
+    assert!(set.iter().any(|c| c.starts_with("theme=")), "{:?}", set);
+    let said = echoed(r).await;
+    assert_eq!(said["headers"]["cookie"], "mine=1; app_session=sess-1");
+    assert_eq!(h.app.lock().unwrap().acs_posts, 1);
+    // The jar is used again, updated with what the application refreshed.
+    h.app.lock().unwrap().valid.insert("refreshed".into());
+    let said = echoed(
+        h.get("/sso/page")
+            .basic_auth("alice", Some("right"))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(said["headers"]["cookie"], "app_session=refreshed");
+    assert_eq!(h.app.lock().unwrap().acs_posts, 1);
+    // The application ends its session: a 401, established again once.
+    h.app.lock().unwrap().valid.clear();
+    let said = echoed(
+        h.get("/sso/page")
+            .basic_auth("alice", Some("right"))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(said["headers"]["cookie"], "app_session=sess-2");
+    assert_eq!(h.app.lock().unwrap().acs_posts, 2);
+    // Refused by the service: refused here, the application not reached.
+    let r = h
+        .get("/sso/page")
+        .basic_auth("denied", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    assert_eq!(h.app.lock().unwrap().acs_posts, 2);
+}
+
+/// D11 on a session route: the evidence is the access token the library
+/// holds for the proxy session (`session_access_token`).
+#[tokio::test]
+async fn a_session_route_proves_its_subject_with_the_librarys_token() {
+    let h = harness().await;
+    let q = h.send_to_sign_in("/apptok/x", "sid-tok").await;
+    h.service.lock().unwrap().live.insert("sid-tok".into());
+    let pair = cookie_of(&h.come_back("tok-1", &member(&q, "state")).await);
+    let said = echoed(
+        h.get("/apptok/x")
+            .header("cookie", pair)
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(said["headers"]["authorization"]
+        .as_str()
+        .unwrap()
+        .starts_with("Bearer svc-at-"));
+    let g = h.service.lock().unwrap();
+    let (route, evidence) = g.identity_calls.last().unwrap();
+    assert_eq!(route, "apptok");
+    assert_eq!(evidence["kind"], "access_token");
+    assert_eq!(evidence["value"], "at-sid-tok", "the library's token");
 }

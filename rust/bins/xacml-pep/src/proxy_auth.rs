@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use reqwest::Method;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sts_core::log::tag;
 
 use crate::jwt::{self, Key, Local};
@@ -41,9 +41,45 @@ pub struct Identity {
     pub sub: String,
     pub username: String,
     pub mechanism: Mechanism,
+    /// The subject's claims the credential itself established (a verified
+    /// JWT, an introspection answer, the service's SAML or Basic answer, the
+    /// sign-in): what mode `headers` may use without asking (D11).
+    pub claims: Map<String, Value>,
+    /// What the subject was established from, for `POST
+    /// /xacml/pep/identity` to re-validate (D11): (`access_token`,
+    /// `saml_assertion` or `ticket`, the value). A session's access token is
+    /// asked of the library when it is needed, so a session has none here.
+    pub evidence: Option<(&'static str, String)>,
+    /// The proxy session, on a `session` route: what the identity caches
+    /// are keyed by.
+    pub session_id: Option<String>,
 }
 
 impl Identity {
+    /// The identity, with the evidence it was established from.
+    pub fn with_evidence(
+        mut self,
+        kind: &'static str,
+        value: &str,
+    ) -> Identity {
+        self.evidence = Some((kind, value.to_string()));
+        self
+    }
+
+    /// The cache key of an identity delivered for `application`: the proxy
+    /// session, else the subject and its mechanism.
+    pub fn cache_key(&self, application: &str) -> String {
+        match &self.session_id {
+            Some(id) => format!("session|{}|{}", id, application),
+            None => format!(
+                "subject|{}|{}|{}",
+                self.mechanism.as_str(),
+                self.subject(),
+                application
+            ),
+        }
+    }
+
     /// D8: the username when known, else `sub`.
     pub fn subject(&self) -> &str {
         if self.username.is_empty() {
@@ -111,11 +147,37 @@ fn identity_of(said: &Value, mechanism: Mechanism) -> Option<Identity> {
         .or_else(|| said["preferred_username"].as_str())
         .unwrap_or("")
         .to_string();
+    let mut claims = Map::new();
+    for name in crate::proxy_config::IDENTITY_CLAIMS {
+        if let Some(value) = said.get(name).filter(|v| !v.is_null()) {
+            claims.insert(name.to_string(), value.clone());
+        }
+    }
+    claims.insert("sub".into(), json!(sub));
+    if !username.is_empty() {
+        claims.insert("username".into(), json!(username));
+    }
     (!sub.is_empty() || !username.is_empty()).then_some(Identity {
         sub,
         username,
         mechanism,
+        claims,
+        evidence: None,
+        session_id: None,
     })
+}
+
+/// A blank identity of `mechanism`, for a builder.
+pub fn identity(sub: &str, username: &str, mechanism: Mechanism) -> Identity {
+    identity_of(&json!({ "sub": sub, "username": username }), mechanism)
+        .unwrap_or(Identity {
+            sub: String::new(),
+            username: String::new(),
+            mechanism,
+            claims: Map::new(),
+            evidence: None,
+            session_id: None,
+        })
 }
 
 /// The service's answer could not be used: unreachable, or not an answer.
@@ -277,14 +339,14 @@ impl Authenticator {
                         &format!("the access token was refused: {}", why),
                     ));
                 }
-                return identity_of(&claims, Mechanism::OAuth2).ok_or_else(
-                    || {
+                return identity_of(&claims, Mechanism::OAuth2)
+                    .map(|i| i.with_evidence("access_token", token))
+                    .ok_or_else(|| {
                         Refusal::token(
                             "STS-XPEP-0071",
                             "the access token names no subject",
                         )
-                    },
-                );
+                    });
             }
             Ok(None) => {}
         }
@@ -348,12 +410,14 @@ impl Authenticator {
                 &format!("the introspected token was refused: {}", why),
             ));
         }
-        identity_of(said, Mechanism::OAuth2).ok_or_else(|| {
-            Refusal::token(
-                "STS-XPEP-0074",
-                "the introspected token names no subject",
-            )
-        })
+        identity_of(said, Mechanism::OAuth2)
+            .map(|i| i.with_evidence("access_token", token))
+            .ok_or_else(|| {
+                Refusal::token(
+                    "STS-XPEP-0074",
+                    "the introspected token names no subject",
+                )
+            })
     }
 
     /// `Authorization: SAML <base64 assertion>` on a `saml2` route.
@@ -394,11 +458,12 @@ impl Authenticator {
                 ))
             }
             Outcome::Verified(found) => {
-                return Ok(Identity {
-                    sub: found.subject,
-                    username: found.username.unwrap_or_default(),
-                    mechanism: Mechanism::Saml2,
-                })
+                return Ok(identity(
+                    &found.subject,
+                    &found.username.unwrap_or_default(),
+                    Mechanism::Saml2,
+                )
+                .with_evidence("saml_assertion", &encoded))
             }
             Outcome::CannotEstablish(why) => {
                 tracing::info!(
@@ -444,9 +509,11 @@ impl Authenticator {
                 "the service says the SAML assertion is not valid",
             ));
         }
-        identity_of(said, Mechanism::Saml2).ok_or_else(|| {
-            Refusal::new(401, "STS-XPEP-0078", "the assertion names nobody")
-        })
+        identity_of(said, Mechanism::Saml2)
+            .map(|i| i.with_evidence("saml_assertion", &encoded))
+            .ok_or_else(|| {
+                Refusal::new(401, "STS-XPEP-0078", "the assertion names nobody")
+            })
     }
 
     /// `Authorization: Basic` on a `basic` route: ALWAYS the service's.
@@ -521,18 +588,89 @@ impl Authenticator {
                 "the service says the Basic credential is not valid",
             ));
         }
-        let mut identity =
-            identity_of(said, Mechanism::Basic).unwrap_or(Identity {
-                sub: String::new(),
-                username: String::new(),
-                mechanism: Mechanism::Basic,
-            });
+        let mut identity = identity_of(said, Mechanism::Basic)
+            .unwrap_or_else(|| self::identity("", username, Mechanism::Basic));
         // The name the person signed in with is known, so it is the
         // decision's subject when the service did not say another.
         if identity.username.is_empty() {
             identity.username = username.to_string();
+            identity.claims.insert("username".into(), json!(username));
+        }
+        // D11: the service's answer carries a TICKET — opaque, bound to
+        // this PEP and this subject, short-lived — which is the evidence
+        // the identity endpoint takes for a Basic sign-in. The password
+        // itself is never sent there.
+        if let Some(ticket) = said["ticket"].as_str().filter(|t| !t.is_empty())
+        {
+            identity = identity.with_evidence("ticket", ticket);
         }
         Ok(identity)
+    }
+
+    /// `POST validation.identity` (D11): the route, the evidence the
+    /// subject was established from, and for mode `headers` the claims
+    /// asked. The service's 403 is a 403 here; anything else that is not a
+    /// 200 with a JSON object is a 502. Never logged: the evidence.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub async fn identity(
+        &self,
+        route: &Route,
+        evidence: (&str, &str),
+        claims: Option<&[String]>,
+        pulled: &Pulled,
+    ) -> Result<Map<String, Value>, Refusal> {
+        let url = &pulled.validation.identity;
+        if url.is_empty() {
+            return Err(Refusal::new(
+                502,
+                "STS-XPEP-0095",
+                "the route sends an identity and the service named no \
+                 identity endpoint",
+            ));
+        }
+        let mut body = json!({ "route": route.id,
+            "evidence": { "kind": evidence.0, "value": evidence.1 } });
+        if let Some(claims) = claims {
+            body["claims"] = json!(claims);
+        }
+        let answer = self
+            .client
+            .call_url(Method::POST, url, Some(Body::Json(body)), &[], None)
+            .await;
+        if answer.error.is_none() && answer.status == 403 {
+            return Err(Refusal::new(
+                403,
+                "STS-XPEP-0095",
+                &format!(
+                    "the service refused the identity for route {} (403{})",
+                    route.id,
+                    answer
+                        .json
+                        .as_ref()
+                        .and_then(|j| j["code"].as_str())
+                        .map(|c| format!(", {}", c))
+                        .unwrap_or_default()
+                ),
+            ));
+        }
+        match answer.json.as_ref().and_then(Value::as_object) {
+            Some(said) if answer.status == 200 && answer.error.is_none() => {
+                Ok(said.clone())
+            }
+            _ => Err(Refusal::new(
+                502,
+                "STS-XPEP-0095",
+                &format!(
+                    "the service's identity endpoint did not answer usably \
+                     for route {} ({})",
+                    route.id,
+                    answer
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| format!("HTTP {}", answer.status))
+                ),
+            )),
+        }
     }
 
     /// `POST validation.session { sid }`: `Ok(Some(identity))` when live,

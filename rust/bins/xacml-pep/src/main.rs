@@ -16,6 +16,7 @@ mod authzen;
 mod authzen_catalogue;
 mod authzen_map;
 mod enforce;
+mod identity;
 mod jwt;
 mod listener;
 mod options;
