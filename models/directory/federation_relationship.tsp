@@ -389,6 +389,14 @@ model FederationRelationship {
     kind: "single",
     role: "service-provider",
     from: "this register",
+    what: "OPENID CONNECT ONLY. TRUE, the default (and what an empty value means): the partner's UserInfo endpoint is asked with the access token at sign-in and at every refresh, and what it answers for the same sub is added to the ID Token's claims (OpenID Connect Core 1.0 section 5.3). FALSE: UserInfo is never asked, whatever fedUserinfoUrl or the discovery document names, and the person's claims are the ID Token's alone — for a partner whose UserInfo this relationship may not call, such as a FAPI 1.0 Advanced authorization server that serves its resource elsewhere."
+  })
+  fedUserinfo?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    role: "service-provider",
+    from: "this register",
     what: "OPENID CONNECT ONLY. TRUE keeps the refresh token the partner issues at sign-in, sealed, with the session it started, and uses it to keep that session's identity current (OpenID Connect Core 1.0 section 12): every fedRefreshEverySeconds the session's tokens are refreshed, a new ID Token must name the same iss and sub, and UserInfo must still answer for that sub. A refresh the partner refuses, or an answer that fails those checks, ENDS the session. The token dies with the session. FALSE, the default: the partner's tokens are used once, at sign-in, and discarded — nothing here holds a credential at another service, and the partner's own sign-out and Shared Signals are what end the session early."
   })
   fedRefreshTokens?: string;

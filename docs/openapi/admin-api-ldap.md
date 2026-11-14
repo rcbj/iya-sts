@@ -593,6 +593,7 @@ Scope: `admin:read`.
 | `relationships[].fedTokenUrl` | string |  |  |
 | `relationships[].fedTrustAnchor` | string |  |  |
 | `relationships[].fedUpdateUserAttributes` | string |  |  |
+| `relationships[].fedUserinfo` | string |  |  |
 | `relationships[].fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationships[].fedUserinfoUrl` | string |  |  |
 | `relationships[].fedUsernameSource` | string |  |  |

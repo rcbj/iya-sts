@@ -287,6 +287,10 @@
     "en": "dfebb4c3fc05d0ca",
     "text": "SOLO OPENID CONNECT. El algoritmo con el que debe estar firmada una respuesta UserInfo FIRMADA: lo que se registró en el socio como userinfo_signed_response_alg (OpenID Connect Core 1.0 sección 5.3.2). Una respuesta firmada se verifica con las claves del socio esté o no establecido; establecido, una firmada con otro algoritmo no se usa. Vacío, el valor predeterminado: una respuesta JSON, o una firmada con cualquier algoritmo de la familia de su clave."
   },
+  "fed.schema.attributes.fedUserinfo.what": {
+    "en": "937c36d63a3876a6",
+    "text": "SOLO OPENID CONNECT. TRUE, el valor predeterminado (y lo que significa un valor vacío): se consulta el endpoint UserInfo del socio con el access token al iniciar sesión y en cada renovación, y lo que responde para el mismo sub se añade a los claims del ID Token (OpenID Connect Core 1.0 sección 5.3). FALSE: nunca se consulta UserInfo, nombre lo que nombre fedUserinfoUrl o el documento de descubrimiento, y los claims de la persona son solo los del ID Token — para un socio cuyo UserInfo esta relación no puede llamar, como un servidor de autorización FAPI 1.0 Advanced que sirve su recurso en otro lugar."
+  },
   "fed.schema.attributes.fedRefreshTokens.what": {
     "en": "eaa1a36d346a058b",
     "text": "SOLO OPENID CONNECT. TRUE conserva, sellado, el token de actualización que el socio emite al iniciar sesión, con la sesión que inició, y lo usa para mantener al día la identidad de esa sesión (OpenID Connect Core 1.0 sección 12): cada fedRefreshEverySeconds se actualizan los tokens de la sesión, un nuevo ID Token debe nombrar los mismos iss y sub, y UserInfo debe seguir respondiendo por ese sub. Una actualización que el socio rechaza, o una respuesta que no supera esas comprobaciones, TERMINA la sesión. El token muere con la sesión. FALSE, el valor predeterminado: los tokens del socio se usan una vez, al iniciar sesión, y se descartan; aquí nada guarda una credencial de otro servicio, y son el cierre de sesión del socio y sus Shared Signals los que terminan antes la sesión."

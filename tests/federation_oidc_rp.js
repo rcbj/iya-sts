@@ -84,6 +84,10 @@
 //      1-advanced's fragment answer (#931's FAPI 1.0 Advanced run, 10ao):
 //      the profile's `code id_token`, not the stored `code`, decides that
 //      the bare GET is answered with the fragment page.
+//      fedUserinfo off (#931's third run, 6e, 10ap): neither a sign-in
+//      nor a refresh asks UserInfo, a 1-advanced sign-in still dials the
+//      token alias with its certificate and signs the person in on the ID
+//      Tokens, and the field is stored TRUE, FALSE or empty (on).
 // The conformance suite's relying-party plans drive the same code over the
 // wire (`tests/protocol/sts_oidcc_rp_conformance.js`); this pins each
 // refusal's code and that nothing is dialled after it.
@@ -742,6 +746,25 @@ function childMain() {
     note(counts.refreshed === 1 && counts.ended === 0,
          '6d. an ended session\'s token is gone: only the live one is ' +
          'refreshed again', JSON.stringify(counts));
+    // fedUserinfo off (#931's third run): neither the sign-in nor a refresh
+    // asks UserInfo, and the refresh still stands on the ID Token.
+    federation.update(REFRESH, { field: 'fedUserinfo', value: 'off' });
+    note(federation.get(REFRESH).fedUserinfo === 'FALSE' &&
+         !federation.asksUserinfo(federation.get(REFRESH)),
+         '6e. fedUserinfo written as off is stored FALSE and read as off',
+         String(federation.get(REFRESH).fedUserinfo));
+    counts = await refreshCase('rt-noui', { claims: fresh });
+    note(counts.refreshed >= 1 && counts.ended === 0 &&
+         bearers().length === 0,
+         '6e. with fedUserinfo off a due refresh is refreshed on the ID ' +
+         'Token alone and UserInfo is not asked',
+         JSON.stringify(counts) + ' ' + JSON.stringify(bearers()));
+    federation.update(REFRESH, { field: 'fedUserinfo', value: '' });
+    note(!federation.get(REFRESH).fedUserinfo &&
+         federation.asksUserinfo(federation.get(REFRESH)) &&
+         federation.asksUserinfo({}),
+         '6e. fedUserinfo emptied stays empty and reads as on, the default',
+         JSON.stringify(federation.get(REFRESH).fedUserinfo));
 
     // --- 7. self-registration and Request Objects -------------------------
     const stateOf = function (text) {
@@ -1864,6 +1887,58 @@ function childMain() {
          'mtls_endpoint_aliases with the client certificate',
          r.status + ' cert=' + aliasToken.cert + ' ' +
          String(r.text || '').slice(0, 200));
+
+    const aliasAskedUserinfo = op.calls.some(function (c) {
+      return /\/userinfo$/.test(c.path);
+    });
+
+    // --- 10ap. fedUserinfo off (#931's third run, 2026-11-14) -------------
+    // The suite's FAPI 1.0 Advanced document names a UserInfo alias its
+    // mutual-TLS listener does not serve, so those relationships ask none:
+    // the sign-in completes on the ID Tokens, the token request still goes
+    // to the alias with the certificate, and nothing named userinfo is
+    // dialled. 10al above, with fedUserinfo at its default, is the control.
+    const NOUI = make('frp-fapi1-noui-' + stamp, { fedFapi: '1-advanced',
+      fedDiscovery: 'TRUE', fedTokenAuth: 'tls_client_auth',
+      fedUserinfo: 'FALSE', fedSsoUrl: null, fedTokenUrl: null,
+      fedJwksUri: null, fedUserinfoUrl: null });
+    op.scenario = { issuer: opBase, base: opBase, discovery: {
+      mtls_endpoint_aliases: { token_endpoint: mtlsBase + 'token',
+                               userinfo_endpoint: mtlsBase + 'userinfo' } } };
+    const nouiJar = {};
+    started = await begin(NOUI, nouiJar);
+    op.calls = [];
+    op.scenario.bindMtls = true;
+    op.scenario.backClaims = function () {
+      return claims(started);
+    };
+    r = await call('POST', '/federation/acs/' + NOUI, {
+      state: started.params.get('state'), code: 'c-noui',
+      id_token: sign(claims(started, {
+        c_hash: halfHash('c-noui'),
+        s_hash: halfHash(started.params.get('state')) }))
+    }, nouiJar);
+    // Read after the sign-in, whose token request issued the certificate.
+    const nouiView = fedClientCert.viewOf(federation.get(NOUI)) || {};
+    const nouiToken = op.calls.filter(function (c) {
+      return /\/token$/.test(c.path);
+    })[0] || { cert: '' };
+    note(aliasAskedUserinfo,
+         '10ap. the control: with fedUserinfo at its default, 10al\'s ' +
+         'sign-in asks the UserInfo alias', JSON.stringify(op.calls.length));
+    note(r.status < 400 && nouiToken.cert &&
+         nouiToken.cert === nouiView.x5tS256 &&
+         !op.calls.some(function (c) {
+           return /userinfo/.test(c.path);
+         }) &&
+         String(r.text || '').indexOf('<title>Signed in</title>') > 0,
+         '10ap. with fedUserinfo off 1-advanced signs the person in on the ' +
+         'ID Tokens, dials the token alias with its certificate and asks ' +
+         'no UserInfo', r.status + ' cert=' + nouiToken.cert + ' want=' +
+           nouiView.x5tS256 + ' ' + JSON.stringify(op.calls.map(
+           function (c) {
+             return c.path;
+           })) + ' ' + String(r.text || '').slice(0, 200));
 
     // --- 10ao. 1-advanced's fragment answer, the stored type `code` -------
     // (#931's FAPI 1.0 Advanced run, 2026-11-14). The profile asks for

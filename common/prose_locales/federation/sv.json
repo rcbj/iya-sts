@@ -287,6 +287,10 @@
     "en": "dfebb4c3fc05d0ca",
     "text": "ENDAST OPENID CONNECT. Den algoritm ett SIGNERAT UserInfo-svar måste vara signerat med — det som registrerades hos partnern som userinfo_signed_response_alg (OpenID Connect Core 1.0 avsnitt 5.3.2). Ett signerat svar verifieras mot partnerns nycklar oavsett om detta är angivet; angivet används inte ett som är signerat med en annan algoritm. Tomt, standardvärdet: ett JSON-svar, eller ett signerat med vilken algoritm som helst i dess nyckels familj."
   },
+  "fed.schema.attributes.fedUserinfo.what": {
+    "en": "937c36d63a3876a6",
+    "text": "ENDAST OPENID CONNECT. TRUE, standardvärdet (och vad ett tomt värde betyder): partnerns UserInfo-slutpunkt tillfrågas med åtkomsttoken vid inloggning och vid varje förnyelse, och det den svarar för samma sub läggs till ID Tokenens claims (OpenID Connect Core 1.0 avsnitt 5.3). FALSE: UserInfo tillfrågas aldrig, vad fedUserinfoUrl eller discovery-dokumentet än anger, och personens claims är enbart ID Tokenens — för en partner vars UserInfo den här relationen inte får anropa, till exempel en FAPI 1.0 Advanced-auktoriseringsserver som tillhandahåller sin resurs någon annanstans."
+  },
   "fed.schema.attributes.fedRefreshTokens.what": {
     "en": "eaa1a36d346a058b",
     "text": "ENDAST OPENID CONNECT. TRUE behåller, förseglad, den uppdateringstoken partnern utfärdar vid inloggning, tillsammans med sessionen den startade, och använder den för att hålla den sessionens identitet aktuell (OpenID Connect Core 1.0 avsnitt 12): var fedRefreshEverySeconds uppdateras sessionens token, en ny ID-token måste namnge samma iss och sub, och UserInfo måste fortfarande svara för den sub. En uppdatering som partnern avvisar, eller ett svar som inte klarar dessa kontroller, AVSLUTAR sessionen. Token dör med sessionen. FALSE, standardvärdet: partnerns token används en gång, vid inloggning, och kastas — inget här håller en autentiseringsuppgift hos en annan tjänst, och partnerns egen utloggning och Shared Signals är det som avslutar sessionen tidigare."

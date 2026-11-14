@@ -44,8 +44,10 @@
 //      or token answer the client must refuse) passes when this service
 //      refuses it and dials nothing more. A positive module waits for a
 //      resource call this relying party never makes, so it is stopped once
-//      the suite has answered its UserInfo and judged REACHED RESOURCE
-//      (operatorFor() argues it).
+//      the suite has answered its UserInfo and judged REACHED RESOURCE —
+//      for FAPI 1.0 Advanced, whose plan forbids that call, once its token
+//      endpoint has answered and the sign-in has completed here, judged
+//      REACHED TOKEN (operatorFor() argues both).
 //   3. A FAILED module fails the job unless EXPECTED names it with its
 //      reason; a FAILURE from a condition KNOWN_FAILURES names is argued
 //      only when it is the module's only kind of failure; a WARNING from a
@@ -293,6 +295,15 @@ async function relationship(plan, made, issuer, id, clientId, extra) {
   if (plan.tokenAuth) {
     fields.fedTokenAuth = plan.tokenAuth;
   }
+  // FAPI 1.0 ADVANCED'S PLANS FORBID THE USERINFO CALL (#931's third run):
+  // the suite's discovery document names a UserInfo alias in
+  // mtls_endpoint_aliases that its mutual-TLS listener does not serve
+  // ("Got unexpected HTTP (using mtls) call to userinfo"), and a
+  // certificate-bound client must dial the alias (RFC 8705 section 5). So
+  // the relationship takes the person's claims from the ID Token alone.
+  if (plan.fapi === "1-advanced") {
+    fields.fedUserinfo = "FALSE";
+  }
   // PRODUCT MODE requires a partner to encrypt an ID Token that crosses the
   // browser; the suite could only be told to through its client
   // configuration, and encryption is not what these plans test — except
@@ -357,6 +368,7 @@ async function prepare(plan) {
     waitTimeoutSeconds: 5
   };
   const logins = { client: first.login };
+  const ids = { client: first.id };
   if (plan.fapi === "1-advanced") {
     configuration.server = { jwks: serverJwks(plan) };
     // THE SECOND CLIENT (#931's first run): FAPI 1.0 Advanced's two
@@ -378,11 +390,13 @@ async function prepare(plan) {
     second.client.id_token_encrypted_response_enc = "A256GCM";
     configuration.client2 = second.client;
     logins.client2 = second.login;
+    ids.client2 = second.id;
   }
   log.debug("Leaving prepare().");
   return {
     realm: made, id: first.id, issuer: issuer, alias: alias,
-    login: first.login, logins: logins, configuration: configuration
+    login: first.login, logins: logins, ids: ids,
+    configuration: configuration
   };
 }
 
@@ -406,7 +420,52 @@ async function prepare(plan) {
 // request and the UserInfo request having run — the module is stopped
 // here and judged REACHED RESOURCE: passed if the suite logged no FAILURE,
 // FAILED otherwise, its warnings judged as any module's.
+//
+// FAPI 1.0 ADVANCED ENDS AT THE TOKEN ENDPOINT (#931's third run,
+// 2026-11-14). Its plan publishes a UserInfo alias in
+// `mtls_endpoint_aliases` (GenerateServerConfigurationMTLS) that its
+// mutual-TLS listener does not serve — handleHttpMtls answers only
+// `token`, the accounts endpoint and `par`, and throws "Got unexpected
+// HTTP (using mtls) call to userinfo" for anything else — and a client
+// holding a certificate-bound token must dial the alias (RFC 8705 section
+// 5). So those relationships ask no UserInfo (`fedUserinfo` FALSE, above)
+// and a positive module is judged REACHED TOKEN once the suite's log shows
+// its token endpoint answered 200 AND this service shows the outcome on
+// the relationship: its sign-in count up (the ID Tokens verified and the
+// person signed in), or a refusal recorded (`fedLastError`), which fails
+// the module. A NEGATIVE module whose answer this client signed somebody
+// in on fails too, whatever the suite says: without UserInfo, a client
+// that accepted a bad ID Token at the token endpoint calls nothing more,
+// which is exactly what the suite passes a negative module for.
 // ---------------------------------------------------------------------------
+const FAPI1_POSITIVE = new RegExp("^fapi1-advanced-final-client-test" +
+  "(-encrypted-idtoken|-valid-aud-as-array|" +
+  "-no-scope-in-token-endpoint-response|-missing-athash)?$");
+
+async function tokenAnswered(id) {
+  log.debug("Entering tokenAnswered(). " + id);
+  const logs = (await oidf.suite("GET", "api/log/" + id)).body || [];
+  const answered = Array.isArray(logs) && logs.some(function (entry) {
+    // The mutual-TLS alias (`test-mtls/a/<alias>/token`) or the plain
+    // endpoint, matched at the end as userinfoAnswered() matches.
+    return entry && entry.http === "outgoing" &&
+           /(^|\/)token$/.test(String(entry.outgoing_path || "")) &&
+           Number(entry.outgoing_status_code) === 200;
+  });
+  log.debug("Leaving tokenAnswered(). " + answered);
+  return answered;
+}
+
+// What the relationship a module signs in through says about its sign-ins.
+async function signInsOf(prepared, relationship) {
+  log.debug("Entering signInsOf(). " + relationship);
+  const view = await relationshipView(prepared.realm.api, relationship);
+  log.debug("Leaving signInsOf().");
+  return { count: Number(view.authentications) || 0,
+           lastError: String(view.lastError || ""),
+           lastErrorAt: String(view.lastErrorAt || "") };
+}
+
 async function userinfoAnswered(id) {
   log.debug("Entering userinfoAnswered(). " + id);
   const logs = (await oidf.suite("GET", "api/log/" + id)).body || [];
@@ -426,6 +485,11 @@ function operatorFor(plan, prepared, person) {
   log.debug("Entering operatorFor(). " + plan.key);
   const started = {};
   const reached = {};
+  // FAPI 1.0 Advanced (above): the relationship's sign-ins before each
+  // module, and the refusal a positive module's answer met, by module id.
+  const atToken = plan.fapi === "1-advanced";
+  const before = {};
+  const refused = {};
   log.debug("Leaving operatorFor().");
   const operator = async function (id, info) {
     log.debug("Entering the FAPI client's person. " + id);
@@ -433,13 +497,41 @@ function operatorFor(plan, prepared, person) {
       log.debug("Leaving the FAPI client's person. Not waiting.");
       return;
     }
+    const second = /encrypted-idtoken/.test(String(info.testName || ""));
+    const relationship = second && prepared.ids.client2
+      ? prepared.ids.client2 : prepared.ids.client;
     if (!started[id]) {
       started[id] = 1;
-      const second = /encrypted-idtoken/.test(String(info.testName || ""));
+      if (atToken) {
+        before[id] = Object.assign({ relationship: relationship },
+                                   await signInsOf(prepared, relationship));
+      }
       await person.start(id, info, second && prepared.logins.client2
         ? prepared.logins.client2 : prepared.login);
     }
     await person.visit(id, info);
+    if (atToken) {
+      if (FAPI1_POSITIVE.test(String(info.testName || "")) &&
+          before[id] && await tokenAnswered(id)) {
+        const now = await signInsOf(prepared, relationship);
+        const signedIn = now.count > before[id].count;
+        const refusal = now.lastErrorAt !== before[id].lastErrorAt;
+        if (signedIn || refusal) {
+          reached[id] = 1;
+          if (!signedIn) {
+            refused[id] = now.lastError || "a refusal with no sentence";
+          }
+          log.info("  " + plan.key + " " + (info.testName || id) +
+                   ": the token endpoint answered and the sign-in " +
+                   (signedIn ? "completed" : "was refused: " + refused[id]) +
+                   "; stopping it at the resource call this client does " +
+                   "not make.");
+          await oidf.suite("DELETE", "api/runner/" + id);
+        }
+      }
+      log.debug("Leaving the FAPI client's person. FAPI 1.0 Advanced.");
+      return;
+    }
     if (await userinfoAnswered(id)) {
       reached[id] = 1;
       log.info("  " + plan.key + " " + (info.testName || id) + ": UserInfo " +
@@ -450,20 +542,42 @@ function operatorFor(plan, prepared, person) {
     log.debug("Leaving the FAPI client's person.");
   };
   operator.reached = reached;
+  operator.atToken = atToken;
+  operator.before = before;
+  operator.refused = refused;
   return operator;
 }
 
-// What a module the operator stopped at the resource call is reported as.
-function judgedAtResource(got, operator) {
+// What a module the operator stopped at the resource call is reported as;
+// and, for FAPI 1.0 Advanced, a negative module this client signed
+// somebody in on, as FAILED.
+async function judgedAtResource(got, operator, prepared) {
   log.debug("Entering judgedAtResource(). " + got.module);
+  if (operator && operator.atToken && operator.before[got.id] &&
+      !operator.reached[got.id] && !FAPI1_POSITIVE.test(got.module)) {
+    const base = operator.before[got.id];
+    const now = await signInsOf(prepared, base.relationship);
+    if (now.count > base.count) {
+      log.debug("Leaving judgedAtResource(). A negative signed in.");
+      return Object.assign({}, got, { status: "FINISHED", result: "FAILED",
+        failures: [{ src: "iya-sts", msg: "the relationship " +
+          base.relationship + " signed the person in on an answer this " +
+          "module expects the client to refuse" }].concat(got.failures) });
+    }
+  }
   if (!operator || !operator.reached[got.id] ||
       got.status !== "INTERRUPTED") {
     log.debug("Leaving judgedAtResource(). Not stopped there.");
     return got;
   }
+  const failures = operator.refused[got.id]
+    ? [{ src: "iya-sts", msg: "this client refused the answer: " +
+         operator.refused[got.id] }].concat(got.failures)
+    : got.failures;
   log.debug("Leaving judgedAtResource().");
-  return Object.assign({}, got, { status: "FINISHED",
-    result: got.failures.length ? "FAILED" : "REACHED RESOURCE" });
+  return Object.assign({}, got, { status: "FINISHED", failures: failures,
+    result: failures.length ? "FAILED"
+      : operator.atToken ? "REACHED TOKEN" : "REACHED RESOURCE" });
 }
 
 // ONE PLAN, prepared, run module by module and judged; answers the lines
@@ -494,16 +608,17 @@ async function runOnePlan(plan) {
     for (let i = 0; i < modules.length; i++) {
       const module = modules[i];
       const argued = expectedFor(plan, module.testModule);
-      let got = judgedAtResource(await oidf.runModule(planId, module,
+      let got = await judgedAtResource(await oidf.runModule(planId, module,
         argued ? null : operator, argued ? ARGUED_SECONDS : undefined),
-        operator);
+        operator, prepared);
       // ONE MORE RUN FOR A MODULE THAT TIMED OUT, as runPlan() gives one —
       // unless it is argued to wait out its time.
       if (got.status === "TIMED OUT" && !argued) {
         log.info("  " + plan.key + " " + got.module + ": TIMED OUT; " +
                  "running it once more.");
-        got = judgedAtResource(await oidf.runModule(planId, module,
-                                                    operator), operator);
+        got = await judgedAtResource(await oidf.runModule(planId, module,
+                                                          operator),
+                                     operator, prepared);
       }
       log.info("  " + plan.key + " " + got.module + ": " +
                (got.result || got.status) +

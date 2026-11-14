@@ -165,6 +165,7 @@
   "fedTokenUrl": 159,
   "fedTrustAnchor": 160,
   "fedUpdateUserAttributes": 161,
+  "fedUserinfo": 751,
   "fedUserinfoSignedResponseAlg": 162,
   "fedUserinfoUrl": 163,
   "fedUsernameSource": 164,

@@ -506,10 +506,11 @@ class FederationPage {
              'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
               .concat(json.encrypts ? ['fedAllowUnencrypted'] : [])
               // OpenID Connect's discovery and partner-started sign-in
-              // (#930), both off by default.
+              // (#930), both off by default, and whether UserInfo is
+              // asked (#931's third run), on by default.
               .concat(row.protocol === 'oidc'
                 ? ['fedDiscovery', 'fedInitiateLogin', 'fedRefreshTokens',
-                   'fedRegister', 'fedWebFinger']
+                   'fedRegister', 'fedWebFinger', 'fedUserinfo']
                 : [])
           : []).map(function (name) {
         const field = json.schema.filter(
@@ -525,7 +526,8 @@ class FederationPage {
           ? json.autocreateDefault !== false
           : (name === 'fedUpdateUserAttributes' ||
              name === 'fedAcceptSignout' ||
-             name === 'fedRequireSignedLogout');
+             name === 'fedRequireSignedLogout' ||
+             name === 'fedUserinfo');
         const on = FederationPage.boolOf(record[name], dflt);
         // TRUE and FALSE are the attribute's own values, not words.
         return '<tr><td><code>' + kit.esc(name) + '</code></td>' +

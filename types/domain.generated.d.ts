@@ -339,6 +339,7 @@ declare namespace IyaDomain {
     responseType?: string;
     idTokenSignedResponseAlg?: string;
     userinfoSignedResponseAlg?: string;
+    userinfo?: string;
     refreshTokens?: string;
     refreshEverySeconds?: string;
     register?: string;

@@ -2608,6 +2608,14 @@ is fixed in the service.
   (`federation/CLAUDE.md`, *WHAT THE CONFORMANCE SUITE'S FIRST RUN FOUND*);
   the operator stops the module once the suite's log shows UserInfo
   answered `200`, and it passes only with no FAILURE logged.
+* **A FAPI 1.0 Advanced positive module ends at the token endpoint,
+  judged `REACHED TOKEN`** (run 27, 2026-11-14). That plan names a UserInfo
+  alias in `mtls_endpoint_aliases` its mutual-TLS listener does not serve,
+  so its relationships set `fedUserinfo=FALSE`; the operator stops the
+  module once the token endpoint answered `200` and the relationship's
+  sign-in count rose (a recorded `fedLastError` instead fails it), and a
+  negative module that raised the count is FAILED
+  (`federation/CLAUDE.md`, *WHAT THE THIRD RUN FOUND*).
 * **The plans**, with the client role's variant keys read off the suite's
   plan classes (a `createPlan` that rejects one is a fix to that JSON):
   * `fapi1adv` — `fapi1-advanced-final-client-test-plan`,
