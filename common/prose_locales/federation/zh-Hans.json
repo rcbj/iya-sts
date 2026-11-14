@@ -287,6 +287,10 @@
     "en": "dfebb4c3fc05d0ca",
     "text": "仅限 OPENID CONNECT。已签名的 UserInfo 响应必须使用的签名算法——即在合作伙伴处注册为 userinfo_signed_response_alg 的算法（OpenID Connect Core 1.0 第 5.3.2 节）。无论是否设置此项，已签名的响应都会用合作伙伴的密钥验证；设置后，以其他算法签名的响应不会被使用。为空即默认值：JSON 响应，或以其密钥所属家族任何算法签名的响应。"
   },
+  "fed.schema.attributes.fedUserinfo.what": {
+    "en": "937c36d63a3876a6",
+    "text": "仅限 OPENID CONNECT。TRUE 为默认值（空值也表示此意）：在登录时和每次刷新时都用访问令牌询问合作方的 UserInfo 端点，并将其针对同一 sub 的回答加入 ID Token 的声明（OpenID Connect Core 1.0 第 5.3 节）。FALSE：无论 fedUserinfoUrl 或发现文档指明什么，都从不询问 UserInfo，此人的声明仅取自 ID Token——适用于此关系不得调用其 UserInfo 的合作方，例如在别处提供其资源的 FAPI 1.0 Advanced 授权服务器。"
+  },
   "fed.schema.attributes.fedRefreshTokens.what": {
     "en": "eaa1a36d346a058b",
     "text": "仅限 OPENID CONNECT。TRUE 会将合作伙伴在登录时签发的刷新令牌加密保存，与其开启的会话放在一起，并用它保持该会话的身份为最新（OpenID Connect Core 1.0 第 12 节）：每隔 fedRefreshEverySeconds 刷新一次会话的令牌，新的 ID Token 必须标明相同的 iss 和 sub，并且 UserInfo 必须仍为该 sub 作答。合作伙伴拒绝的刷新，或未通过这些检查的响应，会结束该会话。令牌随会话一起消亡。FALSE 为默认值：合作伙伴的令牌只在登录时使用一次，随后丢弃——这里不持有其他服务的任何凭据，而合作伙伴自己的注销和 Shared Signals 才是提前结束会话的方式。"

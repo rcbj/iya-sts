@@ -2929,6 +2929,39 @@ reached the token endpoint.
   still asks for form_post, the operator's choice for a partner that
   supports it.
 
+**WHAT THE THIRD RUN FOUND (run 27, 2026-11-14, develop 522bce127, memory
+mode).** The 2.x plans passed. In all four FAPI 1.0 Advanced plans the five
+positive modules got past the token endpoint and FAILED on `Got unexpected
+HTTP (using mtls) call to userinfo`. Read from the suite's source
+(release-v5.3.1, `AbstractFAPI1AdvancedFinalClientTest`):
+
+* **Its discovery document names UserInfo twice and serves it once.**
+  `GenerateServerConfigurationMTLS` (the `condition.as` one) publishes
+  `userinfo_endpoint` on the plain host and the same in
+  `mtls_endpoint_aliases`. `handleHttp()` answers the plain `userinfo`;
+  `handleHttpMtls()` answers only `token`, the accounts endpoint and `par`,
+  and throws for anything else. A positive module finishes only in
+  `accountsEndpoint()` (`resourceEndpointCallComplete()`); UserInfo on
+  either host leaves it waiting. This client is right to dial the alias:
+  its access token is bound to its certificate, and RFC 8705 section 5 has
+  such a client use the aliases.
+* **So `fedUserinfo` exists, on by default.** `FALSE` asks no UserInfo at
+  sign-in (`completeOidc()`) or at a refresh (`refreshOne()`), whatever
+  `fedUserinfoUrl` or the discovery document names
+  (`federation.asksUserinfo()`), and the person's claims are the ID
+  Token's. OpenID Connect Core 1.0 section 5.3 makes UserInfo the relying
+  party's to ask. The four FAPI 1.0 Advanced plans set it; the 2.x plans
+  and the RP plans keep the default, and rcbj's decision that a 2.x
+  positive module ends at UserInfo stands.
+* **The FAPI 1.0 Advanced end condition is the token endpoint.** The job
+  stops a positive module once the suite's log shows the token endpoint
+  answered 200 AND the relationship shows the outcome: its sign-in count up
+  (judged `REACHED TOKEN`), or a refusal on `fedLastError` (FAILED). A
+  NEGATIVE module whose answer this client signed somebody in on is FAILED
+  whatever the suite says, because without UserInfo a client that accepted
+  a bad ID Token at the token endpoint calls nothing more, and that is
+  exactly what the suite passes a negative module for.
+
 #### 1-ADVANCED OVER MUTUAL TLS (#931, rcbj's decision of 2026-11-13)
 
 **The root `CLAUDE.md`'s row "authenticate to a partner with a client

@@ -287,6 +287,10 @@
     "en": "dfebb4c3fc05d0ca",
     "text": "僅限 OPENID CONNECT。已簽署的 UserInfo 回應必須使用的簽署演算法——即在夥伴處註冊為 userinfo_signed_response_alg 的演算法（OpenID Connect Core 1.0 第 5.3.2 節）。無論是否設定此項，已簽署的回應都會以夥伴的金鑰驗證；設定後，以其他演算法簽署的回應不會被使用。空白即預設值：JSON 回應，或以其金鑰所屬家族任何演算法簽署的回應。"
   },
+  "fed.schema.attributes.fedUserinfo.what": {
+    "en": "937c36d63a3876a6",
+    "text": "僅限 OPENID CONNECT。TRUE 為預設值（空值也表示此意）：在登入時與每次重新整理時都以存取權杖詢問合作方的 UserInfo 端點，並將其針對同一 sub 的回答加入 ID Token 的宣告（OpenID Connect Core 1.0 第 5.3 節）。FALSE：無論 fedUserinfoUrl 或探索文件指明什麼，都從不詢問 UserInfo，此人的宣告僅取自 ID Token——適用於此關係不得呼叫其 UserInfo 的合作方，例如在別處提供其資源的 FAPI 1.0 Advanced 授權伺服器。"
+  },
   "fed.schema.attributes.fedRefreshTokens.what": {
     "en": "eaa1a36d346a058b",
     "text": "僅限 OPENID CONNECT。TRUE 會將夥伴於登入時簽發的更新權杖加密保存，與其開啟的工作階段放在一起，並用它讓該工作階段的身分保持最新（OpenID Connect Core 1.0 第 12 節）：每隔 fedRefreshEverySeconds 更新一次工作階段的權杖，新的 ID Token 必須標明相同的 iss 與 sub，且 UserInfo 必須仍為該 sub 回應。夥伴拒絕的更新，或未通過這些檢查的回應，會結束該工作階段。權杖隨工作階段一同消亡。FALSE 為預設值：夥伴的權杖只在登入時使用一次，隨後捨棄——這裡不持有其他服務的任何憑證，而夥伴自己的登出與 Shared Signals 才是提早結束工作階段的方式。"

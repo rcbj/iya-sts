@@ -273,6 +273,7 @@ Scope: `admin:read`.
 | `fields.fedTokenUrl` | string |  |  |
 | `fields.fedTrustAnchor` | string |  |  |
 | `fields.fedUpdateUserAttributes` | string |  |  |
+| `fields.fedUserinfo` | string |  |  |
 | `fields.fedUserinfoSignedResponseAlg` | string |  |  |
 | `fields.fedUserinfoUrl` | string |  |  |
 | `fields.fedUsernameSource` | string |  |  |
@@ -796,6 +797,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -910,6 +912,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -1124,6 +1127,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -1238,6 +1242,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -1420,6 +1425,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -1534,6 +1540,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -1673,6 +1680,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -1787,6 +1795,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -1975,6 +1984,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -2089,6 +2099,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -2228,6 +2239,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -2342,6 +2354,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -2378,7 +2391,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `field` | one of `fedName`, `fedPeer`, `fedLocalEntityId`, `fedEnabled`, `fedSsoUrl`, `fedTokenUrl`, `fedUserinfoUrl`, `fedJwksUri`, `fedEmailsUrl`, `fedJwks`, `fedTrustAnchor`, `fedSigningCertificate`, `fedClientId`, `fedClientSecret`, `fedResponseMode`, `fedTeamId`, `fedKeyId`, `fedClientSigningKey`, `fedTokenAuth`, `fedScope`, `fedResponseType`, `fedIdTokenSignedResponseAlg`, `fedUserinfoSignedResponseAlg`, `fedRefreshTokens`, `fedRefreshEverySeconds`, `fedRegister`, `fedRegisteredIssuer`, `fedRequestObject`, `fedRequestObjectSigningAlg`, `fedWebFinger`, `fedDiscovery`, `fedFapi`, `fedInitiateLogin`, `fedBinding`, `fedSignRequest`, `fedUsernameSource`, `fedSubjectClaim`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedProvisionGroups`, `fedProvisionCap`, `fedProvisionIdleMinutes`, `fedSubjectPolicy`, `fedSubjectPattern`, `fedMayAssertAdministrators`, `fedSignalEmailMatch`, `fedSignalsEnabled`, `fedSignalsIssuer`, `fedSignalsDelivery`, `fedSignalsTokenUrl`, `fedSignalsClientId`, `fedSignalsClientSecret`, `fedSignalsScope`, `fedSignalsBearer`, `fedSloUrl`, `fedSloBinding`, `fedEndSessionUrl`, `fedAcceptSignout`, `fedRequireSignedLogout`, `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm`, `fedAllowUnencrypted`, `fedAllowUnsolicited`, `fedApplication`, `fedAuthnMechanism`, `fedAuthnRelationship` | yes | The attribute name, e.g. `fedSsoUrl`, `fedSigningCertificate`, `fedClientId`. |
+| `field` | one of `fedName`, `fedPeer`, `fedLocalEntityId`, `fedEnabled`, `fedSsoUrl`, `fedTokenUrl`, `fedUserinfoUrl`, `fedJwksUri`, `fedEmailsUrl`, `fedJwks`, `fedTrustAnchor`, `fedSigningCertificate`, `fedClientId`, `fedClientSecret`, `fedResponseMode`, `fedTeamId`, `fedKeyId`, `fedClientSigningKey`, `fedTokenAuth`, `fedScope`, `fedResponseType`, `fedIdTokenSignedResponseAlg`, `fedUserinfoSignedResponseAlg`, `fedUserinfo`, `fedRefreshTokens`, `fedRefreshEverySeconds`, `fedRegister`, `fedRegisteredIssuer`, `fedRequestObject`, `fedRequestObjectSigningAlg`, `fedWebFinger`, `fedDiscovery`, `fedFapi`, `fedInitiateLogin`, `fedBinding`, `fedSignRequest`, `fedUsernameSource`, `fedSubjectClaim`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedProvisionGroups`, `fedProvisionCap`, `fedProvisionIdleMinutes`, `fedSubjectPolicy`, `fedSubjectPattern`, `fedMayAssertAdministrators`, `fedSignalEmailMatch`, `fedSignalsEnabled`, `fedSignalsIssuer`, `fedSignalsDelivery`, `fedSignalsTokenUrl`, `fedSignalsClientId`, `fedSignalsClientSecret`, `fedSignalsScope`, `fedSignalsBearer`, `fedSloUrl`, `fedSloBinding`, `fedEndSessionUrl`, `fedAcceptSignout`, `fedRequireSignedLogout`, `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm`, `fedAllowUnencrypted`, `fedAllowUnsolicited`, `fedApplication`, `fedAuthnMechanism`, `fedAuthnRelationship` | yes | The attribute name, e.g. `fedSsoUrl`, `fedSigningCertificate`, `fedClientId`. |
 | `id` | string | yes | The relationship. |
 | `value` | string | yes | The new value. An empty string clears it. `fedSigningCertificate` is normalised — PEM armour and whitespace are stripped, because what the schema holds is the base64 DER a ds:X509Certificate carries. |
 
@@ -2489,6 +2502,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |
@@ -2603,6 +2617,7 @@ Scope: `admin:write`.
 | `relationship.fedTokenUrl` | string |  |  |
 | `relationship.fedTrustAnchor` | string |  |  |
 | `relationship.fedUpdateUserAttributes` | string |  |  |
+| `relationship.fedUserinfo` | string |  |  |
 | `relationship.fedUserinfoSignedResponseAlg` | string |  |  |
 | `relationship.fedUserinfoUrl` | string |  |  |
 | `relationship.fedUsernameSource` | string |  |  |

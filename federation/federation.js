@@ -2488,6 +2488,24 @@ function refreshesTokens(record) {
 }
 
 /**
+ * Says whether an OpenID Connect relationship asks the partner's UserInfo
+ * endpoint, at sign-in and at a refresh (`fedUserinfo`, #931's third run).
+ * On by default. Off, the person's claims are the ID Token's alone: OpenID
+ * Connect Core 1.0 section 5.3 makes UserInfo something a relying party MAY
+ * ask, and a FAPI 1.0 Advanced partner may publish a UserInfo alias it does
+ * not serve to a certificate-bound client (federation/CLAUDE.md, *WHAT THE
+ * THIRD RUN FOUND*). A value that is neither true nor false reads as on.
+ *
+ * @param record - the relationship
+ * @returns whether it does
+ */
+function asksUserinfo(record) {
+  log.debug("Entering asksUserinfo().");
+  log.debug("Leaving asksUserinfo().");
+  return !!record && boolOf(record.fedUserinfo, true);
+}
+
+/**
  * Returns how many seconds after a refresh the next one is due: the
  * relationship's fedRefreshEverySeconds, else the access token's expires_in,
  * else an hour.
@@ -3951,6 +3969,13 @@ function update(id, change) {
       row.name === 'fedAllowUnencrypted') {
     record[field] = boolText(boolOf(record[field], false));
   }
+  // fedUserinfo defaults ON (#931's third run), so an empty value stays
+  // empty — the default — where the switches above would write FALSE;
+  // anything else reaches the entry as TRUE or FALSE.
+  if (row.name === 'fedUserinfo') {
+    const given = String(record[field] == null ? '' : record[field]).trim();
+    record[field] = given === '' ? '' : boolText(boolOf(given, true));
+  }
   if (row.name === 'fedProvisionCap' ||
       row.name === 'fedProvisionIdleMinutes') {
     record[field] = String(record[field] || '').trim();
@@ -4754,6 +4779,7 @@ module.exports = {
   responseTypeOf: responseTypeOf,
   responseTypeParts: responseTypeParts,
   discovers: discovers,
+  asksUserinfo: asksUserinfo,
   registers: registers,
   webFingers: webFingers,
   DISCOVERED_FIELDS: DISCOVERED_FIELDS,

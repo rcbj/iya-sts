@@ -232,6 +232,12 @@ What it does, in every mode:
 * **A signed or encrypted UserInfo answer** is verified against the
   partner's keys (`fedUserinfoSignedResponseAlg` pins its algorithm) before it
   is used.
+* **`fedUserinfo`** (on by default) asks the partner's UserInfo endpoint at
+  sign-in and at each refresh. Set it to `FALSE` for a partner whose UserInfo
+  this relationship may not call: the person's claims then come from the ID
+  Token alone, whatever `fedUserinfoUrl` or the discovery document names.
+  Some FAPI 1.0 Advanced authorization servers list a UserInfo address in
+  `mtls_endpoint_aliases` and do not answer it there.
 
 * **`fedRegister`** (off by default, needs `fedDiscovery`) registers this
   service at the partner's `registration_endpoint` (RFC 7591) whenever the
@@ -947,6 +953,7 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedWebFinger` | SP (OIDC) | find a person's provider from an identifier they type (`FALSE` by default — **a warning**) |
 | `fedRefreshTokens`, `fedRefreshEverySeconds` | SP (OIDC) | keep and use the partner's refresh token for each session (`FALSE` by default — **a warning** when on); how often, in seconds |
 | `fedUserinfoSignedResponseAlg` | SP (OIDC) | the algorithm a signed UserInfo answer must use |
+| `fedUserinfo` | SP (OIDC) | ask the partner's UserInfo endpoint (`TRUE` by default); `FALSE` takes the person's claims from the ID Token alone |
 | `fedIdTokenSignedResponseAlg` | SP (OIDC) | the one algorithm the partner signs ID Tokens and Logout Tokens with (what was registered as `id_token_signed_response_alg`); a token under another is refused even when a partner key verifies it. **Empty is a warning**: any algorithm of the key's family is accepted |
 | `fedDiscovery`, `fedInitiateLogin` | SP (OIDC) | read the endpoints from the partner's discovery document; answer a sign-in the partner starts. Both `FALSE` by default |
 | `fedFapi` | SP (OIDC) | empty (today's relying party), `1-advanced`, `2-security` or `2-message-signing` — see [FAPI client profiles](#fapi-client-profiles) |

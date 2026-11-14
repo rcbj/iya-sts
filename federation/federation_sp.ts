@@ -6712,7 +6712,10 @@ class FederationSp {
                       String(entry.dpopNonce || '');
     let dpopResourceNonce = String(entry.dpopResourceNonce || '');
     const access = String(tokens.access_token || '');
-    if (access && String(record.fedUserinfoUrl || '').trim()) {
+    // With fedUserinfo off the refresh is held to the ID Token alone, as
+    // the sign-in was.
+    if (access && String(record.fedUserinfoUrl || '').trim() &&
+        federation.asksUserinfo(record)) {
       let info;
       if (FapiClient.usesDpop(profile)) {
         const fetched = await this.userinfoFetch(record, access, dpopKey,
@@ -9463,7 +9466,11 @@ class FederationSp {
         });
       }, verified.jwk);
     };
-    if (!accessToken || !String(record.fedUserinfoUrl || '').trim()) {
+    // fedUserinfo off (#931's third run): the ID Token's claims are the
+    // whole answer, whatever the discovery document names. UserInfo is a
+    // relying party's to ask (OpenID Connect Core 1.0 section 5.3).
+    if (!accessToken || !String(record.fedUserinfoUrl || '').trim() ||
+        !federation.asksUserinfo(record)) {
       log.debug("Leaving FederationSp.completeOidc(). No UserInfo call.");
       return finish(null);
     }

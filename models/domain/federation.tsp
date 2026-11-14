@@ -115,6 +115,9 @@ model FederationRelationship {
   @fromAttr(#{attr: "fedUserinfoSignedResponseAlg"})
   `userinfoSignedResponseAlg`?: string;
 
+  @fromAttr(#{attr: "fedUserinfo"})
+  `userinfo`?: string;
+
   @fromAttr(#{attr: "fedRefreshTokens"})
   `refreshTokens`?: string;
 
