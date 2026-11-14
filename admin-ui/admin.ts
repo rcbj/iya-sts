@@ -8733,6 +8733,24 @@ class AdminConsole {
       self.sendConsoleFile(req, res, self.stylesheet(), null, null);
       log.debug("Leaving the static console's stylesheet.");
     });
+    // THE COUNTRY OUTLINES GEOLOCATION'S MAP IS DRAWN OVER (#444 phase 2b,
+    // 2026-11-14): `natural_earth/countries.json` as it ships, which the
+    // console fetches once per load and projects in the browser
+    // (`web_geo_map.ts`), rather than in every answer of
+    // `/admin-api/geolocation`. Public, like the script: Natural Earth's
+    // public-domain outlines and nothing about a request. Precompressed by
+    // the image build, read once; registered above the shell, which answers
+    // every other `/admin/*` path with the document.
+    app.get('/admin/geo-outlines.json', function (req, res) {
+      log.debug("Entering the console's country outlines.");
+      if (geoOutlinesFile === null) {
+        geoOutlinesFile = ShellDocument.readFile(
+          require('path').join(__dirname, 'natural_earth'), 'countries.json',
+          '{"countries":[]}');
+      }
+      ShellDocument.sendFile(req, res, geoOutlinesFile, 'application/json');
+      log.debug("Leaving the console's country outlines.");
+    });
     // ONE HANDLER, ON TWO PATHS — `/admin` itself and everything under it —
     // registered apart so that the router lists each by its own name.
     const shell = function (req, res, next) {
@@ -9330,6 +9348,9 @@ let consoleScriptText: string | null = null;
 // request instead.
 let consoleScriptPacked: { br: Buffer | null, gzip: Buffer | null } | null =
   null;
+// The country outlines Geolocation's map is drawn over, and their
+// precompressed forms, read once (`/admin/geo-outlines.json`).
+let geoOutlinesFile: ReturnType<typeof ShellDocument.readFile> | null = null;
 
 const REALM_SWITCH_PATH = '/admin/realm-switch';
 

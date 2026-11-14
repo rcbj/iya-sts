@@ -2371,6 +2371,14 @@
     "en": "232dadd8bb312926",
     "text": "Kung kailangang humabol ang isang request worker sa mga write na ginawa sa ibang mga worker bago ito sumagot. Pinapaabot ng coordination ang mga worker sa iisang estado sa loob ng kalahating segundo hanggang isang segundo, at hindi iyon read-your-write. `session` (ang default): ang isang request na may dalang session cookie, ang pool cookie o isang sign-in flow sa address nito ay naghihintay sa mga write ng mga naunang request na may dalang ganoon din, sa bawat write ng isang request na walang dala sa mga iyon, at sa sariling mga write ng front process; ang isang request na walang dala sa mga iyon, gaya ng token request mula sa server ng isang client, SCIM o isang tawag sa management API na may bearer token, ay naghihintay sa bawat write na nasagot bago ito. Kaya agad na nakikita ng isang browser ang sarili nitong mga write at ang sa bawat back channel, at ang sa ibang browser kapag nagkaisa na lamang ang mga worker. `global`: bawat request ay naghihintay sa bawat write na nasagot bago ito, na nagkakahalaga ng sampu-sampung millisecond bawat request kapag may load. `off`: walang request na naghihintay, at maaaring hindi makita ng isang tumatawag ang sarili nitong write. Ang `true` ay nangangahulugang `session` at ang `false` ay nangangahulugang `off`. Hindi ito dapat naka-off para sa isang surface pool (workers.surfaceCount)."
   },
+  "workers.readBarrierTimeoutMs|label": {
+    "en": "3b71b70cca1bcc7d",
+    "text": "Paghihintay ng read barrier (ms)"
+  },
+  "workers.readBarrierTimeoutMs|description": {
+    "en": "5de72cbc57b2e8dc",
+    "text": "Gaano katagal, sa kabuuan, maaaring maghintay ang isang request para makahabol ang request worker nito (o ang front process, para sa request na ito mismo ang sumasagot) sa mga write na nasagot bago nito, kapag sinasabi ng workers.readYourWrite na kailangan. Tinatanong muli ang worker tuwing limang segundo hanggang makahabol ito. Lampas sa paghihintay na ito, tinatanggihan ang request gamit ang HTTP 503 at Retry-After (ang isang operasyon ng LDAP, Kerberos o SPIFFE ay sa sagot na hindi available ng protocol nito) sa halip na sagutin mula sa kopyang maaaring luma na. Taasan ito kung saan mas matagal mailapat ng isang worker ang sunud-sunod na mga write (isang global logout, isang bulk load) sa mabagal na hardware; babaan ito kung saan mas angkop sa mga tumatawag ang mabilis na pagtanggi kaysa sa mahabang paghihintay. Binabasa para sa bawat request."
+  },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
     "text": "Directory ng socket ng request worker"

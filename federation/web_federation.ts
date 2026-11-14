@@ -33,6 +33,9 @@
 
 import kit = require('../admin-ui/web_kit');
 import SettingsForms = require('../admin-ui/web_settings');
+// THE PICTURE'S LAYOUT, IN THE BROWSER (#444 phase 2b, 2026-11-14): the code
+// the server draws the answer's `svg` with, bundled with dagre.
+import FederationDiagram = require('../admin-ui/web_federation_diagram');
 
 type Json = any;
 
@@ -1500,19 +1503,60 @@ class FederationPage {
       json.mapKey);
   }
 
+  // THE PICTURE IS LAID OUT HERE (#444 phase 2b), from the answer's graph,
+  // by the code the server draws `svg` with: what `render()` read off the
+  // server's graph, the answer carries — each node's realm or partner names,
+  // each edge's relationship row (by `relationship`, from `relationships`),
+  // each box's link (`looks`) and the realm's mode.
+  /**
+   * Lays the federation picture out from its answer.
+   *
+   * @param json - the answer
+   * @param links - whether each box links to its console page
+   * @returns `web_federation_diagram.ts`'s drawing
+   */
+  static laidOut(json: Json, links: boolean): Json {
+    const rows: Json = {};
+    (json.relationships || []).forEach(function (row: Json): void {
+      rows[row.id] = row;
+    });
+    const edges = (json.edges || []).map(function (edge: Json): Json {
+      return Object.assign({}, edge, { row: rows[edge.relationship] });
+    });
+    const looks = json.looks || {};
+    return FederationDiagram.render({ nodes: json.nodes || [], edges: edges },
+      { resolve: function (node: Json): Json {
+        return looks[node.id];
+      },
+      links: links, id: 'fedmap', label: json.label,
+      verifiesCredentials: !!(json.drawing &&
+                              json.drawing.verifiesCredentials) });
+  }
+
+  /**
+   * Draws the federation picture as a standalone SVG document, for the
+   * page's `?format=svg` link.
+   *
+   * @param json - the answer
+   * @returns the SVG document
+   */
+  static mapDocument(json: Json): string {
+    return FederationPage.laidOut(json, false).svg;
+  }
+
   /**
    * Draws the federation picture from its answer, with the links to its SVG
    * and JSON forms.
    *
-   * @param json - the answer: `svg` and `drawing`
+   * @param json - the answer: the graph, `looks`, `label` and `drawing`
    * @param params - the page's filter, carried into the two links
    * @param t - the page's translator
    * @returns the drawing and its note as HTML
    */
   static mapDrawing(json: Json, params: Json, t: Json): string {
-    const drawn = json.drawing || {};
+    const drawn = FederationPage.laidOut(json, true);
     // The layout's failure is a refusal of sorts, and stays English.
-    return '<div class="diagram">' + json.svg + '</div>' +
+    return '<div class="diagram">' + drawn.svg + '</div>' +
       kit.note(drawn.width + '&times;' + drawn.height + ' &mdash; ' +
       '<a href="' +
       kit.esc('/admin/federation/map' +

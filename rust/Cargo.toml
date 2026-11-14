@@ -21,6 +21,7 @@ members = [
   "crates/sts-model",
   "crates/sts-guards",
   "crates/sts-tls",
+  "crates/sts-kerberos",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]
@@ -48,6 +49,7 @@ sts-mgmt-api = { path = "crates/sts-mgmt-api" }
 sts-model = { path = "crates/sts-model" }
 sts-xml = { path = "crates/sts-xml" }
 sts-tls = { path = "crates/sts-tls" }
+sts-kerberos = { path = "crates/sts-kerberos" }
 axum = "0.8"
 base64 = "0.23"
 flate2 = "1"
@@ -78,7 +80,17 @@ idna = "1"
 quick-xml = "0.42"
 roxmltree = "0.21"
 sha3 = "0.10"
+# Kerberos etype 23 alone (rust/DESIGN.md section 6, D1): MD4 is the NT
+# hash, MD5 is under its HMAC, RC4 is its cipher. OpenSSL 3 keeps MD4 and
+# RC4 in the legacy provider, so they come from RustCrypto instead.
+md4 = "0.11"
+md-5 = "0.11"
+rc4 = "0.2"
 thiserror = "2.0"
+brotli = "8"
+futures-util = "0.3"
+encoding_rs = "0.8"
+icu_locale = "2"
 tracing = "0.1"
 
 [workspace.lints.rust]
