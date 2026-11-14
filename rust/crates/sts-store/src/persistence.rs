@@ -940,7 +940,7 @@ impl Persistence {
         };
         let saved = saved.unwrap_or_default();
         for (key, raw) in &saved {
-            match self.settings.set_override(key, raw.clone()) {
+            match self.settings.restore_override(key, raw.clone()) {
                 Ok(()) => restored.overrides += 1,
                 Err(r) => tracing::warn!(
                     "persistence: the stored override {} was not applied: {}",
@@ -1339,7 +1339,7 @@ impl Persistence {
                 }
             }
             for (key, raw) in &wanted {
-                if let Err(r) = self.settings.set_override(key, raw.clone()) {
+                if let Err(r) = self.settings.restore_override(key, raw.clone()) {
                     tracing::warn!("persistence: another node's override {} was not applied: {}", key, r.problem);
                 }
             }
