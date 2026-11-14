@@ -35,7 +35,7 @@
 //     mirror-contexts.sh, which prints the whole list);
 //  6. build-container.yml names a context for every FROM of the root
 //     Dockerfile, each pointing at a listed path;
-//  7. what push-stack-images.sh pushes is what run-tests.sh names.
+//  7. what stack-images.sh hands between CI jobs is what run-tests.sh names.
 //
 // WHY IN PROCESS, which tests/CLAUDE.md asks first: every claim is a
 // comparison between FILES in this repository — readme_ports.js's shape. A
@@ -301,7 +301,8 @@ function run(t) {
           'XACML PEP Dockerfiles to a listed mirror path',
           JSON.stringify(wf) + ' uncovered: ' + uncovered.join(', '));
 
-  // 7. what is pushed is what run-tests.sh names.
+  // 7. what CI's build job saves is what run-tests.sh names (2026-11-14:
+  // it was what tests.yml pushed, until CI stopped publishing anything).
   const launcher = read('run-tests.sh');
   const named = [];
   const re = /\$\{IMAGE_REGISTRY\}\/([a-z0-9-]+):\$\{imageTag\}/g;
@@ -309,13 +310,13 @@ function run(t) {
   while ((m = re.exec(launcher)) !== null) {
     named.push(m[1]);
   }
-  const push = read('.github/scripts/push-stack-images.sh');
-  const listed = ((/^NAMES="([^"]*)"/m.exec(push) || ['', ''])[1])
+  const saver = read('.github/scripts/stack-images.sh');
+  const listed = ((/^NAMES="([^"]*)"/m.exec(saver) || ['', ''])[1])
     .split(/\s+/).filter(Boolean);
   t.check(named.length > 0 &&
           named.slice().sort().join(',') === listed.slice().sort().join(','),
-          'push-stack-images.sh pushes exactly the images run-tests.sh names',
-          'named ' + named.join(',') + ' / pushed ' + listed.join(','));
+          'stack-images.sh saves exactly the images run-tests.sh names',
+          'named ' + named.join(',') + ' / saved ' + listed.join(','));
   log.debug("Leaving run().");
 }
 

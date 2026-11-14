@@ -1,99 +1,102 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: BUSL-1.1
 #
-# Runs this repository's whole test suite, in containers — THREE TIMES, in
-# three jobs that do not depend on each other: the plain suite, the same suite
-# with coverage collected, and the suite in the `cluster` mode (two nodes behind
-# a load balancer, 2026-09-15).
+# Runs this repository's whole test suite, in containers. Every job wraps a
+# launcher that needs docker and NOTHING ELSE: no node, no npm install, no
+# Chrome, no checkout of the parent project. That is the property this
+# workflow exists to use, and it is why the suite was made self-contained on
+# 2026-08-28 and why ./run-coverage.sh was containerized on 2026-08-29.
 #
-# All three wrap a launcher that needs docker and NOTHING ELSE: no node, no npm
-# install, no Chrome, no checkout of the parent project. That is the property
-# this workflow exists to use, and it is why the suite was made self-contained
-# on 2026-08-28 and why ./run-coverage.sh was containerized on 2026-08-29.
+# THE JOB GRAPH SINCE 2026-11-14. Until then four jobs each built every image
+# and ran a whole suite, the in-process half included, and the workflow had
+# not passed since 2026-09-17: a `tests` job running two modes could not
+# finish inside 240 minutes, mostly because the in-process files ran one at a
+# time (run-report.js's default concurrency is a quarter of the CPUs, which
+# is 1 on a 4-vCPU runner) and ran again in every mode; the `cluster` runner
+# was lost four times in five, out of disk or memory; and it ran on `main`
+# only, which carried failures already fixed on develop. Now:
 #
-#   tests     ./run-tests.sh --modes=memory,single-node — builds
-#             docker-compose-run-tests.yml (the
-#             service from this repository's Dockerfile, and a test runner with
-#             node and a Chrome in it), runs every job against the
-#             service over the compose network, and always tears the stack down.
-#   coverage  ./run-coverage.sh — HALF of that same compose file. It puts the
-#             RUNNER in the `tests` image and lets it start the service it
-#             measures as a child process in there, because V8 writes coverage
-#             from inside the process being measured and a service container
-#             next door can never be under the report.
-#   openid-conformance  STS_TEST_CONFORMANCE_MODES=memory ./run-tests.sh
-#             --modes=memory --conformance-only --not-lanes=conformance — the
-#             OpenID Foundation conformance suite's plans (#176, #187, #930)
-#             in every lane but the OpenID Provider job's: FAPI, the
-#             relying-party plans, and `conformance-b`'s Shared Signals,
-#             OpenID Federation, OpenID4VCI and OpenID4VP jobs. Only those:
-#             every other third-party suite (the SAML peers, Samba,
-#             Heimdal, tlsfuzzer, the W3C and SCIM suites) runs in `tests`.
-#   openid-conformance-oidcc  the same with --lanes=conformance: the OpenID
-#             Provider plans and their classical twins, the suite's longest
-#             lane, alone in a job of its own (#930).
-#             Neither passes --no-browser since #930 (rcbj): the jobs that
-#             play the suite's person in Chrome run in CI too.
-#   cluster   ./run-tests.sh --modes=cluster — the third mode of
-#             tests/tools/modes.sh, which the `tests` job does not name: two
-#             production nodes (product mode, request workers) active-active
-#             on one postgres and one OpenBao, behind an HAProxy in TCP mode,
-#             every job's requests alternating between them. tests/CLAUDE.md's *THE `cluster` MODE* argues it.
+#   mirror         copy any image the private mirror lacks (packages: write,
+#                  the one job that writes anything, and only to the PRIVATE
+#                  ghcr.io/rcbj/iya-sts/mirror)
+#   build          ./run-tests.sh --build-only: every image the stack builds,
+#                  ONCE; saved with `docker save | zstd` as the artifact
+#                  `stack-images` (one day). Nothing is pushed anywhere.
+#   unit           the in-process half, once, in the tests image:
+#                  run-report.js --no-protocol --unit-concurrency=4. It does
+#                  not depend on the mode (run-report.js strips the mode
+#                  variables from a unit job), so running it per mode only
+#                  repeated it.
+#   mode (matrix)  memory, single-node, cluster: ./run-tests.sh --no-build
+#                  --modes=<mode> --protocol=only, one runner each.
+#   openid-conformance, openid-conformance-oidcc
+#                  the OpenID Foundation plans, split by lane, --no-build.
+#   openapi-breaking  pull requests only: the published APIs did not break.
+#   dependency-windows  SECURITY.md's windows over the lockfile.
+#   coverage       ./run-coverage.sh --no-build, nightly and by hand only:
+#                  130-170 instrumented minutes is not a merge gate.
 #
-# WHY THEY ARE TWO JOBS RATHER THAN TWO STEPS, which is the shape
-# ../id-proto-debugger/.github/workflows/tests.yml uses and the reason to copy
-# it here. Both launchers write into tests/report/ and point a `latest` symlink
-# at their own timestamped directory — ./run-tests.sh one per MODE under
-# tests/report/<mode>/, ./run-coverage.sh the bare tests/report/latest, which is
-# why the two uploads name different paths. In one job the second run would
-# write into the tree the first one's upload has not read yet, so an artifact
-# named for the plain suite could hold the coverage run's report — wrong, and
-# wrong silently. Two jobs are two workspaces, so each tree is its own. Two
-# more things fall out of it: the coverage pass still runs when the plain suite
-# goes red, which is when its
-# report is most worth having, and the two run in PARALLEL, so the wall clock
-# is the slower of them rather than the sum. What it costs is a second image
-# build, since nothing is shared between jobs — that is the trade, and it is
-# the one the parent project made.
+# CI PUBLISHES NOTHING (rcbj's hold on every iya-sts image, 2026-11-14). The
+# step that pushed what a run built to ghcr.io, four of those packages PUBLIC,
+# is gone with its script; images move between jobs as an artifact
+# (.github/scripts/stack-images.sh), and the token is `packages: read`
+# everywhere but `mirror`. build-container.yml is the one publishing path and
+# publishes from main only, so running this on develop touches no hold.
+#
+# EVERY JOB HOLDING A STACK first frees disk and starts a resource sampler
+# (.github/scripts/runner-host.sh), whose log goes into its report artifact,
+# `test-report-<job>`. Each job is its own workspace, so no report tree is
+# ever written into by two runs of the suite.
 #
 # WHAT THIS COVERS THAT build-container.yml DOES NOT. That workflow builds the
 # image and waits for /healthcheck, which proves every module resolved and the
-# port bound — the failure mode this repository has actually had most often.
-# This one drives the running service: the in-process jobs that assert module
-# contracts, and the protocol jobs (tests/protocol/MANIFEST.js is the count)
-# that exercise every protocol family, the management API and — in a real
-# browser — the admin console. The two overlap
-# only in that both start the image.
+# port bound. This one drives the running service: the in-process jobs that
+# assert module contracts, and the protocol jobs (tests/protocol/MANIFEST.js
+# is the count) that exercise every protocol family, the management API and,
+# in a real browser, the admin console.
 #
-# WHY IT IS NOT THE PARENT PROJECT'S SUITE. Most of what covers this service is
-# authored in ../id-proto-debugger/tests/ (the root CLAUDE.md argues that
-# decision), and their CI drives the `sts/` gitlink — which is a PIN. A change
-# made here is not covered by that run until somebody bumps it. Many of
-# those jobs are vendored into tests/protocol/ precisely so that this repository
-# can run them against its own working tree; this workflow is where that
-# happens on every push. It does not replace bumping the pin, because that is
-# what gates the other project.
+# tests/teardown_bounds.js reads this file: every job's timeout against the
+# launcher's own bounds, and the job graph above.
 name: Tests
 
 on:
-  # Every push to main — which is what a merged pull request is — and every PR
-  # aimed at it. A protocol job here takes about a minute and the image builds
-  # are most of the wall clock; that is affordable per push and is the only way
-  # a suite gets trusted.
+  # Develop is where all work lands, and main gets it at a release; both are
+  # tested on a push and on a pull request into them.
   push:
-    branches: [main]
+    branches: [develop, main]
   pull_request:
-    branches: [main]
+    branches: [develop, main]
   workflow_dispatch:
+  # Nightly, for the coverage run. A schedule runs the DEFAULT branch's copy
+  # of this file, so every checkout below takes `develop` on a schedule: the
+  # tree worth measuring every night is the one work lands on.
+  schedule:
+    - cron: '23 4 * * *'
+
+# One run per pull request or branch. A newer push to a pull request cancels
+# the run of the older one; a push to develop or main waits for the run
+# before it rather than cancelling it.
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
   # The private test corpora image (#253) and the private image mirror
-  # (2026-09-27) are READ from ghcr.io, and the images a run built are pushed
-  # there, so `write`. On a pull request from a fork or Dependabot the token
-  # is simply downgraded, which is why the mirror is a job here and not a
-  # call to mirror-images.yml (see the `mirror` job).
-  packages: write
+  # (2026-09-27) are READ from ghcr.io. Nothing in this workflow writes a
+  # package but the `mirror` job, which says so itself.
+  packages: read
+
+env:
+  # The tag every image the `build` job builds is named with (run-tests.sh
+  # names them ${IMAGE_REGISTRY}/<name>:${IMAGE_TAG}), the same in every job
+  # of a run, so a job that loads the artifact finds the names the launcher
+  # asks for. Never pushed under it.
+  IMAGE_TAG: ci-${{ github.run_id }}
+  # Only the runner's output on the job log (run-tests.sh): every service's
+  # log made 20-38 MB of it, truncated before the summary. The service logs
+  # are captured into the report artifact either way.
+  STS_TEST_ATTACH_RUNNER_ONLY: "1"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -102,9 +105,8 @@ jobs:
   # FROM comes from private copies under ghcr.io/rcbj/iya-sts/mirror
   # (.github/image-mirror.txt), so that a reset connection to Docker Hub
   # cannot take the suite down. `missing` copies only an image the mirror
-  # does not have yet — one added to the list in this commit, say — so a
-  # complete mirror costs one manifest request per image and no request to an
-  # upstream registry at all.
+  # does not have yet, so a complete mirror costs one manifest request per
+  # image and no request to an upstream registry at all.
   #
   # A job here rather than a call to mirror-images.yml, deliberately: a called
   # workflow that declares packages: write fails OUTRIGHT when the caller's
@@ -115,9 +117,14 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -126,98 +133,67 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # THE ADVISORY WINDOWS OF SECURITY.md (#1458). No install: `npm audit` reads
-  # the lockfile.
+  # the lockfile. The published image's half is dependency-windows.yml's.
   # ---------------------------------------------------------------------------
   dependency-windows:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - name: Fail on an advisory past its window
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node tests/tools/dependency-windows.js
 
   # ---------------------------------------------------------------------------
-  # THE PLAIN SUITE. Every job, service and runner both in
-  # containers, nothing instrumented. This is the one whose status means "the
-  # tree is green".
+  # EVERY IMAGE, BUILT ONCE (2026-11-14). The same build a run of the launcher
+  # does (`docker compose build` of docker-compose-run-tests.yml, the SAML
+  # peers' profile on), stopped before any mode. It was done by every job
+  # until this day, which was five chances per run for a network flake in the
+  # build and five times the disk. The images go to the jobs below as an
+  # artifact, never to a registry.
+  #
+  # 50 minutes: a cold build took 20-29 on this kind of runner, and the save
+  # and the upload of three to four compressed gigabytes about ten more.
   # ---------------------------------------------------------------------------
-  tests:
+  build:
     needs: mirror
     runs-on: ubuntu-latest
-    env:
-      # The tag every image this job builds is named with (run-tests.sh), and
-      # pushed under: the commit, and the branch by the push step below.
-      IMAGE_TAG: ${{ github.sha }}
-    # THE OUTER BOUND, AND IT IS DELIBERATELY NOT THE ONE THAT SHOULD FIRE.
-    #
-    # A hung browser job is caught by run-report.js's own per-job watchdog, and
-    # since 2026-09-10 a hung DOCKER call is caught by ./run-tests.sh's
-    # own two (STS_MODE_TIMEOUT and STS_TEARDOWN_TIMEOUT). Those bounds explain
-    # themselves, capture the container logs, keep the report and still give
-    # the mode the verdict the suite reached; this one cancels the job and
-    # leaves none of that. So it has to sit ABOVE the sum of theirs, which is
-    # what tests/teardown_bounds.js asserts in both directions.
-    #
-    # 45 MINUTES UNTIL THAT DAY, AND IT IS WHAT LOST THE RUN. Three modes take
-    # 21m on a fast runner and 34m on a slow one; the run that raised this had
-    # finished all three green and was cancelled at 45m because compose spent
-    # twenty-three of those minutes failing to stop a database container. The
-    # number was thin on its own account and the wedge only made it visible.
-    #
-    # Not larger, for the reason it exists at all: without a number here a
-    # stuck job holds a runner for six hours.
-    #
-    # 150 SINCE 2026-09-27: a runner with no layer cache spends about nineteen
-    # minutes building the images before any mode starts, which no mode bound
-    # covers; tests/teardown_bounds.js adds thirty for it.
-    #
-    # 240 SINCE 2026-11-10, with the ceiling tests/teardown_bounds.js allows:
-    # `single-node`'s own bound went from 80 to 150 minutes (tests/tools/
-    # modes.sh), and one wedged single-node mode plus the build and every
-    # teardown is 215 minutes.
-    #
-    # 180 SINCE 2026-10-13, the ceiling tests/teardown_bounds.js allows: on
-    # main 8fe81efa the build took 23 minutes, `memory` 56 and `single-node`
-    # was still running, healthy, when 150 cancelled it — two whole modes
-    # and the build no longer fit.
-    #
-    # 120 SINCE 2026-09-14. The suite is 225 jobs now and `dispatch` alone
-    # outgrew the launcher's 25-minute mode bound, which went to 50; this has
-    # to sit above one wedged mode plus every teardown (tests/teardown_bounds.js)
-    # and above three healthy modes, measured at about 70 minutes on a
-    # developer machine. 120 is that test's own ceiling.
-    timeout-minutes: 240
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      packages: read
     steps:
       # submodules: recursive is LOAD-BEARING, and `true` is not enough. The
-      # embedded directory's library is `"ldapjs": "file:node-ldapjs"` — a git
-      # SUBMODULE — and this repository is itself a submodule of the parent
-      # project, so there are submodules inside submodules and `true` stops one
-      # level short. An uninitialised submodule is an EMPTY DIRECTORY, so
-      # nothing fails loudly: the COPY succeeds, npm installs a package with no
-      # `main`, both images build, and the container dies at startup with
-      # `Cannot find module 'ldapjs'` — a message naming a package rather than a
-      # checkout. Both Dockerfiles and the launcher's preflight guard it too;
-      # asking for it here keeps a fetch failure on the checkout step, where it
-      # reads as one.
+      # embedded directory's library is `"ldapjs": "file:node-ldapjs"`, a git
+      # SUBMODULE, and this repository is itself a submodule of the parent
+      # project, so there are submodules inside submodules and `true` stops
+      # one level short. An uninitialised submodule is an EMPTY DIRECTORY, so
+      # nothing fails loudly: the COPY succeeds, npm installs a package with
+      # no `main`, both images build, and the container dies at startup with
+      # `Cannot find module 'ldapjs'`. Both Dockerfiles and the launcher's
+      # preflight guard it too; asking for it here keeps a fetch failure on
+      # the checkout step, where it reads as one.
       - name: Check out
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
           submodules: recursive
 
-      # ubuntu-latest runners ship docker and the compose plugin, so nothing is
-      # installed here. This is where the parent project's workflow installs
-      # docker-compose, and the difference is that its launcher supports the v1
-      # standalone binary as well; tests/tools/compose.sh finds either.
+      - name: Free disk
+        run: .github/scripts/runner-host.sh free-disk
+
       # THE TEST CORPORA (#253) AND THE IMAGE MIRROR (2026-09-27) ARE PRIVATE
       # PACKAGES ON GHCR.IO: tests/Dockerfile copies the corpora out of
       # ghcr.io/rcbj/iya-sts-test-corpora by digest, and every third-party
-      # image and base image comes from ghcr.io/rcbj/iya-sts/mirror. A private
-      # package is pulled only by a logged-in client; GITHUB_TOKEN carries
-      # packages access (the workflow's permissions) and the packages grant
-      # this repository access.
+      # image and base image comes from ghcr.io/rcbj/iya-sts/mirror. A
+      # private package is pulled only by a logged-in client; GITHUB_TOKEN
+      # carries packages: read and the packages grant this repository access.
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -227,32 +203,78 @@ jobs:
           docker --version
           docker compose version
 
-      # The whole suite. The script resolves compose itself (and never prompts
-      # for a sudo password), builds both images from this checkout, and exits
-      # with the test container's status.
-      # `memory` and `single-node`, NAMED rather than bare (2026-09-21): a
-      # bare ./run-tests.sh runs `cluster` too, which is the `cluster` job's
-      # below, and all three in one job would outrun its 120 minutes.
-      #
-      # STS_TEST_CONFORMANCE_MODES EMPTY (#187): the OpenID conformance
-      # suite's jobs take about two hours and a quarter on their own, which
-      # is the two `openid-conformance*` jobs' below (split by lane since
-      # #930); here they are reported SKIPPED
-      # with the reason, as they are in every mode that does not run them.
-      - name: Run the containerized test suite
-        env:
-          STS_TEST_CONFORMANCE_MODES: ""
-        run: ./run-tests.sh --modes=memory,single-node
+      - name: Build every image the stack needs
+        run: ./run-tests.sh --build-only
 
-      # What this run built, to ghcr.io: under the commit and under the branch
-      # name. Not from a pull request, whose GITHUB_TOKEN may not write
-      # packages and whose images are nobody's to keep. Only this job pushes:
-      # the others build the same commit and would race it for the tags.
-      - name: Push built images
-        if: (success() || failure()) && github.event_name != 'pull_request'
-        run: .github/scripts/push-stack-images.sh "${{ github.ref_name }}"
+      # The build cache is gigabytes the archive does not need and the disk
+      # cannot spare while it is written.
+      - name: Drop the build cache
+        run: docker builder prune -af
 
-      # The tests container writes tests/report as root through a bind mount;
+      - name: Save the images
+        run: .github/scripts/stack-images.sh save "${RUNNER_TEMP}/stack-images.tar.zst"
+
+      # Already zstd, so the upload does not compress it again. One day: it
+      # is for this run's jobs and nobody else.
+      - name: Upload the images
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-images
+          path: ${{ runner.temp }}/stack-images.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  # ---------------------------------------------------------------------------
+  # THE IN-PROCESS HALF, ONCE (2026-11-14). Every tests/*.js file, four at a
+  # time, in the tests image the `build` job made, with no stack: a unit file
+  # touches no service. It was run in every mode job until this day, one file
+  # at a time on this runner, and in the `memory` mode of run 42934501375 it
+  # was still at file 458 of 1137 when the mode's bound fired while the
+  # protocol half had nearly finished. tests/teardown_bounds.js holds that
+  # some job still runs it.
+  #
+  # The service URL and the directory URL the image carries for the compose
+  # stack are emptied, as ./run-coverage.sh empties them, because there is no
+  # `sts` here.
+  # ---------------------------------------------------------------------------
+  unit:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+
+      - name: Free disk
+        run: .github/scripts/runner-host.sh free-disk
+
+      - name: Sample the runner's memory and disk
+        run: nohup .github/scripts/runner-host.sh sample tests/report/runner/resources.log > /dev/null 2>&1 &
+
+      - name: Download the images
+        uses: actions/download-artifact@v4
+        with:
+          name: stack-images
+          path: ${{ runner.temp }}
+
+      - name: Load the images
+        run: .github/scripts/stack-images.sh load "${RUNNER_TEMP}/stack-images.tar.zst"
+
+      - name: Run the in-process files
+        run: |
+          docker run --rm --shm-size=2g \
+            -e STS_TEST_SERVICE_URL= -e STS_LDAP_URL= \
+            -v "${PWD}/tests/report:/usr/src/sts/tests/report" \
+            "ghcr.io/rcbj/iya-sts/iya-sts-tests:${IMAGE_TAG}" \
+            node tests/tools/run-report.js --no-protocol --unit-concurrency=4 \
+              --report-dir=tests/report/unit
+
+      # The container writes tests/report as root through the bind mount;
       # hand it back to the runner user before the upload step reads it.
       # `|| true` because a run that failed before writing anything must not
       # fail HERE and hide why.
@@ -260,21 +282,113 @@ jobs:
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
 
-      # if: always() — the report is at its most useful when the run went red.
-      #
-      # THE WHOLE tests/report TREE AND NOT `tests/report/latest`, WHICH IT
-      # NAMED UNTIL 2026-09-07 AND WHICH HAD BEEN UPLOADING NOTHING SINCE THE
-      # MODE MATRIX LANDED. ./run-tests.sh runs the suite once per mode
-      # and hands each `--report-dir=tests/report/<mode>`, so `latest` lives
-      # under THOSE directories and the bare `tests/report/latest` no longer
-      # exists in a fresh checkout at all. `if-no-files-found: warn` is what
-      # made that silent: the upload said so in a line nobody reads and the job
-      # stayed green.
-      #
-      # The tree also carries the two container logs each mode's run left
-      # beside its jobs — and, for a mode that died before writing a report,
-      # the tests/report/<mode>-00-*.log the launcher falls back to, which is
-      # exactly the run whose logs are worth having.
+      - name: Upload the test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-unit
+          path: tests/report
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # THE PROTOCOL HALF, ONE MODE PER RUNNER (2026-11-14). The three modes of
+  # tests/tools/modes.sh's STS_ALL_MODES, each on a runner of its own: one
+  # mode per machine is what fits it (the `cluster` stack is two production
+  # nodes, postgres, OpenBao, HAProxy and a runner with Chrome), the launcher's
+  # container names are machine-wide, and a red mode names itself. Red in
+  # `cluster` and green in `single-node`, the same deployment on one node, is
+  # a CLUSTER defect, which is why both run every time. fail-fast is off: one
+  # mode's failure says nothing about another's.
+  #
+  # THE BOUNDS. `minutes` is the job's timeout and `bound` the launcher's own
+  # bound for the mode, in seconds, handed over through the variable that
+  # mode reads (STS_MODE_TIMEOUT for memory, STS_SINGLE_NODE_MODE_TIMEOUT,
+  # STS_CLUSTER_MODE_TIMEOUT; the others are ignored by a run of one mode).
+  # The launcher adds STS_SAML_PEERS_TIMEOUT (15m) in memory and single-node.
+  # The job's number sits above the bound, the peers, a teardown for the mode
+  # and one for the stack before it, and ten minutes to download and load the
+  # images, so the bound that fires is the one that can explain itself
+  # (tests/teardown_bounds.js). The bounds are below the launcher's defaults
+  # for a whole mode because the in-process half is not in them: the
+  # protocol half of memory took about an hour in run 42934501375 beside a
+  # serial unit pool, and the estimates for the others are 80-110 minutes
+  # (single-node) and 90-120 (cluster).
+  #
+  # STS_TEST_CONFORMANCE_MODES EMPTY (#187): the OpenID conformance plans are
+  # the two `openid-conformance*` jobs'; here they are reported SKIPPED with
+  # the reason.
+  # ---------------------------------------------------------------------------
+  mode:
+    name: mode (${{ matrix.mode }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.minutes }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: memory
+            minutes: 100
+            bound: 3600
+          - mode: single-node
+            minutes: 160
+            bound: 7200
+          - mode: cluster
+            minutes: 180
+            bound: 9000
+    steps:
+      # See the build job: recursive, for the nested node-ldapjs submodule,
+      # which the launcher's preflight checks even with --no-build.
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+          submodules: recursive
+
+      - name: Free disk
+        run: .github/scripts/runner-host.sh free-disk
+
+      - name: Sample the runner's memory and disk
+        run: nohup .github/scripts/runner-host.sh sample tests/report/runner/resources.log > /dev/null 2>&1 &
+
+      # See the build job: the stack's third-party images (postgres, OpenBao,
+      # HAProxy, mailpit) come from the private mirror at `up`.
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Download the images
+        uses: actions/download-artifact@v4
+        with:
+          name: stack-images
+          path: ${{ runner.temp }}
+
+      - name: Load the images
+        run: .github/scripts/stack-images.sh load "${RUNNER_TEMP}/stack-images.tar.zst"
+
+      - name: Run the protocol jobs in the ${{ matrix.mode }} mode
+        env:
+          STS_TEST_CONFORMANCE_MODES: ""
+          STS_MODE_TIMEOUT: ${{ matrix.bound }}
+          STS_SINGLE_NODE_MODE_TIMEOUT: ${{ matrix.bound }}
+          STS_CLUSTER_MODE_TIMEOUT: ${{ matrix.bound }}
+        run: ./run-tests.sh --no-build --modes=${{ matrix.mode }} --protocol=only
+
+      # See the unit job.
+      - name: Normalize report permissions
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
+
+      # if: always(): the report is at its most useful when the run went red.
+      # THE WHOLE tests/report TREE: ./run-tests.sh hands each mode
+      # `--report-dir=tests/report/<mode>`, and a mode that died before
+      # writing a report leaves tests/report/<mode>-00-*.log, exactly the run
+      # whose logs are worth having. In the cluster mode the tree carries node
+      # B's and the balancer's logs too.
       #
       # pep-credential/ is excluded: it is the client key and certificate the
       # launcher mints for the remote PEP, it protects nothing and lives for
@@ -284,7 +398,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-report
+          name: test-report-${{ matrix.mode }}
           path: |
             tests/report
             !tests/report/pep-credential
@@ -292,92 +406,236 @@ jobs:
           retention-days: 30
 
   # ---------------------------------------------------------------------------
-  # THE SAME SUITE AGAIN, INSTRUMENTED. What this adds is the only question the
-  # job above cannot answer: WHICH LINES of this tree the jobs
-  # actually reached. It is the second half of the picture for anybody deciding
-  # what to test next, and it is worth a CI run because the report is the thing
-  # nobody generates by hand.
+  # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, #187). The jobs marked
+  # `conformance: true` in tests/protocol/MANIFEST.js (FAPI, OpenID Connect
+  # with its logout plans and Identity Assurance, Shared Signals, OpenID
+  # Federation, OpenID4VCI and OpenID4VP) against the suite's own containers
+  # under the `conformance` compose profile, in the `memory` mode.
+  # `--conformance-only` names them by that FLAG (2026-09-27).
   #
-  # It builds its own images — this job shares no workspace and no docker cache
-  # with the one above, so --no-build would have nothing to reuse. Its compose
-  # project is iya-sts-coverage, which is what keeps the two runs from reaching
-  # each other's containers even when they land on one machine.
+  # TWO JOBS, SPLIT BY LANE (#930): this one every lane but the OpenID
+  # Provider job's, `openid-conformance-oidcc` that lane alone, the suite's
+  # longest. Neither passes --no-browser since #930 (rcbj): the jobs that play
+  # the suite's person in Chrome run in CI too.
+  #
+  # The launcher grows the mode's bound by STS_CONFORMANCE_TIMEOUT (260m since
+  # 2026-10-23); this number sits above the mode's bound (50m + 260m), two
+  # teardowns (5m each) and ten minutes to load the images, and under
+  # GitHub's six hours (tests/teardown_bounds.js asserts both).
   # ---------------------------------------------------------------------------
-  # WHAT A CALLER RELIES ON HAS NOT GONE (#1390). Compares the OpenAPI documents
-  # the model generates here with the ones generated from the target branch. A
-  # pull request labelled `api-breaking` says the break is intended.
+  openid-conformance:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+          submodules: recursive
+
+      - name: Free disk
+        run: .github/scripts/runner-host.sh free-disk
+
+      - name: Sample the runner's memory and disk
+        run: nohup .github/scripts/runner-host.sh sample tests/report/runner/resources.log > /dev/null 2>&1 &
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Download the images
+        uses: actions/download-artifact@v4
+        with:
+          name: stack-images
+          path: ${{ runner.temp }}
+
+      - name: Load the images
+        run: .github/scripts/stack-images.sh load "${RUNNER_TEMP}/stack-images.tar.zst"
+
+      - name: Run the OpenID conformance suite's plans
+        # The SAML interoperability peers (#189-#192) are the mode jobs'; the
+        # launcher would start them in `memory` by default, for jobs
+        # `--conformance-only` does not run.
+        env:
+          STS_TEST_CONFORMANCE_MODES: memory
+          STS_TEST_SAML_PEERS_MODES: ""
+        run: ./run-tests.sh --no-build --modes=memory --conformance-only --not-lanes=conformance
+
+      - name: Normalize report permissions
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
+
+      # Each job's log names the suite's plan ids and every module's result.
+      - name: Upload the conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-conformance
+          path: |
+            tests/report
+            !tests/report/pep-credential
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # THE OPENID PROVIDER PLANS, A JOB OF THEIR OWN (#930, 2026-11-03): the
+  # OpenID Provider certification profiles, oidcc-test-plan and the logout
+  # plans, each also as its classical twin. The arithmetic is the job above's.
+  # ---------------------------------------------------------------------------
+  openid-conformance-oidcc:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+          submodules: recursive
+
+      - name: Free disk
+        run: .github/scripts/runner-host.sh free-disk
+
+      - name: Sample the runner's memory and disk
+        run: nohup .github/scripts/runner-host.sh sample tests/report/runner/resources.log > /dev/null 2>&1 &
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Download the images
+        uses: actions/download-artifact@v4
+        with:
+          name: stack-images
+          path: ${{ runner.temp }}
+
+      - name: Load the images
+        run: .github/scripts/stack-images.sh load "${RUNNER_TEMP}/stack-images.tar.zst"
+
+      - name: Run the OpenID conformance suite's plans
+        env:
+          STS_TEST_CONFORMANCE_MODES: memory
+          STS_TEST_SAML_PEERS_MODES: ""
+        # THE OPENID PROVIDER LANE ALONE (#930).
+        run: ./run-tests.sh --no-build --modes=memory --conformance-only --lanes=conformance
+
+      - name: Normalize report permissions
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
+
+      - name: Upload the conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-conformance-oidcc
+          path: |
+            tests/report
+            !tests/report/pep-credential
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # WHAT A CALLER RELIES ON HAS NOT GONE (#1390). Compares the OpenAPI
+  # documents the model generates here with the ones generated from the
+  # target branch. A pull request labelled `api-breaking` says the break is
+  # intended. It builds the tests image twice (the base's and the head's),
+  # whose FROMs come from the private mirror, so it logs in (it failed on
+  # every pull request with a 401 until 2026-11-14) and frees disk first.
+  # ---------------------------------------------------------------------------
   openapi-breaking:
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'api-breaking')
+    needs: mirror
     runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Check out
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
+      - name: Free disk
+        run: .github/scripts/runner-host.sh free-disk
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
       - name: Fail on a breaking change to a published API
         run: tests/tools/oasdiff-gate.sh "origin/${{ github.base_ref }}"
 
+  # ---------------------------------------------------------------------------
+  # THE SAME SUITE AGAIN, INSTRUMENTED: which LINES of this tree the jobs
+  # actually reached. Nightly and by hand only since 2026-11-14: 130-170
+  # instrumented minutes per push, failing on the same failures as the mode
+  # jobs, made it a fifth heavy runner per merge and no better a gate.
+  #
+  # It loads the `build` job's tests image (--no-build). Its compose project
+  # is iya-sts-coverage, which keeps it from the launcher's containers even on
+  # one machine.
+  #
+  # 210 since 2026-10-13: on main 8fe81efa the suite took 6,312s after the
+  # build (about 128 minutes in all).
+  # ---------------------------------------------------------------------------
   coverage:
-    needs: mirror
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: build
     runs-on: ubuntu-latest
-    # The instrumented pass is a suite plus a render on top of the image build.
-    # 90 since 2026-09-15: the suite alone took 2,807s of a 49-minute job on
-    # develop (244 jobs), and the post-quantum jobs that used to fail at the
-    # service's 120s worker bound now wait out their signatures instead.
-    # 150 since 2026-09-27: on a runner with no layer cache the build took
-    # nineteen minutes, and the instrumented suite had reached 386 of its jobs
-    # when 90 cancelled it.
-    # 210 since 2026-10-13: on main 8fe81efa the suite took 6,312s after the
-    # build (about 128 minutes in all), and on develop d2221e6f 150 cancelled
-    # it — the suite grew by #591-#607 in a day.
     timeout-minutes: 210
+    permissions:
+      contents: read
+      packages: read
     steps:
-      # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
           submodules: recursive
 
-      # THE TEST CORPORA (#253) AND THE IMAGE MIRROR (2026-09-27) ARE PRIVATE
-      # PACKAGES ON GHCR.IO: tests/Dockerfile copies the corpora out of
-      # ghcr.io/rcbj/iya-sts-test-corpora by digest, and every third-party
-      # image and base image comes from ghcr.io/rcbj/iya-sts/mirror. A private
-      # package is pulled only by a logged-in client; GITHUB_TOKEN carries
-      # packages access (the workflow's permissions) and the packages grant
-      # this repository access.
+      - name: Free disk
+        run: .github/scripts/runner-host.sh free-disk
+
+      - name: Sample the runner's memory and disk
+        run: nohup .github/scripts/runner-host.sh sample tests/report/runner/resources.log > /dev/null 2>&1 &
+
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Show docker and compose versions
-        run: |
-          docker --version
-          docker compose version
+      - name: Download the images
+        uses: actions/download-artifact@v4
+        with:
+          name: stack-images
+          path: ${{ runner.temp }}
+
+      - name: Load the images
+        run: .github/scripts/stack-images.sh load "${RUNNER_TEMP}/stack-images.tar.zst"
 
       # `docker compose run --rm --no-deps` on the tests service alone: the
       # runner is in the container and the service it measures is a child
-      # process beside it, so everything V8 writes is written by processes this
-      # run started. ./coverage and ./tests/report are bind mounts, so both come
-      # out onto the host.
+      # process beside it, so everything V8 writes is written by processes
+      # this run started. ./coverage and ./tests/report are bind mounts, so
+      # both come out onto the host.
       - name: Run the suite with coverage, in containers
-        run: ./run-coverage.sh
+        run: ./run-coverage.sh --no-build
 
-      # Belt and braces: run-coverage.sh already hands both directories back
-      # with a throwaway root container of its own (it has to — the NEXT HOST
-      # run of that script dies clearing coverage/raw otherwise), but that step
-      # is best-effort and says so. If it worked this chown is a no-op; if it
-      # did not, the uploads below can still read what they were given.
-      # `|| true` for the tests job's reason.
+      # run-coverage.sh already hands both directories back; this is the
+      # belt to its braces, and `|| true` for the unit job's reason.
       - name: Normalize coverage permissions
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" coverage tests/report || true
 
-      # The rendered coverage — index.html with a page per file, lcov.info for
-      # anything that reads that, summary.json for the totals, and raw/ so that
-      # somebody who would rather point c8 at the same data can. `warn` rather
-      # than `error` because a run that went red before the render is a run with
-      # no coverage to upload, and that must not be a second failure.
+      # index.html with a page per file, lcov.info, summary.json for the
+      # totals, and raw/. `warn` because a run that went red before the
+      # render has no coverage to upload, and that must not be a second
+      # failure.
       - name: Upload the coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -387,260 +645,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      # The instrumented run's OWN test report, under a name of its own —
-      # artifact names must be unique across a workflow run, and this is a
-      # different run of the suite from the one the tests job uploaded. Worth
-      # keeping both: a job that passes plain and fails under coverage is a real
-      # thing (the throwaway service is a child process here, not a container),
-      # and without this there would be no report to read it from.
-      #
-      # THE WHOLE tests/report TREE, NOT `tests/report/latest` (2026-09-27):
-      # the runner points `latest` at the run only when it finishes, so a run
-      # that died first — CI run 36369109378's, out of heap in the render —
-      # uploaded nothing, and with it went the throwaway service's own log,
-      # the one record of why it stopped answering twenty minutes earlier.
-      # The dated directory is written from the first job on. The tests job's
-      # reason for leaving out the PEP credentials applies here too.
+      # The instrumented run's OWN test report: a job that passes plain and
+      # fails under coverage is a real thing (the service is a child process
+      # here, not a container).
       - name: Upload the coverage run's test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-test-report
-          path: |
-            tests/report
-            !tests/report/pep-credential
-          if-no-files-found: warn
-          retention-days: 30
-
-  # ---------------------------------------------------------------------------
-  # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, #187). The six jobs
-  # marked `conformance: true` in tests/protocol/MANIFEST.js — FAPI, OpenID
-  # Connect with its logout plans and Identity Assurance, Shared Signals,
-  # OpenID Federation, OpenID4VCI and OpenID4VP — against the suite's own
-  # three containers under the `conformance` compose profile, in the
-  # `memory` mode (the launcher's STS_TEST_CONFORMANCE_MODES default, argued
-  # in its header). `--conformance-only` names them by that FLAG
-  # (2026-09-27): `--only=conformance` was a substring and also ran
-  # sts_ssf_conformance and sts_scim_conformance, which the `tests` job
-  # already runs in both its modes. The job was called `conformance` until
-  # the same day; it runs the OpenID Foundation's suite and nothing else.
-  #
-  # A JOB OF ITS OWN because of the time: the plans took about two hours and
-  # a quarter on 2026-09-24, so the launcher grows such a mode's bound by
-  # STS_CONFORMANCE_TIMEOUT (260m since 2026-10-23, when four of the jobs
-  # gained a classical twin of every plan; 180m until then) and no ceiling
-  # the `tests` job may have fits it. The same argument as that job's
-  # number: above the mode's bound (50m + 260m) and two teardowns (5m each)
-  # — and, since 2026-09-27, thirty minutes for the image build before any
-  # mode starts — so the launcher's bound is the one that fires, and under
-  # GitHub's own six hours (tests/teardown_bounds.js asserts both).
-  # ---------------------------------------------------------------------------
-  openid-conformance:
-    needs: mirror
-    runs-on: ubuntu-latest
-    timeout-minutes: 355
-    steps:
-      # See the tests job: recursive, for the nested node-ldapjs submodule.
-      - name: Check out
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      # See the tests job: the corpora and the image mirror are private.
-      - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" |
-             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Show docker and compose versions
-        run: |
-          docker --version
-          docker compose version
-
-      - name: Run the OpenID conformance suite's plans
-        # The SAML interoperability peers (#189-#192) are the tests job's;
-        # the launcher would start them in `memory` by default, for jobs
-        # `--conformance-only` does not run.
-        env:
-          STS_TEST_CONFORMANCE_MODES: memory
-          STS_TEST_SAML_PEERS_MODES: ""
-        # EVERY LANE BUT THE OPENID PROVIDER JOB'S (#930): with the browser
-        # jobs, since rcbj asked for the Chrome-driven conformance jobs in
-        # CI, the lanes no longer fit one job beside the OpenID Provider
-        # lane, which is the suite's longest; that lane is
-        # `openid-conformance-oidcc` below. A job added to any other lane
-        # lands here without a list to edit.
-        run: ./run-tests.sh --modes=memory --conformance-only --not-lanes=conformance
-
-      # See the tests job: the runner writes tests/report as root.
-      - name: Normalize report permissions
-        if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
-
-      # Each job's log names the suite's plan ids and every module's result;
-      # pep-credential/ is excluded for the tests job's reason.
-      - name: Upload the conformance report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: conformance-test-report
-          path: |
-            tests/report
-            !tests/report/pep-credential
-          if-no-files-found: warn
-          retention-days: 30
-
-  # ---------------------------------------------------------------------------
-  # THE OPENID PROVIDER PLANS, A JOB OF THEIR OWN (#930, 2026-11-03). Until
-  # then one job ran every conformance job without a browser, which left out
-  # every job that plays the suite's person in Chrome — this lane's among
-  # them. With them in, the lanes run side by side as they do locally, and
-  # this lane — the OpenID Provider certification profiles, oidcc-test-plan
-  # and the logout plans, each also as its classical twin — is the long
-  # pole the launcher's STS_CONFORMANCE_TIMEOUT is sized for, so it is the
-  # one given a runner alone. The arithmetic is the job above's, and
-  # tests/teardown_bounds.js holds both.
-  # ---------------------------------------------------------------------------
-  openid-conformance-oidcc:
-    needs: mirror
-    runs-on: ubuntu-latest
-    timeout-minutes: 355
-    steps:
-      # See the tests job: recursive, for the nested node-ldapjs submodule.
-      - name: Check out
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      # See the tests job: the corpora and the image mirror are private.
-      - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" |
-             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Show docker and compose versions
-        run: |
-          docker --version
-          docker compose version
-
-      - name: Run the OpenID conformance suite's plans
-        # The SAML interoperability peers (#189-#192) are the tests job's;
-        # the launcher would start them in `memory` by default, for jobs
-        # `--conformance-only` does not run.
-        env:
-          STS_TEST_CONFORMANCE_MODES: memory
-          STS_TEST_SAML_PEERS_MODES: ""
-        # THE OPENID PROVIDER LANE ALONE (#930): sts_oidcc_conformance, its
-        # plans and their classical twins, the lane the launcher's
-        # STS_CONFORMANCE_TIMEOUT is sized for.
-        run: ./run-tests.sh --modes=memory --conformance-only --lanes=conformance
-
-      # See the tests job: the runner writes tests/report as root.
-      - name: Normalize report permissions
-        if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
-
-      # Each job's log names the suite's plan ids and every module's result;
-      # pep-credential/ is excluded for the tests job's reason.
-      - name: Upload the conformance report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: conformance-oidcc-test-report
-          path: |
-            tests/report
-            !tests/report/pep-credential
-          if-no-files-found: warn
-          retention-days: 30
-
-  # ---------------------------------------------------------------------------
-  # THE SUITE AGAIN, IN THE `cluster` MODE (issue #46). What this adds is the
-  # one question neither job above can answer: whether two containers on one
-  # store agree. The three default modes differ in what shares state INSIDE one
-  # container; this is the only run in which the thing under test is BETWEEN
-  # containers. Red here and green in the `tests` job's `single-node` mode —
-  # the same production deployment on one node (product mode, postgres,
-  # request workers), which is what this mode runs on each of two since
-  # 2026-09-21 — is a CLUSTER defect, and that comparison is why both run on
-  # every push.
-  #
-  # A JOB OF ITS OWN RATHER THAN A BARE ./run-tests.sh IN THE `tests` JOB —
-  # which since 2026-09-21 would run all three modes, `cluster` included — for
-  # three reasons. The time: a cluster of two production nodes is the longest
-  # mode, and beside the other two it would push that job past the ceiling
-  # tests/teardown_bounds.js holds it to. The verdict: a cluster defect
-  # would turn the status that means "the tree is green" red for a reason that
-  # says nothing about the single-node service, where a job of its own names
-  # what broke. And the machine: two nodes, a balancer, postgres, OpenBao and a
-  # runner with Chrome in it is the heaviest stack this suite starts, and the
-  # launcher's default container names are machine-wide — a job of its own is
-  # a runner of its own, so neither stack can meet the other's memory or names.
-  # It also runs in parallel with the other two, so the wall clock is the
-  # slowest job rather than the sum.
-  # ---------------------------------------------------------------------------
-  cluster:
-    needs: mirror
-    runs-on: ubuntu-latest
-    # The `tests` job's argument, for ONE mode: above the cluster mode's own
-    # bound (STS_CLUSTER_MODE_TIMEOUT, 200m — tests/tools/modes.sh) plus its
-    # teardowns (STS_TEARDOWN_TIMEOUT, 5m each), so the bound that fires is the
-    # one that can explain itself — tests/teardown_bounds.js asserts it. The
-    # mode took 24.7 minutes on 2026-09-15 in development mode with one process
-    # per node; as two production nodes (2026-09-21) its bulk loads alone
-    # outran the shared 50-minute bound. 150 since 2026-09-27: 115 did not
-    # count the image build (nineteen minutes on a cold runner), so a run was
-    # cancelled at 527 jobs before the mode's own bound could fire; the test
-    # now adds thirty minutes for it. 175 since 2026-10-13, with the mode's
-    # bound raised to 130m (main 8fe81efa outgrew 100m at job 734 of 774).
-    # 245 since 2026-10-20, with the mode's bound raised to 200m: main
-    # 1f01ce51 (run 39464473145) outgrew 130m at job 841 of 871, its
-    # bulk loads still to run, after a 23-minute build. Above the 180 the
-    # `tests` job keeps, and under GitHub's six hours; tests/teardown_bounds.js
-    # holds the cluster job to 300 for the reason it gives.
-    timeout-minutes: 245
-    steps:
-      # See the tests job: recursive, for the nested node-ldapjs submodule.
-      - name: Check out
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      # THE TEST CORPORA (#253) AND THE IMAGE MIRROR (2026-09-27) ARE PRIVATE
-      # PACKAGES ON GHCR.IO: tests/Dockerfile copies the corpora out of
-      # ghcr.io/rcbj/iya-sts-test-corpora by digest, and every third-party
-      # image and base image comes from ghcr.io/rcbj/iya-sts/mirror. A private
-      # package is pulled only by a logged-in client; GITHUB_TOKEN carries
-      # packages access (the workflow's permissions) and the packages grant
-      # this repository access.
-      - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" |
-             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Show docker and compose versions
-        run: |
-          docker --version
-          docker compose version
-
-      # The same launcher as the tests job, asked for the one mode that job
-      # does not name. It builds both images, layers
-      # tests/docker-compose-run-tests-cluster.yml over the usual file, and
-      # exits with the runner's status.
-      - name: Run the containerized test suite in the cluster mode
-        run: ./run-tests.sh --modes=cluster
-
-      # See the tests job: the runner writes tests/report as root.
-      - name: Normalize report permissions
-        if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
-
-      # The tests job's upload, under a name of its own (artifact names are
-      # unique per workflow run). The tree carries node B's and the balancer's
-      # logs beside node A's and the runner's — the launcher collects all four
-      # in this mode — which is what tells a node that refused to join from a
-      # job that failed. pep-credential/ is excluded for the tests job's reason.
-      - name: Upload the cluster test report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cluster-test-report
+          name: test-report-coverage
           path: |
             tests/report
             !tests/report/pep-credential

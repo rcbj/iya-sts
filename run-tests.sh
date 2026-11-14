@@ -71,15 +71,20 @@
 # Usage:
 #   ./run-tests.sh
 #   ./run-tests.sh --no-build                 # reuse the images already built
+#   ./run-tests.sh --build-only               # build every image a run needs
+#                                             # (all profiles) and stop; CI's
+#                                             # `build` job, which hands the
+#                                             # images to the test jobs as an
+#                                             # artifact (tests.yml)
 #   ./run-tests.sh --keep-stack               # leave the LAST mode's stack
 #                                             # running, to look at
 #   ./run-tests.sh --modes=single-node        # one mode of tests/tools/modes.sh
 #                                             # rather than all three (memory,
 #                                             # single-node, cluster), in that
 #                                             # file's own spelling
-#   ./run-tests.sh --modes=memory,single-node # what CI's `tests` job runs; its
-#                                             # `cluster` job runs the third
-#                                             # (2026-09-21)
+#   ./run-tests.sh --modes=memory,single-node # two modes, one after the other;
+#                                             # CI runs each mode on a runner
+#                                             # of its own (2026-11-14)
 #   ./run-tests.sh --modes=cells --only=sts_cells --no-browser
 #   ./run-tests.sh --modes=schema-validation  # every answer held to its model,
 #                                             # one container, every deployment
@@ -117,6 +122,12 @@
 #                                             # conformance suite's FAPI plans
 #                                             # (#176; default `memory`, empty
 #                                             # for none); see below
+#   STS_TEST_ATTACH_RUNNER_ONLY=1 ./run-tests.sh
+#                                             # print only the runner's output,
+#                                             # not every service container's
+#                                             # (CI: the job log was 20-38 MB);
+#                                             # the service logs are still
+#                                             # captured into the report
 #   STS_TEST_SAML_PEERS_MODES=memory ./run-tests.sh
 #                                             # the modes that bring up the four
 #                                             # SAML interoperability peers
@@ -245,8 +256,9 @@ STS_TEST_PEER_CONTAINER_NAME="${STS_TEST_PEER_CONTAINER_NAME:-sts-docker-tests-t
 # tags.
 #
 # THE NAMES ARE UNDER ghcr.io SINCE 2026-09-27 (IMAGE_REGISTRY, default
-# ghcr.io/rcbj/iya-sts): tests.yml pushes what a run built
-# (.github/scripts/push-stack-images.sh). The tag is IMAGE_TAG when set (CI
+# ghcr.io/rcbj/iya-sts). NOTHING PUSHES THEM SINCE 2026-11-14: tests.yml
+# builds them once and hands them to its test jobs as an artifact
+# (.github/scripts/stack-images.sh). The tag is IMAGE_TAG when set (CI
 # sets the commit), the named project otherwise, and `latest` for an unnamed
 # local run — the compose files' own default. Always set, because the
 # one-shot containers below name STS_IMAGE directly.
@@ -365,7 +377,7 @@ STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-15600}"
 #
 #   STS_TEST_SAML_PEERS_MODES    a comma list of modes, in modes.sh's
 #                                spelling (default `memory,single-node`, what
-#                                CI's `tests` job runs); empty runs them in
+#                                CI runs in those modes); empty runs them in
 #                                none. `single-node` because it is the
 #                                deployment the peers stand in for the
 #                                clients of — product mode, postgres, the
@@ -386,6 +398,7 @@ STS_TEST_SAML_PEERS_MODES="${STS_TEST_SAML_PEERS_MODES-memory,single-node}"
 STS_SAML_PEERS_TIMEOUT="${STS_SAML_PEERS_TIMEOUT:-900}"
 
 BUILD=1
+BUILD_ONLY=0
 KEEP_STACK=0
 TARGET=local
 MODES_GIVEN=0
@@ -422,6 +435,10 @@ while [ $# -gt 0 ];
 do
   case "$1" in
     --no-build)   BUILD=0 ;;
+    # BUILD AND STOP (2026-11-14): CI builds every image once, in a job of
+    # its own, and the test jobs load them (--no-build). The same build as a
+    # run's, with the SAML peers' profile on, so nothing is left to `up`.
+    --build-only) BUILD=1; BUILD_ONLY=1 ;;
     --keep-stack) KEEP_STACK=1 ;;
     # WHICH MODES TO RUN, AND THIS LAUNCHER LACKED IT UNTIL 2026-09-09.
     # ./local-run-tests.sh (removed 2026-09-16) had `--modes=` since the
@@ -1463,7 +1480,8 @@ docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
 BUILD_ENV=(${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"})
 for buildMode in "${RUN_MODES[@]}";
 do
-  if printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${buildMode},";
+  if [ "${BUILD_ONLY}" = "1" ] ||
+     printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${buildMode},";
   then
     COMPOSE_ENV+=("COMPOSE_PROFILES=saml-peers")
     break
@@ -1491,6 +1509,11 @@ else
   echo "a result surprises you."
 fi
 COMPOSE_ENV=(${BUILD_ENV[@]+"${BUILD_ENV[@]}"})
+if [ "${BUILD_ONLY}" = "1" ];
+then
+  echo "Built (--build-only); nothing was run."
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # THE SERVICE FIRST, THEN THE CREDENTIAL, THEN EVERYTHING ELSE.
@@ -2096,6 +2119,17 @@ do
   if [ "${#MODE_PROFILES[@]}" -gt 0 ];
   then
     MODE_ENV+=("COMPOSE_PROFILES=$(IFS=','; echo "${MODE_PROFILES[*]}")")
+  fi
+  # ONLY THE RUNNER'S OUTPUT ON THE TERMINAL, WHEN ASKED (2026-11-14). Every
+  # attached service streams its log into this one, which in CI made a job
+  # log of 20-38 MB that GitHub truncated before the summary. Each service's
+  # log is captured into the report anyway (captureContainerLogs()). The
+  # cost: `--abort-on-container-exit` watches attached containers only, so a
+  # service that dies no longer ends the mode at once; the runner's jobs fail
+  # against it and the runner's exit still ends the mode.
+  if [ "${STS_TEST_ATTACH_RUNNER_ONLY:-0}" = "1" ];
+  then
+    UP_NO_ATTACH+=(--attach tests)
   fi
 
   COMPOSE_ENV=(
