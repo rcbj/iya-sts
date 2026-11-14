@@ -64,6 +64,13 @@ each.
 [Token samples](token-samples.md) ·
 [Error codes](error-codes.md)
 
+**Protocol debugger** —
+[The protocol debugger](debugger/index.md): the identity protocol debugger
+this service embeds on port 8444, for console administrators, with its user
+guides ·
+[Accessing the debugger](debugger/access.md): signing in, turning it on, and
+building an image without it
+
 **Administration** —
 [Admin console](admin-console.md): `/admin`, who may use it and what its pages
 do ·

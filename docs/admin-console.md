@@ -2201,7 +2201,10 @@ The [Identity Protocol Debugger](https://idptools.com) — the project this
 service was extracted from — can be served by this process, in this container,
 as a feature of it. **Server configuration → Protocol debugger**
 (`/admin/debugger`) and `GET /admin-api/debugger` report the listener, the api
-process and its allow-list.
+process and its allow-list. **Using it** — signing in, turning it on, leaving
+it out of a production build — is the
+[Protocol debugger](debugger/access.md) chapter, with the debugger's own user
+guides.
 
 **How it is served.** The debugger project builds its browser client and its
 api for embedding (`embedded/build.sh` or `embedded/Dockerfile` in that

@@ -88,6 +88,34 @@ of rows in `common/config.js` and will drift when a row changes — the live
 source is the protocol's console page and `GET /admin-api/config`, and the
 table says so; update it when you change a row for that family.
 
+## `debugger/`, a chapter that is mostly a COPY (#1717, 2026-11-13)
+
+**rcbj asked for the embedded debugger's documentation to be a chapter here.**
+Two of its pages are this service's own and are written like any other page
+here: `debugger/index.md`, the chapter and its table of guides, and
+`debugger/access.md`, which covers reaching the debugger, who may use it, turning it on, and
+`DEBUGGER_IMAGE=debugger-none`. **Everything else under `debugger/` is a
+COPY of the id-proto-debugger user guides at the release the image embeds
+(0.9.1)** — its `docs/oauth2-oidc/` with the screenshots, `saml.md`,
+`saml-assertion.md`, `saml-decoders.md`, `wstrust.md`, `jwt-tools.md`,
+`digital-signature.md` and `what-is-a-protocol-debugger.md` — under that
+project's MIT licence (`REUSE.toml`).
+
+The copies were changed in exactly these ways, and a refresh repeats them:
+`nav_order` added; a note under the title saying where the page came from;
+`https://localhost:3000` → `https://localhost:8444` and `:4000` → `:8444/api`
+(the embedded build's own addresses); "the mock STS" → iya-sts; links to this
+site made relative; links to debugger pages that were NOT copied pointed at
+`github.com/rcbj/id-proto-debugger/blob/<release>/docs/`; and the "start it
+from a checkout" and "regenerating the screenshots" passages replaced by
+pointers to `access.md` and to that project. Its developer notes (`kerberos.md`,
+`scim.md`, `ssf.md` and the rest, which begin by listing the source files they
+cover) were not copied: this directory is for somebody using the service.
+
+**A bump of `DEBUGGER_IMAGE` owes a refresh of the copies**, or the guides
+describe a debugger the image no longer carries; the release named in
+`index.md`, in each page's note and in the GitHub links is the one to move.
+
 ## `sessions.md` and `caep-events.md`, and the line between them
 
 `sessions.md` and `caep-events.md` are close enough together that the split

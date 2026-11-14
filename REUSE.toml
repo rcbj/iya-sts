@@ -38,6 +38,26 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
 SPDX-License-Identifier = "MIT"
 
+# The id-proto-debugger user guides under docs/debugger/, copied from that
+# project's release 0.9.1 (#1717): the same owner, and that project's MIT
+# licence, like the protocol jobs above. The chapter's own two pages,
+# docs/debugger/index.md and access.md, are this service's and stay BUSL-1.1
+# under the catch-all.
+[[annotations]]
+path = [
+  "docs/debugger/oauth2-oidc/**",
+  "docs/debugger/what-is-a-protocol-debugger.md",
+  "docs/debugger/saml.md",
+  "docs/debugger/saml-assertion.md",
+  "docs/debugger/saml-decoders.md",
+  "docs/debugger/wstrust.md",
+  "docs/debugger/jwt-tools.md",
+  "docs/debugger/digital-signature.md",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
+SPDX-License-Identifier = "MIT"
+
 # The OASIS XACML conformance suite, as adapted by AT&T and then AuthzForce
 # (OW2). Apache-2.0. xacml/conformance/PROVENANCE.md is the record.
 [[annotations]]
