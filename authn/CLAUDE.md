@@ -2322,6 +2322,17 @@ too. The kept copy now takes `mergeSessionRows()` of the two, in place: it
 is what the flush will write. `tests/session_window.js`,
 `upgradedElsewhereCase()`.
 
+**AND THAT MERGE KEEPS A CLIENT'S `iss` AND `sub` (run 27, 2026-11-14).**
+`mergeSessionRows()` rebuilt an `oidcClients` entry both copies held from
+`first`, `last` and `count`, dropping the issuer and subject
+`noteClient()` records. The merge above made that an ordinary sign-in's
+path in the single-node mode: `sts_frontchannel_logout`'s iframe carried
+the sign-out's issuer instead of the named authorization server's, and
+`sts_backchannel_logout`'s Logout Token was dead-lettered
+`STS-OAUTH-0542`. The later answer's (`last`) values win, an empty one
+never wipes a recorded one. `tests/session_window.js`,
+`dirtyClientCase()`; `tests/cluster_lww_stores.js` section E.
+
 **A CONSOLE PAGE MAY NOT BE "A WALK THAT NEEDS EVERY SESSION" (2026-10-22,
 #820).** On 8081, Monitoring → Sessions opened all ~470,000 sealed bodies,
 one synchronous read each, on a request worker, and held it for two minutes.
