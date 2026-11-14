@@ -3835,6 +3835,1240 @@ async function httpVectors() {
   };
 }
 
+// THE KERBEROS CODEC (#444, phase 2b): what kerberos/'s codec modules make
+// of a broad set of messages, keys and tokens — every enctype's
+// string-to-key, derived keys, encryptions (the confounder fixed, so Node is
+// deterministic) and checksums, RFC 3962's and RFC 8009's published vectors,
+// every RFC 4120 message decoded and re-encoded (and refused, with Node's
+// sentence), the RFC 4121 0x8003 checksum, MIC and Wrap tokens, SPNEGO,
+// FAST, PKINIT and the MS-KKDCP envelope — for `sts-kerberos`'s
+// `tests/node_vectors.rs` to reproduce. Nothing here is secret: the keys
+// are derived from fixed strings.
+async function krb5Codec() {
+  const K = path.join(ROOT, 'kerberos');
+  const prim = require(path.join(K, 'krb5_primitives.js'));
+  const asn1 = require(path.join(K, 'krb5_asn1.js'));
+  const kc = require(path.join(K, 'krb5_crypto.js'));
+  const m = require(path.join(K, 'krb5_messages.js'));
+  const gss = require(path.join(K, 'krb5_gss.js'));
+  const sp = require(path.join(K, 'krb5_spnego.js'));
+  const fc = require(path.join(K, 'krb5_fast_codec'));
+  const pc = require(path.join(K, 'krb5_pkinit_codec'));
+  const hex = function (b) { return Buffer.from(b).toString('hex'); };
+  const unhex = function (s) { return new Uint8Array(Buffer.from(s, 'hex')); };
+  const utf = function (s) { return new Uint8Array(Buffer.from(s, 'utf8')); };
+  // Node's answer as JSON: bytes as hex, a Date as ISO 8601, `undefined`
+  // dropped — the form `sts-kerberos` serializes its structures to.
+  const norm = function (v) {
+    if (v === null || v === undefined) {
+      return v === null ? null : undefined;
+    }
+    if (v instanceof Uint8Array) {
+      return hex(v);
+    }
+    if (v instanceof Date) {
+      return v.toISOString();
+    }
+    if (Array.isArray(v)) {
+      return v.map(norm);
+    }
+    if (typeof v === 'object') {
+      const out = {};
+      Object.keys(v).forEach(function (k) {
+        const n = norm(v[k]);
+        if (n !== undefined) {
+          out[k] = n;
+        }
+      });
+      return out;
+    }
+    return v;
+  };
+  const stripRaw = function (v) {
+    if (v instanceof Uint8Array || v instanceof Date || v === null ||
+        typeof v !== 'object') {
+      return v;
+    }
+    if (Array.isArray(v)) {
+      return v.map(stripRaw);
+    }
+    const out = {};
+    Object.keys(v).forEach(function (k) {
+      if (k !== 'raw') {
+        out[k] = stripRaw(v[k]);
+      }
+    });
+    return out;
+  };
+  const attempt = function (f) {
+    try {
+      return { ok: f() };
+    } catch (e) {
+      return { error: (e && e.message) || String(e) };
+    }
+  };
+  const attemptAsync = async function (f) {
+    try {
+      return { ok: await f() };
+    } catch (e) {
+      return { error: (e && e.message) || String(e) };
+    }
+  };
+  const T = function (s) { return new Date(s); };
+  const pn = function (type, name) { return { type: type, name: name }; };
+
+  // ---- primitives -------------------------------------------------------
+  const inputs = ['', 'a', 'abc', 'message digest', 'kerberos',
+    'The quick brown fox jumps over the lazy dog', 'é漢字𝄞',
+    'x'.repeat(55), 'x'.repeat(56), 'x'.repeat(64), 'x'.repeat(200)];
+  const primitives = inputs.map(function (s) {
+    const b = utf(s);
+    return { text: s, input: hex(b), md4: hex(prim.md4(b)),
+             md5: hex(prim.md5(b)), utf16le: hex(prim.utf16le(s)),
+             hmacShort: hex(prim.hmacMd5(utf('key'), b)),
+             hmacLong: hex(prim.hmacMd5(new Uint8Array(100).fill(7), b)),
+             rc4: hex(prim.rc4(utf('Secret'), b)),
+             fromUtf8: prim.fromUtf8(b) };
+  });
+  [[0xc3], [0xc0, 0x80], [0xed, 0xa0, 0x80], [0xf4, 0x90, 0x80, 0x80],
+   [0x80], [0xe2, 0x82]].forEach(function (bad) {
+    primitives.push({ text: null, input: hex(new Uint8Array(bad)),
+                      fromUtf8: prim.fromUtf8(new Uint8Array(bad)) });
+  });
+  const nfold = [];
+  ['012345', 'password', 'Rough Consensus, and Running Code', 'kerberos',
+   'Q', 'ba', '', 'prf'].forEach(function (s) {
+    [0, 8, 56, 64, 128, 168, 256].forEach(function (bits) {
+      const r = attempt(function () { return prim.nfold(utf(s), bits); });
+      nfold.push({ input: hex(utf(s)), bits: bits,
+                   out: r.ok ? hex(r.ok) : null, error: r.error || null });
+    });
+  });
+
+  // ---- enctypes ---------------------------------------------------------
+  const IDS = [17, 18, 19, 20, 23];
+  const profiles = IDS.map(function (id) {
+    const e = kc.ETYPES[id];
+    return { id: e.id, name: e.name, keyBytes: e.keyBytes,
+             blockBytes: e.blockBytes, confounderBytes: e.confounderBytes,
+             checksumBytes: e.checksumBytes, checksumType: e.checksumType,
+             defaultIterations: e.defaultIterations, rfc: e.rfc,
+             legacy: e.legacy };
+  });
+  const etypeNames = [];
+  for (let id = -1; id <= 30; id++) {
+    const r = attempt(function () { return kc.etypeById(id); });
+    etypeNames.push({ id: id, name: kc.etypeName(id),
+                      supported: kc.isSupportedEtype(id),
+                      error: r.error || null });
+  }
+  const s2k = [];
+  const salts = [['password', 'ATHENA.MIT.EDUraeburn'],
+    ['pässwörd', 'EXAMPLE.COMalice'], ['', ''],
+    ['𝄞', 'EXAMPLE.COMpianist'], ['Pa55w0rd!', 'host/x']];
+  for (const id of IDS) {
+    for (const [pw, salt] of salts) {
+      for (const params of [null, unhex('00000001'), unhex('00000002'),
+                            unhex('000003e8'), unhex('00000000'),
+                            unhex('0001')]) {
+        const r = await attemptAsync(function () {
+          return kc.ETYPES[id].stringToKey(pw, utf(salt), params);
+        });
+        s2k.push({ etype: id, password: pw, salt: hex(utf(salt)),
+                   params: params ? hex(params) : null,
+                   key: r.ok ? hex(r.ok) : null, error: r.error || null });
+      }
+    }
+  }
+  // RFC 3962 appendix B: string-to-key for both AES-SHA1 sizes.
+  const RFC3962 = [
+    [1, 'password', utf('ATHENA.MIT.EDUraeburn'),
+     '42263c6e89f4fc28b8df68ee09799f15',
+     'fe697b52bc0d3ce14432ba036a92e65bbb52280990a2fa27883998d72af30161'],
+    [2, 'password', utf('ATHENA.MIT.EDUraeburn'),
+     'c651bf29e2300ac27fa469d693bdda13',
+     'a2e16d16b36069c135d5e9d2e25f896102685618b95914b467c67622225824ff'],
+    [1200, 'password', utf('ATHENA.MIT.EDUraeburn'),
+     '4c01cd46d632d01e6dbe230a01ed642a',
+     '55a6ac740ad17b4846941051e1e8b0a7548d93b0ab30a8bc3ff16280382b8c2a'],
+    [5, 'password', unhex('1234567878563412'),
+     'e9b23d52273747dd5c35cb55be619d8e',
+     '97a4e786be20d81a382d5ebc96d5909cabcdadc87ca48f574504159f16c36e31'],
+    [1200, 'X'.repeat(64), utf('pass phrase equals block size'),
+     '59d1bb789a828b1aa54ef9c2883f69ed',
+     '89adee3608db8bc71f1bfbfe459486b05618b70cbae22092534e56c553ba4b34'],
+    [1200, 'X'.repeat(65), utf('pass phrase exceeds block size'),
+     'cb8005dc5f90179a7f02104c0018751d',
+     'd78c5c9cb872a8c9dad4697f0bb5b2d21496c82beb2caeda2112fceea057401b'],
+    [50, '𝄞', utf('EXAMPLE.COMpianist'),
+     'f149c1f2e154a73452d43e7fe62a56e5',
+     '4b6d9839f84406df1f09cc166db4b83c571848b784a3d6bdc346589a3e393f9e']];
+  for (const [iter, pw, salt, k128, k256] of RFC3962) {
+    const params = new Uint8Array(4);
+    new DataView(params.buffer).setUint32(0, iter);
+    for (const [id, expect] of [[17, k128], [18, k256]]) {
+      s2k.push({ etype: id, password: pw, salt: hex(salt),
+                 params: hex(params), expect: expect,
+                 key: hex(await kc.ETYPES[id].stringToKey(pw, salt, params)),
+                 error: null });
+    }
+  }
+  // RFC 8009 appendix A: string-to-key, the derived keys, encryptions and
+  // checksums for both AES-SHA2 sizes.
+  const r8009Salt = unhex('10df9dd783e5bc8acea1730e74355f61' +
+                          hex(utf('ATHENA.MIT.EDUraeburn')));
+  s2k.push({ etype: 19, password: 'password', salt: hex(r8009Salt),
+             params: null, expect: '089bca48b105ea6ea77ca5d2f39dc5e7',
+             key: hex(await kc.ETYPES[19].stringToKey('password', r8009Salt)),
+             error: null });
+  s2k.push({ etype: 20, password: 'password', salt: hex(r8009Salt),
+             params: null,
+             expect: '45bd806dbf6a833a9cffc1c94589a222' +
+                     '367a79bc21c413718906e9f578a78467',
+             key: hex(await kc.ETYPES[20].stringToKey('password', r8009Salt)),
+             error: null });
+  const R8009 = {
+    19: { base: '3705d96080c17728a0e800eab6e0d23c',
+          kc: 'b31a018a48f54776f403e9a396325dc3',
+          ke: '9b197dd1e8c5609d6e67c3e37c62c72e',
+          ki: '9fda0e56ab2d85e1569a688696c26a6c',
+          enc: [['', '7e5895eaf2672435bad817f545a37148',
+                 'ef85fb890bb8472f4dab20394dca781dad877eda39d50c87' +
+                 '0c0d5a0a8e48c718'],
+                ['000102030405', '7bca285e2fd4130fb55b1a5c83bc5b24',
+                 '84d7f30754ed987bab0bf3506beb09cfb55402cef7e6877c' +
+                 'e99e247e52d16ed4' +
+                 '421dfdf8976c'],
+                ['000102030405060708090a0b0c0d0e0f',
+                 '56ab21713ff62c0a1457200f6fa9948f',
+                 '3517d640f50ddc8ad3628722b3569d2ae07493fa82632540' +
+                 '80ea65c1008e8fc2' +
+                 '95fb4852e7d83e1e7c48c37eebe6b0d3'],
+                ['000102030405060708090a0b0c0d0e0f1011121314',
+                 'a7a4e29a4728ce10664fb64e49ad3fac',
+                 '720f73b18d9859cd6ccb4346115cd336c70f58edc0c4437c' +
+                 '5573544c31c813bc' +
+                 'e1e6d072c186b39a413c2f92ca9b8334a287ffcbfc']],
+          cksum: 'd78367186643d67b411cba9139fc1dee' },
+    20: { base: '6d404d37faf79f9df0d33568d320669800eb4836472ea8a0' +
+                '26d16b7182460c52',
+          kc: 'ef5718be86cc84963d8bbb5031e9f5c4ba41f28faf69e73d',
+          ke: '56ab22bee63d82d7bc5227f6773f8ea7a5eb1c825160c383' +
+              '12980c442e5c7e49',
+          ki: '69b16514e3cd8e56b82010d5c73012b622c4d00ffc23ed1f',
+          enc: [['', 'f764e9fa15c276478b2c7d0c4e5f58e4',
+                 '41f53fa5bfe7026d91faf9be959195a058707273a96a40f0' +
+                 'a01960621ac61274' +
+                 '8b9bbfbe7eb4ce3c'],
+                ['000102030405', 'b80d3251c1f6471494256ffe712d0b9a',
+                 '4ed7b37c2bcac8f74f23c1cf07e62bc7b75fb3f637b9f559' +
+                 'c7f664f69eab7b60' +
+                 '92237526ea0d1f61cb20d69d10f2'],
+                ['000102030405060708090a0b0c0d0e0f',
+                 '53bf8a0d105265d4e276428624ce5e63',
+                 'bc47ffec7998eb91e8115cf8d19dac4bbbe2e163e87dd37f' +
+                 '49beca92027764f6' +
+                 '8cf51f14d798c2273f35df574d1f932e40c4ff255b36a266'],
+                ['000102030405060708090a0b0c0d0e0f1011121314',
+                 '763e65367e864f02f55153c7e3b58af1',
+                 '40013e2df58e8751957d2878bcd2d6fe101ccfd556cb1eae' +
+                 '79db3c3ee86429f2' +
+                 'b2a602ac86fef6ecb647d6295fae077a1feb517508d2c16b4192e01f62']],
+          cksum: '45ee791567eefca37f4ac1e0222de80d43c3bfa06699672a' } };
+  const keyFor = function (id, n) {
+    // A key of the etype's size, from a fixed string.
+    const seed = nodeCrypto.createHash('sha256')
+      .update('krb5-codec ' + id + ' ' + n).digest();
+    return new Uint8Array(seed.subarray(0, kc.ETYPES[id].keyBytes));
+  };
+  const derived = [];
+  const encryptions = [];
+  const checksums = [];
+  const decryptErrors = [];
+  const USAGES = [1, 2, 3, 7, 8, 9, 11, 12, 13, 22, 23, 24, 25, 51, 1024];
+  const LENGTHS = [0, 1, 15, 16, 17, 31, 32, 33, 64, 100];
+  for (const id of IDS) {
+    const e = kc.ETYPES[id];
+    for (let n = 0; n < 2; n++) {
+      const key = keyFor(id, n);
+      for (const usage of USAGES) {
+        if (e.encryptionKey) {
+          derived.push({ etype: id, key: hex(key), usage: usage,
+            ke: hex(await e.encryptionKey(key, usage)),
+            ki: hex(await e.integrityKey(key, usage)),
+            kc: hex(await e.checksumKey(key, usage)) });
+        }
+        for (const len of LENGTHS) {
+          const plain = new Uint8Array(len).map(function (_, i) {
+            return (i * 7 + usage) & 0xff;
+          });
+          const conf = new Uint8Array(e.confounderBytes).map(function (_, i) {
+            return (i * 13 + len + n) & 0xff;
+          });
+          encryptions.push({ etype: id, key: hex(key), usage: usage,
+            plain: hex(plain), confounder: hex(conf),
+            cipher: hex(await e.encrypt(key, usage, plain, conf)) });
+          checksums.push({ etype: id, key: hex(key), usage: usage,
+            message: hex(plain),
+            checksum: hex(await e.checksum(key, usage, plain)) });
+        }
+      }
+      // Refusals: a flipped bit, the wrong usage, a short ciphertext.
+      const good = await e.encrypt(key, 3, utf('hello'),
+                                   new Uint8Array(e.confounderBytes));
+      const flipped = new Uint8Array(good);
+      flipped[flipped.length - 1] ^= 1;
+      for (const [usage, cipher] of [[3, flipped], [4, good],
+                                     [3, good.subarray(0, 10)],
+                                     [3, good.subarray(0, 27)]]) {
+        const r = await attemptAsync(function () {
+          return e.decrypt(key, usage, cipher);
+        });
+        decryptErrors.push({ etype: id, key: hex(key), usage: usage,
+                             cipher: hex(cipher), error: r.error || null,
+                             plain: r.ok ? hex(r.ok) : null });
+      }
+    }
+    if (R8009[id]) {
+      const r = R8009[id];
+      const base = unhex(r.base);
+      derived.push({ etype: id, key: r.base, usage: 2,
+        ke: hex(await e.encryptionKey(base, 2)),
+        ki: hex(await e.integrityKey(base, 2)),
+        kc: hex(await e.checksumKey(base, 2)),
+        expect: { ke: r.ke, ki: r.ki, kc: r.kc } });
+      for (const [plain, conf, cipher] of r.enc) {
+        encryptions.push({ etype: id, key: r.base, usage: 2, plain: plain,
+          confounder: conf, expect: cipher,
+          cipher: hex(await e.encrypt(base, 2, unhex(plain), unhex(conf))) });
+      }
+      checksums.push({ etype: id, key: r.base, usage: 2,
+        message: '000102030405060708090a0b0c0d0e0f1011121314',
+        expect: r.cksum,
+        checksum: hex(await e.checksum(base, 2,
+          unhex('000102030405060708090a0b0c0d0e0f1011121314'))) });
+    }
+  }
+  // RFC 3962 appendix B's CTS vectors.
+  const ctsKey = utf('chicken teriyaki');
+  const soup = utf('I would like the General Gau\'s Chicken, please, ' +
+                   'and wonton soup.');
+  const CTS = [[17, 'c6353568f2bf8cb4d8a580362da7ff7f97'],
+    [31, 'fc00783e0efdb2c1d445d4c8eff7ed2297687268d6ecccc0c07b25e25ecfe5'],
+    [32, '39312523a78662d5be7fcbcc98ebf5a897687268d6ecccc0c07b25e25ecfe584'],
+    [47, '97687268d6ecccc0c07b25e25ecfe584b3fffd940c16a18c1b5549d2f838029e' +
+         '39312523a78662d5be7fcbcc98ebf5'],
+    [48, '97687268d6ecccc0c07b25e25ecfe5849dad8bbb96c4cdc03bc103e1a194bbd8' +
+         '39312523a78662d5be7fcbcc98ebf5a8'],
+    [64, '97687268d6ecccc0c07b25e25ecfe58439312523a78662d5be7fcbcc98ebf5a8' +
+         '4807efe836ee89a526730dbc2f7bc8409dad8bbb96c4cdc03bc103e1a194bbd8']];
+  const cts = [];
+  for (const [len, expect] of CTS) {
+    cts.push({ key: hex(ctsKey), plain: hex(soup.subarray(0, len)),
+      expect: expect,
+      cipher: hex(await kc.ctsEncrypt(ctsKey, new Uint8Array(16),
+                                      soup.subarray(0, len))) });
+  }
+  for (const len of [0, 15, 16, 20, 33, 80]) {
+    const r = await attemptAsync(function () {
+      return kc.ctsEncrypt(keyFor(18, 0), new Uint8Array(16),
+                           new Uint8Array(len).fill(len));
+    });
+    cts.push({ key: hex(keyFor(18, 0)),
+               plain: hex(new Uint8Array(len).fill(len)),
+               cipher: r.ok ? hex(r.ok) : null, error: r.error || null });
+  }
+
+  // ---- messages ---------------------------------------------------------
+  const messages = [];
+  const tlvOf = function (b) { return asn1.readTlv(b, 0); };
+  // kind -> [read(bytes), encode(read result)]. A null encoder means Node
+  // has no encoder for that reader.
+  const KINDS = {
+    PrincipalName: [function (b) { return m.readPrincipalName(tlvOf(b)); },
+                    m.encPrincipalName],
+    EncryptedData: [function (b) { return m.readEncryptedData(tlvOf(b)); },
+                    m.encEncryptedData],
+    EncryptionKey: [function (b) { return m.readEncryptionKey(tlvOf(b)); },
+                    m.encEncryptionKey],
+    Checksum: [function (b) { return m.readChecksum(tlvOf(b)); },
+               m.encChecksum],
+    PaData: [function (b) { return m.readPaData(tlvOf(b)); }, m.encPaData],
+    HostAddresses: [function (b) { return m.readHostAddresses(tlvOf(b)); },
+                    m.encHostAddresses],
+    AuthorizationData: [function (b) {
+      return m.readAuthorizationData(tlvOf(b));
+    }, m.encAuthorizationData],
+    Ticket: [m.readTicket, m.encTicket],
+    EncTicketPart: [m.readEncTicketPart, m.encEncTicketPart],
+    KdcReqBody: [function (b) { return m.readKdcReqBody(tlvOf(b)); },
+                 m.encKdcReqBody],
+    KdcReq: [m.readKdcReq, m.encKdcReq],
+    KdcRep: [m.readKdcRep, m.encKdcRep],
+    EncKdcRepPart: [m.readEncKdcRepPart, function (p) {
+      return m.encEncKdcRepPart(p, p.taggedAs === 'EncTGSRepPart' ? 26 : 25);
+    }],
+    Authenticator: [m.readAuthenticator, m.encAuthenticator],
+    ApReq: [m.readApReq, m.encApReq],
+    ApRep: [m.readApRep, m.encApRep],
+    EncApRepPart: [m.readEncApRepPart, m.encEncApRepPart],
+    KrbError: [m.readKrbError, m.encKrbError],
+    PaEncTsEnc: [m.readPaEncTsEnc, function (p) {
+      return m.encPaEncTsEnc(p.patimestamp, p.pausec);
+    }],
+    EtypeInfo2: [m.readEtypeInfo2, m.encEtypeInfo2],
+    EtypeInfo: [m.readEtypeInfo, null],
+    PaPacRequest: [m.readPaPacRequest, function (p) {
+      return p.includePac === undefined ? null
+        : m.encPaPacRequest(p.includePac);
+    }],
+    PaForUser: [m.readPaForUser, m.encPaForUser],
+    PaPacOptions: [m.readPaPacOptions, function (p) {
+      return m.encPaPacOptions(p.flags);
+    }],
+    EncKrbCredPart: [m.readEncKrbCredPart, m.encEncKrbCredPart],
+    KrbCred: [m.readKrbCred, m.encKrbCred],
+    KdcResponse: [m.readKdcResponse, null],
+    'fast.Armor': [function (b) { return fc.readArmor(tlvOf(b)); },
+                   fc.encArmor],
+    'fast.FastRequest': [fc.readFastRequest, fc.encFastRequest],
+    'fast.FastReq': [fc.readFastReq, fc.encFastReq],
+    'fast.FastReply': [fc.readFastReply, fc.encFastReply],
+    'fast.FastResponse': [fc.readFastResponse, fc.encFastResponse],
+    'fast.FastFinished': [function (b) {
+      return fc.readFastFinished(tlvOf(b));
+    }, fc.encFastFinished],
+    'fast.OtpChallenge': [fc.readOtpChallenge, fc.encOtpChallenge],
+    'fast.TokenInfo': [function (b) { return fc.readTokenInfo(tlvOf(b)); },
+                       fc.encTokenInfo],
+    'fast.OtpRequest': [fc.readOtpRequest, fc.encOtpRequest],
+    'fast.OtpEncData': [fc.readOtpEncData, null],
+    'fast.VerifierMac': [function (b) {
+      return fc.readVerifierMac(tlvOf(b));
+    }, fc.encVerifierMac],
+    'fast.Cammac': [fc.readCammac, fc.encCammac],
+    'fast.Indicators': [fc.readIndicators, fc.encIndicators],
+    'pkinit.Krb5PrincipalName': [pc.readKrb5PrincipalName, function (p) {
+      return pc.encKrb5PrincipalName(p.realm, p.name);
+    }],
+    'pkinit.PaPkAsReq': [pc.readPaPkAsReq, pc.encPaPkAsReq],
+    'pkinit.AuthPack': [pc.readAuthPack, pc.encAuthPack],
+    'pkinit.KdfAlgorithmId': [function (b) {
+      return pc.readKdfAlgorithmId(tlvOf(b));
+    }, pc.encKdfAlgorithmId],
+    'pkinit.KdcDhKeyInfo': [pc.readKdcDhKeyInfo, pc.encKdcDhKeyInfo],
+    'pkinit.PaPkAsRep': [pc.readPaPkAsRep, pc.encPaPkAsRep],
+    'pkinit.TypedData': [pc.readTypedData, pc.encTypedData]
+  };
+  const add = function (kind, bytes, note) {
+    const [read, enc] = KINDS[kind];
+    const r = attempt(function () { return read(bytes); });
+    const row = { kind: kind, note: note || null, bytes: hex(bytes) };
+    if (r.error !== undefined) {
+      row.error = r.error;
+    } else {
+      row.decoded = norm(r.ok);
+      if (enc) {
+        const again = attempt(function () { return enc(r.ok); });
+        row.reencoded = again.ok ? hex(again.ok) : null;
+        const rebuilt = attempt(function () { return enc(stripRaw(r.ok)); });
+        row.rebuilt = rebuilt.ok ? hex(rebuilt.ok) : null;
+      }
+    }
+    messages.push(row);
+  };
+  // Raw DER helpers for hand-made inputs.
+  const tlv = function (tag, bytes) {
+    return asn1.tlv(tag, bytes);
+  };
+  const cat = function () {
+    return prim.concat(Array.prototype.slice.call(arguments));
+  };
+  const ctx = function (n, inner) { return asn1.encContext(n, inner); };
+  const seq = function () {
+    return asn1.encSequence(Array.prototype.slice.call(arguments));
+  };
+  const app = function (n, inner) { return asn1.encApplication(n, inner); };
+  const int = asn1.encInteger;
+  const gstr = asn1.encGeneralString;
+  const oct = asn1.encOctetString;
+  const ktime = asn1.encKerberosTime;
+
+  const alice = pn(1, ['alice']);
+  const krbtgt = pn(2, ['krbtgt', 'EXAMPLE.COM']);
+  const http = pn(3, ['HTTP', 'web.example.com']);
+  const enc1 = { etype: 18, kvno: 2, cipher: unhex('00112233445566778899') };
+  const enc2 = { etype: 23, cipher: new Uint8Array(0) };
+  const ticket = { realm: 'EXAMPLE.COM', sname: krbtgt, encPart: enc1 };
+  const ticketBytes = m.encTicket(ticket);
+  const ticket2 = { realm: 'PARTÉ.COM', sname: http,
+                    encPart: { etype: 17, kvno: 0, cipher: unhex('ff') } };
+  const t0 = T('2026-11-14T10:00:00Z');
+  const t1 = T('2026-11-14T20:00:00Z');
+  const t2 = T('2026-11-21T10:00:00Z');
+
+  add('PrincipalName', m.encPrincipalName(alice));
+  add('PrincipalName', m.encPrincipalName(pn(10, ['alice@example.com'])));
+  add('PrincipalName', m.encPrincipalName(pn(-128, [])));
+  add('PrincipalName', m.encPrincipalName(pn(3, ['host', 'a.b', 'x', 'é'])));
+  add('EncryptedData', m.encEncryptedData(enc1));
+  add('EncryptedData', m.encEncryptedData(enc2));
+  add('EncryptedData', m.encEncryptedData({ etype: 26, kvno: 70000,
+                                            cipher: unhex('01') }));
+  add('EncryptedData', m.encEncryptedData({ etype: 3, cipher: unhex('02') }));
+  add('EncryptionKey', m.encEncryptionKey({ etype: 20,
+                                            key: keyFor(20, 0) }));
+  add('Checksum', m.encChecksum({ type: -138, checksum: unhex('aa') }));
+  add('Checksum', m.encChecksum({ type: 0x8003,
+                                 checksum: new Uint8Array(24) }));
+  for (const t of [1, 2, 3, 11, 19, 128, 129, 130, 133, 136, 137, 138, 167,
+                   999]) {
+    add('PaData', m.encPaData({ type: t, value: unhex('3000') }));
+  }
+  add('PaData', seq(ctx(1, int(2))), 'a PA-DATA with no value');
+  add('HostAddresses', m.encHostAddresses([
+    { type: 2, address: unhex('c0a80001') },
+    { type: 24, address: unhex('20010db8000000000000000000000001') }]));
+  add('HostAddresses', m.encHostAddresses([]));
+  add('AuthorizationData', m.encAuthorizationData([
+    { type: 1, data: unhex('3000') }, { type: 128, data: unhex('0102') }]));
+  add('Ticket', ticketBytes);
+  add('Ticket', m.encTicket(ticket2));
+  const etp = { flags: [1, 8, 9, 10, 13, 15], key: { etype: 18,
+    key: keyFor(18, 1) }, crealm: 'EXAMPLE.COM', cname: alice,
+    transited: { type: 1, contents: utf('EXAMPLE.COM,') },
+    authtime: t0, starttime: t0, endtime: t1, renewTill: t2,
+    caddr: [{ type: 2, address: unhex('0a000001') }],
+    authorizationData: [{ type: 1, data: unhex('3003020101') }] };
+  add('EncTicketPart', m.encEncTicketPart(etp));
+  add('EncTicketPart', m.encEncTicketPart({ flags: [], key: { etype: 23,
+    key: keyFor(23, 0) }, crealm: 'R', cname: alice, authtime: t0,
+    endtime: t1, caddr: [], authorizationData: [] }));
+  const body = { kdcOptions: [1, 3, 8, 15, 27], cname: alice,
+    realm: 'EXAMPLE.COM', sname: krbtgt, from: t0, till: t1, rtime: t2,
+    nonce: 0x7fffffff, etypes: [18, 17, 20, 19, 23],
+    addresses: [{ type: 20, address: utf('WORKSTATION     ') }] };
+  add('KdcReqBody', m.encKdcReqBody(body));
+  add('KdcReqBody', m.encKdcReqBody({ realm: 'EXAMPLE.COM', till: t1,
+    nonce: 0, etypes: [], encAuthorizationData: enc1,
+    additionalTickets: [ticket, ticket2] }));
+  const tsEnc = m.encPaEncTsEnc(t0, 123456);
+  const asReq = { msgType: 10, padata: [
+    { type: 2, value: m.encEncryptedData({ etype: 18, cipher: tsEnc }) },
+    { type: 128, value: m.encPaPacRequest(true) },
+    { type: 167, value: m.encPaPacOptions([0, 3]) }], reqBody: body };
+  add('KdcReq', m.encKdcReq(asReq));
+  add('KdcReq', m.encKdcReq({ msgType: 10, reqBody: body }));
+  const apReq = { apOptions: [], ticket: ticket, authenticator: enc1 };
+  const tgsReq = { msgType: 12, padata: [
+    { type: 1, value: m.encApReq(apReq) },
+    { type: 129, value: m.encPaForUser({ userName: alice,
+      userRealm: 'EXAMPLE.COM', cksum: { type: -138,
+      checksum: new Uint8Array(16) } }) }],
+    reqBody: Object.assign({}, body, { cname: null, sname: http,
+      additionalTickets: [ticket] }) };
+  add('KdcReq', m.encKdcReq(tgsReq));
+  const asRep = { msgType: 11, padata: [{ type: 19,
+    value: m.encEtypeInfo2([{ etype: 18, salt: 'EXAMPLE.COMalice' }]) }],
+    crealm: 'EXAMPLE.COM', cname: alice, ticket: ticket, encPart: enc1 };
+  add('KdcRep', m.encKdcRep(asRep));
+  add('KdcRep', m.encKdcRep(Object.assign({}, asRep, { msgType: 13,
+    padata: [], ticket: ticket2 })));
+  const ekrp = { key: { etype: 18, key: keyFor(18, 0) },
+    lastReq: [{ type: 0, value: t0 }, { type: -6, value: t1 }],
+    nonce: -5, keyExpiration: t2, flags: [1, 9, 10], authtime: t0,
+    starttime: t0, endtime: t1, renewTill: t2, srealm: 'EXAMPLE.COM',
+    sname: krbtgt, caddr: [{ type: 2, address: unhex('7f000001') }],
+    encryptedPaData: [{ type: 149, value: unhex('00') }] };
+  add('EncKdcRepPart', m.encEncKdcRepPart(ekrp, 25));
+  add('EncKdcRepPart', m.encEncKdcRepPart(Object.assign({}, ekrp,
+    { lastReq: [], keyExpiration: null, encryptedPaData: [],
+      caddr: null }), 26));
+  const auth = { crealm: 'EXAMPLE.COM', cname: alice,
+    cksum: { type: 0x8003, checksum: gss.buildGssChecksum({
+      flags: [2, 32] }) }, cusec: 999999, ctime: t0,
+    subkey: { etype: 18, key: keyFor(18, 0) }, seqNumber: 0xffffffff,
+    authorizationData: [{ type: 141, data: unhex('00') }] };
+  add('Authenticator', m.encAuthenticator(auth));
+  add('Authenticator', m.encAuthenticator({ crealm: 'X', cname: alice,
+    ctime: t0 }));
+  add('ApReq', m.encApReq({ apOptions: [2], ticket: ticket,
+                            authenticator: enc1 }));
+  add('ApRep', m.encApRep({ encPart: enc1 }));
+  add('EncApRepPart', m.encEncApRepPart({ ctime: t0, cusec: 5,
+    subkey: { etype: 17, key: keyFor(17, 0) }, seqNumber: 12345 }));
+  add('EncApRepPart', m.encEncApRepPart({ ctime: t0 }));
+  const err0 = { stime: t0, susec: 0, errorCode: 25, realm: 'EXAMPLE.COM',
+    sname: krbtgt };
+  add('KrbError', m.encKrbError(err0));
+  add('KrbError', m.encKrbError(Object.assign({}, err0, { ctime: t1,
+    cusec: 7, crealm: 'EXAMPLE.COM', cname: alice, eText: 'need preauth',
+    eData: asn1.encSequence([m.encPaData({ type: 19,
+      value: m.encEtypeInfo2([{ etype: 18, salt: 'EXAMPLE.COMalice',
+      s2kparams: unhex('00001000') }, { etype: 23, salt: '' }]) }),
+      m.encPaData({ type: 2, value: new Uint8Array(0) })]) })));
+  for (const code of [0, 6, 14, 24, 37, 52, 60, 68, 93, 4242]) {
+    add('KrbError', m.encKrbError(Object.assign({}, err0,
+      { errorCode: code, crealm: '', eText: '' })));
+  }
+  add('KrbError', m.encKrbError(Object.assign({}, err0,
+    { eData: unhex('0102') })), 'e-data that is not PA-DATA');
+  add('KrbError', m.encKrbError(Object.assign({}, err0,
+    { eData: new Uint8Array(0) })), 'an empty e-data');
+  add('KrbError', m.encKrbError(Object.assign({}, err0,
+    { eData: seq(seq(ctx(2, oct(unhex('00'))))) })),
+      'PA-DATA without a type');
+  add('PaEncTsEnc', tsEnc);
+  add('PaEncTsEnc', m.encPaEncTsEnc(t1));
+  add('EtypeInfo2', m.encEtypeInfo2([{ etype: 18, salt: 'S',
+    s2kparams: unhex('00001000') }, { etype: 23 }, { etype: 25, salt: '' }]));
+  add('EtypeInfo', seq(seq(ctx(0, int(17)), ctx(1, oct(unhex('41e9')))),
+                       seq(ctx(0, int(3)))));
+  add('PaPacRequest', m.encPaPacRequest(true));
+  add('PaPacRequest', m.encPaPacRequest(false));
+  add('PaPacRequest', seq(), 'no field');
+  add('PaPacRequest', seq(ctx(0, tlv(1, new Uint8Array(0)))), 'empty BOOLEAN');
+  add('PaForUser', m.encPaForUser({ userName: pn(10, ['bob@example.com']),
+    userRealm: 'EXAMPLE.COM', cksum: { type: -138, checksum: unhex('11') },
+    authPackage: 'Kerberos' }));
+  add('PaPacOptions', m.encPaPacOptions([0, 1, 2, 3]));
+  const credPart = { ticketInfo: [
+    { key: { etype: 18, key: keyFor(18, 0) }, prealm: 'EXAMPLE.COM',
+      pname: alice, flags: [1, 2], authtime: t0, starttime: t0, endtime: t1,
+      renewTill: t2, srealm: 'EXAMPLE.COM', sname: krbtgt,
+      caddr: [{ type: 2, address: unhex('01020304') }] },
+    { key: { etype: 23, key: keyFor(23, 1) }, prealm: '', flags: [] }],
+    nonce: 42, timestamp: t0, usec: 1,
+    sAddress: { type: 2, address: unhex('01020304') },
+    rAddress: { type: 2, address: unhex('05060708') } };
+  add('EncKrbCredPart', m.encEncKrbCredPart(credPart));
+  add('EncKrbCredPart', m.encEncKrbCredPart({ ticketInfo: [] }));
+  add('KrbCred', m.encKrbCred({ tickets: [ticket, ticket2], encPart: enc1 }));
+  add('KdcResponse', m.encKdcRep(asRep));
+  add('KdcResponse', m.encKrbError(err0));
+
+  // Hand-made inputs Node reads leniently, and the refusals, with Node's
+  // sentence.
+  const ticketWith = function (realmTlv, extra) {
+    return app(1, seq(ctx(0, int(5)), ctx(1, realmTlv),
+      ctx(2, m.encPrincipalName(krbtgt)), ctx(3, m.encEncryptedData(enc1)),
+      extra || new Uint8Array(0)));
+  };
+  add('Ticket', ticketWith(tlv(0x16, utf('IA5.REALM'))), 'IA5String realm');
+  add('Ticket', ticketWith(tlv(0x1b, unhex('e9746f'))), 'Latin-1 realm');
+  add('Ticket', ticketWith(gstr('R'), ctx(9, int(1))), 'an unknown field');
+  add('Ticket', ticketWith(gstr('R'), ctx(1, gstr('LATER'))),
+      'a duplicate field: the later wins');
+  add('Ticket', app(1, seq(ctx(3, m.encEncryptedData(enc1)),
+    ctx(2, m.encPrincipalName(krbtgt)), ctx(1, gstr('R')), ctx(0, int(5)))),
+      'fields out of order');
+  add('Ticket', cat(unhex('61'), unhex('8200'), new Uint8Array(0)),
+      'a truncated long-form length');
+  add('Ticket', ticketWith(tlv(0x0c, utf('UTF8'))), 'a UTF8String realm');
+  add('Ticket', app(2, seq()), 'the wrong application');
+  add('Ticket', seq(), 'not an application');
+  add('Ticket', unhex('6180'), 'an indefinite length');
+  add('Ticket', unhex('6185ffffffffff'), 'a five-byte length');
+  add('Ticket', unhex('61'), 'one byte');
+  add('Ticket', unhex('610530033001'), 'a length past the end');
+  add('Ticket', app(1, cat(seq(), seq())), 'two elements');
+  add('Ticket', app(1, int(1)), 'not a SEQUENCE inside');
+  add('Ticket', app(1, seq(int(5))), 'a field that is not context-tagged');
+  add('Ticket', app(1, seq(ctx(0, cat(int(5), int(5))))), 'two in one tag');
+  add('Ticket', app(1, seq(ctx(0, int(5)))), 'no realm');
+  add('Ticket', app(1, seq(ctx(0, int(5)), ctx(1, gstr('R')))), 'no sname');
+  add('Ticket', app(1, seq(ctx(0, tlv(2, unhex('01020304050607'))))),
+      'a seven-byte INTEGER');
+  add('Ticket', app(1, seq(ctx(0, tlv(2, new Uint8Array(0))))),
+      'a zero-length INTEGER');
+  add('Ticket', app(1, seq(ctx(0, tlv(2, unhex('800000000000'))))),
+      'a six-byte negative INTEGER');
+  add('Ticket', app(1, seq(ctx(0, int(5)), ctx(1, oct(utf('R'))))),
+      'an OCTET STRING realm');
+  add('EncApRepPart', app(27, seq(ctx(0, tlv(0x18, utf('20261332256161Z'))),
+    ctx(1, int(0)))), 'a KerberosTime that rolls over');
+  add('EncApRepPart', app(27, seq(ctx(0, tlv(0x18, utf('00500101000000Z'))),
+    ctx(1, int(0)))), 'a two-digit year');
+  add('EncApRepPart', app(27, seq(ctx(0, tlv(0x18, utf('2026010100000Z'))),
+    ctx(1, int(0)))), 'a short KerberosTime');
+  add('EncApRepPart', app(27, seq(ctx(0, tlv(0x18,
+    utf('20260101000000.5Z'))), ctx(1, int(0)))), 'fractional seconds');
+  add('EncApRepPart', app(27, seq(ctx(0, tlv(0x18, unhex('22'))),
+    ctx(1, int(0)))), 'a quote in a KerberosTime');
+  add('EncApRepPart', app(27, seq(ctx(1, int(0)))), 'no ctime');
+  add('KdcReq', app(10, seq(ctx(1, int(4)), ctx(2, int(10)),
+    ctx(4, m.encKdcReqBody(body)))), 'pvno 4');
+  add('KdcReq', app(11, seq()), 'an AS-REP');
+  add('KdcReq', app(10, seq(ctx(1, int(5)), ctx(2, int(10)))), 'no body');
+  add('KdcReq', app(10, seq(ctx(1, int(5)), ctx(2, int(10)),
+    ctx(4, seq(ctx(0, tlv(3, new Uint8Array(0))))))), 'an empty BIT STRING');
+  add('KdcReq', app(10, seq(ctx(1, int(5)), ctx(2, int(10)),
+    ctx(4, seq(ctx(0, tlv(3, unhex('000102')))))) ), 'a short body');
+  add('KdcRep', app(10, seq()), 'an AS-REQ');
+  add('KdcRep', app(11, seq(ctx(0, int(5)), ctx(1, int(11)),
+    ctx(3, gstr('R')), ctx(4, m.encPrincipalName(alice)))), 'no ticket');
+  add('EncKdcRepPart', app(27, seq()), 'an EncAPRepPart');
+  add('KrbCred', app(22, seq(ctx(0, int(5)), ctx(1, int(21)))),
+      'the wrong msg-type');
+  add('KrbCred', app(22, seq(ctx(0, int(5)), ctx(1, int(22)),
+    ctx(2, seq()), ctx(3, m.encEncryptedData(enc1)))), 'no tickets');
+  add('EncKrbCredPart', app(29, seq(ctx(0, seq(seq(ctx(1, gstr('R'))))))),
+      'a KrbCredInfo with no key');
+  add('KdcResponse', unhex('3000'), 'not a message');
+  add('KdcResponse', m.encApRep({ encPart: enc1 }), 'an AP-REP');
+  add('KrbError', app(30, seq(ctx(0, int(5)))), 'no error-code');
+  add('Authenticator', app(2, seq(ctx(0, int(5)), ctx(1, gstr('R')),
+    ctx(2, m.encPrincipalName(alice)), ctx(4, int(0)),
+    ctx(5, tlv(0x17, utf('261114100000Z'))))), 'a UTCTime ctime');
+  let deep = int(1);
+  for (let i = 0; i < 40; i++) {
+    deep = seq(deep);
+  }
+  add('PrincipalName', deep, 'forty SEQUENCEs deep');
+
+  // ---- FAST ---------------------------------------------------------
+  const fastReq = { fastOptions: [1], padata: [{ type: 133,
+    value: utf('cookie') }], reqBody: body };
+  const fastReqBytes = fc.encFastReq(fastReq);
+  add('fast.FastReq', fastReqBytes);
+  add('fast.FastReq', fc.encFastReq({ reqBody: body }));
+  add('fast.Armor', fc.encArmor({ type: 1, value: m.encApReq(apReq) }));
+  add('fast.FastRequest', fc.encFastRequest({
+    armor: { type: 1, value: m.encApReq(apReq) },
+    reqChecksum: { type: 16, checksum: new Uint8Array(12) },
+    encFastReq: enc1 }));
+  add('fast.FastRequest', fc.encFastRequest({
+    reqChecksum: { type: 16, checksum: new Uint8Array(12) },
+    encFastReq: enc1 }));
+  add('fast.FastReply', fc.encFastReply(enc1));
+  const fin = { timestamp: t0, usec: 77, crealm: 'EXAMPLE.COM',
+    cname: alice, ticketChecksum: { type: 16, checksum: unhex('ab') } };
+  add('fast.FastFinished', fc.encFastFinished(fin));
+  add('fast.FastResponse', fc.encFastResponse({ padata: [{ type: 133,
+    value: utf('c2') }], strengthenKey: { etype: 18, key: keyFor(18, 1) },
+    finished: fin, nonce: 31337 }));
+  add('fast.FastResponse', fc.encFastResponse({ nonce: 0 }));
+  const tokenInfos = [
+    { flags: [1, 3], vendor: 'Iya', challenge: unhex('0102'), length: 6,
+      format: 0, tokenId: utf('tok-1'), algId: 'hotp' },
+    { flags: [] },
+    { flags: [5], length: 0, format: 4 }];
+  tokenInfos.forEach(function (ti) {
+    add('fast.TokenInfo', fc.encTokenInfo(ti));
+  });
+  add('fast.OtpChallenge', fc.encOtpChallenge({ nonce: unhex('aabbcc'),
+    service: 'EXAMPLE OTP', tokenInfo: tokenInfos, salt: 'EXAMPLE.COMalice',
+    s2kparams: unhex('00001000') }));
+  add('fast.OtpChallenge', fc.encOtpChallenge({ nonce: unhex('00'),
+    tokenInfo: [] }));
+  add('fast.OtpRequest', fc.encOtpRequest({ flags: [1], nonce: unhex('aa'),
+    encData: enc1, value: '123456', pin: '0000', time: t0,
+    vendor: 'Iya' }));
+  add('fast.OtpRequest', fc.encOtpRequest({ encData: enc1, pin: '' }));
+  add('fast.OtpRequest', seq(tlv(0x80, unhex('0000000000')),
+    tlv(0xa2, m.encEncryptedData(enc1).subarray(2)),
+    tlv(0x83, unhex('00')), tlv(0x84, unhex('05')),
+    tlv(0x85, unhex('e9'))), 'a hashed OTP, a Latin-1 value');
+  add('fast.OtpRequest', seq(tlv(0x80, unhex('0000000000')),
+    tlv(0x84, unhex('00')), tlv(0xa2,
+    m.encEncryptedData(enc1).subarray(2))), 'an iteration count of 0');
+  add('fast.OtpRequest', seq(tlv(0x80, unhex('0000000000'))),
+      'no encData');
+  add('fast.OtpRequest', seq(int(1)), 'a universal field');
+  add('fast.OtpEncData', m.encPaEncTsEnc(t0));
+  add('fast.OtpEncData', fc.encOtpEncRequest(unhex('0102')));
+  add('fast.OtpEncData', seq(int(1)), 'neither');
+  add('fast.OtpEncData', int(1), 'not a SEQUENCE');
+  const vmac = { identifier: krbtgt, kvno: 3, enctype: 18,
+    mac: { type: 16, checksum: unhex('00') } };
+  add('fast.VerifierMac', fc.encVerifierMac(vmac));
+  add('fast.VerifierMac', fc.encVerifierMac({ mac: vmac.mac }));
+  const elements = m.encAuthorizationData([{ type: 97,
+    data: fc.encIndicators(['otp', 'pkinit']) }]);
+  add('fast.Cammac', fc.encCammac({ elementsBytes: elements,
+    kdcVerifier: vmac, svcVerifier: vmac }));
+  add('fast.Cammac', fc.encCammac({ elementsBytes: elements }));
+  add('fast.Indicators', fc.encIndicators(['otp', 'hardened', 'é']));
+  add('fast.Indicators', fc.encIndicators([]));
+  add('fast.Indicators', seq(tlv(0x0c, unhex('ff61'))), 'malformed UTF-8');
+  add('fast.Indicators', seq(gstr('otp')), 'a GeneralString');
+  add('fast.FastRequest', ctx(1, seq()), 'the wrong tag');
+  add('fast.FastRequest', ctx(0, cat(seq(), seq())), 'two elements');
+  add('fast.FastRequest', ctx(0, int(1)), 'not a SEQUENCE');
+  add('fast.FastRequest', ctx(0, seq()), 'no checksum');
+  add('fast.FastResponse', seq(ctx(0, seq())), 'no nonce');
+  add('fast.Cammac', seq(), 'no elements');
+  add('fast.TokenInfo', seq(), 'no flags');
+
+  // ---- PKINIT -------------------------------------------------------
+  add('pkinit.Krb5PrincipalName', pc.encKrb5PrincipalName('EXAMPLE.COM',
+    alice));
+  add('pkinit.PaPkAsReq', pc.encPaPkAsReq({ signedAuthPack: unhex('3003'),
+    kdcPkId: unhex('0405') }));
+  add('pkinit.PaPkAsReq', pc.encPaPkAsReq({ signedAuthPack: unhex('30') }));
+  add('pkinit.PaPkAsReq', seq(tlv(0x80, unhex('01')), tlv(0xa1, seq()),
+    tlv(0x82, unhex('02'))), 'with trustedCertifiers');
+  add('pkinit.PaPkAsReq', seq(tlv(0xa0, unhex('0400'))),
+      'a constructed signedAuthPack');
+  add('pkinit.PaPkAsReq', seq(), 'no signedAuthPack');
+  const KDFS = ['1.3.6.1.5.2.3.6.1', '1.3.6.1.5.2.3.6.2',
+                '1.3.6.1.5.2.3.6.3', '2.999.1', '1.2.840.113549.1.1.11'];
+  add('pkinit.AuthPack', pc.encAuthPack({ cusec: 1, ctime: t0, nonce: 99,
+    paChecksum: new Uint8Array(20), freshnessToken: unhex('0f'),
+    clientPublicValue: seq(seq(tlv(6, unhex('2a8648ce3d0201'))),
+      tlv(3, unhex('0004'))), clientDhNonce: unhex('aa55'),
+    supportedKdfs: KDFS }));
+  add('pkinit.AuthPack', pc.encAuthPack({ cusec: 0, ctime: t0, nonce: 0 }));
+  add('pkinit.AuthPack', seq(ctx(0, seq(ctx(0, int(0)), ctx(1, ktime(t0)),
+    ctx(2, int(1)))), ctx(2, seq(seq(), seq(), seq()))),
+      'three supportedCMSTypes');
+  KDFS.forEach(function (oid) {
+    add('pkinit.KdfAlgorithmId', pc.encKdfAlgorithmId(oid));
+  });
+  add('pkinit.KdcDhKeyInfo', pc.encKdcDhKeyInfo({
+    subjectPublicKey: unhex('0201ff'), nonce: 7 }));
+  add('pkinit.KdcDhKeyInfo', seq(ctx(0, tlv(3, unhex('0700'))),
+    ctx(1, int(1))), 'unused bits');
+  add('pkinit.PaPkAsRep', pc.encPaPkAsRep({ dhSignedData: unhex('3000'),
+    kdf: KDFS[1] }));
+  add('pkinit.PaPkAsRep', pc.encPaPkAsRep({ dhSignedData: unhex('3000') }));
+  add('pkinit.PaPkAsRep', ctx(0, cat(tlv(0x80, unhex('3000')),
+    ctx(2, pc.encKdfAlgorithmId(KDFS[0])))), 'the implicit form');
+  add('pkinit.PaPkAsRep', ctx(1, oct(unhex('00'))), 'encKeyPack');
+  add('pkinit.PaPkAsRep', ctx(0, seq()), 'no dhSignedData');
+  add('pkinit.TypedData', pc.encTypedData([{ type: 104,
+    value: unhex('3000') }, { type: 109 }]));
+  const otherInfo = pc.encOtherInfo({ kdf: KDFS[0], client: utf('client'),
+    server: utf('server'), etype: 18, asReq: m.encKdcReq(asReq),
+    pkAsRep: pc.encPaPkAsRep({ dhSignedData: unhex('3000') }) });
+  const epis = [{ subjectName: unhex('3000'),
+    issuerAndSerialNumber: unhex('3003020101'),
+    subjectKeyIdentifier: unhex('0102') }, {}];
+  const pkinit = {
+    otherInfo: { kdf: KDFS[0], client: hex(utf('client')),
+      server: hex(utf('server')), etype: 18, asReq: hex(m.encKdcReq(asReq)),
+      pkAsRep: hex(pc.encPaPkAsRep({ dhSignedData: unhex('3000') })),
+      bytes: hex(otherInfo) },
+    epis: epis.map(function (e) {
+      return { subjectName: e.subjectName ? hex(e.subjectName) : null,
+        issuerAndSerialNumber: e.issuerAndSerialNumber
+          ? hex(e.issuerAndSerialNumber) : null,
+        subjectKeyIdentifier: e.subjectKeyIdentifier
+          ? hex(e.subjectKeyIdentifier) : null,
+        bytes: hex(pc.encExternalPrincipalIdentifier(e)) };
+    }),
+    initialVerifiedCas: norm(pc.initialVerifiedCas(epis)),
+    oids: ['1.2', '2.999', '2.999.3', '1.2.840.113549',
+           '1.3.6.1.4.1.311.20.2.3', '0.0', '2.40.18446744073709551616']
+      .map(function (oid) {
+        const enc = hex(pc.encOid(oid));
+        return { oid: oid, bytes: enc,
+                 back: pc.decOid(asn1.readTlv(unhex(enc), 0)) };
+      })
+  };
+
+  // ---- tree, identify, principals, flags, errors ----------------------
+  const tree = [m.encKdcReq(asReq), m.encKrbError(err0), deep,
+    seq(tlv(0x1b, unhex('e9')), tlv(2, unhex('01020304050607')),
+        tlv(3, unhex('0080000001')), tlv(0x04, new Uint8Array(80)),
+        tlv(0x05, new Uint8Array(0)), tlv(0x30, new Uint8Array(0)),
+        tlv(0x31, int(1)), tlv(0xc1, unhex('00')), tlv(0xe2, int(1)),
+        tlv(0x9f, unhex('01')), tlv(0x13, utf('P')), tlv(0x41, unhex('00')),
+        tlv(0x30, unhex('0201'))),
+    unhex('3003020101ff')]
+    .map(function (b) {
+      const r = attempt(function () { return asn1.tree(b); });
+      return { bytes: hex(b), tree: r.ok ? norm(r.ok) : null,
+               error: r.error || null };
+    });
+  const identify = [m.encKdcReq(asReq), m.encTicket(ticket), unhex('7f00'),
+    unhex('6c'), unhex('3000'), new Uint8Array(0), app(30, seq())]
+    .map(function (b) { return { bytes: hex(b), id: m.identify(b) }; });
+  const principals = [];
+  [['alice', undefined], ['alice@EXAMPLE.COM', undefined],
+   ['krbtgt/EXAMPLE.COM@EXAMPLE.COM', undefined],
+   ['HTTP/web.example.com', undefined], ['  a//b/ @R  ', undefined],
+   ['@R', undefined], ['user@host@REALM', undefined], ['', undefined],
+   ['//', undefined], ['bob@example.com@EXAMPLE.COM', 10],
+   ['krbtgt', undefined]].forEach(function (c) {
+    const r = attempt(function () { return m.parsePrincipal(c[0], c[1]); });
+    principals.push({ text: c[0], defaultType: c[1] === undefined
+      ? null : c[1], parsed: r.ok ? norm(r.ok) : null,
+      error: r.error || null,
+      text2: r.ok ? m.principalToString(r.ok, r.ok.realm) : null });
+  });
+  const allBits = [];
+  for (let i = 0; i < 33; i++) {
+    allBits.push(i);
+  }
+  const flags = { kdc: m.kdcOptionNames(allBits),
+    ticket: m.ticketFlagNames(allBits), ap: m.apOptionNames(allBits),
+    fromBits: hex(asn1.flagsFromBits([0, 7, 8, 31])),
+    bits: asn1.bitsFromFlags(unhex('8001ff00')) };
+  const errorsTable = [];
+  for (let c = -1; c <= 100; c++) {
+    errorsTable.push(m.describeError(c));
+  }
+  const ints = [0, 1, -1, 127, 128, -128, -129, 255, 256, 32767, -32768,
+    65535, 0x7fffffff, -0x80000000, 0xffffffff, 2 ** 40, -(2 ** 40),
+    2 ** 47 - 1, -(2 ** 47)].map(function (v) {
+    return { value: v, der: hex(asn1.encInteger(v)) };
+  });
+  const times = ['2026-11-14T10:00:00Z', '1970-01-01T00:00:00Z',
+    '2038-01-19T03:14:08Z', '1999-12-31T23:59:59Z', '9999-12-31T23:59:59Z',
+    '1000-01-01T00:00:00Z', '2000-02-29T12:00:00Z']
+    .map(function (s) {
+      return { iso: s, secs: Date.parse(s) / 1000,
+               der: hex(asn1.encKerberosTime(T(s))) };
+    });
+
+  // ---- GSS ----------------------------------------------------------
+  const cred = m.encKrbCred({ tickets: [ticket], encPart: enc1 });
+  const gssChecksums = [
+    { flags: [] }, { flags: [2, 32, 8] },
+    { flags: [1, 2], delegation: cred },
+    { flags: [2], channelBindings: new Uint8Array(16).fill(0xcb) },
+    { flags: [2], extensions: unhex('deadbeef') },
+    { flags: [2], channelBindings: new Uint8Array(15) },
+    { flags: [2], delegation: cred }].map(function (o) {
+    const r = attempt(function () { return gss.buildGssChecksum(o); });
+    return { flags: o.flags,
+      channelBindings: o.channelBindings ? hex(o.channelBindings) : null,
+      delegation: o.delegation ? hex(o.delegation) : null,
+      extensions: o.extensions ? hex(o.extensions) : null,
+      bytes: r.ok ? hex(r.ok) : null, error: r.error || null };
+  });
+  const parsedChecksums = gssChecksums.filter(function (c) {
+    return c.bytes;
+  }).map(function (c) { return unhex(c.bytes); }).concat([
+    new Uint8Array(23), cat(unhex('00000010'), new Uint8Array(20)),
+    cat(unhex('11000000'), new Uint8Array(20)),
+    cat(unhex('10000000'), new Uint8Array(16), unhex('01000000'),
+        unhex('0100')),
+    cat(unhex('10000000'), new Uint8Array(16), unhex('01000000'),
+        unhex('01000900'), unhex('aa'))]).map(function (b) {
+    const r = attempt(function () { return gss.parseGssChecksum(b); });
+    return { bytes: hex(b), parsed: r.ok ? norm(r.ok) : null,
+             error: r.error || null };
+  });
+  const apReqBytes = m.encApReq(apReq);
+  const ict = [gss.encodeInitialContextToken(gss.TOK_ID.AP_REQ, apReqBytes),
+    gss.encodeInitialContextToken(gss.TOK_ID.AP_REP, unhex('00')),
+    gss.encodeInitialContextToken([9, 9], new Uint8Array(0)),
+    gss.encodeInitialContextToken(gss.TOK_ID.KRB_ERROR,
+                                  new Uint8Array(300)),
+    apReqBytes, new Uint8Array(0), unhex('6003060100'),
+    cat(unhex('600a'), sp.SPNEGO_OID_DER, unhex('a000')),
+    cat(unhex('600d'), unhex('060b2b06010401823702020a'),
+        unhex('00')),
+    cat(unhex('600b'), gss.KRB5_MECH_OID_DER),
+    cat(unhex('600c'), gss.KRB5_MECH_OID_DER, unhex('01'))]
+    .map(function (b) {
+      const r = attempt(function () {
+        return gss.decodeInitialContextToken(b);
+      });
+      return { bytes: hex(b), decoded: r.ok ? norm(r.ok) : null,
+               error: r.error || null };
+    });
+  const mics = [];
+  const wraps = [];
+  const message = utf('a GSS message, of no particular length');
+  for (const id of IDS) {
+    const key = keyFor(id, 0);
+    for (const role of ['initiator', 'acceptor']) {
+      for (const sub of [false, true]) {
+        for (const seqNo of [0, 1, 0xffffffff, 2 ** 40 + 5]) {
+          const token = await gss.getMic({ key: key, etype: id, role: role,
+            acceptorSubkey: sub, message: message, sequenceNumber: seqNo });
+          const tampered = new Uint8Array(token);
+          tampered[token.length - 1] ^= 1;
+          mics.push({ etype: id, key: hex(key), role: role,
+            acceptorSubkey: sub, sequenceNumber: seqNo,
+            message: hex(message), token: hex(token),
+            verdict: norm(await gss.verifyMic({ key: key, etype: id,
+              token: token, message: message })),
+            tampered: hex(tampered),
+            tamperedVerdict: norm(await gss.verifyMic({ key: key, etype: id,
+              token: tampered, message: message })) });
+        }
+        for (const [ec, rrc] of [[0, 0], [0, 28], [16, 0], [3, 12],
+                                 [0, 1000]]) {
+          const token = await gss.wrap({ key: key, etype: id, role: role,
+            acceptorSubkey: sub, message: message, sequenceNumber: 77,
+            extraCount: ec, rrc: rrc });
+          wraps.push({ etype: id, key: hex(key), role: role,
+            acceptorSubkey: sub, sequenceNumber: 77, extraCount: ec,
+            rrc: rrc, message: hex(message), token: hex(token),
+            unwrapped: norm(await gss.unwrap({ key: key, etype: id,
+              token: token })) });
+        }
+      }
+    }
+  }
+  const unwrapErrors = [];
+  const okWrap = unhex(wraps[0].token);
+  const badHeader = new Uint8Array(okWrap);
+  badHeader[2] ^= 0x04;
+  const unsealed = new Uint8Array(okWrap);
+  unsealed[2] &= ~0x02;
+  for (const t of [okWrap.subarray(0, 10), unhex('0404' + '00'.repeat(20)),
+                   unsealed, badHeader]) {
+    const r = await attemptAsync(function () {
+      return gss.unwrap({ key: keyFor(17, 0), etype: 17, token: t });
+    });
+    unwrapErrors.push({ etype: 17, key: hex(keyFor(17, 0)), token: hex(t),
+                        error: r.error || null });
+  }
+  for (const t of [unhex('0404'), unhex('0504' + '00'.repeat(20))]) {
+    const r = await attemptAsync(function () {
+      return gss.verifyMic({ key: keyFor(17, 0), etype: 17, token: t,
+                             message: message });
+    });
+    unwrapErrors.push({ etype: 17, key: hex(keyFor(17, 0)), token: hex(t),
+                        mic: true, error: r.error || null });
+  }
+  const rotations = [];
+  for (const n of [0, 1, 5, 9, 10, 23]) {
+    rotations.push({ count: n, bytes: '00010203040506070809',
+      right: hex(gss.rotateRight(unhex('00010203040506070809'), n)),
+      left: hex(gss.rotateLeft(unhex('00010203040506070809'), n)) });
+  }
+
+  // ---- SPNEGO -------------------------------------------------------
+  const inits = [
+    { mechTypes: undefined },
+    { mechTypes: [sp.MS_KRB5_MECH_OID, sp.KRB5_MECH_OID,
+      '1.3.6.1.4.1.311.2.2.10'], mechToken: unhex('6000'),
+      mechListMic: unhex('0404') },
+    { mechTypes: ['1.3.6.1.4.1.311.2.2.30', '1.2.840.113554.1.2.2.3'] },
+    { mechTypes: [] }, { mechTypes: [sp.SPNEGO_OID] },
+    { mechTypes: ['1'] }, { mechTypes: ['3.1'] }, { mechTypes: ['1.40'] },
+    { mechTypes: ['2.100.3'] }, { mechTypes: ['1..2'] },
+    { mechTypes: ['1.x'] }].map(function (o) {
+    const r = attempt(function () { return sp.encodeNegTokenInit(o); });
+    return { mechTypes: o.mechTypes === undefined ? null : o.mechTypes,
+      mechToken: o.mechToken ? hex(o.mechToken) : null,
+      mechListMic: o.mechListMic ? hex(o.mechListMic) : null,
+      token: r.ok ? hex(r.ok.token) : null,
+      mechListDer: r.ok ? hex(r.ok.mechListDer) : null,
+      error: r.error || null };
+  });
+  const resps = [{ negState: 0, supportedMech: sp.KRB5_MECH_OID,
+    responseToken: unhex('6f00') }, { negState: 1 }, { negState: 2 },
+    { negState: 3, mechListMic: unhex('00') }, { negState: 7 },
+    { supportedMech: sp.MS_KRB5_MECH_OID }, {},
+    { responseToken: new Uint8Array(0) }].map(function (o) {
+    return { negState: o.negState === undefined ? null : o.negState,
+      supportedMech: o.supportedMech || null,
+      responseToken: o.responseToken ? hex(o.responseToken) : null,
+      mechListMic: o.mechListMic ? hex(o.mechListMic) : null,
+      token: hex(sp.encodeNegTokenResp(o)) };
+  });
+  const spOid = sp.SPNEGO_OID_DER;
+  const wrapInit = function (inner) {
+    const b = cat(spOid, ctx(0, inner));
+    return cat(unhex('60'), asn1.encodeLength(b.length), b);
+  };
+  const negTokens = inits.filter(function (i) { return i.token; })
+    .map(function (i) { return unhex(i.token); })
+    .concat(resps.map(function (r) { return unhex(r.token); }))
+    .concat([
+      wrapInit(seq(ctx(0, seq(sp.encodeOid(sp.KRB5_MECH_OID))),
+        ctx(1, tlv(3, unhex('0002'))), ctx(3, seq(ctx(0, gstr('hint')),
+        ctx(1, oct(unhex('0a'))))))),
+      wrapInit(seq(ctx(0, seq(sp.encodeOid(sp.SPNEGO_OID))),
+        ctx(4, oct(unhex('01'))), ctx(7, int(1)))),
+      wrapInit(seq()), wrapInit(int(1)),
+      cat(unhex('600c'), spOid, ctx(1, seq())),
+      cat(unhex('6009'), spOid, unhex('02')),
+      ctx(1, seq(ctx(0, int(2)), ctx(9, int(1)))),
+      ctx(1, seq(ctx(0, tlv(4, unhex('01'))))),
+      ctx(1, int(0)), new Uint8Array(0), unhex('6e00'), unhex('3000'),
+      gss.encodeInitialContextToken(gss.TOK_ID.AP_REQ, apReqBytes),
+      cat(unhex('600d'), unhex('060b2b06010401823702020a'), unhex('00')),
+      cat(unhex('6004'), unhex('06028f00')),
+      cat(unhex('6003'), unhex('0a0100'))]);
+  const decodedTokens = negTokens.map(function (b) {
+    const r = attempt(function () { return sp.decodeNegotiationToken(b); });
+    return { bytes: hex(b), decoded: r.ok ? norm(r.ok) : null,
+             error: r.error || null };
+  });
+  const oids = ['1.2.840.113554.1.2.2', '1.3.6.1.5.5.2', '2.5', '0.39',
+    '1.2.840.48018.1.2.2', '1.3.6.1.4.1.311.2.2.10', '2.100.3',
+    '1.2.4294967296', '2.999.3'].map(function (oid) {
+    const r = attempt(function () { return sp.encodeOidContent(oid); });
+    return { oid: oid, content: r.ok ? hex(r.ok) : null,
+      back: r.ok ? sp.decodeOidContent(r.ok) : null,
+      error: r.error || null };
+  });
+  ['', '80', '2a86', '7f', 'ff7f'].forEach(function (h) {
+    const r = attempt(function () { return sp.decodeOidContent(unhex(h)); });
+    oids.push({ oid: null, content: h, back: r.ok || null,
+                error: r.error || null });
+  });
+  const micLists = [];
+  for (const id of IDS) {
+    const der = unhex(inits[1].mechListDer);
+    const mic = await sp.computeMechListMic({ key: keyFor(id, 1), etype: id,
+      role: 'acceptor', acceptorSubkey: true, mechListDer: der,
+      sequenceNumber: 9 });
+    micLists.push({ etype: id, key: hex(keyFor(id, 1)), role: 'acceptor',
+      acceptorSubkey: true, sequenceNumber: 9, mechListDer: hex(der),
+      mic: hex(mic), verdict: norm(await sp.verifyMechListMic({
+        key: keyFor(id, 1), etype: id, mic: mic, mechListDer: der })) });
+  }
+  const requirements = [[[sp.KRB5_MECH_OID], sp.KRB5_MECH_OID],
+    [[sp.MS_KRB5_MECH_OID, sp.KRB5_MECH_OID], sp.KRB5_MECH_OID],
+    [[], sp.KRB5_MECH_OID], [[sp.KRB5_MECH_OID], null],
+    [['9.9'], '9.9'], [['9.9', '1.3.6.1.4.1.311.2.2.10'],
+                       '1.3.6.1.4.1.311.2.2.10']]
+    .map(function (c) {
+      return { mechTypes: c[0], selected: c[1],
+               requirement: sp.micRequirement(c[0], c[1]) };
+    });
+  const negStates = [-1, 0, 1, 2, 3, 4].map(function (v) {
+    return { value: v, info: sp.negStateInfo(v) };
+  });
+
+  // ---- MS-KKDCP -----------------------------------------------------
+  // The /KdcProxy handler's own reading (krb5_kdc.js), line for line, and
+  // the cell router's (krb5_home.ts's messageOf()).
+  let home = null;
+  try {
+    home = require(path.join(K, 'krb5_home'));
+  } catch (e) {
+    console.error('krb5_home did not load: ' + ((e && e.message) || e));
+  }
+  const proxyRead = function (body) {
+    if (!body || !body.length) {
+      return { refusal: 'STS-KRB-0055',
+               body: 'a KDC-PROXY-MESSAGE is required' };
+    }
+    let framed;
+    try {
+      const outer = asn1.readTlv(prim.toBytes(body), 0);
+      const fields = asn1.readTaggedSequence(outer.value);
+      framed = asn1.decOctetString(fields[0]);
+    } catch (e) {
+      return { refusal: 'STS-KRB-0056',
+               body: 'the KDC-PROXY-MESSAGE does not decode: ' + e.message };
+    }
+    if (framed.length < 4) {
+      return { refusal: 'STS-KRB-0057',
+               body: 'the kerb-message is too short to be framed' };
+    }
+    const declared = (framed[0] << 24 | framed[1] << 16 | framed[2] << 8 |
+                      framed[3]) >>> 0;
+    return { message: hex(framed.subarray(4, 4 + declared)) };
+  };
+  const frame = function (reply) {
+    const out = new Uint8Array(4 + reply.length);
+    out[0] = (reply.length >>> 24) & 255;
+    out[1] = (reply.length >>> 16) & 255;
+    out[2] = (reply.length >>> 8) & 255;
+    out[3] = reply.length & 255;
+    out.set(reply, 4);
+    return out;
+  };
+  const asReqBytes = m.encKdcReq(asReq);
+  const kkdcp = [
+    seq(ctx(0, oct(frame(asReqBytes)))),
+    seq(ctx(0, oct(frame(asReqBytes))), ctx(1, gstr('EXAMPLE.COM')),
+        ctx(2, int(0))),
+    seq(ctx(0, oct(cat(unhex('00000003'), unhex('0102'))))),
+    seq(ctx(0, oct(cat(unhex('00000001'), unhex('010203'))))),
+    seq(ctx(0, oct(unhex('000000')))), seq(ctx(0, oct(new Uint8Array(0)))),
+    seq(), seq(ctx(0, int(1))), unhex('30'), unhex('300a'),
+    new Uint8Array(0), int(1)].map(function (b) {
+    return { body: hex(b), read: proxyRead(b),
+             messageOf: home ? (function () {
+               const got = home.messageOf(Buffer.from(b));
+               return got ? hex(got) : null;
+             })() : 'unavailable' };
+  });
+  const replies = [asReqBytes, m.encKrbError(err0), new Uint8Array(0),
+    new Uint8Array(300)].map(function (r) {
+    return { reply: hex(r),
+             envelope: hex(asn1.encSequence([asn1.encContext(0,
+               asn1.encOctetString(frame(r)))])) };
+  });
+
+  // ---- the keytab file format (krb5_keytab.ts) ----------------------
+  const kt = require(path.join(K, 'krb5_keytab'));
+  const ktEntries = [
+    { realm: 'EXAMPLE.COM', components: ['HTTP', 'web.example.com'],
+      timestamp: 1800000000, kvno: 3, etype: 18, key: keyFor(18, 0) },
+    { realm: 'EXAMPLE.COM', components: ['host', 'hé.example.com'],
+      nameType: 3, timestamp: 4294967297, kvno: 300, etype: -138,
+      key: keyFor(23, 0) },
+    // Not 0: Node writes `timestamp || now`, so 0 is the time of writing.
+    { realm: '', components: ['x'], timestamp: 1, kvno: 0, etype: 23,
+      key: unhex('01') }];
+  const keytab = { written: [], read: [] };
+  [[ktEntries[0]], ktEntries, [], [{ realm: 'R', components: [],
+    timestamp: 0, kvno: 1, etype: 17, key: unhex('01') }],
+   [{ realm: 'R', components: ['a', ''], timestamp: 0, kvno: 1, etype: 17,
+      key: unhex('01') }],
+   [{ realm: 'R', components: ['a'], timestamp: 0, kvno: 1, etype: 17,
+      key: new Uint8Array(0) }],
+   [{ realm: 'R', components: ['a'.repeat(70000)], timestamp: 0, kvno: 1,
+      etype: 17, key: unhex('01') }]].forEach(function (list) {
+    const r = attempt(function () { return kt.writeKeytab(list); });
+    keytab.written.push({ entries: list.map(function (e) {
+      return { realm: e.realm, components: e.components,
+               nameType: e.nameType === undefined ? null : e.nameType,
+               timestamp: e.timestamp, kvno: e.kvno, etype: e.etype,
+               key: hex(e.key) };
+    }), bytes: r.ok ? hex(r.ok) : null, error: r.error || null });
+  });
+  const goodTab = kt.writeKeytab(ktEntries);
+  const be32 = function (n) {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setInt32(0, n);
+    return b;
+  };
+  const oneEntry = kt.writeKeytab([ktEntries[0]]).subarray(2);
+  [goodTab, cat(unhex('0502'), be32(-5), new Uint8Array(5), oneEntry),
+   cat(unhex('0502'), oneEntry.subarray(0, oneEntry.length - 4)),
+   cat(unhex('0502'), be32(oneEntry.length - 8),
+       oneEntry.subarray(4, oneEntry.length - 4)),
+   unhex('0501'), unhex('05'), unhex('0502'), unhex('050200'),
+   cat(unhex('0502'), be32(-9), new Uint8Array(2)),
+   cat(unhex('0502'), be32(100), new Uint8Array(3)),
+   cat(unhex('0502'), be32(0)), cat(unhex('0502'), be32(1), unhex('00')),
+   cat(unhex('0502'), be32(6), unhex('0001'), unhex('0009'), unhex('00')),
+   cat(unhex('0502'), be32(8), unhex('0000'), unhex('0001'), unhex('41'),
+       unhex('000000')),
+   cat(unhex('0502'), be32(17), unhex('0001'), unhex('0001'), unhex('ff'),
+       unhex('0000'), new Uint8Array(11), unhex('0000')),
+   cat(unhex('0502'), be32(16), unhex('0000'), unhex('0000'),
+       new Uint8Array(11), unhex('0001'), unhex('aa')),
+   cat(unhex('0502'), be32(4), unhex('0000'))].forEach(function (b) {
+    const r = attempt(function () { return kt.readKeytab(b); });
+    keytab.read.push({ bytes: hex(b), entries: r.ok ? norm(r.ok) : null,
+                       error: r.error || null });
+  });
+
+  return {
+    primitives: primitives, nfold: nfold, profiles: profiles,
+    etypeNames: etypeNames, stringToKey: s2k, derived: derived,
+    encryptions: encryptions, checksums: checksums,
+    decryptErrors: decryptErrors, cts: cts, messages: messages,
+    pkinit: pkinit, tree: tree, identify: identify, principals: principals,
+    flags: flags, errors: errorsTable, integers: ints, times: times,
+    gss: { checksums: gssChecksums, parsed: parsedChecksums, ict: ict,
+           mics: mics, wraps: wraps, errors: unwrapErrors,
+           rotations: rotations },
+    spnego: { inits: inits, resps: resps, decoded: decodedTokens,
+              oids: oids, mics: micLists, requirements: requirements,
+              negStates: negStates,
+              mechs: sp.MECHS },
+    kkdcp: { bodies: kkdcp, replies: replies },
+    keytab: keytab,
+    usage: kc.KEY_USAGE, preference: kc.DEFAULT_ETYPE_PREFERENCE
+  };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -3863,7 +5097,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'xacml-node.json',
                    build: function () {
                      return require('./xacml-vectors.js').build(ROOT);
-                   } }];
+                   } },
+                 { file: 'krb5-codec-node.json', build: krb5Codec }];
 
 // THE KEYSTORE'S DATA KEYS (#444): values sealed by `common/keystore.js`
 // under a durable key-encryption key — with the data-key rows it wrote to
