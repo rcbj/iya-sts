@@ -702,6 +702,36 @@ pub fn verify_compact(
     verify_compact_under(token, key, options, &AcceptAll)
 }
 
+/// A compact JWS read without being verified ([`decode_jws`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Decoded {
+    pub header: Json,
+    pub payload: Json,
+    /// The third segment as it was carried.
+    pub signature: String,
+}
+
+/// `decodeJws()`: a compact JWS read WITHOUT verifying it, for the places
+/// that must look at a token before choosing how to treat it. Strict
+/// base64url, as the verifier's, so a token this reads and the verifier
+/// refuses cannot exist. Nothing read here is evidence of anything. `None`
+/// where it is not three segments with JSON in the first two.
+pub fn decode_jws(token: &str) -> Option<Decoded> {
+    let parts: Vec<&str> = token.split('.').collect();
+    let [header, payload, signature] = parts.as_slice() else {
+        return None;
+    };
+    let json = |segment: &str, what: &str| -> Option<Json> {
+        let bytes = b64::decode_strict(segment, what).ok()?;
+        serde_json::from_slice(&bytes).ok()
+    };
+    Some(Decoded {
+        header: json(header, "JWS protected header")?,
+        payload: json(payload, "JWS payload")?,
+        signature: (*signature).to_string(),
+    })
+}
+
 /// `certificateSpkiDer()`: a certificate's SubjectPublicKeyInfo, as the
 /// DER the issuer signed, read structurally rather than through OpenSSL so
 /// that a post-quantum key OpenSSL cannot load is still a key (#1713). The
@@ -1256,5 +1286,17 @@ mod tests {
             refused.code(),
             Some(sts_core::errors::codes::STS_KEYS_0157)
         );
+    }
+
+    #[test]
+    fn decode_jws_reads_strictly_and_verifies_nothing() {
+        let token = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJhIn0.c2ln";
+        let read = decode_jws(token).unwrap();
+        assert_eq!(read.header["alg"], "none");
+        assert_eq!(read.payload["sub"], "a");
+        assert_eq!(read.signature, "c2ln");
+        assert!(decode_jws("eyJhbGciOiJub25lIn0=.eyJzdWIiOiJhIn0.x").is_none());
+        assert!(decode_jws("a.b").is_none());
+        assert!(decode_jws("e30.bm90IGpzb24.x").is_none());
     }
 }
