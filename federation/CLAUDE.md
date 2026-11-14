@@ -2824,9 +2824,17 @@ or JARM where the profile uses them.
 
 The DPoP key is made for the sign-in (ES256, the public JWK in the proof's
 header) and kept on the flow context, as the PKCE verifier is. One retry
-when the partner answers `use_dpop_nonce` with a different nonce; the same
-nonce is not sent again. A success that omits `DPoP-Nonce` keeps the nonce
-that was sent. UserInfo presents `Authorization: DPoP` and hashes the access
+when the partner answers `use_dpop_nonce` with a different nonce — in the
+JSON body from the authorization server (RFC 9449 section 8), in
+`WWW-Authenticate` from UserInfo (section 9, scheme and parameter
+case-insensitive) — and the same nonce is not sent again. **Each attempt is
+signed afresh**: a new client assertion and, for message signing, a new
+request object, never the first attempt's again (RFC 7523 section 3's
+`jti`). **The authorization server's nonce and UserInfo's are kept apart**
+(`fapiNonce` / `dpopNonce` for the push, token and refresh requests,
+`fapiResourceNonce` / `dpopResourceNonce` for UserInfo): the first UserInfo
+call of a sign-in sends none and answers the challenge. A success that
+omits `DPoP-Nonce` keeps the nonce that was sent. UserInfo presents `Authorization: DPoP` and hashes the access
 token as `ath`. A missing key is `STS-FED-0247`, not a bearer request. When
 `fedRefreshTokens` is on, the key is sealed with the refresh token
 (`sealPartnerToken`) and opened for the refresh; the same key is kept across
@@ -2862,6 +2870,36 @@ relationship with no profile behaves exactly as before:
   (`STS-FED-0251`) and UserInfo is never asked with it, and at a refresh
   the session is ended under the same code. Bluesky's path makes the same
   check for its own profile (`STS-FED-0231`).
+
+**WHAT THE CONFORMANCE SUITE'S FIRST RUN FOUND (2026-11-13, develop
+9300a96d1, memory mode).** Of ~156 modules, 3 passed:
+
+* **Every 2.x module failed `CheckForClientAssertionJtiReuse`.** The
+  `use_dpop_nonce` retry at the push and at the token endpoint resent the
+  first attempt's client assertion. Each attempt now signs its own (above).
+* **Every 2.x module that reaches UserInfo timed out.** The suite's UserInfo
+  answers `401` with `WWW-Authenticate: DPoP error="use_dpop_nonce"` (and
+  `dPoP` in one module) and a nonce of its own; `withNonce()` read only a
+  JSON body, so UserInfo was never asked again and the sign-in stood on
+  the ID Token alone. `FapiClient.asksForNonce()` reads both.
+* **An ID Token issued before the sign-in began, or in the future, is
+  refused** (`STS-FED-0253`, every relationship, not only a profile): the
+  FAPI 1.0 Advanced plan's `iat-is-week-in-past` module, OpenID Connect
+  Core 3.1.3.7 step 10. The range is the flow's own — from when its
+  context was stored to now, each end widened by `oauth2.clockSkewS`.
+* **THIS CLIENT CALLS NO RESOURCE SERVER, AND THE PLANS' POSITIVE MODULES
+  WAIT FOR ONE.** Each finishes only when the client calls the suite's
+  `accounts_endpoint`. A relationship is a relying party: the person is
+  authenticated by the ID Token and UserInfo (Core 3.1.3, 5.3), and the
+  partner's tokens are used to learn who the person is and are never
+  handed on (*THIS SERVICE AS A FAPI CLIENT*, above), so there is no API
+  call to make. The suite itself ends a module at UserInfo for the profiles
+  whose resource UserInfo is (`userInfoIsResourceEndpoint()`). So
+  `tests/protocol/sts_fapi_client_conformance.js` stops a positive module
+  once the suite has answered its UserInfo `200` and judges it `REACHED
+  RESOURCE` — passed only with no FAILURE logged, its warnings judged as
+  any module's. Calling a partner's API on a person's behalf would be a
+  feature of its own, with its own argument.
 
 #### 1-ADVANCED OVER MUTUAL TLS (#931, rcbj's decision of 2026-11-13)
 
@@ -2932,5 +2970,8 @@ two `STS-FED-0243` refusals, a refused push (`STS-FED-0244`), the JARM
 refusals (`STS-FED-0246`, and a partner error as `STS-FED-0025` that does
 not redeem the code), the DPoP nonce on the wire, the registration
 metadata, `beginConnect`'s refusal of a profile (`STS-FED-0184`), the
-refresh of a DPoP profile and of 1-advanced, and the four refusals above
-with the accepted path beside each (10v–10ab).
+refresh of a DPoP profile and of 1-advanced, the four refusals above
+with the accepted path beside each (10v–10ab), and (10am, 10an) a partner
+demanding nonces at the push, the token request, the refresh and UserInfo
+with no assertion or request object jti sent twice and the two servers'
+nonces kept apart. 1h and 1i hold `STS-FED-0253`.

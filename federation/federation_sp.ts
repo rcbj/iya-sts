@@ -4965,13 +4965,26 @@ class FederationSp {
     params.forEach(function (value, name) {
       form[name] = value;
     });
-    try {
+    form.client_id = String(record.fedClientId || '');
+    form.client_assertion_type = FapiClient.CLIENT_ASSERTION_TYPE;
+    // EVERY PUSH IS SIGNED AFRESH (#931's first run, 2026-11-13). The
+    // use_dpop_nonce retry sent the first push's client assertion and
+    // request object again, and the suite refused both as replays: an
+    // assertion's jti is single-use (RFC 7523 section 3), and the suite
+    // holds a request object's jti to the same (ValidateRequestObjectJti).
+    const signedPush = (): any => {
+      const one: any = Object.assign({}, form);
       if (FapiClient.usesJarm(profile)) {
         // Signed from the parameters as they are now, before `request`
         // exists, so the object does not contain itself.
-        form.request = FapiClient.requestObject(record, params);
+        one.request = FapiClient.requestObject(record, params);
       }
-      form.client_assertion = FapiClient.clientAssertion(record);
+      one.client_assertion = FapiClient.clientAssertion(record);
+      return one;
+    };
+    let firstPush: any = null;
+    try {
+      firstPush = signedPush();
     } catch (e) {
       log.debug("Caught in FederationSp.fapiParRedirect(): " +
                 ((e && e.message) || e));
@@ -4980,11 +4993,25 @@ class FederationSp {
       return this.refuse(res, record, 500, 'The FAPI request could not be ' +
                          'signed', String((e && e.message) || e));
     }
-    form.client_id = String(record.fedClientId || '');
-    form.client_assertion_type = FapiClient.CLIENT_ASSERTION_TYPE;
     const parUrl = String(record.fedParUrl || '');
     const key = stored && stored.fapiKey;
+    let pushes = 0;
     const send = (nonce) => {
+      let body = firstPush;
+      if (pushes > 0) {
+        try {
+          body = signedPush();
+        } catch (e) {
+          log.debug("Caught in FederationSp.fapiParRedirect(): " +
+                    ((e && e.message) || e));
+          return Promise.resolve({ ok: false, status: 0, json: null,
+                                   headers: {}, errorCode: 'STS-FED-0245',
+                                   why: 'the FAPI request could not be ' +
+                                        'signed again: ' +
+                                        String((e && e.message) || e) });
+        }
+      }
+      pushes += 1;
       const headers: any = {};
       if (FapiClient.usesDpop(profile)) {
         if (!key || !key.pem) {
@@ -5007,7 +5034,7 @@ class FederationSp {
       return fedHttp.fetchPublished(parUrl, {
         method: 'POST', accept: 'application/json',
         contentType: 'application/x-www-form-urlencoded',
-        headers: headers, body: new URLSearchParams(form).toString()
+        headers: headers, body: new URLSearchParams(body).toString()
       }).then((answer) => {
         let json = null;
         try {
@@ -5033,14 +5060,15 @@ class FederationSp {
     }
     const requestUri = answer.json && answer.json.request_uri;
     if (!answer.ok || !requestUri) {
-      const code = answer.errorCode === 'STS-FED-0247' ? 'STS-FED-0247'
-                                                       : 'STS-FED-0244';
+      const code = answer.errorCode === 'STS-FED-0247' ||
+                   answer.errorCode === 'STS-FED-0245'
+        ? answer.errorCode : 'STS-FED-0244';
       errorCodes.mark(res, code);
       log.debug("Leaving FederationSp.fapiParRedirect(). Not pushed.");
-      return this.refuse(res, record, code === 'STS-FED-0247' ? 500 : 502,
+      return this.refuse(res, record, code === 'STS-FED-0244' ? 502 : 500,
         code === 'STS-FED-0247' ? 'The DPoP proof could not be made'
-                                : 'The authorization request could not be ' +
-                                  'pushed',
+          : code === 'STS-FED-0245' ? 'The FAPI request could not be signed'
+            : 'The authorization request could not be pushed',
         answer.why || 'the partner answered no request_uri');
     }
     const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
@@ -5097,6 +5125,17 @@ class FederationSp {
         { method: 'POST', form: form,
           clientCertificate: clientCertificate || undefined });
     }
+    // ONE ASSERTION PER REQUEST SENT (#931's first run, 2026-11-13): the
+    // use_dpop_nonce retry below signs a new one, with a new jti, rather
+    // than sending this one twice (RFC 7523 section 3; the suite's
+    // CheckForClientAssertionJtiReuse failed every 2.x module on it).
+    const notSigned = (e) => {
+      return { ok: false, status: 0, json: null, text: '',
+        url: String(record.fedTokenUrl || ''), headers: {},
+        errorCode: 'STS-FED-0245',
+        why: 'the private_key_jwt could not be signed: ' +
+             String((e && e.message) || e) };
+    };
     let assertion = '';
     try {
       assertion = FapiClient.clientAssertion(record);
@@ -5104,11 +5143,7 @@ class FederationSp {
       log.debug("Caught in FederationSp.fapiTokenRequestWith(): " +
                 ((e && e.message) || e));
       log.debug("Leaving FederationSp.fapiTokenRequestWith(). Not signed.");
-      return Promise.resolve({ ok: false, status: 0, json: null, text: '',
-        url: String(record.fedTokenUrl || ''), headers: {},
-        errorCode: 'STS-FED-0245',
-        why: 'the private_key_jwt could not be signed: ' +
-             String((e && e.message) || e) });
+      return Promise.resolve(notSigned(e));
     }
     form.client_id = String(record.fedClientId || '');
     form.client_assertion_type = FapiClient.CLIENT_ASSERTION_TYPE;
@@ -5127,9 +5162,20 @@ class FederationSp {
         why: 'this sign-in holds no DPoP key' });
     }
     const url = String(record.fedTokenUrl || '');
+    let attempts = 0;
     log.debug("Leaving FederationSp.fapiTokenRequestWith().");
     return FapiClient.withNonce((n) => {
       let proof = '';
+      if (attempts > 0) {
+        try {
+          form.client_assertion = FapiClient.clientAssertion(record);
+        } catch (e) {
+          log.debug("Caught in FederationSp.fapiTokenRequestWith(): " +
+                    ((e && e.message) || e));
+          return Promise.resolve(notSigned(e));
+        }
+      }
+      attempts += 1;
       try {
         proof = FapiClient.proof(key, 'POST', url, String(n || ''));
       } catch (e) {
@@ -6446,6 +6492,7 @@ class FederationSp {
       endpoints: held.endpoints || null, refreshes: 0,
       dpopKey: String(held.dpopKey || ''),
       dpopNonce: String(held.dpopNonce || ''),
+      dpopResourceNonce: String(held.dpopResourceNonce || ''),
       due: Date.now() + after * 1000 });
     log.debug("Leaving FederationSp.holdPartnerRefresh(). Due in " + after +
               "s.");
@@ -6659,16 +6706,19 @@ class FederationSp {
                         verified.why);
       }
     }
-    let dpopNonce = this.oneHeader(answer.headers, 'dpop-nonce') ||
-                    String(entry.dpopNonce || '');
+    // The authorization server's nonce and UserInfo's are two (RFC 9449
+    // section 9), each kept for the next request to its own server.
+    const dpopNonce = this.oneHeader(answer.headers, 'dpop-nonce') ||
+                      String(entry.dpopNonce || '');
+    let dpopResourceNonce = String(entry.dpopResourceNonce || '');
     const access = String(tokens.access_token || '');
     if (access && String(record.fedUserinfoUrl || '').trim()) {
       let info;
       if (FapiClient.usesDpop(profile)) {
         const fetched = await this.userinfoFetch(record, access, dpopKey,
-                                                 dpopNonce);
+                                                 dpopResourceNonce);
         if (fetched.nonce) {
-          dpopNonce = fetched.nonce;
+          dpopResourceNonce = fetched.nonce;
         }
         info = fetched.answer;
       } else {
@@ -6689,6 +6739,7 @@ class FederationSp {
       token: next && next.ok ? next.value : entry.token,
       refreshes: Number(entry.refreshes || 0) + 1,
       dpopNonce: dpopNonce,
+      dpopResourceNonce: dpopResourceNonce,
       due: Date.now() + federation.refreshAfterSeconds(stored,
                                                        tokens.expires_in) *
            1000 }));
@@ -9083,7 +9134,7 @@ class FederationSp {
   }
 
   private verifyIdToken(res, record, context, sentToken, checks): Promise<any> {
-    const { errorCodes, log, stsCrypto, jsonFromB64u } = this.deps;
+    const { config, errorCodes, log, stsCrypto, jsonFromB64u } = this.deps;
     log.debug("Entering FederationSp.verifyIdToken(). front=" +
               !!checks.front);
     const opened: any = this.openIdToken(res, record, sentToken,
@@ -9177,6 +9228,34 @@ class FederationSp {
           'sent "' + context.nonce + '". A replayed ID Token looks exactly ' +
           'like this.');
       }
+      // ISSUED FOR THIS SIGN-IN, NOT BEFORE IT OR AFTER NOW (#931's first
+      // run, 2026-11-13: the FAPI 1.0 Advanced plan's
+      // iat-is-week-in-past module). OpenID Connect Core 1.0 section
+      // 3.1.3.7 step 10 lets a client reject an ID Token "issued too far
+      // away from the current time" and leaves the range to it. An ID
+      // Token that answers this authorization request cannot have been
+      // issued before the request was made, so the range is the flow's
+      // own: from when its context was stored to now, each end widened by
+      // oauth2.clockSkewS, as exp is. A context with no start (none is
+      // stored without one) asks only the upper end.
+      const skewS = Number(config.value('oauth2.clockSkewS')) || 0;
+      const nowS = Math.floor(Date.now() / 1000);
+      const startedS = Math.floor(Number(context.startedAt || 0) / 1000);
+      if (payload.iat > nowS + skewS ||
+          (startedS > 0 && payload.iat < startedS - skewS)) {
+        return refused(401, 'STS-FED-0253',
+          'The ID Token was not issued for this sign-in',
+          'Its iat is ' + new Date(payload.iat * 1000).toISOString() +
+          (payload.iat > nowS + skewS
+            ? ', in the future'
+            : ', before this sign-in began (' +
+              new Date(startedS * 1000).toISOString() + ')') +
+          ', beyond the ' + skewS + ' seconds oauth2.clockSkewS allows. ' +
+          'OpenID Connect Core 1.0 section 3.1.3.7 step 10 lets a client ' +
+          'refuse a token issued too far from the current time; one older ' +
+          'than the request it answers is a replay or a partner\'s clock ' +
+          'gone wrong.');
+      }
       let alg = '';
       try {
         alg = String((jsonFromB64u(String(idToken).split('.')[0]) || {}).alg ||
@@ -9266,7 +9345,7 @@ class FederationSp {
       ? { token: sealedRefresh.value, expiresIn: Number(tokens.expires_in) ||
           0, iss: String(payload.iss || ''), sub: String(payload.sub || ''),
           endpoints: context.discovered || null,
-          dpopKey: '', dpopNonce: '' }
+          dpopKey: '', dpopNonce: '', dpopResourceNonce: '' }
       : null;
     // THE DPoP KEY (#931), sealed with the refresh token and nowhere else.
     // A seal that fails leaves the key unset: the next refresh ends the
@@ -9383,10 +9462,13 @@ class FederationSp {
               'well.');
     return this.userinfoFetch(record, accessToken,
                               context && context.fapiKey,
-                              context && context.fapiNonce)
+                              // UserInfo's own nonce, never the authorization
+                              // server's (RFC 9449 section 9): the first call
+                              // sends none and is told one if it must.
+                              context && context.fapiResourceNonce)
       .then((fetched) => {
         if (partnerRefresh && fetched.nonce) {
-          partnerRefresh.dpopNonce = fetched.nonce;
+          partnerRefresh.dpopResourceNonce = fetched.nonce;
         }
         const answer = fetched.answer;
         // A SIGNED OR ENCRYPTED UserInfo response (#930, Core 5.3.2) is a JWT

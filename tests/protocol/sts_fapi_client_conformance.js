@@ -31,14 +31,21 @@
 //      certificate as its `certificate`, read off the relationship's own
 //      view (`clientCertificate`, issued when fedFapi became 1-advanced:
 //      rcbj's decision of 2026-11-13 on #931). The suite holds every token
-//      request and UserInfo call to that certificate.
+//      request and UserInfo call to that certificate. FAPI 1.0 Advanced
+//      also takes the key the suite signs with as `server.jwks` (one PS256
+//      RSA key made here; the 2.x plans make their own) and a `client2`
+//      for its two encrypted-ID-Token modules: a second relationship to the
+//      same issuer, its RSA-OAEP-256 encryption key in that client's `jwks`.
 //   2. The plan is created and its modules run one at a time. When a
 //      module waits, the PERSON starts where an application would send
 //      them — this service's /federation/login/{id} — in the one headless
 //      Chrome (`conformance_browser.js`), and the browser carries them to
 //      the suite and back. A negative module (an ID Token, JARM response
 //      or token answer the client must refuse) passes when this service
-//      refuses it and dials nothing more.
+//      refuses it and dials nothing more. A positive module waits for a
+//      resource call this relying party never makes, so it is stopped once
+//      the suite has answered its UserInfo and judged REACHED RESOURCE
+//      (operatorFor() argues it).
 //   3. A FAILED module fails the job unless EXPECTED names it with its
 //      reason; a FAILURE from a condition KNOWN_FAILURES names is argued
 //      only when it is the module's only kind of failure; a WARNING from a
@@ -70,6 +77,7 @@
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
+const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
@@ -216,21 +224,51 @@ async function clientJwks(realmBase) {
   return { keys: keys };
 }
 
-async function prepare(plan) {
-  log.debug("Entering prepare(). " + plan.key);
-  const realm = ("fapi-rp-" + plan.key + "-" + TAG).slice(0, 31)
-    .replace(/-+$/, "");
-  const alias = "iya-fapi-rp-" + plan.key + "-" + TAG;
-  const issuer = oidf.SUITE + "test/a/" + alias + "/";
-  const made = await oidf.makeRealm(root, realm, "Conformance " + plan.name,
-    // What the service fetches from the suite — its discovery document,
-    // token, UserInfo, PAR and JWKS endpoints — goes through the federation
-    // outbound policy, verified against the suite's own certificate (#171).
-    // A classical twin's own setting (withClassicalTwins()) comes after it.
-    [["federation.outboundCaFile", oidf.suiteCaFile()]]
-      .concat(plan.settings || []));
-  const id = "suite-" + plan.key;
-  const clientId = "iya-fapi-rp-" + plan.key + "-" + TAG;
+// THE KEY THE SUITE SIGNS WITH AS FAPI 1.0 ADVANCED'S AUTHORIZATION SERVER
+// (#931's first run, 2026-11-13). The FAPI 2 client plans generate their
+// own (FAPI2GenerateServerJWKs) when the configuration names none; the
+// FAPI 1.0 Advanced plan only loads one (LoadServerJWKs: "Couldn't find a
+// JWK set in configuration" failed all 92 of its modules), from
+// `server.jwks`, and it must be ONE key with an `alg`
+// (ExtractServerSigningAlg) of at least 2048 bits
+// (FAPIEnsureMinimumServerKeyLength). PS256, because that is what the
+// relationship's fedIdTokenSignedResponseAlg expects. Made per plan here
+// and handed to nobody but the suite; this service reads only its public
+// half, from the suite's jwks_uri.
+function serverJwks(plan) {
+  log.debug("Entering serverJwks(). " + plan.key);
+  const pair = nodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = pair.privateKey.export({ format: "jwk" });
+  jwk.kid = "suite-as-" + plan.key + "-" + TAG;
+  jwk.use = "sig";
+  jwk.alg = "PS256";
+  log.debug("Leaving serverJwks().");
+  return { keys: [jwk] };
+}
+
+// THE RELATIONSHIP'S OWN ENCRYPTION KEY, public half, as the client's
+// `jwks` member for ID Token encryption (OpenID Connect Registration
+// section 2): what /federation/jwks/{id} publishes.
+async function encryptionJwks(realmBase, id) {
+  log.debug("Entering encryptionJwks(). " + id);
+  const r = await oidf.send(realmBase + "/federation/jwks/" +
+                            encodeURIComponent(id));
+  assert.ok(r.status === 200 && r.body && Array.isArray(r.body.keys),
+            "the relationship " + id + "'s key set answered " + r.status);
+  const keys = r.body.keys.filter(function (one) {
+    return one && one.use === "enc" && !one.d;
+  });
+  assert.ok(keys.length === 1, "the relationship " + id + " publishes " +
+            keys.length + " encryption keys: " + JSON.stringify(r.body));
+  log.debug("Leaving encryptionJwks(). " + keys[0].kid);
+  return keys;
+}
+
+// ONE INBOUND RELATIONSHIP TO THE SUITE: created, configured, enabled and
+// read back. `extra` is written before fedFapi (which, set to 1-advanced,
+// issues the client certificate).
+async function relationship(plan, made, issuer, id, clientId, extra) {
+  log.debug("Entering relationship(). " + id);
   await oidf.ok(made.api + "/federation/create",
                 { id: id, role: "service-provider", protocol: "oidc",
                   peer: issuer },
@@ -257,10 +295,14 @@ async function prepare(plan) {
   }
   // PRODUCT MODE requires a partner to encrypt an ID Token that crosses the
   // browser; the suite could only be told to through its client
-  // configuration, and encryption is not what these plans test.
-  if (await registry.isProduct(root)) {
+  // configuration, and encryption is not what these plans test — except
+  // for the second client, which `extra` makes encrypt.
+  if (await registry.isProduct(root) && !extra) {
     fields.fedAllowUnencrypted = "TRUE";
   }
+  const fapi = fields.fedFapi;
+  delete fields.fedFapi;
+  Object.assign(fields, extra || {}, { fedFapi: fapi });
   const keys = Object.keys(fields);
   for (let i = 0; i < keys.length; i++) {
     await setField(made.api, id, keys[i], fields[keys[i]]);
@@ -286,42 +328,139 @@ async function prepare(plan) {
               " holds no client certificate: " + JSON.stringify(cert));
     client.certificate = cert.certificatePem;
   }
+  log.debug("Leaving relationship().");
+  return { id: id, client: client,
+           login: made.base + "/federation/login/" + encodeURIComponent(id) };
+}
+
+async function prepare(plan) {
+  log.debug("Entering prepare(). " + plan.key);
+  const realm = ("fapi-rp-" + plan.key + "-" + TAG).slice(0, 31)
+    .replace(/-+$/, "");
+  const alias = "iya-fapi-rp-" + plan.key + "-" + TAG;
+  const issuer = oidf.SUITE + "test/a/" + alias + "/";
+  const made = await oidf.makeRealm(root, realm, "Conformance " + plan.name,
+    // What the service fetches from the suite — its discovery document,
+    // token, UserInfo, PAR and JWKS endpoints — goes through the federation
+    // outbound policy, verified against the suite's own certificate (#171).
+    // A classical twin's own setting (withClassicalTwins()) comes after it.
+    [["federation.outboundCaFile", oidf.suiteCaFile()]]
+      .concat(plan.settings || []));
+  const first = await relationship(plan, made, issuer, "suite-" + plan.key,
+    "iya-fapi-rp-" + plan.key + "-" + TAG, null);
+  const configuration = {
+    alias: alias,
+    description: "iya-sts " + plan.name + " " + STAMP,
+    client: first.client,
+    // How long a negative module waits for this client to call something
+    // it should not before it passes: the suite's default.
+    waitTimeoutSeconds: 5
+  };
+  const logins = { client: first.login };
+  if (plan.fapi === "1-advanced") {
+    configuration.server = { jwks: serverJwks(plan) };
+    // THE SECOND CLIENT (#931's first run): FAPI 1.0 Advanced's two
+    // encrypted-ID-Token modules run as `client2`, whose ID Tokens the
+    // suite encrypts to a key in its `jwks` (FAPI 1.0 Advanced 5.2.2.1
+    // clause 6: an OP shall support signed and encrypted ID Tokens). It is
+    // a second relationship to the same suite issuer, RSA-OAEP-256 and
+    // A256GCM, so the RSA1_5 module runs too (the suite skips it for an
+    // EC key) and this client must refuse that ID Token (STS-FED-0139).
+    const second = await relationship(plan, made, issuer,
+      "suite-" + plan.key + "-enc",
+      "iya-fapi-rp-" + plan.key + "-enc-" + TAG,
+      { fedEncryptionKeyType: "rsa-3072",
+        fedKeyManagementAlgorithm: "RSA-OAEP-256",
+        fedContentEncryptionAlgorithm: "A256GCM" });
+    second.client.jwks = { keys: second.client.jwks.keys.concat(
+      await encryptionJwks(made.base, second.id)) };
+    second.client.id_token_encrypted_response_alg = "RSA-OAEP-256";
+    second.client.id_token_encrypted_response_enc = "A256GCM";
+    configuration.client2 = second.client;
+    logins.client2 = second.login;
+  }
   log.debug("Leaving prepare().");
   return {
-    realm: made, id: id, issuer: issuer, alias: alias,
-    login: made.base + "/federation/login/" + encodeURIComponent(id),
-    configuration: {
-      alias: alias,
-      description: "iya-sts " + plan.name + " " + STAMP,
-      client: client,
-      // How long a negative module waits for this client to call something
-      // it should not before it passes: the suite's default.
-      waitTimeoutSeconds: 5
-    }
+    realm: made, id: first.id, issuer: issuer, alias: alias,
+    login: first.login, logins: logins, configuration: configuration
   };
 }
 
 // ---------------------------------------------------------------------------
 // THE PERSON (step 2 of the header): each module that waits is started once
-// at the login endpoint, and whatever the module lists is visited.
+// at the login endpoint — the second relationship's for a module that runs
+// as `client2` — and whatever the module lists is visited.
+//
+// AND WHERE THIS CLIENT'S EXCHANGE ENDS (#931's first run, 2026-11-13).
+// Every positive module of these plans finishes only when the client calls
+// the suite's resource endpoint (`accounts_endpoint`,
+// `open-banking/v1.1/accounts`): its UserInfo answer leaves the module
+// WAITING, and a client that makes no further call is TIMED OUT. This
+// client is a relying party: it authenticates the person by the ID Token
+// and UserInfo (OpenID Connect Core 3.1.3, 5.3), and the partner's tokens
+// are used once and never handed on (`federation/CLAUDE.md`, *THIS SERVICE
+// AS A FAPI CLIENT*), so there is no resource for it to call. The suite
+// itself ends a module at UserInfo where UserInfo is the profile's
+// resource (`userInfoIsResourceEndpoint()`, ConnectID and CBUAE). So once
+// the suite's log shows UserInfo answered 200 — every check of the token
+// request and the UserInfo request having run — the module is stopped
+// here and judged REACHED RESOURCE: passed if the suite logged no FAILURE,
+// FAILED otherwise, its warnings judged as any module's.
 // ---------------------------------------------------------------------------
+async function userinfoAnswered(id) {
+  log.debug("Entering userinfoAnswered(). " + id);
+  const logs = (await oidf.suite("GET", "api/log/" + id)).body || [];
+  const answered = Array.isArray(logs) && logs.some(function (entry) {
+    return entry && entry.http === "outgoing" &&
+           entry.outgoing_path === "userinfo" &&
+           Number(entry.outgoing_status_code) === 200;
+  });
+  log.debug("Leaving userinfoAnswered(). " + answered);
+  return answered;
+}
+
 function operatorFor(plan, prepared, person) {
   log.debug("Entering operatorFor(). " + plan.key);
   const started = {};
+  const reached = {};
   log.debug("Leaving operatorFor().");
-  return async function (id, info) {
+  const operator = async function (id, info) {
     log.debug("Entering the FAPI client's person. " + id);
-    if (!info || info.status !== "WAITING") {
+    if (!info || info.status !== "WAITING" || reached[id]) {
       log.debug("Leaving the FAPI client's person. Not waiting.");
       return;
     }
     if (!started[id]) {
       started[id] = 1;
-      await person.start(id, info, prepared.login);
+      const second = /encrypted-idtoken/.test(String(info.testName || ""));
+      await person.start(id, info, second && prepared.logins.client2
+        ? prepared.logins.client2 : prepared.login);
     }
     await person.visit(id, info);
+    if (await userinfoAnswered(id)) {
+      reached[id] = 1;
+      log.info("  " + plan.key + " " + (info.testName || id) + ": UserInfo " +
+               "answered; stopping it at the resource call this client " +
+               "does not make.");
+      await oidf.suite("DELETE", "api/runner/" + id);
+    }
     log.debug("Leaving the FAPI client's person.");
   };
+  operator.reached = reached;
+  return operator;
+}
+
+// What a module the operator stopped at the resource call is reported as.
+function judgedAtResource(got, operator) {
+  log.debug("Entering judgedAtResource(). " + got.module);
+  if (!operator || !operator.reached[got.id] ||
+      got.status !== "INTERRUPTED") {
+    log.debug("Leaving judgedAtResource(). Not stopped there.");
+    return got;
+  }
+  log.debug("Leaving judgedAtResource().");
+  return Object.assign({}, got, { status: "FINISHED",
+    result: got.failures.length ? "FAILED" : "REACHED RESOURCE" });
 }
 
 // ONE PLAN, prepared, run module by module and judged; answers the lines
@@ -352,14 +491,16 @@ async function runOnePlan(plan) {
     for (let i = 0; i < modules.length; i++) {
       const module = modules[i];
       const argued = expectedFor(plan, module.testModule);
-      let got = await oidf.runModule(planId, module, argued ? null : operator,
-                                     argued ? ARGUED_SECONDS : undefined);
+      let got = judgedAtResource(await oidf.runModule(planId, module,
+        argued ? null : operator, argued ? ARGUED_SECONDS : undefined),
+        operator);
       // ONE MORE RUN FOR A MODULE THAT TIMED OUT, as runPlan() gives one —
       // unless it is argued to wait out its time.
       if (got.status === "TIMED OUT" && !argued) {
         log.info("  " + plan.key + " " + got.module + ": TIMED OUT; " +
                  "running it once more.");
-        got = await oidf.runModule(planId, module, operator);
+        got = judgedAtResource(await oidf.runModule(planId, module,
+                                                    operator), operator);
       }
       log.info("  " + plan.key + " " + got.module + ": " +
                (got.result || got.status) +

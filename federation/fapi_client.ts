@@ -45,7 +45,11 @@
 //
 // DPoP uses a key made for the sign-in (ES256), the same shape as
 // `atproto_client.ts` plus the method, an optional access-token hash, and
-// one retry when the partner answers `use_dpop_nonce`. The key rides on the
+// one retry when the partner answers `use_dpop_nonce` — in the body from
+// the authorization server, in `WWW-Authenticate` from UserInfo — each
+// attempt signed afresh, assertion and request object included. The
+// authorization server's nonce and UserInfo's are kept apart (RFC 9449
+// section 9: a resource server's nonce is its own). The key rides on the
 // flow context for the sign-in. When the relationship keeps the partner's
 // refresh token, the key is sealed with that token and opened again for the
 // refresh. Outbound mutual TLS is `1-advanced`'s alone (`usesMtls()`).
@@ -450,9 +454,42 @@ class FapiClient {
   }
 
   /**
+   * Whether an answer asks for a DPoP nonce. An authorization server says
+   * so in the JSON body (RFC 9449 section 8); a resource server, UserInfo
+   * among them, says so in `WWW-Authenticate` (section 9), whose scheme and
+   * parameter name are case-insensitive (RFC 9110 section 11.1). The
+   * conformance suite's UserInfo answers the second way, the scheme spelt
+   * `dPoP` in one module (#931's first run, 2026-11-13).
+   *
+   * @param answer - `{ ok, json, headers }`, headers lower-cased
+   * @returns whether the answer is a `use_dpop_nonce` refusal
+   */
+  static asksForNonce(answer: Json): boolean {
+    log.debug("Entering FapiClient.asksForNonce().");
+    if (!answer || answer.ok) {
+      log.debug("Leaving FapiClient.asksForNonce(). Not a refusal.");
+      return false;
+    }
+    if (answer.json && answer.json.error === 'use_dpop_nonce') {
+      log.debug("Leaving FapiClient.asksForNonce(). In the body.");
+      return true;
+    }
+    const raw = (answer.headers || {})['www-authenticate'];
+    const challenge = Array.isArray(raw) ? raw.join(', ') : String(raw || '');
+    const asked = /(^|,)\s*dpop\s[^]*?\berror\s*=\s*"?use_dpop_nonce"?/i
+      .test(challenge);
+    log.debug("Leaving FapiClient.asksForNonce(). " + asked);
+    return asked;
+  }
+
+  /**
    * Sends once, and again when the partner answers `use_dpop_nonce` with a
    * nonce other than the one just sent. A repeat of the same nonce is not
-   * retried: that would loop.
+   * retried: that would loop. `send` is called once per attempt, and
+   * signs everything it sends on that attempt: a client assertion or a
+   * request object sent twice is a replay the partner refuses (RFC 7523
+   * section 3, the `jti`; #931's first run, the suite's
+   * `CheckForClientAssertionJtiReuse`).
    *
    * @param send - posts with the nonce it is given and answers
    *   `{ ok, json, headers }`
@@ -466,9 +503,7 @@ class FapiClient {
     let answer = await send(nonce);
     const headers = (answer && answer.headers) || {};
     const next = String(headers['dpop-nonce'] || '');
-    const err = answer && answer.json && answer.json.error;
-    if (answer && !answer.ok && next && err === 'use_dpop_nonce' &&
-        next !== nonce) {
+    if (next && next !== nonce && FapiClient.asksForNonce(answer)) {
       answer = await send(next);
     }
     log.debug("Leaving FapiClient.withNonce(). " +
