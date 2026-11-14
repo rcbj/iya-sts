@@ -285,6 +285,9 @@ pub struct MintedFilter {
     /// dropped; 0 keeps every one.
     pub stale_before: i64,
     pub age_handles: Vec<String>,
+    /// The stores whose expiring rows a start does not read
+    /// (`nullExpiryHandles`, #883): only their rows with a NULL expiry.
+    pub null_expiry_handles: Vec<String>,
 }
 
 /// What an in-place edit's merge answers: the merged body sealed, and the

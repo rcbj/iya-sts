@@ -287,6 +287,8 @@ const NODE_WRITE: &str = crate::written!(
     node_id,
     name,
     mode,
+    version,
+    fingerprint,
     started_at,
     heartbeat_at,
     expires_at,
@@ -2014,6 +2016,18 @@ impl Driver for MariadbDriver {
                 );
                 values.push(Value::from(filter.stale_before));
             }
+            if !filter.null_expiry_handles.is_empty() {
+                sql.push_str(&format!(
+                    " AND NOT (handle IN ({}) AND expires_at IS NOT NULL)",
+                    marks(filter.null_expiry_handles.len())
+                ));
+                values.extend(
+                    filter
+                        .null_expiry_handles
+                        .iter()
+                        .map(|h| Value::from(h.as_str())),
+                );
+            }
             let rows: Vec<Row> =
                 self.conn().await?.exec(sql, values).await.map_err(err)?;
             Ok(rows.iter().map(minted_row).collect())
@@ -2642,6 +2656,11 @@ impl ClusterStore for MariadbDriver {
         })
     }
 
+    // JOINING (`joinCluster()` on this engine): the join serialised on a
+    // row of `sts_cluster_locks` (`portable.serialize('cluster.join')`),
+    // the dead swept, every live node of another mode a refusal
+    // (STS-CLUSTER-0002), and the row inserted; the postgres driver's join
+    // says the rest.
     fn join(
         &self,
         node: &str,
@@ -2650,20 +2669,69 @@ impl ClusterStore for MariadbDriver {
     ) -> BoxFuture<'_, Result<(), String>> {
         let node = node.to_string();
         self.pending(async move {
-            let name = info.get("name").and_then(Json::as_str).unwrap_or("").to_string();
-            self.conn()
-                .await?
-                .exec_drop(
+            let field = |k: &str| info.get(k).and_then(Json::as_str).unwrap_or("").to_string();
+            let (name, version) = (field("name"), field("version"));
+            let mode = Some(field("mode")).filter(|m| !m.is_empty()).unwrap_or_else(|| "active-active".to_string());
+            let mut tx = self.pool.start_transaction(TxOpts::default()).await.map_err(err)?;
+            tx.exec_drop(format!("INSERT IGNORE INTO sts_cluster_locks ({}) VALUES (?)", LOCK_WRITE), ("cluster.join",))
+                .await
+                .map_err(err)?;
+            tx.exec_drop("SELECT name FROM sts_cluster_locks WHERE name = ? FOR UPDATE", ("cluster.join",))
+                .await
+                .map_err(err)?;
+            tx.exec_drop(
+                format!("DELETE FROM sts_cluster_nodes WHERE expires_at < {} - ?", NOW),
+                (crate::postgres::DEAD_NODE_RETENTION_MS,),
+            )
+            .await
+            .map_err(err)?;
+            let live: Vec<Row> = tx
+                .exec(
                     format!(
-                        "INSERT INTO sts_cluster_nodes ({w}) VALUES (?, ?, 'active-active', {now}, {now}, {now} + ?, ?) \
-                         ON DUPLICATE KEY UPDATE heartbeat_at = {now}, expires_at = {now} + ?, left_at = 0",
-                        w = NODE_WRITE,
-                        now = NOW
+                        "SELECT node_id, name, mode, version FROM sts_cluster_nodes WHERE left_at = 0 AND expires_at > \
+                         {} AND node_id <> ?",
+                        NOW
                     ),
-                    (node.as_str(), name.as_str(), ttl_ms as i64, info.to_string(), ttl_ms as i64),
+                    (node.as_str(),),
                 )
                 .await
-                .map_err(err)
+                .map_err(err)?;
+            let differing: Vec<String> = live
+                .iter()
+                .filter(|r| text(r, "mode").as_deref() != Some(mode.as_str()))
+                .map(|r| {
+                    crate::postgres::differing_of(
+                        &text(r, "name").unwrap_or_default(),
+                        &text(r, "node_id").unwrap_or_default(),
+                        &text(r, "mode").unwrap_or_default(),
+                        &text(r, "version").unwrap_or_default(),
+                    )
+                })
+                .collect();
+            if !differing.is_empty() {
+                tx.rollback().await.map_err(err)?;
+                return Err(StoreError::new(crate::postgres::refused_join(&mode, &differing)));
+            }
+            tx.exec_drop(
+                format!(
+                    "INSERT INTO sts_cluster_nodes ({w}) VALUES (?, ?, ?, ?, '', {now}, {now}, {now} + ?, ?)",
+                    w = NODE_WRITE,
+                    now = NOW
+                ),
+                vec![
+                    Value::from(node.as_str()),
+                    Value::from(name.as_str()),
+                    Value::from(mode.as_str()),
+                    Value::from(version.as_str()),
+                    Value::from(ttl_ms as i64),
+                    Value::from(info.to_string()),
+                ],
+            )
+            .await
+            .map_err(err)?;
+            tx.commit().await.map_err(err)?;
+            tracing::info!("cluster: node {} ({}) joined in {} mode; {} other live node(s).", node, name, mode, live.len());
+            Ok(())
         })
     }
 

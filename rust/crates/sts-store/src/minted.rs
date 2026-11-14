@@ -100,6 +100,8 @@ pub struct Minted {
     /// What each declared store files beside its rows (Node's `indexOf`,
     /// `lookupsOf` and `sortOf`, declared with the store), by handle.
     index_hooks: std::sync::RwLock<HashMap<String, IndexHooks>>,
+    /// The stores declared `restoreExpiring: false` (#883).
+    null_expiry: std::sync::RwLock<Vec<String>>,
 }
 
 fn b64(text: &str) -> String {
@@ -165,6 +167,7 @@ impl Minted {
                 SESSIONS_HANDLE.to_string(),
                 IndexHooks::sessions(),
             )])),
+            null_expiry: std::sync::RwLock::new(Vec::new()),
         })
     }
 
@@ -597,7 +600,33 @@ impl Minted {
                 .filter(|h| h.spec.retain == Retain::Age)
                 .map(|h| h.handle.clone())
                 .collect(),
+            null_expiry_handles: self.null_expiry_only(),
         }
+    }
+
+    /// Declares a store `restoreExpiring: false` (#883, `realms.map()`): a
+    /// start reads its rows whose `expires_at` is NULL — the operational
+    /// ones, a leader, a queued or running run — and leaves its expiring
+    /// rows, finished history, in the table until the expiry purge, never
+    /// opened into this process. `scheduler.runs` is the store that says so.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn set_restore_expiring(&self, handle: &str, restore: bool) {
+        let mut held = self
+            .null_expiry
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        held.retain(|h| h != handle);
+        if !restore {
+            held.push(handle.to_string());
+        }
+    }
+
+    /// `nullExpiryOnly()`.
+    fn null_expiry_only(&self) -> Vec<String> {
+        self.null_expiry
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// `restore()`: the stored rows put back into the stores, once, at the
@@ -636,6 +665,11 @@ impl Minted {
             return Ok(0);
         }
         let filter = self.restore_filter(now);
+        // An expiring row of a store that asked not to restore one (#883),
+        // dropped here as well as in the query: a driver that does not know
+        // the clause still cannot admit it. A row with no expiry is kept.
+        let null_expiry: HashSet<String> =
+            filter.null_expiry_handles.iter().cloned().collect();
         let partitions = filter.realms.len();
         let rows = self.driver.load_minted(filter).await.map_err(|e| {
             format!(
@@ -653,6 +687,9 @@ impl Minted {
             (0u64, 0u64, 0u64, 0u64);
         let mut stale: BTreeSet<String> = BTreeSet::new();
         for row in rows {
+            if null_expiry.contains(&row.handle) && row.expires_at.is_some() {
+                continue;
+            }
             let Some(h) = self.handles.handle_for(&row.handle) else {
                 unknown += 1;
                 stale.insert(row.handle);

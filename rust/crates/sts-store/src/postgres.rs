@@ -148,6 +148,8 @@ const NODE_WRITE: &str = crate::written!(
     node_id,
     name,
     mode,
+    version,
+    fingerprint,
     started_at,
     heartbeat_at,
     expires_at,
@@ -237,6 +239,46 @@ pub struct PostgresDriver {
     /// driver. Until then, and where nothing durable seals, the plaintext
     /// form.
     keys: std::sync::RwLock<std::sync::Weak<crate::keystore::DataKeys>>,
+}
+
+/// The advisory lock two joining nodes serialise on (`JOIN_LOCK`).
+const JOIN_LOCK: i64 = 460046;
+
+/// A membership row dead longer than this is swept at a join
+/// (`DEAD_NODE_RETENTION_MS`).
+pub(crate) const DEAD_NODE_RETENTION_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// One live node in another mode, as `describeDiffering()` names it.
+#[tracing::instrument(level = "debug")]
+pub(crate) fn differing_of(
+    name: &str,
+    id: &str,
+    mode: &str,
+    version: &str,
+) -> String {
+    format!(
+        "{} ({}, {}, {})",
+        name,
+        id,
+        mode,
+        if version.is_empty() {
+            "unknown version"
+        } else {
+            version
+        }
+    )
+}
+
+/// `cluster.js`'s refusal of a membership (STS-CLUSTER-0002).
+#[tracing::instrument(level = "debug")]
+pub(crate) fn refused_join(mode: &str, differing: &[String]) -> String {
+    format!(
+        "{}cluster: this node ({}) was refused membership: {}. Every node against one store must run the same \
+         cluster mode.",
+        tag(codes::STS_CLUSTER_0002),
+        mode,
+        differing.join("; ")
+    )
 }
 
 /// The channel a commit's NOTIFY goes out on, so another process pulls at
@@ -703,29 +745,40 @@ impl Driver for PostgresDriver {
             let base = "SELECT handle, realm, key, body, (extract(epoch from written_at) * 1000)::bigint AS \
                         written_ms, expires_at, key_sealed FROM sts_minted WHERE body <> $1 AND realm = \
                         ANY($2::text[]) AND (expires_at IS NULL OR expires_at > $3)";
-            let rows = if aged {
-                client
-                    .query(
-                        &format!(
-                            "{} AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) AND written_at < \
-                             to_timestamp($5::float8 / 1000.0))",
-                            base
-                        ),
-                        &[
-                            &TOMBSTONE,
-                            &filter.realms,
-                            &filter.now_ms,
-                            &filter.age_handles,
-                            &(filter.stale_before as f64),
-                        ],
-                    )
-                    .await
-            } else {
-                client
-                    .query(base, &[&TOMBSTONE, &filter.realms, &filter.now_ms])
-                    .await
+            let mut sql = base.to_string();
+            let mut params: Vec<
+                Box<dyn tokio_postgres::types::ToSql + Sync + Send>,
+            > = vec![
+                Box::new(TOMBSTONE),
+                Box::new(filter.realms.clone()),
+                Box::new(filter.now_ms),
+            ];
+            if aged {
+                params.push(Box::new(filter.age_handles.clone()));
+                params.push(Box::new(filter.stale_before as f64));
+                sql.push_str(&format!(
+                    " AND NOT (expires_at IS NULL AND handle = ANY(${}::text[]) AND written_at < to_timestamp(${}::float8 \
+                     / 1000.0))",
+                    params.len() - 1,
+                    params.len()
+                ));
             }
-            .map_err(err)?;
+            // The stores whose expiring rows a start does not read (#883):
+            // a NULL expires_at, the operational row, is still read.
+            if !filter.null_expiry_handles.is_empty() {
+                params.push(Box::new(filter.null_expiry_handles.clone()));
+                sql.push_str(&format!(
+                    " AND NOT (handle = ANY(${}::text[]) AND expires_at IS NOT NULL)",
+                    params.len()
+                ));
+            }
+            let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
+                .iter()
+                .map(|p| {
+                    p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync)
+                })
+                .collect();
+            let rows = client.query(&sql, &refs).await.map_err(err)?;
             Ok(rows.iter().map(minted_row).collect())
         })
     }
@@ -1607,6 +1660,14 @@ impl ClusterStore for PostgresDriver {
         })
     }
 
+    // JOINING (`joinCluster()`, `cluster.js`'s `join()`). One transaction
+    // under the advisory JOIN_LOCK, so two nodes starting together cannot
+    // both see "nobody else runs a different mode" and both write a row.
+    // Rows dead for longer than DEAD_NODE_RETENTION_MS are swept on the
+    // way; a live node in another mode writes nothing and is refused with
+    // STS-CLUSTER-0002, the sentence `cluster.js` says. The mode, the name
+    // and the version come in `info` (`mode`, `name`, `version`); a caller
+    // that names no mode joins active-active, as this driver always did.
     fn join(
         &self,
         node: &str,
@@ -1615,20 +1676,73 @@ impl ClusterStore for PostgresDriver {
     ) -> BoxFuture<'_, Result<(), String>> {
         let node = node.to_string();
         self.pending(async move {
-            let name = info.get("name").and_then(Json::as_str).unwrap_or("").to_string();
-            self.client()
-                .await?
-                .execute(
+            let field = |k: &str| {
+                info.get(k).and_then(Json::as_str).unwrap_or("").to_string()
+            };
+            let (name, version) = (field("name"), field("version"));
+            let mode = Some(field("mode"))
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| "active-active".to_string());
+            let mut client = self.client().await?;
+            let tx = client.transaction().await.map_err(err)?;
+            tx.execute("SELECT pg_advisory_xact_lock($1)", &[&JOIN_LOCK])
+                .await
+                .map_err(err)?;
+            tx.execute(
+                &format!(
+                    "DELETE FROM sts_cluster_nodes WHERE expires_at < {} - $1",
+                    DB_NOW
+                ),
+                &[&DEAD_NODE_RETENTION_MS],
+            )
+            .await
+            .map_err(err)?;
+            let live = tx
+                .query(
                     &format!(
-                        "INSERT INTO sts_cluster_nodes ({node_write}) VALUES ($1, $2, 'active-active', {now}, {now}, {now} + $3, $4) ON CONFLICT (node_id) \
-                         DO UPDATE SET heartbeat_at = {now}, expires_at = {now} + $3, left_at = 0",
-                        node_write = NODE_WRITE,
-                        now = DB_NOW
+                        "SELECT node_id, name, mode, version FROM sts_cluster_nodes WHERE left_at = 0 AND \
+                         expires_at > {} AND node_id <> $1",
+                        DB_NOW
                     ),
-                    &[&node, &name, &(ttl_ms as i64), &info],
+                    &[&node],
                 )
                 .await
                 .map_err(err)?;
+            let differing: Vec<String> = live
+                .iter()
+                .filter(|r| r.get::<_, Option<String>>("mode").as_deref() != Some(mode.as_str()))
+                .map(|r| {
+                    differing_of(
+                        &r.get::<_, Option<String>>("name").unwrap_or_default(),
+                        &r.get::<_, String>("node_id"),
+                        &r.get::<_, Option<String>>("mode").unwrap_or_default(),
+                        &r.get::<_, Option<String>>("version").unwrap_or_default(),
+                    )
+                })
+                .collect();
+            if !differing.is_empty() {
+                tx.rollback().await.map_err(err)?;
+                return Err(StoreError::new(refused_join(&mode, &differing)));
+            }
+            tx.execute(
+                &format!(
+                    "INSERT INTO sts_cluster_nodes ({node_write}) VALUES ($1, $2, $3, $4, '', {now}, {now}, {now} + \
+                     $5, $6)",
+                    node_write = NODE_WRITE,
+                    now = DB_NOW
+                ),
+                &[&node, &name, &mode, &version, &(ttl_ms as i64), &info],
+            )
+            .await
+            .map_err(err)?;
+            tx.commit().await.map_err(err)?;
+            tracing::info!(
+                "cluster: node {} ({}) joined in {} mode; {} other live node(s).",
+                node,
+                name,
+                mode,
+                live.len()
+            );
             Ok(())
         })
     }
