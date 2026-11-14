@@ -288,8 +288,9 @@ const HOME_CSS =
   // pale yellow ground is not the realm's to change.
   'h1{font-size:1.5em;margin:0 0 2px;color:var(--sts-accent,#12107c);' +
   'letter-spacing:.01em}' +
-  'p.sub{color:var(--sts-muted,#666);font-size:.88em;margin:0 0 4px}' +
-  'p.ver{color:#8a8a99;font-size:.76em;margin:0 0 16px}' +
+  // The version line under this sentence went to the page footer
+  // (2026-11-14), so the sentence keeps the space below it that line had.
+  'p.sub{color:var(--sts-muted,#666);font-size:.88em;margin:0 0 16px}' +
   '.warn{background:#fff8e1;border:1px solid #ffe082;padding:9px 12px;' +
   'border-radius:5px;font-size:.82em;margin:0 0 18px;color:#222}' +
   'ul{list-style:none;margin:0;padding:0}' +

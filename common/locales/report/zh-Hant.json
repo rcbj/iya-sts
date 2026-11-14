@@ -61,7 +61,6 @@
   "indexedNote": "已索引的運算子由目錄直接回答，無需逐一讀取每個人。若使用者查詢的篩選未使用任何已索引運算子，或進行排序或計數，則需要讀取每個人：同步執行時會被拒絕，模式為 auto 時會成為工作。",
   "trustRealm": "信任領域",
   "go": "前往",
-  "version": "iya-sts 版本 {version}",
   "docsLink": "文件",
   "addFilter": "新增篩選條件",
   "removeFilter": "移除此篩選條件",

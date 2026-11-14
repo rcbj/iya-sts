@@ -61,7 +61,6 @@
   "indexedNote": "已索引的运算符由目录直接回答，无需逐个读取每个人。若用户查询的筛选未使用任何已索引运算符，或进行排序或计数，则需要读取每个人：同步运行时会被拒绝，模式为 auto 时会成为作业。",
   "trustRealm": "信任领域",
   "go": "前往",
-  "version": "iya-sts 版本 {version}",
   "docsLink": "文档",
   "addFilter": "添加筛选条件",
   "removeFilter": "删除此筛选条件",

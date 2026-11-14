@@ -34,11 +34,15 @@ statement about the router and a useless one about the service: this port
 answers well over a hundred endpoints across sixteen protocol families and none
 of them was discoverable from `/`.
 
-So the page is a **signpost**: the logo, the name, the version, one sentence
+So the page is a **signpost**: the logo, the name, one sentence
 about what this service is, the warning that it verifies nothing, and six
 links — the repository, its issues, the documentation site, and the three
 surfaces on this instance that a person rather than a client goes to, `/admin`,
-`/portal` and `/report`.
+`/portal` and `/report`. The version
+is not on the card since 2026-11-14 (rcbj): the page footer every shell draws
+(`common/page_footer.ts`) carries it, with its build line as the tooltip, and
+a second line here was the version said twice. `GET /home-api/front` still
+answers `version` and `build`.
 
 **IT LISTS NO ENDPOINTS AND MUST NOT START.** `GET /admin/sts-metadata` builds
 that list by walking the running Express router, so it cannot go stale by

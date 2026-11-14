@@ -98,10 +98,9 @@ const REPORT_STYLE = [
   '  gap: .35rem; }',
   '.realmpickrow { display: flex; gap: 6px; align-items: center; }',
   '.realmpick .realmname { font-weight: 600; }',
-  // The documentation link under the bar, and the version under the card.
+  // The documentation link under the bar. The version under the card went
+  // to the page footer (2026-11-14).
   '.doclink { margin: -.5rem 0 1rem; font-size: .9em; }',
-  '.foot { margin: .75rem 0 0; color: #6b6f80; font-size: .85em;',
-  '  text-align: right; }',
   // Save is first in the document so that Enter saves when the Save query
   // box is ticked, and drawn after Run (`web_report_pages.ts`,
   // `actionsHtml()`).

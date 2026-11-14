@@ -5,8 +5,6 @@
   "shell.memory.link": "持久保存",
   "shell.memory.after": "，預設為關閉。",
   "shell.json": "這裡的每個頁面也都支援 <code>?format=json</code>，每個表單也都接受 JSON 主體，因此測試可以不透過瀏覽器操作此主控台。",
-  "shell.version": "iya-sts 版本 <code>{version}</code>",
-  "shell.notStamped": "（不是已標記的組建——此程序是從簽出的原始碼執行，其組建時間是其啟動的時間）",
   "shell.open.text": "<strong>此主控台未受保護。</strong>門禁已「關閉」，因此這裡不會檢查任何認證——此服務的其他部分也不會：在登入畫面輸入的使用者名稱，就是它簽發的每個權杖中的身分。任何能連到此連接埠的人，都可以撤銷所有權杖，並改變下一個權杖的內容。在筆記型電腦或 compose 網路上這沒問題，但在公開位址上就不行。請在",
   "shell.adminRoles": "管理員角色",
   "shell.open.after": "中指定誰可以進入，該頁面會繪製此頁面背後的每個設定。",

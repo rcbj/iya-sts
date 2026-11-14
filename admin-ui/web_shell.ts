@@ -117,24 +117,12 @@ class WebShell {
         t.html('console.shell.memory.link') + '</a>' +
         t.html('console.shell.memory.after')) + '</div><div>' +
     t.html('console.shell.json') + '</div>' +
-    // WHICH BUILD OF THIS SERVICE YOU ARE LOOKING AT, on every page of the
-    // console for the reason the sentence above it is here: this is the
-    // surface that CHANGES what every protocol endpoint does, so "was that
-    // fixed in the build I am on" is a question asked in front of it
-    // constantly, and an answer that is one page away is an answer somebody
-    // guesses instead.
-    //
-    // The version (M.N.O.<build>, #1317) is what gets quoted; the tooltip
-    // carries the rest of the build — whether it is a release build, the
-    // build instant, the commit where there is one, and
-    // whether this is a stamped artifact or a checkout being run. That last
-    // distinction is the one worth a tooltip rather than a footnote: two
-    // instances reporting different build times mean nothing if neither was
-    // ever built.
-    '<div title="' + kit.esc(shell.version.buildInfo) + '">' +
-    t.html('console.shell.version', { version: shell.version.version }) +
-    (shell.version.stamped ? '' : t.html('console.shell.notStamped')) +
-    '</div>' +
+    // WHICH BUILD OF THIS SERVICE YOU ARE LOOKING AT is the page footer's
+    // (rcbj, 2026-11-14): `common/web_footer.ts` draws the version under
+    // every page with the build line — release, build instant, commit,
+    // stamped or not — as its tooltip, so the version line that stood here
+    // was the version said twice. `shell.version` is still in the shell's
+    // answer, which machines read.
     // AND WHAT THIS PROCESS IS RUNNING AS — dispatch or single process, the
     // mode, the store and the secret stores. See runtimeFooter().
     WebShell.runtimeFooter(shell, t) +

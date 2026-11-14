@@ -323,10 +323,6 @@ const STYLE_AS_WRITTEN =
   // be a phone showing nothing but navigation.
   '@media (max-width:52rem){.side{position:static;flex:1 1 100%}' +
   WebNavSections.narrowCss('#2c5cc5', '10rem') + '}' +
-  // The version line at the foot of every page. Quiet and small: it is
-  // provenance rather than content, and this is the surface a person visits to
-  // change their own password, not one they came to read a build number off.
-  '.ver{color:#9a9aa6;font-size:.78em;text-align:center;margin:16px 0 0}' +
   // THE TLS CLIENT CERTIFICATE CARD (2026-09-13). A select for the key
   // algorithm and the revocation reason, drawn like the text inputs above it;
   // download LINKS that look like buttons, because a `data:` link with
@@ -361,8 +357,7 @@ const STYLE_AS_WRITTEN =
   'ol.steps li{margin:0 0 4px}' +
   '.state-valid{color:#1b7a3a;font-weight:600}' +
   '.state-revoked,.state-superseded{color:#b00020;font-weight:600}' +
-  '.state-expired{color:#8a8a96;font-weight:600}' +
-  '.ver code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}';
+  '.state-expired{color:#8a8a96;font-weight:600}';
 
 const NAV = [
   // `key` names the section in the `portal` catalog (#539): its title and
