@@ -36,7 +36,18 @@
 //                                length and SHA-256
 //   GET  /pep-app/slow?ms=<n>    page "slow", answered after n ms, at most
 //                                30 s: the proxy's upstream timeout (504)
+//   POST /pep-app/saml/acs       page "saml-acs": the application's SAML
+//                                ACS (D11's `saml` mode), which checks the
+//                                SAMLResponse and opens a session behind
+//                                `pep_app_saml` (`pep_app_identity.js`)
+//   POST /pep-app/saml/_setup    what the ACS and the JWT check trust; not
+//                                counted
 //   *    /pep-app/...            page "other"
+//
+// Every echo also carries `jwt` ({ header, payload, verified, expired, why })
+// when `Authorization` is a Bearer JWT, and `saml` ({ nameId, attributes,
+// issuer, sessionIndex }) when the request's `pep_app_saml` cookie names a
+// live ACS session.
 //
 // Every page answers the same JSON:
 //
@@ -63,6 +74,7 @@
 
 const crypto = require("crypto");
 const util = require("./companion_util.js");
+const { PepAppIdentity } = require("./pep_app_identity.js");
 
 const log = util.logger("iya-sts-companion-pep-app");
 
@@ -164,8 +176,13 @@ function bodyOf(req) {
  * The application.
  */
 class PepApp {
-  constructor() {
+  /**
+   * @param {object} [opts] - `caFile`, `insecure`: how the identity half
+   *   dials the service for its metadata and JWKS
+   */
+  constructor(opts) {
     log.debug("Entering PepApp.constructor().");
+    this.identity = new PepAppIdentity(opts);
     // path -> count, in insertion order for the cap.
     this.hits = new Map();
     this.total = 0;
@@ -251,6 +268,8 @@ class PepApp {
       page = method === "POST" ? "item-created" : "items";
     } else if (p === PREFIX + "/slow") {
       page = "slow";
+    } else if (p === PREFIX + "/saml/acs" && method === "POST") {
+      page = "saml-acs";
     }
     log.debug("Leaving PepApp.pageOf(). " + page);
     return page;
@@ -269,6 +288,28 @@ class PepApp {
       util.sendJson(res, 200, { app: "pep-app", total: this.total,
                                 byPath: Object.fromEntries(this.hits) });
       log.debug("Leaving PepApp.handle(). Hits.");
+      return;
+    }
+    if (p === PREFIX + "/saml/_setup" && req.method === "POST") {
+      // What the ACS and the JWT check trust; not counted, never proxied.
+      const raw = await bodyOf(req);
+      let asked = {};
+      try {
+        asked = JSON.parse((raw || Buffer.alloc(0)).toString("utf8") || "{}");
+      } catch (e) {
+        log.debug("Caught in PepApp.handle(): " + ((e && e.message) || e));
+        util.sendJson(res, 400, { ok: false, why: "the body is not JSON" });
+        log.debug("Leaving PepApp.handle(). Setup not JSON.");
+        return;
+      }
+      try {
+        util.sendJson(res, 200, await this.identity.setup(asked));
+      } catch (e) {
+        log.debug("Caught in PepApp.handle(): " + ((e && e.message) || e));
+        util.sendJson(res, 502, { ok: false,
+                                  why: String((e && e.message) || e) });
+      }
+      log.debug("Leaving PepApp.handle(). Setup.");
       return;
     }
     const hit = this.count(p);
@@ -310,11 +351,33 @@ class PepApp {
         return;
       }
     }
-    const status = page === "item-created" ? 201 : 200;
+    // THE IDENTITY THE PROXY FORWARDED (D11): a Bearer JWT decoded and
+    // checked, and the SAML session the ACS opened, when there is one.
+    let status = page === "item-created" ? 201 : 200;
     const headers = { "Content-Type": "application/json",
                       "Cache-Control": "no-store",
                       "X-Content-Type-Options": "nosniff",
                       "X-Pep-App-Page": page };
+    const jwt = await this.identity.bearerJwt(req.headers.authorization);
+    if (jwt) {
+      echo.jwt = jwt;
+    }
+    if (page === "saml-acs") {
+      const accepted = this.identity.acs(bytes);
+      status = accepted.status;
+      echo.ok = accepted.status === 200;
+      if (accepted.saml) {
+        echo.saml = accepted.saml;
+        headers["Set-Cookie"] = accepted.cookie;
+      } else {
+        echo.why = accepted.why;
+      }
+    } else {
+      const saml = this.identity.sessionOf(req);
+      if (saml) {
+        echo.saml = saml;
+      }
+    }
     if (page === "hop") {
       // A HOP-BY-HOP HEADER, NAMED BY `Connection`. A proxy that forwards a
       // response must remove `Connection` and every header it names (RFC

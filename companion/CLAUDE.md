@@ -25,8 +25,11 @@ is why it is shaped the way it is.
 | `krb5_error.js` | The one Kerberos message the companion writes itself: the KRB-ERROR its TCP service answers a refusal with |
 | `social_idps.js` | A dummy of each of the 39 named social providers (#1689), at `/social/{id}` |
 | `pep_app.js` | The application the remote XACML PEP protects as a reverse proxy (#1760), at `/pep-app`: every page echoes what reached it as JSON |
+| `pep_app_identity.js` | What `/pep-app` reads of the identity the proxy forwards (#1760, D11): a Bearer JWT decoded and checked, and the application's SAML ACS |
 
-Node built-ins, `bunyan`, `qrcode` and `kerberos`, pinned and installed from
+Node built-ins, `bunyan`, `qrcode`, `kerberos`, and since #1760 `xml-crypto`
+and `@xmldom/xmldom` (the ACS's XML signature check, at the versions the
+service uses, required lazily), pinned and installed from
 the committed lockfile. Plain JavaScript and no build of its own: the
 service's TypeScript conversion (#50) is about the service. `kerberos` is a
 native module, built from source in the image's first stage against Debian's
@@ -237,6 +240,8 @@ the job or the test peer (`tests/peer/`). `pep_app.js` serves it at
 | `GET /pep-app/api/items` | `items` | the OAuth 2.0 and Basic route's read |
 | `POST /pep-app/api/items` | `item-created` (201) | the write: allowed and refused methods |
 | `GET /pep-app/slow?ms=` | `slow` | answered after `ms`, at most 30 s: the proxy's upstream timeout (504) |
+| `POST /pep-app/saml/acs` | `saml-acs` | the application's own SAML ACS, where the proxy POSTs the assertion in D11's `saml` mode |
+| `POST /pep-app/saml/_setup` | — | `{ audience, metadataUrl?, certificates?, jwksUrl? }`: what the ACS and the JWT check trust. Not counted |
 | anything else under `/pep-app` | `other` | e.g. the SAML route's pages |
 
 Every page answers one JSON shape: `{ app: "pep-app", page, method, path,
@@ -247,6 +252,27 @@ show; `headers` is every header node received, names lower-cased, so the
 job reads the identity headers the proxy added and the `Authorization` and
 proxy cookie it must have stripped. A body over 8 MiB is the application's
 own 413, well past any `maxBodyBytes` the job sets.
+
+**THE IDENTITY THE PROXY FORWARDS IS READ, NOT ONLY ECHOED (D11).** A
+route sends it as headers it names, as a JWT access token the service
+issued for the application, or as a SAML assertion the service issued for
+it, which the proxy POSTs to this ACS server-side before forwarding the
+request with the cookie it set. So every echo also carries `jwt` — the
+header and payload of a `Bearer` JWT as sent, `verified` against the
+realm's JWKS (`_setup`'s `jwksUrl`, else the token's `iss` +
+`/oauth2/jwks`; RS, PS, ES and EdDSA with node's crypto) and `expired` —
+and `saml` (`{ nameId, attributes, issuer, sessionIndex }`) when the
+request's `pep_app_saml` cookie names a live ACS session. **The ACS reads
+the assertion from what the signature COVERS** (xml-crypto's signed
+references), never from the document around it, so a wrapped assertion is
+not read; it checks the signature under the realm's certificate (from the
+IdP metadata `_setup` named, or the certificates it was handed), the
+audience against the configured SP entity, and the conditions' window.
+**`_setup` is unauthenticated**, like everything in this container: the job
+calls it once its realm exists, which no environment variable could name
+when the stack started. Mutation-tested: the audience check removed fails
+10f; ignoring `checkSignature()`'s answer is equivalent, because xml-crypto
+6 throws on a signature that does not verify.
 
 **DISPATCHED BEFORE THE SESSION AND THE CSRF CHECK**, by the raw path. The
 proxy, not a browser, sends these requests, with no companion session; a
@@ -301,7 +327,11 @@ codec). `tests/social_idp_signins.js` signs in through each dummy social
 provider as its own assertion, against this module on a loopback port, and
 `tests/companion.js` holds that a token POST under `/social` is that dummy
 and not the CSRF page; section 9 holds `/pep-app`'s echo, its raw path, the
-write's digest, the hop-by-hop page, the slow page and the counter.
+write's digest, the hop-by-hop page, the slow page and the counter, and
+section 10 the identity half: `_setup`, a JWT verified and a changed one
+not, the ACS accepting a signed response for its audience and setting
+`pep_app_saml`, the next echo carrying the session, and a tampered,
+foreign-audience or unsigned response refused with no cookie.
 
 **ONE PROTOCOL JOB NEEDS THE COMPANION SINCE #1760**, and so it is on the
 test stack: `docker-compose-run-tests.yml`'s `companion`, in every local

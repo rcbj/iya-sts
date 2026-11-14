@@ -3026,6 +3026,16 @@ const PROXY_SECRETS = [];
 // CAEP poll stream: the library polls every 5 s by default, plus the
 // transmitter's own delivery.
 const PROXY_SIGNAL_MS = 45000;
+// D11's `headers` mode, on every route that forwards headers: who, how, and
+// three of the person's claims.
+const PROXY_IDENTITY_HEADERS = {
+  mode: "headers", separator: ",",
+  headers: [{ name: "X-Remote-User", claim: "username" },
+            { name: "X-Remote-Auth", claim: "mechanism" },
+            { name: "X-Iya-User", claim: "sub" },
+            { name: "X-Iya-Email", claim: "email" },
+            { name: "X-Iya-Groups", claim: "groups" }]
+};
 const PROXY_MAX_BODY = 4096;
 const COMPANION_IMAGE = "rcbj/iya-sts-companion:test";
 const SAML2_TOKEN_TYPE =
@@ -3424,9 +3434,11 @@ async function browse(jars, url, username) {
 // refuses a non-loopback http redirect URI, D5).
 function proxyConfiguration(publicBaseUrl, withSession) {
   log.debug("Entering proxyConfiguration().");
-  const identity = { subjectHeader: "X-Remote-User",
-                     mechanismHeader: "X-Remote-Auth",
-                     forwardCredentials: false, resource: "", action: "" };
+  // D11: the identity reaches the application in one of three modes. Most
+  // routes use `headers`, naming five claims; the jwt and saml-app routes
+  // below are the other two modes.
+  const identity = { forwardCredentials: false, resource: "", action: "",
+                     identity: PROXY_IDENTITY_HEADERS };
   const routes = [
     { id: "public", path: "/pep-app/public", match: "prefix",
       methods: ["GET", "HEAD"], public: true },
@@ -3454,6 +3466,14 @@ function proxyConfiguration(publicBaseUrl, withSession) {
                               match: "prefix", methods: ["GET"],
                               mechanisms: ["saml2"],
                               application: PROXY_SAML_APP }, identity));
+  routes.push({ id: "jwt", path: "/pep-app/jwt", match: "prefix",
+                methods: ["GET"], mechanisms: ["oauth2", "basic"],
+                application: PROXY_APP, forwardCredentials: false,
+                resource: "", action: "", identity: { mode: "jwt" } });
+  routes.push({ id: "saml-app", path: "/pep-app/saml-app", match: "prefix",
+                methods: ["GET"], mechanisms: ["basic"],
+                application: PROXY_SAML_APP, forwardCredentials: false,
+                resource: "", action: "", identity: { mode: "saml" } });
   routes.push(Object.assign({ id: "scratch", path: "/pep-app/scratch",
                               match: "prefix", methods: ["GET"],
                               mechanisms: ["basic"],
@@ -3552,7 +3572,9 @@ async function registerTheApplications() {
   }, "the confidential client behind the proxy");
   await createApplication(PROXY_SAML_APP, ["saml2", "wstrust"], {
     samlEntityId: [PROXY_SAML_AUDIENCE],
-    samlAssertionConsumerService: ["https://pep-app.example.test/saml/acs"],
+    // THE APPLICATION'S OWN ACS (D11's `saml` mode): the companion's, as the
+    // PEP dials it, where the proxy POSTs the assertion server-side.
+    samlAssertionConsumerService: [pep.upstreamUrl + "/pep-app/saml/acs"],
     wstrustAppliesTo: [PROXY_SAML_AUDIENCE]
   }, "the SAML 2.0 service provider the saml route names");
   await createApplication(PROXY_SCRATCH_APP, ["oauth2"], {
@@ -3645,6 +3667,24 @@ async function itProxiesAnApplication() {
              note: "GET /pep-app/_hits said " + told(r) };
   });
 
+  // WHAT THE APPLICATION TRUSTS (D11): its ACS checks the realm's SAML
+  // signature, read from the realm's IdP metadata, for the SP entity the
+  // saml-app route's application is; its echo checks a Bearer JWT against
+  // the realm's JWKS. Both as the COMPANION reaches the service.
+  const realmAsTheCompanionSees = LAUNCHER_STARTED_IT ? realmUrl("")
+                                                      : pep.pdpUrl;
+  const setUp = await proxyRequest("POST", pep.upstreamDirectUrl +
+    "/pep-app/saml/_setup", {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      audience: PROXY_SAML_AUDIENCE,
+      metadataUrl: realmAsTheCompanionSees + "/saml2/metadata",
+      jwksUrl: realmAsTheCompanionSees + "/oauth2/jwks" }) });
+  assert.ok(setUp.status === 200 && setUp.json &&
+            setUp.json.certificates > 0,
+    "POST /pep-app/saml/_setup should read the realm's signing " +
+    "certificate from " + realmAsTheCompanionSees + "/saml2/metadata; it " +
+    "answered " + told(setUp));
   const modeBefore = await realmSetting("global.mode");
   if (modeBefore !== "development") {
     await setSetting("global.mode", "development");
@@ -3657,6 +3697,7 @@ async function itProxiesAnApplication() {
     await theProxyTakesAnAccessToken();
     await theProxyTakesBasic();
     await theProxyTakesAnAssertion();
+    await theProxyForwardsTheIdentity();
     if (pep.proxyHttpsUrl) {
       await theProxyHoldsASession();
     } else {
@@ -4194,6 +4235,135 @@ async function theProxyTakesAnAssertion() {
       "and neither refusal reached the application");
   });
   log.debug("Leaving theProxyTakesAnAssertion().");
+}
+
+// 10e-ii. HOW THE IDENTITY REACHES THE APPLICATION (D11), in each of the
+// three modes, and what a client may not put there itself.
+async function theProxyForwardsTheIdentity() {
+  log.debug("Entering theProxyForwardsTheIdentity().");
+  const admin = await personsToken(ADMIN_PERSON, PROXY_API_AUDIENCE);
+  const adminSub = String((jwsPayloadOf(admin) || {}).sub || "");
+  const items = pep.proxyUrl + "/pep-app/api/items";
+
+  // HEADERS MODE: the five claims, and a client's own copy of one of them —
+  // in an odd case, sent twice — removed before the proxy adds its own.
+  const viaHeaders = await proxyRequest("GET", items, {
+    headers: { authorization: "Bearer " + admin,
+               "X-iYa-UsEr": ["forged-one", "forged-two"],
+               "x-iya-email": "mallory@evil.test" } });
+  const h = (viaHeaders.json || {}).headers || {};
+  check("headers mode: the configured claims reach the application",
+        function () {
+    assert.strictEqual(viaHeaders.status, 200,
+      "GET /pep-app/api/items answered " + told(viaHeaders));
+    assert.ok(adminSub, "the realm's JWT carries a sub");
+    assert.strictEqual(h["x-iya-user"], adminSub,
+      "X-Iya-User is the person's sub; it arrived as " +
+      JSON.stringify(h["x-iya-user"]));
+    assert.strictEqual(h["x-iya-email"],
+                       ADMIN_PERSON + "@xacml-remote-pep.test",
+      "X-Iya-Email is the entry's mail; it arrived as " +
+      JSON.stringify(h["x-iya-email"]));
+    assert.ok(String(h["x-iya-groups"] || "").split(",")
+      .indexOf("ssf-read") >= 0,
+      "X-Iya-Groups lists the person's groups, joined by the separator; it " +
+      "arrived as " + JSON.stringify(h["x-iya-groups"]));
+  });
+  check("headers mode: a client's own identity header is removed whatever " +
+        "its case and however often it was sent", function () {
+    assert.ok(String(h["x-iya-user"]).indexOf("forged") < 0 &&
+              String(h["x-iya-email"]).indexOf("mallory") < 0,
+      "the client sent X-iYa-UsEr twice and x-iya-email once; the " +
+      "application saw " + JSON.stringify({ user: h["x-iya-user"],
+                                            email: h["x-iya-email"] }));
+  });
+
+  // JWT MODE: a token the service issued for the application's audience.
+  const byBasic = await proxyRequest("GET", pep.proxyUrl + "/pep-app/jwt/a",
+    { headers: { authorization: basic(ADMIN_PERSON,
+                                      "pep-proxy-" + ADMIN_PERSON) } });
+  const byToken = await proxyRequest("GET", pep.proxyUrl + "/pep-app/jwt/b",
+    { headers: { authorization: "Bearer " + admin } });
+  const issued = function (r) {
+    log.debug("Entering issued().");
+    log.debug("Leaving issued().");
+    return ((r.json || {}).jwt) || {};
+  };
+  check("jwt mode: the application is sent a Bearer token the service " +
+        "issued for its audience, about the person", function () {
+    assert.strictEqual(byBasic.status, 200,
+      "GET /pep-app/jwt/a with Basic answered " + told(byBasic));
+    const sent = String(((byBasic.json || {}).headers || {}).authorization ||
+                        "");
+    assert.ok(/^Bearer\s+\S+\.\S+\.\S+$/.test(sent),
+      "Authorization reaching the application is a Bearer JWT, not the " +
+      "client's Basic credential; it is " + sent.slice(0, 20));
+    const jwt = issued(byBasic);
+    assert.strictEqual(jwt.verified, true,
+      "and it verifies against the realm's JWKS: " + jwt.why);
+    assert.strictEqual(String((jwt.payload || {}).sub), adminSub,
+      "its sub is the person's; it is " + JSON.stringify(jwt.payload));
+    assert.ok([].concat((jwt.payload || {}).aud || [])
+      .indexOf(PROXY_API_AUDIENCE) >= 0,
+      "its aud is the application's audience " + PROXY_API_AUDIENCE);
+  });
+  check("jwt mode: the client's own Authorization is gone", function () {
+    assert.strictEqual(byToken.status, 200,
+      "GET /pep-app/jwt/b with a Bearer token answered " + told(byToken));
+    const sent = String(((byToken.json || {}).headers || {}).authorization ||
+                        "");
+    assert.ok(sent && sent !== "Bearer " + admin,
+      "the application must be sent the token the service issued for it, " +
+      "never the client's own");
+    assert.strictEqual(issued(byToken).verified, true,
+      "and that token verifies: " + issued(byToken).why);
+  });
+
+  // SAML MODE: the proxy POSTs the service's assertion to the
+  // application's ACS server-side and forwards the request with the
+  // application's cookie, which the browser never sees.
+  const hitsBefore = await upstreamHits();
+  const viaSaml = await proxyRequest("GET", pep.proxyUrl +
+    "/pep-app/saml-app/page", { headers: { authorization:
+      basic(ADMIN_PERSON, "pep-proxy-" + ADMIN_PERSON) } });
+  const hitsAfter = await upstreamHits();
+  check("saml mode: the application's ACS was sent an assertion about the " +
+        "person and the request arrives in that session", function () {
+    assert.strictEqual(viaSaml.status, 200,
+      "GET /pep-app/saml-app/page answered " + told(viaSaml) + pepLog());
+    const saml = (viaSaml.json || {}).saml || {};
+    const nameId = String(saml.nameId || "");
+    assert.ok(nameId && (nameId === ADMIN_PERSON || nameId === adminSub ||
+                         nameId.indexOf(ADMIN_PERSON) >= 0),
+      "the echo's saml.nameId names the person; the echo holds " +
+      JSON.stringify(viaSaml.json && viaSaml.json.saml));
+    assert.ok(hitsOn(hitsAfter, "/pep-app/saml/acs") >
+              hitsOn(hitsBefore, "/pep-app/saml/acs"),
+      "and the ACS was posted to");
+  });
+  check("saml mode: the browser never receives the application's cookie",
+        function () {
+    const set = [].concat(viaSaml.headers["set-cookie"] || []).join(" ");
+    assert.ok(set.indexOf("pep_app_saml") < 0,
+      "the proxy keeps the application's cookie in a jar of its own; it " +
+      "sent the client " + JSON.stringify(set));
+  });
+  log.debug("Leaving theProxyForwardsTheIdentity().");
+}
+
+// The payload of a compact JWS this job holds, unverified.
+function jwsPayloadOf(token) {
+  log.debug("Entering jwsPayloadOf().");
+  try {
+    const part = String(token || "").split(".")[1] || "";
+    const out = JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+    log.debug("Leaving jwsPayloadOf().");
+    return out;
+  } catch (e) {
+    log.debug("Caught in jwsPayloadOf(): " + ((e && e.message) || e));
+    log.debug("Leaving jwsPayloadOf(). Not a JWS.");
+    return null;
+  }
 }
 
 // 10f. THE SESSION MECHANISM (D5 revised, D10): THE PROXY IS THE RELYING

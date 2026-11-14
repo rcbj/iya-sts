@@ -53,6 +53,12 @@
 //      SHA-256 with no form token; `/pep-app/public/hop` answers
 //      `Connection: x-upstream-secret` with that header beside an
 //      end-to-end one; `/pep-app/slow` waits what it was asked, bounded.
+//  10. AND THE IDENTITY IT READS (#1760, D11): `_setup` taking the audience,
+//      a signing key and a JWKS; a Bearer JWT decoded and verified against
+//      the JWKS, a changed one echoed as not verified; the ACS accepting a
+//      signed response for its audience and setting `pep_app_saml`, the
+//      next echo carrying that session, and a tampered, foreign-audience or
+//      unsigned response refused with no cookie.
 //
 // In process: the companion requires nothing of the service, so nothing
 // here loads the protocol stack.
@@ -647,6 +653,7 @@ async function run(t) {
   }
   await kerberosDemonstration(t);
   await pepApplication(t);
+  await pepApplicationIdentity(t);
   log.debug("Leaving run().");
 }
 
@@ -754,6 +761,159 @@ async function pepApplication(t) {
     server.close();
   }
   log.debug("Leaving pepApplication().");
+}
+
+// A compact JWS, RS256, by node's crypto.
+function rs256(privateKey, kid, payload) {
+  log.debug("Entering rs256().");
+  const enc = function (obj) {
+    log.debug("Entering enc().");
+    log.debug("Leaving enc().");
+    return Buffer.from(JSON.stringify(obj)).toString('base64url');
+  };
+  const input = enc({ alg: 'RS256', typ: 'at+jwt', kid: kid }) + '.' +
+                enc(payload);
+  const signature = require('crypto').sign('sha256', Buffer.from(input),
+                                           privateKey).toString('base64url');
+  log.debug("Leaving rs256().");
+  return input + '.' + signature;
+}
+
+// A SAML 2.0 Response whose Assertion is signed (enveloped, exclusive
+// c14n, RSA-SHA256) by xml-crypto — the library the companion verifies
+// with, which is the weakness of this half: the job's run against the
+// service's own signer is the independent check.
+function signedResponse(privatePem, audience, nameId) {
+  log.debug("Entering signedResponse().");
+  const { SignedXml } = require('xml-crypto');
+  const now = Date.now();
+  const iso = function (ms) {
+    log.debug("Entering iso().");
+    log.debug("Leaving iso().");
+    return new Date(ms).toISOString();
+  };
+  const xml = '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:' +
+    'protocol" ID="_r1" Version="2.0" IssueInstant="' + iso(now) + '">' +
+    '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ' +
+    'ID="_a1" Version="2.0" IssueInstant="' + iso(now) + '">' +
+    '<saml:Issuer>https://idp.test/realm/x</saml:Issuer>' +
+    '<saml:Subject><saml:NameID>' + nameId + '</saml:NameID></saml:Subject>' +
+    '<saml:Conditions NotBefore="' + iso(now - 60000) + '" NotOnOrAfter="' +
+    iso(now + 300000) + '"><saml:AudienceRestriction><saml:Audience>' +
+    audience + '</saml:Audience></saml:AudienceRestriction>' +
+    '</saml:Conditions><saml:AuthnStatement AuthnInstant="' + iso(now) +
+    '" SessionIndex="_s1"/><saml:AttributeStatement><saml:Attribute ' +
+    'Name="mail"><saml:AttributeValue>' + nameId + '@example.test' +
+    '</saml:AttributeValue></saml:Attribute></saml:AttributeStatement>' +
+    '</saml:Assertion></samlp:Response>';
+  const EXC = 'http://www.w3.org/2001/10/xml-exc-c14n#';
+  const sig = new SignedXml({ privateKey: privatePem,
+    canonicalizationAlgorithm: EXC,
+    signatureAlgorithm: 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256' });
+  sig.addReference({ xpath: "//*[local-name(.)='Assertion']",
+    transforms: ['http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+                 EXC],
+    digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256' });
+  sig.computeSignature(xml, { location: {
+    reference: "//*[local-name(.)='Assertion']/*[local-name(.)='Issuer']",
+    action: 'after' } });
+  log.debug("Leaving signedResponse().");
+  return sig.getSignedXml();
+}
+
+// 10. The identity `/pep-app` reads (#1760, D11): a Bearer JWT decoded and
+// checked against a JWKS, and the ACS.
+async function pepApplicationIdentity(t) {
+  log.debug("Entering pepApplicationIdentity().");
+  const nodeCrypto = require('crypto');
+  const pair = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const jwk = Object.assign(pair.publicKey.export({ format: 'jwk' }),
+                            { kid: 'k1', alg: 'RS256', use: 'sig' });
+  const jwks = http.createServer(function (req, res) {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ keys: [jwk] }));
+  });
+  await new Promise(function (resolve) {
+    jwks.listen(0, '127.0.0.1', resolve);
+  });
+  const { Companion } = require(path.join(ROOT, 'companion', 'companion.js'));
+  const companion = new Companion({ port: 0, publicUrl: PUBLIC,
+                                    walletUrl: '' }, { sts: standIn() });
+  const server = await companion.listen();
+  const port = server.address().port;
+  const AUD = 'https://sp.example.test/saml';
+  const privatePem = pair.privateKey.export({ format: 'pem',
+                                              type: 'pkcs8' });
+  const publicPem = pair.publicKey.export({ format: 'pem', type: 'spki' });
+  try {
+    let r = await raw(port, 'POST', '/pep-app/saml/_setup',
+      { 'content-type': 'application/json' }, JSON.stringify({
+        audience: AUD, certificates: [publicPem],
+        jwksUrl: 'http://127.0.0.1:' + jwks.address().port + '/jwks' }));
+    t.check(r.status === 200 && !!r.json && r.json.certificates === 1,
+            '10a. /pep-app/saml/_setup takes the audience, the signing ' +
+            'certificate and the JWKS', r.text);
+    const token = rs256(pair.privateKey, 'k1',
+      { iss: 'https://idp.test', sub: 'urn:uuid:1', aud: 'https://api.test',
+        exp: Math.floor(Date.now() / 1000) + 300 });
+    r = await raw(port, 'GET', '/pep-app/api/items',
+                  { authorization: 'Bearer ' + token });
+    const jwt = (r.json || {}).jwt || {};
+    t.check(r.status === 200 && jwt.verified === true &&
+            jwt.payload.sub === 'urn:uuid:1' && jwt.header.kid === 'k1' &&
+            jwt.expired === false,
+            '10b. a Bearer JWT is decoded and verified against the JWKS',
+            r.text);
+    const parts = token.split('.');
+    const forged = parts[0] + '.' + Buffer.from(JSON.stringify(
+      { iss: 'https://idp.test', sub: 'urn:uuid:2' })).toString('base64url') +
+      '.' + parts[2];
+    r = await raw(port, 'GET', '/pep-app/api/items',
+                  { authorization: 'Bearer ' + forged });
+    t.check(r.status === 200 && !!r.json && !!r.json.jwt &&
+            r.json.jwt.verified === false &&
+            r.json.jwt.payload.sub === 'urn:uuid:2',
+            '10c. a JWT whose payload was changed is echoed as not verified',
+            r.text);
+    const good = signedResponse(privatePem, AUD, 'alice');
+    const post = function (xml) {
+      log.debug("Entering post().");
+      const form = 'SAMLResponse=' + encodeURIComponent(
+        Buffer.from(xml).toString('base64'));
+      log.debug("Leaving post().");
+      return raw(port, 'POST', '/pep-app/saml/acs',
+                 { 'content-type': 'application/x-www-form-urlencoded',
+                   'content-length': Buffer.byteLength(form) }, form);
+    };
+    r = await post(good);
+    const set = [].concat(r.headers['set-cookie'] || []).join(' ');
+    t.check(r.status === 200 && !!r.json && r.json.ok === true &&
+            r.json.saml.nameId === 'alice' &&
+            r.json.saml.attributes.mail[0] === 'alice@example.test' &&
+            /pep_app_saml=[^;]+; Path=\/pep-app; HttpOnly/.test(set),
+            '10d. the ACS accepts a signed response for its audience and ' +
+            'sets pep_app_saml', r.status + ' ' + r.text + ' ' + set);
+    const cookie = set.split(';')[0];
+    r = await raw(port, 'GET', '/pep-app/protected', { cookie: cookie });
+    t.check(r.status === 200 && !!r.json && !!r.json.saml &&
+            r.json.saml.nameId === 'alice',
+            '10e. every echo carries the SAML session its cookie names',
+            r.text);
+    r = await post(good.split('alice').join('mallo'));
+    const tampered = r.status;
+    r = await post(signedResponse(privatePem, 'https://other.test', 'alice'));
+    const elsewhere = r.status;
+    r = await post('<x/>');
+    t.check(tampered === 403 && elsewhere === 403 && r.status === 403 &&
+            !r.headers['set-cookie'],
+            '10f. a tampered response, one for another audience and an ' +
+            'unsigned one are refused and open no session',
+            [tampered, elsewhere, r.status].join(','));
+  } finally {
+    server.close();
+    jwks.close();
+  }
+  log.debug("Leaving pepApplicationIdentity().");
 }
 
 module.exports = {

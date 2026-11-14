@@ -174,7 +174,8 @@ class Companion {
     const social = new SocialIdps({ publicUrl: settings.publicUrl });
     this.social = social;
     // #1760: the remote PEP's upstream application, dispatched by prefix.
-    this.pepApp = new pepApp.PepApp();
+    this.pepApp = new pepApp.PepApp({ caFile: settings.caFile,
+                                      insecure: settings.insecure });
     // THE DEMONSTRATIONS. oid4vc stays first: /healthz's demos[0] is it.
     this.demos = [oid4vc, kerberos, social, this.pepApp];
     const router = {
