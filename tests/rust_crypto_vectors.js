@@ -162,6 +162,11 @@ function restOfRun(t) {
     xmlEncryption(t, read('xmlenc-rust.json'), read('xmlenc-node.json'));
   }
   const pending = [];
+  if (fs.existsSync(path.join(VECTORS, 'webauthn-rust.json')) &&
+      fs.existsSync(path.join(VECTORS, 'webauthn-node.json'))) {
+    coseSign1FromRust(t, read('webauthn-rust.json'),
+                      read('webauthn-node.json'));
+  }
   if (fs.existsSync(path.join(VECTORS, 'raw-sig-rust.json'))) {
     pending.push(function () {
       return rawSignaturesFromRust(t, read('raw-sig-rust.json'));
@@ -270,6 +275,34 @@ async function sigstoreFromRust(t, v) {
   t.check(await crypto.verifyRekorSet(changed, set, logs) ===
           'unable to verify SET', 'and not over another log index');
   log.debug("Leaving sigstoreFromRust().");
+}
+
+// COSE_SIGN1 (#1368): every COSE_Sign1 Rust signed with Node's key, in each
+// algorithm coseSign1Sign() signs with, verifies with coseSign1Verify() over
+// the same protected header, payload and external AAD.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} vectors - webauthn-rust.json
+ * @param {any} node - webauthn-node.json, for the message
+ */
+function coseSign1FromRust(t, vectors, node) {
+  log.debug("Entering coseSign1FromRust().");
+  const message = node.coseSign1;
+  vectors.coseSign1.forEach(function (row) {
+    let ok = false;
+    try {
+      ok = crypto.coseSign1Verify(row.alg, row.publicJwk,
+        Buffer.from(message.protected, 'base64'),
+        Buffer.from(message.payload, 'base64'),
+        Buffer.from(row.signature, 'base64'),
+        { external: Buffer.from(message.external, 'base64') });
+    } catch (e) {
+      log.debug("Caught in coseSign1FromRust(): " + ((e && e.message) || e));
+    }
+    t.check(ok, 'COSE ' + row.alg + ': a COSE_Sign1 Rust signed verifies ' +
+            'in Node');
+  });
+  log.debug("Leaving coseSign1FromRust().");
 }
 
 // RAW SIGNATURES, THE PQ FAMILY WITH THE ALGORITHM NAMED (#1368): every

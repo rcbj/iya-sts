@@ -10,6 +10,7 @@
 
 pub mod algorithms;
 pub mod b64;
+pub mod cose;
 pub mod der_lite;
 pub mod dkim;
 pub mod error;

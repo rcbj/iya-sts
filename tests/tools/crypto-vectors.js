@@ -1410,8 +1410,74 @@ function webauthn() {
                 signature: t.signature.toString('base64'),
                 tpmTPublic: t.tpmTPublic.toString('base64') };
   return { cose: cose, tpm: tpm, extensions: extensions, csr: csr,
+           coseSign1: coseSign1Vectors(keyFor),
            brokenAlgorithms: require(path.join(ROOT, 'common', 'mode.js'))
              .usesBrokenAlgorithms() };
+}
+
+// COSE_SIGN1 (#1368): coseSign1Sign() over a protected header, a payload
+// and external AAD, for every COSE algorithm it signs with, and
+// coseSign1Verify()'s verdicts on the signature, a tampered one, and the
+// same signature under other AAD. RS1 is never signed with, and its refusal
+// is a row. The private key travels so that Rust signs with Node's key: the
+// deterministic ones (RSA PKCS#1, EdDSA) must be the same bytes.
+function coseSign1Vectors(keyFor) {
+  const protectedBytes = Buffer.from('a10126', 'hex');
+  const payload = Buffer.from('a COSE_Sign1 payload \u00e9', 'utf8');
+  const external = Buffer.from('external aad');
+  const plan = [
+    [-7, 'ec256'], [-35, 'ec384'], [-36, 'ec521'], [-8, 'ed25519'],
+    [-8, 'ed448'], [-257, 'rsa'], [-258, 'rsa'], [-259, 'rsa'],
+    [-37, 'rsa'], [-38, 'rsa'], [-39, 'rsa'], [-9, 'ec256'], [-51, 'ec384'],
+    [-52, 'ec521'], [-47, 'k1'], [-19, 'ed25519'], [-53, 'ed448'],
+    [-48, 'ML-DSA-44'], [-49, 'ML-DSA-65'], [-50, 'ML-DSA-87']
+  ];
+  const rows = plan.map(function (row) {
+    const spec = crypto.coseSignatureAlg(row[0]);
+    let publicKey;
+    let privateKey;
+    let out;
+    if (spec.family === 'pq') {
+      const pair = pqJose.generate(spec.name);
+      publicKey = { kty: 'AKP', alg: spec.name,
+                    pub: pair.pub.toString('base64url') };
+      privateKey = pair.priv.toString('base64');
+      out = { publicJwk: publicKey, privateRaw: privateKey };
+      privateKey = pair.priv;
+    } else {
+      const pair = keyFor[row[1]];
+      publicKey = pair.publicKey.export({ format: 'jwk' });
+      privateKey = pair.privateKey;
+      out = { publicJwk: publicKey,
+              privatePem: pair.privateKey.export({ type: 'pkcs8',
+                                                   format: 'pem' }) };
+    }
+    const sig = crypto.coseSign1Sign(row[0], privateKey, protectedBytes,
+                                     payload, { external: external });
+    const tampered = Buffer.from(sig);
+    tampered[tampered.length - 1] ^= 1;
+    const verdict = function (bytes, aad) {
+      return crypto.coseSign1Verify(row[0], publicKey, protectedBytes,
+                                    payload, bytes, { external: aad });
+    };
+    return Object.assign(out, {
+      alg: row[0], key: row[1],
+      deterministic: spec.family === 'rsa-pkcs1' || spec.family === 'eddsa',
+      signature: Buffer.from(sig).toString('base64'),
+      ok: verdict(sig, external), tampered: verdict(tampered, external),
+      otherAad: verdict(sig, Buffer.from('other aad')) });
+  });
+  let refusal = null;
+  try {
+    crypto.coseSign1Sign(-65535, keyFor.rsa.privateKey, protectedBytes,
+                         payload, {});
+  } catch (e) {
+    refusal = e.message;
+  }
+  return { protected: protectedBytes.toString('base64'),
+           payload: payload.toString('base64'),
+           external: external.toString('base64'),
+           rows: rows, rs1Refusal: refusal };
 }
 
 // SIGSTORE AND TUF (section 11): Node's two canonical forms over values
