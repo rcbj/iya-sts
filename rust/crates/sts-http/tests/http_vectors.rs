@@ -6,8 +6,10 @@
 //! (`common/app.js`) over HTTP, with the same probe routes registered
 //! behind its middleware. Status, the security headers, the Location, and
 //! the body — the realm prefix put back on links and redirects, a page's
-//! careless CSP replaced, the one framed page, Express's 404 — must be
-//! Node's; so must the two CSP builders on their own.
+//! careless CSP replaced, a body that is not a page narrowed, a charset
+//! added to a text or XML type, the Permissions-Policy, the one framed page
+//! and its exact script sources, Express's 404 — must be Node's; so must
+//! the CSP builders on their own.
 //!
 //! The directory is `STS_CRYPTO_VECTORS`, never committed; with it unset
 //! this test says so and passes.
@@ -53,8 +55,24 @@ fn with_csp(mut r: Response, policy: String) -> Response {
     r
 }
 
+/// A body written with its bare type, so the flush is what adds to it.
+fn raw(content_type: &'static str, body: &'static str) -> Response {
+    let mut r = Response::new(Body::from(body));
+    r.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    r
+}
+
 fn app(registry: Arc<RealmRegistry>) -> axum::Router {
     let routes = axum::Router::new()
+        .route("/probe/json", get(|| async { raw("application/json", "{\"a\":1}") }))
+        .route("/probe/jrd", get(|| async { raw("application/jrd+json", "{}") }))
+        .route("/probe/xml", get(|| async { raw("application/samlmetadata+xml", "<x/>") }))
+        .route("/probe/text-xml", get(|| async { raw("text/xml", "<x/>") }))
+        .route("/probe/svg", get(|| async { raw("image/svg+xml", "<svg/>") }))
+        .route("/probe/css", get(|| async { raw("text/css", "a{}") }))
+        .route("/probe/named", get(|| async { raw("text/plain; charset=iso-8859-1", "x") }))
+        .route("/probe/octets", get(|| async { raw("application/octet-stream", "x") }))
         .route(
             "/probe/html",
             get(|| async {
@@ -139,6 +157,7 @@ async fn the_http_layer_is_nodes() {
             "x-content-type-options",
             "referrer-policy",
             "location",
+            "permissions-policy",
         ] {
             headers.insert(
                 k.to_string(),
@@ -188,10 +207,20 @@ async fn the_http_layer_is_nodes() {
             .iter()
             .map(|o| o.as_str().unwrap())
             .collect();
-        let got = csp::framed_content_security_policy(&origins, &[]);
+        let owned = pairs(&c["overrides"]);
+        let args: Vec<(&str, Option<&str>)> = owned
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_deref()))
+            .collect();
+        let got = csp::framed_content_security_policy(&origins, &args);
         if json!(got) != c["value"] {
             failures.push(format!("framed {}: {}", c["origins"], got));
         }
+    }
+    if !v["notAPage"].is_null()
+        && json!(csp::not_a_page_policy()) != v["notAPage"]
+    {
+        failures.push(format!("not a page: {}", csp::not_a_page_policy()));
     }
     assert!(
         failures.is_empty(),

@@ -117,6 +117,17 @@ pub fn run_view(row: &Json) -> Json {
     out.insert("params".into(), or(row, "params", Json::Null));
     out.insert("takenOver".into(), json!(truthy(row.get("takenOver"))));
     out.insert("abandonedOf".into(), or(row, "abandonedOf", Json::Null));
+    // Where its body ran and how long it was held for load (#408): rows
+    // written before #408 carry neither, and read as the front and none.
+    out.insert(
+        "ranIn".into(),
+        match row.get("ranIn") {
+            Some(v) if truthy(Some(v)) => v.clone(),
+            _ if text(row, "kind") == "run" => json!("front"),
+            _ => Json::Null,
+        },
+    );
+    out.insert("deferredMs".into(), json!(num(row, "deferredMs")));
     out.insert("errorCode".into(), or(row, "errorCode", json!("")));
     out.insert("why".into(), or(row, "why", json!("")));
     out.insert(
@@ -326,6 +337,19 @@ impl Scheduler {
             "offReason": if off.is_empty() { Json::Null } else { json!(off) },
             "manual": job.manual && job.kind != Kind::PerProcess,
             "timeoutMs": schedules.timeout_ms_of(job),
+            // Where a cluster run's body goes (#408), as Node reports it: a
+            // request worker unless the job gave a reason to stay on the
+            // front. This runtime runs every body in its one process, which
+            // is what Node does with no pool too, and says the same.
+            "runsOn": if job.kind == Kind::PerProcess {
+                "every-process"
+            } else if job.on_front.is_some() {
+                "front"
+            } else {
+                "worker"
+            },
+            "onFront": job.on_front.as_ref().map_or(Json::Null, |r| json!(r)),
+            "nice": job.nice_of() as i64,
         });
         let next = schedules.slot_at(job, at as i64);
         drop(schedules);
@@ -393,7 +417,11 @@ impl Scheduler {
     ) {
         view["nextRunAt"] = Json::Null;
         view["nextRunInMs"] = Json::Null;
+        // The pair is set together and cleared together: a reason without the
+        // time it explains would be a stale sentence on a job that is not
+        // late.
         view["overdueSince"] = Json::Null;
+        view["overdueWhy"] = Json::Null;
         if !off.is_empty() {
             view["nextRunState"] = json!("off");
             return;

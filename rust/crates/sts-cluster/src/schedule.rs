@@ -40,6 +40,15 @@ pub const STATES: &[&str] =
 pub const FINAL: &[&str] = &["succeeded", "failed", "abandoned"];
 /// A quiet job's run is recorded at most this often while its outcome holds.
 pub const QUIET_RECORD_MS: f64 = 60_000.0;
+
+/// The fewest runs the default cap allows at once (`MIN_DEFAULT_RUNS`): at
+/// one, the memory mode's fifteen-second partner refresh queued behind every
+/// other job (#1571).
+pub const MIN_DEFAULT_RUNS: f64 = 2.0;
+
+/// A job's `nice` when it names none (#408): the middle of 0 to 19, the
+/// scale `nice(1)` uses.
+pub const DEFAULT_NICE: f64 = 10.0;
 /// How far past the instant the purge would first be free to delete a row
 /// its expiry is written, so a job that runs every slot never has a kept
 /// row near its expiry.
@@ -166,6 +175,17 @@ pub struct JobSpec {
     /// Why the job is off in a realm, or `''`; an `Err` is its own check
     /// failing.
     pub off: Option<OffCheck>,
+    /// Why a cluster job must run on the front process (#408), or `None`.
+    /// A reason, never a flag: an empty one is refused (`STS-SCHED-0009`).
+    /// This runtime has one process and no request workers, so it runs
+    /// every body where the leader is; the reason is kept, and reported,
+    /// because the page and the API name it.
+    pub on_front: Option<String>,
+    /// How patient a scheduled run is with a busy worker (#408): 0 to 19,
+    /// [`DEFAULT_NICE`] when `None`, and 0 for a job on demand only
+    /// (registration settles it). It orders the runs due at one tick; with
+    /// no request workers here nothing is ever held for load.
+    pub nice: Option<f64>,
     /// What the job does; registration refuses a job without it.
     pub run: Option<JobRun>,
 }
@@ -192,8 +212,15 @@ impl JobSpec {
             manual: true,
             timeout_s: None,
             off: None,
+            on_front: None,
+            nice: None,
             run: None,
         }
+    }
+
+    /// Its `nice` as registration settled it.
+    pub fn nice_of(&self) -> f64 {
+        self.nice.unwrap_or(DEFAULT_NICE)
     }
 
     fn manual_only(&self) -> bool {
@@ -440,6 +467,26 @@ impl Schedules {
                     .to_string(),
             );
         }
+        // A REASON TO STAY ON THE FRONT IS A SENTENCE (#408): an empty
+        // one would be an exemption nobody can check.
+        if let Some(reason) = &spec.on_front {
+            if reason.trim().is_empty() {
+                problems.push(
+                    "an onFront that says why the job must run on the front process, or no onFront".to_string(),
+                );
+            }
+            if spec.kind == Kind::PerProcess {
+                problems.push(
+                    "no onFront: a per-process job always runs in the process whose state it cleans".to_string(),
+                );
+            }
+        }
+        if let Some(nice) = spec.nice {
+            if !(nice.fract() == 0.0 && (0.0..=19.0).contains(&nice)) {
+                problems
+                    .push("a nice of a whole number from 0 to 19".to_string());
+            }
+        }
         if spec.kind == Kind::PerProcess && spec.manual_only() {
             problems.push(
                 "a schedule: a per-process job cannot be on demand only, because nothing queues a run in every \
@@ -461,6 +508,14 @@ impl Schedules {
                 problems.join("; ")
             ));
         }
+        let mut spec = spec;
+        // AN ON-DEMAND JOB IS AN OPERATOR'S ACT (a `*-now`), and an operator
+        // who pressed a button is not made to wait.
+        spec.nice = Some(if spec.manual_only() {
+            0.0
+        } else {
+            spec.nice_of()
+        });
         self.jobs.insert(spec.id.clone(), spec);
         Ok(())
     }
@@ -485,12 +540,21 @@ impl Schedules {
         self.jobs.shift_remove(id).is_some()
     }
 
-    /// How many cluster runs the leader may have going at once:
-    /// `scheduler.maxConcurrentRuns`, and never every connection the store's
-    /// pool holds — one is always left for the requests.
+    /// How many cluster runs the leader may have going at once
+    /// (`maxConcurrentRuns()`, rcbj 2026-11-10): `scheduler.maxConcurrentRuns`
+    /// when it is 1 or more (read directly: 0 is a legal value), otherwise
+    /// [`MIN_DEFAULT_RUNS`] — Node's default is the larger of two and one
+    /// fewer than its protocol request workers, and this runtime has no
+    /// request workers to hand a body to (#408), which is Node with none.
+    /// And never every connection the store's pool holds: one is always
+    /// left for the requests.
     pub fn max_concurrent_runs(&self) -> f64 {
         let setting = self.settings.number("scheduler.maxConcurrentRuns");
-        let mut n = if setting >= 1.0 { setting } else { 1.0 };
+        let mut n = if setting >= 1.0 {
+            setting.floor()
+        } else {
+            MIN_DEFAULT_RUNS
+        };
         let pool = self.store_connections.as_ref().map_or(0.0, |f| f());
         if pool > 0.0 {
             n = n.min((pool - 1.0).max(1.0));
@@ -563,22 +627,32 @@ impl Schedules {
         }
     }
 
-    /// A job's schedule in words, for the page and the API.
+    /// A job's schedule in words, for the page and the API
+    /// (`scheduleText()`): four templates rather than a sentence and a
+    /// suffix, because a translation may not put the setting at the end
+    /// (#543 phase 2c, `SENTENCES`).
     pub fn schedule_text(&self, job: &JobSpec) -> String {
         match &job.schedule {
             Schedule::ManualOnly => "on demand only".to_string(),
             Schedule::Cron(expr) => format!("cron {} (UTC)", expr),
             schedule => {
                 let every = self.interval_ms(job);
-                let mut text = if every > 0.0 {
-                    format!("every {}", span(every))
-                } else {
-                    "no interval (0)".to_string()
+                let from = match schedule {
+                    Schedule::EverySetting { key, .. } => Some(key.as_str()),
+                    _ => None,
                 };
-                if let Schedule::EverySetting { key, .. } = schedule {
-                    text.push_str(&format!(", from {}", key));
+                match (every > 0.0, from) {
+                    (true, Some(key)) => {
+                        format!("every {} (from {})", span(every), key)
+                    }
+                    (true, None) => {
+                        format!("every {} (a fixed interval)", span(every))
+                    }
+                    (false, Some(key)) => {
+                        format!("no interval (0), from {}", key)
+                    }
+                    (false, None) => "no interval (0)".to_string(),
                 }
-                text
             }
         }
     }
@@ -605,11 +679,14 @@ impl Schedules {
         let timed =
             !matches!(job.schedule, Schedule::ManualOnly | Schedule::Cron(_));
         if timed && self.interval_ms(job) <= 0.0 {
-            let what = match &job.schedule {
-                Schedule::EverySetting { key, .. } => key.as_str(),
-                _ => "its interval",
+            // A job with no setting has a sentence of its own, not 'its
+            // interval' put where a setting's name goes.
+            return match &job.schedule {
+                Schedule::EverySetting { key, .. } => {
+                    format!("{} is 0, so the job is off", key)
+                }
+                _ => "its interval is 0, so the job is off".to_string(),
             };
-            return format!("{} is 0", what);
         }
         String::new()
     }
@@ -710,7 +787,8 @@ impl Schedules {
 
     /// The instant after which a run-store row is past every bound the
     /// history keeps, so a start need not read it back; `None` for a row
-    /// that does not expire — the leader's, a queued or running one, one of
+    /// that does not expire — the leader's, a process row, a queued or
+    /// running one, one of
     /// a job not registered here or with no interval. Never before a pin
     /// (`keepUntil`).
     pub fn expiry_of(&self, row: &Json) -> Option<f64> {
@@ -725,14 +803,10 @@ impl Schedules {
         let at = match text("kind") {
             "command" => (text("state") != "queued" && ended != 0.0)
                 .then_some(ended + bounds.keep_ms + EXPIRY_SLACK_MS),
-            "process" => match job() {
-                Some(job) if ended != 0.0 => Some(
-                    ended
-                        + bounds.keep_ms.max(3.0 * self.process_every_ms(job))
-                        + EXPIRY_SLACK_MS,
-                ),
-                _ => None,
-            },
+            // #883: one row per process. An expiry would leave it out of the
+            // front's restore, and the page would show no process until the
+            // job ran again; the history walk still deletes a stale one.
+            "process" => None,
             "run" if FINAL.contains(&text("state")) && ended != 0.0 => {
                 let every = match job() {
                     Some(job) if !job.manual_only() && job.cron().is_none() => {

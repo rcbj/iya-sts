@@ -5,9 +5,10 @@
 //! `tests/tools/crypto-vectors.js` writes with `cluster/scheduler.ts`'s own
 //! `Scheduler` over stand-in deps. Both sides build the same jobs from the
 //! same descriptors and settings; every interval, schedule text,
-//! off-reason, time limit, slot, run id, next delay, concurrency limit,
-//! refused registration, row rank, expiry, span and cron occurrence must be
-//! Node's.
+//! off-reason, time limit, `nice` and `onFront` (#408), slot, run id, next
+//! delay, concurrency limit (the setting's and the default's), refused
+//! registration, row rank, expiry, span, a success's `why` (#1313) and cron
+//! occurrence must be Node's.
 //!
 //! Two answers differ by design and are pinned here: croner's complaint
 //! about an expression it cannot read is in each parser's own words, so a
@@ -27,6 +28,7 @@ use sts_cluster::schedule::{
     compare_rows, cron_next, cron_prev, run_id_for, span, JobSpec, Kind,
     Schedule, SchedulerSettings, Schedules, Scope, Unit,
 };
+use sts_cluster::scheduler::why_of;
 
 struct Settings(HashMap<String, Json>);
 
@@ -106,6 +108,8 @@ fn spec_of(d: &Json) -> JobSpec {
                 .to_string())
         }));
     }
+    spec.on_front = d["onFront"].as_str().map(str::to_string);
+    spec.nice = d["nice"].as_f64();
     if let Some(why) = d["offThrows"].as_str() {
         let why = why.to_string();
         spec.off = Some(Arc::new(move |_: &str| Err(why.clone())));
@@ -145,8 +149,13 @@ fn the_scheduler_core_is_nodes() {
         .collect();
     let pool = Arc::new(std::sync::Mutex::new(0.0f64));
     let pool_reader = pool.clone();
+    let mut zero = settings.clone();
+    zero.insert("scheduler.maxConcurrentRuns".into(), json!(0));
     let mut sched = Schedules::new(Arc::new(Settings(settings)))
         .with_store_connections(Arc::new(move || *pool_reader.lock().unwrap()));
+    let zero_reader = pool.clone();
+    let default_cap = Schedules::new(Arc::new(Settings(zero)))
+        .with_store_connections(Arc::new(move || *zero_reader.lock().unwrap()));
     for d in v["descriptors"].as_array().unwrap() {
         sched.register(spec_of(d)).unwrap();
     }
@@ -176,6 +185,14 @@ fn the_scheduler_core_is_nodes() {
         check(
             norm(json!(sched.timeout_ms_of(job))) == node["timeout"],
             format!("{} timeout", id),
+        );
+        check(
+            norm(json!(job.nice_of())) == node["nice"],
+            format!("{} nice {}", id, job.nice_of()),
+        );
+        check(
+            json!(job.on_front) == node["onFront"],
+            format!("{} onFront", id),
         );
         for (t, want) in times.iter().zip(node["slots"].as_array().unwrap()) {
             let got = sched
@@ -216,6 +233,20 @@ fn the_scheduler_core_is_nodes() {
             norm(json!(sched.max_concurrent_runs())) == *want,
             format!("concurrency at pool {}", n),
         );
+    }
+    for (n, want) in [0.0, 1.0, 2.0, 3.0, 10.0]
+        .iter()
+        .zip(v["concurrencyDefault"].as_array().unwrap())
+    {
+        *pool.lock().unwrap() = *n;
+        check(
+            norm(json!(default_cap.max_concurrent_runs())) == *want,
+            format!("default concurrency at pool {}", n),
+        );
+    }
+    for w in v["whys"].as_array().unwrap() {
+        let got = why_of(&w["result"]);
+        check(json!(got) == w["why"], format!("whyOf {}", w["result"]));
     }
     for r in v["refused"].as_array().unwrap() {
         let got = sched.register(spec_of(&r["descriptor"])).err();
