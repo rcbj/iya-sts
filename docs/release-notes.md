@@ -158,6 +158,18 @@ refused. A request that worked in 1.0.0 gets the same answer.
 declare. The remote PEP's AuthZEN endpoint in the `xacml-pep` container
 follows the same rule.
 
+### A federated OpenID Provider may leave out its `issuer`
+
+This applies to a federation relationship that finds its OpenID Provider
+through an [OpenID Federation](configure-oidfed.md#this-service-as-a-federated-relying-party) Trust Anchor
+(`fedTrustAnchor`). In 1.0.0, the sign-in was refused with `STS-FED-0149`
+when the provider's resolved `openid_provider` metadata had no `issuer`.
+In 1.1.0 an absent `issuer` is read as the provider's Entity Identifier.
+OpenID Federation for OpenID Connect 1.1 section 5.1.2 allows no other
+value. An `issuer` that is present and names another entity is still
+refused. The ID Token's `iss` is still checked against the Entity
+Identifier. Nothing this service publishes changes.
+
 ## 1.0.0
 
 1.0.0 is the first release of iya-sts. Every build before it was a

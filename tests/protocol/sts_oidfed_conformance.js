@@ -38,9 +38,15 @@
 //     realm's only authority hint is the suite's Trust Anchor
 //     (`oidfed.realmsAreSubordinates` off): a subordinate's first hint is
 //     otherwise the default realm, and the suite stops at the first hint
-//     it cannot validate. No ledger row was added for this plan. The
-//     suite has not been run against it, and a guessed module key would
-//     hide a real failure in that module.
+//     it cannot validate. No ledger row was added for this plan: its first
+//     run (develop 9300a96d1, memory mode) failed nothing a ledger could
+//     argue. Its seven entity-configuration modules passed in both twins;
+//     the happy path and the two ID Token modules timed out WAITING
+//     because the suite's OP publishes `openid_provider` metadata with no
+//     `issuer`, which `oidfed/oidfed_rp.ts` refused (STS-FED-0149). Connect
+//     1.1 section 5.1.2 makes the Entity Identifier the only value it can
+//     have, so an absent one is read as that since #933
+//     (`tests/oidfed_rp.js`).
 //
 // The ledger is `conformance_suite.js`'s: a FAILED module, or a WARNING
 // from a condition KNOWN_WARNINGS does not name, fails the job.
@@ -119,10 +125,16 @@ const KNOWN_WARNINGS = {
 const KNOWN_FAILURES = {
   // The Entity Configuration's openid_provider metadata publishes the
   // post-quantum JWS algorithms this OP verifies a request object with.
-  // The suite checks the list against its own table of JWS algorithms,
-  // which has ML-DSA but not SLH-DSA or the composite ML-DSA algorithms of
-  // draft-ietf-jose-pq-composite-sigs; they are JWS algorithms all the
-  // same, and rcbj's decision on #176 was PQC support over a clean run.
+  // It IS a JSON array of alg strings (#933's first run: the suite's
+  // array-shape check passed and its per-value check failed). The suite
+  // checks each value against its own table (`JWSUtil`: nimbus's RSA, EC,
+  // ED and HMAC families plus ML-DSA-44/65/87), which lacks SLH-DSA and
+  // the composite ML-DSA algorithms of draft-ietf-jose-pq-composite-sigs;
+  // they are JWS algorithms all the same, the list is exactly what
+  // `oidfed_registration.ts` accepts (`EntityStatement.acceptedAlgorithms()`),
+  // and rcbj's decision on #176 was PQC support over a clean run. Every
+  // classical twin realm passes the same condition, which is why the entry
+  // is in PQ_ONLY.
   ValidateRequestAuthenticationSigningAlgValuesSupported: "the suite's " +
     "JWS algorithm table lacks SLH-DSA and the composite ML-DSA algorithms",
   // The suite decides whether the entity under test IS the Trust Anchor by
@@ -130,7 +142,14 @@ const KNOWN_FAILURES = {
   // identifier, https://…:8081/realm/<id>, begins with its Trust Anchor's,
   // https://…:8081. So it demands that the Leaf's Entity Configuration carry
   // no authority_hints, which OpenID Federation 1.1 section 3 REQUIRES of a
-  // Leaf. Only in the Leaf's entity-configuration module.
+  // Leaf. Only in the Leaf's entity-configuration module. The condition's
+  // message says "in Subordinate Statements" because the suite calls the
+  // same condition at the fetch endpoint too (validateSubordinateStatements);
+  // #933's first run saw it in deployed-leaf-cl from the prefix branch,
+  // and `tests/oidfed_entity.js` holds that a Subordinate Statement this
+  // service issues carries no authority_hints. The PQ Leaf hits it as well;
+  // its log line names only the first failed condition, the algorithm
+  // table's. The twin inherits this entry by `ledgerFor()`.
   ["deployed-leaf/openid-federation-entity-configuration/" +
     "ValidateAbsenceOfAuthorityHints"]: "the suite's prefix test takes a " +
     "Leaf under its Trust Anchor's URL for the Trust Anchor"
