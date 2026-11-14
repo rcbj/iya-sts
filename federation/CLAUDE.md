@@ -2699,6 +2699,20 @@ credential at another service held by this one; off, nothing changed.
 * **IT DIES WITH THE SESSION.** An entry whose session is gone — ended here,
   by the partner, by expiry — is dropped the next time the job reads it, and
   so is one whose relationship turned the switch off.
+* **ONE RUN PRESENTS A TOKEN, HOWEVER MANY SAW IT DUE** (run 28,
+  2026-11-14). The scheduler lets a Run now of the job overlap a scheduled
+  run in the same realm, and both read the same entry as due: both
+  presented its refresh token, the suite had rotated it at the first, and
+  the second was refused ("Invalid refresh_token parameter"), failing the
+  invalid-sub module and ending the session (`STS-FED-0210`) while the first
+  was still checking the answer (`STS-FED-0211`). A rotating partner may
+  read a second use of a spent token as theft (RFC 9700 section 4.14.2).
+  So `refreshOnce()` claims the entry's STATE (session, sealed token, due)
+  through `cluster/cluster_claims.js` before `refreshOne()` dials, and never
+  releases it: every outcome writes a new due or deletes the entry, so the
+  next run claims a different value, and a run holding the old state — in
+  this process or another node's — skips it. A run that died half-way holds
+  the token for the claim's five minutes, then it is tried again.
 
 **Signed and encrypted UserInfo** came with it (the dynamic plan's
 `userinfo-signed` module asks for it): a UserInfo answer that is a JWT is
