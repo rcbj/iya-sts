@@ -17,8 +17,10 @@
 //! variable), the operator's appconfig file, and the defaults. A
 //! `realmOnly` row skips the three process layers — a value the process was
 //! given would otherwise be every realm's — and a `perProcess` row, like the
-//! `realms.*` ones, skips the realm layer. The four DERIVED defaults are
-//! functions of other settings, computed here ([`Settings::derived`]).
+//! `realms.*` ones, skips the realm layer. A DERIVED default is a function:
+//! four are of other settings and the rest of the mode
+//! (`strongerInProduct()`, #1491), all computed here
+//! ([`Settings::derived`]).
 //!
 //! **A raw value is a JSON value**: a string from the environment or a form,
 //! anything from the appconfig file. Every type coerces from either, exactly
@@ -76,8 +78,8 @@ impl SettingType {
     }
 }
 
-/// A row's `dflt`. `Derived` is one of the four that are functions of other
-/// settings.
+/// A row's `dflt`. `Derived` is a function: one of the four of other
+/// settings, or a row's [`ByMode`] pair.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DefaultValue {
     Text(&'static str),
@@ -150,6 +152,16 @@ pub struct SettingRow {
     pub absolute_uri: bool,
     /// `selectAll` (#1130): what an ordered row's Select all ticks.
     pub select_all: Option<SelectAll>,
+    /// A `strongerInProduct(product, development)` default (#1491).
+    pub by_mode: Option<ByMode>,
+}
+
+/// `strongerInProduct()`'s two values: the default in a product realm and
+/// in a development one, resolved when read, in the ambient realm's mode.
+#[derive(Debug, Clone, Copy)]
+pub struct ByMode {
+    pub product: DefaultValue,
+    pub development: DefaultValue,
 }
 
 /// `onlyWhileValuesUnless`: `values` are marked too while `setting` is not
@@ -183,8 +195,8 @@ pub struct Replaced {
 #[allow(dead_code)]
 mod generated {
     use super::{
-        DefaultValue, Key, Replaced, SelectAll, SettingRow, SettingType,
-        ValuesUnless,
+        ByMode, DefaultValue, Key, Replaced, SelectAll, SettingRow,
+        SettingType, ValuesUnless,
     };
     include!(concat!(env!("OUT_DIR"), "/settings.rs"));
 }
@@ -281,17 +293,43 @@ impl Source {
 // JavaScript's coercions, which the types are written in terms of.
 // ---------------------------------------------------------------------------
 
+/// `String(n)` for a JavaScript number: the shortest digits that read back
+/// as `n`, in decimal from 1e-6 up to 1e21 and in exponent form outside it
+/// (`1e+21`, `1e-7`), and `0` for negative zero.
+pub(crate) fn js_number_text(n: f64) -> String {
+    if n.is_nan() {
+        return "NaN".to_string();
+    }
+    if n.is_infinite() {
+        return if n > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+    }
+    if n == 0.0 {
+        return "0".to_string();
+    }
+    let magnitude = n.abs();
+    if (1e-6..1e21).contains(&magnitude) {
+        return n.to_string();
+    }
+    // Rust writes `1e21` and `1.5e-8`; JavaScript writes the sign.
+    let text = format!("{:e}", n);
+    match text.split_once('e') {
+        Some((mantissa, exponent)) if !exponent.starts_with('-') => {
+            format!("{}e+{}", mantissa, exponent)
+        }
+        _ => text,
+    }
+}
+
 /// `String(raw)`: what the environment and a form would have carried.
-fn js_string(raw: &Json) -> String {
+pub(crate) fn js_string(raw: &Json) -> String {
     match raw {
         Json::Null => "null".to_string(),
         Json::Bool(b) => b.to_string(),
         Json::Number(n) => match (n.as_i64(), n.as_f64()) {
-            (Some(i), _) => i.to_string(),
-            (None, Some(f)) if f.fract() == 0.0 && f.abs() < 1e21 => {
-                format!("{:.0}", f)
-            }
-            (None, Some(f)) => f.to_string(),
+            // An integer beyond 2^53 is a double in JavaScript, and is
+            // written as the double it rounds to.
+            (Some(i), _) if i.unsigned_abs() <= 1 << 53 => i.to_string(),
+            (_, Some(f)) => js_number_text(f),
             _ => n.to_string(),
         },
         Json::String(text) => text.clone(),
@@ -308,10 +346,16 @@ fn js_string(raw: &Json) -> String {
     }
 }
 
-/// `parseInt(text, 10)`: leading whitespace, a sign, the leading digits;
-/// `None` where JavaScript answers NaN.
-fn js_parse_int(text: &str) -> Option<i64> {
-    let trimmed = text.trim_start();
+/// `String.prototype.trim()`: JavaScript's white space and line
+/// terminators, which are not Rust's `str::trim` set.
+pub(crate) fn js_trim(text: &str) -> &str {
+    text.trim_matches(is_js_space)
+}
+
+/// `parseInt(text, 10)` as the double JavaScript reads: leading white
+/// space, a sign, the leading digits; `None` where JavaScript answers NaN.
+fn js_parse_number(text: &str) -> Option<f64> {
+    let trimmed = text.trim_start_matches(is_js_space);
     let (negative, digits) = match trimmed.strip_prefix('-') {
         Some(rest) => (true, rest),
         None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
@@ -320,11 +364,20 @@ fn js_parse_int(text: &str) -> Option<i64> {
     if run.is_empty() {
         return None;
     }
-    let magnitude = run.parse::<i64>().unwrap_or(i64::MAX);
+    let magnitude = run.parse::<f64>().unwrap_or(f64::INFINITY);
     Some(if negative { -magnitude } else { magnitude })
 }
 
+/// `parseInt(text, 10)` as the integer a row holds. A value beyond what an
+/// `i64` holds saturates, where JavaScript keeps a double; nothing a row
+/// bounds reaches that far.
+fn js_parse_int(text: &str) -> Option<i64> {
+    // `as` saturates, and -0 is 0.
+    js_parse_number(text).map(|n| n as i64)
+}
+
 fn is_whole_number(text: &str, allow_sign: bool) -> bool {
+    // JavaScript's `\d` is ASCII.
     let digits = if allow_sign {
         text.strip_prefix('-').unwrap_or(text)
     } else {
@@ -357,7 +410,7 @@ fn is_color(text: &str) -> bool {
 /// The colour type's parse: trimmed, lower-cased, `#rgb` widened to
 /// `#rrggbb`; anything else is kept as written (the check refuses it).
 fn color_value(raw: &str) -> String {
-    let s = raw.trim().to_lowercase();
+    let s = js_trim(raw).to_lowercase();
     match s.strip_prefix('#') {
         Some(hex)
             if hex.len() == 3 && hex.chars().all(|c| c.is_ascii_hexdigit()) =>
@@ -428,7 +481,7 @@ impl SettingRow {
             }),
             SettingType::Enum => SettingValue::Text(match raw {
                 None => String::new(),
-                Some(raw) => js_string(raw).trim().to_string(),
+                Some(raw) => js_trim(&js_string(raw)).to_string(),
             }),
             SettingType::Color => SettingValue::Text(match raw {
                 None | Some(Json::Null) => String::new(),
@@ -444,7 +497,7 @@ impl SettingRow {
                 None => Vec::new(),
                 Some(raw) => csv_parts(raw)
                     .into_iter()
-                    .map(|part| part.trim().to_string())
+                    .map(|part| js_trim(&part).to_string())
                     .filter(|part| !part.is_empty())
                     .collect(),
             }),
@@ -459,7 +512,7 @@ impl SettingRow {
             return *b;
         }
         let text = raw.map(js_string).unwrap_or_else(|| "undefined".into());
-        let text = text.trim();
+        let text = js_trim(&text);
         if is_true_word(text) {
             return true;
         }
@@ -500,7 +553,7 @@ impl SettingRow {
                     Json::Null => String::new(),
                     other => js_string(other),
                 };
-                if is_color(text.trim()) {
+                if is_color(js_trim(&text)) {
                     return None;
                 }
                 Some(format!(
@@ -511,16 +564,19 @@ impl SettingRow {
             SettingType::Int => self.check_int(raw),
             SettingType::Port => {
                 let text = js_string(raw);
-                let s = text.trim();
+                let s = js_trim(&text);
                 if !is_whole_number(s, false) {
                     return Some(format!(
                         "must be a port number, got \"{}\"",
                         text
                     ));
                 }
-                let n = js_parse_int(s).unwrap_or(0);
-                if n > 65535 {
-                    return Some(format!("must be 0-65535, got {}", n));
+                let n = js_parse_number(s).unwrap_or(0.0);
+                if n > 65535.0 {
+                    return Some(format!(
+                        "must be 0-65535, got {}",
+                        js_number_text(n)
+                    ));
                 }
                 None
             }
@@ -529,7 +585,7 @@ impl SettingRow {
                     return None;
                 }
                 let text = js_string(raw);
-                let s = text.trim();
+                let s = js_trim(&text);
                 if is_true_word(s) || is_false_word(s) {
                     return None;
                 }
@@ -543,7 +599,7 @@ impl SettingRow {
                 };
                 let bad = parts
                     .iter()
-                    .map(|part| part.trim())
+                    .map(|part| js_trim(part))
                     .find(|part| !part.is_empty() && !allowed.contains(part))?;
                 Some(format!(
                     "must be one of {}, got \"{}\"",
@@ -553,7 +609,7 @@ impl SettingRow {
             }
             SettingType::Enum => {
                 let text = js_string(raw);
-                if self.enum_values.contains(&text.trim()) {
+                if self.enum_values.contains(&js_trim(&text)) {
                     return None;
                 }
                 Some(format!(
@@ -597,33 +653,45 @@ impl SettingRow {
     /// emptied form field sends and 0 is a port.
     fn check_int(&self, raw: &Json) -> Option<String> {
         let text = js_string(raw);
-        let s = text.trim();
+        let s = js_trim(&text);
         if s.is_empty() {
             return Some("must be a number".into());
         }
         if !is_whole_number(s, true) {
             return Some(format!("must be a whole number, got \"{}\"", text));
         }
-        let n = js_parse_int(s).unwrap_or(0);
+        // Compared and written as the double JavaScript reads.
+        let n = js_parse_number(s).unwrap_or(0.0);
         if let Some(min) = self.min {
-            if n < min {
-                return Some(format!("must be at least {}, got {}", min, n));
+            if n < min as f64 {
+                return Some(format!(
+                    "must be at least {}, got {}",
+                    min,
+                    js_number_text(n)
+                ));
             }
         }
         if let Some(max) = self.max {
-            if n > max {
-                return Some(format!("must be at most {}, got {}", max, n));
+            if n > max as f64 {
+                return Some(format!(
+                    "must be at most {}, got {}",
+                    max,
+                    js_number_text(n)
+                ));
             }
         }
         if let Some(step) = self.step {
-            if step > 1 && (n - self.min.unwrap_or(0)) % step != 0 {
+            let from = (n - self.min.unwrap_or(0) as f64) % step as f64;
+            if step > 1 && from != 0.0 {
                 let above = match self.min {
                     Some(min) if min % step != 0 => format!(" above {}", min),
                     _ => String::new(),
                 };
                 return Some(format!(
                     "must be a multiple of {}{}, got {}",
-                    step, above, n
+                    step,
+                    above,
+                    js_number_text(n)
                 ));
             }
         }
@@ -651,11 +719,19 @@ pub trait RealmLayer: Send + Sync {
 
 /// A rule between settings, owned by the module that reads them (#423): the
 /// problem and its code for a write it refuses, `None` otherwise.
+/// `in_realm` is true for a write that lands in a realm's overrides (#472:
+/// a rule over the process's settings leaves those to the realm module).
+///
+/// Node also hands a rule `beside(key)`, a companion setting's value as a
+/// `withWriteBatch()` write leaves it (#1114); the doors that batch writes
+/// are not ported yet, so a rule here reads a companion with
+/// [`Settings::value_of`], which is what `beside()` answers outside a batch.
 pub trait WriteRule: Send + Sync {
     fn problem(
         &self,
         key: &str,
         parsed: &SettingValue,
+        in_realm: bool,
     ) -> Option<(String, ErrorCode)>;
 }
 
@@ -735,6 +811,15 @@ impl Settings {
         row(key).is_some_and(|row| row.per_process)
     }
 
+    /// Whether a trust realm other than the default one is ambient, for the
+    /// rules that ask that of the realm itself rather than of a key
+    /// (`config.js`'s `realmContext()`).
+    pub fn ambient_realm(&self) -> bool {
+        self.realm
+            .get()
+            .is_some_and(|layer| layer.ambient_overrides().is_some())
+    }
+
     fn realm_overrides(&self, key: &str) -> Option<Arc<HashMap<String, Json>>> {
         if SUPPRESS_REALM.with(Cell::get)
             || key.starts_with("realms.")
@@ -785,8 +870,20 @@ impl Settings {
         (Some(row.default.raw()), Source::Defaults)
     }
 
-    /// The four defaults that are functions of other settings.
+    /// The defaults that are functions: a `strongerInProduct()` pair, read
+    /// in the ambient realm's mode, or one of the four of other settings.
     fn derived(&self, key: &str) -> Json {
+        if let Some(pair) = Settings::row_of(key).by_mode {
+            // `value('global.mode') === 'product' ? product : development`:
+            // the realm's mode, unless the process is being asked.
+            let product = self.value(keys::GLOBAL_MODE).as_str() == "product";
+            return if product {
+                pair.product
+            } else {
+                pair.development
+            }
+            .raw();
+        }
         match key {
             // A statement about a bound socket, so read for the PROCESS: a
             // FAPI profile and both OAuth modes imply TLS.
@@ -911,13 +1008,46 @@ impl Settings {
                 code: codes::STS_CORE_0005,
             });
         }
+        // After the runtime check and before the type check, so a
+        // non-default realm hears STS-CORE-0162 rather than a type error
+        // (#368).
+        if let Some(problem) = self.max_count_realm_problem(key) {
+            return Some(Refusal {
+                problem,
+                code: codes::STS_CORE_0162,
+            });
+        }
+        if unstorable_text(raw) {
+            return Some(Refusal {
+                problem: format!(
+                    "\"{}\" holds a NUL character or half of a surrogate \
+                     pair, which this service cannot store.",
+                    key
+                ),
+                code: codes::STS_CORE_0171,
+            });
+        }
         if let Some(problem) = row.check(raw) {
             return Some(Refusal {
                 problem: format!("\"{}\" {}.", key, problem),
                 code: codes::STS_CORE_0006,
             });
         }
-        self.write_rule_problem(key, &row.parse(Some(raw)))
+        self.write_rule_problem(key, &row.parse(Some(raw)), in_realm)
+    }
+
+    /// `maxCountRealmProblem()`: `realms.maxCount` is a cap on the whole
+    /// service, so it is written only while the default realm is ambient.
+    fn max_count_realm_problem(&self, key: &str) -> Option<String> {
+        if key != "realms.maxCount" || !self.ambient_realm() {
+            return None;
+        }
+        Some(
+            "\"realms.maxCount\" can be set only in the default realm, by a \
+             service administrator. Open /admin/realms there, or POST \
+             /admin-api/config/set with no realm prefix."
+                .to_string(),
+        )
     }
 
     /// The first rule's refusal, or `None`. A rule that panics refuses
@@ -926,6 +1056,7 @@ impl Settings {
         &self,
         key: &str,
         parsed: &SettingValue,
+        in_realm: bool,
     ) -> Option<Refusal> {
         let rules = match self.rules.read() {
             Ok(rules) => rules.clone(),
@@ -934,7 +1065,7 @@ impl Settings {
         for rule in rules {
             let answer =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    rule.problem(key, parsed)
+                    rule.problem(key, parsed, in_realm)
                 }));
             match answer {
                 Ok(Some((problem, code))) => {
@@ -997,6 +1128,22 @@ pub fn replaced_by(key: &str) -> String {
     }
 }
 
+/// `unstorableText()` (#1463): whether a value holds text the store's
+/// `jsonb` columns can never hold — a NUL (22P05) or half of a surrogate
+/// pair (22P02) — in a string, a key, or anything nested. A Rust string
+/// cannot hold half a pair (`serde_json` refuses a lone `\ud800` where the
+/// body is read), so what is left to ask here is the NUL.
+pub fn unstorable_text(value: &Json) -> bool {
+    match value {
+        Json::String(text) => text.contains('\u{0}'),
+        Json::Array(items) => items.iter().any(unstorable_text),
+        Json::Object(map) => map
+            .iter()
+            .any(|(key, one)| key.contains('\u{0}') || unstorable_text(one)),
+        _ => false,
+    }
+}
+
 /// A dot path into an appconfig document; `None` for any missing hop, so a
 /// file that omits a whole section falls through to the next layer.
 fn dig<'a>(root: &'a Json, dotted: &str) -> Option<&'a Json> {
@@ -1037,6 +1184,7 @@ static EMPTY_ROW: SettingRow = SettingRow {
     max_length: None,
     absolute_uri: false,
     select_all: None,
+    by_mode: None,
 };
 
 #[cfg(test)]
@@ -1058,20 +1206,43 @@ mod tests {
         assert!(rows().len() > 1100);
         assert_eq!(keys::GLOBAL_PORT.as_str(), "global.port");
         assert!(row("global.port").is_some_and(|r| r.env == Some("STS_PORT")));
-        let derived: Vec<&str> = rows()
+        // A derived default is one of the four of other settings, or a
+        // strongerInProduct() pair; the export refuses any other kind.
+        let by_hand = [
+            "global.https",
+            "adminApi.audience",
+            "oid4vp.walletUrl",
+            "krb5.serviceDomains",
+        ];
+        let derived: Vec<&SettingRow> = rows()
             .iter()
             .filter(|r| r.default == DefaultValue::Derived)
-            .map(|r| r.key)
             .collect();
-        assert_eq!(
-            derived,
-            [
-                "global.https",
-                "adminApi.audience",
-                "oid4vp.walletUrl",
-                "krb5.serviceDomains"
-            ]
-        );
+        assert_eq!(derived.len(), 23);
+        for one in derived {
+            assert!(
+                by_hand.contains(&one.key) || one.by_mode.is_some(),
+                "{} has a derived default sts-core does not compute",
+                one.key
+            );
+        }
+    }
+
+    #[test]
+    fn a_default_stronger_in_product() {
+        let development = settings(Json::Null, &[]);
+        let product = settings(Json::Null, &[("STS_MODE", "product")]);
+        assert_eq!(development.value(keys::TOTP_WINDOW).as_int(), 1);
+        assert_eq!(product.value(keys::TOTP_WINDOW).as_int(), 0);
+        assert_eq!(product.source_of(keys::TOTP_WINDOW), Source::Default);
+        assert_eq!(product.value(keys::PKI_KEY_ALGORITHM).as_str(), "rsa-3072");
+        assert!(development.value(keys::LDAP_PLAIN_LISTENER).as_bool());
+        assert!(!product.value(keys::LDAP_PLAIN_LISTENER).as_bool());
+        // The realm's mode decides, as value('global.mode') reads it.
+        let mut map = HashMap::new();
+        map.insert("global.mode".to_string(), json!("product"));
+        development.set_realm_layer(Arc::new(Acme(Arc::new(map))));
+        assert_eq!(development.value(keys::TOTP_WINDOW).as_int(), 0);
     }
 
     #[test]
@@ -1144,6 +1315,13 @@ mod tests {
             ["x".to_string()]
         );
         assert_eq!(js_string(&json!([1, null, "a"])), "1,,a");
+        assert_eq!(js_string(&json!(1e21)), "1e+21");
+        assert_eq!(js_string(&json!(0.0000001)), "1e-7");
+        assert_eq!(js_string(&json!(-0.0)), "0");
+        assert_eq!(js_string(&json!(1.5)), "1.5");
+        // JavaScript's white space is not Rust's.
+        assert_eq!(js_trim("\u{feff} x\u{a0}"), "x");
+        assert_eq!(js_trim("\u{85}x"), "\u{85}x");
     }
 
     #[test]
@@ -1193,5 +1371,18 @@ mod tests {
         assert!(s.clear_override("global.mode"));
         let bad = s.set_override("global.mode", json!("prod"));
         assert_eq!(bad.map_err(|r| r.code), Err(codes::STS_CORE_0006));
+        let nul = s.check_override("global.mode", &json!("a\u{0}b"), None);
+        assert_eq!(nul.map(|r| r.code), Some(codes::STS_CORE_0171));
+    }
+
+    #[test]
+    fn the_realm_cap_is_the_default_realms() {
+        let s = settings(Json::Null, &[]);
+        assert!(s
+            .check_override("realms.maxCount", &json!("3"), None)
+            .is_none());
+        s.set_realm_layer(Arc::new(Acme(Arc::new(HashMap::new()))));
+        let refused = s.check_override("realms.maxCount", &json!("x"), None);
+        assert_eq!(refused.map(|r| r.code), Some(codes::STS_CORE_0162));
     }
 }

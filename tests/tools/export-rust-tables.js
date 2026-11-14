@@ -52,11 +52,49 @@ function errorCodes() {
 
 // The settings table (`common/config.js`'s SETTINGS) and the keys it
 // refuses by name because they were replaced (REPLACED_SETTINGS). A row is
-// data except for the four `derived` defaults, which are FUNCTIONS of other
-// settings: those export `dflt: null` and `derivedDefault: true`, and
-// `sts-core::settings` computes them in Rust (a function cannot be data).
-// Loading config.js needs its npm dependencies, so this export runs where
-// they are installed — the tests image, or a checkout after `npm install`.
+// data except where its default is a FUNCTION: those export `dflt: null`
+// and `derivedDefault: true`, and `sts-core::settings` computes them in Rust
+// (a function cannot be data). Loading config.js needs its npm dependencies,
+// so this export runs where they are installed — the tests image, or a
+// checkout after `npm install`.
+//
+// TWO KINDS OF FUNCTION (#1491). Four are expressions of other settings,
+// ported by hand (DERIVED_BY_HAND). Every other one is config.js's
+// `strongerInProduct(product, development)` — a closure over two values,
+// one per mode — and those two values ARE data: the export reads them by
+// calling the default once in each mode and carries them as `byMode`. A
+// function that is neither is refused here, so a new kind of derived
+// default stops the export rather than reaching Rust as a null.
+const DERIVED_BY_HAND = ['global.https', 'adminApi.audience',
+                         'oid4vp.walletUrl', 'krb5.serviceDomains'];
+const STRONGER_IN_PRODUCT =
+  /^function \(\) \{\s*return value\('global\.mode'\) === 'product' \? product : development;\s*\}$/;
+
+// The two values of a `strongerInProduct()` default, read with `global.mode`
+// pinned in the environment layer (which `resolve()` reads live). Run where
+// nothing above that layer holds the mode: an override or a realm would win.
+function byMode(config, row) {
+  const saved = process.env.STS_MODE;
+  const out = {};
+  try {
+    ['product', 'development'].forEach(function (mode) {
+      process.env.STS_MODE = mode;
+      if (config.value('global.mode') !== mode) {
+        throw new Error('export-rust-tables: global.mode is not ' + mode +
+                        ' with STS_MODE set; run with no override of it');
+      }
+      out[mode] = row.dflt();
+    });
+  } finally {
+    if (saved === undefined) {
+      delete process.env.STS_MODE;
+    } else {
+      process.env.STS_MODE = saved;
+    }
+  }
+  return out;
+}
+
 function settings() {
   const config = require(path.join(ROOT, 'common', 'config.js'));
   return {
@@ -67,6 +105,19 @@ function settings() {
           out[key] = null;
           if (key === 'dflt') {
             out.derivedDefault = true;
+            if (DERIVED_BY_HAND.indexOf(row.key) < 0) {
+              const source = row.dflt.toString().split('\n').filter(
+                function (line) {
+                  return !/log\.debug/.test(line);
+                }).join('\n');
+              if (!STRONGER_IN_PRODUCT.test(source)) {
+                throw new Error('export-rust-tables: ' + row.key + '\'s ' +
+                  'default is a function of a kind sts-core does not ' +
+                  'compute; port it to sts-core::settings and name it in ' +
+                  'DERIVED_BY_HAND');
+              }
+              out.byMode = byMode(config, row);
+            }
           }
           return;
         }
@@ -82,9 +133,10 @@ function settings() {
 // method of `sts-core::mode::Mode`, and a Rust test fails on a name it does
 // not answer — the sentence each one's write refusal ends with, and the two
 // tables `/admin/mode` draws, REQUIREMENTS and NOT_YET.
+// `prose` is the #543 harvest of the module's sentences, not a predicate.
 const MODE_HELPERS = ['current', 'isProduct', 'isDevelopment', 'allowsValue',
                       'valueInForce', 'inForce', 'writeRefusalReason',
-                      'report'];
+                      'report', 'prose'];
 
 function modeTable() {
   const mode = require(path.join(ROOT, 'common', 'mode.js'));
