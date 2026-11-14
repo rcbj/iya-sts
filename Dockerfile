@@ -4,12 +4,23 @@
 # iya-sts, IYA STS: every protocol family README.md lists, in one small Node
 # service. See README.md.
 #
-# Pinned to Node 24.22.1 via nvm rather than an official node image, which is
-# what the project this was extracted from does for all of its services.
-# 24.22.1 is the 21 October 2026 security release of the 24 line. It fixes
-# CVE-2026-111497, an out-of-bounds write in the bundled Brotli decoder
-# (HTTP2Shell / Node2Shell), plus the other issues in that release.
-# End-of-life Node lines get no fix, so the pin stays on 24.
+# Pinned to Node 24.22.1. 24.22.1 is the 21 October 2026 security release of
+# the 24 line. It fixes CVE-2026-111497, an out-of-bounds write in the bundled
+# Brotli decoder (HTTP2Shell / Node2Shell), plus the other issues in that
+# release. End-of-life Node lines get no fix, so the pin stays on 24.
+#
+# **THE SMALLEST IMAGE THAT RUNS THE SAME SERVICE (rcbj, 2026-11-14).** It was
+# ubuntu:latest with node installed through nvm, npm run in the final stage,
+# and 625 MB. Now every stage that builds anything is the official
+# `node:24.22.1-bookworm-slim`, and the FINAL stage is `debian:bookworm-slim`
+# (the same Debian release, the same glibc) carrying the node BINARY copied
+# out of that image and nothing else of it: no npm, no corepack, no yarn, no
+# C headers. `node_modules`, the secret-store SDKs and both SBOMs are made in
+# the `dependencies` stage and copied in; the TypeScript, the native module
+# and the removal of everything the image does not run happen in the
+# `typescript` stage. So no layer of the final image ever held a file it does
+# not ship: a `rm` in the final stage would have left them in the layer below
+# it. Nothing in the final stage runs npm.
 
 # ---------------------------------------------------------------------------
 # THE EMBEDDED PROTOCOL DEBUGGER'S BUILT TREE (2026-09-13), TAKEN FROM AN IMAGE
@@ -43,7 +54,7 @@
 # COPY optional.
 # ---------------------------------------------------------------------------
 ARG DEBUGGER_IMAGE=ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3
-FROM ubuntu:latest AS debugger-none
+FROM debian:bookworm-slim AS debugger-none
 RUN mkdir -p /debugger
 FROM ${DEBUGGER_IMAGE} AS debugger
 
@@ -61,10 +72,10 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # deleting them in the final stage instead would have left them in an earlier
 # layer of it.
 #
-# **AN OFFICIAL NODE IMAGE, UNLIKE THE FINAL STAGE**, which pins node through
-# nvm for the parent project's reason (the header). Nothing from this stage
-# runs: it only produces files, `tsc` is a native binary whose output does not
-# depend on the node beside it, and the version is still 24.22.1.
+# **THE OFFICIAL NODE IMAGE**, the one the final stage takes its node binary
+# from, so the native module below is compiled against the headers of the very
+# node that loads it. Nothing else from this stage runs: it only produces
+# files.
 #
 # **AND SHIPPED WITHOUT ITS COMMENTS (#365, 2026-09-30)**: `--strip` also
 # takes the comments out of every `.js` left in the tree, compiled or written
@@ -76,10 +87,10 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # script one-byte (another ~20 MB per isolate). The repository and the tests
 # image keep both as written.
 #
-# The installs are the final stage's (for the types of what the service
+# The installs are the service's (for the types of what the service
 # requires) and `tests/package.json`'s (the compiler, and the parser the
-# comment stripper uses). Both `node_modules` are
-# removed at the end, so the COPY below cannot replace the final stage's own.
+# comment stripper uses). Both `node_modules` are removed at the end; the
+# final stage takes its own from the `dependencies` stage.
 # ---------------------------------------------------------------------------
 FROM node:24.22.1-bookworm-slim AS typescript
 WORKDIR /usr/src/sts
@@ -100,217 +111,10 @@ COPY . ./
 RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
  && STS_IN_IMAGE_BUILD=1 ./build-native.sh \
  && rm -rf ./node_modules ./tests/node_modules ./node-ldapjs/node_modules
-
-FROM ubuntu:latest
-
-# replace shell with bash so we can source files
-RUN rm /bin/sh && ln -s /bin/bash /bin/sh
-
-# Create app directory
-WORKDIR /usr/src/sts
-
-# The package lists are removed in the same layer: 43 MB nothing reads after
-# the install (2026-11-14).
-RUN apt-get update \
- && apt-get -y install curl \
-        jq \
-        wget \
-        unzip \
-        util-linux \
-        bsdextrautils \
-        # SECONDARY IP ADDRESSES FOR THE PER-REALM SPIFFE LISTENERS (2026-09-12).
-        #
-        # A realm with SPIFFE turned on binds a Workload API and a SPIRE
-        # Server API of its own, and what keeps two realms apart is the
-        # ADDRESS rather than the port — a SPIFFE client has nowhere else to
-        # name a tenant, because the gRPC method name is fixed by the
-        # specification. So a container running two realms needs two
-        # addresses, and `ip addr add` is how it gets them.
-        #
-        # ONE PACKAGE, and it is in the image rather than installed at start
-        # for the ordinary reason: a container that apt-gets on the way up
-        # fails to start when the network it is being given is the thing that
-        # is broken.
-        iproute2 \
- && rm -rf /var/lib/apt/lists/*
-
-# Install NVM
-ENV NVM_DIR /usr/local/nvm
-ENV NODE_VERSION=24.22.1
-RUN mkdir -p ${NVM_DIR}
-# NODE_VERSION is set, so the installer installs node in this layer too; its
-# download cache (56 MB) is cleared in the same layer (2026-11-14).
-RUN set -o pipefail && curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.5/install.sh | bash \
- && . $NVM_DIR/nvm.sh && nvm cache clear
-
-# Load NVM and install Node.js
-RUN . $NVM_DIR/nvm.sh && nvm version && echo -e ". $NVM_DIR/nvm.sh\nexport PATH=\$NVM_DIR/versions/node/\$(nvm version)/bin:\$PATH" >> ~/.bashrc
-RUN cat ~/.bashrc
-
-RUN source $NVM_DIR/nvm.sh \
-    && nvm install $NODE_VERSION \
-    && nvm alias default $NODE_VERSION \
-    && nvm use default
-
-# add node and npm to path so the commands are available
-ENV NODE_PATH $NVM_DIR/v$NODE_VERSION/lib/node_modules
-ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
-
-# confirm installation
-RUN node -v
-RUN npm -v
-
-# Install dependencies (package-lock.json is optional; wildcard copies it when
-# present so `npm ci`-style reproducibility works once a lock is committed).
-COPY package*.json ./
-# The LDAP server's library is `"ldapjs": "file:node-ldapjs"` — the git SUBMODULE,
-# not a registry package — so it has to be in the build context BEFORE npm runs or
-# the install fails with EUNSUPPORTEDPROTOCOL/ENOENT naming a path rather than a
-# submodule. It is copied here, ahead of the source, so that editing this service
-# does not invalidate the install layer.
-#
-# An UNINITIALISED SUBMODULE IS AN EMPTY DIRECTORY, and this is where that shows
-# up: the COPY succeeds, npm installs a package with no main, and the failure
-# arrives at runtime as `Cannot find module 'ldapjs'` from ldap_server.js. Run
-# `git submodule update --init --recursive` — --recursive because this repository
-# is itself a submodule of the parent project, and a plain --init there stops one
-# level short of this one.
-#
-# .npmrc carries `omit=dev`, and it is load-bearing rather than tidiness: npm
-# installs the devDependencies of a `file:` dependency, and ldapjs's are tap and
-# eslint — some 200 packages and a dozen advisories that have nothing to do with
-# this service. The flag below says the same thing twice on purpose, so that a
-# build which loses the .npmrc does not quietly start shipping them.
-COPY .npmrc ./
-COPY node-ldapjs ./node-ldapjs
-RUN npm ci --omit=dev && npm cache clean --force
-RUN npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx --sbom-type=application > /usr/src/sts/sbom.cdx.json
-
-
-# THE WHOLE SOURCE TREE IN ONE LINE, and that is deliberate rather than lazy.
-#
-# The service is a shell: server.js requires the other modules and listens, so a
-# module that never reaches the image is not a missing feature but a
-# MODULE_NOT_FOUND before anything binds the port — the container never answers
-# /healthcheck and every STS-backed job in the parent project's suite fails on a
-# timeout that says nothing about the cause.
-#
-# This used to be `COPY *.js ./` plus one line each for contexts, protos and env,
-# and the wildcard's comment said why: a per-file list would have to be edited
-# every time a module was added, and forgetting is silent until the containerized
-# run. The 2026-08-23 reorganisation moved every module into a subdirectory
-# (common/, oauth-oidc/, kerberos/, ldap/, scim/, spiffe/, admin-ui/, mgmt-api/
-# and the rest), which put that exact trap back one level up: a per-DIRECTORY
-# list has the same failure, and a new protocol family is a likelier thing to add
-# than a new sibling of server.js ever was.
-#
-# So the context is copied whole and .dockerignore decides what is in it. That is
-# the only arrangement in which adding a directory cannot be forgotten. Three
-# things ride along that are read AT REQUIRE TIME and whose absence is a service
-# that does not start rather than a degraded feature, which is the reason to be
-# sure they are here:
-#
-#   common/crypto_impl/contexts  the JSON-LD contexts bbs2023.js loads at module
-#                             scope. They are a SIBLING of that module because it
-#                             is a byte-identical copy of the parent project's
-#                             and resolves path.join(__dirname, 'contexts') — so
-#                             they move when it moves and the file is not edited.
-#   spiffe/protos             the SPIFFE project's own workloadapi.proto and the
-#                             spire-api-sdk's, read by spiffe/spiffe_grpc.ts at
-#                             module scope. Verbatim: the wire matching what a
-#                             real client expects is the entire reason
-#                             @grpc/grpc-js is a dependency here.
-#   env                       the appconfig files. CONFIG_FILE selects one.
-#
-# node_modules, .git, the documentation and the CI definitions are excluded in
-# .dockerignore; node-ldapjs is copied above, ahead of the install, and copying
-# it again here is a no-op on identical content.
-#
-# **FROM THE `typescript` STAGE, NOT FROM THE CONTEXT, SINCE #50
-# (2026-09-16)**: the same tree, with every `.ts` compiled and then removed —
-# see that stage. Everything said above about what rides along still holds.
-COPY --from=typescript /usr/src/sts/ ./
-
 # ---------------------------------------------------------------------------
-# THE SECRET-STORE SDK, AND WHY IT IS INSTALLED HERE RATHER THAN DECLARED AS A
-# DEPENDENCY (2026-09-12).
-#
-# `common/secrets.js` reads the key-encryption key and the database password
-# from one of five places, and four of them need somebody else's SDK. Those are
-# OPTIONAL PEER dependencies on purpose — that file's header argues it at
-# length: this package is installed by the debugger's suite and by CI, and
-# carrying four cloud SDKs to use none of them would be a cost every one of
-# those installs pays.
-#
-# **THE IMAGE IS THE OTHER CASE.** The stack this repository ships now brings up
-# an OpenBao container and points the service at it, so the image REQUIRES the
-# Vault SDK to start. It is installed here, with `--no-save`, so that the
-# container has it and a checkout still does not — which is exactly the split
-# the peer declaration describes.
-#
-# **IT IS AFTER `COPY . ./` AND THAT IS NOT A STYLE CHOICE.** Installed
-# before it, the package is there at that step and GONE from the finished
-# image: the copy brings the build context's own `node_modules` over the
-# top of the one npm just wrote into. `.dockerignore` carries
-# `**/node_modules`, which reads as though it prevents exactly that and does
-# not for the tree's own top-level directory. Installing after the copy is
-# the fix that does not depend on reading that pattern correctly.
-#
-# The three cloud SDKs are deliberately NOT installed: nothing in this stack
-# dials AWS, GCP or Azure, and a deployment that does runs one `npm install` in
-# its own image. `secrets.js` names the package to install when one is missing.
-# **AND IT GOES IN A PREFIX OF ITS OWN, WHICH IS npm's DOING.** `npm install
-# node-vault` inside this tree does NOTHING and says "up to date": the package
-# is declared here as an OPTIONAL PEER, and npm treats an absent optional peer
-# as a satisfied one — an explicit install request included. Every spelling of
-# `--include=optional`, `--no-save` and `--force` answers the same way. So the
-# SDK is installed into a prefix that has no opinion about this package.json,
-# and `NODE_PATH` is what makes `require('node-vault')` find it.
-RUN mkdir -p /opt/sts-sdk \
-    && cd /opt/sts-sdk \
-    && npm init -y > /dev/null \
-    && npm install --omit=dev node-vault \
-    && npm cache clean --force
-ENV NODE_PATH=/opt/sts-sdk/node_modules
-# ---------------------------------------------------------------------------
-# A CLOUD SDK AND A DATABASE CA, FOR AN IMAGE THAT RUNS IN A CLOUD (2026-09-15).
-#
-# The paragraph above leaves the three cloud SDKs out, and for THIS stack that
-# is still right. `deploy/aws/` (issue #51) runs the same image on ECS against
-# AWS Secrets Manager and RDS, so it needs `@aws-sdk/client-secrets-manager`
-# (and, since #391, `@aws-sdk/client-kms` for a key-encryption key in KMS,
-# and, since #323, the elastic-load-balancing and ecs clients the SPIFFE
-# target reconcile loads)
-# and the RDS certificate bundle — and "a deployment runs one `npm install` in
-# its own image" is exactly what these two build arguments are, spelt once
-# here rather than in a second Dockerfile that would drift from this one.
-#
-# * `STS_CLOUD_SDKS` — space-separated package names, installed into the same
-#   prefix as node-vault (npm's peer rule above applies to them too). Empty by
-#   default, so the image every other launcher builds is unchanged.
-# * `STS_DATABASE_CA_URL` — a PEM bundle fetched into
-#   /opt/sts-sdk/database-ca.pem. Node reads it through `NODE_EXTRA_CA_CERTS`,
-#   which the deployment sets; this service has no CA-file setting of its own
-#   for the database (`persistence/CLAUDE.md`). Fetched at BUILD time, so a
-#   container never needs the network to trust its own database.
-# ---------------------------------------------------------------------------
-ARG STS_CLOUD_SDKS=
-ARG STS_DATABASE_CA_URL=
-RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
-    then \
-      cd /opt/sts-sdk \
-      && npm install --omit=dev ${STS_CLOUD_SDKS} \
-      && npm cache clean --force; \
-    fi \
-    && if [ -n "${STS_DATABASE_CA_URL}" ]; \
-    then \
-      curl -fsSL "${STS_DATABASE_CA_URL}" -o /opt/sts-sdk/database-ca.pem \
-      && grep -q 'BEGIN CERTIFICATE' /opt/sts-sdk/database-ca.pem; \
-    fi
-RUN cd /opt/sts-sdk && npm sbom --omit=dev --sbom-format=cyclonedx --sbom-type=application > /usr/src/sts/sbom-sdks.cdx.json
-RUN dpkg-query -W -f='${Package} ${Version}\n' > /usr/src/sts/os-packages.txt
-# ---------------------------------------------------------------------------
-# AND THE SUITE BACK OUT AGAIN, WHICH .dockerignore USED TO DO.
+# AND THE SUITE BACK OUT AGAIN, WHICH .dockerignore USED TO DO, IN THIS
+# STAGE SINCE 2026-11-14, so the final stage's COPY never carries it (a `rm`
+# there left every one of these files in the layer underneath it).
 #
 # `tests/` is in the build context since 2026-08-29 and it is not here by
 # choice: ONE context serves two images — this one and the test runner
@@ -376,12 +180,259 @@ RUN dpkg-query -W -f='${Package} ${Version}\n' > /usr/src/sts/os-packages.txt
 # container built from its own directory: the click-through demonstrations
 # the service ships none of. It is in the context because that directory is
 # in the repository, and nothing of it may reach this image.
+# The host's launchers and what only they read went the same way on
+# 2026-11-14 — `run-tests.sh`, `run-coverage.sh`, `run-jsdoc.sh`,
+# `docker-npm-test.sh`, `docker-compose-quick.yml`, `CONTRIBUTING.md` — and
+# `icap-clamav/`, the adapter's own container (`docker-compose.yml` builds it
+# from that directory). The service names some of them in a message and
+# reads none of them.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./SECURITY.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
-           ./build-typescript.sh ./rust ./companion
+           ./build-typescript.sh ./rust ./companion \
+           ./run-tests.sh ./run-coverage.sh ./run-jsdoc.sh \
+           ./docker-npm-test.sh ./docker-compose-quick.yml ./CONTRIBUTING.md ./icap-clamav
+
+# ---------------------------------------------------------------------------
+# THE SERVICE'S node_modules, THE SECRET-STORE SDKs AND BOTH SBOMs, MADE HERE
+# AND COPIED INTO THE FINAL STAGE (2026-11-14).
+#
+# The final stage carries no npm, so every install happens in this stage, on
+# the same node as the one the service runs on (its binary is copied from this
+# image). A package with an install script runs it here exactly as it ran in
+# the final stage before: there is no compiler in either, so bunyan's optional
+# `dtrace-provider` skips its build as it always has.
+#
+# The LDAP server's library is `"ldapjs": "file:node-ldapjs"` — the git
+# SUBMODULE, not a registry package — so it has to be in the build context
+# BEFORE npm runs or the install fails with EUNSUPPORTEDPROTOCOL/ENOENT naming a
+# path rather than a submodule. npm installs it as a LINK to that directory and
+# puts what ldapjs alone needs in `node-ldapjs/node_modules`, which is why the
+# final stage copies that directory as well as `node_modules`.
+#
+# An UNINITIALISED SUBMODULE IS AN EMPTY DIRECTORY, and this is where that shows
+# up: the COPY succeeds, npm installs a package with no main, and the failure
+# arrives at runtime as `Cannot find module 'ldapjs'` from ldap_server.js. Run
+# `git submodule update --init --recursive` — --recursive because this repository
+# is itself a submodule of the parent project, and a plain --init there stops one
+# level short of this one.
+#
+# .npmrc carries `omit=dev`, and it is load-bearing rather than tidiness: npm
+# installs the devDependencies of a `file:` dependency, and ldapjs's are tap and
+# eslint — some 200 packages and a dozen advisories that have nothing to do with
+# this service. The flag below says the same thing twice on purpose, so that a
+# build which loses the .npmrc does not quietly start shipping them.
+# ---------------------------------------------------------------------------
+FROM node:24.22.1-bookworm-slim AS dependencies
+WORKDIR /usr/src/sts
+COPY package*.json .npmrc ./
+COPY node-ldapjs ./node-ldapjs
+RUN npm ci --omit=dev && npm cache clean --force \
+ && mkdir -p ./node-ldapjs/node_modules /out \
+ && npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx \
+      --sbom-type=application > /out/sbom.cdx.json
+
+# ---------------------------------------------------------------------------
+# THE SECRET-STORE SDK, AND WHY IT IS INSTALLED HERE RATHER THAN DECLARED AS A
+# DEPENDENCY (2026-09-12).
+#
+# `common/secrets.js` reads the key-encryption key and the database password
+# from one of five places, and four of them need somebody else's SDK. Those are
+# OPTIONAL PEER dependencies on purpose — that file's header argues it at
+# length: this package is installed by the debugger's suite and by CI, and
+# carrying four cloud SDKs to use none of them would be a cost every one of
+# those installs pays.
+#
+# **THE IMAGE IS THE OTHER CASE.** The stack this repository ships now brings up
+# an OpenBao container and points the service at it, so the image REQUIRES the
+# Vault SDK to start. It is installed here, into a prefix of its own, so that
+# the container has it and a checkout still does not — which is exactly the
+# split the peer declaration describes.
+#
+# The three cloud SDKs are deliberately NOT installed by default: nothing in
+# this stack dials AWS, GCP or Azure, and a deployment that does passes them
+# below. `secrets.js` names the package to install when one is missing.
+# **AND IT GOES IN A PREFIX OF ITS OWN, WHICH IS npm's DOING.** `npm install
+# node-vault` inside the service's tree does NOTHING and says "up to date": the
+# package is declared there as an OPTIONAL PEER, and npm treats an absent
+# optional peer as a satisfied one — an explicit install request included.
+# Every spelling of `--include=optional`, `--no-save` and `--force` answers the
+# same way. So the SDK is installed into a prefix that has no opinion about
+# that package.json, and `NODE_PATH` (the final stage) is what makes
+# `require('node-vault')` find it.
+RUN mkdir -p /opt/sts-sdk \
+    && cd /opt/sts-sdk \
+    && npm init -y > /dev/null \
+    && npm install --omit=dev node-vault \
+    && npm cache clean --force
+# ---------------------------------------------------------------------------
+# A CLOUD SDK AND A DATABASE CA, FOR AN IMAGE THAT RUNS IN A CLOUD (2026-09-15).
+#
+# The paragraph above leaves the three cloud SDKs out, and for THIS stack that
+# is still right. `deploy/aws/` (issue #51) runs the same image on ECS against
+# AWS Secrets Manager and RDS, so it needs `@aws-sdk/client-secrets-manager`
+# (and, since #391, `@aws-sdk/client-kms` for a key-encryption key in KMS,
+# and, since #323, the elastic-load-balancing and ecs clients the SPIFFE
+# target reconcile loads)
+# and the RDS certificate bundle — and "a deployment runs one `npm install` in
+# its own image" is exactly what these two build arguments are, spelt once
+# here rather than in a second Dockerfile that would drift from this one.
+#
+# * `STS_CLOUD_SDKS` — space-separated package names, installed into the same
+#   prefix as node-vault (npm's peer rule above applies to them too). Empty by
+#   default, so the image every other launcher builds is unchanged.
+# * `STS_DATABASE_CA_URL` — a PEM bundle fetched into
+#   /opt/sts-sdk/database-ca.pem. Node reads it through `NODE_EXTRA_CA_CERTS`,
+#   which the deployment sets; this service has no CA-file setting of its own
+#   for the database (`persistence/CLAUDE.md`). Fetched at BUILD time, so a
+#   container never needs the network to trust its own database. With node's
+#   own `fetch` since 2026-11-14 (it was curl, which no stage carries now): a
+#   non-2xx answer or a body with no certificate fails the build, as `curl -f`
+#   and the grep after it did.
+# ---------------------------------------------------------------------------
+ARG STS_CLOUD_SDKS=
+ARG STS_DATABASE_CA_URL=
+RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
+    then \
+      cd /opt/sts-sdk \
+      && npm install --omit=dev ${STS_CLOUD_SDKS} \
+      && npm cache clean --force; \
+    fi \
+    && if [ -n "${STS_DATABASE_CA_URL}" ]; \
+    then \
+      node -e "fetch(process.argv[1]).then(function (r) { \
+          if (!r.ok) { throw new Error('HTTP ' + r.status); } \
+          return r.text(); }).then(function (pem) { \
+          if (pem.indexOf('BEGIN CERTIFICATE') < 0) { \
+            throw new Error('no certificate in the answer'); } \
+          require('fs').writeFileSync('/opt/sts-sdk/database-ca.pem', pem); \
+        }).catch(function (e) { \
+          console.error('STS_DATABASE_CA_URL: ' + e.message); \
+          process.exit(1); })" "${STS_DATABASE_CA_URL}"; \
+    fi \
+    && cd /opt/sts-sdk \
+    && npm sbom --omit=dev --sbom-format=cyclonedx --sbom-type=application \
+         > /out/sbom-sdks.cdx.json
+# ---------------------------------------------------------------------------
+# AND WHAT NO PACKAGE LOADS, OUT OF THE INSTALLED TREES (2026-11-14), AFTER
+# BOTH SBOMs ARE WRITTEN — they are read from the lockfile and from the tree
+# as npm installed it, so they still name every package and version.
+#
+# TypeScript declarations and sources (`.d.ts`, `.ts` and their module
+# forms), source maps, and README, CHANGELOG and HISTORY files: about 21 MB of
+# the 88. Node never loads a `.d.ts`; a package's `.ts` sources (zod's,
+# grpc-js's, noble's) sit beside the JavaScript its `main` and `exports`
+# name; nothing here starts node with `--enable-source-maps`. Licence files
+# and every `.proto`, `.wasm` and `.json` stay. A `test` directory stays as
+# well: a few packages keep runtime files under one, so it is not a pattern
+# to delete by.
+# ---------------------------------------------------------------------------
+RUN find /usr/src/sts/node_modules /usr/src/sts/node-ldapjs/node_modules \
+         /opt/sts-sdk/node_modules -type f \
+         \( -name '*.ts' -o -name '*.mts' -o -name '*.cts' -o -name '*.map' \
+            -o -name '*.tsbuildinfo' -o -iname 'README*' \
+            -o -iname 'CHANGELOG*' -o -iname 'HISTORY*' \) -delete
+
+
+# ---------------------------------------------------------------------------
+# THE IMAGE: DEBIAN BOOKWORM SLIM, NODE'S BINARY, AND ONE PACKAGE (2026-11-14).
+#
+# The node binary is copied from the official image the other stages use, so
+# it is the same 24.22.1 the native module was compiled against; it needs only
+# glibc, libstdc++ and libgcc, which the base already carries. Of the seven
+# packages the ubuntu image installed, the one anything here runs is iproute2:
+# the compose files' `command` runs `ip`, `awk`, `head`, `find`, `chown` and
+# `setpriv` (util-linux, part of the base), the spiffe-agent sidecar is `bash
+# -c`, the health checks are `node -e`, and nothing in the service, its
+# scripts or the documentation runs curl, jq, wget, unzip or a bsdextrautils
+# tool inside the container. `/bin/sh` is the base's dash again: every `sh
+# -c` the compose files and launchers pass is POSIX, and what needs bash names
+# bash. No ca-certificates either: node carries its own root store and is not
+# told to read the system's.
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+ENV NODE_VERSION=24.22.1
+COPY --from=dependencies /usr/local/bin/node /usr/local/bin/node
+
+# The package lists are removed in the same layer: nothing reads them after
+# the install.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        # SECONDARY IP ADDRESSES FOR THE PER-REALM SPIFFE LISTENERS (2026-09-12).
+        #
+        # A realm with SPIFFE turned on binds a Workload API and a SPIRE
+        # Server API of its own, and what keeps two realms apart is the
+        # ADDRESS rather than the port — a SPIFFE client has nowhere else to
+        # name a tenant, because the gRPC method name is fixed by the
+        # specification. So a container running two realms needs two
+        # addresses, and `ip addr add` is how it gets them.
+        #
+        # ONE PACKAGE, and it is in the image rather than installed at start
+        # for the ordinary reason: a container that apt-gets on the way up
+        # fails to start when the network it is being given is the thing that
+        # is broken.
+        iproute2 \
+ && rm -rf /var/lib/apt/lists/* \
+ && node -v
+
+# Create app directory
+WORKDIR /usr/src/sts
+
+# THE WHOLE SOURCE TREE IN ONE LINE, and that is deliberate rather than lazy.
+#
+# The service is a shell: server.js requires the other modules and listens, so a
+# module that never reaches the image is not a missing feature but a
+# MODULE_NOT_FOUND before anything binds the port — the container never answers
+# /healthcheck and every STS-backed job in the parent project's suite fails on a
+# timeout that says nothing about the cause.
+#
+# This used to be `COPY *.js ./` plus one line each for contexts, protos and env,
+# and the wildcard's comment said why: a per-file list would have to be edited
+# every time a module was added, and forgetting is silent until the containerized
+# run. The 2026-08-23 reorganisation moved every module into a subdirectory
+# (common/, oauth-oidc/, kerberos/, ldap/, scim/, spiffe/, admin-ui/, mgmt-api/
+# and the rest), which put that exact trap back one level up: a per-DIRECTORY
+# list has the same failure, and a new protocol family is a likelier thing to add
+# than a new sibling of server.js ever was.
+#
+# So the context is copied whole and .dockerignore decides what is in it. That is
+# the only arrangement in which adding a directory cannot be forgotten. Three
+# things ride along that are read AT REQUIRE TIME and whose absence is a service
+# that does not start rather than a degraded feature, which is the reason to be
+# sure they are here:
+#
+#   common/crypto_impl/contexts  the JSON-LD contexts bbs2023.js loads at module
+#                             scope. They are a SIBLING of that module because it
+#                             is a byte-identical copy of the parent project's
+#                             and resolves path.join(__dirname, 'contexts') — so
+#                             they move when it moves and the file is not edited.
+#   spiffe/protos             the SPIFFE project's own workloadapi.proto and the
+#                             spire-api-sdk's, read by spiffe/spiffe_grpc.ts at
+#                             module scope. Verbatim: the wire matching what a
+#                             real client expects is the entire reason
+#                             @grpc/grpc-js is a dependency here.
+#   env                       the appconfig files. CONFIG_FILE selects one.
+#
+# node_modules, .git, the documentation and the CI definitions are excluded in
+# .dockerignore; the tree's `node_modules` come from the `dependencies` stage,
+# just below.
+#
+# **FROM THE `typescript` STAGE, NOT FROM THE CONTEXT, SINCE #50
+# (2026-09-16)**: the same tree, with every `.ts` compiled and then removed —
+# see that stage. Everything said above about what rides along still holds.
+# The suite, the remote PEP and the rest that never ran here are already gone
+# from that tree (the end of that stage), so they are in no layer of this one.
+COPY --from=typescript /usr/src/sts/ ./
+COPY --from=dependencies /usr/src/sts/node_modules ./node_modules
+COPY --from=dependencies /usr/src/sts/node-ldapjs/node_modules \
+     ./node-ldapjs/node_modules
+COPY --from=dependencies /opt/sts-sdk /opt/sts-sdk
+COPY --from=dependencies /out/sbom.cdx.json /out/sbom-sdks.cdx.json ./
+ENV NODE_PATH=/opt/sts-sdk/node_modules
+RUN dpkg-query -W -f='${Package} ${Version}\n' > /usr/src/sts/os-packages.txt
 
 # The debugger's built tree — see the stage at the top of this file. After the
-# `rm` above and before the version stamp, and into the directory
+# tree and before the version stamp, and into the directory
 # `debugger.uiDirectory` and `debugger.apiDirectory` default to.
 COPY --from=debugger /debugger/ ./debugger/embedded/
 # ---------------------------------------------------------------------------
@@ -405,8 +456,8 @@ COPY --from=debugger /debugger/ ./debugger/embedded/
 # which makes "which build is this" unanswerable in exactly the situation
 # where it is asked. See common/version.js.
 #
-# It runs AFTER `COPY . ./` because it needs the VERSION file and the module,
-# and after the `rm` above because neither is among what that removes.
+# It runs AFTER the tree's COPY because it needs the VERSION file and the
+# module, neither of which the typescript stage's `rm` removes.
 # It is the LAST layer that touches the source, so a rebuild of an unchanged
 # tree still records a new build instant — which is correct: that is a
 # different artifact, of the same release.

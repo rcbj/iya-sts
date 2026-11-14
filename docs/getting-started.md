@@ -192,6 +192,15 @@ a volume mounted there must be writable by uid 10001. A file you mount for
 the service to read, such as a key-encryption key file, must be readable by
 uid 10001.
 
+**The image is Debian 12 (bookworm) slim with Node.js 24.22.1 and little
+else.** It carries the `node` binary but not npm, corepack or a compiler, and
+of the operating system's tools only the base's and `iproute2` (for `ip addr
+add`, which a realm's SPIFFE listeners on an address of their own need). There
+is no `curl`, `wget` or `jq` in it: a health check is `node -e`, as the compose
+file's is. To add a package to an image of your own, build `FROM` this one
+and install it there. A cloud SDK is a build argument instead
+(`STS_CLOUD_SDKS`).
+
 **The image's JavaScript carries no comments.** The build takes them out of
 every `.js` it ships, compiled from TypeScript or not, because Node keeps the
 source text of every module in memory for as long as the process runs, and
