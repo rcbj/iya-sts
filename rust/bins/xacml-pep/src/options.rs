@@ -77,6 +77,27 @@ pub struct Options {
     /// `PEP_TIMEOUT_MS` because the caller is waiting on this one, and a
     /// pull is not waited on by anybody. At least 1.
     pub authzen_forward_timeout_ms: u64,
+    /// THE REVERSE PROXY (#1760): on by default, on ports of its own so
+    /// every existing endpoint is untouched. It answers 404 to everything
+    /// until the service sends a configuration for this PEP.
+    pub proxy_enabled: bool,
+    pub proxy_port: u16,
+    /// Served with the same reloaded `PEP_HTTPS_CERT`/`KEY` pair as 9443,
+    /// asking every client for a certificate (never requiring one) so a
+    /// certificate-bound token's `cnf.x5t#S256` can be checked.
+    pub proxy_https_port: u16,
+    /// How old the service's last "live" answer about a proxy session may
+    /// be before the next access asks again; 0 asks every time.
+    pub proxy_session_recheck_ms: u64,
+    pub proxy_session_ttl_ms: u64,
+    /// The most proxy sessions (and, separately, sign-ins in flight) held.
+    pub proxy_max_sessions: usize,
+    /// How long a fetched JWKS is used before it is fetched again.
+    pub proxy_jwks_ttl_ms: u64,
+    /// Anchors for an https upstream, beside the system's; read once.
+    pub proxy_upstream_ca: Option<Vec<u8>>,
+    /// Do not verify an https upstream's certificate.
+    pub proxy_upstream_insecure: bool,
 }
 
 /// One caller `PEP_AUTHZEN_CALLERS` names: the certificate it presents, by
@@ -300,6 +321,33 @@ impl Options {
                 5000u64,
             )
             .max(1),
+            proxy_enabled: std::env::var("PEP_PROXY").as_deref() != Ok("false"),
+            proxy_port: int_from_env("PEP_PROXY_PORT", 9180),
+            proxy_https_port: int_from_env("PEP_PROXY_HTTPS_PORT", 9543),
+            proxy_session_recheck_ms: int_from_env(
+                "PEP_PROXY_SESSION_RECHECK_MS",
+                5000u64,
+            ),
+            proxy_session_ttl_ms: int_from_env(
+                "PEP_PROXY_SESSION_TTL_MS",
+                8 * 3600 * 1000u64,
+            )
+            .max(1),
+            proxy_max_sessions: int_from_env(
+                "PEP_PROXY_MAX_SESSIONS",
+                10_000usize,
+            )
+            .max(1),
+            proxy_jwks_ttl_ms: int_from_env(
+                "PEP_PROXY_JWKS_TTL_MS",
+                300_000u64,
+            ),
+            proxy_upstream_ca: proxy_upstream_ca(),
+            proxy_upstream_insecure: std::env::var(
+                "PEP_PROXY_UPSTREAM_INSECURE",
+            )
+            .as_deref()
+                == Ok("true"),
         }
     }
 }
@@ -327,6 +375,28 @@ fn authzen_client_ca() -> Option<Vec<u8>> {
                 "{}xacml-pep: PEP_AUTHZEN_CLIENT_CA names {} and it could \
                  not be read ({}), so the AuthZEN endpoints admit nobody.",
                 tag("STS-XPEP-0039"),
+                path,
+                error
+            );
+            None
+        }
+    }
+}
+
+/// `PEP_PROXY_UPSTREAM_CA`, read once. Unreadable, an https upstream is
+/// verified against the system's anchors alone — and says so.
+fn proxy_upstream_ca() -> Option<Vec<u8>> {
+    let path = std::env::var("PEP_PROXY_UPSTREAM_CA")
+        .ok()
+        .filter(|p| !p.is_empty())?;
+    match std::fs::read(&path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) => {
+            tracing::error!(
+                "{}xacml-pep: PEP_PROXY_UPSTREAM_CA names {} and it could \
+                 not be read ({}); an https upstream is verified against the \
+                 system's anchors alone.",
+                tag("STS-XPEP-0092"),
                 path,
                 error
             );

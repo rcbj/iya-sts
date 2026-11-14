@@ -38,6 +38,13 @@
 //!   catalogue (`STS-XPEP-0059`), keeping the one held: which evaluations
 //!   must be forwarded cannot be told from it, and guessing "none" would
 //!   decide an enforcing application from the root.
+//! * **AND THE REVERSE PROXY'S CONFIGURATION AFTER THE CALLERS** (#1760),
+//!   from `GET /xacml/pep/proxy`, with its own sync token, `?since=` and
+//!   `If-None-Match`. The same rule: a failed pull keeps the last good
+//!   configuration (`STS-XPEP-0060`, `-0061`). The document is read again
+//!   by D2's own rules (`proxy_config.rs`) and refused WHOLE when one part
+//!   does not validate (`STS-XPEP-0062`): a route table loaded in part
+//!   forwards what nobody configured. It converges on the poll, unnudged.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -54,6 +61,8 @@ use crate::authzen_catalogue::{self, Row};
 use crate::enforce::Outcome;
 use crate::options::Options;
 use crate::pdp_client::{Body, PdpClient};
+use crate::proxy_config::{self, Mechanism, Pulled};
+use crate::rp_session::Stores;
 
 /// What this PEP decides with, replaced WHOLE on a successful pull so the
 /// root and the repository can never disagree mid-decision.
@@ -187,6 +196,31 @@ pub struct Callers {
     pub last_pull_at: String,
     pub last_pull_ok: bool,
     pub last_pull_why: String,
+}
+
+/// The reverse proxy's configuration this PEP holds (#1760), replaced
+/// WHOLE on a successful pull.
+#[derive(Debug, Clone, Default)]
+pub struct ProxyHolding {
+    /// A configuration answer was loaded at least once.
+    pub loaded: bool,
+    pub sync_token: String,
+    pub etag: String,
+    pub pulled: Arc<Pulled>,
+    pub last_pull_at: String,
+    pub last_pull_ok: bool,
+    pub last_pull_why: String,
+}
+
+/// What the reverse proxy has answered, cumulative in this process: by
+/// status, and how many reached the application.
+#[derive(Debug, Clone, Default)]
+struct ProxyCounters {
+    requests: u64,
+    forwarded: u64,
+    by_status: std::collections::BTreeMap<u16, u64>,
+    sign_ins: u64,
+    sessions_ended: u64,
 }
 
 /// The endpoint names a pulled caller may be admitted to.
@@ -366,6 +400,9 @@ struct State {
     counters: Counters,
     /// The reason the last failed pull gave, so a repeat is not warned twice.
     last_kept_why: String,
+    proxy: ProxyHolding,
+    last_proxy_kept_why: String,
+    proxy_counters: ProxyCounters,
 }
 
 /// The register / pull / heartbeat client and what it holds.
@@ -373,6 +410,9 @@ pub struct Sync {
     client: PdpClient,
     options: Options,
     state: Mutex<State>,
+    /// The reverse proxy's sign-ins and sessions (#1760): here so that
+    /// `GET /` can count them.
+    pub proxy_sessions: Arc<Stores>,
 }
 
 /// What a pull, a register or a heartbeat answers its caller.
@@ -387,9 +427,14 @@ impl Sync {
             last_pull_why: "No pull has been attempted yet.".into(),
             ..Held::default()
         };
+        let proxy_sessions = Arc::new(Stores::new(
+            options.proxy_max_sessions,
+            options.proxy_session_ttl_ms,
+        ));
         Sync {
             client,
             options,
+            proxy_sessions,
             state: Mutex::new(State {
                 held,
                 registration: Registration {
@@ -409,6 +454,12 @@ impl Sync {
                 last_callers_kept_why: String::new(),
                 authzen: AuthzenCounters::default(),
                 last_catalogue_kept_why: String::new(),
+                proxy: ProxyHolding {
+                    last_pull_why: "No pull has been attempted yet.".into(),
+                    ..ProxyHolding::default()
+                },
+                last_proxy_kept_why: String::new(),
+                proxy_counters: ProxyCounters::default(),
             }),
         }
     }
@@ -698,6 +749,9 @@ impl Sync {
         self.pull_once(cause).await;
         self.pull_catalogue().await;
         self.pull_callers().await;
+        if self.options.proxy_enabled {
+            self.pull_proxy().await;
+        }
         let mut state = self.lock();
         if cause == "nudge" {
             state.held.last_nudge_at = iso_now();
@@ -872,6 +926,12 @@ impl Sync {
             state.held.sync_token,
             why
         );
+    }
+
+    /// A pulled policy set handed straight in, for a test that has no PDP.
+    #[cfg(test)]
+    pub fn load_for_test(&self, said: &Value) {
+        self.load(said, "test");
     }
 
     /// A failed pull keeps what is held. `lastPullAt` is NOT touched: it
@@ -1205,6 +1265,237 @@ impl Sync {
                 state.callers.last_pull_why
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // THE REVERSE PROXY'S CONFIGURATION (#1760). Pulled after the callers,
+    // with its own token and ETag; a failure keeps what is held.
+    // -----------------------------------------------------------------------
+    async fn pull_proxy(&self) {
+        let (token, etag) = {
+            let state = self.lock();
+            (state.proxy.sync_token.clone(), state.proxy.etag.clone())
+        };
+        let query = if token.is_empty() {
+            String::new()
+        } else {
+            format!("?since={}", encode(&token))
+        };
+        let headers: Vec<(&str, String)> = if etag.is_empty() {
+            Vec::new()
+        } else {
+            vec![("If-None-Match", etag)]
+        };
+        let answer = self
+            .client
+            .call_with(
+                Method::GET,
+                &format!("/xacml/pep/proxy{}", query),
+                None,
+                &headers,
+                None,
+            )
+            .await;
+        if let Some(error) = &answer.error {
+            self.keep_proxy(
+                &format!("Could not reach the PDP: {}", error),
+                "STS-XPEP-0060",
+            );
+            return;
+        }
+        if answer.status == 304 {
+            let mut state = self.lock();
+            state.proxy.last_pull_at = iso_now();
+            state.proxy.last_pull_ok = true;
+            state.proxy.last_pull_why =
+                "Unchanged; this configuration is current.".into();
+            state.last_proxy_kept_why.clear();
+            return;
+        }
+        if answer.status != 200 {
+            let detail = answer
+                .error_description()
+                .map(|d| format!(": {}", d))
+                .unwrap_or_default();
+            let older = if answer.status == 404 {
+                " A PDP older than #1760 has no proxy configuration endpoint."
+            } else {
+                ""
+            };
+            self.keep_proxy(
+                &format!(
+                    "The PDP answered {} to the proxy configuration pull{}.{}",
+                    answer.status, detail, older
+                ),
+                "STS-XPEP-0061",
+            );
+            return;
+        }
+        let Some(said) = answer.json else {
+            self.keep_proxy(
+                "The PDP answered 200 to the proxy configuration pull with \
+                 something that is not JSON.",
+                "STS-XPEP-0061",
+            );
+            return;
+        };
+        self.receive_proxy(&said, answer.etag);
+    }
+
+    /// One pulled answer: loaded whole, or refused whole and the held one
+    /// kept. Apart from the transport so a test can hand it a document.
+    pub fn receive_proxy(&self, said: &Value, etag: Option<String>) {
+        match proxy_config::parse_pulled(said) {
+            Ok(pulled) => self.load_proxy(pulled, etag),
+            Err(why) => self.keep_proxy(
+                &format!(
+                    "The proxy configuration the PDP sent was refused whole: \
+                     {}. Nothing of it is used.",
+                    why
+                ),
+                "STS-XPEP-0062",
+            ),
+        }
+    }
+
+    fn load_proxy(&self, pulled: Pulled, etag: Option<String>) {
+        let routes = pulled.proxy.as_ref().map_or(0, |p| p.routes.len());
+        let why = match pulled.active() {
+            Some(_) => {
+                format!("Pulled a proxy configuration of {} route(s).", routes)
+            }
+            None if pulled.configured => "Pulled a proxy configuration that \
+                is switched off (enabled: false); the proxy answers 404 to \
+                everything."
+                .to_string(),
+            None => "The PDP holds no proxy configuration for this PEP; the \
+                     proxy answers 404 to everything."
+                .to_string(),
+        };
+        let mut state = self.lock();
+        state.last_proxy_kept_why.clear();
+        tracing::info!("xacml-pep: {} Token {}.", why, pulled.sync_token);
+        state.proxy = ProxyHolding {
+            loaded: true,
+            sync_token: pulled.sync_token.clone(),
+            etag: etag.unwrap_or_default(),
+            pulled: Arc::new(pulled),
+            last_pull_at: iso_now(),
+            last_pull_ok: true,
+            last_pull_why: why,
+        };
+    }
+
+    /// A failed proxy pull keeps what is held, and warns once per distinct
+    /// reason.
+    fn keep_proxy(&self, why: &str, code: &str) {
+        let mut state = self.lock();
+        state.proxy.last_pull_ok = false;
+        state.proxy.last_pull_why = if state.proxy.loaded {
+            format!(
+                "{} KEEPING the configuration pulled at {}, so the proxy \
+                 goes on routing as it did.",
+                why, state.proxy.last_pull_at
+            )
+        } else {
+            format!(
+                "{} NO CONFIGURATION IS HELD, so the proxy answers 404 to \
+                 everything.",
+                why
+            )
+        };
+        if state.last_proxy_kept_why != why {
+            state.last_proxy_kept_why = why.to_string();
+            tracing::warn!(
+                "{}xacml-pep: {}",
+                tag(code),
+                state.proxy.last_pull_why
+            );
+        }
+    }
+
+    /// The configuration in force now.
+    pub fn proxy(&self) -> Arc<Pulled> {
+        self.lock().proxy.pulled.clone()
+    }
+
+    /// One answer of the reverse proxy, counted.
+    pub fn count_proxy(&self, status: u16, forwarded: bool) {
+        let mut state = self.lock();
+        let c = &mut state.proxy_counters;
+        c.requests += 1;
+        if forwarded {
+            c.forwarded += 1;
+        }
+        *c.by_status.entry(status).or_insert(0) += 1;
+    }
+
+    pub fn count_sign_in(&self) {
+        self.lock().proxy_counters.sign_ins += 1;
+    }
+
+    pub fn count_session_ended(&self) {
+        self.lock().proxy_counters.sessions_ended += 1;
+    }
+
+    /// `proxy` on `GET /`: COUNTS, never a route, a URL or a credential —
+    /// `GET /` answers whoever reaches the container.
+    pub fn proxy_json(&self) -> Value {
+        let (live, pending) = self.proxy_sessions.counts();
+        let state = self.lock();
+        let h = &state.proxy;
+        let c = &state.proxy_counters;
+        let active = h.pulled.active();
+        let mut mechanisms = serde_json::Map::new();
+        for m in [
+            Mechanism::Session,
+            Mechanism::OAuth2,
+            Mechanism::Saml2,
+            Mechanism::Basic,
+        ] {
+            let n = active
+                .map_or(0, |p| p.routes.iter().filter(|r| r.allows(m)).count());
+            mechanisms.insert(m.as_str().into(), json!(n));
+        }
+        let by_status: serde_json::Map<String, Value> = c
+            .by_status
+            .iter()
+            .map(|(k, v)| (k.to_string(), json!(v)))
+            .collect();
+        let o = &self.options;
+        json!({
+            "enabled": o.proxy_enabled,
+            "ports": { "http": o.proxy_port, "https": o.proxy_https_port },
+            "loaded": h.loaded,
+            "configured": h.pulled.configured,
+            "active": active.is_some(),
+            "syncToken": h.sync_token,
+            "routes": active.map_or(0, |p| p.routes.len()),
+            "publicRoutes": active
+                .map_or(0, |p| p.routes.iter().filter(|r| r.public).count()),
+            "routesByMechanism": mechanisms,
+            "sessionClient": h.pulled.realm.client_id.is_some(),
+            "signingCertificates": h.pulled.realm.signing_certificates.len(),
+            "lastPullAt": h.last_pull_at,
+            "lastPullOk": h.last_pull_ok,
+            "lastPullWhy": h.last_pull_why,
+            "answered": {
+                "requests": c.requests,
+                "forwarded": c.forwarded,
+                "byStatus": by_status,
+                "signIns": c.sign_ins,
+                "sessionsEnded": c.sessions_ended
+            },
+            "sessions": { "live": live, "signInsInFlight": pending,
+                          "max": o.proxy_max_sessions },
+            "what": "A reverse proxy in front of one application, on ports \
+                     of its own: deny-by-default over the route table pulled \
+                     from the service, each route's mechanism verified here \
+                     where it can be and at the service where it cannot, and \
+                     the decision made here against the policy this PEP \
+                     holds. Counts only: the routes and the upstream are the \
+                     service's to show."
+        })
     }
 
     // -----------------------------------------------------------------------

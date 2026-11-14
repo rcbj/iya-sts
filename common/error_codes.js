@@ -23337,6 +23337,183 @@ const CODES = [
       'identifiers. The catalogue is refused whole and the one held is ' +
       'kept: which evaluations must be forwarded cannot be told (#564).',
     spec: 'none; the edge keeps what it holds' },
+  { code: 'STS-XPEP-0060',
+    summary: 'The remote PEP could not reach the PDP to pull its reverse ' +
+      'proxy configuration (GET /xacml/pep/proxy, #1760). The ' +
+      'configuration last pulled is kept and the proxy goes on routing ' +
+      'with it; with none held it answers 404 to everything.',
+    spec: 'none; the proxy keeps what it holds' },
+  { code: 'STS-XPEP-0061',
+    summary: 'The PDP answered the remote PEP\'s reverse proxy configuration ' +
+      'pull with a status other than 200 or 304, or with something that is ' +
+      'not JSON (a PDP older than #1760 answers 404). The configuration ' +
+      'last pulled is kept.',
+    spec: 'none; the proxy keeps what it holds' },
+  { code: 'STS-XPEP-0062',
+    summary: 'The reverse proxy configuration the remote PEP pulled did not ' +
+      'validate under the configuration document\'s own rules (an upstream ' +
+      'that is not an absolute http(s) URL without userinfo, query or ' +
+      'fragment, a route path with a dot segment, //, % or a backslash, an ' +
+      'unknown method or mechanism, a duplicate route id, more than 64 ' +
+      'routes, a missing audience or publicBaseUrl, a signing certificate ' +
+      'that is not PEM, and the like). It is refused WHOLE and the one held ' +
+      'is kept: a route table loaded in part would forward what nobody ' +
+      'configured (#1760).',
+    spec: 'none; the proxy keeps what it holds' },
+  { code: 'STS-XPEP-0063',
+    summary: 'The remote PEP\'s reverse proxy could not listen on ' +
+      'PEP_PROXY_PORT (commonly the port is taken). The PEP\'s own ' +
+      'endpoints and enforcement are unaffected (#1760).',
+    spec: '' },
+  { code: 'STS-XPEP-0064',
+    summary: 'The reverse proxy refused a request whose path does not ' +
+      'normalise: a . or .. segment, //, a backslash, a NUL or control ' +
+      'character, an invalid percent-escape, or an encoded ., /, \\ or NUL ' +
+      '(%2e, %2f, %5c, %00). The application is not reached (#1760).',
+    spec: 'HTTP 400, invalid_request' },
+  { code: 'STS-XPEP-0065',
+    summary: 'The reverse proxy answered a path no route matches, or any ' +
+      'path while it holds no configuration that is switched on: deny by ' +
+      'default, the application is not reached (#1760).',
+    spec: 'HTTP 404, not_found' },
+  { code: 'STS-XPEP-0066',
+    summary: 'The reverse proxy refused a method the matched route does not ' +
+      'take (#1760).',
+    spec: 'HTTP 405, method_not_allowed, with Allow' },
+  { code: 'STS-XPEP-0067',
+    summary: 'The reverse proxy refused a request body larger than the ' +
+      'configuration\'s maxBodyBytes — declared by Content-Length, or ' +
+      'counted as it streamed to the application (#1760).',
+    spec: 'HTTP 413, payload_too_large' },
+  { code: 'STS-XPEP-0068',
+    summary: 'The application behind the reverse proxy did not answer within ' +
+      'the configuration\'s upstreamTimeoutMs (#1760).',
+    spec: 'HTTP 504, gateway_timeout' },
+  { code: 'STS-XPEP-0069',
+    summary: 'The reverse proxy could not reach the application at the ' +
+      'configured upstream, or the connection failed (#1760).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0070',
+    summary: 'A request to a reverse proxy route that is not public carried ' +
+      'no credential the route takes (#1760).',
+    spec: 'HTTP 401, unauthorized, with a WWW-Authenticate per mechanism' },
+  { code: 'STS-XPEP-0071',
+    summary: 'The reverse proxy refused a JWT access token it verified ' +
+      'against the realm\'s JWKS: unsigned (alg none), a key of the wrong ' +
+      'type, a signature that does not verify, a segment that is not ' +
+      'strict base64url, or an issuer, audience, exp or nbf that does not ' +
+      'hold (#1760).',
+    spec: 'HTTP 401, invalid_token' },
+  { code: 'STS-XPEP-0072',
+    summary: 'The reverse proxy refused a DPoP-bound access token (the DPoP ' +
+      'scheme, or cnf.jkt): this proxy proves no DPoP key (#1760).',
+    spec: 'HTTP 401, invalid_token' },
+  { code: 'STS-XPEP-0073',
+    summary: 'The reverse proxy refused a certificate-bound access token ' +
+      '(cnf.x5t#S256) presented without a client certificate on the ' +
+      'connection or with another one, or a token whose cnf names a key it ' +
+      'cannot check (#1760).',
+    spec: 'HTTP 401, invalid_token' },
+  { code: 'STS-XPEP-0074',
+    summary: 'The service\'s introspection (POST /xacml/pep/introspect) said ' +
+      'the access token is not active, or named an issuer or audience that ' +
+      'is not the realm\'s or the route\'s, or no subject (#1760).',
+    spec: 'HTTP 401, invalid_token' },
+  { code: 'STS-XPEP-0075',
+    summary: 'The reverse proxy could not get an answer from one of the ' +
+      'service\'s validation endpoints (introspection, Basic, SAML, session ' +
+      'liveness, or the token endpoint): unreachable, a status that is not ' +
+      'an answer, or no endpoint named in the pull. The request is refused, ' +
+      'never admitted (#1760).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0076',
+    summary: 'The reverse proxy refused an EncryptedAssertion presented as a ' +
+      'SAML credential: neither the proxy nor the service holds a service ' +
+      'provider\'s decryption key (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0077',
+    summary: 'A SAML assertion presented to the reverse proxy could not be ' +
+      'established locally (a signature shape not read here, a digest or ' +
+      'signature that does not verify against the pulled certificates, or ' +
+      'an issuer, condition or audience that does not hold), so the ' +
+      'service is asked. Not a refusal on its own (#1760).',
+    spec: 'none; the service decides' },
+  { code: 'STS-XPEP-0078',
+    summary: 'The service (POST /xacml/pep/saml) said the SAML assertion a ' +
+      'reverse proxy route was presented is not valid (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0079',
+    summary: 'The service (POST /xacml/pep/basic) said the Basic credential ' +
+      'presented to the reverse proxy is not valid (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0080',
+    summary: 'The service refused a Basic sign-in at the reverse proxy under ' +
+      'its lockout and limits (429); the answer and its Retry-After are ' +
+      'passed on (#1760).',
+    spec: 'HTTP 429, too_many_requests, with Retry-After' },
+  { code: 'STS-XPEP-0081',
+    summary: 'A request that is not a browser\'s reached a session route of ' +
+      'the reverse proxy with no proxy session; a browser is sent to sign ' +
+      'in instead (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0082',
+    summary: 'The reverse proxy refused a sign-in callback ' +
+      '(/.iya-pep/callback): an unknown, spent or expired state, an error ' +
+      'from the authorization server, no code, or a code the token ' +
+      'endpoint would not redeem (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0083',
+    summary: 'The reverse proxy refused the ID Token of a sign-in: it could ' +
+      'not be verified against the realm\'s JWKS, or its issuer, audience ' +
+      '(the PEP\'s client), azp, nonce or exp does not hold, or it carries ' +
+      'no sid or sub (#1760).',
+    spec: 'HTTP 401, unauthorized' },
+  { code: 'STS-XPEP-0084',
+    summary: 'The service (POST /xacml/pep/session) said the sign-on session ' +
+      'behind a proxy session is no longer live — a sign-out at the ' +
+      'service — so the proxy session is ended (#1760).',
+    spec: 'HTTP 302 to sign in for a browser, otherwise HTTP 401' },
+  { code: 'STS-XPEP-0085',
+    summary: 'The reverse proxy could not make a proxy session: ' +
+      'PEP_PROXY_MAX_SESSIONS live sessions are held (none is evicted, ' +
+      'which would sign somebody else out), or no random value could be ' +
+      'drawn (#1760).',
+    spec: 'HTTP 503, temporarily_unavailable' },
+  { code: 'STS-XPEP-0086',
+    summary: 'The reverse proxy\'s decision refused the request: the policy ' +
+      'this PEP holds, under its bias and obligation rule, did not permit ' +
+      'the subject, resource and action (#1760).',
+    spec: 'HTTP 403, access_denied' },
+  { code: 'STS-XPEP-0087',
+    summary: 'The reverse proxy could not carry the subject in the route\'s ' +
+      'subject header (not a valid header value), so the request is ' +
+      'refused rather than forwarded without the identity (#1760).',
+    spec: 'HTTP 403, access_denied' },
+  { code: 'STS-XPEP-0088',
+    summary: 'The reverse proxy could not fetch the realm\'s JWKS. The keys ' +
+      'fetched before are kept; with none, a JWT access token is asked of ' +
+      'the service\'s introspection (#1760).',
+    spec: 'none' },
+  { code: 'STS-XPEP-0089',
+    summary: 'The reverse proxy refused an Authorization header it cannot ' +
+      'read (not text, no credential, Basic or SAML that is not base64) or ' +
+      'whose scheme the route does not take (#1760).',
+    spec: 'HTTP 401, unauthorized, with a WWW-Authenticate per mechanism' },
+  { code: 'STS-XPEP-0090',
+    summary: 'A session route of the reverse proxy was reached and the pull ' +
+      'named no client, no authorization endpoint or no token endpoint for ' +
+      'this PEP, so nobody can be signed in (#1760).',
+    spec: 'HTTP 503, temporarily_unavailable' },
+  { code: 'STS-XPEP-0091',
+    summary: 'The upstream URL the reverse proxy built for a request would ' +
+      'not stay on the configured upstream\'s origin and path, so the ' +
+      'request is not sent (#1760).',
+    spec: 'HTTP 502, bad_gateway' },
+  { code: 'STS-XPEP-0092',
+    summary: 'PEP_PROXY_UPSTREAM_CA could not be read or would not load, so ' +
+      'an https upstream is verified against the system\'s anchors alone; ' +
+      'or the client to the upstream would not build (#1760).',
+    spec: 'HTTP 502 when the client would not build; otherwise none' },
   // ===== AUTHZEN ===========================================================
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',

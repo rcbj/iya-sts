@@ -1097,6 +1097,7 @@ mod tests {
     fn peer(sha256: &str, verified: bool) -> Transport {
         Transport {
             https: true,
+            remote: None,
             peer: Some(Peer {
                 sha256: sha256.to_string(),
                 subject: "CN=pep".into(),
@@ -1350,6 +1351,7 @@ mod tests {
             json: Some(body),
             error: None,
             timed_out: false,
+            ..Answer::default()
         }
     }
 

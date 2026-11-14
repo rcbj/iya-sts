@@ -16,10 +16,19 @@ mod authzen;
 mod authzen_catalogue;
 mod authzen_map;
 mod enforce;
+mod jwt;
 mod listener;
 mod options;
 mod pdp_client;
 mod pip;
+mod proxy;
+mod proxy_auth;
+mod proxy_config;
+mod proxy_request;
+#[cfg(test)]
+mod proxy_tests;
+mod rp_session;
+mod saml_verify;
 mod service;
 mod sync;
 
@@ -41,6 +50,7 @@ use crate::listener::{peer_of, HttpsListener, Transport};
 use crate::options::Options;
 use crate::pdp_client::PdpClient;
 use crate::pip::RemotePip;
+use crate::proxy::Proxy;
 use crate::service::Pep;
 use crate::sync::Sync;
 
@@ -199,6 +209,7 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
             let transport = Transport {
                 https: true,
                 peer: peer_of(tls.ssl()),
+                remote: None,
             };
             let served = Builder::new(TokioExecutor::new())
                 .serve_connection(
@@ -219,7 +230,11 @@ async fn start(options: Options, info: version::VersionInfo) {
         "xacml-pep: version {} ({}built {}{}, {}). The release is the \
          service's own; the build number is this image's.",
         info.version,
-        if info.release { "a RELEASE build, " } else { "" },
+        if info.release {
+            "a RELEASE build, "
+        } else {
+            ""
+        },
         info.built_at,
         if info.commit.is_empty() {
             String::new()
@@ -272,6 +287,7 @@ async fn start(options: Options, info: version::VersionInfo) {
         }
     };
     let sync = Arc::new(Sync::new(client.clone(), options.clone()));
+    let proxy_client = client.clone();
     let pip = RemotePip::new(client, options.pip_enabled);
     let https = Arc::new(HttpsListener::new(
         &options.https_cert_path,
@@ -374,6 +390,39 @@ async fn start(options: Options, info: version::VersionInfo) {
             } else {
                 " — which is not set, so nobody is admitted"
             }
+        );
+    }
+    if options.proxy_enabled {
+        // THE REVERSE PROXY (#1760), on ports of its own: every endpoint
+        // above is untouched by it. It answers 404 to everything until the
+        // service sends a configuration for this PEP.
+        let proxy = Arc::new(Proxy::new(pep.clone(), proxy_client));
+        tokio::spawn(proxy::serve_http(proxy.clone(), options.proxy_port));
+        let proxy_https = Arc::new(HttpsListener::for_proxy(
+            &options.https_cert_path,
+            &options.https_key_path,
+            options.proxy_https_port,
+            options.https_reload_interval_ms,
+        ));
+        if proxy_https.is_configured() {
+            tokio::spawn(async move {
+                loop {
+                    if proxy_https.reload() {
+                        tokio::spawn(proxy::serve_https(
+                            proxy.clone(),
+                            proxy_https.clone(),
+                        ));
+                    }
+                    tokio::time::sleep(proxy_https.interval()).await;
+                }
+            });
+        }
+        tracing::info!(
+            "xacml-pep: the reverse proxy answers on {} (plain) and {} \
+             (HTTPS, with the pair 9443 serves), over the route table the \
+             service sends for this PEP; deny by default.",
+            options.proxy_port,
+            options.proxy_https_port
         );
     }
     install_fault_handler();

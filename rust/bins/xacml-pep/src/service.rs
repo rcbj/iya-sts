@@ -302,30 +302,6 @@ impl Pep {
     /// A decision here, with what was pulled — and the remote PIP asked
     /// BEFORE evaluation, because the engine's resolver is synchronous.
     async fn decide(&self, query: &IndexMap<String, String>) -> Answer {
-        let (policies, loaded) = self.sync.current();
-        let Some(root) = policies.root.as_ref().filter(|_| loaded) else {
-            tracing::warn!(
-                "{}xacml-pep: a decision was asked for and this PEP holds no \
-                 root policy, so it is NotApplicable and the {} bias settles \
-                 it.",
-                tag("STS-XPEP-0005"),
-                self.options.bias.as_str()
-            );
-            return Answer {
-                decision: Decision::NotApplicable,
-                status: Status::ok(),
-                obligations: Vec::new(),
-                advice: Vec::new(),
-                policy_identifiers: Vec::new(),
-                note: Some(
-                    "This PEP holds no root policy — it has never pulled one \
-                     successfully, or what it pulled had no root. There is \
-                     nothing to evaluate, so the decision is NotApplicable \
-                     and the bias below is what actually decided.",
-                ),
-                pip: None,
-            };
-        };
         let get = |k: &str| query.get(k).cloned().unwrap_or_default();
         let subject = get("subject");
         let resource = query
@@ -379,6 +355,68 @@ impl Pep {
         req.target(&resource, Some(types::ANYURI))
             .requested_action(&action);
         let request = req.build();
+        self.evaluate(request).await
+    }
+
+    /// The reverse proxy's decision (#1760, D8): subject, resource and
+    /// action through the ONE builder exactly as `/protected` builds its
+    /// request — the four categories named first, the subject as
+    /// `subject-id`, the resource typed anyURI, the action as `action-id` —
+    /// evaluated by the same path (the PIP asked first), enforced by the
+    /// same rule and counted with the same counters.
+    pub(crate) async fn decide_proxy(
+        &self,
+        subject: &str,
+        resource: &str,
+        action: &str,
+    ) -> (Decision, crate::enforce::Outcome) {
+        let mut req = AuthorizationRequest::default();
+        for id in [
+            category::ACCESS_SUBJECT,
+            category::RESOURCE,
+            category::ACTION,
+            category::ENVIRONMENT,
+        ] {
+            req.category(id);
+        }
+        if !subject.is_empty() {
+            req.subject(attribute::SUBJECT_ID, [subject]);
+        }
+        req.target(resource, Some(types::ANYURI))
+            .requested_action(action);
+        let answer = self.evaluate(req.build()).await;
+        let outcome =
+            self.enforcer.enforce(answer.decision, &answer.obligations);
+        self.sync.count_decision(&outcome);
+        (answer.decision, outcome)
+    }
+
+    /// One built request evaluated against what was pulled.
+    async fn evaluate(&self, request: sts_xacml::request::Request) -> Answer {
+        let (policies, loaded) = self.sync.current();
+        let Some(root) = policies.root.as_ref().filter(|_| loaded) else {
+            tracing::warn!(
+                "{}xacml-pep: a decision was asked for and this PEP holds no \
+                 root policy, so it is NotApplicable and the {} bias settles \
+                 it.",
+                tag("STS-XPEP-0005"),
+                self.options.bias.as_str()
+            );
+            return Answer {
+                decision: Decision::NotApplicable,
+                status: Status::ok(),
+                obligations: Vec::new(),
+                advice: Vec::new(),
+                policy_identifiers: Vec::new(),
+                note: Some(
+                    "This PEP holds no root policy — it has never pulled one \
+                     successfully, or what it pulled had no root. There is \
+                     nothing to evaluate, so the decision is NotApplicable \
+                     and the bias below is what actually decided.",
+                ),
+                pip: None,
+            };
+        };
         let resolution = self
             .pip
             .resolver_for(&request, root, &policies.repository)
@@ -619,6 +657,7 @@ impl Pep {
             "protectedAt": "/protected",
             "https": self.listener.overview(),
             "authzen": self.authzen_overview(),
+            "proxy": self.sync.proxy_json(),
             "holding": self.sync.holding_json(),
             "stale": stale,
             "staleAfterMs": stale_after_ms,

@@ -42,13 +42,20 @@ shim) are in git history.
 | `service.rs` | The one handler for both listeners, `/protected`'s decision, `GET /`. |
 | `authzen_catalogue.rs`, `authzen_map.rs` | Ports of `authzen/authzen_catalogue.ts` and `authzen/authzen_map.ts`: the catalogue grammar, the request reading and the fail-closed mapping (#1179). Pure. |
 | `authzen.rs` | The AuthZEN edge PDP's endpoints, the admission of a caller by the pulled list and the optional local narrowing (#1189), the batch and the metadata (#1179), and the forward of an evaluation about an application that enforces fine-grained authorization to the service (#564, P7). |
+| `proxy.rs` | **The reverse proxy (#1760)**: its two listeners, the one handler, the session mechanism's `/.iya-pep/callback` and `/.iya-pep/logout`, and the streamed, bounded forward to the upstream. See *THE REVERSE PROXY*. |
+| `proxy_config.rs` | The pulled configuration (D2, D3) read again by D2's rules and refused whole, the route table and its matching. Pure. |
+| `proxy_request.rs` | The path normalised or refused, and the headers that may not cross in either direction. Pure. |
+| `proxy_auth.rs` | The four mechanisms, local first and the service's validation endpoints behind, and the JWKS cache. |
+| `jwt.rs` | A JWS verified against the realm's JWKS with OpenSSL, the claim and `cnf` checks, strict base64url. Pure. |
+| `saml_verify.rs` | A SAML 2.0 assertion's enveloped signature, with exclusive c14n written over roxmltree. Pure. |
+| `rp_session.rs` | The session mechanism's sign-ins in flight and proxy sessions, in memory and bounded. |
 | `main.rs` | Start-up, the backoff timers, the fault handler, `--stamp`, `--healthcheck`. |
 
 ## The tests, and which half each guards
 
 | Test | What it holds |
 |---|---|
-| `cargo test -p xacml-pep` | **The SHAPE**: the PIP walk over ONE document holding a designator in five places (a target, a condition, a variable definition, an obligation assignment, a policy reached by `PolicyIdReference`) and NOT the resource-category one beside them; the PIP answer read with the engine's own request reader; the listener's reload rules and a real mutual-TLS handshake read by `peer_of()`; the enforcement rule against `enforcement_cases.json`; and the AuthZEN mapping against `authzen_cases.json`, the request it builds, the fail-closed result, the pulled caller list's grammar, admission by it and by the local narrowing, and the application scope; and (#564, P7) the catalogue's `fgaApplications` read whole or not at all, which applications are forwarded, the forwarded body, the service's every answer mapped to a decision or an error (never `false`), and the forward over a real socket to a mock service — the realm's path, `X-Request-ID`, a 500, a refusal of the PEP, a timeout and nobody listening. |
+| `cargo test -p xacml-pep` | **The SHAPE**: the PIP walk over ONE document holding a designator in five places (a target, a condition, a variable definition, an obligation assignment, a policy reached by `PolicyIdReference`) and NOT the resource-category one beside them; the PIP answer read with the engine's own request reader; the listener's reload rules and a real mutual-TLS handshake read by `peer_of()`; the enforcement rule against `enforcement_cases.json`; and the AuthZEN mapping against `authzen_cases.json`, the request it builds, the fail-closed result, the pulled caller list's grammar, admission by it and by the local narrowing, and the application scope; and (#564, P7) the catalogue's `fgaApplications` read whole or not at all, which applications are forwarded, the forwarded body, the service's every answer mapped to a decision or an error (never `false`), and the forward over a real socket to a mock service — the realm's path, `X-Request-ID`, a 500, a refusal of the PEP, a timeout and nobody listening; and (#1760) the reverse proxy — see *THE REVERSE PROXY*, *What holds it*. |
 | `tests/authzen_map.js` S | **The service's mapping against the same `authzen_cases.json`** — so the two readings of one request are checked against one expectation, as the two enforcement rules are. |
 | `tests/authzen_evaluation.js` K, P | The PDP's side of the two AuthZEN pulls, `GET /xacml/pep/authzen-catalogue` (K) and `GET /xacml/pep/authzen-callers` (P), in process — P holding each pulled caller's name to the one the certificate door gives a real handshake. |
 | `cargo test -p sts-xacml` | The engine against the vendored OASIS suite, case for case as `tests/xacml_conformance.js` holds the service's. |
@@ -259,6 +266,8 @@ GET  /crl/<name>    this PEP's own credential's CRLs (#174), from PEP_CRL_DIR
 ```
 
 and the AuthZEN edge PDP's three (#1179), *The AuthZEN edge PDP* below.
+**The reverse proxy (#1760) is on ports of its own** (9180, 9543) and adds
+nothing here but a `proxy` member on `GET /` — *THE REVERSE PROXY* below.
 
 **`/crl/<name>` is not a fifth endpoint of the PEP's; it is its credential's
 distribution point (#174, 2026-09-23).** A product-mode PDP refuses, under
@@ -430,6 +439,15 @@ console.
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | The metadata's `policy_decision_point`, an `https` origin with no path; unset, the origin the HTTPS request arrived at (`STS-XPEP-0045` over plain HTTP). |
 | `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | How long an evaluation FORWARDED to the service (an application that enforces fine-grained authorization, #564) may take; past it the caller gets 504 (`STS-XPEP-0055`). Not `PEP_TIMEOUT_MS`, because a caller is waiting on this one and nobody waits on a pull. At least 1. |
 | `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | `PEP_MAX_BODY_BYTES` also bounds a single AuthZEN evaluation's body (`STS-XPEP-0046`). |
+| `PEP_PROXY` | `true` | **The reverse proxy (#1760).** `false` starts neither of its listeners and skips its pull. On, it answers 404 to everything until the service sends this PEP a configuration. |
+| `PEP_PROXY_PORT` | `9180` | Its plain-HTTP listener. A port that will not bind is logged (`STS-XPEP-0063`) and the PEP goes on. |
+| `PEP_PROXY_HTTPS_PORT` | `9543` | Its HTTPS listener: the SAME `PEP_HTTPS_CERT`/`KEY` pair 9443 serves, re-read on the same interval, and a client is ASKED for a certificate (never required to present one) so a certificate-bound token's `cnf.x5t#S256` can be checked. No pair, no listener. |
+| `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | How old the service's last "live" answer about a proxy session may be before the next access asks `POST /xacml/pep/session` again. `0` asks on every access. |
+| `PEP_PROXY_SESSION_TTL_MS` | `28800000` (8 h) | The longest a proxy session lives, whatever the service says. |
+| `PEP_PROXY_MAX_SESSIONS` | `10000` | The most proxy sessions held — a new one past it is REFUSED (503, `STS-XPEP-0085`), never made by evicting somebody — and, separately, the most sign-ins in flight, where the OLDEST is dropped. |
+| `PEP_PROXY_JWKS_TTL_MS` | `300000` | How long the realm's JWKS is used before it is fetched again. An unknown `kid` refetches at once after an ordinary fetch, then at most every 5 s. |
+| `PEP_PROXY_UPSTREAM_CA` | — | **A path, read once**: anchors for an `https` upstream, beside the system's (`STS-XPEP-0092` when unreadable). |
+| `PEP_PROXY_UPSTREAM_INSECURE` | `false` | Do not verify an `https` upstream's certificate. |
 
 **The compose service, beyond the table** (moved from `docker-compose.yml`'s
 comments on 2026-10-07): it is under `profiles: [xacml]`, so a plain `up` never
@@ -789,6 +807,296 @@ endpoints are served at this container's root, so an identifier with a path
 is refused at start (`STS-XPEP-0045`). It names the batch endpoint only
 while the realm has it on, and nothing unimplemented, as the service's does.
 
+## THE REVERSE PROXY (#1760)
+
+```
+PEP_PROXY_PORT        9180   plain HTTP
+PEP_PROXY_HTTPS_PORT  9543   the pair 9443 serves, a client certificate asked for
+GET  /.iya-pep/callback      the session mechanism's redirect URI
+GET  /.iya-pep/logout        ends the proxy session, then the service's
+everything else              the route table
+```
+
+**rcbj's ticket: this container in front of ONE application, deciding
+locally whether a request goes through, on routes and mechanisms the
+administrator configures in the service's Remote XACML section.** The
+decisions D1–D9 on #1760 are the contract; this is the PEP's half of it
+(D2, D3, D4 as a client, D5's PEP half, D6, D7's local column, D8). The
+service's half is `xacml/CLAUDE.md`'s.
+
+**ON PORTS OF ITS OWN, FOR BACKWARDS COMPATIBILITY.** 9090, 9443, the four
+endpoints, `GET /` and the AuthZEN edge are untouched; the one addition to
+them is a `proxy` member on `GET /`, which COUNTS (routes, routes per
+mechanism, answers by status, live sessions, sign-ins in flight) and names
+no route, URL, credential or person — `GET /` answers whoever reaches the
+container. `PEP_PROXY=false` starts neither listener and skips the pull.
+
+### The configuration is pulled, read again, and loaded whole
+
+`sync.rs` pulls `GET /xacml/pep/proxy` after the AuthZEN callers on every
+poll, with the same client certificate, its own sync token (`?since=`) and
+`If-None-Match` with the `ETag` it was last given. 304 is unchanged; a
+failure keeps the configuration held (`STS-XPEP-0060`, `-0061`, a PDP older
+than #1760 answering 404); `configured: false` holds nothing, and the proxy
+then answers 404 to everything. **Every member is read again by D2's rules**
+(`proxy_config.rs`): the upstream an absolute http(s) URL with no userinfo,
+query or fragment; at most 64 routes with unique ids; a route path with no
+dot segment, `//`, `%`, backslash or control character; the methods,
+mechanisms and match from their closed sets; an audience for `oauth2` and
+`saml2`; `publicBaseUrl` when a route uses `session`; the two bounds in
+range; each signing certificate a PEM certificate; the validation URLs
+absolute. **One refusal refuses the document WHOLE and the one held is kept**
+(`STS-XPEP-0062`) — a route table loaded in part forwards what nobody
+configured or refuses what somebody did. Unknown members are ignored, so a
+service that adds one does not switch the proxy off. Not nudged: it
+converges on the poll.
+
+### A request, in order
+
+`proxy.rs`'s `answer()`; each step's refusal is the first one met.
+
+1. **The path is normalised or refused** (400, `STS-XPEP-0064`;
+   `proxy_request.rs`): a `.` or `..` segment, `//`, a backslash, a NUL or
+   control character, a byte that is not ASCII, an invalid percent-escape,
+   and an ENCODED `.`, `/`, `\` or NUL (`%2e`, `%2f`, `%5c`, `%00`) —
+   wherever it is, not only where it would make a segment, as D8 says. An
+   escape of an UNRESERVED character is DECODED (RFC 3986 section 6.2.2.2),
+   so `/%61pi` is matched and forwarded as `/api` and cannot slip past an
+   exact route to a prefix route behind it; every other escape is kept, hex
+   upper-cased. **The normalised path is what is matched AND what is
+   forwarded**, so the route that decided and the resource the application
+   serves are one string.
+2. `/.iya-pep/callback` and `/.iya-pep/logout` are the session mechanism's,
+   ahead of the route table.
+3. **The route**: the FIRST whose path matches — exact, or prefix at a
+   segment boundary (`/api` is `/api` and `/api/…`, never `/apix`; a
+   configured trailing `/` is dropped). No route, or no configuration
+   switched on: 404 (`STS-XPEP-0065`), and the application is never reached.
+4. **The method**: one the route does not take is 405 with `Allow`
+   (`STS-XPEP-0066`); the next route is NOT tried.
+5. **A declared body over `maxBodyBytes`**: 413 before anything else
+   (`STS-XPEP-0067`).
+6. **The mechanism**, unless the route is public (below).
+7. **The decision** (D8): `service.rs`'s `decide_proxy()` — subject the
+   username when known, else `sub`; resource the route's `resource` or the
+   normalised path (typed anyURI, as `/protected` types it); action the
+   route's `action` or the method; through the one builder, the PIP asked
+   first, `enforce.rs`'s bias and obligation rule, counted with
+   `/protected`'s counters (so the heartbeat reports them). Not allowed:
+   403 (`STS-XPEP-0086`). A public route takes no mechanism and no
+   decision.
+8. **The forward**, below.
+
+### The headers that may not cross
+
+**To the application** (`forward_headers()`): the hop-by-hop headers gone —
+`Connection` and every header it names, `Keep-Alive`, every `Proxy-*`, `TE`,
+`Trailer`, `Transfer-Encoding`, `Upgrade`; every `X-Forwarded-*` and
+`Forwarded` the CLIENT sent gone; `Host` gone (the client library writes the
+upstream's); any header named like the route's `subjectHeader` or
+`mechanismHeader` gone, on a public route too; and unless the route says
+`forwardCredentials`, `Authorization` and the `iya_pep_session` cookie gone
+(the other cookies stay). Then set fresh: `X-Forwarded-For` (the
+connection's peer, never a header), `X-Forwarded-Proto`, `X-Forwarded-Host`
+(the client's `Host`), and the identity: the subject in `subjectHeader`,
+the mechanism (`session`, `oauth2`, `saml2`, `basic`) in `mechanismHeader`.
+A subject a header cannot carry is refused rather than forwarded without it
+(403, `STS-XPEP-0087`). **To the client**: the application's hop-by-hop
+headers gone, everything else as it was.
+
+### The forward
+
+**The destination is never the request's**: the configured upstream base,
+the normalised path and the original query, and the result checked to still
+be on the upstream's origin and under its path (502, `STS-XPEP-0091`). One
+`reqwest` client per `upstreamTimeoutMs`: no redirect followed (the
+application's 302 is the client's), no environment proxy, the system's
+anchors plus `PEP_PROXY_UPSTREAM_CA` (or `PEP_PROXY_UPSTREAM_INSECURE`).
+**Both bodies stream.** The request body goes through a counting wrapper
+that fails past `maxBodyBytes`, which is a 413 even mid-stream
+(`STS-XPEP-0067`); a request with neither `Content-Length` nor
+`Transfer-Encoding` is sent with no body at all, so a GET is not turned into
+a chunked one. Past `upstreamTimeoutMs`, connect included: 504
+(`STS-XPEP-0068`); unreachable or failed: 502 (`STS-XPEP-0069`). A 5xx body
+is a generic sentence — the logged reason may name the service's or the
+application's address.
+
+### Each mechanism, here and at the service (D7)
+
+**Chosen by the `Authorization` scheme** — `Bearer` (and `DPoP`) is
+`oauth2`, `SAML` is `saml2`, `Basic` is `basic` — when the route takes it;
+otherwise, on a route that takes `session`, the cookie. A scheme the route
+does not take, or a header that cannot be read, is 401 (`STS-XPEP-0089`); no
+credential at all is 401 (`STS-XPEP-0070`). **A 401 carries a
+`WWW-Authenticate` for each mechanism the route allows** — `Bearer
+realm="<pep>"` with `error="invalid_token"` when a token was refused,
+`Basic realm="<pep>", charset="UTF-8"`, `SAML realm="<pep>"`; the session
+mechanism has no scheme. **Every validation call goes through the ONE
+client** (`PdpClient::call_url()`, the absolute URL the pull named), so the
+PEP's certificate is presented and the PDP verified as for every pull. **A
+service that cannot be asked refuses, never admits** (502,
+`STS-XPEP-0075`).
+
+| Mechanism | Here (`jwt.rs`, `saml_verify.rs`) | At the service |
+|---|---|---|
+| `oauth2` | A compact JWS: RS256/384/512, PS256/384/512, ES256/384/512 against the RSA and EC keys of the realm's JWKS (an OKP, AKP or encryption key is left out); strict base64url; `none` and a key of the wrong type refused; `iss` the realm's, `aud` (string or array) holding the route's audience, `exp` required, `exp`/`nbf` with 60 s of skew (`STS-XPEP-0071`); `cnf.x5t#S256` equal to the SHA-256 of the certificate presented on THIS connection (`STS-XPEP-0073`, also for a `cnf` member it cannot check); `cnf.jkt`, and the `DPoP` scheme, refused by name (`STS-XPEP-0072`) | An opaque token, a JWS whose algorithm is not verified here (EdDSA, ML-DSA, a composite), or whose `kid` is unknown after one refetch: `POST validation.introspect { token }`, and only `active: true` with the realm's `iss`, the route's audience in `aud` and an acceptable `cnf` admits (`STS-XPEP-0074`) |
+| `saml2` | `Authorization: SAML <base64>`: the one shape the service signs (below). An EncryptedAssertion is refused, here, and nobody is asked (`STS-XPEP-0076`) | **ANY local failure** — logged at info, `STS-XPEP-0077` — is `POST validation.saml { assertion, audience }`, and only `valid: true` admits (`STS-XPEP-0078`) |
+| `basic` | never | always `POST validation.basic { username, password }`; `valid: false` is 401 (`STS-XPEP-0079`); its 429 is passed on with `Retry-After` from `retryAfterS` (`STS-XPEP-0080`) |
+| `session` | the ID Token at sign-in; the proxy cookie | `POST validation.session { sid }` liveness (below) |
+
+**The JWKS is cached** for `PEP_PROXY_JWKS_TTL_MS`; an unknown `kid` fetches
+it again at once after an ordinary fetch (a rotation being picked up) and
+then at most every five seconds, so tokens naming invented `kid`s cannot make
+this PEP fetch per request. A fetch that fails keeps the keys held
+(`STS-XPEP-0088`); with none, a JWS is the service's to introspect.
+
+### The SAML check, and why a local failure is a question
+
+`saml_verify.rs` reads exactly the shape `common/crypto_impl/xmldsig.js`'s
+`signEnveloped()` makes for `saml/saml2.ts`: the document is the Assertion
+(Version 2.0, an `ID`); no DOCTYPE; EXACTLY ONE `ds:Signature` in the
+document, a direct child of the Assertion, holding SignedInfo,
+SignatureValue and at most a KeyInfo (which is IGNORED — the key is a pulled
+signing certificate's, never the document's); one Reference whose URI is
+`#` + the ID, and no other element carrying that ID (signature wrapping);
+the transforms exactly enveloped-signature then exclusive c14n, with no
+InclusiveNamespaces, and exclusive c14n for the SignedInfo; RSA PKCS#1 v1.5
+or ECDSA (r‖s) with SHA-256/384/512, and those digests. Then, **off the
+verified node's own children and nothing else** — the digest is over that
+node minus its Signature — the Issuer is `samlIssuer`, one Conditions with
+a `NotOnOrAfter` and a `NotBefore` that hold (60 s skew) and nothing but
+AudienceRestriction children, each holding the route's audience, and one
+NameID (the subject; `uid` or its OID attribute is the username).
+
+**Exclusive c14n (without comments) is written here**, over roxmltree, which
+resolves namespaces but does not keep the PREFIX an element or attribute was
+written with — and c14n renders prefixes. So each prefix is read from the
+source text at the node's own range, never looked up by URI (two prefixes
+may bind one URI). A declaration is rendered only where the element's own
+name or an attribute uses it and the nearest rendered ancestor did not render
+the same binding; `xmlns=""` only to undo a rendered default; attributes
+sorted by namespace URI then local name; C14N 1.0's escapes; comments
+dropped; a processing instruction is not read. The test vector's canonical
+forms are written out BY HAND in the test and were checked, when written,
+against lxml's independent exclusive c14n (all three agreed).
+
+**A failure here is never a refusal**: an XML signature has more legitimate
+shapes than this file reads, and refusing one would refuse a person the
+service admits. So the cost of the narrow reader is a round trip, never a
+wrong answer, and the security of the local path rests on its success being
+strict: nothing is admitted here that the digest and the signature did not
+cover.
+
+### The session mechanism (D5)
+
+**A browser** — a GET or HEAD whose `Accept` holds `text/html` — on a
+`session` route with no live proxy session is sent (302) to the realm's
+`authorizationEndpoint` with `response_type=code`, the pulled `clientId`
+(the public client the service registered for this PEP), the pulled
+`redirectUri` (else `publicBaseUrl` + `/.iya-pep/callback`), `scope=openid`,
+a `state`, a `nonce` and a PKCE S256 challenge, each 256 random bits from
+OpenSSL. The verifier, the nonce and where the browser was going (the
+normalised path and the original query, relative, NEVER anything the
+callback brings) are kept here under the state. Anything else is 401
+(`STS-XPEP-0081`). No client or endpoint named: 503 (`STS-XPEP-0090`).
+
+**`/.iya-pep/callback`** takes the state ONCE (an unknown, spent or
+ten-minute-old one, an `error`, or no code: 401, `STS-XPEP-0082`), redeems
+the code at `tokenEndpoint` (a form POST through the ONE client — a public
+client, no secret — with the verifier), and verifies the ID Token HERE:
+signature against the JWKS (no introspection for an ID Token), `iss`, `aud`
+the client (with `azp` when there are several), the nonce compared in
+constant time, `exp`, and a `sid` and `sub` (`STS-XPEP-0083`). Then a proxy
+session — a random 256-bit id in `iya_pep_session`, `HttpOnly`,
+`SameSite=Lax`, `Path=/`, `Secure` on the HTTPS listener — and a 302 to
+where the browser was going.
+
+**Each access re-asks the service** (`POST validation.session { sid }`) when
+its last answer is older than `PEP_PROXY_SESSION_RECHECK_MS` (0 asks every
+time). `live: false` — a sign-out at the service — ENDS the proxy session
+(`STS-XPEP-0084`): a browser is sent to sign in again with the cookie
+cleared, anything else gets 401. A service that cannot be asked is a 502 and
+the session is kept. **`/.iya-pep/logout`** ends the proxy session, clears
+the cookie, and sends the browser to `endSessionEndpoint` with `client_id`
+and `id_token_hint`.
+
+**In memory, bounded, purged at the insert, never on a timer**
+(`rp_session.rs`): a proxy session lives at most `PEP_PROXY_SESSION_TTL_MS`;
+past `PEP_PROXY_MAX_SESSIONS` live ones a new one is REFUSED (503,
+`STS-XPEP-0085`), because evicting would sign somebody else out; past the
+same number of sign-ins in flight the OLDEST is dropped, because anybody can
+start one and refusing would let anybody stop everybody signing in. A
+restart only sends each browser through a sign-in it will not see — the
+service's session is still there. Two instances hold two sets, which the
+#676 decision above already accepts.
+
+### What it does not do, and what is unproven
+
+* **It proves no DPoP key**: a `cnf.jkt` token and the DPoP scheme are
+  refused by name, as D7 says for this ticket.
+* **A path parameter (`;`) is forwarded as written.** `/api;x/admin` is not
+  `/api/admin` here, and an application that strips `;` parameters (some
+  servlet containers) would read it as that. An exact route in front of a
+  prefix route on such an application can be reached past its exact match.
+  Not refused because D8's list does not refuse it; a deployment in front
+  of such an application should not rely on an exact route alone.
+* **Case is not folded.** An application that matches paths without case
+  sees `/API` where the route table saw no route (404, the safe side) — but
+  a prefix route behind an exact one is the `;` case again.
+* **No WebSocket or `Upgrade`**: the hop-by-hop rule strips it.
+* **Unproven until a stack run**: the service's four validation endpoints'
+  real answers (the shapes here are D4's), the real ID Token (`sid`,
+  `preferred_username`), the service's real JWKS and signed SAML assertion
+  through the local path (the test vector is the service's SHAPE, signed
+  here), the realm's redirect back through a browser, and a certificate-bound
+  token over 9543 (the listener's ask-anybody handshake is held by
+  `listener.rs`'s test; the `cnf` comparison by `jwt.rs`'s).
+
+### What holds it
+
+`cargo test -p xacml-pep`, 50 tests, of which the proxy's are: the
+configuration's every refusal and the contract's own example
+(`proxy_config.rs`); the path rules and the header rules (`proxy_request.rs`);
+every supported algorithm, a wrong key, a wrong key type, `none`, a tampered
+signature, an unknown `kid`, strict base64url, and the claim and `cnf`
+checks (`jwt.rs`); the canonical forms by hand, the assertion verified, and
+every local failure — a stranger's key, a forged digest, content changed
+after signing, the Reference, the SignatureMethod, the transforms, a
+DOCTYPE, a wrapped ID, the audience, the time, the issuer — answered as a
+question (`saml_verify.rs`); the stores' bounds, a spent state, expiry and
+RFC 7636's own PKCE vector (`rp_session.rs`); the proxy listener's handshake
+(`listener.rs`); and, OVER REAL SOCKETS (`proxy_tests.rs`), the proxy in
+front of a mock application that echoes what reached it beside a mock
+service: every mechanism admitted and refused, unrouted 404, 405 with
+`Allow`, 413 declared and streamed, 504, 502, a redirect not followed,
+traversal sent byte for byte over a raw socket (a URL library resolves `..`
+before sending), credentials and forwarding headers stripped, identity
+headers set, the decision refusing a subject and a route's resource, a key
+rotation picked up by one refetch, Basic's 429 passed on, the SAML local
+path and its fallback, the session flow from the redirect through PKCE and
+the callback to a sign-out at the service ending access, and the pull's
+token, `ETag`, 304, failure and whole refusal. **Thirteen mutants** — the
+audience check, the segment boundary, `%2e` accepted, `Authorization`
+forwarded, a failed SAML digest admitted, the session recheck, `cnf.jkt`
+accepted, a client's `X-Forwarded-For` kept, the ID Token nonce, the SAML
+Reference URI, the introspection issuer, the 405, the 429 — are all caught;
+two survived the first pass (`%2e` not forming a segment, and the
+introspected issuer) and the tests that catch them were added.
+`tests/protocol/sts_xacml_remote_pep.js` is the deployment's.
+
+### Its error codes
+
+`0060`–`0062` the pull; `0063` the plain listener (the HTTPS one reuses
+`0029`–`0032`); `0064`–`0069` the route table, the body and the upstream;
+`0070`–`0075` and `0088`, `0089` the credential and the service's
+validation; `0076`–`0078` SAML; `0079`, `0080` Basic; `0081`–`0085` and
+`0090` the session mechanism; `0086` the decision; `0087` an identity header;
+`0091` the upstream URL; `0092` the upstream's anchors. **No log line carries
+a token, an assertion, a password, a session id or a query string**: the
+method, the normalised path (at most 200 characters, quoted), the route and
+the reason.
+
+
 ## Error codes
 
 Every failure has an `STS-XPEP-nnnn` code in the service's ONE table
@@ -805,7 +1113,8 @@ contained and throttled as before. **0035–0046 are the AuthZEN edge PDP's**
 (#1179), **0047–0054 its caller pull and admission by it** (#1189),
 **0055–0059 the forward of a fine-grained authorization evaluation and the
 catalogue's `fgaApplications`** (#564, P7); a request it refuses under the mapping contract is logged with the
-`STS-AUTHZEN-*` code the service gives the same request.
+`STS-AUTHZEN-*` code the service gives the same request. **0060–0092 are the
+reverse proxy's** (#1760), listed in *THE REVERSE PROXY*.
 
 
 ## THE HTTPS LISTENER (2026-09-13)
