@@ -567,9 +567,13 @@ writes them into a gitignored directory or `STS_CRYPTO_VECTORS`).
 
 * **Every URL, every port, every setting key and every environment variable.**
   `env/` keeps working unchanged against the Rust runtime.
-* **The appconfig layers' content.** `env/*.js` become `env/*.json` (they
-  are data), read by the Rust runtime; the Node runtime keeps its `.js` copies
-  until the cutover deletes it.
+* **The appconfig layers' content, and their form.** Under D11 an
+  operator's `CONFIG_FILE` is the JavaScript module a 1.x install already
+  has, so the Rust runtime EVALUATES it (`sts_core::appconfig`, phase 3:
+  QuickJS with no I/O but the appconfig files it requires, the exports read
+  back as data); a `.json` file is read as node's `require()` reads one. 29
+  files — the shipped `env/*.js` and `env/*.json` and written ones in every
+  form — load to Node's exports, values, refusals and warnings.
 * **The error-code table and every code in it.** The 57 suite files that
   assert codes keep asserting them.
 * **The protocol suite, and its language.** It stays JavaScript. A phase makes a
