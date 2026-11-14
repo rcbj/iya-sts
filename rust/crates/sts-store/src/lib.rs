@@ -28,7 +28,9 @@ pub mod model;
 pub mod persistence;
 pub mod postgres;
 pub mod replication;
+pub mod schema;
 pub mod shadow;
+pub mod side;
 
 pub use driver::{Driver, StoreError, StoreFuture, StoreResult};
 pub use model::{

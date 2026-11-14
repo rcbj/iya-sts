@@ -23,7 +23,8 @@ import { documents, everyOperation, projections, renderApiTypes }
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
-import { renderRustApi, renderRustDomain } from '../lib/rust_lib.mjs';
+import { renderRustApi, renderRustDomain, renderRustPersistence }
+  from '../lib/rust_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
 import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
@@ -253,6 +254,9 @@ async function generate() {
   fs.writeFileSync(path.join(out, 'mariadb.schema.sql'), renderScript(
     fs.readFileSync(path.join(ROOT, 'models', 'persistence',
       'mariadb.template.sql'), 'utf8'), mariadb));
+  // Both engines' tables and columns as Rust constants (#444, phase 3).
+  fs.writeFileSync(path.join(out, 'persistence.rs'),
+    renderRustPersistence(persistence, mariadb));
   if (authored.length === 0) {
     log.debug("Leaving generate(). Nothing to write.");
     throw new Error('The model has no object written by hand, so the ' +

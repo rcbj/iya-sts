@@ -58,35 +58,153 @@ use crate::merge::{merge_entry, Outcome};
 use crate::model::{
     DirectoryChange, DirectoryOutcome, DirectoryUpsert, StoredEntry,
 };
+use crate::schema::POSTGRES;
 use crate::shadow::{AppconfigDelta, RealmsDelta};
+use crate::side::{filed, IndexRow, SessionIndex, SESSIONS_HANDLE};
 
 /// The database's clock, in milliseconds.
 const DB_NOW: &str = "(extract(epoch from clock_timestamp()) * 1000)::bigint";
 
-/// The tables this driver reads and writes.
-const TABLES: &[&str] = &[
+/// The schema this driver speaks: `postgres/schema.sql` as the Node
+/// service of the same release creates it, read from the model
+/// (`schema.rs`), so a store a 1.x install wrote is the store this runtime
+/// opens (rcbj, 2026-11-14: the cutover upgrades in place). Its version is
+/// written to `sts_schema` on every open, as Node writes it; `ON CONFLICT
+/// DO NOTHING` makes the script's row and this one harmless together.
+pub const SCHEMA_VERSION: i32 = POSTGRES.version;
+
+const ENTRY_COLUMNS: &str = crate::columns!(
+    POSTGRES,
     "sts_ldap_entries",
-    "sts_realms",
-    "sts_appconfig",
-    "sts_keys",
+    realm,
+    dn_key,
+    dn,
+    attrs,
+    origin,
+    created_at,
+    modified_at
+);
+
+/// What a statement writes to `sts_changes`.
+const CHANGE_WRITE: &str =
+    crate::written!(POSTGRES, "sts_changes", origin, kind, realm, key);
+/// What a statement writes to `sts_ldap_entries`.
+const ENTRY_WRITE: &str = crate::written!(
+    POSTGRES,
+    "sts_ldap_entries",
+    realm,
+    dn_key,
+    dn,
+    attrs,
+    origin,
+    created_at,
+    modified_at,
+    name_keys,
+    mail_keys,
+    uuid_keys,
+    class_keys,
+    value_keys,
+    attr_names,
+    dek_keys
+);
+/// What a statement writes to `sts_keys`.
+const KEY_WRITE: &str =
+    crate::written!(POSTGRES, "sts_keys", realm, material, written_at);
+/// What a statement writes to `sts_minted`.
+const MINTED_WRITE: &str = crate::written!(
+    POSTGRES,
     "sts_minted",
-    "sts_changes",
+    handle,
+    realm,
+    key,
+    body,
+    written_at,
+    expires_at,
+    key_sealed
+);
+/// What a statement writes to `sts_schema`.
+const SCHEMA_WRITE: &str = crate::written!(POSTGRES, "sts_schema", version);
+/// What a statement writes to `sts_realms`.
+const REALM_WRITE: &str = crate::written!(
+    POSTGRES,
+    "sts_realms",
+    id,
+    name,
+    description,
+    created_at,
+    overrides,
+    domain,
+    retiring_at
+);
+/// What a statement writes to `sts_appconfig`.
+const APPCONFIG_WRITE: &str =
+    crate::written!(POSTGRES, "sts_appconfig", key, value);
+/// What a statement writes to `sts_cluster_nodes`.
+const NODE_WRITE: &str = crate::written!(
+    POSTGRES,
     "sts_cluster_nodes",
+    node_id,
+    name,
+    mode,
+    started_at,
+    heartbeat_at,
+    expires_at,
+    info
+);
+/// What a statement writes to `sts_cluster_leases`.
+const LEASE_WRITE: &str = crate::written!(
+    POSTGRES,
     "sts_cluster_leases",
+    name,
+    holder,
+    token,
+    acquired_at,
+    expires_at
+);
+/// What a statement writes to `sts_cluster_claims`.
+const CLAIM_WRITE: &str = crate::written!(
+    POSTGRES,
     "sts_cluster_claims",
-    "sts_schema",
-];
+    scope,
+    realm,
+    key,
+    reservation,
+    origin,
+    claimed_at,
+    expires_at
+);
 
-/// The schema this driver speaks (`SCHEMA_VERSION`): `postgres/schema.sql`
-/// as the Node service of the same release creates it, so a store a 1.x
-/// install wrote is the store this runtime opens (rcbj, 2026-11-14: the
-/// cutover upgrades in place). Written to `sts_schema` on every open, as
-/// Node writes it; `ON CONFLICT DO NOTHING` makes the script's row and
-/// this one harmless together.
-pub const SCHEMA_VERSION: i32 = 32;
+/// `sts_sessions`' fifteen columns (`SESSION_INDEX_UPSERT`).
+pub(crate) const SESSION_COLUMNS: &str = crate::written!(
+    POSTGRES,
+    "sts_sessions",
+    realm,
+    key,
+    expires_at,
+    last_seen_at,
+    started_at,
+    subject_key,
+    username_key,
+    chosen,
+    authenticated,
+    kind,
+    rp_surface,
+    parent_key,
+    backs_console,
+    credential_key,
+    partner_relationship
+);
 
-const ENTRY_COLUMNS: &str =
-    "realm, dn_key, dn, attrs, origin, created_at, modified_at";
+/// `sts_minted_index`'s five (`MINTED_INDEX_INSERT`).
+pub(crate) const INDEX_COLUMNS: &str = crate::written!(
+    POSTGRES,
+    "sts_minted_index",
+    handle,
+    realm,
+    index_key,
+    key,
+    sort_at
+);
 
 fn err(e: impl std::fmt::Display) -> StoreError {
     StoreError::new(e.to_string())
@@ -171,8 +289,10 @@ impl PostgresDriver {
             let realms: Vec<&str> = chunk.iter().map(|r| r.1).collect();
             let keys: Vec<&str> = chunk.iter().map(|r| r.2).collect();
             tx.execute(
-                "INSERT INTO sts_changes (origin, kind, realm, key) SELECT $1, k, r, y FROM unnest($2::text[], \
+                &format!("INSERT INTO sts_changes ({change_write}) SELECT $1, k, r, y FROM unnest($2::text[], \
                  $3::text[], $4::text[]) WITH ORDINALITY AS u(k, r, y, n) ORDER BY n",
+                change_write = CHANGE_WRITE
+            ),
                 &[&self.origin, &kinds, &realms, &keys],
             )
             .await
@@ -245,10 +365,10 @@ impl PostgresDriver {
              EXCLUDED.dek_keys"
         };
         let sql = format!(
-            "INSERT INTO sts_ldap_entries (realm, dn_key, dn, attrs, origin, created_at, modified_at, name_keys, \
-             mail_keys, uuid_keys, class_keys, value_keys, attr_names, dek_keys) VALUES ($1, $2, $3, $4, $5, $6, $7, \
+            "INSERT INTO sts_ldap_entries ({entry_write}) VALUES ($1, $2, $3, $4, $5, $6, $7, \
              $8, $9, $10, $11, $12, $13, $14) {}",
-            conflict
+            conflict,
+                        entry_write = ENTRY_WRITE
         );
         tx.execute(
             &sql,
@@ -347,6 +467,132 @@ impl PostgresDriver {
     }
 }
 
+impl PostgresDriver {
+    /// One `sts_sessions` row upserted (`SESSION_INDEX_UPSERT`), in the
+    /// flush's transaction.
+    async fn index_session(
+        tx: &deadpool_postgres::Transaction<'_>,
+        realm: &str,
+        key: &str,
+        index: &SessionIndex,
+    ) -> StoreResult<()> {
+        let i = index.params();
+        let sql = format!(
+            "INSERT INTO sts_sessions ({}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, \
+             $15) ON CONFLICT (realm, key) DO UPDATE SET expires_at = EXCLUDED.expires_at, last_seen_at = \
+             EXCLUDED.last_seen_at, started_at = EXCLUDED.started_at, subject_key = EXCLUDED.subject_key, \
+             username_key = EXCLUDED.username_key, chosen = EXCLUDED.chosen, authenticated = \
+             EXCLUDED.authenticated, kind = EXCLUDED.kind, rp_surface = EXCLUDED.rp_surface, parent_key = \
+             EXCLUDED.parent_key, backs_console = EXCLUDED.backs_console, credential_key = \
+             EXCLUDED.credential_key, partner_relationship = EXCLUDED.partner_relationship",
+            SESSION_COLUMNS
+        );
+        tx.execute(
+            &sql,
+            &[
+                &realm,
+                &key,
+                &i.expires_at,
+                &i.last_seen_at,
+                &i.started_at,
+                &i.subject_key,
+                &i.username_key,
+                &i.chosen,
+                &i.authenticated,
+                &i.kind,
+                &i.rp_surface,
+                &i.parent_key,
+                &i.backs_console,
+                &i.credential_key,
+                &i.partner_relationship,
+            ],
+        )
+        .await
+        .map_err(err)?;
+        Ok(())
+    }
+
+    /// An ended session's row removed (`SESSION_INDEX_DELETE`).
+    async fn unindex_session(
+        tx: &deadpool_postgres::Transaction<'_>,
+        realm: &str,
+        key: &str,
+    ) -> StoreResult<()> {
+        tx.execute(
+            "DELETE FROM sts_sessions WHERE realm = $1 AND key = $2",
+            &[&realm, &key],
+        )
+        .await
+        .map_err(err)?;
+        Ok(())
+    }
+
+    /// A row's index rows replaced by `rows` (MINTED_FLUSH's `ixd` and
+    /// `ixi`): a row filed again is KEPT, its `sort_at` updated in place
+    /// where it moved, and the rest deleted. An empty `rows` removes them.
+    async fn refile(
+        tx: &deadpool_postgres::Transaction<'_>,
+        at: (&str, &str, &str),
+        rows: &[IndexRow],
+    ) -> StoreResult<()> {
+        let (handle, realm, key) = at;
+        let keep: Vec<&str> =
+            rows.iter().map(|r| r.index_key.as_str()).collect();
+        tx.execute(
+            "DELETE FROM sts_minted_index WHERE handle = $1 AND realm = $2 AND key = $3 AND NOT (index_key = \
+             ANY($4::text[]))",
+            &[&handle, &realm, &key, &keep],
+        )
+        .await
+        .map_err(err)?;
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let mut sorted: Vec<&IndexRow> = rows.iter().collect();
+        sorted.sort();
+        let h: Vec<&str> = sorted.iter().map(|r| r.handle.as_str()).collect();
+        let r: Vec<&str> = sorted.iter().map(|r| r.realm.as_str()).collect();
+        let i: Vec<&str> =
+            sorted.iter().map(|r| r.index_key.as_str()).collect();
+        let k: Vec<&str> = sorted.iter().map(|r| r.key.as_str()).collect();
+        let at: Vec<Option<i64>> = sorted.iter().map(|r| r.sort_at).collect();
+        let sql = format!(
+            "INSERT INTO sts_minted_index ({}) SELECT u.h, u.r, u.i, u.k, u.s FROM unnest($1::text[], \
+             $2::text[], $3::text[], $4::text[], $5::bigint[]) AS u(h, r, i, k, s) ORDER BY u.h, u.r, u.i, u.k \
+             ON CONFLICT (handle, realm, index_key, key) DO UPDATE SET sort_at = EXCLUDED.sort_at WHERE \
+             sts_minted_index.sort_at IS DISTINCT FROM EXCLUDED.sort_at",
+            INDEX_COLUMNS
+        );
+        tx.execute(&sql, &[&h, &r, &i, &k, &at])
+            .await
+            .map_err(err)?;
+        Ok(())
+    }
+}
+
+/// What the store lacks of the model: a table named once, a column as
+/// `table.column`.
+pub(crate) fn missing_of(
+    schema: &crate::schema::Schema,
+    held: &std::collections::HashSet<(String, String)>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for table in schema.tables {
+        if !held.iter().any(|(t, _)| t == table.name) {
+            out.push(table.name.to_string());
+            continue;
+        }
+        for column in table.columns {
+            if !held
+                .contains(&(table.name.to_string(), column.name.to_string()))
+            {
+                out.push(format!("{}.{}", table.name, column.name));
+            }
+        }
+    }
+    out
+}
+
 /// How long a liveness renewal may take (`renewalBoundMs()`): a third of
 /// the lifetime, between a quarter of a second and two seconds.
 fn renewal_bound_ms(ttl_ms: f64) -> u64 {
@@ -405,8 +651,10 @@ impl Driver for PostgresDriver {
             let mut client = self.client().await?;
             let tx = client.transaction().await.map_err(err)?;
             tx.execute(
-                "INSERT INTO sts_keys (realm, material, written_at) VALUES ($1, $2, now()) ON CONFLICT (realm) DO \
+                &format!("INSERT INTO sts_keys ({key_write}) VALUES ($1, $2, now()) ON CONFLICT (realm) DO \
                  UPDATE SET material = EXCLUDED.material, written_at = now()",
+                key_write = KEY_WRITE
+            ),
                 &[&realm, &material],
             )
             .await
@@ -509,10 +757,12 @@ impl Driver for PostgresDriver {
                         // A TOMBSTONE HAS NO EXPIRY OF ITS OWN: it lives for
                         // persistence.mintedRetention.
                         tx.execute(
-                            "INSERT INTO sts_minted (handle, realm, key, body, written_at, expires_at, key_sealed) \
+                            &format!("INSERT INTO sts_minted ({minted_write}) \
                              VALUES ($1, $2, $3, $4, now(), NULL, $5) ON CONFLICT (handle, realm, key) DO UPDATE \
                              SET body = EXCLUDED.body, written_at = now(), expires_at = NULL, key_sealed = \
                              EXCLUDED.key_sealed",
+                minted_write = MINTED_WRITE
+            ),
                             &[&row.handle, &row.realm, &row.key, &TOMBSTONE, &row.key_sealed],
                         )
                         .await
@@ -524,6 +774,21 @@ impl Driver for PostgresDriver {
                         )
                         .await
                         .map_err(err)?;
+                    }
+                    // THE SIDE ROWS GO WITH THE BODY (#350, #820).
+                    if row.handle == SESSIONS_HANDLE {
+                        PostgresDriver::unindex_session(
+                            &tx, &row.realm, &row.key,
+                        )
+                        .await?;
+                    }
+                    if row.indexed {
+                        PostgresDriver::refile(
+                            &tx,
+                            (&row.handle, &row.realm, &row.key),
+                            &[],
+                        )
+                        .await?;
                     }
                     changes.push((
                         kind.to_string(),
@@ -552,10 +817,13 @@ impl Driver for PostgresDriver {
                         continue;
                     }
                     if let Some(stored) = found.filter(|f| *f != row.body) {
-                        if let Some((body, expires)) = merge(&stored) {
-                            if body != row.body {
-                                row.body = body;
-                                row.expires_at = expires;
+                        if let Some(merged) = merge(&stored) {
+                            if merged.body != row.body {
+                                row.body = merged.body;
+                                row.expires_at = merged.expires_at;
+                                row.session_index = merged.session_index;
+                                row.lookups = merged.lookups;
+                                row.sort_at = merged.sort_at;
                                 decided.merged.push((
                                     row.handle.clone(),
                                     row.realm.clone(),
@@ -568,11 +836,12 @@ impl Driver for PostgresDriver {
                 }
                 let expires = row.expires_at.filter(|e| *e > 0);
                 let sql = format!(
-                    "INSERT INTO sts_minted (handle, realm, key, body, written_at, expires_at, key_sealed) VALUES \
+                    "INSERT INTO sts_minted ({minted_write}) VALUES \
                      ($1, $2, $3, $4, now(), $5, $6) ON CONFLICT (handle, realm, key) DO UPDATE SET body = \
                      EXCLUDED.body, written_at = now(), expires_at = EXCLUDED.expires_at, key_sealed = \
                      EXCLUDED.key_sealed{}",
-                    if guarded { " WHERE sts_minted.body <> $7" } else { "" }
+                    if guarded { " WHERE sts_minted.body <> $7" } else { "" },
+                        minted_write = MINTED_WRITE
                 );
                 let written = if guarded {
                     tx.execute(
@@ -611,6 +880,31 @@ impl Driver for PostgresDriver {
                         row.journal_key,
                     ));
                     continue;
+                }
+                // THE SIDE TABLES, after the body and only for a body that
+                // was written (MINTED_FLUSH's `ses` and `ixi` read `ins`).
+                if row.handle == SESSIONS_HANDLE {
+                    if let Some(index) = row.session_index.as_ref() {
+                        PostgresDriver::index_session(
+                            &tx, &row.realm, &row.key, index,
+                        )
+                        .await?;
+                    }
+                }
+                if let Some(lookups) = row.lookups.as_ref() {
+                    let rows = filed(
+                        &row.handle,
+                        &row.realm,
+                        &row.key,
+                        lookups,
+                        row.sort_at,
+                    );
+                    PostgresDriver::refile(
+                        &tx,
+                        (&row.handle, &row.realm, &row.key),
+                        &rows,
+                    )
+                    .await?;
                 }
                 changes.push((kind.to_string(), row.realm.clone(), change_key));
             }
@@ -765,8 +1059,10 @@ impl Driver for PostgresDriver {
             } else {
                 let inserted = tx
                     .execute(
-                        "INSERT INTO sts_keys (realm, material, written_at) VALUES ($1, $2, now()) ON CONFLICT \
+                        &format!("INSERT INTO sts_keys ({key_write}) VALUES ($1, $2, now()) ON CONFLICT \
                          (realm) DO NOTHING",
+                key_write = KEY_WRITE
+            ),
                         &[&realm, &next],
                     )
                     .await
@@ -794,20 +1090,23 @@ impl Driver for PostgresDriver {
     fn open(&self) -> StoreFuture<'_, ()> {
         Box::pin(async move {
             let client = self.client().await?;
-            let probes: Vec<String> = TABLES
-                .iter()
-                .map(|t| format!("to_regclass('{}') IS NOT NULL", t))
-                .collect();
-            let row = client
-                .query_one(&format!("SELECT {}", probes.join(", ")), &[])
+            // EVERY TABLE AND COLUMN OF THE MODEL, asked of the catalogue
+            // in one read: a store the script has not brought level is
+            // refused whole, rather than half used.
+            let names: Vec<&str> = POSTGRES.table_names();
+            let rows = client
+                .query(
+                    "SELECT table_name::text, column_name::text FROM information_schema.columns WHERE \
+                     table_schema = current_schema() AND table_name = ANY($1::text[])",
+                    &[&names],
+                )
                 .await
                 .map_err(err)?;
-            let missing: Vec<&str> = TABLES
+            let held: std::collections::HashSet<(String, String)> = rows
                 .iter()
-                .enumerate()
-                .filter(|(i, _)| !row.get::<_, bool>(*i))
-                .map(|(_, t)| *t)
+                .map(|r| (r.get::<_, String>(0), r.get::<_, String>(1)))
                 .collect();
+            let missing = missing_of(&POSTGRES, &held);
             if !missing.is_empty() {
                 // Node creates what is missing where its role may, and says
                 // STS-STORE-0029 where it may not; this runtime never
@@ -815,9 +1114,9 @@ impl Driver for PostgresDriver {
                 return Err(StoreError::new(format!(
                     "{}persistence: the postgres store could not be opened — it is missing {}. This role may \
                      not create what is missing, which is how it is meant to be: build the schema once with \
-                     postgres/schema.sql, run by a superuser or by the owner of the database. If the objects ARE \
-                     there, check the search path: this driver names them unqualified, and the script sets it \
-                     on the database.",
+                     postgres/schema.sql (and postgres/upgrade-1.0.0.sql), run by a superuser or by the owner of \
+                     the database. If the objects ARE there, check the search path: this driver names them \
+                     unqualified, and the script sets it on the database.",
                     tag(codes::STS_STORE_0029),
                     missing.join(", ")
                 )));
@@ -864,7 +1163,9 @@ impl Driver for PostgresDriver {
             }
             client
                 .execute(
-                    "INSERT INTO sts_schema (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+                    &format!("INSERT INTO sts_schema ({schema_write}) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+                schema_write = SCHEMA_WRITE
+            ),
                     &[&SCHEMA_VERSION],
                 )
                 .await
@@ -1181,13 +1482,15 @@ impl PostgresDriver {
                 .map(|n| n as i64);
             let domain = text("domain").filter(|d| !d.is_empty());
             tx.execute(
-                "INSERT INTO sts_realms (id, name, description, created_at, overrides, domain, retiring_at) VALUES \
+                &format!("INSERT INTO sts_realms ({realm_write}) VALUES \
                  ($1, $2, $3, $4, $5, $11, $12) ON CONFLICT (id) DO UPDATE SET retiring_at = \
                  COALESCE(sts_realms.retiring_at, EXCLUDED.retiring_at), domain = COALESCE(sts_realms.domain, \
                  EXCLUDED.domain), name = CASE WHEN $6 THEN EXCLUDED.name ELSE sts_realms.name END, description = \
                  CASE WHEN $7 THEN EXCLUDED.description ELSE sts_realms.description END, created_at = \
                  COALESCE(sts_realms.created_at, EXCLUDED.created_at), overrides = CASE WHEN $10 THEN \
-                 EXCLUDED.overrides ELSE (COALESCE(sts_realms.overrides, '{}'::jsonb) - $8::text[]) || $9 END",
+                 EXCLUDED.overrides ELSE (COALESCE(sts_realms.overrides, '{{}}'::jsonb) - $8::text[]) || $9 END",
+                realm_write = REALM_WRITE
+            ),
                 &[
                     &text("id").unwrap_or_default(),
                     &text("name"),
@@ -1225,8 +1528,10 @@ impl PostgresDriver {
         }
         for (key, value) in &delta.set {
             tx.execute(
-                "INSERT INTO sts_appconfig (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = \
+                &format!("INSERT INTO sts_appconfig ({appconfig_write}) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = \
                  EXCLUDED.value",
+                appconfig_write = APPCONFIG_WRITE
+            ),
                 &[key, &json!({ "raw": value })],
             )
             .await
@@ -1272,9 +1577,9 @@ impl ClusterStore for PostgresDriver {
                 .await?
                 .execute(
                     &format!(
-                        "INSERT INTO sts_cluster_nodes (node_id, name, mode, started_at, heartbeat_at, expires_at, \
-                         info) VALUES ($1, $2, 'active-active', {now}, {now}, {now} + $3, $4) ON CONFLICT (node_id) \
+                        "INSERT INTO sts_cluster_nodes ({node_write}) VALUES ($1, $2, 'active-active', {now}, {now}, {now} + $3, $4) ON CONFLICT (node_id) \
                          DO UPDATE SET heartbeat_at = {now}, expires_at = {now} + $3, left_at = 0",
+                        node_write = NODE_WRITE,
                         now = DB_NOW
                     ),
                     &[&node, &name, &(ttl_ms as i64), &info],
@@ -1351,7 +1656,7 @@ impl ClusterStore for PostgresDriver {
             let won = client
                 .query_opt(
                     &format!(
-                        "INSERT INTO sts_cluster_leases (name, holder, token, acquired_at, expires_at) SELECT $1, $2, \
+                        "INSERT INTO sts_cluster_leases ({lease_write}) SELECT $1, $2, \
                          1, {now}, {now} + $3 WHERE EXISTS (SELECT 1 FROM sts_cluster_nodes WHERE node_id = $2 AND \
                          left_at = 0 AND expires_at > {now}) ON CONFLICT (name) DO UPDATE SET holder = \
                          EXCLUDED.holder, token = CASE WHEN sts_cluster_leases.holder = EXCLUDED.holder AND \
@@ -1361,6 +1666,7 @@ impl ClusterStore for PostgresDriver {
                          sts_cluster_leases.acquired_at ELSE EXCLUDED.acquired_at END, expires_at = \
                          EXCLUDED.expires_at WHERE sts_cluster_leases.expires_at <= {now} OR \
                          sts_cluster_leases.holder = EXCLUDED.holder RETURNING holder, token",
+                        lease_write = LEASE_WRITE,
                         now = DB_NOW
                     ),
                     &[&name, &node, &(ttl_ms as i64)],
@@ -1442,11 +1748,11 @@ impl ClusterStore for PostgresDriver {
             let won = client
                 .query_opt(
                     &format!(
-                        "INSERT INTO sts_cluster_claims (scope, realm, key, reservation, origin, claimed_at, \
-                         expires_at) VALUES ($1, $2, $3, $4, $5, {now}, {now} + $6) ON CONFLICT (scope, realm, key) \
+                        "INSERT INTO sts_cluster_claims ({claim_write}) VALUES ($1, $2, $3, $4, $5, {now}, {now} + $6) ON CONFLICT (scope, realm, key) \
                          DO UPDATE SET reservation = EXCLUDED.reservation, origin = EXCLUDED.origin, claimed_at = \
                          EXCLUDED.claimed_at, expires_at = EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at \
                          <= EXCLUDED.claimed_at RETURNING claimed_at",
+                        claim_write = CLAIM_WRITE,
                         now = DB_NOW
                     ),
                     &[&scope, &realm, &key, &reservation, &origin, &(ttl_ms.max(1.0) as i64)],

@@ -263,11 +263,22 @@ pub struct MintedFilter {
     pub age_handles: Vec<String>,
 }
 
+/// What an in-place edit's merge answers: the merged body sealed, and the
+/// columns `mergerFor()` takes from the merged record rather than from this
+/// process's copy — its expiry, its session index, its lookups and its sort
+/// value (another node may have extended or refiled it).
+#[derive(Clone, Debug, Default)]
+pub struct MergedRow {
+    pub body: String,
+    pub expires_at: Option<i64>,
+    pub session_index: Option<crate::side::SessionIndex>,
+    pub lookups: Option<Vec<String>>,
+    pub sort_at: Option<i64>,
+}
+
 /// An in-place edit's merge (`mergerFor()`): handed the stored body, it
-/// answers the body to write and its expiry, or `None` to write this
-/// process's copy as it is.
-pub type MintedMerge =
-    Box<dyn FnOnce(&str) -> Option<(String, Option<i64>)> + Send>;
+/// answers the merged row, or `None` to write this process's copy as it is.
+pub type MintedMerge = Box<dyn FnOnce(&str) -> Option<MergedRow> + Send>;
 
 /// One minted row to write or delete.
 pub struct MintedWrite {
@@ -286,6 +297,17 @@ pub struct MintedWrite {
     /// refused.
     pub tombstone: bool,
     pub merge: Option<MintedMerge>,
+    /// `sts_sessions`' columns for an `authn.sessions` upsert (#350), or
+    /// `None`, which writes no index row.
+    pub session_index: Option<crate::side::SessionIndex>,
+    /// An on-demand store's index digests (#820): `Some` replaces the row's
+    /// index rows (an empty list removes them), `None` leaves them.
+    pub lookups: Option<Vec<String>>,
+    /// The store's `sortBy` value, filed as the row's sort row while
+    /// `lookups` is written.
+    pub sort_at: Option<i64>,
+    /// A delete of an indexed store's row removes its index rows.
+    pub indexed: bool,
 }
 
 /// What the store decided for rows another node had changed.
