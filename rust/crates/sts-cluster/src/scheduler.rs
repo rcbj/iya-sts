@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex, RwLock, Weak};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde_json::{json, Map, Value as Json};
-use sts_core::errors::codes;
+use sts_core::errors::{codes, ErrorCode};
 use sts_core::log::tag;
 use sts_core::realm::{self, Realm, RealmRegistry, DEFAULT_ID};
 
@@ -250,7 +250,7 @@ struct State {
 /// A refusal of a request to the scheduler, for a 4xx answer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Refusal {
-    pub error_code: &'static str,
+    pub error_code: ErrorCode,
     pub status: u16,
     pub why: String,
 }
@@ -273,11 +273,13 @@ pub struct Scheduler {
 }
 
 fn random_id(bytes: usize) -> String {
-    let mut buf = vec![0u8; bytes];
-    if openssl::rand::rand_bytes(&mut buf).is_err() {
-        tracing::error!("scheduler: no random bytes for an id");
+    match sts_crypto::random::random_bytes(bytes) {
+        Ok(buf) => URL_SAFE_NO_PAD.encode(buf),
+        Err(e) => {
+            tracing::error!("scheduler: no random bytes for an id: {}", e);
+            URL_SAFE_NO_PAD.encode(vec![0u8; bytes])
+        }
     }
-    URL_SAFE_NO_PAD.encode(buf)
 }
 
 fn num(row: &Json, key: &str) -> f64 {
@@ -873,7 +875,7 @@ impl Scheduler {
             assign(
                 stored,
                 json!({ "state": "abandoned", "endedAt": self.now_ms(),
-                        "errorCode": "STS-SCHED-0011",
+                        "errorCode": codes::STS_SCHED_0011.as_str(),
                         "why": format!("The attempt on {} (pid {}) stopped holding its claim before it finished, \
                                         and its slot passed; the job's next slot runs instead.", by,
                                        pid_text(stored)),
@@ -882,7 +884,7 @@ impl Scheduler {
         );
         self.deps.audit.record(json!({
             "action": "scheduler.run", "protocol": "scheduler", "channel": "internal",
-            "target": job.id, "errorCode": "STS-SCHED-0011", "outcome": "failure", "summarised": true,
+            "target": job.id, "errorCode": codes::STS_SCHED_0011.as_str(), "outcome": "failure", "summarised": true,
             "summary": format!("Scheduler run {} of {} was abandoned: its node stopped and its slot passed.",
                                run_id, job.id),
             "detail": { "runId": run_id, "realm": realm_id, "node": stored.get("node"),
@@ -1012,7 +1014,7 @@ impl Scheduler {
                 assign(
                     &stored,
                     json!({ "runId": format!("{}:{}", run_id, attempt), "state": "abandoned",
-                            "endedAt": self.now_ms(), "errorCode": "STS-SCHED-0011",
+                            "endedAt": self.now_ms(), "errorCode": codes::STS_SCHED_0011.as_str(),
                             "why": format!("The attempt on {} (pid {}) stopped holding its claim before it \
                                             finished; attempt {} took it over.", by,
                                            stored.get("pid").cloned().unwrap_or(Json::Null), attempt + 1.0),
@@ -1021,7 +1023,7 @@ impl Scheduler {
             );
             self.deps.audit.record(json!({
                 "action": "scheduler.run", "protocol": "scheduler", "channel": "internal",
-                "target": job.id, "errorCode": "STS-SCHED-0011", "outcome": "failure", "summarised": true,
+                "target": job.id, "errorCode": codes::STS_SCHED_0011.as_str(), "outcome": "failure", "summarised": true,
                 "summary": format!("Scheduler run {} of {} was abandoned and taken over.", run_id, job.id),
                 "detail": { "runId": run_id, "realm": realm_id, "node": stored.get("node"),
                             "pid": stored.get("pid") } }));
@@ -1183,7 +1185,7 @@ impl Scheduler {
                         span(timeout_ms)
                     )),
                 );
-                "STS-SCHED-0002"
+                codes::STS_SCHED_0002.as_str()
             }
             Ok(Err(why)) => {
                 fields.insert("state".into(), json!("failed"));
@@ -1195,7 +1197,7 @@ impl Scheduler {
                         why
                     }),
                 );
-                "STS-SCHED-0001"
+                codes::STS_SCHED_0001.as_str()
             }
             Ok(Ok(result)) => {
                 fields.insert("state".into(), json!("succeeded"));
@@ -1366,7 +1368,7 @@ impl Scheduler {
                     job.id,
                     e
                 );
-                ("failed", "STS-SCHED-0015", e, Json::Null)
+                ("failed", codes::STS_SCHED_0015.as_str(), e, Json::Null)
             }
         };
         if job.quiet {
@@ -1410,7 +1412,7 @@ impl Scheduler {
     ) -> Result<Queued, Refusal> {
         let Some(job) = self.job(job_id) else {
             return Err(Refusal {
-                error_code: "STS-SCHED-0004",
+                error_code: codes::STS_SCHED_0004,
                 status: 404,
                 why: format!(
                     "No job \"{}\" is registered. The jobs are {}.",
@@ -1421,7 +1423,7 @@ impl Scheduler {
         };
         if !job.manual || job.kind == Kind::PerProcess {
             return Err(Refusal {
-                error_code: "STS-SCHED-0005",
+                error_code: codes::STS_SCHED_0005,
                 status: 400,
                 why: format!(
                     "{} runs on its schedule only{}",
@@ -1445,7 +1447,7 @@ impl Scheduler {
             && self.deps.realms.get(&realm_id).is_none()
         {
             return Err(Refusal {
-                error_code: "STS-SCHED-0012",
+                error_code: codes::STS_SCHED_0012,
                 status: 400,
                 why: format!("There is no realm \"{}\".", realm_id),
             });
@@ -1453,7 +1455,7 @@ impl Scheduler {
         let off = self.schedules().off_reason(&job, &realm_id);
         if !off.is_empty() {
             return Err(Refusal {
-                error_code: "STS-SCHED-0006",
+                error_code: codes::STS_SCHED_0006,
                 status: 400,
                 why: format!("{} is off: {}.", job.id, off),
             });
@@ -1507,7 +1509,7 @@ impl Scheduler {
     ) -> Result<Json, Refusal> {
         if !self.deps.cluster.enabled() {
             return Err(Refusal {
-                error_code: "STS-SCHED-0010",
+                error_code: codes::STS_SCHED_0010,
                 status: 400,
                 why: "This service is not clustered, so there is no other node to hand the scheduler to.".to_string(),
             });

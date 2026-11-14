@@ -124,21 +124,11 @@ const TLS_ONLY: &[(&str, &str)] = &[
         "xacml-pep|openssl",
         "the PEP's HTTPS listener and its PDP client",
     ),
-    // sts-cluster has no TLS: its `openssl` is the three uses PENDING
-    // lists, and leaves with them.
-    ("sts-cluster|openssl", "PENDING below"),
 ];
 
 /// `file|openssl::module` outside `ssl`, each in a crate another phase-2b
 /// slice is changing (listed, not edited), or in the remote PEP.
 const PENDING: &[(&str, &str)] = &[
-    // The cluster slice's: SHA-256 for a member's and a schedule's digest,
-    // random bytes for a node id and a run id. sts-crypto has both
-    // (`jws_alg::Hash::Sha256.digest()`, `random::random_bytes()`).
-    ("crates/sts-cluster/src/membership.rs|hash", "cluster slice"),
-    ("crates/sts-cluster/src/membership.rs|rand", "cluster slice"),
-    ("crates/sts-cluster/src/schedule.rs|hash", "cluster slice"),
-    ("crates/sts-cluster/src/scheduler.rs|rand", "cluster slice"),
     // The store slice's: the keystore makes and signs with key sets (a
     // port of `keystore.js`, which asked crypto.js); a random id.
     (

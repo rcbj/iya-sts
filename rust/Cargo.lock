@@ -1649,9 +1649,9 @@ dependencies = [
  "chrono",
  "croner",
  "indexmap",
- "openssl",
  "serde_json",
  "sts-core",
+ "sts-crypto",
  "tokio",
  "tracing",
 ]

@@ -24,10 +24,10 @@ use chrono::{TimeZone, Utc};
 use croner::parser::{CronParser, Seconds};
 use croner::Cron;
 use indexmap::IndexMap;
-use openssl::hash::{hash, MessageDigest};
 use serde_json::Value as Json;
 use sts_core::errors::codes;
 use sts_core::log::tag;
+use sts_crypto::jws_alg::Hash;
 
 /// The lease the leader holds; only its holder runs cluster jobs.
 pub const LEADER_LEASE: &str = "ops.scheduler";
@@ -400,9 +400,7 @@ pub fn ended_of(row: &Json) -> f64 {
 /// claim one row.
 pub fn run_id_for(job_id: &str, realm_id: &str, slot: i64) -> String {
     let text = format!("{}\n{}\n{}", job_id, realm_id, slot);
-    let digest = hash(MessageDigest::sha256(), text.as_bytes())
-        .map(|d| URL_SAFE_NO_PAD.encode(d))
-        .unwrap_or_default();
+    let digest = URL_SAFE_NO_PAD.encode(Hash::Sha256.digest(text.as_bytes()));
     format!("s-{}", digest.get(..22).unwrap_or(&digest))
 }
 

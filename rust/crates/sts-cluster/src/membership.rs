@@ -30,10 +30,11 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use openssl::hash::{hash, MessageDigest};
 use serde_json::{json, Value as Json};
 use sts_core::errors::codes;
 use sts_core::log::tag;
+use sts_crypto::jws_alg::Hash;
+use sts_crypto::random::random_bytes;
 use tokio::time::{Duration, Instant};
 
 use crate::schedule::BoxFuture;
@@ -385,20 +386,21 @@ pub struct ClusterNode {
 
 /// A single-use value's stored form: SHA-256 of `scope \n value`.
 pub fn claim_digest(scope: &str, value: &str) -> String {
-    hash(
-        MessageDigest::sha256(),
-        format!("{}\n{}", scope, value).as_bytes(),
-    )
-    .map(|d| URL_SAFE_NO_PAD.encode(d))
-    .unwrap_or_default()
+    URL_SAFE_NO_PAD
+        .encode(Hash::Sha256.digest(format!("{}\n{}", scope, value).as_bytes()))
 }
 
 fn random_reservation() -> String {
-    let mut buf = [0u8; 12];
-    if openssl::rand::rand_bytes(&mut buf).is_err() {
-        tracing::error!("cluster: no random bytes for a claim's reservation");
+    match random_bytes(12) {
+        Ok(buf) => URL_SAFE_NO_PAD.encode(buf),
+        Err(e) => {
+            tracing::error!(
+                "cluster: no random bytes for a claim's reservation: {}",
+                e
+            );
+            URL_SAFE_NO_PAD.encode([0u8; 12])
+        }
     }
-    URL_SAFE_NO_PAD.encode(buf)
 }
 
 impl ClusterNode {
