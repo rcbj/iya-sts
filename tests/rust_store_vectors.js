@@ -24,6 +24,11 @@
 //                    the jobs held to Node's
 //   scheduler-history, realm-lifecycle
 //                    held to Node's answers
+//   scheduler-tick   Rust's claims, reads, drops and run rows per scenario
+//                    held to Node's; leastLoaded() run again on Rust's loads
+//   cache-registry   Rust's report, detail, snapshot and ejection held to
+//                    Node's, and Rust's snapshot rows read back by Node's
+//                    unpackSnapshotRow()
 //   http             the two CSP builders run again; the answers held to
 //                    Node's
 //   keystore         every value Rust sealed opened by Node's keystore over
@@ -378,6 +383,66 @@ async function run(t) {
     ['status', 'acme', 'purged', 'pinned'].forEach(function (k) {
       t.check(canonical(historyRust[k]) === canonical(history[k]),
               'Rust\'s scheduler ' + k + ' is Node\'s');
+    });
+  }
+  const tick = read('scheduler-tick-node.json');
+  const tickRust = read('scheduler-tick-rust.json');
+  if (tick && tickRust) {
+    const S = require('../cluster/scheduler').Scheduler;
+    // Which of two claims one tick asks first is not the behaviour, and the
+    // rows are in no order: both sides are put in one.
+    const tidy = function (ticks) {
+      return ticks.map(function (events) {
+        const claims = events.filter(function (e) {
+          return e.claim;
+        }).map(function (e) {
+          return JSON.stringify(e);
+        }).sort().map(function (e) {
+          return JSON.parse(e);
+        });
+        return events.filter(function (e) {
+          return !e.claim;
+        }).concat(claims);
+      });
+    };
+    const byRun = function (rows) {
+      return rows.slice().sort(function (a, b) {
+        const x = a.realm + a.runId;
+        const y = b.realm + b.runId;
+        return x < y ? -1 : (x > y ? 1 : 0);
+      });
+    };
+    tick.scenarios.forEach(function (one, i) {
+      const mine = tickRust.scenarios[i] || {};
+      t.check(canonical(tidy(mine.ticks || [])) ===
+              canonical(tidy(one.ticks)),
+              'Rust\'s ticks of ' + one.name + ' are Node\'s',
+              canonical(mine.ticks));
+      t.check(canonical(byRun(mine.rows || [])) ===
+              canonical(byRun(one.rows)),
+              'Rust\'s run rows of ' + one.name + ' are Node\'s');
+    });
+    tickRust.leastLoaded.forEach(function (one) {
+      t.equal(one.id, S.leastLoaded(one.loads),
+              'leastLoaded(' + canonical(one.loads) + ') is Node\'s');
+    });
+  }
+  const caches = read('cache-registry-node.json');
+  const cachesRust = read('cache-registry-rust.json');
+  if (caches && cachesRust) {
+    const registry = require('../common/cache_registry');
+    ['report', 'detail', 'ejected', 'after'].forEach(function (k) {
+      t.check(canonical(cachesRust[k]) === canonical(caches[k]),
+              'Rust\'s cache ' + k + ' is Node\'s');
+    });
+    ['snapshot', 'snapshotAsync'].forEach(function (k) {
+      const unpack = function (s) {
+        return s.caches.map(registry.unpackSnapshotRow);
+      };
+      t.check(canonical(unpack(cachesRust[k])) ===
+              canonical(unpack(caches[k])) &&
+              cachesRust[k].at === caches[k].at,
+              'Node reads Rust\'s ' + k + ' as its own');
     });
   }
   const life = read('realm-lifecycle-node.json');

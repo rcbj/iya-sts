@@ -241,7 +241,11 @@ rust/
     sts-cluster/                 membership, leases, fencing, claims, barrier, Scheduler
     sts-cache/                   CacheRegistry and the bounded caches it describes
     sts-http/                    the HTTP application: realm layer, CSP, CORS, bodies,
-                                 call log, validation guard, error-code marking
+                                 call log, validation guard, error-code marking;
+                                 the static surfaces' host (shells, the bundles
+                                 read from the TypeScript build's tree at
+                                 STS_WEB_ROOT, /web), held to Node by
+                                 tests/tools/http-differential.js
     sts-directory/               the embedded directory model and the LDAP server
     sts-authn/                   the session, sign-in, second factors, WebAuthn
     sts-oauth/                   authorization server and OpenID provider
@@ -366,6 +370,60 @@ sleep loop outside `sts-cluster`.
 * **80 columns, `rustfmt` with `max_width = 80`.** SPDX headers on every file,
   as `tests/copyright_notices.js` requires.
 * Comments carry the reasoning, at this repository's density.
+
+### 4.6 The concurrency model: what replaces the worker pool (phase 3, the cluster slice)
+
+**Node** runs one front process that owns every listener and two pools of
+`worker_threads` Workers (`common/request_pool.js`), each Worker holding its
+OWN COPY of the store's state, kept current from the change log. Everything
+the pool has besides dispatch exists because of those copies: the tickets (a
+write answered by a worker), a generation per worker, the read barrier that
+holds a reader until its worker has applied every write answered before it,
+`readYourWrite` narrowing that to the reader's session, and
+`NEVER_DISPATCHED`, the pages that must be answered where the sockets are.
+
+**Rust runs one process on one multi-threaded tokio runtime, with one copy
+of the state shared by every task.** That replaces the pool:
+
+| Node | Rust |
+|---|---|
+| N Workers, each a copy of the state | tokio's worker threads over one shared copy; CPU-heavy work on `spawn_blocking` |
+| Tickets, generations, the per-worker read barrier, `readYourWrite` | **Nothing**: a handler's write is in the one copy before its response is sent, so the next request of the same session reads it on any task. Read-your-write inside a process holds by construction (`sts-cluster/tests/coordination.rs`) |
+| `NEVER_DISPATCHED` | Nothing to except: every request runs where the sockets are |
+| A cluster run's body on the least-loaded Worker (#408) | A task on the runtime, which work-steals onto a free thread. `scheduler::Loads` says how busy the runtime is (`RuntimeLoad`: requests in flight, and the scheduler loop's lateness waking as the event-loop delay), and Node's hold-for-load rule reads it unchanged |
+| `scheduler.maxConcurrentRuns`' default, one fewer than the protocol Workers | One fewer than the runtime's worker threads (`Schedules::with_request_workers`) |
+
+**Between processes nothing holds by construction**, so the two rules of
+`cluster/cluster_barrier.js` are kept as they are, in
+`sts-cluster::coordination`:
+
+1. **`ReadBarrier`**: a request is served only after this process has applied
+   everything other processes committed before it arrived, proved by a
+   change-log pull that STARTED after the request did and finished CAUGHT
+   UP. One pull serves every reader that arrived before it started.
+2. **`CommitGate`**: a request that wrote is answered only once its writes
+   committed; a commit that fails is a 503 (`STS-STORE-0066`), never the
+   handler's success; a request that wrote nothing is not held.
+
+Together they are read-your-write across nodes. **A barrier that runs out is
+a refusal, never a stale answer** (develop's 057998e08): a pull that did not
+catch up never counts, a reader asks again a round at a time for
+`workers.readBarrierTimeoutMs`, and is then refused `STS-WORKER-0053`. Rust
+cannot have Node's two stale paths, because there is no "serve from what we
+have" branch and the only thing that satisfies a reader is a caught-up pull
+numbered after it.
+
+**"A store is shared by coordination; a socket, a timer or a listener belongs
+to one process"** becomes `coordination::Topology` (several processes on one
+store without a change log refused before anything binds, `STS-WORKER-0024`),
+the per-process versus cluster job split of the scheduler, and the two-node
+test (`sts-cluster/tests/two_nodes.rs`): two processes on one PostgreSQL store,
+a cluster job run on exactly one of them and moving when that one dies.
+Beside it `sts-cluster/tests/node_interop.rs` runs the Node service's own
+postgres driver (`tests/tools/cluster-interop-node.js`) next to a Rust node
+on the same store: the two never run together in production (D11), but they
+must read and write the cluster tables' rows alike, and they agree on who
+leads at every token.
 
 ## 5. The management API is the console's and the portal's only door
 
@@ -521,7 +579,7 @@ in CMS, RS1 unless `webauthn.insecureAlgorithms`, SHA-1 in XML unless
 | **Post-quantum primitives** | ML-DSA-44/65/87; all 12 SLH-DSA sets; ML-KEM-512/768/1024; hedged and pure only | `openssl` (3.5), as today. RustCrypto `ml-dsa`, `slh-dsa` and `ml-kem` run as the second implementation in the cross-check tests, never in the service |
 | **Composite and hybrid** | 18 X.509 composites (draft-ietf-lamps-pq-composite-sigs-19, OIDs 1.3.6.1.5.5.7.6.37–54); X-Wing; QSF hybrids ML-KEM-768 + P-256/P-384/X25519, ML-KEM-1024 + P-384/P-521/X448; ITU-T X.509 9.8 alternative keys across a chain | Composed in `sts-crypto` and `sts-pki` from `openssl` halves; X-Wing from `openssl` ML-KEM-768 and X25519 with the `sha3` combiner |
 | **X.509 / PKI** | rsa-2048/3072/4096, ec-p256/384/521, ed25519, every ML-DSA and SLH-DSA set, composites, ML-KEM subject keys; sha1/256/384/512-rsa, -rsapss, -ecdsa; CRL and OCSP (RSA, RSA-PSS, ECDSA, Ed25519; CertID SHA-1/2); CMS for SCEP (RSA/ECDSA SHA-256/384/512, AES-CBC, RSAES-PKCS1-v1_5, RSAES-OAEP); PKCS#10 classical and PQ; PKCS#12 and encrypted PKCS#8 (PBES2, AES-256-CBC, PBKDF2-SHA256, 600,000 iterations since #1512); PKCS#7 for AWS IID | **Authoring and reading certificates and PKCS#10 is a port of `x509.js` on a DER writer of our own** (`sts-pki::x509`), for XML's reason: a certificate issued by a deterministic signer must be Node's byte for byte (`tests/x509_vectors.rs`: 456 answers, every profile, extension, algorithm, hybrid and refusal). For CRL, OCSP and CMS: RustCrypto `x509-ocsp`, `cms`, `pkcs8`, `pkcs5`; `pkcs12` from `openssl` |
-| **Kerberos** | enctypes 17, 18, 19, 20, 23; decode-only DES 1/2/3/5/7/16, 24, Camellia 25/26; checksums 15, 16, 19, 20, -138; RFC 4121 MIC and Wrap; PRF and KRB-FX-CF2 | `openssl` AES, HMAC and PBKDF2; RFC 3962 CTS mode written in `sts-kerberos` over AES-CBC (no crate is trustworthy enough); `md4`, `md-5` and `rc4` from RustCrypto for type 23; ASN.1 with `rasn-kerberos`. **See decision D1** |
+| **Kerberos** | enctypes 17, 18, 19, 20, 23; decode-only DES 1/2/3/5/7/16, 24, Camellia 25/26; checksums 15, 16, 19, 20, -138; RFC 4121 MIC and Wrap; PRF and KRB-FX-CF2 | `openssl` AES, HMAC and PBKDF2; RFC 3962 CTS mode written over AES-CBC (no crate is trustworthy enough); `md4`, `md-5` and `rc4` from RustCrypto for type 23 — all of it in `sts-crypto`'s `krb5` module since 2026-11-14 (the crypto-in-one-place rule), `sts-kerberos` holding the enctype table and depending on no crypto crate; ASN.1 with `rasn-kerberos`. **See decision D1** |
 | **Data Integrity and VCs** | ecdsa-jcs-2019, ecdsa-rdfc-2019, eddsa-jcs-2022, eddsa-rdfc-2022, mldsa44-jcs-2024, slhdsa128-jcs-2024, ecdsa-sd-2023; bbs-2023 (BLS12-381-SHA-256); SD-JWT (`_sd_alg` sha-256 to issue, sha-256/384/512 to verify); VC-JOSE-COSE; status-list CWT COSE algorithms | `serde_json_canonicalizer` for JCS (RFC 8785); `json-ld` with the repo's pinned contexts and **a closed loader that fetches nothing**, as today; `rdf-canon` for RDFC-1.0; `zkryptium` for BBS (the IETF BBS ciphersuite); `coset` for COSE |
 | **WebAuthn** | COSE ES256/384/512, ESP256/384/512, EdDSA, Ed25519 (-19), Ed448 (-53), ES256K (-47), RS256/384/512, PS256/384/512, ML-DSA-44/65/87; RS1 only when allowed; formats packed, tpm, android-key, android-safetynet, fido-u2f, apple, compound, none; FIDO MDS3 | A port of this repository's own verifier (there is no library covering every format and the PQ algorithms), over `coset` and `ciborium` and the `sts-crypto` registry |
 | **GNAP tokens and HTTP signatures** | rsa-pss-sha512, rsa-v1_5-sha256, hmac-sha256, ecdsa-p256-sha256, ecdsa-p384-sha384, ed25519, and the JWS algs; Content-Digest sha-256/512; Biscuit (Ed25519); macaroons (HMAC-SHA256); ZCAP (Ed25519Signature2020) | HTTP Message Signatures written in `sts-gnap` over `sfv` (RFC 8941 structured fields); `biscuit-auth` (the native crate the wasm build is made from); `macaroon`; ZCAP ported |
@@ -569,9 +627,13 @@ writes them into a gitignored directory or `STS_CRYPTO_VECTORS`).
 
 * **Every URL, every port, every setting key and every environment variable.**
   `env/` keeps working unchanged against the Rust runtime.
-* **The appconfig layers' content.** `env/*.js` become `env/*.json` (they
-  are data), read by the Rust runtime; the Node runtime keeps its `.js` copies
-  until the cutover deletes it.
+* **The appconfig layers' content, and their form.** Under D11 an
+  operator's `CONFIG_FILE` is the JavaScript module a 1.x install already
+  has, so the Rust runtime EVALUATES it (`sts_core::appconfig`, phase 3:
+  QuickJS with no I/O but the appconfig files it requires, the exports read
+  back as data); a `.json` file is read as node's `require()` reads one. 29
+  files — the shipped `env/*.js` and `env/*.json` and written ones in every
+  form — load to Node's exports, values, refusals and warnings.
 * **The error-code table and every code in it.** The 57 suite files that
   assert codes keep asserting them.
 * **The protocol suite, and its language.** It stays JavaScript. A phase makes a

@@ -1301,4 +1301,37 @@ impl RealmLayer for RealmLifecycle {
         let held = self.held.read().unwrap_or_else(PoisonError::into_inner);
         held.get(&id).map(|h| h.layer.clone())
     }
+
+    fn ambient_id(&self) -> Option<String> {
+        let id = realm::current_id();
+        let held = self.held.read().unwrap_or_else(PoisonError::into_inner);
+        (id != DEFAULT_ID && held.contains_key(&id)).then_some(id)
+    }
+
+    /// `config.js`'s `realm.overrides[key] = raw` (and its `delete`): a
+    /// write `Settings::set_override()` already checked, made in the
+    /// ambient realm, and told to whoever writes the registry down, as
+    /// `overridesChanged(realm.id)` is.
+    fn write_ambient(&self, key: &str, raw: Option<Json>) -> Option<String> {
+        let id = self.ambient_id()?;
+        let what = {
+            let mut held =
+                self.held.write().unwrap_or_else(PoisonError::into_inner);
+            let h = held.get_mut(&id)?;
+            let what = match raw {
+                Some(raw) => {
+                    h.overrides.insert(key.to_string(), raw);
+                    "set-override"
+                }
+                None => {
+                    h.overrides.shift_remove(key);
+                    "clear-override"
+                }
+            };
+            h.rebuild();
+            what
+        };
+        self.changed(&id, what, false, None);
+        Some(id)
+    }
 }

@@ -22,6 +22,7 @@
 #![forbid(unsafe_code)]
 
 mod bounded;
+pub mod jobs;
 mod lru;
 mod registry;
 
@@ -29,5 +30,5 @@ pub use bounded::{BoundedMap, Expired, Policy, Room};
 pub use lru::{BoundedLru, LruOptions, LruStats};
 pub use registry::{
     clip_key, digest_key, CacheRegistry, Counter, Descriptor, Detail, Ejected,
-    Kind, Row, Scope, Snapshot, SnapshotRow, Summary,
+    Kind, Row, Scope, Snapshot, SnapshotRow, Summary, Tally,
 };

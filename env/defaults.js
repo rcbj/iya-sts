@@ -744,6 +744,7 @@ var config = {
     batchQueueTimeoutS: 60,                                                                // Longest a batch request waits (seconds)
     maxSockets: 64,                                                                        // Connections per request worker; restart to apply
     readYourWrite: "session",                                                              // Read-your-write across request workers
+    readBarrierTimeoutMs: 30000,                                                           // Read barrier wait (ms)
     socketDir: ""                                                                          // Request worker socket directory; restart to apply
   },
 

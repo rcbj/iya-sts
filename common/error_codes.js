@@ -1405,9 +1405,11 @@ const CODES = [
     summary: 'Only some of the configured request workers started.',
     spec: '' },
   { code: 'STS-WORKER-0027',
-    summary: 'A request worker did not answer a read barrier in time, so the ' +
-      'request was served from whatever that worker holds, possibly ' +
-      'stale.',
+    summary: 'A request worker had not caught up after one read-barrier ' +
+      'round (it did not answer within 5 s, or answered that its change ' +
+      'pull was still running). The request keeps waiting, for up to ' +
+      'workers.readBarrierTimeoutMs in all, and is refused (STS-WORKER-' +
+      '0053) rather than served stale if the worker never catches up.',
     spec: '' },
   { code: 'STS-WORKER-0028',
     summary: 'A request matched workers.dispatch while a pool is configured ' +
@@ -1539,6 +1541,20 @@ const CODES = [
       'worker that has not applied it may be answered until the workers ' +
       'converge. Logged at the first and every hundredth.',
     spec: 'Nothing: the request is answered as it was' },
+  { code: 'STS-WORKER-0053',
+    summary: 'A dispatched request or operation was refused because its ' +
+      'request worker had not caught up with the writes answered before ' +
+      'it within workers.readBarrierTimeoutMs; answering from what that ' +
+      'worker held could have been wrong. The worker\'s STS-STORE-0039 ' +
+      'line says where its change pull\'s time went.',
+    spec: 'HTTP 503 (Retry-After: 5), plain text; an LDAP operation ' +
+      'LDAP_UNAVAILABLE, a Kerberos message KDC_ERR_SVC_UNAVAILABLE' },
+  { code: 'STS-WORKER-0054',
+    summary: 'A request the front process answers itself was refused ' +
+      'because that process had not caught up with the change log within ' +
+      'workers.readBarrierTimeoutMs; answering from its own copy could ' +
+      'have been wrong.',
+    spec: 'HTTP 503 (Retry-After: 5), plain text' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
@@ -1699,12 +1715,16 @@ const CODES = [
       'failed; this process is behind until a retry succeeds.',
     spec: '' },
   { code: 'STS-STORE-0039',
-    summary: 'A read barrier gave up before catching up with the change log; ' +
-      'the request is answered from this process\'s copy.',
+    summary: 'A read barrier gave up before catching up with the change log ' +
+      'and told its caller so; a request pool barrier asks again and ' +
+      'refuses once workers.readBarrierTimeoutMs has passed. The line ' +
+      'breaks the pull\'s time down: reading pages, the rows by kind, ' +
+      'preparing, the event loop\'s turns, and the rest.',
     spec: '' },
   { code: 'STS-STORE-0040',
-    summary: 'A read barrier could not read the change log; the request is ' +
-      'answered from this process\'s copy.',
+    summary: 'A read barrier could not read the change log and told its ' +
+      'caller it did not catch up; a request pool barrier asks again and ' +
+      'refuses once workers.readBarrierTimeoutMs has passed.',
     spec: '' },
   { code: 'STS-STORE-0041',
     summary: 'Preparing a page of replicated rows of one kind failed; they ' +

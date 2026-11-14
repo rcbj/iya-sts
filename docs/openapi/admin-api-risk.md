@@ -105,6 +105,26 @@ Scope: `admin:read`.
 | `drawing.legend[].colour` | string |  |  |
 | `drawing.legend[].from` | number |  |  |
 | `drawing.legend[].to` | number |  |  |
+| `drawing.map` | object |  | The map as data, which the console projects and draws over Natural Earth's outlines (`/admin/geo-outlines.json`) with the code that draws `picture` here (#444): the level, the continent's slug or the country's code, each counted country's step on the scale and what it says, the labels and the cities, each where it is. |
+| `drawing.map.areas` | map |  | Each counted country by ISO 3166-1 code: its step on the scale (1 to 5) and its tooltip. |
+| `drawing.map.areas.{key}.bucket` | integer |  |  |
+| `drawing.map.areas.{key}.href` | string |  |  |
+| `drawing.map.areas.{key}.title` | string |  |  |
+| `drawing.map.cities` | list |  |  |
+| `drawing.map.cities[].lat` | number |  |  |
+| `drawing.map.cities[].lon` | number |  |  |
+| `drawing.map.cities[].name` | string |  |  |
+| `drawing.map.cities[].people` | integer |  |  |
+| `drawing.map.cities[].title` | string |  |  |
+| `drawing.map.continent` | string |  |  |
+| `drawing.map.iso` | string |  |  |
+| `drawing.map.labels` | list |  |  |
+| `drawing.map.labels[].href` | string |  |  |
+| `drawing.map.labels[].lat` | number |  |  |
+| `drawing.map.labels[].lon` | number |  |  |
+| `drawing.map.labels[].text` | string |  |  |
+| `drawing.map.level` | string |  |  |
+| `drawing.map.title` | string |  |  |
 | `drawing.picture` | object |  |  |
 | `drawing.picture.height` | number |  |  |
 | `drawing.picture.svg` | string |  |  |

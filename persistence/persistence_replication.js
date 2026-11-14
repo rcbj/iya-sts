@@ -759,8 +759,10 @@ function createReplication(label) {
         // ever is worse than one answered from a copy that is a moment behind.
         log.warn(errorCodes.tag('STS-STORE-0039') +
                  'persistence: a read barrier gave up at ' + highest +
-                 ': no change pull started after it completed. The request ' +
-                 'is being answered from what this process has.' +
+                 ': no change pull started after it completed, and its ' +
+                 'caller is told it did not catch up (a request pool ' +
+                 'barrier asks again, and refuses once ' +
+                 'workers.readBarrierTimeoutMs has passed).' +
                  pullCostText());
         log.debug("Leaving step(). Gave up.");
         return Promise.resolve({ caughtUp: false, applied: applied,
@@ -788,8 +790,7 @@ function createReplication(label) {
     return step().catch(function (err) {
       log.warn(errorCodes.tag('STS-STORE-0040') +
                'persistence: a read barrier could not read the change log: ' +
-               err.message + '. The request is being answered from what this ' +
-               'process has.');
+               err.message + '. Its caller is told it did not catch up.');
       return { caughtUp: false, applied: applied, coordinating: true };
     });
   }
@@ -814,24 +815,56 @@ function createReplication(label) {
       return '';
     }
     const now = Date.now();
-    const kindMs = pullCost.kindMs || {};
-    const current = pullCost.current;
-    const kinds = Object.keys(pullCost.kinds).map(function (kind) {
+    const c = pullCost;
+    const kindMs = c.kindMs || {};
+    const current = c.current;
+    let rowsMs = 0;
+    const kinds = Object.keys(c.kinds).map(function (kind) {
       const ms = (kindMs[kind] || 0) +
         (current && current.kind === kind ? now - current.since : 0);
-      return kind + '=' + pullCost.kinds[kind] + '/' + ms + 'ms';
+      rowsMs += ms;
+      return kind + '=' + c.kinds[kind] + '/' + ms + 'ms';
     }).join(',');
-    const applyMs = pullCost.applyMs +
-      (pullCost.applyingSince ? now - pullCost.applyingSince : 0);
+    // WHAT ELSE THE APPLYING TIME WENT TO (2026-11-14): each kind's
+    // `prepare` (a page's batched read, for the minted rows), the turns of
+    // the event loop, and the remainder nothing timed — so the parts add up
+    // to `applying` and a reader can see which one is the time.
+    const prepareMs = c.prepareMs || {};
+    const preparing = c.preparing;
+    let preparedMs = 0;
+    const prepared = Object.keys(prepareMs).concat(
+      preparing && !(preparing.kind in prepareMs) ? [preparing.kind] : []
+    ).map(function (kind) {
+      const ms = (prepareMs[kind] || 0) +
+        (preparing && preparing.kind === kind ? now - preparing.since : 0);
+      preparedMs += ms;
+      return kind + '=' + ms + 'ms';
+    }).join(',');
+    const turnMs = (c.turnMs || 0) + (c.turning ? now - c.turning : 0);
+    const turnMax = Math.max(c.turnMaxMs || 0, c.turning ? now - c.turning : 0);
+    const applyMs = c.applyMs + (c.applyingSince ? now - c.applyingSince : 0);
+    const otherMs = Math.max(0, applyMs - rowsMs - preparedMs - turnMs);
+    const holesMs = (c.holesMs || 0) + (c.holing ? now - c.holing : 0);
     log.debug("Leaving pullCostText().");
     return ' The ' + (runningPull ? 'pull in flight' : 'latest pull') +
-           ' began ' + (now - pullCost.startedAt) + ' ms ago: ' +
-           pullCost.queryMs + ' ms reading pages, ' + applyMs +
-           ' ms applying ' + pullCost.rows + ' row(s)' +
+           ' began ' + (now - c.startedAt) + ' ms ago: ' +
+           c.queryMs + ' ms reading pages, ' + applyMs +
+           ' ms applying ' + c.rows + ' row(s)' +
            (kinds ? ' (rows/time by kind: ' + kinds + ')' : '') +
+           '; of the applying, ' + rowsMs + ' ms in the rows, ' +
+           preparedMs + ' ms preparing' +
+           (prepared ? ' (' + prepared + ')' : '') + ', ' + turnMs +
+           ' ms waiting for ' + (c.turns || 0) + ' turn(s) of this ' +
+           'thread\'s event loop (the longest ' + turnMax + ' ms: time other ' +
+           'work on this thread held it), ' + otherMs + ' ms otherwise' +
+           (holesMs ? '; ' + holesMs + ' ms re-reading holes' : '') +
            (current ? '; applying a "' + current.kind + '" row (' +
             current.key.slice(0, 40) + ') for ' + (now - current.since) +
-            ' ms' : '') + '.';
+            ' ms' : '') +
+           (preparing ? '; preparing "' + preparing.kind + '" rows for ' +
+            (now - preparing.since) + ' ms' : '') +
+           (c.turning ? '; waiting for a turn of the event loop for ' +
+            (now - c.turning) + ' ms' : '') + '.';
   }
 
   function pull() {
@@ -853,8 +886,18 @@ function createReplication(label) {
     // so a barrier that gives up while a page is still being applied says
     // which kind of row the time is going to (2026-11-10): `applyMs` alone
     // is added only when a page ends, and read "0 ms" for a stuck one.
+    // AND SINCE 2026-11-14 THE REST OF A PAGE'S APPLY IS TIMED TOO: a kind's
+    // `prepare` (`prepareMs`, `preparing`), the turns of the event loop the
+    // apply yields (`turns`, `turnMs`, the longest in `turnMaxMs`,
+    // `turning`), and the hole re-check (`holesMs`, `holing`). In GitHub
+    // Actions run 43622250478 a pull "applying" 8,000 rows for 18,643 ms
+    // accounted for 508 ms of it by kind, and the line could not say where
+    // the other eighteen seconds went; pullCostText() now says, and what is
+    // still unaccounted is named as such.
     const cost = { startedAt: Date.now(), queryMs: 0, applyMs: 0, rows: 0,
-                   kinds: {}, kindMs: {}, applyingSince: 0, current: null };
+                   kinds: {}, kindMs: {}, applyingSince: 0, current: null,
+                   prepareMs: {}, preparing: null, turns: 0, turnMs: 0,
+                   turnMaxMs: 0, turning: 0, holesMs: 0, holing: 0 };
     pullCost = cost;
 
     function page() {
@@ -1009,7 +1052,12 @@ function createReplication(label) {
 
     log.debug("Leaving pull().");
     return page().then(function () {
-      return recheckHoles();
+      cost.holing = Date.now();
+      return recheckHoles().then(function (n) {
+        cost.holesMs += Date.now() - cost.holing;
+        cost.holing = 0;
+        return n;
+      });
     }).then(function () {
       pulls++;
       lastCompletedStartNo = Math.max(lastCompletedStartNo, startNo);
@@ -1171,18 +1219,40 @@ function createReplication(label) {
     // page that failed part-way left — its `done()` not reached — must not
     // stand in for this page's rows.
     clearPageState(appliers);
+    // THE PULL THIS PAGE BELONGS TO, for the timings below (pullCostText()).
+    const pageCost = pullCost;
     let chain = Promise.resolve();
     byKindRows.forEach(function (rowsOfKind, kind) {
       const applier = appliers[kind];
       if (applier && typeof applier.prepare === 'function') {
         chain = chain.then(function () {
-          return Promise.resolve(applier.prepare(rowsOfKind)).catch(
+          const began = Date.now();
+          if (pageCost) {
+            pageCost.preparing = { kind: kind, since: began };
+          }
+          const prepared = function () {
+            if (pageCost) {
+              pageCost.prepareMs[kind] = (pageCost.prepareMs[kind] || 0) +
+                (Date.now() - began);
+              pageCost.preparing = null;
+            }
+          };
+          let preparing = null;
+          try {
+            preparing = Promise.resolve(applier.prepare(rowsOfKind));
+          } catch (e) {
+            // A prepare that throws synchronously is a prepare that failed,
+            // as a rejection is; the rows are applied one at a time.
+            log.debug("Caught in applyRows(): " + ((e && e.message) || e));
+            preparing = Promise.reject(e);
+          }
+          return preparing.catch(
             function (e) {
             log.warn(errorCodes.tag('STS-STORE-0041') +
                      'replication: preparing ' + rowsOfKind.length + ' "' +
                      kind + '" row(s) failed (' + e.message + '); they are ' +
                      'applied one at a time.');
-          });
+          }).then(prepared);
         });
       }
     });
@@ -1334,8 +1404,24 @@ function createReplication(label) {
     first.concat(rest).forEach(function (row, i) {
       if (i > 0 && i % APPLY_YIELD_EVERY === 0) {
         chain = chain.then(function () {
+          // TIMED (2026-11-14): a turn costs microseconds on an idle loop
+          // and whatever else this thread runs on a busy one — a request's
+          // synchronous store read, another job. The time is this thread's,
+          // not the apply's, and the line says which.
+          const began = Date.now();
+          if (pageCost) {
+            pageCost.turning = began;
+          }
           return new Promise(function (resolve) {
             setImmediate(resolve);
+          }).then(function () {
+            if (pageCost) {
+              const ms = Date.now() - began;
+              pageCost.turns += 1;
+              pageCost.turnMs += ms;
+              pageCost.turnMaxMs = Math.max(pageCost.turnMaxMs, ms);
+              pageCost.turning = 0;
+            }
           });
         });
       }
@@ -2415,6 +2501,9 @@ function createReplication(label) {
     start: start,
     stop: stop,
     syncNow: syncNow,
+    // The STS-STORE-0039 breakdown, for tests/read_barrier_slow_apply.js
+    // (2026-11-14).
+    pullCostText: pullCostText,
     forgetDeferred: forgetDeferred,
     heldRealmIds: heldRealmIds,
     supports: supports,

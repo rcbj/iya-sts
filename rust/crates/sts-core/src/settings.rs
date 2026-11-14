@@ -28,7 +28,7 @@
 //! `String()` — because the console's refusals and the values a deployment
 //! already carries are the contract.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
@@ -546,8 +546,21 @@ impl SettingRow {
     /// `TYPES[type].check(raw, setting)`: what is wrong with a value a caller
     /// supplied, in the words the console prints after the key, or `None`.
     pub fn check(&self, raw: &Json) -> Option<String> {
+        self.check_as(raw, false)
+    }
+
+    /// The same check with `{ startup: true }`: a value read at START from
+    /// the environment or a file is not held to `absoluteUri` (it is warned
+    /// about, STS-CORE-0176), so a deployment that started on one before the
+    /// rule still starts.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn check_at_startup(&self, raw: &Json) -> Option<String> {
+        self.check_as(raw, true)
+    }
+
+    fn check_as(&self, raw: &Json, startup: bool) -> Option<String> {
         match self.kind {
-            SettingType::String => self.check_string(raw),
+            SettingType::String => self.check_string(raw, startup),
             SettingType::Color => {
                 let text = match raw {
                     Json::Null => String::new(),
@@ -623,7 +636,7 @@ impl SettingRow {
 
     /// A string row's `maxLength` and `absoluteUri`; a row with neither is
     /// any text, as every string row was before them.
-    fn check_string(&self, raw: &Json) -> Option<String> {
+    fn check_string(&self, raw: &Json, startup: bool) -> Option<String> {
         let text = match raw {
             Json::Null => String::new(),
             other => js_string(other),
@@ -637,7 +650,7 @@ impl SettingRow {
                 ));
             }
         }
-        if self.absolute_uri && !is_absolute_uri(&text) {
+        if self.absolute_uri && !startup && !is_absolute_uri(&text) {
             return Some(
                 "must be an absolute URI (a scheme, a colon and the rest, \
                  with no spaces), such as \
@@ -698,6 +711,17 @@ impl SettingRow {
         None
     }
 
+    /// What `env/defaults.js` holds for this row: its `dflt`, as
+    /// `env/generate_defaults.js` writes it, and nothing for a derived row
+    /// (that file carries none).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn defaults_file_value(&self) -> Option<Json> {
+        if self.derived || self.default == DefaultValue::Derived {
+            return None;
+        }
+        Some(self.default.raw())
+    }
+
     /// The dot path into an appconfig file: the key, unless the row says
     /// otherwise (the log level and the mode do).
     pub fn dotted(&self) -> &'static str {
@@ -715,6 +739,48 @@ impl SettingRow {
 /// rather than a copy of it.
 pub trait RealmLayer: Send + Sync {
     fn ambient_overrides(&self) -> Option<Arc<HashMap<String, Json>>>;
+
+    /// The ambient realm's id, for the sentences that name it; `None`
+    /// where [`RealmLayer::ambient_overrides`] is.
+    fn ambient_id(&self) -> Option<String>;
+
+    /// Writes one key of the ambient realm's overrides — `Some` sets it,
+    /// `None` removes it — as `config.js`'s `setOverride()` and
+    /// `clearOverride()` write `realm.overrides[key]`, and says it changed
+    /// so the realm is written down. The realm's id, or `None` when no
+    /// realm is ambient and nothing was written.
+    fn write_ambient(&self, key: &str, raw: Option<Json>) -> Option<String>;
+}
+
+/// The mode's half of a write (`config.js`'s `modeWriteProblem()` and
+/// `pinnedSignerWriteProblem()`), which `sts-core::mode` answers. A slot
+/// because the mode reads settings: [`crate::mode::Mode::shared`] fills
+/// it, and with it empty a write is checked by the settings' own rules
+/// only.
+pub trait WriteGate: Send + Sync {
+    /// Why a write of `raw` to `key` is refused by the mode, or `None`.
+    fn write_problem(&self, key: &str, raw: &Json) -> Option<Refusal>;
+
+    /// Why a reset that would leave `key` reading `after` is refused: the
+    /// one is `pki.pinnedSigners` turned off by a reset while a pinned
+    /// signer is live (#263).
+    fn reset_problem(&self, key: &str, after: &SettingValue)
+        -> Option<Refusal>;
+}
+
+/// Where the management API is advertised when a custom listener carries
+/// it (#472, `common/listener_map.js`'s `advertisedBase()`), which the TLS
+/// module's listener map answers. Empty is none.
+pub trait AdvertisedBase: Send + Sync {
+    fn advertised_base(&self, surface: &str) -> String;
+}
+
+/// What a successful `set_override()` or `reset_override()` wrote: the key,
+/// and the realm it landed in (`None` for the process).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Written {
+    pub key: String,
+    pub realm: Option<String>,
 }
 
 /// A rule between settings, owned by the module that reads them (#423): the
@@ -742,6 +808,17 @@ thread_local! {
     // right primitive, saved and restored so a derived default that reads
     // another one nests.
     static SUPPRESS_REALM: Cell<bool> = const { Cell::new(false) };
+
+    // `withWriteBatch()` (#1114): the other values of the write in hand, for
+    // `beside()`. One synchronous call long, so a thread-local, saved and
+    // restored so a batch inside a batch nests.
+    static WRITE_BATCH: RefCell<Option<Arc<serde_json::Map<String, Json>>>> =
+        const { RefCell::new(None) };
+
+    // `valueWithout()` (#263): the one key whose process-wide override is
+    // set aside while a reset is asked what it would leave.
+    static WITHOUT_OVERRIDE: RefCell<Option<String>> =
+        const { RefCell::new(None) };
 }
 
 /// Every setting's value. One per process, built by the composition root
@@ -753,6 +830,11 @@ pub struct Settings {
     overrides: RwLock<indexmap::IndexMap<String, Json>>,
     realm: OnceLock<Arc<dyn RealmLayer>>,
     rules: RwLock<Vec<Arc<dyn WriteRule>>>,
+    /// The values delivered as files at start (#254), by key, raw: the
+    /// environment layer, just above the variable.
+    delivered: RwLock<HashMap<String, String>>,
+    gate: OnceLock<std::sync::Weak<dyn WriteGate>>,
+    advertised: OnceLock<Arc<dyn AdvertisedBase>>,
 }
 
 /// A refused write: the sentence the console prints, and its code.
@@ -772,7 +854,89 @@ impl Settings {
             overrides: RwLock::new(indexmap::IndexMap::new()),
             realm: OnceLock::new(),
             rules: RwLock::new(Vec::new()),
+            delivered: RwLock::new(HashMap::new()),
+            gate: OnceLock::new(),
+            advertised: OnceLock::new(),
         }
+    }
+
+    /// The operator's appconfig file as it was loaded. A hot path (the
+    /// startup checks read it per row), with no span.
+    pub(crate) fn operator(&self) -> &Json {
+        &self.operator
+    }
+
+    /// One variable of the environment this was built with. A hot path,
+    /// with no span.
+    pub(crate) fn env_var(&self, name: &str) -> Option<&str> {
+        self.env.get(name).map(String::as_str)
+    }
+
+    /// Fills the mode's slot, once (see [`WriteGate`]).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_write_gate(&self, gate: std::sync::Weak<dyn WriteGate>) -> bool {
+        self.gate.set(gate).is_ok()
+    }
+
+    /// Fills the listener map's slot, once (see [`AdvertisedBase`]).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_advertised_base(&self, slot: Arc<dyn AdvertisedBase>) -> bool {
+        self.advertised.set(slot).is_ok()
+    }
+
+    /// `setDelivered()` (#254): a setting's value delivered as a file at
+    /// start, held at the environment layer. `Err` is config.js's throw
+    /// for a key that names no setting.
+    #[tracing::instrument(level = "debug", skip(self, raw))]
+    pub fn set_delivered(&self, key: &str, raw: &str) -> Result<(), String> {
+        if row(key).is_none() {
+            return Err(format!("config.js: no such setting \"{}\"", key));
+        }
+        match self.delivered.write() {
+            Ok(mut map) => map.insert(key.to_string(), raw.to_string()),
+            Err(poisoned) => poisoned
+                .into_inner()
+                .insert(key.to_string(), raw.to_string()),
+        };
+        Ok(())
+    }
+
+    /// `withWriteBatch()` (#1114): runs `f` while a write rule may read
+    /// `values` — the posted settings, raw, by key — as the other settings
+    /// of the same write, through [`Settings::beside`].
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn with_write_batch<T>(
+        &self,
+        values: &serde_json::Map<String, Json>,
+        f: impl FnOnce() -> T,
+    ) -> T {
+        let before = WRITE_BATCH
+            .with(|batch| batch.replace(Some(Arc::new(values.clone()))));
+        struct Restore(Option<Arc<serde_json::Map<String, Json>>>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                let was = self.0.take();
+                WRITE_BATCH.with(|batch| *batch.borrow_mut() = was);
+            }
+        }
+        let _restore = Restore(before);
+        f()
+    }
+
+    /// `besideValue()`: a companion setting's value as a rule should judge
+    /// it — the batch's, where it carries a valid one, else the value in
+    /// force. Outside a batch it is [`Settings::value_of`].
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn beside(&self, key: &str) -> SettingValue {
+        let posted = WRITE_BATCH.with(|batch| {
+            batch.borrow().as_ref().and_then(|m| m.get(key).cloned())
+        });
+        if let (Some(raw), Some(row)) = (posted, row(key)) {
+            if row.check(&raw).is_none() {
+                return row.parse(Some(&raw));
+            }
+        }
+        self.value_of(key)
     }
 
     /// The process's own environment and the given appconfig file.
@@ -820,6 +984,13 @@ impl Settings {
             .is_some_and(|layer| layer.ambient_overrides().is_some())
     }
 
+    /// The ambient trust realm's id, as its layer names it; `None` in the
+    /// default realm.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn ambient_realm_id(&self) -> Option<String> {
+        self.realm.get()?.ambient_id()
+    }
+
     fn realm_overrides(&self, key: &str) -> Option<Arc<HashMap<String, Json>>> {
         if SUPPRESS_REALM.with(Cell::get)
             || key.starts_with("realms.")
@@ -846,8 +1017,17 @@ impl Settings {
             Ok(map) => map.get(key).cloned(),
             Err(poisoned) => poisoned.into_inner().get(key).cloned(),
         };
-        if let Some(raw) = overridden {
+        let set_aside = WITHOUT_OVERRIDE
+            .with(|without| without.borrow().as_deref() == Some(key));
+        if let Some(raw) = overridden.filter(|_| !set_aside) {
             return (Some(raw), Source::Override);
+        }
+        let delivered = match self.delivered.read() {
+            Ok(map) => map.get(key).cloned(),
+            Err(poisoned) => poisoned.into_inner().get(key).cloned(),
+        };
+        if let Some(raw) = delivered {
+            return (Some(Json::from(raw)), Source::Env);
         }
         if let Some(raw) = row.env.and_then(|name| self.env.get(name)) {
             return (Some(Json::from(raw.as_str())), Source::Env);
@@ -951,8 +1131,22 @@ impl Settings {
     /// request; a wildcard bind is drawn as `localhost`, and the scheme's
     /// standard port is left off.
     pub fn management_api_base_url(&self) -> String {
-        let pinned = self.process_value(keys::GLOBAL_PUBLIC_BASE_URL);
-        let pinned = pinned.as_str().trim().trim_end_matches('/');
+        // WHERE THE MANAGEMENT API IS ADVERTISED (#472): a custom
+        // listener's `publicBaseUrl` when one is, `global.publicBaseUrl`
+        // otherwise.
+        let advertised = self
+            .advertised
+            .get()
+            .map(|slot| slot.advertised_base("management-api"))
+            .unwrap_or_default();
+        let pinned = if advertised.is_empty() {
+            self.process_value(keys::GLOBAL_PUBLIC_BASE_URL)
+                .as_str()
+                .to_string()
+        } else {
+            advertised
+        };
+        let pinned = js_trim(&pinned).trim_end_matches('/');
         if !pinned.is_empty() {
             return format!("{}/admin-api", pinned);
         }
@@ -1093,24 +1287,234 @@ impl Settings {
         None
     }
 
-    /// Sets a process-wide runtime override, after `check_override()`.
-    pub fn set_override(&self, key: &str, raw: Json) -> Result<(), Refusal> {
+    /// `setOverride()`: a write somebody asked for — the console's, the
+    /// API's. It lands WHEREVER IT WAS MADE: in the ambient trust realm's
+    /// overrides when one is (every `realms.*` and per-process row is the
+    /// process's whatever is ambient), process-wide otherwise; and it is
+    /// checked as `checkWrite()` checks it, for the realm it lands in —
+    /// the settings' own rules, then the mode's ([`WriteGate`]).
+    #[tracing::instrument(level = "debug", skip(self, raw))]
+    pub fn set_override(
+        &self,
+        key: &str,
+        raw: Json,
+    ) -> Result<Written, Refusal> {
+        let in_realm = self.realm_overrides(key).is_some();
+        if let Some(refusal) = self.check_override(key, &raw, Some(in_realm)) {
+            return Err(refusal);
+        }
+        if let Some(refusal) =
+            self.gate().and_then(|g| g.write_problem(key, &raw))
+        {
+            return Err(refusal);
+        }
+        let realm = if in_realm {
+            self.realm
+                .get()
+                .and_then(|layer| layer.write_ambient(key, Some(raw)))
+        } else {
+            self.write_process(key, Some(raw));
+            None
+        };
+        self.apply_log_level();
+        tracing::info!(
+            "config: {} is now {} {}",
+            key,
+            Json::from(self.text_named(key)),
+            match &realm {
+                Some(id) => format!("in the \"{}\" realm.", id),
+                None => "(runtime override).".to_string(),
+            }
+        );
+        Ok(Written {
+            key: key.to_string(),
+            realm,
+        })
+    }
+
+    /// `clearOverride()`: drops the override made HERE — the ambient
+    /// realm's, or the process's — so the setting falls back to what it
+    /// would otherwise be. Refused for an unknown key (STS-CORE-0004),
+    /// `realms.maxCount` outside the default realm (0162), nothing to reset
+    /// (0007), and a reset that would turn a live pinned signer off
+    /// (STS-PKI-0215).
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn reset_override(&self, key: &str) -> Result<Written, Refusal> {
+        if row(key).is_none() {
+            return Err(Refusal {
+                problem: format!("Unknown setting \"{}\".", key),
+                code: codes::STS_CORE_0004,
+            });
+        }
+        if let Some(problem) = self.max_count_realm_problem(key) {
+            return Err(Refusal {
+                problem,
+                code: codes::STS_CORE_0162,
+            });
+        }
+        let realm = self.realm_overrides(key);
+        let held = match &realm {
+            Some(map) => map.contains_key(key),
+            None => self.runtime_overrides().contains_key(key),
+        };
+        let realm_id = realm
+            .as_ref()
+            .and_then(|_| self.realm.get().and_then(|l| l.ambient_id()));
+        if !held {
+            return Err(Refusal {
+                problem: format!(
+                    "\"{}\" has no {} to reset; it is already coming from \
+                     {}.",
+                    key,
+                    match &realm_id {
+                        Some(id) =>
+                            format!("value set in the \"{}\" realm", id),
+                        None => "runtime override".to_string(),
+                    },
+                    self.source_named(key).as_str()
+                ),
+                code: codes::STS_CORE_0007,
+            });
+        }
+        let after = self.value_without(key, realm.is_some());
+        if let Some(refusal) =
+            self.gate().and_then(|g| g.reset_problem(key, &after))
+        {
+            return Err(refusal);
+        }
+        let realm = if realm.is_some() {
+            self.realm
+                .get()
+                .and_then(|layer| layer.write_ambient(key, None))
+        } else {
+            self.write_process(key, None);
+            None
+        };
+        self.apply_log_level();
+        tracing::info!(
+            "config: {} is back to its {} value{}",
+            key,
+            self.source_named(key).as_str(),
+            match &realm {
+                Some(id) => format!(" in the \"{}\" realm.", id),
+                None => ".".to_string(),
+            }
+        );
+        Ok(Written {
+            key: key.to_string(),
+            realm,
+        })
+    }
+
+    /// `valueWithout()`: what `key` would read here once the override in
+    /// question is gone — the realm's (so the process's value), or the
+    /// process's own.
+    fn value_without(&self, key: &str, in_realm: bool) -> SettingValue {
+        if in_realm {
+            let was = SUPPRESS_REALM.with(|flag| flag.replace(true));
+            let value = self.value_of(key);
+            SUPPRESS_REALM.with(|flag| flag.set(was));
+            return value;
+        }
+        let was = WITHOUT_OVERRIDE
+            .with(|without| without.replace(Some(key.to_string())));
+        let value = self.value_of(key);
+        WITHOUT_OVERRIDE.with(|without| *without.borrow_mut() = was);
+        value
+    }
+
+    fn gate(&self) -> Option<Arc<dyn WriteGate>> {
+        self.gate.get().and_then(std::sync::Weak::upgrade)
+    }
+
+    fn write_process(&self, key: &str, raw: Option<Json>) -> bool {
+        let mut map = match self.overrides.write() {
+            Ok(map) => map,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match raw {
+            Some(raw) => map.insert(key.to_string(), raw).is_some(),
+            None => map.shift_remove(key).is_some(),
+        }
+    }
+
+    /// `applyLogLevel()`: `global.logLevel` in force for the log.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn apply_log_level(&self) -> u8 {
+        let level = crate::log::parse_level(
+            self.value(keys::GLOBAL_LOG_LEVEL).as_str(),
+        );
+        crate::log::set_level(level);
+        level
+    }
+
+    /// One stored override put back, process-wide, checked as
+    /// `applyPersistedOverrides()` checks each — `checkOverride()` alone, no
+    /// mode rule, wherever it is asked from.
+    #[tracing::instrument(level = "debug", skip(self, raw))]
+    pub fn restore_override(
+        &self,
+        key: &str,
+        raw: Json,
+    ) -> Result<(), Refusal> {
         if let Some(refusal) = self.check_override(key, &raw, Some(false)) {
             return Err(refusal);
         }
-        match self.overrides.write() {
-            Ok(mut map) => map.insert(key.to_string(), raw),
-            Err(poisoned) => poisoned.into_inner().insert(key.to_string(), raw),
-        };
+        self.write_process(key, Some(raw));
         Ok(())
     }
 
-    /// Removes a process-wide runtime override; whether there was one.
-    pub fn clear_override(&self, key: &str) -> bool {
-        match self.overrides.write() {
-            Ok(mut map) => map.shift_remove(key).is_some(),
-            Err(poisoned) => poisoned.into_inner().shift_remove(key).is_some(),
+    /// `applyPersistedOverrides()`: the stored process-wide overrides put
+    /// back — each checked, one refused reported and SKIPPED (STS-CORE-0008;
+    /// it stays in the store), and an override no longer stored cleared.
+    /// The keys applied.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn apply_persisted_overrides(
+        &self,
+        saved: &serde_json::Map<String, Json>,
+    ) -> Vec<String> {
+        let mut applied = Vec::new();
+        for (key, raw) in saved {
+            if let Some(refusal) = self.check_override(key, raw, None) {
+                tracing::warn!(
+                    "{}config: the saved override for \"{}\" was not applied: \
+                     {} It is left in the store; nothing is deleted on the \
+                     strength of one start refusing it.",
+                    crate::log::tag(codes::STS_CORE_0008),
+                    key,
+                    refusal.problem
+                );
+                continue;
+            }
+            self.write_process(key, Some(raw.clone()));
+            applied.push(key.clone());
         }
+        let gone: Vec<String> = self
+            .runtime_overrides()
+            .keys()
+            .filter(|key| !saved.contains_key(*key))
+            .cloned()
+            .collect();
+        for key in &gone {
+            self.write_process(key, None);
+        }
+        if !gone.is_empty() {
+            tracing::info!(
+                "config: {} runtime override(s) are no longer in the store and \
+                 have been cleared here: {}.",
+                gone.len(),
+                gone.join(", ")
+            );
+        }
+        self.apply_log_level();
+        applied
+    }
+
+    /// Removes a process-wide runtime override without a check; whether
+    /// there was one. The store's door, for an override another node
+    /// cleared; a person's reset is [`Settings::reset_override`].
+    pub fn clear_override(&self, key: &str) -> bool {
+        self.write_process(key, None)
     }
 
     /// The process-wide runtime overrides, in the order they were set
@@ -1155,8 +1559,9 @@ pub fn unstorable_text(value: &Json) -> bool {
 }
 
 /// A dot path into an appconfig document; `None` for any missing hop, so a
-/// file that omits a whole section falls through to the next layer.
-fn dig<'a>(root: &'a Json, dotted: &str) -> Option<&'a Json> {
+/// file that omits a whole section falls through to the next layer. On the
+/// read path of every setting: a hot path, with no span.
+pub(crate) fn dig<'a>(root: &'a Json, dotted: &str) -> Option<&'a Json> {
     let mut node = root;
     for part in dotted.split('.') {
         node = node.as_object()?.get(part)?;
@@ -1276,6 +1681,12 @@ mod tests {
     impl RealmLayer for Acme {
         fn ambient_overrides(&self) -> Option<Arc<HashMap<String, Json>>> {
             Some(self.0.clone())
+        }
+        fn ambient_id(&self) -> Option<String> {
+            Some("acme".to_string())
+        }
+        fn write_ambient(&self, _: &str, _: Option<Json>) -> Option<String> {
+            None
         }
     }
 
