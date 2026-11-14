@@ -3389,6 +3389,299 @@ function schedulerVectors() {
                       90061000, -5].map(S.span) };
 }
 
+// THE SCHEDULER'S TICK (`cluster/scheduler.ts`, #408, #623, #883, #98): the
+// TypeScript Scheduler's own `tick()` over stand-in claims, a runner whose
+// load each scenario sets, and a durable run reader that answers, is empty
+// or fails as the scenario says. Per tick: the claims asked (scope, value,
+// realm), the reads asked (realm, ids) and the held bodies dropped; after
+// the ticks, every run row's state, where it ran and how long it was held.
+// Rust drives its own Scheduler through the same scenarios
+// (`sts-cluster/tests/tick_vectors.rs`).
+async function schedulerTickVectors() {
+  const S = require(path.join(ROOT, 'cluster', 'scheduler.js')).Scheduler;
+  const bunyan = require('bunyan');
+  const cells = require(path.join(ROOT, 'common', 'cells.js'));
+  const t0 = Date.UTC(2026, 9, 5, 12, 0, 0);
+  const base = { 'scheduler.enabled': true, 'scheduler.tickS': 15,
+                 'scheduler.disabledJobs': [],
+                 'scheduler.maxConcurrentRuns': 10,
+                 'scheduler.runTimeoutS': 300,
+                 'scheduler.runHistoryCount': 50,
+                 'scheduler.runHistoryHours': 24,
+                 'scheduler.niceBusyThreshold': 3,
+                 'scheduler.niceLagMs': 200,
+                 'scheduler.niceMaxDeferS': 120 };
+  const settle = async function () {
+    for (let i = 0; i < 20; i++) {
+      await new Promise(function (r) { setImmediate(r); });
+    }
+  };
+  // One scenario: `jobs` as descriptors, `realms`, and per tick `{ at,
+  // loads, reads, claim }` (loads null: no runner at all).
+  const scenario = async function (sc) {
+    const settings = Object.assign({}, base, sc.settings || {});
+    const store = new Map();
+    const mapOf = function (id) {
+      if (!store.has(id)) {
+        store.set(id, new Map());
+      }
+      return store.get(id);
+    };
+    let clock = sc.ticks[0].at;
+    let current = sc.ticks[0];
+    let events = [];
+    let watcher = null;
+    const deps = {
+      log: bunyan.createLogger({ name: 'vectors', level: 'fatal' }),
+      config: { value: function (k) { return settings[k]; } },
+      realms: { list: function () {
+        return sc.realms.map(function (id) { return { id: id }; });
+      }, run: function (r, fn) { return fn(); },
+      get: function (id) {
+        return sc.realms.indexOf(id) >= 0 ? { id: id } : null;
+      }, DEFAULT_ID: 'default' },
+      errorCodes: require(path.join(ROOT, 'common', 'error_codes.js')),
+      audit: { record: function () {} },
+      cluster: { enabled: function () { return true; },
+                 nodeId: function () { return 'n1'; },
+                 nodeName: function () { return 'node-one'; },
+                 stepDown: function () {
+                   events.push({ stepDown: true });
+                   return Promise.resolve({ ok: true });
+                 } },
+      claims: {
+        claim: function (o) {
+          events.push({ claim: [o.scope, o.value, o.realm] });
+          const used = current.claimUsed &&
+            current.claimUsed.indexOf(o.scope) >= 0;
+          return Promise.resolve(used ? { ok: false, reason: 'used' } :
+            { ok: true, claimedAt: clock, handle: { v: o.value } });
+        },
+        release: function () { return Promise.resolve(null); }
+      },
+      store: { realmMap: mapOf,
+               watch: function (fn) { watcher = fn; },
+               dropHeld: function (realm, key) {
+                 events.push({ drop: [realm, key] });
+                 mapOf(realm).delete(key);
+                 return true;
+               },
+               restoreRow: function (realm, key, row) {
+                 mapOf(realm).set(key, row);
+                 if (watcher) {
+                   watcher(realm, row);
+                 }
+               } },
+      dbNow: function () { return Promise.resolve(clock); },
+      now: function () { return clock; },
+      setTimer: function () { return null; }, clearTimer: function () {},
+      cronPrev: S.cronPrev, cronNext: S.cronNext,
+      host: 'h1', pid: 41, isRequestWorker: function () { return false; }
+    };
+    if (sc.history) {
+      deps.persisted = function () { return true; };
+      deps.readRuns = function (realm, ids) {
+        events.push({ read: [realm, ids.slice()] });
+        const how = (current.reads || {})[realm];
+        if (how === 'fail' ||
+            (how === 'fail-batch' && ids.length > 2) ||
+            (Array.isArray(how) && ids.some(function (id) {
+              return how.indexOf(id) >= 0;
+            }))) {
+          return Promise.reject(new Error('the store is unwell'));
+        }
+        if (how === 'none') {
+          return Promise.resolve(null);
+        }
+        const out = new Map();
+        (sc.stored || []).forEach(function (r) {
+          if (r.realm === realm && ids.indexOf(r.runId) >= 0) {
+            out.set(r.runId, r);
+          }
+        });
+        return Promise.resolve(out);
+      };
+    }
+    deps.runner = function () {
+      if (!current.loads) {
+        return null;
+      }
+      return { workers: function () { return current.loads; },
+               run: function () {
+                 return Promise.resolve({ ok: true, result: null });
+               },
+               fence: function () {}, renew: function () {} };
+    };
+    const sched = new S(deps);
+    const specOf = function (d) {
+      const spec = { id: d.id, title: 'T ' + d.id, describe: 'D', owner: 'O',
+                     run: function () { return null; } };
+      ['kind', 'scope', 'manualOnly', 'onFront', 'nice'].forEach(function (k) {
+        if (d[k] !== undefined) {
+          spec[k] = d[k];
+        }
+      });
+      if (d.everyMs !== undefined) {
+        spec.everyMs = function () { return d.everyMs; };
+      }
+      return spec;
+    };
+    sc.jobs.forEach(function (d) {
+      sched.register(specOf(d));
+    });
+    (sc.admitted || []).forEach(function (one) {
+      mapOf(one.realm).set(one.row.runId, Object.assign({}, one.row));
+      if (one.watched) {
+        watcher(one.realm, Object.assign({}, one.row));
+      }
+    });
+    sched.leading = true;
+    const ticks = [];
+    const wasMulti = cells.isMulti;
+    cells.isMulti = function () { return !!sc.cells; };
+    try {
+      for (const t of sc.ticks) {
+        current = t;
+        clock = t.at;
+        events = [];
+        await sched.tick();
+        await settle();
+        ticks.push(events);
+      }
+    } finally {
+      cells.isMulti = wasMulti;
+    }
+    const rows = [];
+    store.forEach(function (m, realm) {
+      m.forEach(function (row) {
+        if (row.kind !== 'run') {
+          return;
+        }
+        rows.push({ realm: realm, runId: row.runId, jobId: row.jobId,
+                    state: row.state, trigger: row.trigger,
+                    attempt: row.attempt, ranIn: row.ranIn === undefined ?
+                      null : row.ranIn,
+                    deferredMs: row.deferredMs === undefined ? null :
+                      row.deferredMs });
+      });
+    });
+    rows.sort(function (a, b) {
+      return (a.realm + a.runId).localeCompare(b.realm + b.runId);
+    });
+    return { name: sc.name, ticks: ticks, rows: rows };
+  };
+  const heavy = [{ id: 5, inFlight: 4, lagMs: 10 },
+                 { id: 3, inFlight: 4, lagMs: null }];
+  const lagging = [{ id: 2, inFlight: 0, lagMs: 250 }];
+  const light = [{ id: 7, inFlight: 1, lagMs: 20 },
+                 { id: 4, inFlight: 1, lagMs: 20 }];
+  const H = function (job, realm, slot) {
+    return S.prototype.runIdFor.call({ deps: { log: { debug: function () {} } } },
+                                     { id: job }, realm, slot);
+  };
+  const realmJobs = [{ id: 'a.one', everyMs: 600000, scope: 'realm' },
+                     { id: 'a.two', everyMs: 600000, scope: 'realm' },
+                     { id: 'a.three', everyMs: 600000, scope: 'realm' },
+                     { id: 'a.four', everyMs: 600000, scope: 'realm' }];
+  const slotNow = Math.floor(t0 / 600000);
+  const scenarios = [
+    { name: 'hold-for-load', realms: ['default'],
+      jobs: [{ id: 'n.patient', everyMs: 600000, nice: 19 },
+             { id: 'n.zero', everyMs: 600000, nice: 0 },
+             { id: 'n.front', everyMs: 600000, onFront: 'it holds a socket' },
+             { id: 'n.mid', everyMs: 60000, nice: 10 },
+             { id: 'n.lag', everyMs: 600000, nice: 5 }],
+      ticks: [{ at: t0, loads: heavy }, { at: t0 + 20000, loads: heavy },
+              { at: t0 + 40000, loads: heavy },
+              { at: t0 + 50000, loads: light }] },
+    { name: 'lag-alone', realms: ['default'],
+      jobs: [{ id: 'n.lag', everyMs: 600000, nice: 5 }],
+      ticks: [{ at: t0, loads: lagging }, { at: t0 + 1000, loads: [] },
+              { at: t0 + 2000, loads: lagging }] },
+    { name: 'no-runner', realms: ['default'],
+      jobs: [{ id: 'n.patient', everyMs: 600000, nice: 19 }],
+      ticks: [{ at: t0, loads: null }] },
+    { name: 'pending-index', realms: ['default', 'acme'],
+      jobs: [{ id: 'm.manual', manualOnly: true }],
+      admitted: [
+        { realm: 'default', watched: true, row: {
+          runId: 'm1', kind: 'run', jobId: 'm.manual', realm: 'default',
+          trigger: 'manual', state: 'queued', params: null, attempt: 0,
+          fenceAt: 0, queuedAt: t0 - 2000, updatedAt: t0 - 2000 } },
+        { realm: 'acme', watched: false, row: {
+          runId: 'm2', kind: 'run', jobId: 'm.manual', realm: 'acme',
+          trigger: 'manual', state: 'queued', params: null, attempt: 0,
+          fenceAt: 0, queuedAt: t0 - 3000, updatedAt: t0 - 3000 } },
+        { realm: 'acme', watched: true, row: {
+          runId: 'm3', kind: 'run', jobId: 'm.manual', realm: 'acme',
+          trigger: 'manual', state: 'queued', params: null, attempt: 0,
+          fenceAt: 0, queuedAt: t0 - 1000, updatedAt: t0 - 1000 } },
+        { realm: 'default', watched: false, row: {
+          runId: 'command|silent', kind: 'command', command: 'step-down',
+          state: 'queued', queuedAt: t0 - 500, updatedAt: t0 - 500 } }],
+      ticks: [{ at: t0, loads: null }] },
+    { name: 'finished-slots', realms: ['default', 'acme'], history: true,
+      jobs: realmJobs,
+      stored: [{ runId: H('a.one', 'default', slotNow), kind: 'run',
+                 jobId: 'a.one', realm: 'default', trigger: 'schedule',
+                 state: 'succeeded', attempt: 1, fenceAt: t0 - 9,
+                 startedAt: t0 - 9, endedAt: t0 - 5, updatedAt: t0 - 5 }],
+      ticks: [{ at: t0 + 1000, loads: null,
+                reads: { acme: [H('a.two', 'acme', slotNow),
+                                H('a.three', 'acme', slotNow)] } },
+              { at: t0 + 2000, loads: null, reads: { acme: 'none' } }] },
+    { name: 'read-outage', realms: ['default', 'acme'], history: true,
+      jobs: realmJobs,
+      ticks: [{ at: t0 + 1000, loads: null,
+                reads: { default: 'fail', acme: 'fail' } }] },
+    { name: 'global-claim', realms: ['default'], cells: true,
+      jobs: [{ id: 'signing.rotate', everyMs: 600000 },
+             { id: 'x.local', everyMs: 600000 }],
+      ticks: [{ at: t0, loads: null, claimUsed: ['scheduler.run.global'] },
+              { at: t0 + 1000, loads: null,
+                claimUsed: ['scheduler.run.global'] }] },
+    { name: 'global-claim-one-cell', realms: ['default'], cells: false,
+      jobs: [{ id: 'signing.rotate', everyMs: 600000 }],
+      ticks: [{ at: t0, loads: null }] }
+  ];
+  const out = [];
+  for (const sc of scenarios) {
+    out.push(Object.assign({ scenario: sc }, await scenario(sc)));
+  }
+  // The default cap with request workers (2026-11-10): the larger of two
+  // and one fewer than the workers, never every store connection.
+  let workers = 0;
+  let pool = 0;
+  const capSched = new S({
+    log: bunyan.createLogger({ name: 'vectors', level: 'fatal' }),
+    config: { value: function (k) {
+      return k === 'scheduler.maxConcurrentRuns' ? 0 : base[k];
+    } },
+    realms: { list: function () { return []; }, DEFAULT_ID: 'default',
+              get: function () { return null; } },
+    errorCodes: require(path.join(ROOT, 'common', 'error_codes.js')),
+    store: { realmMap: function () { return new Map(); } },
+    requestWorkers: function () { return workers; },
+    storeConnections: function () { return pool; },
+    now: function () { return 0; }, host: 'h', pid: 1,
+    isRequestWorker: function () { return false; }
+  });
+  const caps = [];
+  [0, 1, 2, 3, 8].forEach(function (w) {
+    [0, 3, 20].forEach(function (p) {
+      workers = w;
+      pool = p;
+      caps.push({ workers: w, pool: p, cap: capSched.maxConcurrentRuns() });
+    });
+  });
+  return { settings: base, scenarios: out, caps: caps,
+           leastLoaded: [heavy, lagging, light, [], [
+             { id: 9, inFlight: 0, lagMs: null },
+             { id: 8, inFlight: 0, lagMs: 0 }]].map(function (l) {
+             return { loads: l, id: S.leastLoaded(l) };
+           }) };
+}
+
 // THE SCHEDULER'S HISTORY AND REPORT (`cluster/scheduler.ts`, #338 and the
 // status /admin/scheduler draws): the TypeScript Scheduler over a store the
 // vectors carry — runs finished, running and queued, old and new, process
@@ -3855,6 +4148,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'scheduler-node.json', build: schedulerVectors },
                  { file: 'scheduler-history-node.json',
                    build: schedulerHistoryVectors },
+                 { file: 'scheduler-tick-node.json',
+                   build: schedulerTickVectors },
                  { file: 'realm-lifecycle-node.json',
                    build: realmLifecycleVectors },
                  { file: 'http-node.json', build: httpVectors },
