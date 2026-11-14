@@ -1158,9 +1158,9 @@ Those are two claims and keeping them apart is the whole of this section.
 ./run-jsdoc.sh                          # the API reference (TypeDoc) into ./apidocs
 ```
 
-**`./run-tests.sh` is the one launcher, wherever the service is**; its local
-modes are `memory`, `single-node` and `cluster` (a bare run runs all three),
-`cells` runs only when named, and an AWS target runs the protocol half only.
+**`./run-tests.sh` is the one launcher, wherever the service is**; a bare
+local run is six modes — `memory`, `single-node`, `mariadb`, `cluster`,
+`cells`, `fuzz` (2026-11-14) — and an AWS target runs the protocol half only.
 **`npm test` refuses on a checkout since #50**, which is why
 `./docker-npm-test.sh` exists. `tests/CLAUDE.md` argues all of it.
 

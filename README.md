@@ -256,10 +256,18 @@ Everything runs in containers; the host needs only docker.
 
 ```bash
 ./docker-npm-test.sh                # the in-process suite, in the tests image
-./run-tests.sh                      # every job, every mode — what CI runs
-./run-tests.sh --modes=memory       # one mode: memory, single-node or cluster
+./run-tests.sh                      # every job, in all six modes
+./run-tests.sh --modes=memory       # one mode of the six (see below)
+./run-tests.sh --plan               # what a run would do; starts nothing
 ./run-coverage.sh                   # coverage, from a run of its own
 ```
+
+A bare `./run-tests.sh` runs six modes, in this order: `memory`,
+`single-node`, `mariadb`, `cluster`, `cells` and `fuzz`. The `fuzz` mode runs
+only its Schemathesis jobs; the other modes run every job. An `--only=`
+narrows every mode, and a mode it leaves with no job is skipped, with the
+reason. A bare run takes about eleven hours on a laptop. CI does not run a
+bare run: its jobs name the modes they run.
 
 `./run-tests.sh` writes a report to `tests/report/<mode>/latest/`.
 [`tests/CLAUDE.md`](tests/CLAUDE.md) describes the jobs, the modes and where a
