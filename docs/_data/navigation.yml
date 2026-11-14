@@ -186,6 +186,23 @@
     - { title: Management API, url: /management-api.html }
     - { title: Account API, url: /account-api.html }
 
+- section: Protocol debugger
+  items:
+    - { title: The protocol debugger, url: /debugger/ }
+    - { title: Accessing the debugger, url: /debugger/access.html }
+    - { title: What a protocol debugger is, url: /debugger/what-is-a-protocol-debugger.html }
+    - { title: The OAuth2 / OIDC workflow, url: /debugger/oauth2-oidc/ }
+    - { title: OAuth 2.0 authorization grants, url: /debugger/oauth2-oidc/oauth2-grants.html }
+    - { title: OpenID Connect authentication flows, url: /debugger/oauth2-oidc/oidc-flows.html }
+    - { title: Dynamic client registration, url: /debugger/oauth2-oidc/dynamic-client-registration.html }
+    - { title: "Token detail, introspection, UserInfo, JWKS", url: /debugger/oauth2-oidc/related-tools.html }
+    - { title: The SAML workflow, url: /debugger/saml.html }
+    - { title: SAML Assertion Tool, url: /debugger/saml-assertion.html }
+    - { title: SAML decoders, url: /debugger/saml-decoders.html }
+    - { title: The WS-Trust workflow, url: /debugger/wstrust.html }
+    - { title: JWT Tools, url: /debugger/jwt-tools.html }
+    - { title: Digital Signature, url: /debugger/digital-signature.html }
+
 - section: Operating it
   items:
     - { title: The compose stack, url: /docker-compose.html }
