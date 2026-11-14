@@ -139,6 +139,10 @@ clean.sh
 # either image — least of all the tests image, where the container mounts the
 # host's directory over the top of it.
 tests/report
+# Coverage output (./run-coverage.sh writes ./coverage: an HTML page per file,
+# lcov.info, raw V8 JSON). Never part of an image: on 2026-11-14 it was 2.0 GB
+# of a 2.81 GB service image built from a checkout that had run coverage.
+coverage/
 
 # THE BUILD STAMP FROM A HOST RUN. `common/version.js --stamp .` writes
 # version.json at the package root, and the Dockerfile runs it INSIDE the image
