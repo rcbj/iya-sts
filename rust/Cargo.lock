@@ -1634,10 +1634,10 @@ name = "sts-cache"
 version = "0.1.0"
 dependencies = [
  "indexmap",
- "openssl",
  "serde",
  "serde_json",
  "sts-core",
+ "sts-crypto",
  "tracing",
 ]
 
@@ -1685,6 +1685,14 @@ dependencies = [
  "sts-xml",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "sts-guards"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde_json",
 ]
 
 [[package]]
@@ -1763,6 +1771,7 @@ dependencies = [
  "serde_json",
  "sts-cluster",
  "sts-core",
+ "sts-crypto",
  "sts-http",
  "sts-pki",
  "sts-store",

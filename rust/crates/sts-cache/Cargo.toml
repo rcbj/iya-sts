@@ -12,8 +12,8 @@ publish.workspace = true
 
 [dependencies]
 sts-core.workspace = true
+sts-crypto.workspace = true
 indexmap.workspace = true
-openssl.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

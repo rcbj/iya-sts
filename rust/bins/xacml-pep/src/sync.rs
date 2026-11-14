@@ -932,7 +932,7 @@ impl Sync {
         if let Some(error) = &answer.error {
             self.keep_catalogue(
                 &format!("Could not reach the PDP: {}", error),
-                "STS-XPEP-0040",
+                codes::STS_XPEP_0040.as_str(),
             );
             return;
         }
@@ -960,7 +960,7 @@ impl Sync {
                     "The PDP answered {} to the catalogue pull{}.{}",
                     answer.status, detail, older
                 ),
-                "STS-XPEP-0041",
+                codes::STS_XPEP_0041.as_str(),
             );
             return;
         }
@@ -968,7 +968,7 @@ impl Sync {
             self.keep_catalogue(
                 "The PDP answered 200 with something that is not an \
                  AuthZEN catalogue.",
-                "STS-XPEP-0041",
+                codes::STS_XPEP_0041.as_str(),
             );
             return;
         };
@@ -981,7 +981,7 @@ impl Sync {
         let fga_applications = match parse_fga_applications(said) {
             Ok(list) => list,
             Err(why) => {
-                self.keep_catalogue(&why, "STS-XPEP-0059");
+                self.keep_catalogue(&why, codes::STS_XPEP_0059.as_str());
                 return;
             }
         };
@@ -1011,7 +1011,7 @@ impl Sync {
                 "{}xacml-pep: {} of {} pulled AuthZEN catalogue row(s) were \
                  refused by this container's grammar and left out, so those \
                  properties are undeclared here: {}",
-                tag("STS-XPEP-0042"),
+                tag(codes::STS_XPEP_0042),
                 refused.len(),
                 values.len(),
                 refused.join("; ")
@@ -1092,7 +1092,7 @@ impl Sync {
         if let Some(error) = &answer.error {
             self.keep_callers(
                 &format!("Could not reach the PDP: {}", error),
-                "STS-XPEP-0047",
+                codes::STS_XPEP_0047.as_str(),
             );
             return;
         }
@@ -1120,7 +1120,7 @@ impl Sync {
                     "The PDP answered {} to the caller pull{}.{}",
                     answer.status, detail, older
                 ),
-                "STS-XPEP-0048",
+                codes::STS_XPEP_0048.as_str(),
             );
             return;
         }
@@ -1128,7 +1128,7 @@ impl Sync {
             self.keep_callers(
                 "The PDP answered 200 with something that is not an \
                  AuthZEN caller list.",
-                "STS-XPEP-0048",
+                codes::STS_XPEP_0048.as_str(),
             );
             return;
         };
@@ -1144,7 +1144,7 @@ impl Sync {
                 "{}xacml-pep: {} pulled AuthZEN caller(s) were refused by \
                  this container's grammar and left out, so they are not \
                  admitted here: {}",
-                tag("STS-XPEP-0049"),
+                tag(codes::STS_XPEP_0049),
                 refused.len(),
                 refused.join("; ")
             );

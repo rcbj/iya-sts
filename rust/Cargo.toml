@@ -19,6 +19,7 @@ members = [
   "crates/sts-oauth",
   "crates/sts-mgmt-api",
   "crates/sts-model",
+  "crates/sts-guards",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]

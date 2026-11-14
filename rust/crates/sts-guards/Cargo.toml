@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# The architecture rules the root CLAUDE.md states, held over the Rust
+# workspace's own source and manifests (#444). The Node service holds the
+# same rules with in-process tests that read its source; those are removed
+# at the cutover (rust/DESIGN.md D12), so these are the ones that remain.
+# Nothing here runs in the service: the crate is a library of scanners and
+# one integration test per rule.
+
+[package]
+name = "sts-guards"
+version = "0.1.0"
+description = "Architecture guards over the workspace's own source: error codes, periodic timers, crypto in one place, unsafe, the logging rule, SPDX headers, lints."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+regex.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

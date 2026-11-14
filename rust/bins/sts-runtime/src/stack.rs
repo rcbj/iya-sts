@@ -26,6 +26,7 @@ use sts_core::realm::{RealmRegistry, SettingsEnvironment};
 use sts_core::realm_lifecycle::RealmLifecycle;
 use sts_core::realm_store::{RealmMap, StoreHandles, StoreSpec};
 use sts_core::settings::Settings;
+use sts_crypto::random::random_bytes;
 use sts_store::ldif_driver::LdifDriver;
 use sts_store::persistence::{MemoryDirectory, Persistence, StoreMode};
 use sts_store::postgres::PostgresDriver;
@@ -51,10 +52,13 @@ pub struct Stack {
 
 /// A node id for this process: random, as Node's is per start.
 fn node_id() -> String {
-    let mut buf = [0u8; 8];
-    if openssl::rand::rand_bytes(&mut buf).is_err() {
-        tracing::error!("runtime: no random bytes for the node id");
-    }
+    let buf = match random_bytes(8) {
+        Ok(buf) => buf,
+        Err(e) => {
+            tracing::error!("runtime: no random bytes for the node id: {}", e);
+            vec![0u8; 8]
+        }
+    };
     buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
@@ -126,6 +130,7 @@ async fn jwks(persistence: Weak<Persistence>) -> axum::response::Response {
 impl Stack {
     /// Builds the shared services from the settings. Nothing is opened or
     /// started here; [`Stack::start`] does that.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn build(settings: Arc<Settings>) -> Result<Stack, String> {
         let mode = Arc::new(Mode::new(settings.clone()));
         let environment =
@@ -367,6 +372,7 @@ impl Stack {
 
     /// Opens the store and reads it back — fatal when it cannot be — then
     /// starts the scheduler. Before any listener binds.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn start(&self) -> Result<(), String> {
         self.persistence.start().await?;
         // THE DEFAULT REALM'S KEY SET, before anything is served: read
@@ -384,6 +390,7 @@ impl Stack {
     }
 
     /// Every route, behind the HTTP layer.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn router(&self) -> axum::Router {
         let persistence = Arc::downgrade(&self.persistence);
         let routes = axum::Router::new().route(
@@ -397,6 +404,7 @@ impl Stack {
     }
 
     /// Writes what is pending and closes the store.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn stop(&self) {
         self.scheduler.stop();
         if let Some(node) = &self.node {
