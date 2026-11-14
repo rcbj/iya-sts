@@ -60,7 +60,11 @@ decision of 2026-11-13).** `tests/protocol/sts_authzen_conformance.js`
 as the PEP, in a throwaway realm with `authzen.callerAuthentication`
 `bearer`; the suite's API key (`pdp.api_key`, sent as `Authorization:
 Bearer`) is a `client_credentials` token carrying `authzen:evaluate`,
-audienced to the realm's `/access/v1`, its client in `authzen-peps`. **The
+audienced to the realm's `/access/v1`, its client in `authzen-peps` and
+holding a delegated permission grant of the scope on `sts-authzen-api`
+(`POST /admin-api/permissions/grant-permission`; listing it in
+`oauthAllowedScope` is refused `STS-OAUTH-0577`, which was the job's first
+run). **The
 service's default door stays `mtls`**; nothing here changed it. Two things
 about suite release-v5.3.1 decide the variants, both read in its source:
 

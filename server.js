@@ -1153,6 +1153,9 @@ function customListener(label, certificate, certificateOf, listenerId) {
   require('./common/connect_refusal').install(server, label);
   // A request the parser refuses keeps its answer (#1500).
   require('./common/parser_refusal').install(server, label);
+  // A connection that fails at the TLS layer keeps its alert, as on the
+  // main port (2026-11-13).
+  require('./tls/alert_close').install(server, label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1261,6 +1264,13 @@ if (useHttps) {
   require('./common/connect_refusal').install(mainServer,
     'the main port (' + PORT + ')');
   require('./common/parser_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
+  // A CONNECTION THAT FAILS AT THE TLS LAYER KEEPS ITS ALERT (2026-11-13):
+  // node closed it in the tick of the failure, with the peer's record unread,
+  // and the TCP reset that sent could discard the alert — tlsfuzzer's
+  // record-layer probe, one in seventy under load. Held for two seconds,
+  // bounded — tls/alert_close.ts.
+  require('./tls/alert_close').install(mainServer,
     'the main port (' + PORT + ')');
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
