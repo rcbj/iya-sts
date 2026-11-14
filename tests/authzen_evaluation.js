@@ -98,6 +98,9 @@ const POLICY = [
   '        id = "urn:sts:xacml:authzen:caller" type = string }',
   '    attribute app { category = environmentCat',
   '        id = "urn:sts:xacml:authzen:application" type = string }',
+  '    attribute resourceId { category = resourceCat',
+  '        id = "urn:oasis:names:tc:xacml:1.0:resource:resource-id"',
+  '        type = string }',
   '    policy azevalRoot {',
   '        id = "urn:test:azeval-root"',
   '        apply firstApplicable',
@@ -146,6 +149,16 @@ const POLICY = [
   '            target clause act == "explode"',
   '            condition stringEqual(stringOneAndOnly(tags), "x")',
   '        }',
+  // A resource type this service has no objects of (#936): its candidates
+  // are the resource ids the policy names, rec-1 permitted, rec-2 denied.
+  '        rule peekRecord {',
+  '            permit',
+  '            target clause act == "peek" and resourceId == "rec-1"',
+  '        }',
+  '        rule noPeekRecord2 {',
+  '            deny',
+  '            target clause act == "peek" and resourceId == "rec-2"',
+  '        }',
   '    }',
   '}'
 ].join('\n');
@@ -175,6 +188,13 @@ function request(port, method, urlPath, cred, body, headers) {
     const sent = Object.assign({ 'content-type': 'application/json',
                                  'content-length': Buffer.byteLength(text) },
                                headers || {});
+    // A header given as null is not sent at all (#936's absent
+    // Content-Type).
+    Object.keys(sent).forEach(function (name) {
+      if (sent[name] === null) {
+        delete sent[name];
+      }
+    });
     const req = https.request({ host: '127.0.0.1', port: port,
       path: urlPath, method: method, headers: sent, ca: CA_PEM.value,
       cert: cred ? cred.certPem : undefined,
@@ -695,6 +715,66 @@ async function childBody() {
   });
   t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0044'),
           'S11. authzen.searchEnabled off answers 501', brief(r));
+  // A resource type this service has no objects of (#936): the candidates
+  // are the resource ids the policy names, each decided as that type.
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'peek' },
+    resource: { type: 'record' }, context: { application: 'todo-app' } });
+  ids = ((r.json && r.json.results) || []).map(function (one) {
+    return one.type + ':' + one.id;
+  });
+  t.check(r.status === 200 && ids.join() === 'record:rec-1',
+          'S12. a resource type with no objects here is searched over the ' +
+          'resource ids the policy names: rec-1 permitted, rec-2 denied ' +
+          'and not a result', brief(r));
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'read' },
+    resource: { type: 'record' }, context: { application: 'todo-app' } });
+  t.check(r.status === 200 && r.json.results.length === 0,
+          'S13. a resource id the policy names is a result only where the ' +
+          'policy permits it', brief(r));
+
+  // -------------------------------------------------------------------------
+  // C. CONTENT-TYPE: application/json, AuthZEN 1.0 section 10.1 (#936)
+  // -------------------------------------------------------------------------
+  const kinds = [['evaluation', URL, asked()],
+                 ['evaluations', PREFIX + '/access/v1/evaluations',
+                  { subject: { type: 'user', id: 'azalice' },
+                    action: { name: 'read' },
+                    context: { application: 'todo-app' },
+                    evaluations: [{ resource: evaluation().resource }] }],
+                 ['search', SEARCH + 'resource',
+                  { subject: { type: 'user', id: 'azalice' },
+                    action: { name: 'inspect' },
+                    resource: { type: 'application' },
+                    context: { application: 'todo-app' } }]];
+  for (let i = 0; i < kinds.length; i += 1) {
+    const kind = kinds[i];
+    since = marks.length;
+    r = await request(port, 'POST', kind[1], pepCred, kind[2],
+                      { 'content-type': 'text/plain' });
+    t.check(r.status === 415 && markedSince(since, 'STS-AUTHZEN-0117') &&
+            r.json && r.json.error && r.json.error.status === 415,
+            'C' + (i + 1) + '. a request to the ' + kind[0] + ' endpoint ' +
+            'sent as text/plain is 415 (STS-AUTHZEN-0117)', brief(r));
+  }
+  since = marks.length;
+  r = await request(port, 'POST', URL, pepCred, asked(),
+                    { 'content-type': null });
+  t.check(r.status === 415 && markedSince(since, 'STS-AUTHZEN-0117'),
+          'C4. a request with no Content-Type is 415', brief(r));
+  r = await request(port, 'POST', URL, pepCred, asked(),
+                    { 'content-type': 'Application/JSON; charset=utf-8' });
+  t.check(r.status === 200 && r.json && r.json.decision === true,
+          'C5. application/json with a charset, in any case, is answered',
+          brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', URL, null, evaluation(),
+                    { 'content-type': 'text/plain' });
+  t.check(r.status === 401 && markedSince(since, 'STS-AUTHZEN-0015') &&
+          !markedSince(since, 'STS-AUTHZEN-0117'),
+          'C6. a caller nobody admitted is told 401 before the media type',
+          brief(r));
 
   // -------------------------------------------------------------------------
   // R. THE SEARCHES AS REPORT SOURCES (#1176): run as the report's owner,

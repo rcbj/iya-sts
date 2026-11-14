@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5481** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5482** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 105
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 287
@@ -5199,6 +5199,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0114` | An AuthZEN token-exchange subject gate named a subject token with no lifetime left (context.subject_token.exp), so any token_lifetime would be 0, a denial; answered false (#1181). | decision: false |
 | `STS-AUTHZEN-0115` | A granted_scope wider than the subject token's scope was built for an AuthZEN token-exchange answer and was not sent: the no-broadening rule held at the last moment, which is a defect (#1181). | none — logged; the envelope is sent without it |
 | `STS-AUTHZEN-0116` | An AuthZEN answer carried a member its model in models/authzen/authzen_members.tsp does not name, one of a type or value the model does not allow, or lacked a member it requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
+| `STS-AUTHZEN-0117` | An AuthZEN evaluation, batch or search request did not carry Content-Type: application/json, which AuthZEN 1.0 section 10.1 requires; refused before its body was read (#936). | HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16) |
 
 ## STS-FGA
 

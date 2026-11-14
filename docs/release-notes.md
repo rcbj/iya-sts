@@ -158,6 +158,28 @@ refused. A request that worked in 1.0.0 gets the same answer.
 declare. The remote PEP's AuthZEN endpoint in the `xacml-pep` container
 follows the same rule.
 
+### AuthZEN requires `Content-Type: application/json`
+
+AuthZEN 1.0 section 10.1 says a request MUST carry `Content-Type:
+application/json`. In 1.0.0 the evaluation, the evaluations batch and the
+three searches read any body as JSON, whatever it was labelled. In 1.1.0
+a request labelled anything else, or not labelled at all, is answered
+`415 Unsupported Media Type` (`STS-AUTHZEN-0117`) once the caller is
+admitted. A `charset` parameter is accepted. A caller that sent JSON as
+`text/plain`, or with no `Content-Type`, has to send the header. The
+remote PEP's AuthZEN endpoint is unchanged.
+
+### An AuthZEN resource search names the policy's resource ids
+
+In 1.0.0 a [Resource Search](authzen.md#searching) for a resource type
+this service has no objects of (anything but `application`, `api` and
+`delegation`) answered no results, whatever the policy permitted. In
+1.1.0 its candidates are the resource ids the realm's policies compare
+`resource-id` with, and each is a result only where the policy permits
+it as that type. Section 8.5 asks for every resource of the type the
+subject may act on. The three types this service has objects of answer as
+before.
+
 ### Policies can be exported and imported, whole or one at a time
 
 New in 1.1.0: Directory → Policies has an **Export and import** tab, and

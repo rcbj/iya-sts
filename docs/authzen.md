@@ -432,6 +432,7 @@ evaluated gets an error status and a body of the form
 | 400 | the request is not valid: a missing member, a value that breaks the rules below, an undeclared property, or several applications in scope and none named |
 | 401 | the caller did not authenticate; `WWW-Authenticate: Bearer realm="<issuer>"` when tokens are accepted |
 | 403 | the caller may not ask (no `AUTHZEN_PEPS`, or the access policy refuses it), its token lacks `authzen:evaluate`, or it is not scoped to the application named |
+| 415 | the request's `Content-Type` is not `application/json` (a `charset` parameter is fine), or it has none: section 10.1 requires it. The evaluation, the batch and the three searches answer this once the caller is admitted |
 | 500 | the policy could not be evaluated (for example the root policy does not load, or the application enforces fine-grained authorization and its policy is disabled or missing) — never reported as `false` |
 | 501 | AuthZEN, or XACML, is turned off in the realm, or the realm has no `sts-authzen-api` application |
 
@@ -484,7 +485,7 @@ ones. Every result is therefore a real Permit.
 | Endpoint | Request | Candidates |
 |---|---|---|
 | `POST /access/v1/search/subject` | `subject.type` (no id), `action`, `resource` | the realm's directory people, for a type in `authzen.resolveSubjectTypes`; none for any other type |
-| `POST /access/v1/search/resource` | `subject`, `action`, `resource.type` (no id) | `application`: every application; `api`: the APIs (resource-server applications); `delegation`: every delegation relationship an application declares, as `<source>\|<target>`; none for any other type |
+| `POST /access/v1/search/resource` | `subject`, `action`, `resource.type` (no id) | `application`: every application; `api`: the APIs (resource-server applications); `delegation`: every delegation relationship an application declares, as `<source>\|<target>`; any other type: every resource id the realm's policies compare `resource-id` with |
 | `POST /access/v1/search/action` | `subject`, `resource` (no `action`) | every action name the realm's policies compare `action-id` with, and, for an `application` or `api` resource, the permissions it defines |
 
 An id sent where the search names only a type is ignored, as the

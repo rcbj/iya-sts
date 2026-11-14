@@ -301,6 +301,58 @@ class AuthzenSurface {
   }
 
   /**
+   * Refuses a request whose `Content-Type` is not `application/json`
+   * (#936): 415, STS-AUTHZEN-0117.
+   *
+   * AuthZEN 1.0 section 10.1: "Requests MUST include a `Content-Type`
+   * header with the value `application/json`". The section does not say
+   * what a PDP answers otherwise, and RFC 9110 section 15.5.16 does: 415
+   * Unsupported Media Type. A parameter (`; charset=utf-8`) is allowed, and
+   * the media type is compared case-insensitively (RFC 9110 section
+   * 8.3.1). An absent header is refused too, since the MUST is to include
+   * it. Until #936 this API read any body as JSON whatever it was labelled
+   * (`app.js`'s text parser takes every type), so a `text/plain` request
+   * was answered 200, which the OpenID Foundation's
+   * `*-reject-non-json-content-type` modules fail.
+   *
+   * The check is the TRANSPORT's, not the body's, so it is here rather
+   * than in `models/authzen/authzen.tsp`, which reads members. It runs
+   * after the caller is admitted, so a stranger is told 401 first, and
+   * before anything reads the body.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns true when the request was refused
+   */
+  notJson(req: Req, res: Res): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthzenSurface.notJson().");
+    if (AuthzenSurface.isJsonType(req.headers['content-type'])) {
+      log.debug("Leaving AuthzenSurface.notJson(). JSON.");
+      return false;
+    }
+    errorCodes.mark(res, 'STS-AUTHZEN-0117');
+    callers.send(res, 415, 'The request must carry Content-Type: ' +
+                 'application/json (AuthZEN 1.0 section 10.1).');
+    log.debug("Leaving AuthzenSurface.notJson(). Refused.");
+    return true;
+  }
+
+  /**
+   * Whether a `Content-Type` value names `application/json`, with or
+   * without parameters.
+   *
+   * @param value - the header's value, or undefined
+   * @returns true for application/json
+   */
+  static isJsonType(value: unknown): boolean {
+    log.debug("Entering AuthzenSurface.isJsonType().");
+    const type = String(value || '').split(';')[0].trim().toLowerCase();
+    log.debug("Leaving AuthzenSurface.isJsonType(). " + type);
+    return type === 'application/json';
+  }
+
+  /**
    * The realm's catalogue rows, read off its resource object.
    *
    * @returns the rows
@@ -1389,6 +1441,10 @@ class AuthzenSurface {
         log.debug('Leaving POST ' + EVALUATION_PATH + '. Not admitted.');
         return;
       }
+      if (self.notJson(req, res)) {
+        log.debug('Leaving POST ' + EVALUATION_PATH + '. Not JSON.');
+        return;
+      }
       const body = AuthzenSurface.bodyOf(req);
       const result = self.evaluateOne(body === undefined ? null : body,
                                       caller, self.rows(), id,
@@ -1433,6 +1489,10 @@ class AuthzenSurface {
         log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Not admitted.');
         return;
       }
+      if (self.notJson(req, res)) {
+        log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Not JSON.');
+        return;
+      }
       self.batch(req, res, caller, id);
       log.debug('Leaving POST ' + EVALUATIONS_PATH + '.');
     });
@@ -1459,6 +1519,10 @@ class AuthzenSurface {
         const caller = self.admit(req, res);
         if (!caller) {
           log.debug('Leaving POST ' + path + '. Not admitted.');
+          return;
+        }
+        if (self.notJson(req, res)) {
+          log.debug('Leaving POST ' + path + '. Not JSON.');
           return;
         }
         const body = AuthzenSurface.bodyOf(req);
