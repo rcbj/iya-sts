@@ -385,7 +385,6 @@ crates/sts-core/src/settings.rs replaced_by
 crates/sts-core/src/settings.rs row
 crates/sts-core/src/settings.rs rows
 crates/sts-core/src/settings.rs runtime_overrides
-crates/sts-core/src/settings.rs set_override
 crates/sts-core/src/settings.rs set_realm_layer
 crates/sts-core/src/settings.rs source_named
 crates/sts-core/src/settings.rs source_of

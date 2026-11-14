@@ -20,6 +20,7 @@
 
 use std::fmt;
 use std::io::Write;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
 
 use tracing::field::{Field, Visit};
@@ -85,13 +86,31 @@ impl Visit for Fields {
     }
 }
 
+/// The process's level, which `global.logLevel` moves while it runs
+/// (`config.js`'s `applyLogLevel()`): the installed layer reads it per line.
+static PROCESS_LEVEL: AtomicU8 = AtomicU8::new(30);
+
+/// Sets the level the installed log writes from, as `applyLogLevel()` sets
+/// every registered bunyan logger's. The log's own hot path, with no span:
+/// a span here would be written through the level it is setting.
+pub fn set_level(level: u8) {
+    PROCESS_LEVEL.store(level, Ordering::Relaxed);
+}
+
+/// The level the installed log writes from now. A hot path (every line
+/// asks it), with no span.
+pub fn level() -> u8 {
+    PROCESS_LEVEL.load(Ordering::Relaxed)
+}
+
 /// The layer. One per process; everything it writes goes to stdout, a line
 /// at a time under one lock, so two threads cannot interleave a line.
 pub struct BunyanLayer {
     name: String,
     hostname: String,
     pid: u32,
-    min_level: u8,
+    /// A fixed level, or `None` to follow [`set_level`].
+    min_level: Option<u8>,
     out: Mutex<Box<dyn Write + Send>>,
 }
 
@@ -113,7 +132,7 @@ impl BunyanLayer {
             name: name.to_string(),
             hostname,
             pid: std::process::id(),
-            min_level,
+            min_level: Some(min_level),
             out: Mutex::new(out),
         }
     }
@@ -124,7 +143,7 @@ impl BunyanLayer {
         message: &str,
         extra: serde_json::Map<String, serde_json::Value>,
     ) {
-        if level < self.min_level {
+        if level < self.min_level.unwrap_or_else(self::level) {
             return;
         }
         let mut line = serde_json::Map::new();
@@ -191,8 +210,10 @@ where
 /// Installs the bunyan layer as the process's subscriber. Called once, at
 /// the top of `main`.
 pub fn install(name: &str, min_level: u8) {
-    let subscriber =
-        tracing_subscriber::registry().with(BunyanLayer::new(name, min_level));
+    set_level(min_level);
+    let mut layer = BunyanLayer::new(name, min_level);
+    layer.min_level = None;
+    let subscriber = tracing_subscriber::registry().with(layer);
     if let Err(error) = tracing::subscriber::set_global_default(subscriber) {
         eprintln!("the log was already installed: {}", error);
     }
