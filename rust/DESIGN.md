@@ -365,6 +365,60 @@ sleep loop outside `sts-cluster`.
   as `tests/copyright_notices.js` requires.
 * Comments carry the reasoning, at this repository's density.
 
+### 4.6 The concurrency model: what replaces the worker pool (phase 3, the cluster slice)
+
+**Node** runs one front process that owns every listener and two pools of
+`worker_threads` Workers (`common/request_pool.js`), each Worker holding its
+OWN COPY of the store's state, kept current from the change log. Everything
+the pool has besides dispatch exists because of those copies: the tickets (a
+write answered by a worker), a generation per worker, the read barrier that
+holds a reader until its worker has applied every write answered before it,
+`readYourWrite` narrowing that to the reader's session, and
+`NEVER_DISPATCHED`, the pages that must be answered where the sockets are.
+
+**Rust runs one process on one multi-threaded tokio runtime, with one copy
+of the state shared by every task.** That replaces the pool:
+
+| Node | Rust |
+|---|---|
+| N Workers, each a copy of the state | tokio's worker threads over one shared copy; CPU-heavy work on `spawn_blocking` |
+| Tickets, generations, the per-worker read barrier, `readYourWrite` | **Nothing**: a handler's write is in the one copy before its response is sent, so the next request of the same session reads it on any task. Read-your-write inside a process holds by construction (`sts-cluster/tests/coordination.rs`) |
+| `NEVER_DISPATCHED` | Nothing to except: every request runs where the sockets are |
+| A cluster run's body on the least-loaded Worker (#408) | A task on the runtime, which work-steals onto a free thread. `scheduler::Loads` says how busy the runtime is (`RuntimeLoad`: requests in flight, and the scheduler loop's lateness waking as the event-loop delay), and Node's hold-for-load rule reads it unchanged |
+| `scheduler.maxConcurrentRuns`' default, one fewer than the protocol Workers | One fewer than the runtime's worker threads (`Schedules::with_request_workers`) |
+
+**Between processes nothing holds by construction**, so the two rules of
+`cluster/cluster_barrier.js` are kept as they are, in
+`sts-cluster::coordination`:
+
+1. **`ReadBarrier`**: a request is served only after this process has applied
+   everything other processes committed before it arrived, proved by a
+   change-log pull that STARTED after the request did and finished CAUGHT
+   UP. One pull serves every reader that arrived before it started.
+2. **`CommitGate`**: a request that wrote is answered only once its writes
+   committed; a commit that fails is a 503 (`STS-STORE-0066`), never the
+   handler's success; a request that wrote nothing is not held.
+
+Together they are read-your-write across nodes. **A barrier that runs out is
+a refusal, never a stale answer** (develop's 057998e08): a pull that did not
+catch up never counts, a reader asks again a round at a time for
+`workers.readBarrierTimeoutMs`, and is then refused `STS-WORKER-0053`. Rust
+cannot have Node's two stale paths, because there is no "serve from what we
+have" branch and the only thing that satisfies a reader is a caught-up pull
+numbered after it.
+
+**"A store is shared by coordination; a socket, a timer or a listener belongs
+to one process"** becomes `coordination::Topology` (several processes on one
+store without a change log refused before anything binds, `STS-WORKER-0024`),
+the per-process versus cluster job split of the scheduler, and the two-node
+test (`sts-cluster/tests/two_nodes.rs`): two processes on one PostgreSQL store,
+a cluster job run on exactly one of them and moving when that one dies.
+Beside it `sts-cluster/tests/node_interop.rs` runs the Node service's own
+postgres driver (`tests/tools/cluster-interop-node.js`) next to a Rust node
+on the same store: the two never run together in production (D11), but they
+must read and write the cluster tables' rows alike, and they agree on who
+leads at every token.
+
 ## 5. The management API is the console's and the portal's only door
 
 ### 5.1 What exists, and the gap

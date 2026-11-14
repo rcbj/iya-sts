@@ -1674,8 +1674,10 @@ dependencies = [
  "indexmap",
  "serde",
  "serde_json",
+ "sts-cluster",
  "sts-core",
  "sts-crypto",
+ "tokio",
  "tracing",
 ]
 
@@ -1687,9 +1689,10 @@ dependencies = [
  "chrono",
  "croner",
  "indexmap",
- "openssl",
  "serde_json",
  "sts-core",
+ "sts-crypto",
+ "sts-store",
  "tokio",
  "tracing",
 ]

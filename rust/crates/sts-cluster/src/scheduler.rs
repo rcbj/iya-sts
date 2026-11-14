@@ -30,13 +30,15 @@
 //! is `report`'s.
 
 use std::collections::HashMap;
+
+use indexmap::IndexMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock, Weak};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde_json::{json, Map, Value as Json};
-use sts_core::errors::codes;
+use sts_core::errors::{codes, ErrorCode};
 use sts_core::log::tag;
 use sts_core::realm::{self, Realm, RealmRegistry, DEFAULT_ID};
 
@@ -46,9 +48,14 @@ use crate::schedule::{
 };
 
 mod history;
+mod index;
+mod load;
 mod report;
 
 pub use history::Purged;
+pub use load::{least_loaded, InFlight, Loads, RuntimeLoad, WorkerLoad};
+
+use index::RunIndex;
 
 /// The store's key for the leader's own row.
 pub const LEADER_KEY: &str = "leader";
@@ -56,6 +63,37 @@ pub const PROCESS_PREFIX: &str = "process|";
 pub const COMMAND_PREFIX: &str = "command|";
 /// How many (job, realm) pairs a tick asks about before it yields.
 const TICK_YIELD_EVERY: usize = 50;
+/// `nice`'s top (`MAX_NICE`): the most patient a job can be.
+const MAX_NICE: f64 = 19.0;
+
+/// THE JOBS WHOSE WORK IS THE GLOBAL TIER'S (`persistence/tiers.js`'s
+/// `GLOBAL_JOBS`, #98, #695): deployed as cells, one cell runs each slot of
+/// these — claimed under [`GLOBAL_RUN_SCOPE`], which the tiered store keeps
+/// in the global database — rather than every cell rotating the same key.
+pub const GLOBAL_JOBS: &[&str] = &[
+    "signing.rotate",
+    "signing.retire",
+    "signing.rotate-now",
+    "krb5.krbtgt-rotate",
+    "krb5.krbtgt-rotate-now",
+    "oidfed.key-rotate",
+    "oidfed.key-rotate-now",
+    "oidfed.collection-crawl",
+    "oidfed.registrations-expire",
+    "federation.encryption-key-retire",
+    "federation.client-certificate-renew",
+    "spiffe.authority-rotation",
+    "spiffe.sigstore-tuf-refresh",
+    "oauth2.client-secret-expiry",
+    "oauth2.used-assertion-purge",
+    "saml2.sp-metadata-refresh",
+    "ssf.stream-maintenance",
+    "ssf.foreign-poll",
+    "persistence.minted-expiry-purge-global",
+];
+/// The claim scope a global job's run is claimed under when deployed as
+/// cells (`tiers.GLOBAL_RUN_SCOPE`).
+pub const GLOBAL_RUN_SCOPE: &str = "scheduler.run.global";
 
 /// Called by the cluster when this process gains or loses a lease.
 pub trait LeaseHandler: Send + Sync {
@@ -152,6 +190,54 @@ pub trait Clock: Send + Sync {
     }
 }
 
+/// What the DURABLE run store can say that the in-memory map cannot (#883):
+/// a start does not restore a finished interval run, so the row saying the
+/// current slot already ran is asked of the store (`readRuns`), and a
+/// finished body this process wrote is dropped from memory once written
+/// down (`persisted`, `dropHeld`). Absent, every row is kept and nothing is
+/// asked — a test's store, and development, where the map is the only copy.
+pub trait RunHistory: Send + Sync {
+    /// True when a finished interval run has a durable copy to drop from
+    /// memory against.
+    fn persisted(&self) -> bool;
+    /// The rows of `ids` in a realm, by run id, from the durable store.
+    /// `Ok(None)` is no store: an absence all the same. `Err` is a read
+    /// that failed, which holds back only the jobs it could not answer.
+    fn read_runs(
+        &self,
+        realm: &str,
+        ids: Vec<String>,
+    ) -> BoxFuture<'_, Result<Option<HashMap<String, Json>>, String>>;
+    /// Drops a held key without journalling a delete; false while the key
+    /// is still journalled (that absence would be written as a delete).
+    fn drop_held(&self, realm: &str, key: &str) -> bool;
+    /// Admits a row the tick read back, without journalling it.
+    fn restore_row(&self, realm: &str, key: &str, row: Json);
+    /// The newest run rows of the named realms, at most `limit` a realm,
+    /// for the page (#883's window, the store's sort index). `Ok(None)`
+    /// means the list is whatever the map holds.
+    fn newest_runs(
+        &self,
+        _realms: Vec<String>,
+        _limit: usize,
+    ) -> BoxFuture<'_, Result<Option<Vec<Json>>, String>> {
+        Box::pin(async { Ok(None) })
+    }
+}
+
+/// What the scheduler may stand on beyond [`Deps`], each optional: how busy
+/// the runtime is (#408), the durable run history (#883), and whether this
+/// service is deployed as cells (#98). Separate from [`Deps`] so that a
+/// composition root that has none of them builds the scheduler as before.
+#[derive(Clone, Default)]
+pub struct Extras {
+    pub loads: Option<Arc<dyn Loads>>,
+    pub history: Option<Arc<dyn RunHistory>>,
+    /// True when the service is deployed as more than one cell
+    /// (`common/cells.js`'s `isMulti()`), read when a run is claimed.
+    pub cells_multi: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+}
+
 /// What the scheduler stands on.
 pub struct Deps {
     pub cluster: Arc<dyn Cluster>,
@@ -245,12 +331,23 @@ struct State {
     clock_offset: f64,
     leader_loop: Option<tokio::task::JoinHandle<()>>,
     process_loop: Option<tokio::task::JoinHandle<()>>,
+    /// The rows a tick has to see (#623, #883).
+    index: RunIndex,
+    /// #408'S BOOKKEEPING, none of it a row: on the leader, runId → when a
+    /// due scheduled run was first held for load (the runId names the slot,
+    /// so a new slot is a new entry); runId → how long it was held, written
+    /// on its running row.
+    held_since: HashMap<String, f64>,
+    deferred_ms: HashMap<String, f64>,
+    /// A global job's run another cell holds the claim of: its runId, and
+    /// the instant that claim cannot outlast (`claimedByAnotherCell`).
+    claimed_by_another_cell: HashMap<String, f64>,
 }
 
 /// A refusal of a request to the scheduler, for a 4xx answer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Refusal {
-    pub error_code: &'static str,
+    pub error_code: ErrorCode,
     pub status: u16,
     pub why: String,
 }
@@ -267,17 +364,20 @@ pub struct Queued {
 pub struct Scheduler {
     schedules: RwLock<Schedules>,
     deps: Deps,
+    extras: Extras,
     state: Mutex<State>,
     tick_lock: tokio::sync::Mutex<()>,
     me: Weak<Scheduler>,
 }
 
 fn random_id(bytes: usize) -> String {
-    let mut buf = vec![0u8; bytes];
-    if openssl::rand::rand_bytes(&mut buf).is_err() {
-        tracing::error!("scheduler: no random bytes for an id");
+    match sts_crypto::random::random_bytes(bytes) {
+        Ok(buf) => URL_SAFE_NO_PAD.encode(buf),
+        Err(e) => {
+            tracing::error!("scheduler: no random bytes for an id: {}", e);
+            URL_SAFE_NO_PAD.encode(vec![0u8; bytes])
+        }
     }
-    URL_SAFE_NO_PAD.encode(buf)
 }
 
 fn num(row: &Json, key: &str) -> f64 {
@@ -325,9 +425,20 @@ pub fn summary_of(result: &Json) -> Json {
 
 impl Scheduler {
     pub fn new(schedules: Schedules, deps: Deps) -> Arc<Scheduler> {
+        Scheduler::with_extras(schedules, deps, Extras::default())
+    }
+
+    /// A scheduler that also stands on [`Extras`].
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn with_extras(
+        schedules: Schedules,
+        deps: Deps,
+        extras: Extras,
+    ) -> Arc<Scheduler> {
         Arc::new_cyclic(|me| Scheduler {
             schedules: RwLock::new(schedules),
             deps,
+            extras,
             state: Mutex::new(State {
                 started: Started::No,
                 leading: false,
@@ -342,6 +453,10 @@ impl Scheduler {
                 clock_offset: 0.0,
                 leader_loop: None,
                 process_loop: None,
+                index: RunIndex::default(),
+                held_since: HashMap::new(),
+                deferred_ms: HashMap::new(),
+                claimed_by_another_cell: HashMap::new(),
             }),
             tick_lock: tokio::sync::Mutex::new(()),
             me: me.clone(),
@@ -453,7 +568,80 @@ impl Scheduler {
             }
         }
         self.deps.rows.set(realm_id, &key, row.clone());
+        let realm = if realm_id.is_empty() {
+            DEFAULT_ID
+        } else {
+            realm_id
+        };
+        let mut st = self.state();
+        st.index.note(realm, &row);
+        // A finished interval body stays until the flush has it, then the
+        // tick drops it (#883). Dropping it while it is still journalled
+        // would delete the durable row.
+        if text(&row, "kind") == "run"
+            && FINAL.contains(&text(&row, "state"))
+            && self.schedules().expiry_of(&row).is_some()
+        {
+            st.index.held_finished.insert(index::key_of(realm, &key));
+        }
+        drop(st);
         row
+    }
+
+    /// A run row the store ADMITTED from outside this process — read back
+    /// at a start, or brought by the change log from another node — shown
+    /// to the index of the rows a tick has to see (#623, the store's
+    /// `watch()`). The store's reconcile hook calls this for every run row
+    /// it admits. A HOT PATH (every row restored or replicated): no
+    /// instrument.
+    pub fn note_admitted(&self, realm_id: &str, row: &Json) {
+        let realm = if realm_id.is_empty() {
+            DEFAULT_ID
+        } else {
+            realm_id
+        };
+        self.state().index.note(realm, row);
+    }
+
+    /// Whether a run row is a FINISHED INTERVAL RUN, whose body the front
+    /// does not keep (#883, `expiringRun()`): the store's restore drops it
+    /// once [`Scheduler::note_admitted`] has seen it. A hot path.
+    pub fn is_expiring_run(&self, row: &Json) -> bool {
+        text(row, "kind") == "run"
+            && FINAL.contains(&text(row, "state"))
+            && self.schedules().expiry_of(row).is_some()
+    }
+
+    /// The rows a tick has to see, read through the index (#623): each
+    /// entry's row as the store holds it now. An entry whose row has gone
+    /// or is no longer pending is dropped; one whose realm is not defined
+    /// here is kept and skipped.
+    fn pending(&self) -> Vec<(String, Json)> {
+        let entries: Vec<(String, (String, String))> = self
+            .state()
+            .index
+            .pending
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let mut out = Vec::new();
+        let mut gone = Vec::new();
+        for (key, (realm, run_id)) in entries {
+            if !self.realm_defined(&realm) {
+                continue;
+            }
+            match self.deps.rows.get(&realm, &run_id) {
+                Some(row) if index::is_pending(&row) => out.push((realm, row)),
+                _ => gone.push(key),
+            }
+        }
+        if !gone.is_empty() {
+            let mut st = self.state();
+            for key in gone {
+                st.index.pending.shift_remove(&key);
+            }
+        }
+        out
     }
 
     // ---------------------------------------------------------------------
@@ -556,6 +744,9 @@ impl Scheduler {
         if let Some(handle) = st.leader_loop.take() {
             handle.abort();
         }
+        // A NEW LEADER MEASURES ITS OWN HOLDS (#408).
+        st.held_since.clear();
+        st.deferred_ms.clear();
         tracing::warn!(
             "scheduler: this process ({}) no longer leads the scheduler. {} run(s) still going here are fenced \
              out from now on.",
@@ -587,10 +778,14 @@ impl Scheduler {
         let handle = tokio::spawn(async move {
             let mut delay = 0.0;
             loop {
-                tokio::time::sleep(std::time::Duration::from_millis(
-                    delay as u64,
-                ))
-                .await;
+                let woke = tokio::time::Instant::now()
+                    + std::time::Duration::from_millis(delay as u64);
+                tokio::time::sleep_until(woke).await;
+                // HOW LATE IT WOKE is the runtime's scheduling delay: the
+                // event-loop delay a Node worker reported (#408).
+                if let Some(loads) = &me.extras.loads {
+                    loads.note_lag(woke.elapsed().as_secs_f64() * 1000.0);
+                }
                 if !me.is_leading() {
                     return;
                 }
@@ -678,6 +873,9 @@ impl Scheduler {
             return Ok(());
         }
         let at = self.now_ms();
+        // THE CURRENT SLOT, LEARNT WITHOUT HOLDING THE HISTORY (#883).
+        self.recall_finished_slots(at).await;
+        self.release_finished_history();
         let mut line: Vec<(JobSpec, String, Json)> = Vec::new();
         for (realm, row) in self.queued_manual_runs() {
             if let Some(job) = self.job(text(&row, "jobId")) {
@@ -720,6 +918,14 @@ impl Scheduler {
                 {
                     continue;
                 }
+                if row.is_none() {
+                    let st = self.state();
+                    if st.index.finished_slots.contains(&run_id)
+                        || st.index.unknown_slots.contains(&run_id)
+                    {
+                        continue;
+                    }
+                }
                 let row = row.unwrap_or_else(|| {
                     json!({ "runId": run_id, "kind": "run", "jobId": job.id, "realm": realm_id,
                             "slot": slot, "dueAt": starts_at, "trigger": "schedule", "params": null,
@@ -747,19 +953,45 @@ impl Scheduler {
         let scheduled = scheduled.into_iter().map(|(j, r, row, _)| (j, r, row));
         let cap = self.schedules().max_concurrent_runs();
         self.state().waiting = false;
+        let mut seen = std::collections::HashSet::new();
         for (job, realm, row) in line.into_iter().chain(scheduled) {
             let run_id = text(&row, "runId").to_string();
+            seen.insert(run_id.clone());
             {
                 let mut st = self.state();
                 if st.in_flight.contains_key(&run_id) {
                     continue;
                 }
+                if st
+                    .claimed_by_another_cell
+                    .get(&run_id)
+                    .is_some_and(|until| *until > at)
+                {
+                    continue;
+                }
+                // THE CAP FIRST, THEN THE HOLD (#408): a run waiting for the
+                // cap is not asked about load, so the instant it was first
+                // held is kept.
                 if st.in_flight.len() as f64 >= cap {
                     st.waiting = true;
                     continue;
                 }
             }
+            // HELD FOR LOAD (#408), BEFORE THE CLAIM.
+            if self.hold_for_load(&job, &row) {
+                continue;
+            }
             self.attempt(job, realm, row);
+        }
+        // A HELD RUN NO TICK SAW AGAIN is forgotten: its slot moved on, its
+        // job was switched off, or its realm went.
+        {
+            let mut st = self.state();
+            st.held_since.retain(|id, _| seen.contains(id));
+            let in_flight: Vec<String> = st.in_flight.keys().cloned().collect();
+            st.deferred_ms
+                .retain(|id, _| seen.contains(id) || in_flight.contains(id));
+            st.claimed_by_another_cell.retain(|id, _| seen.contains(id));
         }
         self.abandon_orphans(at);
         Ok(())
@@ -775,17 +1007,36 @@ impl Scheduler {
     /// asked for — the proof that the runner's claim has lapsed — and, if
     /// the row is still that attempt, it is recorded ABANDONED
     /// (`STS-SCHED-0011`) and the claim given back. The slot is not run
-    /// again. Node keeps an index of the running rows; this port reads the
-    /// realm's rows, as its `queued_manual_runs()` does (#623's index is not
-    /// here yet).
+    /// again. It reads the index of the rows seen running (#623's
+    /// `runningRows`), never the history: an entry whose row has left the
+    /// running state is dropped here.
     fn abandon_orphans(&self, at: f64) {
         let mut found: Vec<(String, Json, JobSpec)> = Vec::new();
-        for realm_id in self.deps.realms.ids() {
-            for row in self.deps.rows.rows(&realm_id) {
-                if text(&row, "kind") != "run"
-                    || text(&row, "state") != "running"
-                    || text(&row, "trigger") != "schedule"
-                {
+        let entries: Vec<(String, (String, String))> = self
+            .state()
+            .index
+            .running
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (key, (realm_id, entry_run)) in entries {
+            if !self.realm_defined(&realm_id) {
+                continue;
+            }
+            {
+                let row = match self.deps.rows.get(&realm_id, &entry_run) {
+                    Some(row)
+                        if text(&row, "kind") == "run"
+                            && text(&row, "state") == "running" =>
+                    {
+                        row
+                    }
+                    _ => {
+                        self.state().index.running.shift_remove(&key);
+                        continue;
+                    }
+                };
+                if text(&row, "trigger") != "schedule" {
                     continue;
                 }
                 let run_id = text(&row, "runId").to_string();
@@ -833,7 +1084,7 @@ impl Scheduler {
                 let answer = me
                     .deps
                     .claims
-                    .claim(RUN_SCOPE, &run_id, &realm_id, 30_000.0)
+                    .claim(me.run_scope_of(&job), &run_id, &realm_id, 30_000.0)
                     .await;
                 match answer {
                     Ok(claim) => {
@@ -873,7 +1124,7 @@ impl Scheduler {
             assign(
                 stored,
                 json!({ "state": "abandoned", "endedAt": self.now_ms(),
-                        "errorCode": "STS-SCHED-0011",
+                        "errorCode": codes::STS_SCHED_0011.as_str(),
                         "why": format!("The attempt on {} (pid {}) stopped holding its claim before it finished, \
                                         and its slot passed; the job's next slot runs instead.", by,
                                        pid_text(stored)),
@@ -882,7 +1133,7 @@ impl Scheduler {
         );
         self.deps.audit.record(json!({
             "action": "scheduler.run", "protocol": "scheduler", "channel": "internal",
-            "target": job.id, "errorCode": "STS-SCHED-0011", "outcome": "failure", "summarised": true,
+            "target": job.id, "errorCode": codes::STS_SCHED_0011.as_str(), "outcome": "failure", "summarised": true,
             "summary": format!("Scheduler run {} of {} was abandoned: its node stopped and its slot passed.",
                                run_id, job.id),
             "detail": { "runId": run_id, "realm": realm_id, "node": stored.get("node"),
@@ -896,19 +1147,387 @@ impl Scheduler {
         );
     }
 
-    /// Every queued manual run in every realm, oldest first.
-    fn queued_manual_runs(&self) -> Vec<(String, Json)> {
-        let mut out = Vec::new();
-        for realm in self.deps.realms.ids() {
-            for row in self.deps.rows.rows(&realm) {
-                if text(&row, "kind") == "run"
-                    && text(&row, "trigger") == "manual"
-                    && matches!(text(&row, "state"), "queued" | "running")
-                {
-                    out.push((realm.clone(), row));
+    // ---------------------------------------------------------------------
+    // Where a run is claimed, where its body runs, and whether it waits.
+    // ---------------------------------------------------------------------
+
+    /// THE SCOPE A RUN IS CLAIMED UNDER (#98, `runScopeOf()`): a job whose
+    /// work is the global tier's claims its run under [`GLOBAL_RUN_SCOPE`]
+    /// when the service is deployed as cells, so one cell runs each slot.
+    fn run_scope_of(&self, job: &JobSpec) -> &'static str {
+        let multi = self.extras.cells_multi.as_ref().is_some_and(|f| f());
+        if multi && GLOBAL_JOBS.contains(&job.id.as_str()) {
+            GLOBAL_RUN_SCOPE
+        } else {
+            RUN_SCOPE
+        }
+    }
+
+    /// The loads a cluster run's body would meet (`runnerFor()` and its
+    /// `workers()`): none for a per-process job, a job on the front, or a
+    /// process with no [`Loads`] — then the run is "on the front" and never
+    /// held.
+    fn loads_for(&self, job: &JobSpec) -> Option<Vec<WorkerLoad>> {
+        if job.kind == Kind::PerProcess || job.on_front.is_some() {
+            return None;
+        }
+        let loads = self.extras.loads.as_ref()?.workers();
+        (!loads.is_empty()).then_some(loads)
+    }
+
+    /// Whether a worker is too busy for a patient run (`isHeavy()`): either
+    /// signal will do, and 0 switches a signal off (read directly — 0 is
+    /// legal, the root CLAUDE.md's `|| n` rule).
+    fn is_heavy(&self, load: &WorkerLoad) -> bool {
+        let s = self.schedules();
+        let busy = s.setting_number("scheduler.niceBusyThreshold");
+        let lag = s.setting_number("scheduler.niceLagMs");
+        (busy > 0.0 && load.in_flight >= busy)
+            || (lag > 0.0 && load.lag_ms.is_some_and(|l| l >= lag))
+    }
+
+    /// The longest a run of this job is held (`holdBoundMs()`): its share
+    /// of `scheduler.niceMaxDeferS`, and never more than half its interval
+    /// — a job held longer could meet its next slot still waiting.
+    fn hold_bound_ms(&self, job: &JobSpec, nice: f64) -> f64 {
+        let s = self.schedules();
+        let max = s.setting_number("scheduler.niceMaxDeferS").max(0.0) * 1000.0;
+        let mut bound = (max * nice.min(MAX_NICE) / MAX_NICE).floor();
+        if let Some(slot) = s.slot_at(job, self.now_ms() as i64) {
+            if let (Some(next), Some(start)) = (slot.next_at, slot.starts_at) {
+                if next > start {
+                    bound = bound.min(((next - start) / 2.0).floor());
                 }
             }
         }
+        bound
+    }
+
+    /// A RUN HELD FOR LOAD, AND NEVER FOR LONG — "nice" (#408,
+    /// `holdForLoad()`). A due SCHEDULED run waits while even the
+    /// least-loaded worker is heavy, for at most [`Self::hold_bound_ms`]
+    /// measured from when it was FIRST held; past that it runs whatever the
+    /// load, because a job that never ran because the service was always
+    /// busy would be a security control silently off. Never held: a manual
+    /// run, an on-demand job, a job of nice 0, a job on the front, and every
+    /// run where there is no [`Loads`]. The hold happens BEFORE the claim,
+    /// so a held run is still due at the next tick.
+    fn hold_for_load(&self, job: &JobSpec, row: &Json) -> bool {
+        let nice = job.nice_of();
+        if text(row, "trigger") != "schedule"
+            || job.manual_only()
+            || nice <= 0.0
+        {
+            return false;
+        }
+        let Some(loads) = self.loads_for(job) else {
+            return false;
+        };
+        let best_id = least_loaded(&loads);
+        let Some(best) = loads.iter().find(|w| Some(w.id) == best_id) else {
+            return false;
+        };
+        let run_id = text(row, "runId").to_string();
+        let now = self.deps.clock.now();
+        let held = self.state().held_since.get(&run_id).copied();
+        let job_id = &job.id;
+        let lag_clause = best
+            .lag_ms
+            .map_or(String::new(), |l| format!(", a {} ms loop delay", l));
+        if !self.is_heavy(best) {
+            if let Some(since) = held {
+                let mut st = self.state();
+                st.held_since.remove(&run_id);
+                st.deferred_ms
+                    .insert(run_id.clone(), (now - since).max(0.0));
+                drop(st);
+                tracing::info!(
+                    "scheduler: run {} of {} was held {} ms for load and now runs.",
+                    run_id,
+                    job_id,
+                    now - since
+                );
+            }
+            return false;
+        }
+        let bound = self.hold_bound_ms(job, nice);
+        let since = held.unwrap_or(now);
+        if held.is_none() {
+            self.state().held_since.insert(run_id.clone(), since);
+        }
+        let waited = now - since;
+        if waited >= bound {
+            let mut st = self.state();
+            st.held_since.remove(&run_id);
+            st.deferred_ms.insert(run_id.clone(), waited.max(0.0));
+            drop(st);
+            // NOT A FAILURE, so no code: the bound doing its job.
+            tracing::info!(
+                "scheduler: run {} of {} runs although every request worker is busy (the least loaded has {} \
+                 in flight{}): it was held {} ms, its bound (nice {}).",
+                run_id,
+                job_id,
+                best.in_flight,
+                lag_clause,
+                waited,
+                nice
+            );
+            return false;
+        }
+        if held.is_none() {
+            tracing::info!(
+                "scheduler: run {} of {} is held for load: the least loaded request worker has {} in \
+                 flight{}. It runs when one is lighter, or in {} ms at most (nice {}).",
+                run_id,
+                job_id,
+                best.in_flight,
+                lag_clause,
+                bound,
+                nice
+            );
+        }
+        true
+    }
+
+    // ---------------------------------------------------------------------
+    // The current slots, learnt without holding the history (#883).
+    // ---------------------------------------------------------------------
+
+    /// Each realm's current and previous interval slot ids, ONE GROUP PER
+    /// JOB, so a read that fails can be asked again job by job
+    /// (`slotIdsAt()`). A cron job's rows have no expiry and stay restored,
+    /// so it is not asked.
+    fn slot_ids_at(&self, at: f64) -> IndexMap<String, Vec<Vec<String>>> {
+        let mut by_realm: IndexMap<String, Vec<Vec<String>>> = IndexMap::new();
+        for job in self.jobs_of(Kind::Cluster) {
+            let slot = {
+                let s = self.schedules();
+                if job.cron().is_some()
+                    || job.manual_only()
+                    || !s.service_off_reason(&job).is_empty()
+                {
+                    continue;
+                }
+                s.slot_at(&job, at as i64)
+            };
+            let Some(Slot { slot: Some(n), .. }) = slot else {
+                continue;
+            };
+            if n < 0 {
+                continue;
+            }
+            for realm_id in self.realm_ids_for(&job) {
+                if !self.schedules().own_off_reason(&job, &realm_id).is_empty()
+                {
+                    continue;
+                }
+                let mut ids = vec![run_id_for(&job.id, &realm_id, n)];
+                if n > 0 {
+                    ids.push(run_id_for(&job.id, &realm_id, n - 1));
+                }
+                by_realm.entry(realm_id).or_default().push(ids);
+            }
+        }
+        by_realm
+    }
+
+    /// WHAT THE STORE SAYS OF THE CURRENT SLOTS, ONE JOB'S FAILURE ITS OWN
+    /// (#883 and its review, `recallFinishedSlots()`). An absence is
+    /// remembered whatever said it; a read that fails holds back its own
+    /// jobs, not the tick: a realm's batch that fails is asked again one job
+    /// at a time, a job whose read still fails is held back this tick
+    /// (neither run twice nor taken as finished), and two job reads failing
+    /// in a row is an outage — the rest of the tick asks nothing more.
+    async fn recall_finished_slots(&self, at: f64) {
+        self.state().index.unknown_slots.clear();
+        let needed = self.slot_ids_at(at);
+        let keep: std::collections::HashSet<String> =
+            needed.values().flatten().flatten().cloned().collect();
+        self.state().index.prune_slots(&keep);
+        // No reader: the map is the only copy. Do not touch it here.
+        let Some(history) = self.extras.history.clone() else {
+            return;
+        };
+        let mut held_back: Vec<String> = Vec::new();
+        let mut first_why = String::new();
+        let mut outage = false;
+        for (realm_id, groups) in needed {
+            let groups: Vec<Vec<String>> = {
+                let st = self.state();
+                groups
+                    .into_iter()
+                    .map(|ids| {
+                        ids.into_iter()
+                            .filter(|id| {
+                                !(self.deps.rows.get(&realm_id, id).is_some()
+                                    || st.index.finished_slots.contains(id)
+                                    || st.index.slot_asked.contains(id))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .filter(|ids| !ids.is_empty())
+                    .collect()
+            };
+            if groups.is_empty() {
+                continue;
+            }
+            if outage {
+                for ids in &groups {
+                    self.hold_back_slot(ids, &mut held_back);
+                }
+                continue;
+            }
+            let ask: Vec<String> = groups.iter().flatten().cloned().collect();
+            match history.read_runs(&realm_id, ask.clone()).await {
+                Ok(got) => {
+                    self.learn_slots(&realm_id, &ask, got);
+                    continue;
+                }
+                Err(e) => {
+                    if first_why.is_empty() {
+                        first_why = e.trim_end_matches('.').to_string();
+                    }
+                }
+            }
+            if groups.len() == 1 {
+                self.hold_back_slot(&groups[0], &mut held_back);
+                continue;
+            }
+            let mut failed_in_a_row = 0;
+            for ids in &groups {
+                if failed_in_a_row >= 2 {
+                    self.hold_back_slot(ids, &mut held_back);
+                    continue;
+                }
+                match history.read_runs(&realm_id, ids.clone()).await {
+                    Ok(got) => {
+                        self.learn_slots(&realm_id, ids, got);
+                        failed_in_a_row = 0;
+                    }
+                    Err(e) => {
+                        if first_why.is_empty() {
+                            first_why = e.trim_end_matches('.').to_string();
+                        }
+                        failed_in_a_row += 1;
+                        self.hold_back_slot(ids, &mut held_back);
+                    }
+                }
+            }
+            if failed_in_a_row >= 2 {
+                outage = true;
+            }
+        }
+        if !held_back.is_empty() {
+            tracing::error!(
+                "{}scheduler: the store could not say whether {} run(s) of the current slot had already run \
+                 ({}), so they were held back this tick and are asked about again at the next; every other \
+                 run went on. Held back: {}{}.",
+                tag(codes::STS_SCHED_0023),
+                held_back.len(),
+                first_why,
+                held_back.iter().take(10).cloned().collect::<Vec<_>>().join(", "),
+                if held_back.len() > 10 { ", and more" } else { "" }
+            );
+        }
+    }
+
+    /// What one read answered about some slot ids (`learnSlots()`). `None`
+    /// is no store: an absence all the same, remembered for the slot.
+    fn learn_slots(
+        &self,
+        realm_id: &str,
+        ask: &[String],
+        got: Option<HashMap<String, Json>>,
+    ) {
+        let Some(got) = got else {
+            let mut st = self.state();
+            for id in ask {
+                st.index.slot_asked.insert(id.clone());
+            }
+            return;
+        };
+        for id in ask {
+            match got.get(id) {
+                None => {
+                    self.state().index.slot_asked.insert(id.clone());
+                }
+                Some(row)
+                    if text(row, "kind") == "run"
+                        && FINAL.contains(&text(row, "state")) =>
+                {
+                    let mut st = self.state();
+                    st.index.finished_slots.insert(id.clone());
+                    st.index.note_latest(realm_id, row);
+                }
+                Some(row) => self.admit_recalled(realm_id, id, row),
+            }
+        }
+    }
+
+    /// A running or queued row the read found (`admitRecalled()`): not
+    /// journalled, it is already in the store.
+    fn admit_recalled(&self, realm_id: &str, run_id: &str, row: &Json) {
+        let mut copy = row.clone();
+        if text(&copy, "runId").is_empty() {
+            copy = assign(&copy, json!({ "runId": run_id }));
+        }
+        match &self.extras.history {
+            Some(h) => h.restore_row(realm_id, run_id, copy.clone()),
+            None => self.deps.rows.set(realm_id, run_id, copy.clone()),
+        }
+        self.state().index.note(realm_id, &copy);
+    }
+
+    /// One job's current slot held back for this tick (`holdBackSlot()`).
+    /// The previous slot's id only feeds the page, so it is neither held nor
+    /// named.
+    fn hold_back_slot(&self, ids: &[String], held_back: &mut Vec<String>) {
+        if let Some(first) = ids.first() {
+            self.state().index.unknown_slots.insert(first.clone());
+            held_back.push(first.clone());
+        }
+    }
+
+    /// A finished interval body this process wrote, once the flush has it
+    /// (`releaseFinishedHistory()`). A key still journalled stays.
+    fn release_finished_history(&self) {
+        let Some(history) = self.extras.history.clone() else {
+            return;
+        };
+        if !history.persisted() {
+            return;
+        }
+        let keys: Vec<String> =
+            self.state().index.held_finished.iter().cloned().collect();
+        for key in keys {
+            let Some((realm_id, run_id)) = key.split_once('\n') else {
+                self.state().index.held_finished.shift_remove(&key);
+                continue;
+            };
+            if self.deps.rows.get(realm_id, run_id).is_none()
+                || history.drop_held(realm_id, run_id)
+            {
+                self.state().index.held_finished.shift_remove(&key);
+            }
+        }
+    }
+
+    /// The latest finished run of each job in each realm the index holds
+    /// (#883's `latestRun`), for the page's last-run figure.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn latest_runs(&self) -> Vec<Json> {
+        self.state().index.latest_run.values().cloned().collect()
+    }
+
+    /// Every queued manual run in every realm, oldest first — from the
+    /// index of the rows a tick has to see (#623), never a read of the
+    /// history.
+    fn queued_manual_runs(&self) -> Vec<(String, Json)> {
+        let mut out: Vec<(String, Json)> = self
+            .pending()
+            .into_iter()
+            .filter(|(_, row)| text(row, "kind") == "run")
+            .collect();
         out.sort_by(|a, b| {
             num(&a.1, "queuedAt").total_cmp(&num(&b.1, "queuedAt"))
         });
@@ -933,15 +1552,30 @@ impl Scheduler {
         let Some(me) = self.arc() else {
             return;
         };
+        let scope = self.run_scope_of(&job);
         tokio::spawn(async move {
             let answer = me
                 .deps
                 .claims
-                .claim(RUN_SCOPE, &run_id, &realm_id, timeout_ms + 1000.0)
+                .claim(scope, &run_id, &realm_id, timeout_ms + 1000.0)
                 .await;
             match answer {
                 Err(refused) => {
                     me.state().in_flight.remove(&run_id);
+                    // THE CELL THAT LOSES A GLOBAL JOB'S CLAIM NEVER SEES THE
+                    // RUN END (#98): the winner writes the run's row in its
+                    // OWN database, so here it stays due, first in every
+                    // tick's line, each ask holding a place under the cap.
+                    // The claim cannot be won before its lifetime ends, so
+                    // it is not asked for until then.
+                    if matches!(refused, ClaimRefused::Held)
+                        && scope != RUN_SCOPE
+                    {
+                        let until = me.now_ms() + timeout_ms + 1000.0;
+                        me.state()
+                            .claimed_by_another_cell
+                            .insert(run_id.clone(), until);
+                    }
                     if let ClaimRefused::Store(why) = refused {
                         tracing::warn!(
                             "{}scheduler: the claim store could not be asked about run {} of {} ({}). It is not \
@@ -1012,7 +1646,7 @@ impl Scheduler {
                 assign(
                     &stored,
                     json!({ "runId": format!("{}:{}", run_id, attempt), "state": "abandoned",
-                            "endedAt": self.now_ms(), "errorCode": "STS-SCHED-0011",
+                            "endedAt": self.now_ms(), "errorCode": codes::STS_SCHED_0011.as_str(),
                             "why": format!("The attempt on {} (pid {}) stopped holding its claim before it \
                                             finished; attempt {} took it over.", by,
                                            stored.get("pid").cloned().unwrap_or(Json::Null), attempt + 1.0),
@@ -1021,20 +1655,26 @@ impl Scheduler {
             );
             self.deps.audit.record(json!({
                 "action": "scheduler.run", "protocol": "scheduler", "channel": "internal",
-                "target": job.id, "errorCode": "STS-SCHED-0011", "outcome": "failure", "summarised": true,
+                "target": job.id, "errorCode": codes::STS_SCHED_0011.as_str(), "outcome": "failure", "summarised": true,
                 "summary": format!("Scheduler run {} of {} was abandoned and taken over.", run_id, job.id),
                 "detail": { "runId": run_id, "realm": realm_id, "node": stored.get("node"),
                             "pid": stored.get("pid") } }));
         }
+        // WHERE THE BODY RUNS (#408), decided now rather than at the tick,
+        // so the load it is decided on is the load the run meets. In Rust a
+        // body is always a task on the runtime's worker threads; `worker` is
+        // written when the runtime said how busy they are, as Node writes it
+        // for a body handed to a worker, and `front` otherwise.
+        let target = self.loads_for(&job).and_then(|l| least_loaded(&l));
+        let held_ms = self.state().deferred_ms.remove(&run_id).unwrap_or(0.0);
         let running = assign(
             &stored,
             json!({ "state": "running", "fenceAt": fence, "attempt": num(&stored, "attempt") + 1.0,
                     "node": node, "nodeName": name, "host": self.deps.host, "pid": self.deps.pid,
                     "startedAt": self.now_ms(), "endedAt": 0, "errorCode": "", "why": "",
                     "result": null, "takenOver": text(&stored, "state") == "running",
-                    // Where the body ran (#408): always here, which is what
-                    // Node writes for a run it has no worker for.
-                    "ranIn": "front", "deferredMs": 0 }),
+                    "ranIn": if target.is_some() { "worker" } else { "front" },
+                    "deferredMs": held_ms }),
         );
         self.write_row(&realm_id, running.clone());
         let flight = Arc::new(Flight::new(&realm_id));
@@ -1183,7 +1823,7 @@ impl Scheduler {
                         span(timeout_ms)
                     )),
                 );
-                "STS-SCHED-0002"
+                codes::STS_SCHED_0002.as_str()
             }
             Ok(Err(why)) => {
                 fields.insert("state".into(), json!("failed"));
@@ -1195,7 +1835,7 @@ impl Scheduler {
                         why
                     }),
                 );
-                "STS-SCHED-0001"
+                codes::STS_SCHED_0001.as_str()
             }
             Ok(Ok(result)) => {
                 fields.insert("state".into(), json!("succeeded"));
@@ -1265,6 +1905,7 @@ impl Scheduler {
         let suffix = format!("|{}", realm_id);
         st.process_slots.retain(|k, _| !k.ends_with(&suffix));
         st.quiet_recorded.retain(|k, _| !k.ends_with(&suffix));
+        st.index.forget_realm(realm_id);
         fenced
     }
 
@@ -1366,7 +2007,7 @@ impl Scheduler {
                     job.id,
                     e
                 );
-                ("failed", "STS-SCHED-0015", e, Json::Null)
+                ("failed", codes::STS_SCHED_0015.as_str(), e, Json::Null)
             }
         };
         if job.quiet {
@@ -1410,7 +2051,7 @@ impl Scheduler {
     ) -> Result<Queued, Refusal> {
         let Some(job) = self.job(job_id) else {
             return Err(Refusal {
-                error_code: "STS-SCHED-0004",
+                error_code: codes::STS_SCHED_0004,
                 status: 404,
                 why: format!(
                     "No job \"{}\" is registered. The jobs are {}.",
@@ -1421,7 +2062,7 @@ impl Scheduler {
         };
         if !job.manual || job.kind == Kind::PerProcess {
             return Err(Refusal {
-                error_code: "STS-SCHED-0005",
+                error_code: codes::STS_SCHED_0005,
                 status: 400,
                 why: format!(
                     "{} runs on its schedule only{}",
@@ -1445,7 +2086,7 @@ impl Scheduler {
             && self.deps.realms.get(&realm_id).is_none()
         {
             return Err(Refusal {
-                error_code: "STS-SCHED-0012",
+                error_code: codes::STS_SCHED_0012,
                 status: 400,
                 why: format!("There is no realm \"{}\".", realm_id),
             });
@@ -1453,7 +2094,7 @@ impl Scheduler {
         let off = self.schedules().off_reason(&job, &realm_id);
         if !off.is_empty() {
             return Err(Refusal {
-                error_code: "STS-SCHED-0006",
+                error_code: codes::STS_SCHED_0006,
                 status: 400,
                 why: format!("{} is off: {}.", job.id, off),
             });
@@ -1507,7 +2148,7 @@ impl Scheduler {
     ) -> Result<Json, Refusal> {
         if !self.deps.cluster.enabled() {
             return Err(Refusal {
-                error_code: "STS-SCHED-0010",
+                error_code: codes::STS_SCHED_0010,
                 status: 400,
                 why: "This service is not clustered, so there is no other node to hand the scheduler to.".to_string(),
             });
@@ -1536,14 +2177,15 @@ impl Scheduler {
 
     /// True when this process stood down, so the tick stops there.
     async fn obey_commands(&self) -> bool {
+        // From the index (#623): this read the default realm's whole
+        // partition — every service job's run history — at every tick.
         let queued: Vec<Json> = self
-            .deps
-            .rows
-            .rows(DEFAULT_ID)
+            .pending()
             .into_iter()
-            .filter(|r| {
-                text(r, "kind") == "command" && text(r, "state") == "queued"
+            .filter(|(realm, r)| {
+                realm == DEFAULT_ID && text(r, "kind") == "command"
             })
+            .map(|(_, r)| r)
             .collect();
         if queued.is_empty() {
             return false;
