@@ -377,15 +377,31 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   // How many modes a full run does. Read from the file that defines them
   // rather than written down here, for the reason that file gives about
   // itself: a fourth mode must not leave this arithmetic quietly stale.
+  // Six since 2026-11-14 (rcbj: all six in the standard run).
   const declared = /STS_ALL_MODES=\(([^)]*)\)/.exec(modes);
-  const modeCount = declared
-    ? declared[1].split(/\s+/).filter(function (w) { return w.trim(); }).length
-    : 3;
-  t.check(modeCount >= 1,
+  const allModes = declared
+    ? declared[1].split(/\s+/).filter(function (w) { return w.trim(); })
+    : [];
+  t.check(allModes.length === 6,
           'the mode list is readable from tests/tools/modes.sh (' +
-            modeCount + ' mode(s))',
-          'the budget below is per mode, so a fourth mode changes it and ' +
+            allModes.length + ' mode(s): ' + allModes.join(', ') + ')',
+          'the budget below is per mode, so a seventh mode changes it and ' +
           'this file must not be the place that goes stale');
+
+  // THE TEARDOWNS ARE THE `tests` JOB'S MODES, not a bare run's: that job
+  // names `--modes=`, so it pays one teardown per mode it names plus the
+  // one before them. With no `--modes=` it is a bare run, all six.
+  const testsModes = /run-tests\.sh[^\n]*--modes=([a-z,-]+)/.exec(testsJob);
+  const modeCount = testsModes
+    ? testsModes[1].split(',').filter(function (w) { return w; }).length
+    : allModes.length;
+  t.check(!testsModes || testsModes[1].split(',').every(function (m) {
+    return allModes.indexOf(m) >= 0;
+  }),
+          'every mode the `tests` job names is a mode of a bare run (' +
+            (testsModes ? testsModes[1] : 'a bare run') + ')',
+          'a CI job naming a mode the file no longer defines runs nothing ' +
+          'for it');
 
   // The `tests` job (sliced above), which is the one that runs this
   // launcher. The coverage job runs ./run-coverage.sh, has a number of its

@@ -73,20 +73,36 @@
 #   ./run-tests.sh --no-build                 # reuse the images already built
 #   ./run-tests.sh --keep-stack               # leave the LAST mode's stack
 #                                             # running, to look at
+#   ./run-tests.sh                            # ALL SIX modes of
+#                                             # tests/tools/modes.sh, in order:
+#                                             # memory, single-node, mariadb,
+#                                             # cluster, cells, fuzz
+#                                             # (2026-11-14; about eleven hours
+#                                             # on the development laptop)
 #   ./run-tests.sh --modes=single-node        # one mode of tests/tools/modes.sh
-#                                             # rather than all three (memory,
-#                                             # single-node, cluster), in that
+#                                             # rather than all six, in that
 #                                             # file's own spelling
 #   ./run-tests.sh --modes=memory,single-node # what CI's `tests` job runs; its
-#                                             # `cluster` job runs the third
-#                                             # (2026-09-21)
+#                                             # `cluster` job runs the cluster
+#                                             # mode (2026-09-21)
+#   ./run-tests.sh --modes=fuzz               # the Schemathesis gate (#1299):
+#                                             # the mode runs its own jobs only
+#                                             # (modes.sh, stsModeJobFilter()),
+#                                             # with no --only typed
 #   ./run-tests.sh --modes=cells --only=sts_cells --no-browser
+#                                             # the cells jobs alone; an --only
+#                                             # narrows every mode, and a mode
+#                                             # with a filter of its own runs
+#                                             # what both keep (none: skipped,
+#                                             # with the reason)
+#   ./run-tests.sh --modes=cluster-portable   # by name only: `cluster` on the
+#                                             # portable statements (#677)
 #   ./run-tests.sh --modes=schema-validation  # every answer held to its model,
 #                                             # one container, every deployment
-#                                             # the fourth mode, two cells of
-#                                             # one service (#98): run only
-#                                             # when named, never by a bare
-#                                             # run or by CI
+#                                             # (#1353); by name only
+#   ./run-tests.sh --plan                     # print what a run of these
+#                                             # arguments would do, mode by
+#                                             # mode, and start nothing
 #   ./run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -185,17 +201,18 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-run-tests.yml}"
 CLUSTER_COMPOSE_FILE="tests/docker-compose-run-tests-cluster.yml"
 # THE `cells` MODE'S LAYER (#98, 2026-09-28): a second cell, a global-tier
 # database, cell B's own database and the cell keys, over the same file. Read
-# only in that mode, which runs only when named (`--modes=cells`); its header
-# argues the stack and tests/tools/modes.sh the mode.
+# only in that mode (in a bare run since 2026-11-14); its header argues the
+# stack and tests/tools/modes.sh the mode.
 CELLS_COMPOSE_FILE="tests/docker-compose-run-tests-cells.yml"
 # THE `mariadb` MODE'S LAYER (#677): the store on the stack's MariaDB server,
-# its schema built by a one-shot from mariadb/schema.sql. Only in that mode,
-# which runs only when named (`--modes=mariadb`); its header argues it.
+# its schema built by a one-shot from mariadb/schema.sql. Only in that mode
+# (in a bare run since 2026-11-14); its header argues it.
 MARIADB_COMPOSE_FILE="tests/docker-compose-run-tests-mariadb.yml"
 # THE `fuzz` MODE'S LAYER (#1299): the stack's network made `internal` — no
 # egress — so Schemathesis can throw any input at the service without anything
-# leaving the device. Only in that mode, which runs only when named
-# (`--modes=fuzz --only=schemathesis`); its header argues it.
+# leaving the device. Only in that mode (in a bare run since 2026-11-14, last,
+# with its own job filter: tests/tools/modes.sh, stsModeJobFilter()); its
+# header argues it.
 FUZZ_COMPOSE_FILE="tests/docker-compose-run-tests-fuzz.yml"
 COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
@@ -387,6 +404,7 @@ STS_SAML_PEERS_TIMEOUT="${STS_SAML_PEERS_TIMEOUT:-900}"
 
 BUILD=1
 KEEP_STACK=0
+PLAN_ONLY=0
 TARGET=local
 MODES_GIVEN=0
 STS_TEST_ARGS="${STS_TEST_ARGS:-}"
@@ -423,13 +441,18 @@ do
   case "$1" in
     --no-build)   BUILD=0 ;;
     --keep-stack) KEEP_STACK=1 ;;
+    # WHAT A RUN WOULD DO, AND NOTHING ELSE (2026-11-14): the modes, each
+    # one's bound, layers and job filter, and which would be skipped. It
+    # reads modes.sh and this file and touches no docker — so it is safe
+    # beside somebody else's run, which a second stack is not.
+    --plan)       PLAN_ONLY=1 ;;
     # WHICH MODES TO RUN, AND THIS LAUNCHER LACKED IT UNTIL 2026-09-09.
     # ./local-run-tests.sh (removed 2026-09-16) had `--modes=` since the
     # matrix arrived, and the asymmetry cost an afternoon: the failure being
     # chased was in `dispatch`, on a listener only THIS stack publishes, so
     # reproducing it meant running `memory` and `postgres` first every time.
     # It took the other launcher's spelling and meaning. A run with no
-    # `--modes=` is unchanged: all three, in order.
+    # `--modes=` is STS_ALL_MODES in order: all six since 2026-11-14.
     --modes=*)    IFS=',' read -r -a RUN_MODES <<< "${1#--modes=}"
                   MODES_GIVEN=1 ;;
     # WHERE THE SUITE RUNS (2026-09-21) — see *THE TARGET* below.
@@ -449,6 +472,156 @@ then
   exec "${CURRENT_DIR}/tests/schema-validation/run.sh" ${STS_TEST_ARGS}
 fi
 STS_TEST_ARGS="${STS_TEST_ARGS# }"
+
+# ---------------------------------------------------------------------------
+# A MODE'S OWN JOB FILTER, AND THE OPERATOR'S (2026-11-14).
+#
+# rcbj put all six modes into a bare run, and `fuzz` runs only its own jobs.
+# Typing `--only=schemathesis` would narrow EVERY mode of the invocation, so
+# the launcher hands that mode's filter (modes.sh, stsModeJobFilter()) to the
+# runner as `--mode-only=` for that mode alone: run-report.js keeps a job only
+# if the operator's --only (when there is one) AND the mode's filter both
+# keep it. A mode with no filter is handed nothing and runs what --only says.
+#
+# THE INTERSECTION CAN BE EMPTY — `./run-tests.sh --only=crypto` asks fuzz for
+# a crypto job that is not Schemathesis — and starting the isolated stack to
+# have the runner refuse an empty list would be a failed mode for a run that
+# asked for nothing wrong. So the launcher works it out first, over the same
+# names the runner chooses from (tests/*.js and MANIFEST.js's `file:`
+# entries; under --conformance-only, the conformance entries alone), and SKIPS
+# the mode with the reason. The runner's own "No jobs to run" stays the
+# backstop for what this cannot see (--lanes, --protocol=off).
+# ---------------------------------------------------------------------------
+
+# The operator's --only fragments, one per line: every `--only=` value split
+# at its commas, and every bare word, which run-report.js reads as one too.
+operatorOnlyFragments()
+{
+  local word
+  # shellcheck disable=SC2086
+  for word in ${STS_TEST_ARGS};
+  do
+    case "${word}" in
+      --only=*) printf '%s\n' "${word#--only=}" | tr ',' '\n' ;;
+      -*)       ;;
+      *)        printf '%s\n' "${word}" ;;
+    esac
+  done | sed '/^$/d'
+}
+
+# The job names the runner chooses from: the in-process files and the
+# protocol jobs' manifest entries — under `--conformance-only`, which keeps
+# no in-process file, only the entries marked `conformance: true`. A
+# superset is harmless here: it can only make this say "something is left"
+# where the runner then says otherwise.
+candidateJobFiles()
+{
+  local f manifest="${CURRENT_DIR}/tests/protocol/MANIFEST.js"
+  if [[ " ${STS_TEST_ARGS} " == *" --conformance-only "* ]];
+  then
+    awk '/\{ *file: *'"'"'/ { buf = ""; on = 1 }
+         on { buf = buf $0 " " }
+         on && /\}/ {
+           if (buf ~ /conformance: *true/ &&
+               match(buf, /file: *'"'"'[^'"'"']*'"'"'/)) {
+             s = substr(buf, RSTART, RLENGTH)
+             sub(/file: *'"'"'/, "", s); sub(/'"'"'$/, "", s); print s
+           }
+           on = 0
+         }' "${manifest}"
+    return 0
+  fi
+  for f in "${CURRENT_DIR}"/tests/*.js;
+  do
+    basename "${f}"
+  done
+  sed -n "s/.*file: *'\([^']*\.js\)'.*/\1/p" "${manifest}"
+}
+
+# 0 when the mode's own filter and the operator's narrowing keep no job at
+# all, which is the mode to skip; 1 otherwise (no filter, or something is
+# kept).
+modeFilterLeavesNothing()
+{
+  local mode="$1" filter frag job op ops
+  filter="$(stsModeJobFilter "${mode}")"
+  [ -z "${filter}" ] && return 1
+  ops="$(operatorOnlyFragments)"
+  # No --only: the mode's own filter decides, unless --conformance-only has
+  # emptied the candidates, which the loop below finds as it does an --only.
+  if [ -z "${ops}" ];
+  then
+    ops="${filter//,/$'\n'}"
+  fi
+  while IFS= read -r job;
+  do
+    for frag in ${filter//,/ };
+    do
+      case "${job}" in
+        *"${frag}"*) ;;
+        *) continue ;;
+      esac
+      while IFS= read -r op;
+      do
+        case "${job}" in
+          *"${op}"*) return 1 ;;
+        esac
+      done <<< "${ops}"
+    done
+  done < <(candidateJobFiles)
+  return 0
+}
+
+# --plan: the run these arguments make, and nothing started. The bounds are
+# the mode's own plus what the launcher adds for the conformance suite and
+# the SAML peers, the same arithmetic as the loop below.
+printPlan()
+{
+  local mode bound filter total=0
+  echo "Modes, in order (${#RUN_MODES[@]}):"
+  for mode in "${RUN_MODES[@]}";
+  do
+    if ! stsModeEnv "${mode}" > /dev/null;
+    then
+      exit 2
+    fi
+    bound="$(stsModeTimeout "${mode}")"
+    if printf ',%s,' "${STS_TEST_CONFORMANCE_MODES}" | grep -q ",${mode},";
+    then
+      bound=$(( bound + STS_CONFORMANCE_TIMEOUT ))
+    fi
+    if printf ',%s,' "${STS_TEST_SAML_PEERS_MODES}" | grep -q ",${mode},";
+    then
+      bound=$(( bound + STS_SAML_PEERS_TIMEOUT ))
+    fi
+    filter="$(stsModeJobFilter "${mode}")"
+    echo ""
+    echo "  ${mode}: $(stsModeDescription "${mode}")"
+    echo "    bound:  ${bound}s"
+    printf '    layers: %s' "${COMPOSE_FILE}"
+    stsModeIsCluster "${mode}" && printf ' + %s' "${CLUSTER_COMPOSE_FILE}"
+    stsModeIsMariadb "${mode}" && printf ' + %s' "${MARIADB_COMPOSE_FILE}"
+    stsModeIsFuzz "${mode}" && printf ' + %s' "${FUZZ_COMPOSE_FILE}"
+    stsModeIsCells "${mode}" && printf ' + %s' "${CELLS_COMPOSE_FILE}"
+    echo ""
+    echo "    jobs:   ${filter:-every job}${STS_TEST_ARGS:+ (narrowed by: ${STS_TEST_ARGS})}"
+    if modeFilterLeavesNothing "${mode}";
+    then
+      echo "    SKIPPED: its own filter (${filter}) and the run's --only or --conformance-only keep no job"
+    else
+      total=$(( total + bound ))
+    fi
+  done
+  echo ""
+  echo "Worst case: ${total}s of mode bounds, plus the build and one" \
+       "teardown (${STS_TEARDOWN_TIMEOUT}s) per mode."
+}
+
+if [ "${PLAN_ONLY}" = "1" ];
+then
+  printPlan
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # THE TARGET: WHERE THE SUITE RUNS (2026-09-21).
@@ -1393,6 +1566,65 @@ schedulerTakeover()
   return "${rc}"
 }
 
+# ---------------------------------------------------------------------------
+# WHAT A `down` LEFT OF THIS PROJECT, REMOVED (2026-11-14).
+#
+# A bare run is six modes on four different sets of compose files since that
+# day, and `down` removes only what the files it is given declare — and only
+# when it finishes inside its bound. So after each mode's down, and before the
+# first mode, every container, network and volume still carrying this run's
+# PROJECT label goes too. The label is what makes it safe: compose stamps
+# `com.docker.compose.project=<project>` on everything it creates, and the
+# `sts` container a plain `docker compose up` here gives somebody is in
+# another project. Each docker call is bounded (tests/teardown_bounds.js's
+# rule): a daemon that hangs costs a warning, never the run.
+# ---------------------------------------------------------------------------
+dockerBounded()
+{
+  local seconds="$1"
+  shift
+  local timeoutCmd
+  local cmd=(docker "$@")
+  if [ -n "${DOCKER_SUDO}" ];
+  then
+    cmd=(sudo docker "$@")
+  fi
+  timeoutCmd="$(command -v timeout 2> /dev/null || true)"
+  if [ -z "${timeoutCmd}" ];
+  then
+    "${cmd[@]}" < /dev/null
+    return $?
+  fi
+  "${timeoutCmd}" --kill-after=30s "${seconds}" "${cmd[@]}" < /dev/null
+}
+
+removeProjectLeftovers()
+{
+  local filter="label=com.docker.compose.project=${COMPOSE_PROJECT}"
+  local kind ids
+  for kind in container network volume;
+  do
+    case "${kind}" in
+      container) ids="$(dockerBounded 60 ps -aq --filter "${filter}" \
+                        2> /dev/null)" ;;
+      *)         ids="$(dockerBounded 60 "${kind}" ls -q \
+                        --filter "${filter}" 2> /dev/null)" ;;
+    esac
+    [ -z "${ids}" ] && continue
+    local list=()
+    mapfile -t list <<< "${ids}"
+    echo "Removing what the teardown left of ${COMPOSE_PROJECT}:" \
+         "${#list[@]} ${kind}(s)." >&2
+    case "${kind}" in
+      container) dockerBounded "${STS_TEARDOWN_TIMEOUT}" rm -f -v \
+                   "${list[@]}" > /dev/null 2>&1 || true ;;
+      *)         dockerBounded "${STS_TEARDOWN_TIMEOUT}" "${kind}" rm \
+                   "${list[@]}" > /dev/null 2>&1 || true ;;
+    esac
+  done
+  return 0
+}
+
 # Always tear the stack down, even when the tests fail, so the next run starts
 # clean. A TRAP rather than a line at the end: an interrupted run (^C, a failing
 # step) would otherwise leave the stack's containers, volumes and network
@@ -1445,6 +1677,9 @@ trap 'exit 143' TERM
 docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
   "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
   > /dev/null 2>&1 || true
+# The base file's down cannot name a layer's volumes or its network; an
+# interrupted `cells` or `fuzz` mode leaves both (removeProjectLeftovers()).
+removeProjectLeftovers
 
 # ---------------------------------------------------------------------------
 # BUILD, THEN RUN.
@@ -1847,6 +2082,8 @@ fi
 RC=0
 MODES_RUN=()
 MODES_FAILED=()
+# Modes a run named and did not start, each with its reason (2026-11-14).
+MODES_SKIPPED=()
 MODE_COUNT="${#RUN_MODES[@]}"
 MODE_INDEX=0
 
@@ -1867,6 +2104,18 @@ do
   echo " $(stsModeDescription "${MODE}")"
   echo "==========================================================="
 
+  # A MODE WHOSE OWN JOB FILTER AND THE OPERATOR'S --only KEEP NOTHING is
+  # skipped before its stack starts (modeFilterLeavesNothing(), above): not a
+  # failure, and not a pass either — the summary names it with the reason.
+  MODE_FILTER="$(stsModeJobFilter "${MODE}")"
+  if modeFilterLeavesNothing "${MODE}";
+  then
+    echo " SKIPPED: this mode runs only its own jobs (${MODE_FILTER}), and" \
+         "the run's --only or --conformance-only keeps none of them (${STS_TEST_ARGS})."
+    MODES_SKIPPED+=("${MODE} (its own jobs, ${MODE_FILTER}, are outside the run's narrowing)")
+    continue
+  fi
+
   # The mode's environment, added to what compose is already given. Every mode
   # names every variable it cares about — see modes.sh — so a later mode cannot
   # inherit an earlier one's.
@@ -1880,6 +2129,18 @@ do
   # the path is the one inside it and the report lands in the host tree beside
   # every other mode's.
   MODE_ENV+=("STS_TEST_REPORT_DIR=/usr/src/sts/tests/report/${MODE}")
+
+  # THE MODE'S OWN JOB FILTER, FOR THIS MODE ALONE (2026-11-14). The base
+  # environment carries the operator's STS_TEST_ARGS; this later assignment
+  # wins (`env` applies them in order) and adds `--mode-only=`, which the
+  # runner intersects with any --only. The next mode starts from the base
+  # again, so no other mode sees it.
+  if [ -n "${MODE_FILTER}" ];
+  then
+    MODE_ENV+=("STS_TEST_ARGS=${STS_TEST_ARGS:+${STS_TEST_ARGS} }--mode-only=${MODE_FILTER}")
+    echo " This mode runs its own jobs only: --mode-only=${MODE_FILTER}" \
+         "(tests/tools/modes.sh, stsModeJobFilter())."
+  fi
 
   # -------------------------------------------------------------------------
   # THE SERVICE FIRST, THEN ITS CREDENTIALS, THEN THE RUNNER (2026-09-09).
@@ -2318,19 +2579,30 @@ do
     echo "The stack did not come down cleanly after mode ${MODE}." >&2
     echo "That is NOT a verdict on the suite — the mode's result above is." >&2
   fi
+  # AND NOTHING OF THE PROJECT IS LEFT FOR THE NEXT MODE (2026-11-14), whose
+  # layers differ: `cells` brings three databases and a volume per cell key,
+  # `fuzz` an `internal` network. A down that timed out, or a container a
+  # layer started that the next mode's files do not name, would otherwise
+  # meet the next mode's fixed container names or its network.
+  removeProjectLeftovers
   STACK_UP=0
 done
 
-if [ "${MODE_COUNT}" -gt 1 ];
+if [ "${MODE_COUNT}" -gt 1 ] || [ "${#MODES_SKIPPED[@]}" -gt 0 ];
 then
   echo ""
   echo "==========================================================="
-  echo " ${MODE_COUNT} mode(s): ${MODES_RUN[*]}"
+  echo " ${MODE_COUNT} mode(s): ${MODES_RUN[*]+${MODES_RUN[*]}}"
+  if [ "${#MODES_SKIPPED[@]}" -gt 0 ];
+  then
+    printf ' SKIPPED: %s\n' "${MODES_SKIPPED[@]}"
+  fi
   if [ "${#MODES_FAILED[@]}" -gt 0 ];
   then
     echo " FAILED in: ${MODES_FAILED[*]}"
-  else
-    echo " all modes passed"
+  elif [ "${#MODES_RUN[@]}" -gt 0 ];
+  then
+    echo " all modes run passed"
   fi
   echo " reports: tests/report/<mode>/latest"
   echo "==========================================================="
@@ -2362,6 +2634,15 @@ done
 # try to delete the old ones. It is written from inside the container, which
 # is root; the workflow chowns it before uploading and a person can too:
 #   sudo chown -R "$(id -u):$(id -g)" tests/report
+
+# EVERY MODE SKIPPED IS NOTHING CHECKED, which is never a pass (2026-11-14):
+# `--modes=fuzz --only=crypto` asks for a mode and then for none of its jobs.
+if [ "${RC}" -eq 0 ] && [ "${#MODES_RUN[@]}" -eq 0 ];
+then
+  echo "No mode ran: every one named was skipped (above). Nothing was" \
+       "checked." >&2
+  RC=1
+fi
 
 if [ "${RC}" -ne 0 ];
 then
