@@ -116,6 +116,7 @@ import Http2Framing = require('../common/http2_framing');
 import Http2Express = require('../common/http2_express');
 import ConnectRefusal = require('../common/connect_refusal');
 import ParserRefusal = require('../common/parser_refusal');
+import AlertClose = require('../tls/alert_close');
 import audit = require('../common/audit');
 import websecurity = require('../common/websecurity');
 import oidcRp = require('../common/oidc_rp');
@@ -846,6 +847,9 @@ class DebuggerServer {
     // A CONNECT is answered 501, as on the main port (#1304).
     ConnectRefusal.install(server, 'the protocol debugger (' + port + ')');
     ParserRefusal.install(server, 'the protocol debugger (' + port + ')');
+    // A connection that fails at the TLS layer keeps its alert, as on the
+    // main port (tls/alert_close.ts; a no-op over plain HTTP).
+    AlertClose.install(server, 'the protocol debugger (' + port + ')');
     // Before TLS, like the main port's — see common/proxy_protocol.ts.
     proxyProtocol.install(server, {
       label: 'the protocol debugger (' + port + ')', channel: 'http' });
