@@ -101,6 +101,7 @@ so the service starts without the pinned management API secret.
 | 8081 | 8081 | The main port: every HTTP protocol, the console, the portal | `STS_HOST_PORT` |
 | 8082 | 8082 | Plain-HTTP revocation listener: the CRL, OCSP and issuer certificate every issued certificate points at | `STS_PKI_HOST_PORT` |
 | 88, TCP and UDP | 88 | The Kerberos KDC, so `kinit` and a browser's SPNEGO sign-in work from the host ([Kerberos](#kerberos)) | `STS_KDC_HOST_PORT` |
+| 8444 | 8444 | The [embedded debugger](admin-console.md#the-embedded-protocol-debugger), signed in to through this service and open to console administrators only. **Both sides move together**, because its sign-in sends the browser back by the host and port it used | `STS_DEBUGGER_PORT` |
 | 9090, 9444 | 9090, 9443 | Remote PEP, HTTP and HTTPS (`xacml` profile only) | `XACML_PEP_HOST_PORT`, `XACML_PEP_HTTPS_HOST_PORT` |
 | 9700 | 9700 | The development companion, plain HTTP (`companion` profile only) | `COMPANION_HOST_PORT` (and `COMPANION_PUBLIC_URL`) |
 | 8888 | 8888 | The companion's Kerberos-protected TCP service (`companion` profile only) | `COMPANION_KRB5_HOST_PORT` |
@@ -117,7 +118,6 @@ mapping under `sts` → `ports` (or `postgres` → `ports`) to reach one:
 | Add | For |
 |---|---|
 | `"389:389"`, `"636:636"` (or `"1389:389"`, `"1636:636"`) | LDAP and LDAPS. LDAPS serves the same certificate as the main port. |
-| `"8444:8444"` | The [embedded debugger](admin-console.md). Both sides must be the same number, because the debugger's sign-in sends the browser back to the service by the host name it used. The image carries it by default (`DEBUGGER_IMAGE`, below); it runs when `debugger.enabled` says so — `auto` is on in development mode and off in product mode. |
 | `"5432:5432"` under `postgres` | To look at the database with `psql` |
 
 A realm's SPIFFE listeners are not published either. A published port maps to
@@ -209,6 +209,10 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_HTTPS` | `true` | `false` serves the main port as plain HTTP, for a client that cannot be made to trust the certificate |
 | `KRB5_SERVICE_PRINCIPAL` | `HTTP/localhost` | The SPN the Kerberos acceptor holds: `HTTP/<the host a browser opens>` ([Kerberos](#kerberos)) |
 | `STS_KDC_HOST_PORT` | `88` | The host port the KDC is published on, TCP and UDP |
+| `STS_DEBUGGER_ENABLED` | `on` | The [embedded debugger](admin-console.md#the-embedded-protocol-debugger). The file turns it on in product mode too, where `debugger.enabled`'s own `auto` would leave it off; `off` removes it. In product mode its api may dial only this service and `STS_DEBUGGER_ALLOWED_DESTINATIONS` |
+| `STS_DEBUGGER_PORT` | `8444` | The debugger's port, published on the same number on the host |
+| `STS_DEBUGGER_ALLOWED_DESTINATIONS` | empty | Comma-separated CIDR ranges the debugger's api may dial besides this service, in product mode |
+| `STS_DEBUGGER_PUBLIC_BASE_URL` | empty | The debugger's address as a browser reaches it, when that is not `https://localhost:<port>` |
 | `STS_LOG_LEVEL` | unset (the appconfig's `info`) | `debug` logs every request, every artifact before and after signing, and every function's entry and exit |
 | `CONFIG_FILE` | `./env/local.js` | The appconfig file |
 | `STS_WORKERS_REQUEST_COUNT` | `2` | Request workers |
