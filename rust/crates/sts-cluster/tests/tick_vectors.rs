@@ -430,9 +430,12 @@ async fn the_tick_is_nodes() {
         .collect();
     let mut failures = Vec::new();
     let mut checks = 0;
+    let mut written = Vec::new();
     for one in v["scenarios"].as_array().unwrap() {
         let name = one["name"].as_str().unwrap();
         let (ticks, rows) = run_scenario(&one["scenario"], &base).await;
+        written
+            .push(norm(json!({ "name": name, "ticks": ticks, "rows": rows })));
         let want_ticks: Vec<Vec<Json>> = one["ticks"]
             .as_array()
             .unwrap()
@@ -490,6 +493,27 @@ async fn the_tick_is_nodes() {
         if json!(got) != c["id"] {
             failures.push(format!("leastLoaded {}: {:?}", c, got));
         }
+    }
+    // Rust's ticks, for `tests/rust_store_vectors.js` to hold to Node's.
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        let loads: Vec<Json> = v["leastLoaded"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                json!({ "loads": c["loads"],
+                        "id": least_loaded(&loads_of(&c["loads"])) })
+            })
+            .collect();
+        std::fs::write(
+            std::path::Path::new(&dir).join("scheduler-tick-rust.json"),
+            serde_json::to_string_pretty(
+                &json!({ "scenarios": written, "leastLoaded": loads }),
+            )
+            .unwrap()
+                + "\n",
+        )
+        .unwrap();
     }
     eprintln!("tick vectors: {} checks", checks);
     assert!(failures.is_empty(), "{}", failures.join("\n"));

@@ -215,5 +215,14 @@ async fn the_registry_is_nodes() {
                 .push(format!("{}:\n  rust {}\n  node {}", k, got[k], v[k]));
         }
     }
+    // Rust's answers, for `tests/rust_store_vectors.js`: held to Node's,
+    // and Rust's snapshot rows read by Node's own `unpackSnapshotRow()`.
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        std::fs::write(
+            std::path::Path::new(&dir).join("cache-registry-rust.json"),
+            serde_json::to_string_pretty(&norm(got)).unwrap() + "\n",
+        )
+        .unwrap();
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
