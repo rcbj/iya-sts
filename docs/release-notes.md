@@ -177,6 +177,17 @@ A document that does not describe the application is now refused with HTTP 400
 and nothing is written, as the create and upload doors already refuse it
 (`STS-ADMIN-0935`). Writing an empty value still clears it.
 
+### An inbound OpenID Connect ID Token's `iat` is held to the sign-in
+
+A federation relationship that signs people in from an OpenID Connect partner
+now refuses an ID Token whose `iat` is before the sign-in started or after now,
+each end widened by `oauth2.clockSkewS` (OpenID Connect Core 3.1.3.7, step 10;
+`STS-FED-0253`). Nothing is redeemed and UserInfo is not asked after the
+refusal. Until 1.1.0 any `iat` was accepted, so an ID Token issued a week
+earlier signed a person in. This applies to every relationship, not only the
+FAPI profiles. A partner whose clock is behind this service's by more than the
+skew is now refused; raise `oauth2.clockSkewS` for it.
+
 ### Not backwards compatible with earlier builds
 
 **1.0.0 is not backwards compatible with the pre-release builds that came

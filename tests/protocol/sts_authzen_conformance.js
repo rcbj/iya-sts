@@ -46,8 +46,9 @@
 // a suite that keeps the key, or for the mtls plans to be runnable.
 //
 // The bearer caller is a registered application: dynamic registration,
-// client_credentials, `authzen:evaluate`, audience the realm's
-// /access/v1. Its group member is the entry DN, and its only application
+// client_credentials, a delegated permission grant of
+// `urn:sts:authzen-api:authzen:evaluate` (#1141; `oauthAllowedScope` no
+// longer declares it), audience the realm's /access/v1. Its group member is the entry DN, and its only application
 // name is its own client id. A token is minted immediately before each
 // plan, under a two-hour access-token lifetime. alice and bob are the
 // subject ids the policy names.
@@ -533,9 +534,16 @@ async function mintToken(realm) {
   const clientId = registered.body && registered.body.client_id;
   const secret = registered.body && registered.body.client_secret;
   assert.ok(clientId && secret, "registration returned no client");
-  await oidf.ok(realm.api + "/applications/add", {
-    application: clientId, attribute: "oauthAllowedScope",
-    value: "authzen:evaluate" }, "declared authzen:evaluate");
+  // `authzen:evaluate` is one of this service's own protected scopes, and
+  // since #1141 the client's half of "may it ask for it" is a DELEGATED
+  // PERMISSION GRANT on the realm's `sts-authzen-api`, never a word in
+  // `oauthAllowedScope` (`common/scope_policy.ts` takes such a word off
+  // the declared list). Declaring it there was this job's first run's
+  // refusal: STS-OAUTH-0577 on every plan's token request.
+  await oidf.ok(realm.api + "/permissions/grant-permission", {
+    client: clientId,
+    permission: "urn:sts:authzen-api:authzen:evaluate" },
+    "granted urn:sts:authzen-api:authzen:evaluate");
   const viewed = await oidf.send(realm.api + "/applications?application=" +
                                  encodeURIComponent(clientId));
   const body = viewed.body || {};

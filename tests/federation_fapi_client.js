@@ -250,6 +250,38 @@ function childMain() {
         json: { error: 'use_dpop_nonce' } });
     }, '');
     eq(bareCount, 1, 'a refusal that carries no DPoP-Nonce is not retried');
+    // A RESOURCE SERVER'S CHALLENGE (RFC 9449 section 9, #931's first
+    // run): UserInfo says use_dpop_nonce in WWW-Authenticate, not in a
+    // body, and the scheme is case-insensitive.
+    const rsSeen = [];
+    const rsAnswer = await Fapi.withNonce(function (nonce) {
+      rsSeen.push(String(nonce));
+      return Promise.resolve(rsSeen.length === 1
+        ? { ok: false, status: 401, json: null,
+            headers: { 'dpop-nonce': 'rs-1', 'www-authenticate':
+              'dPoP error="use_dpop_nonce", error_description="nonce"' } }
+        : { ok: true, status: 200, json: {}, headers: {} });
+    }, '');
+    eq(rsSeen.join(','), ',rs-1',
+       'a WWW-Authenticate use_dpop_nonce challenge is answered with its ' +
+       'nonce');
+    eq(rsAnswer.status, 200, 'the answer to the retried UserInfo is kept');
+    let otherChallenge = 0;
+    await Fapi.withNonce(function () {
+      otherChallenge += 1;
+      return Promise.resolve({ ok: false, status: 401, json: null,
+        headers: { 'dpop-nonce': 'rs-2',
+                   'www-authenticate': 'DPoP error="invalid_token"' } });
+    }, '');
+    eq(otherChallenge, 1, 'another DPoP error is not retried');
+    let bearerChallenge = 0;
+    await Fapi.withNonce(function () {
+      bearerChallenge += 1;
+      return Promise.resolve({ ok: false, status: 401, json: null,
+        headers: { 'dpop-nonce': 'rs-3',
+                   'www-authenticate': 'Bearer error="use_dpop_nonce"' } });
+    }, '');
+    eq(bearerChallenge, 1, 'a challenge in another scheme is not retried');
   };
   main().catch(function (e) {
     note(false, 'the test itself threw', e && e.stack);
