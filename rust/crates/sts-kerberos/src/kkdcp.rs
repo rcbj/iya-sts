@@ -42,6 +42,7 @@ pub enum ProxyRefusal {
 
 impl ProxyRefusal {
     /// The code `krb5_kdc.js` marks on the response.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn code(&self) -> ErrorCode {
         match self {
             ProxyRefusal::Empty => codes::STS_KRB_0055,
@@ -51,6 +52,7 @@ impl ProxyRefusal {
     }
 
     /// The 400's body.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn body(&self) -> String {
         match self {
             ProxyRefusal::Empty => {
@@ -92,6 +94,7 @@ pub fn unwrap_proxy_message(body: &[u8]) -> Result<Vec<u8>, ProxyRefusal> {
 
 /// `krb5_home.ts`'s `Krb5Home.messageOf()`: the same reading, `None` for
 /// anything that is not one.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn message_of(body: &[u8]) -> Option<Vec<u8>> {
     unwrap_proxy_message(body).ok()
 }
@@ -107,6 +110,7 @@ pub fn wrap_proxy_message(reply: &[u8]) -> Vec<u8> {
 
 /// A KDC-PROXY-MESSAGE a CLIENT sends: the request framed and enveloped,
 /// with the optional target realm.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn client_proxy_message(
     request: &[u8],
     target_domain: Option<&str>,
@@ -118,6 +122,7 @@ pub fn client_proxy_message(
 }
 
 /// RFC 4120 section 7.2.2's four-byte big-endian length prefix.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn tcp_frame(message: &[u8]) -> Vec<u8> {
     let mut out = (message.len() as u32).to_be_bytes().to_vec();
     out.extend_from_slice(message);
@@ -138,6 +143,7 @@ pub enum TcpFrame {
 
 impl TcpFrame {
     /// The code a refusal is recorded under.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn code(&self) -> Option<ErrorCode> {
         match self {
             TcpFrame::ReservedBit => Some(codes::STS_KRB_0050),
@@ -148,6 +154,7 @@ impl TcpFrame {
 
 /// The TCP listener's reading of its buffer, as `krb5_kdc.js` does it on
 /// each chunk (the size cap, a setting, is the listener's).
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn tcp_unframe(buffer: &[u8]) -> TcpFrame {
     if buffer.len() < 4 {
         return TcpFrame::Incomplete;
