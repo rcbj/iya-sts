@@ -765,6 +765,49 @@ function childMain() {
          federation.asksUserinfo({}),
          '6e. fedUserinfo emptied stays empty and reads as on, the default',
          JSON.stringify(federation.get(REFRESH).fedUserinfo));
+    // TWO RUNS OF THE JOB AT ONCE (run 28, 2026-11-14): a Run now queued
+    // while a scheduled run of the same realm is in flight. Both see the
+    // token due; one presents it and the other skips, so a partner that
+    // rotates refresh tokens never sees the spent one again (the suite's
+    // invalid-sub module failed on "Invalid refresh_token parameter").
+    {
+      const jar = {};
+      const startedTwice = await begin(REFRESH, jar);
+      op.byToken['rt-twice'] = { claims: fresh };
+      op.scenario = { rt: 'rt-twice', backClaims: function () {
+        return claims(startedTwice);
+      } };
+      await call('GET', '/federation/acs/' + REFRESH + '?state=' +
+        encodeURIComponent(startedTwice.params.get('state')) + '&code=c-r',
+        null, jar);
+      op.calls = [];
+      const both = await Promise.all([
+        fedSp.refreshDue(Date.now() + 5000),
+        fedSp.refreshDue(Date.now() + 5000)]);
+      const presented = op.calls.filter(function (c) {
+        return /\/token$/.test(c.path) &&
+               /refresh_token=rt-twice/.test(c.body);
+      }).length;
+      const summed = both.reduce(function (sum, one) {
+        return { refreshed: sum.refreshed + one.refreshed,
+                 ended: sum.ended + one.ended,
+                 skipped: sum.skipped + one.skipped };
+      }, { refreshed: 0, ended: 0, skipped: 0 });
+      note(presented === 1 && summed.ended === 0 && summed.skipped >= 1,
+           '6f. two overlapping runs of the partner refresh present a held ' +
+           'token once: one refreshes it and the other skips it',
+           presented + ' ' + JSON.stringify(both));
+      // And the token is refreshed again by the next run: the claim was on
+      // the state the first run replaced, not on the session.
+      op.calls = [];
+      const again = await fedSp.refreshDue(Date.now() + 5000);
+      note(again.skipped === 0 && op.calls.some(function (c) {
+             return /\/token$/.test(c.path) &&
+                    /refresh_token=rt-twice/.test(c.body);
+           }),
+           '6f. the next run refreshes the same session\'s token again',
+           JSON.stringify(again));
+    }
 
     // --- 7. self-registration and Request Objects -------------------------
     const stateOf = function (text) {

@@ -2487,7 +2487,11 @@ CONNECT RELYING PARTY PLANS*.
   signed-in module waits, the job queues a Run now of that job every ten
   seconds**, because at the end of a full run its scheduled run waited
   behind every realm's other jobs (3.5 minutes in run 22, and over five
-  for the module that timed out).
+  for the module that timed out). **That Run now can overlap the scheduled
+  run**, and in run 28 both presented the invalid-sub module's token at
+  once; the service now presents a held token from one run only
+  (`federation/CLAUDE.md`, *A PARTNER'S REFRESH TOKEN*), so the nudge needs
+  no lock of its own.
 * **The dynamic plan** (rcbj's decision, 2026-11-03) runs against a
   relationship with `fedDiscovery`, `fedRegister`, `fedWebFinger` and
   `fedRequestObject` `request_uri`; before each module the relationship

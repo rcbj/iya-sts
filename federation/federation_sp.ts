@@ -189,6 +189,12 @@ import audit = require('./../common/audit');
 // join a cycle — rule 3m.
 import realms = require('./../common/realms');
 import scheduler = require('./../cluster/scheduler');
+// ONE REFRESH OF A HELD TOKEN AT A TIME (run 28, 2026-11-14): the atomic
+// "once" the partner refresh claims each held token's state through, so two
+// runs of the job that overlap do not both present it. A library that
+// registers nothing and reaches `persistence.js` lazily, so it closes no
+// cycle.
+import clusterClaims = require('./../cluster/cluster_claims');
 // The configured XML signature algorithms, for a signed outbound AuthnRequest.
 // A leaf in saml/ that registers nothing — the same answer every SAML signer in
 // this service reads, so a partner verifying our request and our assertions is
@@ -414,6 +420,11 @@ const contexts = realms.map({ persist: 'federation_sp.contexts',
 // session. Only a relationship with fedRefreshTokens on writes here.
 const partnerRefresh = realms.map({ persist: 'federation_sp.partnerRefresh' });
 const PARTNER_REFRESH_JOB = 'federation.partner-refresh';
+// How long the claim on one held token's state is kept (refreshOnce()):
+// longer than a refresh can take — a token request, the partner's keys and
+// UserInfo, each under its own timeout — and short enough that a token a
+// dead run left unrefreshed is tried again within a few minutes.
+const REFRESH_CLAIM_MS = 5 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // PAGES. This module draws two: a refusal and an index. Both are plain HTML
@@ -6561,13 +6572,57 @@ class FederationSp {
         due.push(value);
       }
     });
-    const counts = { refreshed: 0, ended: 0, dropped: 0, retried: 0 };
+    const counts = { refreshed: 0, ended: 0, dropped: 0, retried: 0,
+                     skipped: 0 };
     for (let i = 0; i < due.length; i++) {
-      const outcome = await this.refreshOne(due[i]);
+      const outcome = await this.refreshOnce(due[i]);
       counts[outcome] = (counts[outcome] || 0) + 1;
     }
     log.debug("Leaving FederationSp.refreshDue(). " + JSON.stringify(counts));
     return counts;
+  }
+
+  // ONE RUN PRESENTS A HELD TOKEN, HOWEVER MANY RUNS SAW IT DUE (run 28,
+  // 2026-11-14). The scheduler does not keep a Run now of this job from
+  // overlapping a scheduled run in the same realm, and the RP conformance
+  // job queues a Run now while a refresh module waits: both runs read the
+  // same entry as due and both presented its refresh token at once. The
+  // suite had rotated it at the first, so the second was refused
+  // ("ValidateRefreshToken: Invalid refresh_token parameter", which FAILS
+  // the module) and ended the session (STS-FED-0210) while the first was
+  // still checking its answer (STS-FED-0211). A partner that rotates its
+  // refresh tokens treats a second use of a spent one as theft (RFC 9700
+  // section 4.14.2), so this is not only the suite's rule.
+  //
+  // The claim is on the entry's STATE — the session, the sealed token and
+  // when it was due — and is never released: every outcome of the refresh
+  // writes a new due or deletes the entry, so a later run reading the
+  // entry anew claims a different value, and a run that read the old state
+  // before the first finished (here, or on another node behind the change
+  // log) finds it spent and skips. The claim outlives a run that died
+  // half-way only by its lifetime, after which the entry is tried again.
+  // A claim store that cannot be asked also skips: the next run asks again.
+  private async refreshOnce(entry): Promise<string> {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.refreshOnce(). session=" +
+              entry.sessionId);
+    const answer = await clusterClaims.claim({
+      scope: 'federation_sp.partner-refresh',
+      value: String(entry.sessionId) + '\n' + String(entry.token || '') +
+             '\n' + String(entry.due || ''),
+      ttlMs: REFRESH_CLAIM_MS
+    });
+    if (!answer.ok) {
+      log.debug("Leaving FederationSp.refreshOnce(). Skipped: " +
+                (answer.reason === 'used'
+                  ? 'another run is refreshing this token'
+                  : 'the claim store could not be asked (' +
+                    String(answer.why || '') + ')') + '.');
+      return 'skipped';
+    }
+    const outcome = await this.refreshOne(entry);
+    log.debug("Leaving FederationSp.refreshOnce(). " + outcome);
+    return outcome;
   }
 
   // One held token: `refreshed`, `ended` (the session), `dropped` (no
