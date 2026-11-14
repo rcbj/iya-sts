@@ -838,6 +838,11 @@ impl XmlPolicy {
     /// method, or `None`. `alg` is a SignatureMethod URI or a row id; a name
     /// no row has is refused only by a list, and otherwise left to the
     /// signer's own refusal, as in Node.
+    ///
+    /// One narrowing: Node's `rowOf()` also finds a row id of ANOTHER
+    /// surface (`ES256K`, `EdDSA`) and refuses it under `keys.pqcOnly`;
+    /// this knows the XML rows only, so such a name reaches the signer,
+    /// which refuses it as a method it does not sign with.
     pub fn sign_cause(&self, alg: &str) -> Option<Cause> {
         if alg == "none" {
             return None;
@@ -2738,9 +2743,18 @@ mod tests {
 
     #[test]
     fn the_registry() {
-        assert_eq!(signature_methods().len(), 47);
+        // 47 verified, and the four HMAC rows of #658, read and refused.
+        assert_eq!(signature_methods().len(), 51);
         let rsa = signature_method(RSA_SHA256).unwrap();
         assert_eq!(rsa.label, "RSA-SHA256");
+        assert_eq!(rsa.id, "RS256");
+        let hmac = signature_method(
+            "http://www.w3.org/2001/04/xmldsig-more#hmac-sha256",
+        )
+        .unwrap();
+        assert_eq!((hmac.family, hmac.id.as_str()), (Family::Hmac, "HS256"));
+        let verdict = algorithm_verdict(&hmac.uri, &[], &XmlPolicy::default());
+        assert_eq!(verdict.code, Some(codes::STS_KEYS_0061));
         assert_eq!(rsa.engine_label, "RSA-SHA256");
         let pq = signature_method(
             "http://www.w3.org/2026/08/xmldsig-more#ml-dsa-65",
