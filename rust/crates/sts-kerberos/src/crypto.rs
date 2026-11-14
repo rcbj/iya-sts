@@ -19,23 +19,25 @@
 //! the codec reads the EncryptedData and names the etype — and performing
 //! Camellia would be behaviour Node does not have.
 //!
-//! CTS is written here over OpenSSL's unpadded AES-CBC (the design's
-//! reason: no crate is trustworthy enough), in Node's shape — CBC-CS3, the
-//! last two blocks swapped even for an exact multiple, one block or less
-//! plain CBC. HMAC and PBKDF2 are OpenSSL's; HMAC-MD5, MD4 and RC4 are
-//! [`crate::primitives`]'.
+//! **THE CRYPTOGRAPHY IS `sts-crypto`'S** (`sts_crypto::krb5`), because
+//! every cryptographic operation is that crate's (#453; `sts-guards`'
+//! `crypto_centralised.rs`): string-to-key, the derived keys, CTS,
+//! encryption with its confounder, the checksums, HMAC, PBKDF2 and type
+//! 23's MD4, RC4 and HMAC-MD5 all moved there on 2026-11-14, sentences
+//! unchanged. What stays here is Kerberos's, not cryptography's: the
+//! enctype table ([`Enctype`], Node's `ETYPES`), the names, the refusals
+//! of the etypes that are only named, and the key usages; each method
+//! below hands its profile to `sts_crypto::krb5::Profile`. This crate
+//! depends on no crypto library.
 //!
 //! The PRF, PRF+ and KRB-FX-CF2 are `sts_crypto::krb5_prf`'s, as they are
 //! `common/crypto.js`'s in Node; [`Enctype::prf`] hands over to it.
 
-use openssl::hash::MessageDigest;
-use openssl::pkey::PKey;
-use openssl::rand::rand_bytes;
-use openssl::sign::Signer;
-use openssl::symm::{Cipher, Crypter, Mode};
+use sts_crypto::krb5;
 
 use crate::error::{Krb5Error, Krb5Result};
-use crate::primitives;
+
+pub use sts_crypto::krb5::Family;
 
 /// Key usage numbers, RFC 4120 section 7.5.1 and RFC 4121 — named because
 /// a wrong one is an integrity failure at the far end and no other symptom.
@@ -91,6 +93,7 @@ fn unsupported_name(id: i64) -> Option<&'static str> {
 }
 
 /// Node's `etypeName()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn etype_name(id: i64) -> String {
     match Enctype::find(id) {
         Some(e) => e.name.to_string(),
@@ -101,19 +104,9 @@ pub fn etype_name(id: i64) -> String {
 }
 
 /// Node's `isSupportedEtype()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn is_supported_etype(id: i64) -> bool {
     SUPPORTED.contains(&id)
-}
-
-/// Which construction an enctype is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Family {
-    /// RFC 3962: CTS, HMAC-SHA-1-96 over the PLAINTEXT.
-    AesSha1,
-    /// RFC 8009: CTS, HMAC-SHA-2 over IV | CIPHERTEXT.
-    AesSha2,
-    /// RFC 4757: RC4 and HMAC-MD5.
-    Arcfour,
 }
 
 /// One enctype's profile: Node's `ETYPES[id]` object.
@@ -200,144 +193,58 @@ const ETYPES: [Enctype; 5] = [
     },
 ];
 
-/// Random bytes: Node's `randomBytes()`.
+/// Random bytes: Node's `randomBytes()`, `sts-crypto`'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn random_bytes(n: usize) -> Krb5Result<Vec<u8>> {
-    let mut out = vec![0u8; n];
-    rand_bytes(&mut out)?;
-    Ok(out)
+    Ok(krb5::random_bytes(n)?)
 }
 
-fn aes_cbc(key: &[u8]) -> Krb5Result<Cipher> {
-    Ok(match key.len() {
-        16 => Cipher::aes_128_cbc(),
-        24 => Cipher::aes_192_cbc(),
-        32 => Cipher::aes_256_cbc(),
-        n => {
-            return Err(Krb5Error::new(format!(
-                "krb5: an AES key is 16, 24 or 32 bytes, not {}",
-                n
-            )))
-        }
-    })
-}
-
-fn cbc(mode: Mode, key: &[u8], iv: &[u8], data: &[u8]) -> Krb5Result<Vec<u8>> {
-    if data.len() % 16 != 0 {
-        return Err(Krb5Error::new(
-            "krb5: raw CBC needs a whole number of blocks",
-        ));
-    }
-    if data.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut c = Crypter::new(aes_cbc(key)?, mode, key, Some(iv))?;
-    c.pad(false);
-    let mut out = vec![0u8; data.len() + 16];
-    let n = c.update(data, &mut out)?;
-    let m = c.finalize(&mut out[n..])?;
-    out.truncate(n + m);
-    Ok(out)
-}
-
-/// Unpadded AES-CBC encryption: Node's `cbcEncryptRaw()` (which drops
-/// Web Crypto's padding block; OpenSSL is simply asked for none).
+/// Unpadded AES-CBC encryption: Node's `cbcEncryptRaw()`, `sts-crypto`'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn cbc_encrypt_raw(
     key: &[u8],
     iv: &[u8],
     data: &[u8],
 ) -> Krb5Result<Vec<u8>> {
-    cbc(Mode::Encrypt, key, iv, data)
+    Ok(krb5::cbc_encrypt_raw(key, iv, data)?)
 }
 
-/// Unpadded AES-CBC decryption: Node's `cbcDecryptRaw()`.
+/// Unpadded AES-CBC decryption: Node's `cbcDecryptRaw()`, `sts-crypto`'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn cbc_decrypt_raw(
     key: &[u8],
     iv: &[u8],
     data: &[u8],
 ) -> Krb5Result<Vec<u8>> {
-    cbc(Mode::Decrypt, key, iv, data)
+    Ok(krb5::cbc_decrypt_raw(key, iv, data)?)
 }
 
 /// AES-CBC with ciphertext stealing as Kerberos uses it (CBC-CS3):
-/// Node's `ctsEncrypt()`.
+/// Node's `ctsEncrypt()`, `sts-crypto`'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn cts_encrypt(key: &[u8], iv: &[u8], plain: &[u8]) -> Krb5Result<Vec<u8>> {
-    if plain.len() < 16 {
-        return Err(Krb5Error::new(format!(
-            "krb5: CTS needs at least one block; got {}",
-            plain.len()
-        )));
-    }
-    if plain.len() == 16 {
-        return cbc_encrypt_raw(key, iv, plain);
-    }
-    let m = match plain.len() % 16 {
-        0 => 16,
-        r => r,
-    };
-    let mut padded = plain.to_vec();
-    padded.resize(plain.len() + (16 - m) % 16, 0);
-    let c = cbc_encrypt_raw(key, iv, &padded)?;
-    let n = c.len() / 16;
-    let mut out = c[..(n - 2) * 16].to_vec();
-    out.extend_from_slice(&c[(n - 1) * 16..n * 16]);
-    out.extend_from_slice(&c[(n - 2) * 16..(n - 2) * 16 + m]);
-    Ok(out)
+    Ok(krb5::cts_encrypt(key, iv, plain)?)
 }
 
-/// The inverse: Node's `ctsDecrypt()`.
+/// The inverse: Node's `ctsDecrypt()`, `sts-crypto`'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn cts_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Krb5Result<Vec<u8>> {
-    if data.len() < 16 {
-        return Err(Krb5Error::new(
-            "krb5: CTS ciphertext shorter than a block",
-        ));
-    }
-    if data.len() == 16 {
-        return cbc_decrypt_raw(key, iv, data);
-    }
-    let m = match data.len() % 16 {
-        0 => 16,
-        r => r,
-    };
-    let head = &data[..data.len() - 16 - m];
-    let c_last = &data[data.len() - 16 - m..data.len() - m];
-    let truncated = &data[data.len() - m..];
-    // D(C_n) is (P_n | zeros) XOR C_{n-1}, so the bytes of C_{n-1} that
-    // were dropped on the wire are the tail of D(C_n).
-    let z = cbc_decrypt_raw(key, &[0u8; 16], c_last)?;
-    let mut c_prev = truncated.to_vec();
-    c_prev.extend_from_slice(&z[m..]);
-    let p_last: Vec<u8> = primitives::xor(&z, &c_prev)[..m].to_vec();
-    let mut body = head.to_vec();
-    body.extend_from_slice(&c_prev);
-    let mut rest = cbc_decrypt_raw(key, iv, &body)?;
-    rest.extend(p_last);
-    Ok(rest)
+    Ok(krb5::cts_decrypt(key, iv, data)?)
 }
 
-/// HMAC under a named hash, MD5 through [`primitives::hmac_md5`]: Node's
-/// `hmac()`, whose names are Web Crypto's.
+/// HMAC under a named hash (Web Crypto's names): Node's `hmac()`,
+/// `sts-crypto`'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn hmac(
     hash_name: &str,
     key: &[u8],
     message: &[u8],
 ) -> Krb5Result<Vec<u8>> {
-    let md = match hash_name {
-        "MD5" => return Ok(primitives::hmac_md5(key, message)),
-        "SHA-1" => MessageDigest::sha1(),
-        "SHA-256" => MessageDigest::sha256(),
-        "SHA-384" => MessageDigest::sha384(),
-        "SHA-512" => MessageDigest::sha512(),
-        other => {
-            return Err(Krb5Error::new(format!("krb5: no HMAC over {}", other)))
-        }
-    };
-    let k = PKey::hmac(key)?;
-    let mut s = Signer::new(md, &k)?;
-    s.update(message)?;
-    Ok(s.sign_to_vec()?)
+    Ok(krb5::hmac(hash_name, key, message)?)
 }
 
-/// PBKDF2: Node's `pbkdf2()`, the length in bits.
+/// PBKDF2, the length in bits: Node's `pbkdf2()`, `sts-crypto`'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn pbkdf2(
     hash_name: &str,
     password: &[u8],
@@ -345,91 +252,58 @@ pub fn pbkdf2(
     iterations: u32,
     out_bits: usize,
 ) -> Krb5Result<Vec<u8>> {
-    let md = match hash_name {
-        "SHA-1" => MessageDigest::sha1(),
-        "SHA-256" => MessageDigest::sha256(),
-        "SHA-384" => MessageDigest::sha384(),
-        other => {
-            return Err(Krb5Error::new(format!(
-                "krb5: no PBKDF2 over {}",
-                other
-            )))
-        }
-    };
-    let mut out = vec![0u8; out_bits / 8];
-    openssl::pkcs5::pbkdf2_hmac(
-        password,
-        salt,
-        iterations as usize,
-        md,
-        &mut out,
-    )?;
-    Ok(out)
+    Ok(krb5::pbkdf2(
+        hash_name, password, salt, iterations, out_bits,
+    )?)
 }
 
-/// RFC 3961 section 5.1's DR: the folded constant encrypted in CBC, fed
-/// back, until there are enough bytes. Node's `deriveRandom()`.
+/// RFC 3961 section 5.1's DR: Node's `deriveRandom()`, `sts-crypto`'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn derive_random(
     base_key: &[u8],
     constant: &[u8],
     out_bytes: usize,
 ) -> Krb5Result<Vec<u8>> {
-    let mut block = if constant.len() == 16 {
-        constant.to_vec()
-    } else {
-        primitives::nfold(constant, 128)?
-    };
-    let mut out = Vec::new();
-    while out.len() < out_bytes {
-        block = cbc_encrypt_raw(base_key, &[0u8; 16], &block)?;
-        out.extend_from_slice(&block);
-    }
-    out.truncate(out_bytes);
-    Ok(out)
+    Ok(krb5::derive_random(base_key, constant, out_bytes)?)
 }
 
 /// The derivation constant: the usage big-endian, then the purpose byte —
 /// 0x99 checksum, 0xAA encryption, 0x55 integrity. Node's
 /// `usageConstant()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn usage_constant(usage: u32, purpose: u8) -> [u8; 5] {
-    let u = usage.to_be_bytes();
-    [u[0], u[1], u[2], u[3], purpose]
+    krb5::usage_constant(usage, purpose)
 }
 
-/// RFC 8009 section 3's KDF-HMAC-SHA2: Node's `kdfHmacSha2()`.
+/// RFC 8009 section 3's KDF-HMAC-SHA2: Node's `kdfHmacSha2()`,
+/// `sts-crypto`'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn kdf_hmac_sha2(
     hash_name: &str,
     key: &[u8],
     label: &[u8],
     out_bits: u32,
 ) -> Krb5Result<Vec<u8>> {
-    let mut input = vec![0, 0, 0, 1];
-    input.extend_from_slice(label);
-    input.push(0);
-    input.extend_from_slice(&out_bits.to_be_bytes());
-    let mut mac = hmac(hash_name, key, &input)?;
-    mac.truncate(out_bits as usize / 8);
-    Ok(mac)
+    Ok(krb5::kdf_hmac_sha2(hash_name, key, label, out_bits)?)
 }
 
 /// RC4-HMAC's usage translation, a wart from an earlier draft: Node's
 /// `translateArcfourUsage()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn translate_arcfour_usage(usage: u32) -> u32 {
-    match usage {
-        3 | 9 => 8,
-        23 => 13,
-        u => u,
-    }
+    krb5::translate_arcfour_usage(usage)
 }
 
 impl Enctype {
     /// The profile for an id, if this codec performs it.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn find(id: i64) -> Option<&'static Enctype> {
         ETYPES.iter().find(|e| e.id == id)
     }
 
     /// Node's `etypeById()`, with its refusal for an etype that is only
     /// named.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn by_id(id: i64) -> Krb5Result<&'static Enctype> {
         if let Some(e) = Self::find(id) {
             return Ok(e);
@@ -452,6 +326,7 @@ impl Enctype {
     }
 
     /// Node's `etypeByName()`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn by_name(name: &str) -> Krb5Result<&'static Enctype> {
         ETYPES.iter().find(|e| e.name == name).ok_or_else(|| {
             Krb5Error::new(format!("krb5: no encryption type named {}", name))
@@ -459,36 +334,25 @@ impl Enctype {
     }
 
     /// Every profile, in Node's key order.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn all() -> &'static [Enctype] {
         &ETYPES
     }
 
-    fn sha2(&self) -> &'static str {
-        if self.key_bytes == 16 {
-            "SHA-256"
-        } else {
-            "SHA-384"
-        }
-    }
-
-    fn iterations(&self, params: Option<&[u8]>) -> Krb5Result<u32> {
-        match params {
-            Some(p) if p.len() == 4 => {
-                let n = u32::from_be_bytes([p[0], p[1], p[2], p[3]]);
-                // RFC 3962: all-zero means 2^32, which no sane KDC sends.
-                if n == 0 {
-                    return Err(Krb5Error::new(
-                        "krb5: s2kparams asks for 2^32 iterations",
-                    ));
-                }
-                Ok(n)
-            }
-            _ => Ok(self.default_iterations),
+    /// What `sts-crypto` needs of this profile to compute with it.
+    fn cipher(&self) -> krb5::Profile {
+        krb5::Profile {
+            name: self.name,
+            key_bytes: self.key_bytes,
+            confounder_bytes: self.confounder_bytes,
+            checksum_bytes: self.checksum_bytes,
+            default_iterations: self.default_iterations,
+            family: self.family,
         }
     }
 
     /// string-to-key: RFC 3962 section 4, RFC 8009 section 4, RFC 4757
-    /// (unsalted, the NT hash).
+    /// (unsalted, the NT hash). `sts-crypto`'s.
     #[tracing::instrument(level = "debug", skip_all, fields(etype = self.id))]
     pub fn string_to_key(
         &self,
@@ -496,86 +360,34 @@ impl Enctype {
         salt: &[u8],
         params: Option<&[u8]>,
     ) -> Krb5Result<Vec<u8>> {
-        match self.family {
-            Family::AesSha1 => {
-                let iterations = self.iterations(params)?;
-                let tkey = pbkdf2(
-                    "SHA-1",
-                    &primitives::utf8(password),
-                    salt,
-                    iterations,
-                    self.key_bytes * 8,
-                )?;
-                derive_random(&tkey, b"kerberos", self.key_bytes)
-            }
-            Family::AesSha2 => {
-                let iterations = self.iterations(params)?;
-                // saltp puts the enctype name in front of the salt.
-                let mut saltp = self.name.as_bytes().to_vec();
-                saltp.push(0);
-                saltp.extend_from_slice(salt);
-                let tkey = pbkdf2(
-                    self.sha2(),
-                    &primitives::utf8(password),
-                    &saltp,
-                    iterations,
-                    self.key_bytes * 8,
-                )?;
-                kdf_hmac_sha2(
-                    self.sha2(),
-                    &tkey,
-                    b"kerberos",
-                    (self.key_bytes * 8) as u32,
-                )
-            }
-            Family::Arcfour => {
-                Ok(primitives::md4(&primitives::utf16le(password)))
-            }
-        }
+        Ok(self.cipher().string_to_key(password, salt, params)?)
     }
 
     /// Ke for a usage (the AES families).
+    #[tracing::instrument(level = "debug", skip_all, fields(etype = self.id))]
     pub fn encryption_key(
         &self,
         base: &[u8],
         usage: u32,
     ) -> Krb5Result<Vec<u8>> {
-        self.derived(base, usage, 0xaa, (self.key_bytes * 8) as u32)
+        Ok(self.cipher().encryption_key(base, usage)?)
     }
 
     /// Ki for a usage (the AES families). For RFC 8009 it is the MAC
     /// length, not the key length — 192 bits against 256 for etype 20.
+    #[tracing::instrument(level = "debug", skip_all, fields(etype = self.id))]
     pub fn integrity_key(
         &self,
         base: &[u8],
         usage: u32,
     ) -> Krb5Result<Vec<u8>> {
-        self.derived(base, usage, 0x55, (self.checksum_bytes * 8) as u32)
+        Ok(self.cipher().integrity_key(base, usage)?)
     }
 
     /// Kc for a usage (the AES families).
+    #[tracing::instrument(level = "debug", skip_all, fields(etype = self.id))]
     pub fn checksum_key(&self, base: &[u8], usage: u32) -> Krb5Result<Vec<u8>> {
-        self.derived(base, usage, 0x99, (self.checksum_bytes * 8) as u32)
-    }
-
-    fn derived(
-        &self,
-        base: &[u8],
-        usage: u32,
-        purpose: u8,
-        sha2_bits: u32,
-    ) -> Krb5Result<Vec<u8>> {
-        let constant = usage_constant(usage, purpose);
-        match self.family {
-            Family::AesSha1 => derive_random(base, &constant, self.key_bytes),
-            Family::AesSha2 => {
-                kdf_hmac_sha2(self.sha2(), base, &constant, sha2_bits)
-            }
-            Family::Arcfour => Err(Krb5Error::new(format!(
-                "krb5: {} has no derived keys",
-                self.name
-            ))),
-        }
+        Ok(self.cipher().checksum_key(base, usage)?)
     }
 
     /// Encrypt under a usage, with a fresh confounder or the one given (a
@@ -588,50 +400,11 @@ impl Enctype {
         plain: &[u8],
         confounder: Option<&[u8]>,
     ) -> Krb5Result<Vec<u8>> {
-        let conf = match confounder {
-            // Node tests `confounderForTest ? … : random`, and an empty
-            // Uint8Array is truthy, so an empty confounder is used as is.
-            Some(c) => c.to_vec(),
-            None => random_bytes(self.confounder_bytes)?,
-        };
-        match self.family {
-            Family::AesSha1 => {
-                let ke = self.encryption_key(base, usage)?;
-                let ki = self.integrity_key(base, usage)?;
-                let mut p = conf;
-                p.extend_from_slice(plain);
-                let mut c = cts_encrypt(&ke, &[0u8; 16], &p)?;
-                let h = hmac("SHA-1", &ki, &p)?;
-                c.extend_from_slice(&h[..self.checksum_bytes]);
-                Ok(c)
-            }
-            Family::AesSha2 => {
-                let ke = self.encryption_key(base, usage)?;
-                let ki = self.integrity_key(base, usage)?;
-                let mut p = conf;
-                p.extend_from_slice(plain);
-                let mut c = cts_encrypt(&ke, &[0u8; 16], &p)?;
-                let mut mac_input = vec![0u8; 16];
-                mac_input.extend_from_slice(&c);
-                let h = hmac(self.sha2(), &ki, &mac_input)?;
-                c.extend_from_slice(&h[..self.checksum_bytes]);
-                Ok(c)
-            }
-            Family::Arcfour => {
-                let t = translate_arcfour_usage(usage).to_le_bytes();
-                let k1 = primitives::hmac_md5(base, &t);
-                let mut data = conf;
-                data.extend_from_slice(plain);
-                let cksum = primitives::hmac_md5(&k1, &data);
-                let k3 = primitives::hmac_md5(&k1, &cksum);
-                let mut out = cksum;
-                out.extend(primitives::rc4(&k3, &data)?);
-                Ok(out)
-            }
-        }
+        Ok(self.cipher().encrypt(base, usage, plain, confounder)?)
     }
 
     /// Decrypt and verify, the confounder stripped: Node's `decrypt()`.
+    #[tracing::instrument(level = "debug", skip_all, fields(etype = self.id))]
     pub fn decrypt(
         &self,
         base: &[u8],
@@ -654,72 +427,7 @@ impl Enctype {
         usage: u32,
         data: &[u8],
     ) -> Krb5Result<(Vec<u8>, Vec<u8>)> {
-        let integrity = || {
-            Krb5Error::new(format!(
-                "krb5: integrity check failed ({}, usage {})",
-                self.name, usage
-            ))
-        };
-        match self.family {
-            Family::AesSha1 => {
-                if data.len() < 16 + self.checksum_bytes {
-                    return Err(self.too_short());
-                }
-                let ke = self.encryption_key(base, usage)?;
-                let ki = self.integrity_key(base, usage)?;
-                let (c, h) = data.split_at(data.len() - self.checksum_bytes);
-                let plain = cts_decrypt(&ke, &[0u8; 16], c)?;
-                let expect = hmac("SHA-1", &ki, &plain)?;
-                if !primitives::equal_constant_time(
-                    h,
-                    &expect[..self.checksum_bytes],
-                ) {
-                    return Err(integrity());
-                }
-                Ok((plain[..16].to_vec(), plain[16..].to_vec()))
-            }
-            Family::AesSha2 => {
-                if data.len() < 16 + self.checksum_bytes {
-                    return Err(self.too_short());
-                }
-                let ke = self.encryption_key(base, usage)?;
-                let ki = self.integrity_key(base, usage)?;
-                let (c, h) = data.split_at(data.len() - self.checksum_bytes);
-                // Verified BEFORE decrypting: encrypt-then-MAC.
-                let mut mac_input = vec![0u8; 16];
-                mac_input.extend_from_slice(c);
-                let expect = hmac(self.sha2(), &ki, &mac_input)?;
-                if !primitives::equal_constant_time(
-                    h,
-                    &expect[..self.checksum_bytes],
-                ) {
-                    return Err(integrity());
-                }
-                let plain = cts_decrypt(&ke, &[0u8; 16], c)?;
-                Ok((plain[..16].to_vec(), plain[16..].to_vec()))
-            }
-            Family::Arcfour => {
-                if data.len() < 16 + 8 {
-                    return Err(Krb5Error::new(
-                        "krb5: ciphertext too short for arcfour-hmac-md5",
-                    ));
-                }
-                let t = translate_arcfour_usage(usage).to_le_bytes();
-                let k1 = primitives::hmac_md5(base, &t);
-                let cksum = &data[..16];
-                let k3 = primitives::hmac_md5(&k1, cksum);
-                let plain = primitives::rc4(&k3, &data[16..])?;
-                let expect = primitives::hmac_md5(&k1, &plain);
-                if !primitives::equal_constant_time(cksum, &expect) {
-                    return Err(integrity());
-                }
-                Ok((plain[..8].to_vec(), plain[8..].to_vec()))
-            }
-        }
-    }
-
-    fn too_short(&self) -> Krb5Error {
-        Krb5Error::new(format!("krb5: ciphertext too short for {}", self.name))
+        Ok(self.cipher().decrypt_with_confounder(base, usage, data)?)
     }
 
     /// The keyed checksum of a message under a usage: Node's `checksum()`.
@@ -730,32 +438,11 @@ impl Enctype {
         usage: u32,
         message: &[u8],
     ) -> Krb5Result<Vec<u8>> {
-        match self.family {
-            Family::AesSha1 => {
-                let kc = self.checksum_key(base, usage)?;
-                let mut h = hmac("SHA-1", &kc, message)?;
-                h.truncate(self.checksum_bytes);
-                Ok(h)
-            }
-            Family::AesSha2 => {
-                let kc = self.checksum_key(base, usage)?;
-                let mut h = hmac(self.sha2(), &kc, message)?;
-                h.truncate(self.checksum_bytes);
-                Ok(h)
-            }
-            Family::Arcfour => {
-                // RFC 4757 section 4: a signature key from a fixed string,
-                // MD5 over the usage and the message, HMAC of that.
-                let ksign = primitives::hmac_md5(base, b"signaturekey\0");
-                let mut input =
-                    translate_arcfour_usage(usage).to_le_bytes().to_vec();
-                input.extend_from_slice(message);
-                Ok(primitives::hmac_md5(&ksign, &primitives::md5(&input)))
-            }
-        }
+        Ok(self.cipher().checksum(base, usage, message)?)
     }
 
     /// Node's `verifyChecksum()`.
+    #[tracing::instrument(level = "debug", skip_all, fields(etype = self.id))]
     pub fn verify_checksum(
         &self,
         base: &[u8],
@@ -763,13 +450,14 @@ impl Enctype {
         message: &[u8],
         given: &[u8],
     ) -> Krb5Result<bool> {
-        Ok(primitives::equal_constant_time(
+        Ok(krb5::equal_constant_time(
             &self.checksum(base, usage, message)?,
             given,
         ))
     }
 
     /// RFC 3961's pseudo-random function, `sts-crypto`'s.
+    #[tracing::instrument(level = "debug", skip_all, fields(etype = self.id))]
     pub fn prf(&self, key: &[u8], octets: &[u8]) -> Krb5Result<Vec<u8>> {
         Ok(sts_crypto::krb5_prf::prf(self.id as i32, key, octets)?)
     }
