@@ -186,11 +186,13 @@ fn webauthn_matches_node() {
                 );
                 let theirs = b64(&n["signature"]);
                 if o.sig_alg == webauthn::tpm_alg::ECDSA {
-                    let (want, _) = integers(&theirs);
-                    let (have, minimal) = integers(&o.signature);
+                    // Node writes minimal DER since #904, so the bytes are
+                    // the same and not merely the integers.
+                    let (_, minimal) = integers(&o.signature);
                     check(
-                        want == have && minimal,
-                        "TPMT_SIGNATURE ECDSA: Node's integers, minimal DER"
+                        o.signature == theirs && minimal,
+                        "TPMT_SIGNATURE ECDSA: Node's minimal DER, byte for \
+                         byte"
                             .to_string(),
                     );
                 } else {

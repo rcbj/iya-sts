@@ -1174,8 +1174,30 @@ async function rawSignatures() {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+  // THE PQ FAMILY WITH THE ALGORITHM NAMED (#1368): the raw AKP key bytes
+  // a Data Integrity proof holds, every JOSE post-quantum algorithm, signed
+  // by signRawSignature() and judged by verifyRawSignature().
+  const named = [];
+  for (const alg of pqJose.PQ_ALGS) {
+    const pair = pqJose.generate(alg);
+    const other = pqJose.generate(alg);
+    const scheme = { family: 'pq', alg: alg };
+    const sig = crypto.signRawSignature(scheme, pair.priv, data);
+    const tampered = Buffer.from(sig);
+    tampered[tampered.length - 1] ^= 1;
+    named.push({ alg: alg, pub: pair.pub.toString('base64'),
+                 priv: pair.priv.toString('base64'),
+                 otherPub: other.pub.toString('base64'),
+                 signature: Buffer.from(sig).toString('base64'),
+                 ok: await crypto.verifyRawSignature(scheme, pair.pub, data,
+                                                     sig),
+                 tampered: await crypto.verifyRawSignature(scheme, pair.pub,
+                                                           data, tampered),
+                 wrongKey: await crypto.verifyRawSignature(scheme, other.pub,
+                                                           data, sig) });
+  }
   return { signatures: rows, kdfa: kdfa, credential: credential,
-           integers: integers, pkcs7: pkcs7 };
+           integers: integers, pkcs7: pkcs7, named: named };
 }
 
 // WEBAUTHN (section 10): Node's verdict from verifyCoseSignature() for

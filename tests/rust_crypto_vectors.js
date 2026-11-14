@@ -162,6 +162,11 @@ function restOfRun(t) {
     xmlEncryption(t, read('xmlenc-rust.json'), read('xmlenc-node.json'));
   }
   const pending = [];
+  if (fs.existsSync(path.join(VECTORS, 'raw-sig-rust.json'))) {
+    pending.push(function () {
+      return rawSignaturesFromRust(t, read('raw-sig-rust.json'));
+    });
+  }
   if (fs.existsSync(path.join(VECTORS, 'sigstore-rust.json'))) {
     pending.push(function () {
       return sigstoreFromRust(t, read('sigstore-rust.json'));
@@ -265,6 +270,27 @@ async function sigstoreFromRust(t, v) {
   t.check(await crypto.verifyRekorSet(changed, set, logs) ===
           'unable to verify SET', 'and not over another log index');
   log.debug("Leaving sigstoreFromRust().");
+}
+
+// RAW SIGNATURES, THE PQ FAMILY WITH THE ALGORITHM NAMED (#1368): every
+// signature Rust made under Node's raw AKP private key verifies with
+// verifyRawSignature() against the raw public key.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} vectors - raw-sig-rust.json
+ * @returns {Promise<void>} when every row is checked
+ */
+async function rawSignaturesFromRust(t, vectors) {
+  log.debug("Entering rawSignaturesFromRust().");
+  const data = Buffer.from('a challenge the attestor signs');
+  for (const row of vectors.named) {
+    const ok = await crypto.verifyRawSignature(
+      { family: 'pq', alg: row.alg }, Buffer.from(row.pub, 'base64'), data,
+      Buffer.from(row.signature, 'base64'));
+    t.check(ok, row.alg + ': a raw post-quantum signature Rust made, the ' +
+            'algorithm named, verifies in Node');
+  }
+  log.debug("Leaving rawSignaturesFromRust().");
 }
 
 // POST-QUANTUM KEYS IN X.509: every signature Rust made verifies with

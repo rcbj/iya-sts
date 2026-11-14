@@ -343,10 +343,8 @@ fn decode_argon2_secret(parts: &[&str]) -> Option<Decoded> {
     }
     let salt = lenient_b64(parts[4]);
     let expected = lenient_b64(parts[5]);
-    if parallelism < 1
-        || parallelism > ARGON2_LIMITS.parallelism.max
-        || passes < 1
-        || passes > ARGON2_LIMITS.passes.max
+    if !(1..=ARGON2_LIMITS.parallelism.max).contains(&parallelism)
+        || !(1..=ARGON2_LIMITS.passes.max).contains(&passes)
         || memory < 8 * parallelism
         || memory > ARGON2_LIMITS.memory.max
         || salt.len() < 8
