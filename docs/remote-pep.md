@@ -820,6 +820,64 @@ On the Remote PEPs tab each route has its own small form for this: a mode, a
 table of header and claim, and the separator
 (`POST /admin-api/xacml/set-pep-route-identity`).
 
+### Signing a browser in: the `session` mechanism
+
+The proxy signs a person in for the application behind it, as that
+application's OpenID Connect relying party. Register the application in the
+realm as an ordinary confidential client, and add
+`<publicBaseUrl>/.iya-pep/callback` to its redirect URIs. Then name the
+application on the route. The client secret travels to the PEP only over its
+mutual TLS pull. It is never on a console page or in an `/admin-api` answer.
+
+1. A browser asking for a `session` route with no proxy session is redirected
+   to the realm's `/oauth2/authorize` with PKCE.
+2. The person signs in at the service, which redirects back to
+   `/.iya-pep/callback`.
+3. The proxy redeems the code and checks the ID Token. It then keeps a proxy
+   session of its own behind the `iya_pep_session` cookie. The cookie is
+   `HttpOnly` and `SameSite=Lax`, `Secure` over https, and never forwarded.
+4. **A sign-out at the service ends access.** The proxy receives the
+   application's CAEP and RISC events on a Shared Signals poll stream, and a
+   `session-revoked` event ends the proxy session. Give the application the
+   `client_credentials` grant and the `ssf.read` and `ssf.manage` scopes for
+   this, and turn on the realm's transmitter. A route with `signals: false`
+   asks `POST /xacml/pep/session` instead, at most every
+   `PEP_PROXY_SESSION_RECHECK_MS`.
+
+`/.iya-pep/logout` ends the proxy session and sends the browser to the realm's
+end-session endpoint. A request that is not from a browser and has no proxy
+session gets `401`.
+
+The relying party is rcbj's crate
+[`oidc-caep-risc`](https://github.com/rcbj/oidc-caep-risc-rust) (MIT, from
+crates.io). It verifies the service's listener certificate against the chain
+the pull carries, so the host name in `PEP_PDP_URL` must be one that
+certificate names.
+
+### Before you put it in front of an application
+
+* **The application must accept traffic only from the proxy.** An identity
+  header carries no proof. The proxy strips every configured identity header
+  from the incoming request, in any case and however many times it was sent,
+  but an application reachable some other way can be sent any header.
+* **The proxy never chooses where to send a request.** The upstream is fixed
+  by the configuration. A path with a dot segment, `//`, a backslash or an
+  encoded `.`, `/` or `\` is refused `400`.
+* **What the client sent to authenticate is not forwarded**, unless the route
+  sets `forwardCredentials`. That covers `Authorization` and the proxy's own
+  cookie. Hop-by-hop headers are dropped in both directions. `X-Forwarded-For`,
+  `X-Forwarded-Proto` and `X-Forwarded-Host` are the proxy's own, never the
+  client's.
+* **A request is never forwarded without the identity its route sends.** When
+  the service will not issue it, the request is refused: `403` when the
+  policy refused, `502` otherwise.
+* The status codes: `404` for no route, `405` with `Allow` for a method the
+  route does not take, `401` with a challenge for each mechanism the route
+  accepts, `403` for a refusal and for a route whose application no longer
+  qualifies, `413` over `maxBodyBytes`, `502` when the upstream cannot be
+  reached, and `504` after `upstreamTimeoutMs`.
+* WebSockets are not proxied, because `Upgrade` is a hop-by-hop header.
+
 ### What the PEP asks the service
 
 Everything the proxy cannot decide by itself it asks over its mutual TLS, and
@@ -862,6 +920,17 @@ and a PEP has none.
 | `PEP_AUTHZEN_CALLERS` | — | optional: a JSON array of `{ "name", "sha256", "applications" }`. Set, it narrows the callers pulled from the service to the certificates it names, and decides alone until the first caller pull; unset, the pulled list alone decides |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at |
 | `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | how long an evaluation forwarded to the service (an application that enforces fine-grained authorization) may take before the caller is answered `504` |
+| `PEP_PROXY` | `true` | the reverse proxy. Until the service sends a configuration, it answers `404` to everything |
+| `PEP_PROXY_PORT` | `9180` | the proxy's plain-HTTP listener |
+| `PEP_PROXY_HTTPS_PORT` | `9543` | the proxy's HTTPS listener, with the pair 9443 serves. It asks a client for a certificate and never requires one |
+| `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | on a `signals: false` session route: how old the service's last answer that a session is live may be. `0` asks on every access |
+| `PEP_PROXY_SESSION_TTL_MS` | `28800000` | the longest a proxy session lives |
+| `PEP_PROXY_MAX_SESSIONS` | `10000` | the most proxy sessions held. A new one past it is refused `503` |
+| `PEP_PROXY_JWKS_TTL_MS` | `300000` | how long the realm's JWKS is kept |
+| `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | how often the CAEP and RISC stream is polled |
+| `PEP_PROXY_UPSTREAM_CA` | — | a path: anchors for an `https` upstream |
+| `PEP_PROXY_UPSTREAM_INSECURE` | `false` | do not verify an `https` upstream |
+| `PEP_PROXY_RP_ALLOW_INSECURE` | `false` | let the relying party use an `http` issuer, for development only. Redirect URIs stay https |
 | `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_LOG_LEVEL` | | |
 
 ## Against a trust realm
