@@ -85,6 +85,7 @@ pub enum ListenerKind {
 
 impl ListenerKind {
     /// The kind's name as Node spells it in `policy.kind`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn name(&self) -> &str {
         match self {
             ListenerKind::Process => "process",
@@ -100,6 +101,7 @@ impl ListenerKind {
     }
 
     /// The kind from its name (`spiffe` is `spiffeServer`, as before #429).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn named(name: &str) -> Option<ListenerKind> {
         Some(match name {
             "main" => ListenerKind::Main,
@@ -198,6 +200,7 @@ fn own_of_json(value: &Json) -> Option<Own> {
 }
 
 /// `ownValue()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn own_value(
     settings: &Settings,
     kind: &ListenerKind,
@@ -214,6 +217,7 @@ pub fn own_value(
 }
 
 /// A list setting as trimmed, non-empty entries (`listOf()`).
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn list_of(raw: &str) -> Vec<String> {
     raw.split(',')
         .map(str::trim)
@@ -232,6 +236,7 @@ fn text_of(value: &SettingValue) -> String {
 }
 
 /// The 256-bit suites of a list, in its order (`postQuantumSuites()`).
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn post_quantum_suites(suites: &[String]) -> Vec<String> {
     suites
         .iter()
@@ -242,6 +247,7 @@ pub fn post_quantum_suites(suites: &[String]) -> Vec<String> {
 
 /// An OpenSSL groups list with only its ML-KEM groups kept, tuples and
 /// order as written (`postQuantumGroups()`); empty where it held none.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn post_quantum_groups(groups: &str) -> String {
     let wanted: Vec<String> =
         PQ_GROUPS.iter().map(|g| g.to_ascii_lowercase()).collect();
@@ -273,6 +279,7 @@ pub enum ClientAuth {
 }
 
 impl ClientAuth {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn named(name: &str) -> ClientAuth {
         match name {
             "none" => ClientAuth::None,
@@ -283,6 +290,7 @@ impl ClientAuth {
 
     /// node's `requestCert` and `rejectUnauthorized`
     /// (`clientAuthOptions()`).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn request_and_reject(self) -> (bool, bool) {
         (self != ClientAuth::None, self == ClientAuth::Required)
     }
@@ -440,6 +448,7 @@ pub enum TlsVersion {
 
 impl TlsVersion {
     /// node's spelling: `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn named(name: &str) -> Option<TlsVersion> {
         Some(match name {
             "TLSv1" | "TLSv1.0" => TlsVersion::Tls10,
@@ -475,6 +484,7 @@ pub struct ProtocolOptions {
 
 impl ProtocolOptions {
     /// `protocolOptions(policy)`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn of(policy: &ListenerPolicy) -> ProtocolOptions {
         let floor =
             TlsVersion::named(&policy.min_version).unwrap_or(TlsVersion::Tls12);
@@ -517,6 +527,7 @@ impl ProtocolOptions {
     /// OpenSSL's groups list syntax: node hands `tls.groups` straight to
     /// `SSL_CTX_set1_groups_list`, whose tuple separator is `/` and which
     /// takes the spaces around it.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn groups_for_openssl(&self) -> Option<String> {
         self.groups.as_ref().map(|g| {
             g.split('/').map(str::trim).collect::<Vec<_>>().join(" / ")
@@ -526,6 +537,7 @@ impl ProtocolOptions {
 
 /// `tls12Ciphers()`: the setting's TLS 1.2 suites, or node's default list
 /// without its TLS 1.3 names where it is empty.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn tls12_ciphers(listed: &str) -> String {
     let raw = listed.trim();
     let raw = if raw.is_empty() {

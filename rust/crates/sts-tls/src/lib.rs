@@ -66,6 +66,7 @@ pub struct ConnectionFacts {
 /// constant's name without its prefix, as node's `X509ErrorCode()` spells
 /// it. The common ones; any other is `UNSPECIFIED`'s spelling with the
 /// number, which node does not produce but which names it.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn authorization_error_name(code: i32) -> String {
     match code {
         2 => "UNABLE_TO_GET_ISSUER_CERT",

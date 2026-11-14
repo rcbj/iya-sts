@@ -86,6 +86,7 @@ fn normalised(fingerprint: &str) -> String {
 /// Every certificate of a listener's OWN anchors file, or none where it
 /// cannot be read (`listenerFileAnchors()`); the startup check makes an
 /// empty answer fatal (`STS-TLS-0045`).
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn listener_file_anchors(file: &str) -> Vec<String> {
     match std::fs::read_to_string(file) {
         Ok(text) => split_pem_certificates(&text)
@@ -287,6 +288,7 @@ impl Truststore {
     }
 
     /// Every anchor, for the truststore page and its API twin.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn list(&self) -> Vec<Anchor> {
         self.held().clone()
     }

@@ -79,6 +79,7 @@ impl ListenerIdentity {
     }
 
     /// `CN=<first hostname>, O=<organisation>`, the subject Node reports.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn subject(&self) -> String {
         format!("CN={}, O={}", self.common_name(), self.organisation)
     }
@@ -131,6 +132,7 @@ impl ListenerCertificate {
     /// every listener sends four certificates where there is a hierarchy.
     /// Sending the Root trusts nothing (RFC 5280 section 6.1) and lets a
     /// client SHOW which Root it chained to.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn presented_pems(&self) -> Vec<String> {
         let mut out = vec![self.cert_pem.clone()];
         out.extend(self.chain_pem.iter().cloned());
@@ -145,11 +147,13 @@ impl ListenerCertificate {
 
     /// The bundle, concatenated: what `GET /tls/server-certificate`
     /// publishes ahead of the Root.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn presented_bundle_pem(&self) -> String {
         self.presented_pems().concat()
     }
 
     /// The certificate, its chain and its key as OpenSSL objects.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn open(&self) -> PkiResult<OpenedCredential> {
         let mut pems = self.presented_pems().into_iter();
         let leaf_pem = pems.next().unwrap_or_default();
@@ -163,6 +167,7 @@ impl ListenerCertificate {
 
     /// Whether two thirds of its life are gone (`tls/listeners.js`'s
     /// `renewDue()`), at `now`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn renewal_due(&self, now: DateTime<Utc>) -> bool {
         let life = self.not_after - self.not_before;
         life > Duration::zero() && now >= self.not_before + (life * 2) / 3
@@ -182,6 +187,7 @@ fn same_certificate(a: &str, b: &str) -> bool {
 
 /// SHA-256 over the DER, colon-separated upper-case hex
 /// (`certificateThumbprint(…, { format: 'colon-hex' })`).
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn fingerprint_colon_hex(der: &[u8]) -> String {
     sts_crypto::jws_alg::Hash::Sha256
         .digest(der)
@@ -194,6 +200,7 @@ pub fn fingerprint_colon_hex(der: &[u8]) -> String {
 /// Every PEM certificate in a text, each re-normalised to end in a
 /// newline (`splitPemCertificates()`): concatenated PEMs are
 /// self-delimiting.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn split_pem_certificates(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = text;
@@ -427,6 +434,7 @@ pub struct BranchOptions {
 /// certificate. `pki.js` refuses one a caller names (`STS-PKI-0272`) and
 /// falls back to the classical default where only `pki.keyAlgorithm`
 /// names it (`STS-PKI-0273`).
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn is_composite(key_algorithm: &str) -> bool {
     let a = key_algorithm.to_ascii_lowercase();
     a.starts_with("mldsa") && a.contains('-')
@@ -495,6 +503,7 @@ impl ProcessBranch {
     }
 
     /// The service Root, PEM.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn root_pem(&self) -> &str {
         &self.root.cert_pem
     }
@@ -565,6 +574,7 @@ impl ProcessBranch {
     /// travels with THIS branch's Issuing CA and Intermediate, certificate
     /// for certificate — the signature is not enough, two Roots of one name
     /// being the case to tell apart.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn holds_chain_of(&self, certificate: &ListenerCertificate) -> bool {
         certificate.chain_pem.len() == 2
             && same_certificate(
@@ -750,6 +760,7 @@ pub struct AnchorFacts {
 }
 
 /// Reads one anchor PEM, or why OpenSSL cannot.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn describe_anchor(pem: &str) -> PkiResult<AnchorFacts> {
     // OpenSSL first: it reads the ML-DSA anchors too, and an anchor it
     // cannot load would make every listener's next context fail.
@@ -772,6 +783,7 @@ pub fn describe_anchor(pem: &str) -> PkiResult<AnchorFacts> {
 }
 
 /// The anchors as OpenSSL takes them, for the client truststore.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn open_anchors(pems: &[String]) -> PkiResult<Vec<X509>> {
     pems.iter()
         .map(|p| X509::from_pem(p.as_bytes()).map_err(PkiError::from))
@@ -787,6 +799,7 @@ const ACCEPTED_CURVES: &[&str] = &["P-256", "P-384", "P-521"];
 /// `nonNistCurvePeerCertificate()`: whether any certificate of a chain
 /// (DER, leaf first) has an EC key on a curve outside the NIST set. An
 /// unreadable SPKI is not judged here: the path rules refuse it.
+// A hot path: asked of every connection, so no span of its own.
 pub fn chain_has_refused_curve(chain: &[Vec<u8>]) -> bool {
     chain.iter().any(|der| {
         let Ok(c) = Certificate::from_der(der) else {
@@ -802,6 +815,7 @@ pub fn chain_has_refused_curve(chain: &[Vec<u8>]) -> bool {
 }
 
 /// A PEM's DER, for a caller that holds a chain as text.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn der_of_pem(pem: &str) -> PkiResult<Vec<u8>> {
     pem_to_der(pem)
 }

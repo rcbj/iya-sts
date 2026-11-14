@@ -86,6 +86,7 @@ pub struct ListenerDefinition {
 impl ListenerDefinition {
     /// What makes its socket (`signatureOf()`): a change to any of these
     /// rebinds; the TLS block and client authentication apply in place.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn socket_signature(&self) -> String {
         serde_json::json!({
             "owner": self.owner, "port": self.port,
@@ -110,6 +111,7 @@ fn refuse(code: ErrorCode, message: String) -> DefinitionRefusal {
 
 /// The per-listener settings the main port has, by short name, with the
 /// service-wide row each overrides (`TLS_FIELDS`, read from the table).
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn tls_fields() -> Vec<(String, String)> {
     sts_core::settings::rows()
         .iter()
