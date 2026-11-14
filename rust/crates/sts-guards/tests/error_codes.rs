@@ -76,6 +76,14 @@ const LITERALS: &[(&str, &str)] = &[
         "cluster slice",
     ),
     (
+        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0011",
+        "cluster slice",
+    ),
+    (
+        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0011",
+        "cluster slice",
+    ),
+    (
         "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0012",
         "cluster slice",
     ),

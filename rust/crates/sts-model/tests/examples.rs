@@ -72,8 +72,10 @@ fn check(
                     )),
                 }
             }
-            let answers =
-                operation["responses"].as_object().cloned().unwrap_or_default();
+            let answers = operation["responses"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
             for (status, answer) in &answers {
                 let Ok(code) = status.parse::<u16>() else {
                     continue;

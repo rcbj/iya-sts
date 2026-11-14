@@ -173,7 +173,8 @@ pub fn certificate_digests_of(attrs: &Attributes) -> Vec<String> {
     for name in CERTIFICATE_ATTRIBUTES {
         for one in values_of(attrs, name) {
             if let Some(der) = certificate_der_of(&one) {
-                let hex: String = openssl::sha::sha256(&der)
+                let hex: String = sts_crypto::jws_alg::Hash::Sha256
+                    .digest(&der)
                     .iter()
                     .map(|b| format!("{:02x}", b))
                     .collect();

@@ -250,10 +250,14 @@ pub fn crate_dir_of(rel: &str) -> String {
 
 /// Whether a path is code the SERVICE runs, as the Node guards read only
 /// the service's own source: not an integration test, bench or example,
-/// not a build script, and not this crate.
+/// not a build script, and not this crate. Nor what is GENERATED from the
+/// model (`src/generated/`, sts-model's data types, D15): nobody writes
+/// it, the emitter is the place a rule about it is kept, and
+/// tests/model_domain.js holds it to the model instead.
 pub fn is_service_code(rel: &str) -> bool {
     let inside = rel.splitn(3, '/').nth(2).unwrap_or("");
-    !(inside.starts_with("tests/")
+    !(inside.starts_with("src/generated/")
+        || inside.starts_with("tests/")
         || inside.starts_with("benches/")
         || inside.starts_with("examples/")
         || inside == "build.rs"
