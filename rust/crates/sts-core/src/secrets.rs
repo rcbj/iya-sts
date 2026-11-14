@@ -292,11 +292,21 @@ pub struct LedgerRow {
     pub error: Option<String>,
 }
 
+/// A client certificate's private key made PKCS#8 for the TLS client,
+/// which takes no other form: `openbao/seed.js` writes a PKCS#1 RSA key.
+/// Reading a key is the crypto module's (rcbj's rule, #453), so the
+/// composition root fills this from `sts-crypto`; with it empty, a key that
+/// is not PKCS#8 already is refused by name.
+pub trait KeyNormalizer: Send + Sync {
+    fn pkcs8_pem(&self, key_pem: &[u8]) -> Result<Vec<u8>, String>;
+}
+
 /// The secrets, over the settings that locate them.
 pub struct Secrets {
     settings: Arc<Settings>,
     env: HashMap<String, String>,
     ledger: Mutex<Vec<LedgerRow>>,
+    normalizer: std::sync::OnceLock<Arc<dyn KeyNormalizer>>,
 }
 
 impl Secrets {
@@ -311,7 +321,14 @@ impl Secrets {
             settings,
             env,
             ledger: Mutex::new(Vec::new()),
+            normalizer: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Fills the key normalizer's slot, once (see [`KeyNormalizer`]).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_key_normalizer(&self, slot: Arc<dyn KeyNormalizer>) -> bool {
+        self.normalizer.set(slot).is_ok()
     }
 
     fn text(&self, key: &str) -> String {
@@ -770,6 +787,22 @@ impl Secrets {
                 .map_err(|e| fail(node_io(&e, "open", &cert)))?;
             let k = std::fs::read(&key)
                 .map_err(|e| fail(node_io(&e, "open", &key)))?;
+            let k = if k.starts_with(b"-----BEGIN PRIVATE KEY-----") {
+                k
+            } else {
+                match self.normalizer.get() {
+                    Some(slot) => slot
+                        .pkcs8_pem(&k)
+                        .map_err(|e| fail(format!("{}: {}", key, e)))?,
+                    None => {
+                        return Err(fail(format!(
+                            "{} is not a PKCS#8 key, and no key normalizer \
+                             is installed to read it",
+                            key
+                        )))
+                    }
+                }
+            };
             let identity = reqwest::Identity::from_pkcs8_pem(&c, &k)
                 .map_err(|e| fail(format!("{}: {}", cert, e)))?;
             builder = builder.identity(identity);
@@ -956,10 +989,13 @@ impl Secrets {
     /// settings, read again.
     fn reconnector(&self, spec: &'static Spec) -> Reconnect {
         Reconnect {
-            secrets: Secrets {
-                settings: self.settings.clone(),
-                env: self.env.clone(),
-                ledger: Mutex::new(Vec::new()),
+            secrets: {
+                let again =
+                    Secrets::new(self.settings.clone(), self.env.clone());
+                if let Some(slot) = self.normalizer.get() {
+                    again.set_key_normalizer(slot.clone());
+                }
+                again
             },
             spec,
         }

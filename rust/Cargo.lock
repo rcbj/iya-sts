@@ -1763,6 +1763,7 @@ dependencies = [
  "chrono",
  "idna",
  "indexmap",
+ "openssl",
  "reqwest",
  "rquickjs",
  "serde",
