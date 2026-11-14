@@ -269,6 +269,57 @@ function peerAlert(where, hello) {
   });
 }
 
+// A ClientHello one byte short of what its lengths say, both lengths
+// shortened to match: OpenSSL refuses it with decode_error, before any
+// handshake. Like tlsfuzzer's test-truncating-of-client-hello.py, the
+// client then waits for the alert AND the close — which must come at once,
+// as a FIN, even while the descriptor is held.
+function truncatedHello(where, hello) {
+  log.debug("Entering truncatedHello().");
+  const cut = Buffer.from(hello.subarray(0, hello.length - 1));
+  cut.writeUInt16BE(cut.readUInt16BE(3) - 1, 3);
+  cut.writeUIntBE(cut.readUIntBE(6, 3) - 1, 6, 3);
+  log.debug("Leaving truncatedHello().");
+  return new Promise(function (resolve) {
+    let port = 0;
+    let sentAt = 0;
+    const got = { alert: false, alertAfter: null, endAfter: null };
+    const raw = net.connect(where.port, '127.0.0.1', function () {
+      port = raw.localPort;
+      sentAt = Date.now();
+      raw.write(cut);
+    });
+    raw.on('data', function (d) {
+      if (d[0] === 21 && got.alertAfter === null) {
+        got.alert = true;
+        got.alertAfter = Date.now() - sentAt;
+      }
+    });
+    raw.on('end', function () {
+      got.endAfter = Date.now() - sentAt;
+      raw.destroy();
+    });
+    raw.on('error', function (e) {
+      log.debug("Caught in truncatedHello(): " + ((e && e.message) || e));
+    });
+    raw.on('close', function () {
+      const until = Date.now() + DELAY_MS + 3000;
+      const look = function () {
+        const one = where.seen.get(port);
+        if ((one && one.closedAt) || Date.now() > until) {
+          resolve(Object.assign(got, {
+            serverError: one ? one.errorCode : '',
+            serverClosedAfter: one && one.closedAt ?
+              one.closedAt - sentAt : null }));
+          return;
+        }
+        setTimeout(look, 20);
+      };
+      look();
+    });
+  });
+}
+
 // The four ways in, EACH probes of each, all at once.
 const KINDS = {
   a: { version: 'TLSv1.3', waitMs: 0 },
@@ -399,6 +450,22 @@ async function run(t) {
             refused.serverClosedAfter < AT_ONCE_MS,
             '4b. and the server closes on it at once, holding nothing',
             String(refused.serverClosedAfter));
+    // 4c. The handshake refused before it began (tlsfuzzer's truncated
+    // ClientHello): the alert, then the FIN at once, and only the
+    // descriptor held.
+    const hello = await clientHello();
+    const runs = [];
+    for (let i = 0; i < EACH; i++) {
+      runs.push(truncatedHello(quiet, hello));
+    }
+    const cuts = await Promise.all(runs);
+    t.check(cuts.every(function (r) {
+      return r.alert && r.endAfter !== null && r.endAfter < AT_ONCE_MS;
+    }), '4c. a refused handshake sends its alert and then its FIN at ' +
+        'once', JSON.stringify(cuts));
+    t.check(cuts.every(held),
+            '4c. while the descriptor itself is closed only after the delay',
+            JSON.stringify(cuts));
     const body = await new Promise(function (resolve, reject) {
       https.get({ host: '127.0.0.1', port: quiet.port, path: '/',
                   rejectUnauthorized: false, agent: false }, function (res) {
@@ -411,13 +478,13 @@ async function run(t) {
         });
       }).on('error', reject);
     });
-    t.equal(body, 'ok', '4c. a good request is answered');
-    t.equal(AlertClose.heldOn(quiet.server), 0, '4d. and nothing is held');
+    t.equal(body, 'ok', '4d. a good request is answered');
+    t.equal(AlertClose.heldOn(quiet.server), 0, '4e. and nothing is held');
   } finally {
     quiet.server.close();
   }
 
-  // 4e. The parser refusal answers a TLS failure with nothing: no plaintext
+  // 4f. The parser refusal answers a TLS failure with nothing: no plaintext
   // 400 into a connection whose TLS engine has sent its fatal alert.
   const writes = [];
   let destroyed = 0;
@@ -454,7 +521,7 @@ async function run(t) {
   ParserRefusal.answer({ code: 'ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC',
                          library: 'SSL routines' }, fake, 'the test');
   t.check(writes.length === 0 && destroyed === 1,
-          '4e. the parser refusal writes nothing on a TLS failure and ' +
+          '4f. the parser refusal writes nothing on a TLS failure and ' +
           'closes it',
           JSON.stringify({ writes: writes, destroyed: destroyed }));
 

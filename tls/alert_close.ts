@@ -39,12 +39,20 @@
 //      listener prepended at `secureConnection`.
 //
 // Either way the raw socket is marked before its `destroy()` is reached, and
-// its `destroy()` — that one socket's, nothing shared — then holds the
-// socket for CLOSE_DELAY_MS before closing it for real. While it is held the
-// TLS engine keeps reading the TCP stream and throws the bytes away, so the
-// receive buffer stays empty and the peer reads the alert before anything
-// closes; the close that follows may still be a reset, by which time it no
-// longer matters.
+// its `destroy()` — that one socket's, nothing shared — then ENDS the
+// socket's sending side at once (a FIN behind the alert) and holds the
+// descriptor for CLOSE_DELAY_MS before closing it for real. While it is held
+// the TLS engine keeps reading the TCP stream and throws the bytes away, so
+// the receive buffer stays empty and the peer reads the alert and the FIN
+// before anything is reset; the close that follows may still be a reset, by
+// which time it no longer matters.
+//
+// THE FIN IS NOT HELD, AND THE FIRST VERSION HELD IT. A peer that waits for
+// the close after the alert waits briefly — tlsfuzzer's ExpectClose after an
+// ExpectNoMessage, well under a second — and holding the whole close for two
+// seconds failed 23 probes of test-truncating-of-client-hello.py on the
+// debugger's listener and stalled two more scripts to their watchdog. Only
+// the reset is the problem, and only close() with unread data sends one.
 //
 // WHAT IT COSTS. One one-shot timer per FAILED connection, cleared when the
 // socket closes — the per-connection timeout root CLAUDE.md's scheduler
@@ -233,12 +241,17 @@ class AlertClose {
       return raw;
     };
     listener.held += 1;
+    // The FIN goes now, behind the alert: a peer waiting for the close after
+    // the alert sees it at once (tlsfuzzer's ExpectClose waits well under a
+    // second), and only the CLOSE of the descriptor — the reset — waits.
+    AlertClose.halfClose(raw);
     const closer = setTimeout(function (): void {
       destroy.call(raw, error);
     }, listener.delayMs);
-    if (typeof closer.unref === 'function') {
-      closer.unref();
-    }
+    // NOT unref'd: a held socket is still a connection the server counts,
+    // so a server.close() waits for it, and an unref'd timer let the event
+    // loop drain under that wait (tests/tlsfuzzer_debugger.js's run stopped
+    // unfinished). The timer is at most CLOSE_DELAY_MS.
     raw.once('close', function (): void {
       clearTimeout(closer);
       listener.held -= 1;
@@ -247,6 +260,23 @@ class AlertClose {
     log.debug("Leaving AlertClose.hold(). Held for " + listener.delayMs +
               " ms.");
     return raw;
+  }
+
+  // Ends the raw socket's sending side (a TCP FIN after whatever the TLS
+  // engine already queued — the alert), leaving its receiving side to be
+  // drained. A socket that cannot is left to the timer.
+  private static halfClose(raw: any): void {
+    log.debug("Entering AlertClose.halfClose().");
+    try {
+      if (raw.writable && typeof raw.end === 'function') {
+        raw.end();
+      }
+    } catch (e) {
+      log.debug("Caught in AlertClose.halfClose(): " +
+                ((e && (e as Error).message) || e));
+      // The close still comes from the timer.
+    }
+    log.debug("Leaving AlertClose.halfClose().");
   }
 
   private static recordFull(listener: Listener): void {

@@ -1744,6 +1744,13 @@ listener. What it rests on, because none of it is a node option:
   for that connection only; the TLS engine goes on reading the TCP stream and
   discarding it while the socket is held, so the receive buffer stays empty
   (measured: Recv-Q 0 with the peer still sending).
+* **The FIN goes at once; only the descriptor is held.** A reset comes only
+  from closing with unread data, so the sending side is ended immediately
+  (the FIN follows the alert) and the close waits. The first version held
+  both, and tlsfuzzer's ExpectClose — which after an ExpectNoMessage waits
+  well under a second — failed 23 probes of
+  `test-truncating-of-client-hello.py` on the debugger's listener and ran
+  two more scripts into their watchdog.
 * **There are two ways a failure arrives.** Before node counts the handshake
   done (a bad record behind the client's Finished, as tlsfuzzer sends it, or
   a handshake failure), node destroys the TLSSocket itself and closes its
