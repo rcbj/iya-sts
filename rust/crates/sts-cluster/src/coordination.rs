@@ -247,10 +247,12 @@ impl ReadBarrier {
                 }
             }
             self.kick(need);
-            let good = tokio::select! {
-                _ = &mut notified => self.st().good >= need,
-                _ = tokio::time::sleep_until(deadline) => false,
-            };
+            // A WAIT FOR AN EVENT, bounded by the request's deadline — not a
+            // timer: the round ends when a pull settles.
+            let good = tokio::time::timeout_at(deadline, &mut notified)
+                .await
+                .is_ok()
+                && self.st().good >= need;
             if good {
                 return Ok(());
             }
@@ -275,9 +277,14 @@ impl ReadBarrier {
                 let spent = round_began.elapsed();
                 let spacing = Duration::from_millis(ROUND_SPACING_MS);
                 if spent < spacing {
+                    // The spacing is a wait for ANOTHER pull to settle — a
+                    // reader's that may prove this one too — for at most
+                    // the spacing, never past the deadline.
                     let pause =
                         (Instant::now() + (spacing - spent)).min(deadline);
-                    tokio::time::sleep_until(pause).await;
+                    let other = self.settled.notified();
+                    let _spaced =
+                        tokio::time::timeout_at(pause, other).await.is_ok();
                 }
             }
         }
@@ -289,10 +296,11 @@ impl ReadBarrier {
         tracing::warn!(
             "{}barrier: a request was REFUSED: this process had not caught up with the writes other processes \
              committed before it after {}ms (workers.readBarrierTimeoutMs), and serving it from what this \
-             process has could answer wrongly. The change-log pull's own STS-STORE-0039 line says where its \
-             time is going.",
+             process has could answer wrongly. The change-log pull's own {} line says where its time is \
+             going.",
             tag(codes::STS_WORKER_0053),
-            waited_ms as u64
+            waited_ms as u64,
+            codes::STS_STORE_0039
         );
         Err(BarrierRefusal {
             code: codes::STS_WORKER_0053,

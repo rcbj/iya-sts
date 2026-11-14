@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde_json::{json, Value as Json};
-use sts_core::errors::codes;
+use sts_core::errors::{codes, ErrorCode};
 use sts_core::log::tag;
 use sts_crypto::jws_alg::Hash;
 use sts_crypto::random::random_bytes;
@@ -361,6 +361,192 @@ impl ClusterStore for MemoryClusterStore {
 /// records it.
 pub type FailStop = Arc<dyn Fn(&'static str, String) + Send + Sync>;
 
+/// The service lease (`SERVICE_LEASE`): held by the one node that serves in
+/// active-passive mode.
+pub const SERVICE_LEASE: &str = "service";
+
+/// What a node is (`cluster.js`'s `mode()`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClusterMode {
+    Off,
+    ActivePassive,
+    ActiveActive,
+}
+
+impl ClusterMode {
+    /// The mode's name. A hot path (every status read): no span.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ClusterMode::Off => "off",
+            ClusterMode::ActivePassive => "active-passive",
+            ClusterMode::ActiveActive => "active-active",
+        }
+    }
+}
+
+/// The settings `resolve()` reads, as text and flags.
+#[derive(Clone, Debug, Default)]
+pub struct ModeSettings {
+    /// `cluster.mode`: `auto`, `off`, `active-passive` or `active-active`.
+    pub cluster_mode: String,
+    /// `persistence.mode`.
+    pub persistence_mode: String,
+    /// `global.mode` is `product`.
+    pub product: bool,
+    /// `global.mode` as written, for the sentence.
+    pub global_mode: String,
+    /// `keys.source`.
+    pub keys_source: String,
+    /// `global.publicBaseUrl`.
+    pub public_base_url: String,
+    /// `persistence.minted`.
+    pub minted: bool,
+}
+
+/// A cluster mode the configuration cannot run (`resolve()`'s `refused`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModeRefusal {
+    pub code: ErrorCode,
+    pub why: String,
+}
+
+/// Whether a store mode is a database (`storeModes.isDatabase()`).
+fn is_database(store: &str) -> bool {
+    matches!(store, "postgres" | "mariadb")
+}
+
+/// WHAT MODE THIS NODE IS IN, and the refusals that are about configuration
+/// rather than about other nodes (`resolve()`): pure, reads the settings and
+/// answers. `auto` is active-passive in product mode on a database store and
+/// off everywhere else; a cluster needs a database store (STS-CLUSTER-0007);
+/// active-active needs persisted keys (0008) and one public name (0026); any
+/// cluster needs minted state persisted (0040).
+#[tracing::instrument(level = "debug")]
+pub fn resolve_mode(
+    s: &ModeSettings,
+) -> Result<(ClusterMode, String), ModeRefusal> {
+    let configured = if s.cluster_mode.is_empty() {
+        "auto"
+    } else {
+        s.cluster_mode.as_str()
+    };
+    let store = if s.persistence_mode.is_empty() {
+        "memory"
+    } else {
+        s.persistence_mode.as_str()
+    };
+    if configured == "off" {
+        return Ok((ClusterMode::Off, "cluster.mode is off".to_string()));
+    }
+    if configured == "auto" {
+        if s.product && is_database(store) {
+            return Ok((
+                ClusterMode::ActivePassive,
+                "cluster.mode is auto, and this is product mode on a database store".to_string(),
+            ));
+        }
+        return Ok((
+            ClusterMode::Off,
+            "cluster.mode is auto, which is off outside product mode on a postgres store".to_string(),
+        ));
+    }
+    let refuse = |code: ErrorCode, why: String| {
+        Err(ModeRefusal {
+            code,
+            why: format!("{}{}", tag(code), why),
+        })
+    };
+    if !is_database(store) {
+        return refuse(
+            codes::STS_CLUSTER_0007,
+            format!(
+                "cluster.mode is \"{}\" and persistence.mode is \"{}\". Only a database store (postgres, or \
+                 mariadb) can hold a membership table, leases and atomic claims that several containers agree \
+                 on. Set persistence.mode=postgres, or cluster.mode=off for one node.",
+                configured, store
+            ),
+        );
+    }
+    let active_active = configured == "active-active";
+    if active_active
+        && s.keys_source != "persisted"
+        && !(s.keys_source == "auto" && s.product)
+    {
+        return refuse(
+            codes::STS_CLUSTER_0008,
+            format!(
+                "cluster.mode is active-active and keys are not persisted under an operator key-encryption key \
+                 (keys.source={}, global.mode={}). Every node has to sign with the same keys and open the same \
+                 sealed rows, and a key generated per process — or a key-encryption key generated per \
+                 container, which is what development mode shares between its own workers — is a different \
+                 key on every node.",
+                s.keys_source, s.global_mode
+            ),
+        );
+    }
+    if active_active && s.public_base_url.trim().is_empty() {
+        return refuse(
+            codes::STS_CLUSTER_0026,
+            "cluster.mode is active-active and global.publicBaseUrl is empty. Every node must issue under ONE \
+             name — the address clients reach the cluster at (the load balancer) — or a token minted on one \
+             node names an issuer and an audience the next node does not answer to. Set \
+             global.publicBaseUrl (STS_PUBLIC_BASE_URL) to that address on every node."
+                .to_string(),
+        );
+    }
+    if !s.minted {
+        return refuse(
+            codes::STS_CLUSTER_0040,
+            format!(
+                "cluster.mode is {} and persistence.minted is off, so every node would keep its own sessions, \
+                 pending sign-ins, codes and tokens and a flow whose hops land on two nodes would fail. Turn \
+                 persistence.minted on, or run one node with cluster.mode=off.",
+                configured
+            ),
+        );
+    }
+    let mode = if active_active {
+        ClusterMode::ActiveActive
+    } else {
+        ClusterMode::ActivePassive
+    };
+    Ok((mode, format!("cluster.mode is {}", configured)))
+}
+
+/// How long one heartbeat or lease statement may take (`renewalBoundMs()`):
+/// a third of the lifetime, at most two seconds, at least a quarter second.
+/// A renewal that waits longer is a beat that did not land
+/// (STS-CLUSTER-0003), not a membership found dead (#770).
+#[tracing::instrument(level = "debug")]
+pub fn renewal_bound_ms(ttl_ms: f64) -> f64 {
+    let ttl = if ttl_ms > 0.0 { ttl_ms } else { 30000.0 }.max(1000.0);
+    (ttl / 3.0).floor().clamp(250.0, 2000.0)
+}
+
+tokio::task_local! {
+    /// The leases a lease-guarded write in progress is fenced by
+    /// (`leaseContext`, an AsyncLocalStorage in Node).
+    static LEASE_CONTEXT: Vec<(String, u64)>;
+}
+
+/// The fence a write transaction is checked against (`fenceFor()`): the
+/// membership row must be live, and every lease named still held at its
+/// token.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Fence {
+    pub node_id: String,
+    pub leases: Vec<(String, u64)>,
+}
+
+/// Why a write was fenced (`err.reason`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FenceReason {
+    /// The membership row was dead.
+    Node,
+    /// A lease the write named had changed hands.
+    Lease,
+}
+
 #[derive(Default)]
 struct NodeState {
     roles: HashMap<String, Arc<dyn LeaseHandler>>,
@@ -368,8 +554,18 @@ struct NodeState {
     standing_down_until: HashMap<String, Instant>,
     last_renew_ok: Option<Instant>,
     stopping: bool,
+    joined: bool,
     clock_offset: f64,
     heartbeat: Option<tokio::task::JoinHandle<()>>,
+    /// A renewal is still running (`heartbeatInFlight`).
+    renewing: bool,
+    /// A contention is still asking (`contending`).
+    contending: bool,
+    /// The last stall of a heartbeat or more: how long, and when.
+    last_stall: Option<(f64, Instant)>,
+    /// Leases whose takeover waits on the previous holder's writes, so
+    /// STS-CLUSTER-0165 is said once per wait.
+    pending_takeovers: std::collections::HashSet<String>,
 }
 
 /// One node of a clustered service.
@@ -379,6 +575,7 @@ pub struct ClusterNode {
     name: String,
     heartbeat_ms: f64,
     ttl_ms: f64,
+    mode: Mutex<ClusterMode>,
     fail_stop: FailStop,
     state: Mutex<NodeState>,
     me: Weak<ClusterNode>,
@@ -421,6 +618,7 @@ impl ClusterNode {
             name: name.to_string(),
             heartbeat_ms,
             ttl_ms: ttl_ms.max(3.0 * heartbeat_ms),
+            mode: Mutex::new(ClusterMode::ActiveActive),
             fail_stop,
             state: Mutex::new(NodeState::default()),
             me: me.clone(),
@@ -444,23 +642,220 @@ impl ClusterNode {
         self.store
             .join(&self.node_id, self.ttl_ms, json!({ "name": self.name }))
             .await?;
-        self.state().last_renew_ok = Some(Instant::now());
+        {
+            let mut st = self.state();
+            st.last_renew_ok = Some(Instant::now());
+            st.joined = true;
+        }
         self.refresh_clock().await;
         let Some(me) = self.me.upgrade() else {
             return Ok(());
         };
         let every = Duration::from_millis(self.heartbeat_ms as u64);
+        // THE NEXT BEAT IS ARMED WHEN THE PREVIOUS FIRES, whether or not it
+        // has settled (#770): a renewal that waited on a lock used to be the
+        // whole lifetime, unseen. The renewal is the beat; the contention it
+        // asks for runs beside the next beats, one at a time (#770's review).
         let handle = tokio::spawn(async move {
             loop {
-                tokio::time::sleep(every).await;
+                let due = Instant::now() + every;
+                tokio::time::sleep_until(due).await;
                 if me.state().stopping {
                     return;
                 }
-                me.beat().await;
+                me.note_lateness(due.elapsed().as_secs_f64() * 1000.0);
+                if std::mem::replace(&mut me.state().renewing, true) {
+                    me.note_unsettled_renewal();
+                    continue;
+                }
+                let one = me.clone();
+                tokio::spawn(async move {
+                    let member = one.renew().await;
+                    one.state().renewing = false;
+                    if member {
+                        one.contend_once();
+                    }
+                });
             }
         });
         self.state().heartbeat = Some(handle);
         Ok(())
+    }
+
+    /// Sets the mode this node runs in (`resolve_mode()`'s answer): in
+    /// active-passive mode a lost service lease is fatal.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn set_mode(&self, mode: ClusterMode) {
+        *self.mode.lock().unwrap_or_else(PoisonError::into_inner) = mode;
+    }
+
+    fn mode(&self) -> ClusterMode {
+        *self.mode.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A HEARTBEAT THAT DID NOT RUN IS NOT A HEARTBEAT THAT FAILED
+    /// (`noteLateness()`): a beat a heartbeat or more late means nothing ran
+    /// here — in Rust, every runtime thread was busy or blocked. Said
+    /// (STS-CLUSTER-0025), and named by a fail-stop it likely caused.
+    fn note_lateness(&self, late_ms: f64) {
+        if late_ms < self.heartbeat_ms {
+            return;
+        }
+        self.state().last_stall = Some((late_ms, Instant::now()));
+        tracing::warn!(
+            "{}cluster: this node's heartbeat ran {}ms late — the runtime was busy and nothing on it ran, the \
+             heartbeat included. The membership lifetime is {}ms by the database clock; a stall longer than {}ms \
+             costs this node its membership and it exits.",
+            tag(codes::STS_CLUSTER_0025),
+            late_ms as u64,
+            self.ttl_ms,
+            self.ttl_ms - self.heartbeat_ms
+        );
+    }
+
+    /// The clause a fail-stop adds when a recent stall is the likely reason
+    /// the row expired (`stallClause()`).
+    fn stall_clause(&self) -> String {
+        match self.state().last_stall {
+            Some((ms, at))
+                if at.elapsed().as_secs_f64() * 1000.0 <= 2.0 * self.ttl_ms
+                    && ms >= self.ttl_ms - self.heartbeat_ms =>
+            {
+                format!(
+                    " The likely cause is THIS NODE, not the store: its runtime was blocked for {}ms, past its {}ms \
+                     lifetime, so no heartbeat could run.",
+                    ms as u64, self.ttl_ms
+                )
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// A beat was still running when the next was due
+    /// (`noteUnsettledRenewal()`): STS-CLUSTER-0003, and past the lifetime
+    /// STS-CLUSTER-0004, hung statement or not.
+    fn note_unsettled_renewal(&self) {
+        let since = self
+            .state()
+            .last_renew_ok
+            .map_or(f64::MAX, |t| t.elapsed().as_secs_f64() * 1000.0);
+        if since >= self.ttl_ms - self.heartbeat_ms {
+            self.fail(
+                codes::STS_CLUSTER_0004.as_ref(),
+                format!(
+                    "It has not renewed its membership for {}ms against a lifetime of {}ms (the previous renewal \
+                     has not finished). The other nodes may already treat it as dead and take over its leases.",
+                    since as u64, self.ttl_ms
+                ),
+            );
+            return;
+        }
+        tracing::warn!(
+            "{}cluster: a heartbeat has not landed (the previous renewal is still running); {}ms since the last \
+             renewal, {}ms of lifetime left.",
+            tag(codes::STS_CLUSTER_0003),
+            since as u64,
+            (self.ttl_ms - since) as u64
+        );
+    }
+
+    /// One contention at a time (`contendOnce()`): a beat whose contention
+    /// is still asking starts none.
+    fn contend_once(&self) {
+        if std::mem::replace(&mut self.state().contending, true) {
+            return;
+        }
+        let Some(me) = self.me.upgrade() else {
+            return;
+        };
+        tokio::spawn(async move {
+            me.campaign().await;
+            me.state().contending = false;
+        });
+    }
+
+    /// The fence a write transaction is checked against (`fenceFor()`):
+    /// `None` before the join (the join is itself a transaction), otherwise
+    /// this node and the leases the write needs — the service lease in
+    /// active-passive mode, and those of the [`ClusterNode::with_lease`] it
+    /// runs inside. A HOT PATH (every write): no instrument.
+    pub fn fence_for(&self) -> Option<Fence> {
+        let st = self.state();
+        if !st.joined {
+            return None;
+        }
+        let mut leases = Vec::new();
+        if self.mode() == ClusterMode::ActivePassive {
+            if let Some(token) = st.held.get(SERVICE_LEASE) {
+                leases.push((SERVICE_LEASE.to_string(), *token));
+            }
+        }
+        drop(st);
+        let _found = LEASE_CONTEXT.try_with(|outer| {
+            leases.extend(outer.iter().cloned());
+        });
+        Some(Fence {
+            node_id: self.node_id.clone(),
+            leases,
+        })
+    }
+
+    /// Runs `work` with `name` held, every transaction it opens fenced by
+    /// that lease's token (`withLease()`). `Err(holder)` without running it
+    /// when another node holds the lease.
+    #[tracing::instrument(level = "debug", skip(self, work))]
+    pub async fn with_lease<F, T>(
+        &self,
+        name: &str,
+        work: F,
+    ) -> Result<T, String>
+    where
+        F: std::future::Future<Output = T>,
+    {
+        let answer = self.acquire(name).await;
+        if !answer.held {
+            return Err(answer.holder);
+        }
+        let mut leases =
+            LEASE_CONTEXT.try_with(Clone::clone).unwrap_or_default();
+        leases.push((name.to_string(), answer.token));
+        Ok(LEASE_CONTEXT.scope(leases, work).await)
+    }
+
+    /// What the store calls when a transaction was fenced (`whenFenced()`):
+    /// a lease that guarded ONE operation fails that operation and the node
+    /// stays up; a dead membership, or the service lease in active-passive
+    /// mode, is fatal (STS-CLUSTER-0011).
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn when_fenced(
+        &self,
+        reason: FenceReason,
+        lost: &[(String, u64)],
+        message: &str,
+    ) {
+        let service_lost = lost.iter().any(|(n, _)| n == SERVICE_LEASE);
+        if reason == FenceReason::Lease && !service_lost {
+            tracing::warn!(
+                "cluster: a write guarded by {} was fenced; the operation fails and this node stays up: {}",
+                lost.iter()
+                    .map(|(n, t)| format!("{}@{}", n, t))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                message
+            );
+            let mut st = self.state();
+            for (name, token) in lost {
+                if st.held.get(name) == Some(token) {
+                    st.held.remove(name);
+                }
+            }
+            return;
+        }
+        let clause = self.stall_clause();
+        self.fail(
+            codes::STS_CLUSTER_0011.as_ref(),
+            format!("A write was fenced: {}{}", message, clause),
+        );
     }
 
     async fn refresh_clock(&self) {
@@ -496,22 +891,49 @@ impl ClusterNode {
     }
 
     /// Renews the membership and the leases once, notices leases lost, and
-    /// campaigns for every role not held.
+    /// campaigns for every role not held (`beat()`: the renewal, then the
+    /// contention, both awaited — the heartbeat itself runs them apart).
     pub async fn beat(&self) {
+        if self.renew().await {
+            self.campaign().await;
+        }
+    }
+
+    /// The renewal half of a beat (`renew()`): the heartbeat statement,
+    /// bounded by [`renewal_bound_ms`], and what its answer means. True when
+    /// the node is still a member and should contend.
+    async fn renew(&self) -> bool {
         if self.state().stopping {
-            return;
+            return false;
         }
         let started = Instant::now();
-        match self.store.heartbeat(&self.node_id, self.ttl_ms).await {
+        let bound = Duration::from_millis(renewal_bound_ms(self.ttl_ms) as u64);
+        let answer = match tokio::time::timeout(
+            bound,
+            self.store.heartbeat(&self.node_id, self.ttl_ms),
+        )
+        .await
+        {
+            Ok(answer) => answer,
+            Err(_) => Err(format!(
+                "the heartbeat did not answer within {}ms",
+                bound.as_millis()
+            )),
+        };
+        match answer {
             Ok(renewal) => {
                 if !renewal.alive {
+                    let clause = self.stall_clause();
                     self.fail(
                         codes::STS_CLUSTER_0005.as_ref(),
-                        "Its membership row had already expired when it was renewed, so another node may have \
-                         taken over what it held. A node does not come back from that; it is restarted."
-                            .to_string(),
+                        format!(
+                            "Its membership row had already expired when it was renewed, so another node may \
+                             have taken over what it held. A node does not come back from that; it is \
+                             restarted.{}",
+                            clause
+                        ),
                     );
-                    return;
+                    return false;
                 }
                 let lost: Vec<(String, Option<Arc<dyn LeaseHandler>>)> = {
                     let mut st = self.state();
@@ -537,7 +959,15 @@ impl ClusterNode {
                         })
                         .collect()
                 };
+                let passive = self.mode() == ClusterMode::ActivePassive;
                 for (name, handler) in lost {
+                    if name == SERVICE_LEASE && passive {
+                        self.fail(
+                            codes::STS_CLUSTER_0006.as_ref(),
+                            "It lost the service lease, so another node may be serving.".to_string(),
+                        );
+                        return false;
+                    }
                     tracing::warn!(
                         "cluster: node {} lost the \"{}\" lease.",
                         self.node_id,
@@ -547,7 +977,7 @@ impl ClusterNode {
                         h.on_lose();
                     }
                 }
-                self.campaign().await;
+                !self.state().stopping
             }
             Err(e) => {
                 let since = self
@@ -563,7 +993,7 @@ impl ClusterNode {
                             since as u64, self.ttl_ms, e
                         ),
                     );
-                    return;
+                    return false;
                 }
                 tracing::warn!(
                     "{}cluster: a heartbeat failed ({}); {}ms since the last renewal, {}ms of lifetime left.",
@@ -572,6 +1002,7 @@ impl ClusterNode {
                     since as u64,
                     (self.ttl_ms - since) as u64
                 );
+                false
             }
         }
     }
@@ -602,11 +1033,34 @@ impl ClusterNode {
     /// Asks for a lease; never fails (a store that cannot be asked is "not
     /// held", `STS-CLUSTER-0012`).
     pub async fn acquire(&self, name: &str) -> LeaseAnswer {
-        match self
-            .store
-            .acquire_lease(name, &self.node_id, self.ttl_ms)
-            .await
-        {
+        // THE ACQUIRE HAS THE HEARTBEAT'S BOUND (#770's review): a takeover
+        // waits for the previous holder's fences, and an ask that waited
+        // with them held the beat in flight until the node taking over
+        // exited. Past the bound it is "not yet" and asked again next beat.
+        let bound = Duration::from_millis(renewal_bound_ms(self.ttl_ms) as u64);
+        let asked = tokio::time::timeout(
+            bound,
+            self.store.acquire_lease(name, &self.node_id, self.ttl_ms),
+        )
+        .await;
+        let Ok(asked) = asked else {
+            if self.state().pending_takeovers.insert(name.to_string()) {
+                tracing::info!(
+                    "{}cluster: taking over the \"{}\" lease is waiting for writes the previous holder still has \
+                     in flight; asking again every {}ms.",
+                    tag(codes::STS_CLUSTER_0165),
+                    name,
+                    self.heartbeat_ms
+                );
+            }
+            return LeaseAnswer {
+                held: false,
+                token: 0,
+                holder: String::new(),
+            };
+        };
+        self.state().pending_takeovers.remove(name);
+        match asked {
             Ok(answer) => {
                 if answer.held {
                     let was = self

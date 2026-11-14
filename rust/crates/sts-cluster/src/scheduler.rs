@@ -1514,6 +1514,7 @@ impl Scheduler {
 
     /// The latest finished run of each job in each realm the index holds
     /// (#883's `latestRun`), for the page's last-run figure.
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn latest_runs(&self) -> Vec<Json> {
         self.state().index.latest_run.values().cloned().collect()
     }

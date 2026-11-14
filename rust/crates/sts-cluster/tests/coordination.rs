@@ -140,7 +140,8 @@ impl CommitLog for Process {
                 if self.committed.load(Ordering::SeqCst) >= position {
                     return Ok(());
                 }
-                if self.commit_fails && !self.pending.lock().unwrap().is_empty() {
+                if self.commit_fails && !self.pending.lock().unwrap().is_empty()
+                {
                     woken.await;
                     return Err("the store refused the commit".to_string());
                 }

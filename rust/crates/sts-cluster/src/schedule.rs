@@ -223,10 +223,14 @@ impl JobSpec {
         self.nice.unwrap_or(DEFAULT_NICE)
     }
 
+    /// Whether it runs only when asked. A hot path (every tick, every
+    /// job): no span.
     pub fn manual_only(&self) -> bool {
         matches!(self.schedule, Schedule::ManualOnly)
     }
 
+    /// Its cron expression, if it has one. A hot path (every tick, every
+    /// job): no span.
     pub fn cron(&self) -> Option<&str> {
         match &self.schedule {
             Schedule::Cron(c) => Some(c),
