@@ -194,8 +194,25 @@ requires, 2026-11-05):
 
 | Suite | Files | Shape | Against Rust |
 |---|---|---|---|
-| `tests/protocol/` | 315 | 282 only talk to the service; 24 fork or spawn something; 4 read source; 5 require service modules | About 90% as written. The other 33 need a look in phase 2b |
+| `tests/protocol/` | 334 (2026-11-14) | 304 only talk to the service; 30 spawn a tool, read a file or require a module of this repository | All but five as written (triage below) |
 | `tests/*.js` (in-process) | 813 (393k lines) | 520 require service modules; 191 fork or spawn; 13 read source; 89 other | Almost none. They guard the Node service until the cutover (D12) |
+
+**The triage of `tests/protocol/` (phase 2b, 2026-11-14).** A scan for
+requires of this repository's modules, child processes and source reads finds 30
+files. **25 run against Rust as written**: 22 drive a real external client or
+tool against the service over the wire (Heimdal, Samba, MIT Kerberos, certmonger,
+OpenSSL, tlsfuzzer, schemathesis, the DID and VC suites, the SCIM and UMA
+drivers, the remote PEP), and `sts_cells_console.js` and `sts_pki_workbench.js`
+read `admin-ui/console.bundle.js`, which stays TypeScript. **Five read Node itself
+and change before phase 10**, each where its family's phase starts:
+
+| Job | What it takes from Node | What it does instead |
+|---|---|---|
+| `sts_metadata_anonymous.js` | `sts_metadata.ts`'s `PROTOCOLS` table and the pool cookie's name from `common/request_pool.js` | Read both from the running service (`/admin-api`'s metadata operation) or from the model |
+| `sts_attribute_sources.js`, `sts_persistence_postgres.js` | `persistence/knex_store.js` as the door to the database | A test-side Knex client. Their store assertions are D2's check that Rust writes what Node did, so they are worth more after D11, not less |
+| `sts_wstrust_signed_requests.js` | `common/crypto_impl/xmldsig.js`, to sign the requests it sends | A test-side signer: the library copied under `tests/`, or a Rust-signed request checked against Node's vectors |
+| `sts_webauthn_attestation.js` | `common/crypto_impl/key_material`, to make authenticator keys | Node's own `crypto` in the job |
+| `sts_spiffe_grpc.js` | `spiffe/workload_agent`, as a gRPC client | A test-side client over the vendored protos |
 
 ### 3.2 The cutover
 
@@ -629,7 +646,7 @@ so it is not used as the rate.
 |---|---|---|---|
 | **0, 1** | Done. The design, the workspace, `sts-xacml`, the `xacml-pep` binary | | |
 | **2** | **Mostly done on `feature/444`:** `sts-core`, `sts-crypto`, `sts-xml`, `x509.js`. `common/pki.js` is not | (see 6) | |
-| **2b** | **Re-baseline.** ~~Merge `develop` into `feature/444`~~ **done 2026-11-14 (59abb3875; 5 files conflicted).** ~~Regenerate the tables~~ **done** (error codes 5,686; settings 1,449). Bring every ported crate back to parity with Node as it is now, against its vectors: `sts-core`'s settings and mode (23 derived defaults, 127 predicates), `sts-crypto` (Node's crypto grew 14,475 → 18,414 and gained #1368's signature policy), XML, `sts-pki` (with #1360's validation door), the store, cluster and HTTP crates (`persistence/` 11,066 → 25,376, schema 32, read as Node writes it: D2), and `sts-xacml`. ~~Snapshot the four OpenAPI documents and add the missing response schemas~~ **done on Node by #1353 and #1390** (five documents, 849 operations, closed models). Start `sts-model` (D15). Move the server-laid pictures into the browser (still server-side). Triage the 33 protocol files that may not run against Rust, and make D12's list | 19,000 to re-check | 1–2 |
+| **2b** | **Re-baseline.** ~~Merge `develop` into `feature/444`~~ **done 2026-11-14 (59abb3875; 5 files conflicted).** ~~Regenerate the tables~~ **done** (error codes 5,686; settings 1,449). Bring every ported crate back to parity with Node as it is now, against its vectors: `sts-core`'s settings and mode (23 derived defaults, 127 predicates), `sts-crypto` (Node's crypto grew 14,475 → 18,414 and gained #1368's signature policy), XML, `sts-pki` (with #1360's validation door), the store, cluster and HTTP crates (`persistence/` 11,066 → 25,376, schema 32, read as Node writes it: D2), and `sts-xacml`. ~~Snapshot the four OpenAPI documents and add the missing response schemas~~ **done on Node by #1353 and #1390** (five documents, 849 operations, closed models). Start `sts-model` (D15). Move the server-laid pictures into the browser (still server-side). ~~Triage the protocol files~~ **done (section 3.1): five change before phase 10**. Make D12's list | 19,000 to re-check | 1–2 |
 | **3** | **Runtime spine.** `sts-store` (memory, ldif, postgres, and now MariaDB, #677), reading a 1.x store as Node wrote it (D2), `sts-cluster`, `sts-cache`, `sts-http`, TLS, realms, and the static-surface host: shells, bundles, `/web`, one CSP builder. `persistence/` has more than doubled since `feature/444` began (11,066 → 25,376) | 58,000 | 1.5–3 |
 | **4** | **Directory, LDAP and registers.** Applications, roles, policies, ownership, audit export, mail, and the `/admin-api` operations every suite job sets itself up with. **Milestone: the suite can set itself up against Rust** | 56,000 | 1.5–3 |
 | **5** | **Sessions, sign-in, credentials, OAuth/OIDC, logout**, with `/authn-api`. **Milestone: the unchanged console, portal and reports bundles sign in against Rust** | 84,000 | 2–4.5 |
