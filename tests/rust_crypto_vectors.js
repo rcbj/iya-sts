@@ -156,6 +156,9 @@ function restOfRun(t) {
       return x509FromRust(t, read('x509-rust.json'));
     });
   }
+  if (fs.existsSync(path.join(VECTORS, 'x509-door-rust.json'))) {
+    x509DoorFromRust(t, read('x509-door-rust.json'));
+  }
   log.debug("Leaving restOfRun(). " + pending.length + " asynchronous.");
   return pending.reduce(function (chain, next) {
     return chain.then(next);
@@ -174,9 +177,9 @@ function restOfRun(t) {
  */
 async function x509FromRust(t, rows) {
   log.debug("Entering x509FromRust().");
-  const x509 = require('../common/vendored/x509.js');
+  const x509 = require('../common/crypto_impl/x509.js');
   const pkijs = require('pkijs');
-  const bytes = require('../common/vendored/crypto_bytes.js');
+  const bytes = require('../common/crypto_impl/crypto_bytes.js');
   const strip = function (link) {
     const out = Object.assign({}, link);
     delete out.error;
@@ -215,6 +218,44 @@ async function x509FromRust(t, rows) {
             JSON.stringify(links));
   }
   log.debug("Leaving x509FromRust().");
+}
+
+// THE PURE HALF OF THE ONE VALIDATION DOOR (#1360): every certificate Rust
+// issued has, in Node, the facts and the field problems `sts-pki` gave it
+// under every option set.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} v - x509-door-rust.json
+ */
+function x509DoorFromRust(t, v) {
+  log.debug("Entering x509DoorFromRust().");
+  const util = require('util');
+  const attempt = function (f) {
+    try {
+      return f();
+    } catch (e) {
+      log.debug("Caught in x509DoorFromRust(): " + ((e && e.message) || e));
+      return { error: e.message };
+    }
+  };
+  for (const row of v.certificates) {
+    const facts = attempt(function () {
+      return crypto.certificateFacts(row.pem);
+    });
+    t.check(util.isDeepStrictEqual(facts, row.facts),
+            row.name + ': Node reads a certificate Rust issued as Rust ' +
+            'does', JSON.stringify(facts));
+    v.options.forEach(function (o, i) {
+      const problems = attempt(function () {
+        return crypto.certificateFieldProblems(row.pem,
+          Object.assign({ now: v.now }, o));
+      });
+      t.check(util.isDeepStrictEqual(problems, row.problems[i]),
+              row.name + ': its field problems under ' + JSON.stringify(o) +
+              ' are Rust\'s', JSON.stringify(problems));
+    });
+  }
+  log.debug("Leaving x509DoorFromRust().");
 }
 
 // SIGSTORE AND TUF: Rust's two canonical forms are Node's strings, every TUF
