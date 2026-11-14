@@ -675,4 +675,87 @@ mod tests {
         );
         assert!(peer_refused_certificate("no shared cipher").is_none());
     }
+
+    /// One request over a real handshake: what the request was told.
+    async fn ask(
+        port: u16,
+        alpn: &[u8],
+        client: Option<&ListenerCertificate>,
+    ) -> (String, String) {
+        use openssl::ssl::{SslConnector, SslVerifyMode};
+        let mut c = SslConnector::builder(SslMethod::tls_client()).unwrap();
+        c.set_verify(SslVerifyMode::NONE);
+        c.set_alpn_protos(alpn).unwrap();
+        if let Some(cert) = client {
+            let opened = cert.open().unwrap();
+            c.set_certificate(&opened.leaf).unwrap();
+            c.set_private_key(&opened.key).unwrap();
+        }
+        let ssl = c
+            .build()
+            .configure()
+            .unwrap()
+            .into_ssl("localhost")
+            .unwrap();
+        let tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let mut tls = tokio_openssl::SslStream::new(ssl, tcp).unwrap();
+        Pin::new(&mut tls).connect().await.unwrap();
+        let chosen = tls
+            .ssl()
+            .selected_alpn_protocol()
+            .map(|p| String::from_utf8_lossy(p).to_string())
+            .unwrap_or_default();
+        tls.write_all(
+            b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+        let mut answer = Vec::new();
+        tls.read_to_end(&mut answer).await.unwrap_or_default();
+        let text = String::from_utf8_lossy(&answer).to_string();
+        let body = text.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+        (chosen, body)
+    }
+
+    #[tokio::test]
+    async fn a_request_is_told_its_connection_and_client_chain() {
+        let s = Settings::new(json!({}), HashMap::new());
+        let p = policy_for(&s, &ListenerKind::Main);
+        let applied =
+            build_context("t", &p, &[certificate()], &[], true).unwrap();
+        let listener = TlsListener::new("main", "t", 0, applied, true);
+        let tcp = listener.bind("127.0.0.1:0").await.unwrap();
+        let port = tcp.local_addr().unwrap().port();
+        let router = axum::Router::new().route(
+            "/",
+            axum::routing::get(
+                |axum::Extension(f): axum::Extension<ConnectionFacts>| async move {
+                    let t = f.tls.unwrap_or_default();
+                    format!(
+                        "{} {} {} {} {}",
+                        f.listener,
+                        t.version,
+                        t.peer_chain.len(),
+                        t.authorized,
+                        t.authorization_error.unwrap_or_default()
+                    )
+                },
+            ),
+        );
+        tokio::spawn(listener.clone().serve(tcp, router));
+        // ALPN in the server's order: http/1.1 asked alone is served.
+        let (alpn, body) = ask(port, b"\x08http/1.1", None).await;
+        assert_eq!(alpn, "http/1.1");
+        assert_eq!(body, "main TLSv1.3 0 false ");
+        // A certificate that verifies to nothing completes the handshake,
+        // unverified, as node's requestCert without rejectUnauthorized;
+        // this one is a SERVER certificate, so OpenSSL's sslclient purpose
+        // check names it first, in node's spelling.
+        let (_, body) = ask(port, b"\x08http/1.1", Some(&certificate())).await;
+        assert_eq!(body, "main TLSv1.3 1 false INVALID_PURPOSE");
+        assert_eq!(
+            listener.status.lock().unwrap().state,
+            "listening".to_string()
+        );
+    }
 }
