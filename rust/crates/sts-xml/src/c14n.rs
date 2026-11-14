@@ -3,7 +3,7 @@
 
 //! Canonical XML 1.0, inclusive and exclusive, with and without comments —
 //! a line-for-line port of the two canonicalizers in
-//! `common/vendored/xmldsig.js` (`c14nSerialize()` and `c14nIncl()`), which
+//! `common/crypto_impl/xmldsig.js` (`c14nSerialize()` and `c14nIncl()`), which
 //! every signature the Node service makes and checks goes through.
 //!
 //! **A port and not a fresh implementation, on purpose**: a signature made

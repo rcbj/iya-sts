@@ -289,6 +289,11 @@ pub struct EncryptOptions<'a> {
     pub key_transport: Option<&'a str>,
     /// A [`KEY_WRAPS`] name, for an EC recipient; `kw-aes256` by default.
     pub key_wrap: Option<&'a str>,
+    /// `mode.allowsLegacyHashes()`: development, or product with
+    /// `crypto.allowLegacyHashes` on. Without it `rsa-oaep-mgf1p` — named
+    /// or the default — is written as `rsa-oaep` (#1469, ASVS 5.0.0
+    /// 11.4.1), whose digest and mask are not SHA-1.
+    pub allows_legacy_hashes: bool,
 }
 
 fn random(n: usize) -> CryptoResult<Vec<u8>> {
@@ -343,10 +348,15 @@ pub fn encrypt_element(
         .and_then(|a| BLOCK_CIPHERS.iter().find(|c| c.name == a))
         .copied()
         .unwrap_or(BLOCK_CIPHERS[0]);
-    let transport = o
+    let named = o
         .key_transport
         .filter(|t| KEY_TRANSPORTS.iter().any(|(n, _)| n == t))
         .unwrap_or("rsa-oaep-mgf1p");
+    let transport = if named == "rsa-oaep-mgf1p" && !o.allows_legacy_hashes {
+        "rsa-oaep"
+    } else {
+        named
+    };
     let wrap = o
         .key_wrap
         .and_then(|w| KEY_WRAPS.iter().find(|k| k.0 == w))
@@ -526,8 +536,12 @@ pub struct DecryptOptions {
     pub allowed_ciphers: Option<Vec<String>>,
     pub allowed_key_management: Option<Vec<String>>,
     pub allowed_oaep_digests: Option<Vec<String>>,
-    /// `mode.usesBrokenAlgorithms()`: whether an `rsa-1_5` key is unwrapped.
+    /// `mode.usesBrokenAlgorithms()`: whether an `rsa-1_5` key is
+    /// unwrapped, and AES-CBC data read (#1455).
     pub broken_algorithms: bool,
+    /// `mode.allowsLegacyHashes()`: whether a key wrapped with OAEP over
+    /// SHA-1 is unwrapped (#1469).
+    pub allows_legacy_hashes: bool,
 }
 
 /// `decryptElement()`'s answer.
@@ -908,6 +922,19 @@ pub fn decrypt_element(
     {
         return r;
     }
+    // AES-CBC IS NOT AUTHENTICATED (#1455, ASVS 5.0.0 11.3.2): product reads
+    // only AES-GCM, and refuses before any key is unwrapped.
+    if !cipher.gcm && !o.broken_algorithms {
+        return refused_by_name(
+            cipher.name,
+            format!(
+                "the data is encrypted with {}, and this realm reads only \
+                 AES-GCM in product mode",
+                cipher.name
+            ),
+            codes::STS_KEYS_0195,
+        );
+    }
     let data_key_info = child(&doc, Some(data), "KeyInfo");
     let key_el = child(&doc, data_key_info, "EncryptedKey")
         .or_else(|| first(&doc, root, "EncryptedKey"));
@@ -1038,6 +1065,16 @@ pub fn decrypt_element(
             {
                 return r;
             }
+        }
+        // OAEP OVER SHA-1 ONLY WHERE AN OPERATOR ALLOWS IT (#1469).
+        if (mgf1p || digest == "sha1") && !o.allows_legacy_hashes {
+            return refused_by_name(
+                t,
+                "the key is wrapped with OAEP over SHA-1, which this realm \
+                 does not unwrap unless crypto.allowLegacyHashes is on"
+                    .to_string(),
+                codes::STS_KEYS_0196,
+            );
         }
         oaep_hash = digest;
     }
@@ -1221,6 +1258,7 @@ mod tests {
         let cert = certificate(&rsa);
         let open = DecryptOptions {
             broken_algorithms: true,
+            allows_legacy_hashes: true,
             ..DecryptOptions::default()
         };
         for cipher in BLOCK_CIPHERS {
@@ -1232,6 +1270,7 @@ mod tests {
                         wrapper: Some("saml:EncryptedID"),
                         algorithm: Some(cipher.name),
                         key_transport: Some(transport),
+                        allows_legacy_hashes: true,
                         ..EncryptOptions::default()
                     },
                 )
@@ -1254,6 +1293,41 @@ mod tests {
         assert_eq!(
             decrypt_element(&enc, &rsa, &product).code,
             Some(codes::STS_KEYS_0070)
+        );
+        // Product reads no AES-CBC (#1455) and unwraps no OAEP over SHA-1
+        // (#1469); and writes rsa-oaep where rsa-oaep-mgf1p was asked.
+        let cbc = encrypt_element(
+            PLAIN,
+            &cert,
+            &EncryptOptions {
+                algorithm: Some("aes128-cbc"),
+                ..EncryptOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            decrypt_element(&cbc, &rsa, &product).code,
+            Some(codes::STS_KEYS_0195)
+        );
+        let asked = EncryptOptions {
+            key_transport: Some("rsa-oaep-mgf1p"),
+            ..EncryptOptions::default()
+        };
+        let oaep = encrypt_element(PLAIN, &cert, &asked).unwrap();
+        assert!(oaep.contains("xmlenc11#rsa-oaep\""), "{}", oaep);
+        assert!(decrypt_element(&oaep, &rsa, &product).ok);
+        let legacy = encrypt_element(
+            PLAIN,
+            &cert,
+            &EncryptOptions {
+                allows_legacy_hashes: true,
+                ..asked
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            decrypt_element(&legacy, &rsa, &product).code,
+            Some(codes::STS_KEYS_0196)
         );
     }
 

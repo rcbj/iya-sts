@@ -162,7 +162,7 @@ function jwe() {
 }
 
 // CANONICAL XML: every element of every document, in all four forms, as
-// common/vendored/xmldsig.js computes it in place — the bytes every XML
+// common/crypto_impl/xmldsig.js computes it in place — the bytes every XML
 // signature here is made and checked over, which sts-xml must reproduce
 // exactly. The documents are the hand-written edge cases below and, when
 // STS_C14N_CORPUS names a directory, every .xml file under it (the W3C
@@ -179,7 +179,13 @@ const C14N_CASES = [
   '<r xmlns="urn:a"><a xmlns="urn:a"/><b xmlns=""/><c xmlns="urn:c"><d xmlns=""/></c></r>',
   '<r><!--x--><a><!--y--></a></r>',
   '<!DOCTYPE r [<!ENTITY e "x">]><r>&e;</r>',
-  '<r><a></b></r>'
+  '<r><a></b></r>',
+  // common/xml_parser.js refuses a declaration by the TEXT, wherever it is
+  // (2026-11-10): in a comment, in CDATA, in any case; `<!DOCTYPEx` is not
+  // one, and neither is the bare word.
+  '<r><!-- <!doctype r --></r>',
+  '<r><![CDATA[<! \u00a0EnTiTy x]]></r>',
+  '<r><!--<!DOCTYPEx--><!-- DOCTYPE --></r>'
 ];
 
 function c14nCorpus() {
@@ -205,7 +211,7 @@ function c14nCorpus() {
 }
 
 function c14n() {
-  const xmldsig = require(path.join(ROOT, 'common', 'vendored',
+  const xmldsig = require(path.join(ROOT, 'common', 'crypto_impl',
                                     'xmldsig.js'));
   return c14nCorpus().map(function (one) {
     let doc;
@@ -293,7 +299,7 @@ const XML_SIGNERS = [
 // PEM for the post-quantum ones.
 function xmlKeys() {
   const keys = {};
-  const rsa = require(path.join(ROOT, 'common', 'vendored', 'xmldsig.js'))
+  const rsa = require(path.join(ROOT, 'common', 'crypto_impl', 'xmldsig.js'))
     .generateKeyPair(2048, 'Vector Signer');
   keys.rsa = { privateKeyPem: rsa.privateKeyPem,
                publicKeyPem: rsa.publicKeyPem, certPem: rsa.certPem };
@@ -337,6 +343,72 @@ function verdictOf(v) {
 function rootName(xml) {
   return /<(?:[\w.-]+:)?([\w.-]+)[\s>]/.exec(xml.replace(/^<\?[^>]*\?>\s*/,
                                                            ''))[1];
+}
+
+// THE SETTINGS A POLICY CASE RUNS UNDER (#1368, #1455, #1469, ASVS 5.0.0
+// 11.6.1). Each is set in order — a list may not leave out the algorithm a
+// sibling setting already names, so the sibling goes first — refused loudly
+// if a write rule says no, and cleared afterwards, last first.
+function underSettings(settings, fn) {
+  const config = require(path.join(ROOT, 'common', 'config.js'));
+  const set = [];
+  try {
+    settings.forEach(function (row) {
+      const written = config.setOverride(row[0], row[1]);
+      if (written && written.ok === false) {
+        throw new Error(row[0] + ': ' + written.errors.join('; '));
+      }
+      set.push(row[0]);
+    });
+    return fn();
+  } finally {
+    set.reverse().forEach(function (key) {
+      config.clearOverride(key);
+    });
+  }
+}
+
+// signature_policy.ts's `parsed()`: a csv setting as a list.
+function settingList(key) {
+  const raw = require(path.join(ROOT, 'common', 'config.js')).value(key);
+  return (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).trim();
+    })
+    .filter(function (one) {
+      return one.length > 0;
+    });
+}
+
+// What sts_crypto::xmldsig::XmlPolicy carries: every input the XML half of
+// signature_policy.ts and section 1a read, as they stand now.
+function xmlPolicyNow() {
+  const mode = require(path.join(ROOT, 'common', 'mode.js'));
+  const config = require(path.join(ROOT, 'common', 'config.js'));
+  return {
+    sha1Allowed: crypto.xmlSignatureAlgorithms().sha1Allowed,
+    brokenAlgorithms: mode.usesBrokenAlgorithms(),
+    signatureAlgorithms: settingList('saml.signatureAlgorithms'),
+    acceptedSignatureAlgorithms:
+      settingList('saml.acceptedSignatureAlgorithms'),
+    acceptedDigestAlgorithms: settingList('saml.acceptedDigestAlgorithms'),
+    pqcOnly: config.value('keys.pqcOnly') === true,
+    joseSigningAlgorithms: settingList('keys.signingAlgorithms'),
+    joseAcceptedAlgorithms: settingList('keys.acceptedSigningAlgorithms'),
+    omitsUnapprovedCurves: mode.omitsUnapprovedSigningCurves(),
+    allowsLegacyHashes: mode.allowsLegacyHashes()
+  };
+}
+
+// A signer's answer, or its refusal: the message and the code it carries.
+function signedOrRefused(fn) {
+  try {
+    return { signed: fn() };
+  } catch (e) {
+    return { refused: e.message,
+             code: require(path.join(ROOT, 'common', 'error_codes.js'))
+               .codeOf(e) || null };
+  }
 }
 
 function xmldsig() {
@@ -391,6 +463,36 @@ function xmldsig() {
     });
   });
 
+  // THE SIGNER'S CHAIN IN KeyInfo (#1064): `keyInfoXml` in place of the bare
+  // certificate, down each of the three paths — RSA's and ECDSA's take it,
+  // the post-quantum one does not.
+  const chain = '<ds:X509Data><ds:X509Certificate>' +
+    keys.rsa.certPem.replace(/-----[^-]+-----|\s+/g, '') +
+    '</ds:X509Certificate><ds:X509Certificate>MIIBchain' +
+    '</ds:X509Certificate></ds:X509Data>';
+  [['rsa-sha256', 'rsa'], ['ecdsa-sha256', 'p256'], ['ml-dsa-44', 'ML-DSA-44']]
+    .forEach(function (pair) {
+      const signer = XML_SIGNERS.filter(function (row) {
+        return row[0] === pair[0];
+      })[0];
+      const key = keys[pair[1]];
+      const opts = { sigAlg: signer[1], keyInfoXml: chain,
+                     certPem: keys.rsa.certPem };
+      if (key.alg) {
+        opts.privateKey = key.privRaw;
+      } else {
+        opts.privateKeyPem = key.privateKeyPem;
+      }
+      const name = pair[0] + ' saml2 a chain in KeyInfo';
+      const xml = crypto.signXml(XML_DOCS.saml2, opts);
+      signed.push({ name: name, input: XML_DOCS.saml2, key: pair[1],
+                    sigAlg: signer[1], c14nAlg: null,
+                    placement: 'after-issuer', certPem: keys.rsa.certPem,
+                    keyInfoXml: chain, deterministic: pair[1] === 'rsa',
+                    signed: xml });
+      check(name, xml, 'Assertion', { publicKeyPem: key.publicKeyPem });
+    });
+
   // The refusals, each over an RSA signature.
   const base = crypto.signXml(XML_DOCS.saml2, {
     privateKeyPem: keys.rsa.privateKeyPem, certPem: keys.rsa.certPem });
@@ -438,10 +540,31 @@ function xmldsig() {
     check('a nested assertion, ' + which, outer, 'Assertion', rsaPub);
   });
   check('not XML', '<a><b></a>', 'Assertion', rsaPub);
+  // An HMAC needs a shared key (#658): a certificate cannot check one.
+  check('an HMAC method', base.replace(MORE + 'rsa-sha256',
+                                       MORE + 'hmac-sha256'),
+        'Assertion', rsaPub);
+  // A transform outside XML_ACCEPTED_TRANSFORMS (ASVS 5.0.0 1.2.7) is
+  // refused before anything is digested.
+  const ENVELOPED = '<ds:Transform Algorithm="' + DS +
+    'enveloped-signature"/>';
+  [['an XSLT transform', 'http://www.w3.org/TR/1999/REC-xslt-19991116'],
+   ['an XPath transform', 'http://www.w3.org/TR/1999/REC-xpath-19991116'],
+   ['a base64 transform', DS + 'base64']].forEach(function (row) {
+    check(row[0], base.replace(ENVELOPED, ENVELOPED +
+      '<ds:Transform Algorithm="' + row[1] + '"/>'), 'Assertion', rsaPub);
+  });
+  check('a transform in another namespace', base.replace(ENVELOPED,
+    ENVELOPED + '<x:Transform xmlns:x="urn:x" Algorithm="urn:t"/>'),
+  'Assertion', rsaPub);
+  // A declaration anywhere in the text (common/xml_parser.js, 2026-11-10).
+  check('a DOCTYPE', '<!DOCTYPE Assertion>' + base, 'Assertion', rsaPub);
+  check('an ENTITY in a comment', base.replace('<!-- a comment -->',
+    '<!-- <!ENTITY x "y"> -->'), 'Assertion', rsaPub);
 
   // The general engine, in every other method crypto.js verifies.
   const general = [];
-  const engine = require(path.join(ROOT, 'common', 'vendored',
+  const engine = require(path.join(ROOT, 'common', 'crypto_impl',
                                    'xmldsig.js'));
   const pair = function (type, o) {
     return nodeCrypto.generateKeyPairSync(type, o);
@@ -539,15 +662,130 @@ function xmldsig() {
                signature: row[2], sigAlg: row[3], certPem: row[4] })) };
   });
 
+  // THE POLICY (#1368, ASVS 5.0.0 11.6.1): what the lists, keys.pqcOnly and
+  // product mode change, each case under the settings its scenario names.
+  const base384 = crypto.signXml(XML_DOCS.saml2, {
+    privateKeyPem: keys.rsa.privateKeyPem, certPem: keys.rsa.certPem,
+    sigAlg: MORE + 'rsa-sha384' });
+  const es256 = crypto.signXml(XML_DOCS.saml2, {
+    privateKeyPem: keys.p256.privateKeyPem, certPem: keys.rsa.certPem,
+    sigAlg: MORE + 'ecdsa-sha256' });
+  const generalNamed = function (name) {
+    return general.filter(function (row) {
+      return row.name === name;
+    })[0];
+  };
+  const k1 = generalNamed('general ecdsa-sha3-256 ec');
+  const p192 = generalNamed('general ecdsa-sha256 ec');
+  const toVerify = {
+    'rsa-sha256': [base, keys.rsa.publicKeyPem],
+    'rsa-sha384': [base384, keys.rsa.publicKeyPem],
+    'ecdsa-sha256': [es256, keys.p256.publicKeyPem],
+    'ecdsa secp256k1': [k1.signed, k1.publicKeyPem],
+    'ecdsa prime192v1': [p192.signed, p192.publicKeyPem]
+  };
+  const SCENARIOS = [
+    // An accept list must hold what the realm signs with (RS256 here).
+    ['an accept list', [['saml.acceptedSignatureAlgorithms', 'RS256,ES256']],
+     ['rsa-sha256', 'rsa-sha384', 'ecdsa-sha256'], [],
+     ['rsa-sha256', 'rsa-sha384']],
+    ['a digest list', [['saml.acceptedDigestAlgorithms', 'SHA-512']],
+     ['rsa-sha256'], [], []],
+    ['a sign list', [['saml.signatureAlgorithm', 'rsa-sha384'],
+                     ['saml.signatureAlgorithms', 'RS384']],
+     ['rsa-sha256'], ['rsa-sha256', 'rsa-sha384', 'ecdsa-sha256',
+                      'ml-dsa-44'], []],
+    ['keys.pqcOnly', [['keys.pqcOnly', true]],
+     ['rsa-sha256'], ['rsa-sha256', 'ml-dsa-65'], []],
+    ['a JOSE accept list without ES256K',
+     [['keys.acceptedSigningAlgorithms', 'RS256']],
+     ['ecdsa secp256k1', 'rsa-sha256'], [], []],
+    ['product', [['global.mode', 'product']],
+     ['rsa-sha256', 'ecdsa secp256k1', 'ecdsa prime192v1'], [],
+     ['rsa-sha256']],
+    ['product, ES256K listed', [['global.mode', 'product'],
+                                ['keys.acceptedSigningAlgorithms',
+                                 'ES256K,RS256']],
+     ['ecdsa secp256k1'], [], []]
+  ];
+  const policies = SCENARIOS.map(function (scenario) {
+    return underSettings(scenario[1], function () {
+      const out = { name: scenario[0], settings: scenario[1],
+                    policy: xmlPolicyNow(), verify: [], sign: [],
+                    queries: [] };
+      scenario[2].forEach(function (which) {
+        out.verify.push({ name: which, xml: toVerify[which][0],
+          element: 'Assertion', publicKeyPem: toVerify[which][1],
+          verdict: verdictOf(crypto.verifyXmlSignature(toVerify[which][0], {
+            element: 'Assertion', publicKeyPem: toVerify[which][1] })) });
+      });
+      scenario[3].forEach(function (which) {
+        const signer = XML_SIGNERS.filter(function (row) {
+          return row[0] === which;
+        })[0];
+        const key = keys[signer[2]];
+        const opts = { sigAlg: signer[1], certPem: keys.rsa.certPem };
+        if (key.alg) {
+          opts.privateKey = key.privRaw;
+        } else {
+          opts.privateKeyPem = key.privateKeyPem;
+        }
+        out.sign.push(Object.assign({ name: which, key: signer[2],
+                                      sigAlg: signer[1],
+                                      input: XML_DOCS.saml2,
+                                      deterministic: signer[2] === 'rsa' },
+          signedOrRefused(function () {
+            return crypto.signXml(XML_DOCS.saml2, opts);
+          }),
+          { query: query + encodeURIComponent(signer[1]) },
+          { queryResult: signedOrRefused(function () {
+            const q = query + encodeURIComponent(signer[1]);
+            return key.alg
+              ? crypto.signQueryString(q, null, signer[1], key.privRaw)
+              : crypto.signQueryString(q, key.privateKeyPem, signer[1]);
+          }) }));
+      });
+      scenario[4].forEach(function (which) {
+        const row = queries.filter(function (q) {
+          return q.name === which;
+        })[0];
+        out.queries.push({ name: which, query: row.query,
+          signature: row.signature, sigAlg: row.sigAlg,
+          certPem: keys.rsa.certPem,
+          verdict: verdictOf(crypto.verifyQueryString(row.query, {
+            signature: row.signature, sigAlg: row.sigAlg,
+            certPem: keys.rsa.certPem })) });
+      });
+      return out;
+    });
+  });
+
   Object.keys(keys).forEach(function (k) {
     delete keys[k].privRaw;
   });
-  return { policy: { sha1Allowed: crypto.xmlSignatureAlgorithms()
-    .sha1Allowed, brokenAlgorithms: require(path.join(ROOT, 'common',
-                                                      'mode.js'))
-    .usesBrokenAlgorithms() },
+  return { policy: xmlPolicyNow(),
+           registry: xmlRegistry(),
            keys: keys, signed: signed, verify: verify, general: general,
-           queries: queries, queryChecks: queryChecks };
+           queries: queries, queryChecks: queryChecks, policies: policies };
+}
+
+// The XML rows of the one algorithm registry (#1368), as crypto.js reads
+// them: each SignatureMethod with its row id, and the DigestMethods. Rust's
+// tables are held to these, row for row and in order.
+function xmlRegistry() {
+  const registry = require(path.join(ROOT, 'common', 'crypto_impl',
+                                     'algorithm_registry.js'));
+  const methods = registry.xmlSignatureMethods();
+  return {
+    methods: Object.keys(methods).map(function (uri) {
+      const row = registry.bySpelling('xml', uri);
+      return Object.assign({ uri: uri, id: row.id, pqc: row.pqc !== null },
+                           methods[uri]);
+    }),
+    refused: registry.xmlSignaturesRefused(),
+    digests: registry.xmlDigestMethods(),
+    digestsRefused: registry.xmlDigestsRefused()
+  };
 }
 
 // XML ENCRYPTION: what crypto.encryptElement() makes for an RSA recipient
@@ -584,7 +822,7 @@ function decryptVerdict(v) {
 }
 
 function xmlenc() {
-  const engine = require(path.join(ROOT, 'common', 'vendored',
+  const engine = require(path.join(ROOT, 'common', 'crypto_impl',
                                    'xmldsig.js'));
   const rsa = engine.generateKeyPair(2048, 'xmlenc rsa');
   const recipients = { rsa: { privateKeyPem: rsa.privateKeyPem,
@@ -690,9 +928,48 @@ function xmlenc() {
                                           '<xenc:CipherValu></xenc:CipherValu' +
                                           '><xenc:Ci'), 'rsa')
   ];
+  // THE MODE (#1455, #1469, ASVS 5.0.0 11.3.2 and 11.4.1): product reads
+  // only AES-GCM, unwraps no OAEP over SHA-1 unless crypto.allowLegacyHashes
+  // is on, and encrypts with rsa-oaep where rsa-oaep-mgf1p was named or
+  // defaulted.
+  const caseNamed = function (name) {
+    return cases.filter(function (c) {
+      return c.name === name;
+    })[0];
+  };
+  const policies = [
+    ['product', [['global.mode', 'product']]],
+    ['product, legacy hashes', [['global.mode', 'product'],
+                                ['crypto.allowLegacyHashes', true]]]
+  ].map(function (scenario) {
+    return underSettings(scenario[1], function () {
+      const now = xmlPolicyNow();
+      const out = { name: scenario[0], settings: scenario[1],
+                    policy: { brokenAlgorithms: now.brokenAlgorithms,
+                              allowsLegacyHashes: now.allowsLegacyHashes },
+                    cases: [] };
+      ['aes256-gcm rsa-oaep', 'aes256-gcm rsa-oaep-mgf1p',
+       'aes256-cbc rsa-oaep', 'aes128-cbc rsa-1_5', 'aes256-gcm rsa-1_5',
+       'P-256 kw-aes256', 'P-256 aes256-cbc'].forEach(function (name) {
+        const c = caseNamed(name);
+        out.cases.push(decrypt(name, c.xml, c.recipient));
+      });
+      [{}, { algorithm: 'aes128-cbc' }, { keyTransport: 'rsa-oaep-mgf1p' },
+       { keyTransport: 'rsa-oaep' }].forEach(function (opts) {
+        const enc = crypto.encryptElement(plain.assertion, rsa.certPem, opts);
+        const c = decrypt('encrypted ' + JSON.stringify(opts), enc, 'rsa');
+        c.encrypt = { plain: plain.assertion, options: opts };
+        out.cases.push(c);
+      });
+      return out;
+    });
+  });
   return { brokenAlgorithms: require(path.join(ROOT, 'common', 'mode.js'))
     .usesBrokenAlgorithms(),
-           recipients: recipients, cases: cases, refusals: refusals };
+           allowsLegacyHashes: require(path.join(ROOT, 'common', 'mode.js'))
+             .allowsLegacyHashes(),
+           recipients: recipients, cases: cases, refusals: refusals,
+           policies: policies };
 }
 
 // SECRETS: HOTP in every digest and length, scrypt hashes at the floor

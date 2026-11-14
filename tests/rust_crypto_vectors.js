@@ -329,7 +329,10 @@ function secretsFromRust(t, vectors) {
 // XML ENCRYPTION: every element Rust encrypted — an RSA recipient in each
 // cipher and key transport, an EC one in each curve, key wrap and cipher —
 // decrypts with crypto.decryptElement() to the plaintext it was given, with
-// the recipient key Node generated (xmlenc-node.json).
+// the recipient key Node generated (xmlenc-node.json). A row Rust made under
+// a scenario's settings (product mode, #1455 and #1469) is read under the
+// same settings, and gets the verdict Node gave its own encryption there:
+// an AES-CBC element product writes when asked is one it refuses to read.
 /**
  * @param {any} t - the runner's check collector
  * @param {any} vectors - xmlenc-rust.json
@@ -337,9 +340,34 @@ function secretsFromRust(t, vectors) {
  */
 function xmlEncryption(t, vectors, node) {
   log.debug("Entering xmlEncryption().");
+  const config = require('../common/config');
+  const nodeVerdicts = {};
+  (node.policies || []).forEach(function (scenario) {
+    scenario.cases.forEach(function (c) {
+      nodeVerdicts[scenario.name + ': ' + c.name] = c.verdict;
+    });
+  });
   vectors.cases.forEach(function (row) {
-    const opened = crypto.decryptElement(row.xml,
-      node.recipients[row.recipient].privateKeyPem, {});
+    const settings = row.settings || [];
+    let opened;
+    try {
+      settings.forEach(function (one) {
+        config.setOverride(one[0], one[1]);
+      });
+      opened = crypto.decryptElement(row.xml,
+        node.recipients[row.recipient].privateKeyPem, {});
+    } finally {
+      settings.slice().reverse().forEach(function (one) {
+        config.clearOverride(one[0]);
+      });
+    }
+    const want = nodeVerdicts[row.name];
+    if (settings.length && want && !want.ok) {
+      t.check(!opened.ok && require('../common/error_codes').codeOf(opened) ===
+              want.code, row.name + ': an element Rust encrypted gets ' +
+              'Node\'s refusal in Node (' + want.code + ')', opened.why || '');
+      return;
+    }
     t.check(!!opened.ok && opened.xml === row.plain,
             row.name + ': an element Rust encrypted decrypts in Node',
             opened.why || '');

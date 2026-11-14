@@ -26,12 +26,17 @@ fn list(v: &Json) -> Option<Vec<String>> {
         .map(|a| a.iter().map(|x| x.as_str().unwrap().to_string()).collect())
 }
 
-fn options(v: &Json, broken: bool) -> DecryptOptions {
+/// The mode a set of cases ran under: `(brokenAlgorithms,
+/// allowsLegacyHashes)`.
+type Mode = (bool, bool);
+
+fn options(v: &Json, mode: Mode) -> DecryptOptions {
     DecryptOptions {
         allowed_ciphers: list(&v["allowedCiphers"]),
         allowed_key_management: list(&v["allowedKeyManagement"]),
         allowed_oaep_digests: list(&v["allowedOaepDigests"]),
-        broken_algorithms: broken,
+        broken_algorithms: mode.0,
+        allows_legacy_hashes: mode.1,
     }
 }
 
@@ -112,7 +117,10 @@ fn xml_encryption_matches_node() {
     let dir = std::path::PathBuf::from(dir);
     let text = std::fs::read_to_string(dir.join("xmlenc-node.json")).unwrap();
     let v: Json = serde_json::from_str(&text).unwrap();
-    let broken = v["brokenAlgorithms"].as_bool().unwrap();
+    let development: Mode = (
+        v["brokenAlgorithms"].as_bool().unwrap(),
+        v["allowsLegacyHashes"].as_bool().unwrap(),
+    );
     let key = |name: &str| {
         PKey::private_key_from_pem(
             v["recipients"][name]["privateKeyPem"]
@@ -125,16 +133,43 @@ fn xml_encryption_matches_node() {
     let mut failures = Vec::new();
     let mut written = Vec::new();
     let (mut decrypted, mut encrypted) = (0, 0);
-    for case in v["cases"]
+    // The development cases, then each mode scenario's (#1455, #1469).
+    let none = Json::Null;
+    let mut all: Vec<(String, Mode, &Json, &Json)> = v["cases"]
         .as_array()
         .unwrap()
         .iter()
         .chain(v["refusals"].as_array().unwrap())
-    {
-        let name = case["name"].as_str().unwrap();
+        .map(|c| {
+            (
+                c["name"].as_str().unwrap().to_string(),
+                development,
+                c,
+                &none,
+            )
+        })
+        .collect();
+    for scenario in v["policies"].as_array().unwrap() {
+        let p = &scenario["policy"];
+        let mode = (
+            p["brokenAlgorithms"].as_bool().unwrap(),
+            p["allowsLegacyHashes"].as_bool().unwrap(),
+        );
+        let label = scenario["name"].as_str().unwrap();
+        for c in scenario["cases"].as_array().unwrap() {
+            all.push((
+                format!("{}: {}", label, c["name"].as_str().unwrap()),
+                mode,
+                c,
+                &scenario["settings"],
+            ));
+        }
+    }
+    for (name, mode, case, settings) in all {
+        let name = name.as_str();
         let recipient = case["recipient"].as_str().unwrap();
         let private = key(recipient);
-        let opts = options(&case["options"], broken);
+        let opts = options(&case["options"], mode);
         let ours = xmlenc::decrypt_element(
             case["xml"].as_str().unwrap(),
             &private,
@@ -160,6 +195,7 @@ fn xml_encryption_matches_node() {
                 algorithm: o["algorithm"].as_str(),
                 key_transport: o["keyTransport"].as_str(),
                 key_wrap: o["keyWrap"].as_str(),
+                allows_legacy_hashes: mode.1,
             },
         )
         .unwrap();
@@ -175,15 +211,19 @@ fn xml_encryption_matches_node() {
         } else {
             encrypted += 1;
         }
+        // Our own encryption gets the verdict Node's got: in product an
+        // AES-CBC element is written when asked and refused when read
+        // (#1455), in Node as here.
         let back = xmlenc::decrypt_element(&made, &private, &opts);
-        if !back.ok || back.xml != plain {
-            failures.push(format!(
-                "{}: our own did not decrypt: {}",
-                name, back.why
-            ));
-        }
+        compare(
+            &format!("{} (our own)", name),
+            &case["verdict"],
+            &back,
+            &mut failures,
+        );
         written.push(json!({
             "name": name, "recipient": recipient, "xml": made, "plain": plain,
+            "settings": settings,
         }));
     }
     if std::env::var("STS_WRITE_VECTORS").is_ok() {
