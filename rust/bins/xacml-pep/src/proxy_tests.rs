@@ -509,14 +509,14 @@ async fn service(
                 _ => {
                     return (
                         StatusCode::UNPROCESSABLE_ENTITY,
-                        Json(json!({ "code": "STS-XACML-0300" })),
+                        Json(json!({ "code": "STS-XACML-0235" })),
                     )
                 }
             };
             if who == "denied" {
                 return (
                     StatusCode::FORBIDDEN,
-                    Json(json!({ "code": "STS-XACML-0301" })),
+                    Json(json!({ "code": "STS-XACML-0234" })),
                 );
             }
             match route.as_str() {
@@ -640,7 +640,7 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
                   "application": "deleted-app",
                   "resolved": { "usable": false,
                                 "why": "the application was deleted",
-                                "code": "STS-XACML-0999" } },
+                                "code": "STS-XACML-0217" } },
                 { "id": "slow", "path": "/slow", "match": "exact",
                   "public": true },
                 { "id": "hdr", "path": "/hdr", "mechanisms": ["basic"],
