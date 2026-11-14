@@ -383,6 +383,32 @@ pub fn set_session_timeout(
     };
 }
 
+/// THE SESSION ID CONTEXT OF ONE CONNECTION (`SSL_set_session_id_context`,
+/// unbound by the `openssl` crate). The listener scopes it to the server
+/// name a ClientHello offers, so a TLS 1.2 session is resumed only under the
+/// name it was made under (RFC 6066 section 3) — what node's session cache
+/// does by hand (`tls_server.js`'s `attachSessionCache()`, #429, #507).
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn set_connection_session_id_context(
+    ssl: &mut openssl::ssl::SslRef,
+    sid_ctx: &[u8],
+) -> CryptoResult<()> {
+    extern "C" {
+        fn SSL_set_session_id_context(
+            ssl: *mut ffi::SSL,
+            sid_ctx: *const std::os::raw::c_uchar,
+            sid_ctx_len: std::os::raw::c_uint,
+        ) -> std::os::raw::c_int;
+    }
+    let len = std::os::raw::c_uint::try_from(sid_ctx.len())
+        .map_err(|_| CryptoError::new("a session id context is too long"))?;
+    // SAFETY: the SslRef is a live SSL for the duration of the call, and
+    // OpenSSL copies at most 32 bytes from the slice, failing beyond that.
+    check(unsafe {
+        SSL_set_session_id_context(ssl.as_ptr(), sid_ctx.as_ptr(), len)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

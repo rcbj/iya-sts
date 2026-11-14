@@ -84,7 +84,7 @@ use sts_tls::policy::{
     ClientAuth, ListenerPolicy, ProtocolOptions, TlsVersion,
 };
 use sts_tls::{authorization_error_name, ConnectionFacts, TlsFacts};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tower::ServiceExt;
 
@@ -153,7 +153,14 @@ pub fn build_context(
     };
     let mut b = SslContextBuilder::new(SslMethod::tls_server())
         .map_err(|err| e("SSL_CTX_new", err))?;
-    let mut ops = SslOptions::NO_SSLV2 | SslOptions::NO_SSLV3;
+    // SSL_OP_LEGACY_EC_POINT_FORMATS (OpenSSL 3.6): node's OpenSSL 3.5
+    // lists all three EC point formats in a TLS 1.2 ServerHello, and 3.6
+    // lists `uncompressed` alone unless asked — the one default the two
+    // library versions disagree on that a client can see
+    // (tlsfuzzer's test-point-extension.py).
+    let legacy_point_formats = SslOptions::from_bits_retain(1 << 36);
+    let mut ops =
+        SslOptions::NO_SSLV2 | SslOptions::NO_SSLV3 | legacy_point_formats;
     if options.server_preference {
         ops |= SslOptions::CIPHER_SERVER_PREFERENCE;
     }
@@ -467,7 +474,15 @@ impl TlsListener {
     ) {
         let local = stream.local_addr().ok();
         let applied = self.current();
-        let ssl = match Ssl::new(&applied.context) {
+        // THE SERVER NAME, READ OFF THE CLIENTHELLO BEFORE OPENSSL SEES IT
+        // (`installSessionNameSniffer()`): the bytes are read and replayed,
+        // and the session id context is scoped to the name, so a TLS 1.2
+        // session ID or ticket resumes only under the name it was made under
+        // (RFC 6066 section 3). A name that cannot be read FAILS CLOSED: a
+        // context of its own, which nothing resumes under.
+        let (conn, offered) = Conn::sniffing(stream, self.clone()).await;
+        let failed = conn.failed.clone();
+        let mut ssl = match Ssl::new(&applied.context) {
             Ok(ssl) => ssl,
             Err(e) => {
                 tracing::error!(
@@ -479,7 +494,22 @@ impl TlsListener {
                 return;
             }
         };
-        let mut tls = match tokio_openssl::SslStream::new(ssl, stream) {
+        let scope = match &offered {
+            Offered::Name(name) => format!("{}|{}", self.label, name),
+            Offered::None => format!("{}|", self.label),
+            Offered::Unreadable => format!(
+                "{}|?{}",
+                self.label,
+                sts_crypto::random::random_token(None).unwrap_or_default()
+            ),
+        };
+        if let Err(e) = sts_crypto::pq::set_connection_session_id_context(
+            &mut ssl,
+            &session_id_context(&scope),
+        ) {
+            tracing::debug!("{}: the session id context: {}", self.label, e);
+        }
+        let mut tls = match tokio_openssl::SslStream::new(ssl, conn) {
             Ok(tls) => tls,
             Err(e) => {
                 tracing::debug!("{}: {}", self.label, e);
@@ -487,8 +517,12 @@ impl TlsListener {
             }
         };
         if let Err(e) = Pin::new(&mut tls).accept().await {
-            self.handshake_failed(&e.to_string(), peer);
-            self.hold_close(tls.get_mut()).await;
+            let text = e.to_string();
+            self.handshake_failed(&text, peer);
+            // An alert the PEER sent is not held: nothing is owed back.
+            if !text.contains("SSL alert number") {
+                failed.store(true, Ordering::SeqCst);
+            }
             return;
         }
         let facts = facts_of(tls.ssl());
@@ -529,12 +563,17 @@ impl TlsListener {
             },
         );
         let mut builder = Builder::new(TokioExecutor::new());
+        let watched = Watched { inner: tls, failed };
         let served = if h2 {
             builder = builder.http2_only();
-            builder.serve_connection(TokioIo::new(tls), service).await
+            builder
+                .serve_connection(TokioIo::new(watched), service)
+                .await
         } else {
             builder = builder.http1_only();
-            builder.serve_connection(TokioIo::new(tls), service).await
+            builder
+                .serve_connection(TokioIo::new(watched), service)
+                .await
         };
         if let Err(e) = served {
             tracing::debug!("{}: a connection ended: {}", self.label, e);
@@ -583,7 +622,7 @@ impl TlsListener {
     /// `tls/alert_close.ts`: the FIN at once, the descriptor held two
     /// seconds while what the peer still sends is read and discarded, so
     /// the close sends no reset that could overtake the alert.
-    async fn hold_close(&self, raw: &mut TcpStream) {
+    async fn hold_close(&self, mut raw: TcpStream) {
         if self.held.fetch_add(1, Ordering::SeqCst) >= ALERT_HOLD_MAX {
             self.held.fetch_sub(1, Ordering::SeqCst);
             if !self.told_full.swap(true, Ordering::SeqCst) {
@@ -613,6 +652,252 @@ impl TlsListener {
             }
         }
         self.held.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// What a ClientHello said about the server name.
+#[derive(Debug, Clone, PartialEq)]
+enum Offered {
+    Name(String),
+    None,
+    Unreadable,
+}
+
+/// The server name of a TLS ClientHello's first record
+/// (`client_hello.ts`' `nameOfHello()`): `None` when it offers none,
+/// `Unreadable` when the record or the extension is not well formed.
+fn server_name_of(record: &[u8]) -> Offered {
+    fn take<'a>(b: &mut &'a [u8], n: usize) -> Option<&'a [u8]> {
+        if b.len() < n {
+            return None;
+        }
+        let (head, rest) = b.split_at(n);
+        *b = rest;
+        Some(head)
+    }
+    fn len16(b: &mut &[u8]) -> Option<usize> {
+        take(b, 2).map(|x| usize::from(x[0]) << 8 | usize::from(x[1]))
+    }
+    let parse = || -> Option<Offered> {
+        let mut b = record;
+        let head = take(&mut b, 5)?;
+        if head[0] != 22 {
+            return Some(Offered::None);
+        }
+        let mut hs =
+            take(&mut b, usize::from(head[3]) << 8 | usize::from(head[4]))?;
+        let kind = take(&mut hs, 4)?;
+        if kind[0] != 1 {
+            return Some(Offered::None);
+        }
+        take(&mut hs, 34)?;
+        let sid = usize::from(take(&mut hs, 1)?[0]);
+        take(&mut hs, sid)?;
+        let suites = len16(&mut hs)?;
+        take(&mut hs, suites)?;
+        let comp = usize::from(take(&mut hs, 1)?[0]);
+        take(&mut hs, comp)?;
+        if hs.is_empty() {
+            return Some(Offered::None);
+        }
+        let total = len16(&mut hs)?;
+        let mut exts = take(&mut hs, total)?;
+        while !exts.is_empty() {
+            let t = len16(&mut exts)?;
+            let n = len16(&mut exts)?;
+            let mut body = take(&mut exts, n)?;
+            if t != 0 {
+                continue;
+            }
+            let list = len16(&mut body)?;
+            let mut names = take(&mut body, list)?;
+            if !body.is_empty() || names.is_empty() {
+                return Some(Offered::Unreadable);
+            }
+            while !names.is_empty() {
+                let kind = take(&mut names, 1)?[0];
+                let n = len16(&mut names)?;
+                let name = take(&mut names, n)?;
+                if kind == 0 {
+                    return match std::str::from_utf8(name) {
+                        Ok(text) if !text.is_empty() => {
+                            Some(Offered::Name(text.to_ascii_lowercase()))
+                        }
+                        _ => Some(Offered::Unreadable),
+                    };
+                }
+            }
+            return Some(Offered::Unreadable);
+        }
+        Some(Offered::None)
+    };
+    parse().unwrap_or(Offered::Unreadable)
+}
+
+/// The raw connection under the TLS engine: the ClientHello's bytes read
+/// ahead and replayed, and — once the connection is dropped — a close held
+/// for its alert when it failed at the TLS layer (`tls/alert_close.ts`).
+struct Conn {
+    replay: Vec<u8>,
+    at: usize,
+    tcp: Option<TcpStream>,
+    failed: Arc<AtomicBool>,
+    listener: Arc<TlsListener>,
+}
+
+impl Conn {
+    /// Reads the first record, up to its declared length (bounded), with a
+    /// deadline; whatever arrived is replayed whether or not it parsed.
+    async fn sniffing(
+        mut tcp: TcpStream,
+        listener: Arc<TlsListener>,
+    ) -> (Conn, Offered) {
+        let mut buf = Vec::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        let mut chunk = [0u8; 4096];
+        let offered = loop {
+            let want = if buf.len() >= 5 {
+                5 + (usize::from(buf[3]) << 8 | usize::from(buf[4]))
+            } else {
+                5
+            };
+            if buf.len() >= want || buf.len() >= 16 * 1024 + 5 {
+                break server_name_of(&buf);
+            }
+            if buf.first().is_some_and(|b| *b != 22) {
+                break Offered::None;
+            }
+            match tokio::time::timeout_at(deadline, tcp.read(&mut chunk)).await
+            {
+                Ok(Ok(0)) | Err(_) => break Offered::Unreadable,
+                Ok(Ok(n)) => buf.extend_from_slice(&chunk[..n]),
+                Ok(Err(_)) => break Offered::Unreadable,
+            }
+        };
+        (
+            Conn {
+                replay: buf,
+                at: 0,
+                tcp: Some(tcp),
+                failed: Arc::new(AtomicBool::new(false)),
+                listener,
+            },
+            offered,
+        )
+    }
+}
+
+impl Drop for Conn {
+    fn drop(&mut self) {
+        if !self.failed.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(tcp) = self.tcp.take() {
+            let listener = self.listener.clone();
+            tokio::spawn(async move { listener.hold_close(tcp).await });
+        }
+    }
+}
+
+impl AsyncRead for Conn {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        out: &mut ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if self.at < self.replay.len() {
+            let n = (self.replay.len() - self.at).min(out.remaining());
+            let at = self.at;
+            out.put_slice(&self.replay[at..at + n]);
+            self.at += n;
+            return std::task::Poll::Ready(Ok(()));
+        }
+        match self.tcp.as_mut() {
+            Some(tcp) => Pin::new(tcp).poll_read(cx, out),
+            None => std::task::Poll::Ready(Ok(())),
+        }
+    }
+}
+
+impl AsyncWrite for Conn {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        data: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        match self.tcp.as_mut() {
+            Some(tcp) => Pin::new(tcp).poll_write(cx, data),
+            None => std::task::Poll::Ready(Ok(0)),
+        }
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match self.tcp.as_mut() {
+            Some(tcp) => Pin::new(tcp).poll_flush(cx),
+            None => std::task::Poll::Ready(Ok(())),
+        }
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match self.tcp.as_mut() {
+            Some(tcp) => Pin::new(tcp).poll_shutdown(cx),
+            None => std::task::Poll::Ready(Ok(())),
+        }
+    }
+}
+
+/// The TLS stream as HTTP reads it: a read that fails is a TLS-layer
+/// failure after the handshake (a bad record, a CCS after Finished, a
+/// record too big), and its connection's close is held for the alert
+/// OpenSSL wrote — the second of `alert_close.ts`' two ways.
+struct Watched {
+    inner: tokio_openssl::SslStream<Conn>,
+    failed: Arc<AtomicBool>,
+}
+
+impl AsyncRead for Watched {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        out: &mut ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let polled = Pin::new(&mut self.inner).poll_read(cx, out);
+        if let std::task::Poll::Ready(Err(e)) = &polled {
+            if !e.to_string().contains("SSL alert number") {
+                self.failed.store(true, Ordering::SeqCst);
+            }
+        }
+        polled
+    }
+}
+
+impl AsyncWrite for Watched {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        data: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, data)
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
 
