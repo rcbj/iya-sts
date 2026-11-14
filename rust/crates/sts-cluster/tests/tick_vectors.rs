@@ -440,7 +440,13 @@ async fn the_tick_is_nodes() {
             }
         }
         checks += 1;
-        if norm(json!(rows)) != norm(one["rows"].clone()) {
+        // The same order on both sides: Node sorted by localeCompare,
+        // which no byte order reproduces, and the order is not behaviour.
+        let mut want_rows = one["rows"].as_array().unwrap().clone();
+        want_rows.sort_by_key(|r| {
+            format!("{}{}", r["realm"].as_str().unwrap(), r["runId"].as_str().unwrap())
+        });
+        if norm(json!(rows)) != norm(json!(want_rows)) {
             failures.push(format!(
                 "{} rows:\n  rust {}\n  node {}",
                 name,
