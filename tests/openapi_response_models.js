@@ -806,6 +806,22 @@ function codesOnlyWhereDrawn(t, docs) {
   log.debug("Leaving codesOnlyWhereDrawn().");
 }
 
+// What compiling one model says: null when it compiles, ajv's sentence when
+// it will not — the validator's own form, `allOf` beside the document's
+// components (`common/response_models.ts`, `validatorFor()`).
+function compileProblem(ajv, schema, components) {
+  log.debug("Entering compileProblem().");
+  try {
+    ajv.compile({ allOf: [schema], components: components });
+  } catch (e) {
+    log.debug("Caught in compileProblem(): " + ((e && e.message) || e));
+    log.debug("Leaving compileProblem(). It will not compile.");
+    return String((e && e.message) || e);
+  }
+  log.debug("Leaving compileProblem().");
+  return null;
+}
+
 function ruleOverDocuments(t) {
   log.debug("Entering ruleOverDocuments().");
   const docs = documents();
@@ -852,10 +868,31 @@ function ruleOverDocuments(t) {
   const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
                         useDefaults: false });
   addFormats(ajv);
+  // EACH DISTINCT MODEL IS COMPILED ONCE (run 29, memory, 2026-11-14). This
+  // loop compiled every row — 4780 of them — and only 890 are distinct: the
+  // shared refusal model is on every operation, and `management` and
+  // `console` are two views of `admin`'s routes. Each compile costs in
+  // proportion to the document's `components` (1.4 MB for `admin`), which
+  // ajv walks in full for every root it is handed, so the loop grew with
+  // rows times components as the models grew: 120-240 s of this file's
+  // 125-242 s in the runs of 11-13 and 11-14, 175 s measured alone in the
+  // tests image, and past the runner's 300 s watchdog in the unit pool of
+  // run 29 (killed with 151 assertions, the walk done at 9 s). The pool
+  // only made it slower; the work was the file's own, so the answer is not
+  // a longer watchdog or UNIT_ALONE (this file asserts nothing about time)
+  // but not doing the same compile twice. The memory is EXACT, not an
+  // approximation: its key is the document's components and the model's
+  // own text, everything ajv's answer depends on with one instance and one
+  // set of options, and every row sharing a broken model is still named.
+  // Measured in the tests image beside a full run: 64 s for the 890
+  // against 175 s for the 4780 in a script, and this check 83 s against
+  // 181 s in the file itself.
+  const outcomes = new Map();
   const broken = [];
   let compiled = 0;
   Object.keys(docs).forEach(function (api) {
     const doc = docs[api];
+    const components = JSON.stringify(doc.components || {});
     Object.keys(doc.paths).forEach(function (p) {
       Object.keys(doc.paths[p]).forEach(function (m) {
         const responses = (doc.paths[p][m] || {}).responses || {};
@@ -864,15 +901,18 @@ function ruleOverDocuments(t) {
           Object.keys(content).filter(function (type) {
             return /json/.test(type);
           }).forEach(function (type) {
-            try {
-              ajv.compile({ allOf: [content[type].schema],
-                            components: doc.components });
+            const key = components + '\u0000' +
+              JSON.stringify(content[type].schema);
+            if (!outcomes.has(key)) {
+              outcomes.set(key, compileProblem(ajv, content[type].schema,
+                                               doc.components));
+            }
+            const problem = outcomes.get(key);
+            if (problem === null) {
               compiled += 1;
-            } catch (e) {
-              log.debug("Caught in ruleOverDocuments(): " +
-                        ((e && e.message) || e));
+            } else {
               broken.push(api + ' ' + m + ' ' + p + ' ' + status + ': ' +
-                          ((e && e.message) || e));
+                          problem);
             }
           });
         });
@@ -880,7 +920,8 @@ function ruleOverDocuments(t) {
     });
   });
   t.check(broken.length === 0 && compiled > 1000, 'every model compiles (' +
-          compiled + '): ' + broken.slice(0, 20).join('; '));
+          compiled + ', ' + outcomes.size + ' distinct): ' +
+          broken.slice(0, 20).join('; '));
   // A free-form model carries its reason, or it is an open model by another
   // name; the list is printed, because the exception is meant to be read.
   const reasons = new Set();
