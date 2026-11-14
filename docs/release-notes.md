@@ -158,6 +158,19 @@ refused. A request that worked in 1.0.0 gets the same answer.
 declare. The remote PEP's AuthZEN endpoint in the `xacml-pep` container
 follows the same rule.
 
+### Policies can be exported and imported, whole or one at a time
+
+New in 1.1.0: Directory → Policies has an **Export and import** tab, and
+`/admin-api` has `POST /admin-api/policies/transfer/export`, `inspect` and
+`import` with `GET /admin-api/policies/transfer` beside them. An export is a
+JSON document signed under the realm's new Policy Export Signing CA, with the
+signer's whole chain inside it. An import from another realm asks whether to
+trust that realm's signer first. An export may carry every policy the realm
+stores or only the ones named, each by its kind and name, and every stored
+policy has an Export button of its own. An import may write every policy in
+the document or only the ones ticked. [Policies](policies.md#export-and-import)
+has the details.
+
 ### A federated OpenID Provider may leave out its `issuer`
 
 This applies to a federation relationship that finds its OpenID Provider
