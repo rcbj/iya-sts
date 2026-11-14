@@ -1480,6 +1480,35 @@ comes first, the pull or the deadline. At the deadline it answers from what
 the process has (`STS-STORE-0039`), and the pull goes on.
 `tests/replication.js` section 8c covers it.
 
+**AND "ANSWERS FROM WHAT THE PROCESS HAS" IS NOW THE CALLER'S DECISION, AND
+THE REQUEST POOL'S IS TO ASK AGAIN AND THEN REFUSE (2026-11-14).** The
+deadline still returns `caughtUp: false`, but a worker's sync round carries
+that (and `coordinating`) to the front, which no longer stamps a worker
+current on an `ok` that says it is behind: it asks again, round after round,
+for up to `workers.readBarrierTimeoutMs` (30 s), and then answers 503
+(`STS-WORKER-0053`; the front's own kept requests `STS-WORKER-0054`).
+GitHub Actions run 43622250478 is why: a worker 7–22 s into a global logout's
+8,000 minted rows answered a just-created realm 404 and a just-declared scope
+403. `common/CLAUDE.md` (*A RUN-OUT BARRIER IS A REFUSAL*) and
+`request_pool.js`'s header above BARRIER_ROUND_MS argue it. The other callers
+of `syncNow()` (SPIFFE, the cluster barrier, `oauth2.ts`) are unchanged. A
+Kerberos client that gives up at 10 s still gives up; what changed is that
+the KDC no longer answers it from a copy it knows is behind.
+
+**THE LINE NOW ACCOUNTS FOR THE APPLYING TIME (2026-11-14).** That run's
+STS-STORE-0039 said `18643 ms applying 8000 row(s)` with 508 ms of it in the
+per-kind row timings and nothing about the rest. `pullCostText()` now splits
+the applying time into the rows (by kind), each kind's `prepare` (the minted
+page's batched read), the turns of the event loop the apply yields every
+`APPLY_YIELD_EVERY` rows (with the longest — time OTHER work on that thread
+held it), and a remainder named `otherwise`; the hole re-check is separate.
+In that run the same thread reported its event loop blocked for 6,874 ms
+(STS-STORE-0068) in the same second, with no row being applied, so the
+untimed time was a synchronous block on that thread between rows: the new
+line says whether it was a prepare or another task taking the loop at a
+turn, which the old line could not. `tests/read_barrier_slow_apply.js`
+holds the split.
+
 **`audit.events` IS STORED IN SEGMENTS OF 32** (`realms.arr({ segment })`,
 `common/CLAUDE.md`): a whole-array `merge: 'own'` row was 2.3 MB sealed and
 written per flush and read back by every other process. Another origin's
