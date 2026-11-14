@@ -587,6 +587,20 @@ function run(t) {
               .test(src),
             rel + ' does not read the version out of package.json');
   });
+  // THE PAGE FOOTER (2026-11-14) draws the version on every static
+  // surface's shell and on the error page, and is in `common/` beside the
+  // module, so its require is `./version`. The browser's redraw reads the
+  // facts this module put on the footer, never a version of its own.
+  const footerSrc = codeOf('common/page_footer.ts');
+  t.check(/require\((['"])\.\/version\1\)/.test(footerSrc) &&
+          /version\.load\(\)/.test(footerSrc) &&
+          /version\.buildInfo\(/.test(footerSrc),
+          'common/page_footer.ts takes the version and its build line from ' +
+          'common/version.js');
+  t.check(!/package\.json/.test(footerSrc) &&
+          !/require\(/.test(codeOf('common/web_footer.ts')),
+          'and the footer\'s browser half requires nothing, so the only ' +
+          'version it can draw is the one the server put on the footer');
 
   // The three outbound requesters say who is calling and which build. Same
   // argument as above: the string is built in one place, so the check is that

@@ -337,6 +337,29 @@ description as JSON to `?format=json` or to an `Accept` that prefers
 `application/json`; for SAML 2.0 and SAML 1.1 that form is new. `/xacml`
 keeps its gate, over the page, its script and its JSON alike.
 
+## The footer on every page
+
+Every page above that the service draws for a person — the front door, the
+sign-in screens and their steps, consent, the sign-out, the user portal, the
+admin console, the reports application, GNAP's interaction pages, the
+federation pages, the description pages and the error pages — ends with the
+same footer:
+
+- **Documentation**, **Contact** and **About**: this site, the project's
+  issues and the project's repository, each opening in a new tab.
+- The **LinkedIn** and **GitHub** icons.
+- The copyright line, and the service's version (`M.N.O.<build>`). Hover the
+  version to see the build: whether it is a release, when it was built, and
+  the commit.
+
+The footer is drawn in the page's language and needs no script. A narrow
+screen stacks the links. The documents that belong to a specification rather
+than to this service carry no footer: the self-submitting forms of the
+WS-Federation, `form_post` and SAML POST bindings, the OpenID Connect session
+iframe at `/oauth2/check_session`, the fragment page a federation relationship
+uses, and the Kerberos exchange at `/authn/spnego`. Neither does the embedded
+protocol debugger, which is a separate application.
+
 ## Pages that are not for end users
 
 They are listed so the list above is complete. None is planned for

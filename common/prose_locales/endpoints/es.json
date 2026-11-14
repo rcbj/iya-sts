@@ -443,6 +443,10 @@
     "en": "96ed2387e40a779a",
     "text": "La hoja de estilo de tarjeta de las superficies públicas"
   },
+  "endpoints.route./web/footer.css.name": {
+    "en": "b1ae9012425d7c77",
+    "text": "La hoja de estilo del pie de página"
+  },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
     "text": "La hoja de estilo de la apariencia de inicio de sesión de un dominio"

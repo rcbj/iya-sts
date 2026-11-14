@@ -82,6 +82,12 @@ function childMain() {
     const version = require(ROOT_DIR + '/common/version');
 
     // --- A. one shell writer, the same bytes -------------------------------
+    // THE PAGE FOOTER (2026-11-14) is the one deliberate change to both
+    // shells since they were drawn by hand: `/web/footer.css` linked after
+    // the surface's stylesheet, and `common/page_footer.ts`'s footer at the
+    // end of the body. Everything else is the bytes it always was.
+    const footer = require(ROOT_DIR + '/common/page_footer').html();
+    const FOOTER_CSS = '<link rel="stylesheet" href="/web/footer.css">';
     // THE CONSOLE'S SHELL AS `AdminConsole.shellDocument()` DREW IT BY HAND
     // BEFORE #570, copied as it was.
     const adminBefore = function (registered, elsewhere) {
@@ -99,7 +105,7 @@ function childMain() {
       return '<!DOCTYPE html>\n<html lang="en"' + data + '><head><meta ' +
         'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
         'initial-scale=1"><title>IYA STS admin</title>' +
-        '<link rel="stylesheet" href="/admin/console.css">' +
+        '<link rel="stylesheet" href="/admin/console.css">' + FOOTER_CSS +
         (refused ? '' : '<script src="/admin/console.js" defer></script>') +
         '</head><body><div class="shell"><div class="main"><div ' +
         'class="card"><h1>IYA STS admin</h1>' +
@@ -112,7 +118,7 @@ function childMain() {
               '</code>; with scripts blocked there is nothing it can show.',
               'Scripts are blocked') + '</noscript><p class="lede">' +
             'Signing in&hellip;</p>') +
-        '</div></div></div></body></html>\n';
+        '</div></div></div>' + footer + '</body></html>\n';
     };
     // THE PORTAL'S, AS `Portal.shellDocument()` DREW IT BEFORE #570.
     const portalBefore = function (registered, elsewhere) {
@@ -132,7 +138,7 @@ function childMain() {
         '<meta charset="utf-8"><meta name="viewport" ' +
         'content="width=device-width,initial-scale=1"><title>Your account — ' +
         'IYA STS</title><link rel="stylesheet" href="' + BASE +
-        '/portal.css">' +
+        '/portal.css">' + FOOTER_CSS +
         (refused ? '' : '<script src="' + BASE +
                         '/portal.js" defer></script>') +
         '</head><body><div class="wrap"><div class="card">' +
@@ -144,7 +150,7 @@ function childMain() {
             'in your browser and draws every page from <code>/account-api' +
             '</code>; with scripts blocked there is nothing it can show.' +
             '</div></noscript><p class="sub">Loading&hellip;</p>') +
-        '</div></div></body></html>\n';
+        '</div></div>' + footer + '</body></html>\n';
     };
     const odd = 'https://h.example:8443/realm/a?x=1&y="q"\'<b>';
     const shellCases = [

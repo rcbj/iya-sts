@@ -1219,6 +1219,10 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Ang mga patakaran ng card ng sign-in screen at ng language chooser, bilang iisang stylesheet na nili-link ng shell ng isang static na pampublikong surface (common/web_card_css.ts). Sinasagot sa bawat listener; ang address na may ?v= ng build na ito ay naka-cache nang permanente."
   },
+  "stsmetadata.endpoints./web/footer.css.what": {
+    "en": "32bce90003b1f15c",
+    "text": "NON-SPEC (2026-11-14). Ang mga patakaran ng footer na iginuguhit ng shell ng bawat static na surface — ang mga link sa dokumentasyon, pakikipag-ugnayan at tungkol, ang mga icon ng social media, ang copyright at ang bersyon (common/web_footer.ts). Inihahain sa bawat listener; ang address na may ?v= ng build na ito ay naka-cache nang permanente."
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717). Ang mga kulay ng pag-sign in ng realm bilang mga CSS custom property na binabasa ng /web/card.css (common/branding.ts): ang apat na kulay na branding.* at ang mga tonong hinango mula sa mga ito, binuo lamang mula sa mga napatunayang value. Iniuugnay ito ng shell pagkatapos ng card kung saan lamang naiiba ang itsura ng realm sa itsura ng serbisyo; ang address na may digest nito bilang ?v= ay naka-cache nang permanente."

@@ -26,6 +26,7 @@ import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
 import DocLinks = require('../common/web_doc_links');
 import WebAnnouncements = require('../common/web_announcements');
+import WebFooter = require('../common/web_footer');
 
 const CLIENT_ID = 'sts-report';
 const SCOPE = 'openid profile email offline_access report:use report:admin';
@@ -1671,6 +1672,10 @@ class ReportRuntime extends SpaClient {
     } catch (e) {
       this.t = WebMessages.WebTranslator.fromData(null);
     }
+    // THE PAGE FOOTER the shell drew, outside `<main>`, which is all this
+    // runtime draws: put in the page's language once its catalogs are in
+    // hand (`common/web_footer.ts`).
+    WebFooter.redraw(this.env.document, this.t, WebSafeDom.replace);
   }
 
   /**

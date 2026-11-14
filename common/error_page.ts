@@ -52,6 +52,8 @@ import PageLocale = require('./page_locale');
 import realms = require('./realms');
 import audit = require('./audit');
 import helpers = require('./helpers');
+import PageFooter = require('./page_footer');
+import WebFooter = require('./web_footer');
 
 const log = helpers.log;
 
@@ -258,7 +260,7 @@ class ErrorPage {
       '><head><meta charset="utf-8"><meta name="viewport" ' +
       'content="width=device-width, initial-scale=1">' +
       (spec.extraHead || '') + '<title>' + Html.esc(spec.title) +
-      '</title><style>' + PAGE_CSS + PageLocale.ROW_CSS +
+      '</title><style>' + PAGE_CSS + PageLocale.ROW_CSS + WebFooter.CSS +
       '</style></head><body>' +
       (spec.chooser || '') +
       '<h1>' + Html.esc(spec.title) + '</h1>' +
@@ -273,6 +275,11 @@ class ErrorPage {
           spec.background + '</div></details>'
         : '') +
       ErrorPage.footer(t, spec.diagnostics || [], incident, now) +
+      // THE PAGE FOOTER (rcbj, 2026-11-14), below the diagnostics: the
+      // service's links, the copyright and the version, in the page's
+      // language and as markup — this page runs no script
+      // (`common/page_footer.ts`).
+      PageFooter.html(t) +
       '</body></html>';
     log.debug("Leaving ErrorPage.document().");
     return out;

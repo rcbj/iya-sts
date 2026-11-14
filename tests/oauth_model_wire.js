@@ -1089,6 +1089,11 @@ function normalise(record) {
   log.debug("Entering normalise().");
   const seen = new Map();
   const PATTERNS = [
+    // THE PAGE FOOTER (2026-11-14), on every shell and error page: its
+    // version and build line differ per build, and what it holds is
+    // `tests/page_footer.js`'s to check, so here it is one placeholder.
+    ['footer', /<footer class=\\"sts-footer\\".*?<\/footer>/g],
+    ['footercss', /body:has\(>\.sts-footer\).*?\.sts-footer-social\{gap:18px\}\}/g],
     ['uuid', /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi],
     ['time', /\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z/g],
     ['httpdate', /[A-Z][a-z]{2}, \d\d [A-Z][a-z]{2} \d{4} \d\d:\d\d:\d\d GMT/g],

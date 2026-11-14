@@ -1219,6 +1219,10 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登入畫面卡片與語言選擇器的規則，合為一個樣式表，供靜態公開介面的外殼連結（common/web_card_css.ts）。在每個接聽程式上提供；帶有此組建 ?v= 的位址會被永久快取。"
   },
+  "stsmetadata.endpoints./web/footer.css.what": {
+    "en": "32bce90003b1f15c",
+    "text": "NON-SPEC（2026-11-14）。每個靜態介面的外殼所繪製的頁尾規則——文件、聯絡和關於連結、社群媒體圖示、版權和版本（common/web_footer.ts）。在每個監聽器上提供；帶有本建置 ?v= 的位址會被永久快取。"
+  },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
     "text": "NON-SPEC (#717)。領域的登入顏色，作為 /web/card.css 讀取的 CSS 自訂屬性（common/branding.ts）：四種 branding.* 顏色以及由它們衍生的色調，僅由經過驗證的值建構。僅當領域的外觀與服務的外觀不同時，外殼才在卡片之後連結它；帶有其摘要作為 ?v= 的位址會被永久快取。"

@@ -577,7 +577,13 @@ class SpnegoAuthn {
       noscript: '<h1>Sign in with Kerberos</h1><div class="err">This page ' +
         'is a script that runs in your browser, and with scripts blocked ' +
         'there is nothing it can show. Allow scripts for this page.</div>',
-      loading: '<p class="sub">Loading&hellip;</p>'
+      loading: '<p class="sub">Loading&hellip;</p>',
+      // NO PAGE FOOTER (rcbj, 2026-11-14): every answer this shell carries
+      // is one of RFC 4559's exchange — the 401 with its challenge, the 403,
+      // the 200 with or without the AP-REP — and a specification's response
+      // is not converted (`common/page_footer.ts`). With none in the shell,
+      // the runtime draws none either.
+      footer: false
     });
     res.set('Content-Security-Policy',
             ShellDocument.policy(app, { csp: { 'style-src': "'self'" } }));
