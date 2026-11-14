@@ -89,6 +89,8 @@ rc4 = "0.2"
 thiserror = "2.0"
 # Kanidm's LDAPv3 codec: sts-ldap compares its own against it in a test.
 ldap3_proto = "0.9"
+bytes = "1"
+tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
 
 [workspace.lints.rust]

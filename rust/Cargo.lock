@@ -1838,9 +1838,11 @@ dependencies = [
 name = "sts-ldap"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "ldap3_proto",
  "serde",
  "serde_json",
+ "tokio-util",
  "tracing",
 ]
 

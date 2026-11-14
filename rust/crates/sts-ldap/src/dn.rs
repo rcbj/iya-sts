@@ -56,7 +56,10 @@ fn is_array_index(k: &str) -> bool {
         return true;
     }
     let b = k.as_bytes();
-    if b.is_empty() || !(b'1'..=b'9').contains(&b[0]) || !b.iter().all(u8::is_ascii_digit) {
+    if b.is_empty()
+        || !(b'1'..=b'9').contains(&b[0])
+        || !b.iter().all(u8::is_ascii_digit)
+    {
         return false;
     }
     k.parse::<u64>().map(|n| n < 4_294_967_295).unwrap_or(false)
@@ -97,7 +100,8 @@ impl Rdn {
     fn from_entries(entries: Vec<(String, RdnValue)>) -> Outcome<Rdn> {
         let mut rdn = Rdn::default();
         for (name, value) in entries {
-            let alpha = name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic);
+            let alpha =
+                name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic);
             if !alpha && !is_dotted_decimal(&name) {
                 return Err(Fault::thrown(
                     "attribute name must start with an ASCII alpha character \
@@ -272,7 +276,10 @@ impl Parser<'_> {
         pos
     }
 
-    fn read_attribute_pair(&self, pos: i64) -> Outcome<(i64, String, RdnValue)> {
+    fn read_attribute_pair(
+        &self,
+        pos: i64,
+    ) -> Outcome<(i64, String, RdnValue)> {
         let start = self.find_name_start(pos);
         if start < 0 {
             return Err(Fault::thrown(
@@ -401,9 +408,12 @@ impl Parser<'_> {
     }
 
     fn hex_at(&self, a: i64) -> Option<i64> {
-        let s: String = [js::from_char_code(self.at(a)), js::from_char_code(self.at(a + 1))]
-            .iter()
-            .collect();
+        let s: String = [
+            js::from_char_code(self.at(a)),
+            js::from_char_code(self.at(a + 1)),
+        ]
+        .iter()
+        .collect();
         js::parse_int_hex(&s)
     }
 
@@ -454,14 +464,18 @@ fn valid_attribute_type_name(name: &str) -> bool {
             !name.chars().any(|c| c.is_ascii_alphabetic() || c == '-')
         }
         Some(c) if !c.is_ascii_alphabetic() => false,
-        _ => !name.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '-')),
+        _ => !name
+            .chars()
+            .any(|c| !(c.is_ascii_alphanumeric() || c == '-')),
     }
 }
 
 impl Dn {
     /// `DN.fromString()`.
     pub fn parse(input: &str) -> Outcome<Dn> {
-        let p = Parser { b: input.as_bytes() };
+        let p = Parser {
+            b: input.as_bytes(),
+        };
         let length = p.len();
         let mut rdns: Vec<PlainObject> = Vec::new();
         if length == 0 {
@@ -582,7 +596,10 @@ mod tests {
         assert_eq!(dn.to_text(), "cn=a,dc=x");
         let dn = Dn::parse("cn=back\\\\slash").unwrap();
         assert_eq!(dn.to_text(), "cn=back\\slash");
-        assert_eq!(Dn::parse("1=a+cn=b+0=c").unwrap().to_text(), "0=c+1=a+cn=b");
+        assert_eq!(
+            Dn::parse("1=a+cn=b+0=c").unwrap().to_text(),
+            "0=c+1=a+cn=b"
+        );
         assert_eq!(Dn::parse("cn=#4142 ,o=x"), Err(Fault::Stalled));
     }
 }

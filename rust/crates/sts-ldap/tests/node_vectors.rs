@@ -33,9 +33,12 @@ use sts_ldap::dn::{Dn, RdnValue};
 use sts_ldap::filter::{escape_bytes, escape_str, Filter, JsStr};
 use sts_ldap::js;
 use sts_ldap::message::{
-    ExtendedValue, Message, Operation, ResultMessage, SearchEntry, SearchReference,
+    ExtendedValue, Message, Operation, ResultMessage, SearchEntry,
+    SearchReference,
 };
-use sts_ldap::{dn, result_codes, service_dn, Connection, Event, Fault, FrontOptions};
+use sts_ldap::{
+    dn, result_codes, service_dn, Connection, Event, Fault, FrontOptions,
+};
 
 fn dir() -> Option<PathBuf> {
     std::env::var_os("STS_CRYPTO_VECTORS").map(PathBuf::from)
@@ -255,7 +258,10 @@ fn request_json(m: &Message) -> Json {
             o.insert("attributes".into(), json!(s.attributes));
         }
         Operation::Add(a) => {
-            o.insert("entry".into(), json!(a.entry.as_ref().unwrap().to_text()));
+            o.insert(
+                "entry".into(),
+                json!(a.entry.as_ref().unwrap().to_text()),
+            );
             o.insert(
                 "attributes".into(),
                 a.attributes.iter().map(attribute_json).collect(),
@@ -290,7 +296,10 @@ fn request_json(m: &Message) -> Json {
             );
         }
         Operation::Compare(c) => {
-            o.insert("entry".into(), json!(c.entry.as_ref().unwrap().to_text()));
+            o.insert(
+                "entry".into(),
+                json!(c.entry.as_ref().unwrap().to_text()),
+            );
             o.insert("attribute".into(), json!(c.attribute));
             o.insert("value".into(), json!(c.value));
         }
@@ -366,7 +375,9 @@ fn dn_case(input: &str) -> Json {
                     "rdns": rdns, "length": d.len() })
         }
         Err(Fault::Stalled) => json!({ "input": input, "hang": true }),
-        Err(Fault::Thrown(e)) => json!({ "input": input, "ok": false, "error": e }),
+        Err(Fault::Thrown(e)) => {
+            json!({ "input": input, "ok": false, "error": e })
+        }
     }
 }
 
@@ -460,10 +471,16 @@ fn response_hex(r: &Json) -> Json {
                 protocol_op: result_op(k),
                 status: r["status"].as_i64().unwrap() as i32,
                 matched_dn: s_of(&r["matchedDN"]).unwrap_or("").to_string(),
-                diagnostic_message: s_of(&r["diagnosticMessage"]).unwrap_or("").to_string(),
+                diagnostic_message: s_of(&r["diagnosticMessage"])
+                    .unwrap_or("")
+                    .to_string(),
                 referrals: r["referrals"]
                     .as_array()
-                    .map(|a| a.iter().map(|x| x.as_str().unwrap().to_string()).collect())
+                    .map(|a| {
+                        a.iter()
+                            .map(|x| x.as_str().unwrap().to_string())
+                            .collect()
+                    })
                     .unwrap_or_default(),
                 response_name: s_of(&r["responseName"]).map(str::to_string),
                 response_value: s_of(&r["responseValue"]).map(str::to_string),
@@ -480,7 +497,9 @@ fn nullable(v: &Json) -> Option<&str> {
 #[test]
 fn node_vectors() {
     let Some(v) = load() else {
-        eprintln!("STS_CRYPTO_VECTORS unset: the LDAP wire vectors are not checked");
+        eprintln!(
+            "STS_CRYPTO_VECTORS unset: the LDAP wire vectors are not checked"
+        );
         return;
     };
     let mut failures = Vec::new();
@@ -531,7 +550,9 @@ fn node_vectors() {
             .iter()
             .filter_map(|row| {
                 let got = f(nullable(&row[0]));
-                (got != row[1]).then(|| format!("{name}({}): node {} rust {got}", row[0], row[1]))
+                (got != row[1]).then(|| {
+                    format!("{name}({}): node {} rust {got}", row[0], row[1])
+                })
             })
             .collect()
     };
@@ -545,13 +566,23 @@ fn node_vectors() {
             .map(|p| json!({ "attribute": p.attribute, "value": p.value }))
             .collect()
     }));
-    service.extend(one("escapeDnValue", &|x| json!(service_dn::escape_dn_value(x))));
-    service.extend(one("unescapeDnValue", &|x| json!(service_dn::unescape_dn_value(x))));
-    service.extend(one("nameUsableInDn", &|x| json!(service_dn::name_usable_in_dn(x))));
+    service.extend(one("escapeDnValue", &|x| {
+        json!(service_dn::escape_dn_value(x))
+    }));
+    service.extend(one("unescapeDnValue", &|x| {
+        json!(service_dn::unescape_dn_value(x))
+    }));
+    service.extend(one("nameUsableInDn", &|x| {
+        json!(service_dn::name_usable_in_dn(x))
+    }));
     for row in sd["isUnder"].as_array().unwrap() {
         let (a, b) = (nullable(&row[0]), nullable(&row[1]));
-        let got = json!([row[0], row[1], service_dn::is_under(a, b),
-                         service_dn::depth_under(a, b)]);
+        let got = json!([
+            row[0],
+            row[1],
+            service_dn::is_under(a, b),
+            service_dn::depth_under(a, b)
+        ]);
         if &got != row {
             service.push(format!("isUnder: node {row} rust {got}"));
         }
@@ -575,7 +606,8 @@ fn node_vectors() {
         let bytes = unhex(f["hex"].as_str().unwrap());
         let mut out = Map::new();
         out.insert("hex".into(), f["hex"].clone());
-        let got = filter_answer(out, Filter::parse_ber(&mut Reader::new(&bytes)));
+        let got =
+            filter_answer(out, Filter::parse_ber(&mut Reader::new(&bytes)));
         *counts.entry("filterBers").or_insert(0) += 1;
         if &got != f {
             fail(format!("filter ber: node {f}\n  rust {got}"));
@@ -587,7 +619,9 @@ fn node_vectors() {
         let input = e["input"].as_str().unwrap();
         let got = match escape_str(input) {
             Ok(s) => json!({ "input": input, "ok": true, "value": s }),
-            Err(f) => json!({ "input": input, "ok": false, "error": f.message() }),
+            Err(f) => {
+                json!({ "input": input, "ok": false, "error": f.message() })
+            }
         };
         *counts.entry("escapes").or_insert(0) += 1;
         if &got != e {
@@ -598,7 +632,9 @@ fn node_vectors() {
         let bytes = unhex(e["hex"].as_str().unwrap());
         let got = match escape_bytes(&bytes) {
             Ok(s) => json!({ "hex": e["hex"], "ok": true, "value": s }),
-            Err(f) => json!({ "hex": e["hex"], "ok": false, "error": f.message() }),
+            Err(f) => {
+                json!({ "hex": e["hex"], "ok": false, "error": f.message() })
+            }
         };
         *counts.entry("escapes").or_insert(0) += 1;
         if &got != e {
@@ -670,7 +706,8 @@ fn write_rust_vectors() {
         for e in r["events"].as_array().unwrap() {
             if e.get("dispatch").is_some() {
                 if let Some(h) = e["reencoded"].as_str() {
-                    corpus.push((format!("rust {}", r["name"]), vec![unhex(h)]));
+                    corpus
+                        .push((format!("rust {}", r["name"]), vec![unhex(h)]));
                 }
             }
         }

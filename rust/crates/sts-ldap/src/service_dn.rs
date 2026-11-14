@@ -168,7 +168,7 @@ pub fn unescape_dn_value(value: Option<&str>) -> String {
 /// `nameUsableInDn()`: none of `DN_RESERVED`, `/[,=+<>#;"\\]/`.
 #[tracing::instrument(level = "debug")]
 pub fn name_usable_in_dn(name: Option<&str>) -> bool {
-    !text(name)
-        .chars()
-        .any(|c| matches!(c, ',' | '=' | '+' | '<' | '>' | '#' | ';' | '"' | '\\'))
+    !text(name).chars().any(|c| {
+        matches!(c, ',' | '=' | '+' | '<' | '>' | '#' | ';' | '"' | '\\')
+    })
 }

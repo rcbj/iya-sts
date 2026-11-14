@@ -113,7 +113,9 @@ impl Control {
             Control::Generic { oid, .. } => oid.clone(),
             Control::PagedResults { .. } => s(PAGED_RESULTS),
             Control::PersistentSearch { .. } => s(PERSISTENT_SEARCH),
-            Control::EntryChangeNotification { .. } => s(ENTRY_CHANGE_NOTIFICATION),
+            Control::EntryChangeNotification { .. } => {
+                s(ENTRY_CHANGE_NOTIFICATION)
+            }
             Control::PasswordPolicy { .. } => s(PASSWORD_POLICY),
             Control::SortRequest { .. } => s(SORT_REQUEST),
             Control::SortResponse { .. } => s(SORT_RESPONSE),
@@ -256,7 +258,8 @@ impl Control {
                                 }
                                 let mut reverse_order = None;
                                 if r.peek() == Some(0x81) {
-                                    reverse_order = Some(r.read_tag(0x81)? != Some(0));
+                                    reverse_order =
+                                        Some(r.read_tag(0x81)? != Some(0));
                                 }
                                 list.push(SortKey {
                                     attribute_type,
@@ -294,7 +297,9 @@ impl Control {
                 if is_truthy(r.read_sequence(None)?) {
                     r.read_int()?;
                     r.read_int()?;
-                    if r.peek() == Some(0xa0) && is_truthy(r.read_sequence(Some(0xa0))?) {
+                    if r.peek() == Some(0xa0)
+                        && is_truthy(r.read_sequence(Some(0xa0))?)
+                    {
                         r.read_int()?;
                         r.read_int()?;
                     }
@@ -337,7 +342,9 @@ impl Control {
         let oid = self.oid();
         w.write_string(oid.truthy().unwrap_or(""), 0x04)?;
         w.write_boolean(self.criticality(), 0x01);
-        let int = |n: Option<i32>| n.ok_or_else(|| Fault::thrown("argument must be a Number"));
+        let int = |n: Option<i32>| {
+            n.ok_or_else(|| Fault::thrown("argument must be a Number"))
+        };
         let mut inner = Writer::new();
         let wrote = match self {
             Control::Generic { value, .. } => {
@@ -424,7 +431,9 @@ impl Control {
                         inner.start_sequence(0x30);
                         let s = |v: &Option<String>| -> Outcome<String> {
                             v.clone().ok_or_else(|| {
-                                Fault::thrown("argument must be a string (was: object)")
+                                Fault::thrown(
+                                    "argument must be a string (was: object)",
+                                )
                             })
                         };
                         inner.write_string(&s(&k.attribute_type)?, 0x04)?;

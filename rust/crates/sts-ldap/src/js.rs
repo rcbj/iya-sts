@@ -73,13 +73,14 @@ pub fn is_js_space(c: char) -> bool {
             | ' '
             | '\u{a0}'
             | '\u{1680}'
-            | '\u{2000}'..='\u{200a}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202f}'
-            | '\u{205f}'
-            | '\u{3000}'
-            | '\u{feff}'
+            | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
     )
 }
 
@@ -179,7 +180,8 @@ pub fn base64_encode(bytes: &[u8]) -> String {
             chunk.get(1).copied().unwrap_or(0),
             chunk.get(2).copied().unwrap_or(0),
         ];
-        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        let n =
+            (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         out.push(char::from(B64[(n >> 18) as usize & 63]));
         out.push(char::from(B64[(n >> 12) as usize & 63]));
         if chunk.len() > 1 {
@@ -246,7 +248,8 @@ pub fn index_of(hay: &[u16], needle: &[u16], from: usize) -> Option<usize> {
     if hay.len() < needle.len() {
         return None;
     }
-    (from..=hay.len() - needle.len()).find(|&i| &hay[i..i + needle.len()] == needle)
+    (from..=hay.len() - needle.len())
+        .find(|&i| &hay[i..i + needle.len()] == needle)
 }
 
 /// `str.split(sep)` on code units, for a one-unit separator.

@@ -163,7 +163,9 @@ pub struct Message {
 
 fn wrong_op(found: Option<u8>) -> Fault {
     match found {
-        Some(f) => Fault::thrown(format!("found wrong protocol operation: 0x{f:02x}")),
+        Some(f) => {
+            Fault::thrown(format!("found wrong protocol operation: 0x{f:02x}"))
+        }
         None => Fault::null_read("toString"),
     }
 }
@@ -199,8 +201,7 @@ fn valid_attribute_string(s: &str) -> bool {
     // `^[a-zA-Z][\w\d.-]*(;[\w\d.-]+)*;range=\d+-(\d+|\*)(;[\w\d.-]+)*$`
     let parts: Vec<&str> = s.split(';').collect();
     let token = |p: &str| {
-        !p.is_empty()
-            && p.bytes().all(|c| word(c) || c == b'.' || c == b'-')
+        !p.is_empty() && p.bytes().all(|c| word(c) || c == b'.' || c == b'-')
     };
     let range = |p: &str| {
         let Some(r) = p.strip_prefix("range=") else {
@@ -209,7 +210,8 @@ fn valid_attribute_string(s: &str) -> bool {
         let Some((lo, hi)) = r.split_once('-') else {
             return false;
         };
-        let digits = |d: &str| !d.is_empty() && d.bytes().all(|c| c.is_ascii_digit());
+        let digits =
+            |d: &str| !d.is_empty() && d.bytes().all(|c| c.is_ascii_digit());
         digits(lo) && (hi == "*" || digits(hi))
     };
     let head = parts[0];
@@ -268,7 +270,9 @@ impl Message {
         ber.read_sequence(Some(0xa3))?;
         let end = ber.offset() + ber.length();
         let Some(mechanism) = ber.read_string(0x04)? else {
-            return Err(Fault::thrown("malformed SaslCredentials: no mechanism"));
+            return Err(Fault::thrown(
+                "malformed SaslCredentials: no mechanism",
+            ));
         };
         let mut credentials = None;
         if ber.offset() < end {
@@ -329,7 +333,9 @@ impl Message {
                 expect_op(ber, 0x42)?;
                 Operation::Unbind
             }
-            Some(t @ (0x00 | 0x61 | 0x65 | 0x67 | 0x69 | 0x6b | 0x6d | 0x6f)) => {
+            Some(
+                t @ (0x00 | 0x61 | 0x65 | 0x67 | 0x69 | 0x6b | 0x6d | 0x6f),
+            ) => {
                 result_from_client(ber, t)?;
                 Operation::Response(ClientResponse { protocol_op: t })
             }
@@ -377,7 +383,9 @@ impl Message {
                     uris.push(u);
                 }
                 if uris.iter().any(Option::is_none) {
-                    return Err(Fault::thrown("uri must be an array of strings"));
+                    return Err(Fault::thrown(
+                        "uri must be an array of strings",
+                    ));
                 }
                 Operation::Response(ClientResponse { protocol_op: 0x73 })
             }
@@ -397,11 +405,13 @@ impl Message {
                     _ => {}
                 }
                 if let Some(n) = name {
-                    let dotted = n
-                        .split('.')
-                        .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
+                    let dotted = n.split('.').all(|p| {
+                        !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())
+                    });
                     if !dotted {
-                        return Err(Fault::thrown("responseName must be a numeric OID"));
+                        return Err(Fault::thrown(
+                            "responseName must be a numeric OID",
+                        ));
                     }
                 }
                 Operation::Response(ClientResponse { protocol_op: 0x79 })
@@ -428,7 +438,9 @@ impl Message {
         let tag = ber.peek();
         if tag != Some(0x80) {
             return Err(match tag {
-                Some(t) => Fault::thrown(format!("authentication 0x{t:02x} not supported")),
+                Some(t) => Fault::thrown(format!(
+                    "authentication 0x{t:02x} not supported"
+                )),
                 None => Fault::null_read("toString"),
             });
         }
@@ -450,9 +462,9 @@ impl Message {
         let time_limit = ber.read_int(0x02)?;
         let types_only = ber.read_boolean(0x01)?;
         let tag = ber.peek();
-        let raw = ber
-            .read_raw_buffer(tag)?
-            .ok_or_else(|| Fault::thrown("Must supply a Buffer instance to read."))?;
+        let raw = ber.read_raw_buffer(tag)?.ok_or_else(|| {
+            Fault::thrown("Must supply a Buffer instance to read.")
+        })?;
         let parsed = Filter::parse_ber(&mut Reader::new(raw))?;
         let filter_text = parsed.to_text()?;
         let mut attributes: Vec<Option<String>> = Vec::new();
@@ -473,7 +485,9 @@ impl Message {
         // The constructor, in its order.
         let base_object = Dn::parse(&base.unwrap_or_default())?;
         if !(0..=2).contains(&scope) {
-            return Err(Fault::thrown(format!("{scope} is an invalid search scope")));
+            return Err(Fault::thrown(format!(
+                "{scope} is an invalid search scope"
+            )));
         }
         let filter = Filter::parse(&filter_text)?;
         let mut kept = Vec::new();
@@ -481,7 +495,11 @@ impl Message {
             match a {
                 Some(s) if valid_attribute_string(&s) => kept.push(s),
                 Some(s) if s.is_empty() => {}
-                _ => return Err(Fault::thrown("attribute must be a valid string")),
+                _ => {
+                    return Err(Fault::thrown(
+                        "attribute must be a valid string",
+                    ))
+                }
             }
         }
         Ok(Operation::Search(SearchRequest {
@@ -689,7 +707,10 @@ impl Message {
             }
             Operation::Add(a) => {
                 w.start_sequence(0x68);
-                let entry = a.entry.as_ref().ok_or_else(|| Fault::null_read("toString"))?;
+                let entry = a
+                    .entry
+                    .as_ref()
+                    .ok_or_else(|| Fault::null_read("toString"))?;
                 w.write_string(&entry.to_text(), 0x04)?;
                 w.start_sequence(0x30);
                 for at in &a.attributes {
@@ -725,7 +746,10 @@ impl Message {
             }
             Operation::Compare(c) => {
                 w.start_sequence(0x6e);
-                let entry = c.entry.as_ref().ok_or_else(|| Fault::null_read("toString"))?;
+                let entry = c
+                    .entry
+                    .as_ref()
+                    .ok_or_else(|| Fault::null_read("toString"))?;
                 w.write_string(&entry.to_text(), 0x04)?;
                 w.start_sequence(0x30);
                 w.write_string(&c.attribute, 0x04)?;
@@ -734,7 +758,9 @@ impl Message {
                 w.end_sequence()?;
             }
             Operation::Delete { entry } => {
-                let entry = entry.as_ref().ok_or_else(|| Fault::null_read("toString"))?;
+                let entry = entry
+                    .as_ref()
+                    .ok_or_else(|| Fault::null_read("toString"))?;
                 w.write_string(&entry.to_text(), 0x4a)?;
             }
             Operation::Extended(e) => {
@@ -750,7 +776,11 @@ impl Message {
                         w.start_sequence(0x30);
                         match v {
                             ExtendedValue::Cancel(n) => w.write_int(*n, 0x02),
-                            _ => return Err(Fault::thrown("intToWrite must be a Number")),
+                            _ => {
+                                return Err(Fault::thrown(
+                                    "intToWrite must be a Number",
+                                ))
+                            }
                         }
                         w.end_sequence()?;
                         w.end_sequence()?;
@@ -775,14 +805,20 @@ impl Message {
                         w.end_sequence()?;
                     }
                     ExtendedValue::Text(Some(t)) => w.write_string(t, 0x81)?,
-                    _ => return Err(Fault::thrown("stringToWrite must be a string")),
+                    _ => {
+                        return Err(Fault::thrown(
+                            "stringToWrite must be a string",
+                        ))
+                    }
                 }
                 w.end_sequence()?;
             }
             Operation::Abandon { abandon_id } => w.write_int(*abandon_id, 0x50),
             Operation::Unbind => w.write_string("", 0x42)?,
             Operation::Response(_) => {
-                return Err(Fault::thrown("a response from a client is not re-encoded"))
+                return Err(Fault::thrown(
+                    "a response from a client is not re-encoded",
+                ))
             }
         }
         if !self.controls.is_empty() {
@@ -869,7 +905,9 @@ impl ResultMessage {
             w.end_sequence()?;
         }
         if self.protocol_op == 0x78 {
-            if let Some(n) = self.response_name.as_deref().filter(|n| !n.is_empty()) {
+            if let Some(n) =
+                self.response_name.as_deref().filter(|n| !n.is_empty())
+            {
                 w.write_string(n, 0x8a)?;
             }
             if let Some(v) = &self.response_value {

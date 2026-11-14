@@ -15,6 +15,8 @@ tracing.workspace = true
 
 [dev-dependencies]
 ldap3_proto.workspace = true
+bytes.workspace = true
+tokio-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

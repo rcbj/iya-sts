@@ -25,7 +25,9 @@ use crate::js;
 /// `Expected 0x30: got 0x04`, as 2.0.0 words a tag mismatch.
 fn expected(tag: u8, found: Option<u8>) -> Fault {
     match found {
-        Some(f) => Fault::thrown(format!("Expected 0x{tag:02x}: got 0x{f:02x}")),
+        Some(f) => {
+            Fault::thrown(format!("Expected 0x{tag:02x}: got 0x{f:02x}"))
+        }
         None => Fault::null_read("toString"),
     }
 }
@@ -143,7 +145,11 @@ impl<'a> Reader<'a> {
             return Ok(None);
         }
         self.offset = fo;
-        Ok(Some(js::subarray(self.buf, self.offset, self.offset + self.len)))
+        Ok(Some(js::subarray(
+            self.buf,
+            self.offset,
+            self.offset + self.len,
+        )))
     }
 
     /// `readInt(tag)`, and so `readEnumeration()` (tag 0x0a).
@@ -191,7 +197,10 @@ impl<'a> Reader<'a> {
 
     /// `readRawBuffer(tag)`: a whole TLV. `tag` is `None` when the caller
     /// passed what `peek()` found at the end of the buffer.
-    pub fn read_raw_buffer(&mut self, tag: Option<u8>) -> Outcome<Option<&'a [u8]>> {
+    pub fn read_raw_buffer(
+        &mut self,
+        tag: Option<u8>,
+    ) -> Outcome<Option<&'a [u8]>> {
         let Some(tag) = tag else {
             return Err(Fault::thrown("must specify an integer tag"));
         };
@@ -325,8 +334,12 @@ impl<'a> ReaderV1<'a> {
                 return Err(expected_v1(t, seq));
             }
         }
-        let Some(o) =
-            read_length(self.buf, self.offset + 1, &mut self.len, LengthWords::V1)?
+        let Some(o) = read_length(
+            self.buf,
+            self.offset + 1,
+            &mut self.len,
+            LengthWords::V1,
+        )?
         else {
             return Ok(None);
         };
@@ -342,13 +355,20 @@ impl<'a> ReaderV1<'a> {
         if b != tag {
             return Err(expected_v1(tag, b));
         }
-        let Some(o) =
-            read_length(self.buf, self.offset + 1, &mut self.len, LengthWords::V1)?
+        let Some(o) = read_length(
+            self.buf,
+            self.offset + 1,
+            &mut self.len,
+            LengthWords::V1,
+        )?
         else {
             return Ok(None);
         };
         if self.len > 4 {
-            return Err(Fault::thrown(format!("Integer too long: {}", self.len)));
+            return Err(Fault::thrown(format!(
+                "Integer too long: {}",
+                self.len
+            )));
         }
         if self.len > self.size() - o {
             return Ok(None);
@@ -397,8 +417,12 @@ impl<'a> ReaderV1<'a> {
         if b != tag {
             return Err(expected_v1(tag, b));
         }
-        let Some(o) =
-            read_length(self.buf, self.offset + 1, &mut self.len, LengthWords::V1)?
+        let Some(o) = read_length(
+            self.buf,
+            self.offset + 1,
+            &mut self.len,
+            LengthWords::V1,
+        )?
         else {
             return Ok(None);
         };
@@ -491,7 +515,8 @@ impl Writer {
     pub fn write_int(&mut self, n: i32, tag: u8) {
         let mut i = n;
         let mut size = 4;
-        while ((i as u32 & 0xff80_0000) == 0 || (i as u32 & 0xff80_0000) == 0xff80_0000)
+        while ((i as u32 & 0xff80_0000) == 0
+            || (i as u32 & 0xff80_0000) == 0xff80_0000)
             && size > 1
         {
             size -= 1;
@@ -510,7 +535,8 @@ impl Writer {
     }
 
     pub fn write_boolean(&mut self, b: bool, tag: u8) {
-        self.buf.extend_from_slice(&[tag, 0x01, if b { 0xff } else { 0x00 }]);
+        self.buf
+            .extend_from_slice(&[tag, 0x01, if b { 0xff } else { 0x00 }]);
     }
 
     pub fn write_string(&mut self, s: &str, tag: u8) -> Outcome<()> {
@@ -547,6 +573,9 @@ mod tests {
         w.write_int(128, 2);
         w.write_int(-129, 2);
         w.write_int(0, 2);
-        assert_eq!(js::hex(w.bytes()), "0202008002 02ff7f020100".replace(' ', ""));
+        assert_eq!(
+            js::hex(w.bytes()),
+            "0202008002 02ff7f020100".replace(' ', "")
+        );
     }
 }

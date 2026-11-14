@@ -73,7 +73,8 @@ impl Attribute {
         ber.read_sequence(None)?;
         let attr_type = ber.read_string(0x04)?.unwrap_or_default();
         let mut buffers = Vec::new();
-        if ber.peek() == Some(0x31) && ber.read_sequence(Some(0x31))?.is_some() {
+        if ber.peek() == Some(0x31) && ber.read_sequence(Some(0x31))?.is_some()
+        {
             let end = ber.offset() + ber.length();
             let limit = pass_limit(ber.buffer().len());
             while ber.offset() < end {
@@ -140,7 +141,10 @@ impl Change {
         let values = modification.values();
         Ok(Change {
             operation: op as u8,
-            modification: Attribute::from_strings(&modification.attr_type, &values),
+            modification: Attribute::from_strings(
+                &modification.attr_type,
+                &values,
+            ),
         })
     }
 

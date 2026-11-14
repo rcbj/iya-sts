@@ -93,8 +93,10 @@ pub enum Filter {
     },
 }
 
-const AT_LEAST_ONE: &str = "attribute must be a string of at least one character";
-const VALUE_AT_LEAST_ONE: &str = "value must be a string of at least one character";
+const AT_LEAST_ONE: &str =
+    "attribute must be a string of at least one character";
+const VALUE_AT_LEAST_ONE: &str =
+    "value must be a string of at least one character";
 
 fn attribute_of(a: Option<String>) -> Outcome<String> {
     match a {
@@ -186,16 +188,17 @@ impl Filter {
                     Filter::Or(clauses)
                 })
             }
-            Some(0xa2) => Ok(Filter::Not(Box::new(Filter::parse_ber_at(
-                ber,
-                depth + 1,
-            )?))),
+            Some(0xa2) => {
+                Ok(Filter::Not(Box::new(Filter::parse_ber_at(ber, depth + 1)?)))
+            }
             Some(t @ (0xa8 | 0xa3 | 0xa9 | 0xa5 | 0xa6 | 0x87 | 0xa4)) => {
                 ber.set_offset(start);
                 let tag = ber.peek();
                 let raw = ber.read_raw_buffer(tag)?;
                 let Some(raw) = raw else {
-                    return Err(Fault::thrown("Must supply a Buffer instance to read."));
+                    return Err(Fault::thrown(
+                        "Must supply a Buffer instance to read.",
+                    ));
                 };
                 Filter::parse_leaf(t, raw)
             }
@@ -271,9 +274,13 @@ impl Filter {
                         return Err(Fault::Stalled);
                     }
                     match r.peek() {
-                        Some(0x80) => initial = JsStr::from_opt(r.read_string(0x80)?),
+                        Some(0x80) => {
+                            initial = JsStr::from_opt(r.read_string(0x80)?)
+                        }
                         Some(0x81) => any.push(r.read_string(0x81)?),
-                        Some(0x82) => last = JsStr::from_opt(r.read_string(0x82)?),
+                        Some(0x82) => {
+                            last = JsStr::from_opt(r.read_string(0x82)?)
+                        }
                         Some(t) => {
                             return Err(Fault::thrown(format!(
                                 "Invalid substrings filter type: 0x{t:x}"
@@ -308,11 +315,15 @@ impl Filter {
                         return Err(Fault::Stalled);
                     }
                     match r.peek() {
-                        Some(0x81) => rule = JsStr::from_opt(r.read_string(0x81)?),
+                        Some(0x81) => {
+                            rule = JsStr::from_opt(r.read_string(0x81)?)
+                        }
                         Some(0x82) => {
                             attribute = JsStr::from_opt(r.read_string(0x82)?);
                         }
-                        Some(0x83) => value = JsStr::from_opt(r.read_string(0x83)?),
+                        Some(0x83) => {
+                            value = JsStr::from_opt(r.read_string(0x83)?)
+                        }
                         Some(0x84) => dn = r.read_boolean(0x84)?,
                         Some(t) => {
                             return Err(Fault::thrown(format!(
@@ -384,7 +395,9 @@ impl Filter {
                     match a {
                         Some(s) => w.write_string(s, 0x81)?,
                         None => {
-                            return Err(Fault::thrown("stringToWrite must be a string"))
+                            return Err(Fault::thrown(
+                                "stringToWrite must be a string",
+                            ))
                         }
                     }
                 }
@@ -408,7 +421,8 @@ impl Filter {
                 if let Some(r) = rule.truthy() {
                     w.write_string(r, 0x81)?;
                 }
-                if let Some(a) = attribute.as_deref().filter(|a| !a.is_empty()) {
+                if let Some(a) = attribute.as_deref().filter(|a| !a.is_empty())
+                {
                     w.write_string(a, 0x82)?;
                 }
                 w.write_string(value, 0x83)?;
@@ -501,7 +515,8 @@ impl Filter {
                 dn_attributes,
             } => {
                 let mut s = String::from("(");
-                if let Some(a) = attribute.as_deref().filter(|a| !a.is_empty()) {
+                if let Some(a) = attribute.as_deref().filter(|a| !a.is_empty())
+                {
                     s.push_str(a);
                 }
                 s.push(':');
@@ -546,7 +561,11 @@ const fn ch(c: u8) -> u16 {
     c as u16
 }
 
-fn parse_filter(s: &[u16], start: usize, depth: usize) -> Outcome<(usize, Filter)> {
+fn parse_filter(
+    s: &[u16],
+    start: usize,
+    depth: usize,
+) -> Outcome<(usize, Filter)> {
     if depth > MAX_FILTER_DEPTH {
         return Err(too_deep());
     }
@@ -762,19 +781,18 @@ fn read_escaped(buf: &[u8], start: usize) -> Vec<String> {
     let at = |i: usize| buf.get(i).copied();
     let mut chars = Vec::new();
     let mut i = start;
-    loop {
-        let Some(b) = at(i) else {
-            // `chars[-1] = '\\5c'` sets a property, not an element.
-            break;
-        };
+    // At the end of the buffer Node sets `chars[-1] = '\\5c'`: a
+    // property, not an element, so nothing is added.
+    while let Some(b) = at(i) {
         if b == 0x5c {
             chars.push("\\".to_string());
             i += 1;
             continue;
         }
-        let pair: String = [js::from_char_code(Some(b)), js::from_char_code(at(i + 1))]
-            .iter()
-            .collect();
+        let pair: String =
+            [js::from_char_code(Some(b)), js::from_char_code(at(i + 1))]
+                .iter()
+                .collect();
         let Some(code) = js::parse_int_hex(&pair) else {
             chars.push(format!("5c{pair}"));
             break;
@@ -805,7 +823,9 @@ mod tests {
 
     #[test]
     fn round_trips_as_node() {
-        let f = Filter::parse("(&(objectClass=person)(|(uid=al*)(mail=*@x.com)))").unwrap();
+        let f =
+            Filter::parse("(&(objectClass=person)(|(uid=al*)(mail=*@x.com)))")
+                .unwrap();
         assert_eq!(
             f.to_text().unwrap(),
             "(&(objectClass=person)(|(uid=al*)(mail=*@x.com)))"

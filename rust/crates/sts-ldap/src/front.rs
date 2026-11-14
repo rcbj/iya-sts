@@ -140,17 +140,24 @@ impl Connection {
                     None
                 }
             };
-            if !matches!(found, Some(t) if t != 0) || ber.remain() < ber.length() {
+            if !matches!(found, Some(t) if t != 0)
+                || ber.remain() < ber.length()
+            {
                 self.buffer = Some(buf);
                 return events;
             }
             let mut next = None;
-            let whole;
-            if ber.remain() > ber.length() {
+            let whole = if ber.remain() > ber.length() {
                 let cut = ber.offset() + ber.length();
                 next = Some(js::subarray(&buf, cut, buf.len() as i64).to_vec());
                 let mut again = Reader::new(js::subarray(&buf, 0, cut));
-                let _ = again.read_sequence(None);
+                // Node's `ber.readSequence()` and `assert.equal()` here
+                // throw out of the read handler.
+                if let Err(e) = again.read_sequence(None) {
+                    events.push(Event::Thrown(e.message().to_string()));
+                    self.stalled = true;
+                    return events;
+                }
                 if again.remain() != again.length() {
                     events.push(Event::Thrown(format!(
                         "{} == {}",
@@ -160,10 +167,10 @@ impl Connection {
                     self.stalled = true;
                     return events;
                 }
-                whole = again;
+                again
             } else {
-                whole = ber;
-            }
+                ber
+            };
             match Message::decode(&whole.sequence_to_reader()) {
                 Ok(m) => self.on_message(m, &mut events),
                 Err(Fault::Stalled) => {
@@ -183,7 +190,14 @@ impl Connection {
         }
     }
 
-    fn answer(&self, events: &mut Vec<Event>, m: &Message, op: u8, status: i32, error: &str) {
+    fn answer(
+        &self,
+        events: &mut Vec<Event>,
+        m: &Message,
+        op: u8,
+        status: i32,
+        error: &str,
+    ) {
         let diag = if self.options.encode_error_message {
             error.to_string()
         } else {
@@ -209,16 +223,17 @@ impl Connection {
                 self.destroy(events);
                 return;
             }
-            Operation::Bind(b) => Dn::parse_nullable(b.name.as_deref()).map(|_| true),
+            Operation::Bind(b) => {
+                Dn::parse_nullable(b.name.as_deref()).map(|_| true)
+            }
             Operation::Add(a) => Ok(a.entry.is_some()),
             Operation::Compare(c) => Ok(c.entry.is_some()),
             Operation::Delete { entry } => Ok(entry.is_some()),
-            Operation::Modify(md) => {
-                Dn::parse_nullable(md.object.as_deref()).map(|d| {
+            Operation::Modify(md) => Dn::parse_nullable(md.object.as_deref())
+                .map(|d| {
                     md.object_dn = Some(d);
                     true
-                })
-            }
+                }),
             _ => Ok(true),
         };
         let invalid = match checked {
