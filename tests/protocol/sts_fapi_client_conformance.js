@@ -411,8 +411,11 @@ async function userinfoAnswered(id) {
   log.debug("Entering userinfoAnswered(). " + id);
   const logs = (await oidf.suite("GET", "api/log/" + id)).body || [];
   const answered = Array.isArray(logs) && logs.some(function (entry) {
+    // `userinfo` on 8443 and on FAPI 1.0 Advanced's mutual-TLS alias
+    // (8444, `test-mtls/a/<alias>/userinfo`) alike; matched at the end so
+    // a prefix the suite logs on either listener does not hide it.
     return entry && entry.http === "outgoing" &&
-           entry.outgoing_path === "userinfo" &&
+           /(^|\/)userinfo$/.test(String(entry.outgoing_path || "")) &&
            Number(entry.outgoing_status_code) === 200;
   });
   log.debug("Leaving userinfoAnswered(). " + answered);

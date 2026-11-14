@@ -81,6 +81,9 @@
 //      WWW-Authenticate: each is answered once more, no client assertion
 //      or request object jti is ever sent twice, and the authorization
 //      server's nonce and UserInfo's are never sent to each other.
+//      1-advanced's fragment answer (#931's FAPI 1.0 Advanced run, 10ao):
+//      the profile's `code id_token`, not the stored `code`, decides that
+//      the bare GET is answered with the fragment page.
 // The conformance suite's relying-party plans drive the same code over the
 // wire (`tests/protocol/sts_oidcc_rp_conformance.js`); this pins each
 // refusal's code and that nothing is dialled after it.
@@ -1861,6 +1864,27 @@ function childMain() {
          'mtls_endpoint_aliases with the client certificate',
          r.status + ' cert=' + aliasToken.cert + ' ' +
          String(r.text || '').slice(0, 200));
+
+    // --- 10ao. 1-advanced's fragment answer, the stored type `code` -------
+    // (#931's FAPI 1.0 Advanced run, 2026-11-14). The profile asks for
+    // `code id_token` whatever fedResponseType stores, so the bare GET its
+    // fragment-encoded answer arrives as is answered with the fragment page;
+    // read from the stored type, it was refused 401 (STS-FED-0021) and no
+    // positive module of the suite's plan ever reached the token endpoint.
+    const FAPI1_FRAGMENT = make('frp-fapi1-frag-' + stamp,
+                                { fedFapi: '1-advanced',
+                                  fedResponseMode: 'fragment' });
+    r = await call('GET', '/federation/acs/' + FAPI1_FRAGMENT);
+    note(r.status === 200 &&
+         r.text.indexOf('<script src="/federation/fragment.js"></script>') >
+           0 && r.text.indexOf('id="fed-fragment"') > 0,
+         '10ao. 1-advanced with the fragment mode and a stored response ' +
+         'type of code answers the bare GET with the fragment page',
+         r.status + ' ' + String(r.text || '').slice(0, 200));
+    r = await call('GET', '/federation/acs/' + MTLS);
+    note(r.status !== 200 || r.text.indexOf('fragment.js') < 0,
+         '10ao. 1-advanced without the fragment mode still never answers ' +
+         'with the page', r.status);
 
     fs.writeFileSync(OUT, JSON.stringify(findings));
     server.close();

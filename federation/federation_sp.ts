@@ -7464,11 +7464,20 @@ class FederationSp {
       log.debug("Leaving FederationSp.awaitsFragment(). JARM.");
       return false;
     }
-    const parts = federation.responseTypeParts(record);
+    // THE RESPONSE TYPE IS THE SHAPED RECORD'S (#931's FAPI 1.0 Advanced
+    // run, 2026-11-14): a 1-advanced relationship ASKS for `code id_token`
+    // whatever fedResponseType stores, so a stored `code` (the default)
+    // must not make its fragment-encoded answer look like an empty GET.
+    // Read from the stored record, the suite's every FAPI 1.0 Advanced
+    // module redirected back to a bare GET that was refused 401
+    // (STS-FED-0021) and the browser never posted the fragment, so the
+    // client never reached the token endpoint.
+    const shaped = FapiClient.shapedRecord(record);
+    const parts = federation.responseTypeParts(shaped);
     const answer = req.method === 'GET' &&
       Object.keys(req.query || {}).length === 0 &&
-      record.fedProtocol === 'oidc' &&
-      String(record.fedResponseMode || '') === 'fragment' &&
+      shaped.fedProtocol === 'oidc' &&
+      String(shaped.fedResponseMode || '') === 'fragment' &&
       (parts.idToken || parts.token);
     log.debug("Leaving FederationSp.awaitsFragment(). " + !!answer);
     return !!answer;

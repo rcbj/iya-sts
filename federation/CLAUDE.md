@@ -2901,6 +2901,34 @@ relationship with no profile behaves exactly as before:
   any module's. Calling a partner's API on a person's behalf would be a
   feature of its own, with its own argument.
 
+**WHAT THE SECOND RUN FOUND (2026-11-14, develop 48e343c65, memory mode).**
+The 2.x plans passed. Every POSITIVE FAPI 1.0 Advanced module (the plain
+one, both encrypted-ID-Token ones, `valid-aud-as-array`,
+`no-scope-in-token-endpoint-response`, `missing-athash`, in all four
+plans) TIMED OUT, the suite's log ending at
+`SendAuthorizationResponseWithResponseModeFragment`: the client never
+reached the token endpoint.
+
+* **The fragment page was decided on the STORED response type.**
+  `awaitsFragment()` read `responseTypeParts()` of the record as stored,
+  and a `1-advanced` relationship stores `code` (the default) while
+  `FapiClient.shapedRecord()` asks for `code id_token`. So the bare GET
+  the fragment answer arrives as was not recognised: it was refused 401
+  (`STS-FED-0021`, no state) and nothing was posted back. It now reads
+  the shaped record, as `consumeOauthResponse()` and
+  `authorizationParams()` already did (`tests/federation_oidc_rp.js`
+  10ao).
+* **The negative modules had passed for nothing.** A negative passes when
+  the client dials nothing after the bad answer, and a client that never
+  received the answer dials nothing too. Their passes in that run say
+  nothing about the client; the next run is the first that does.
+* **The suite's FAPI 1.0 Advanced discovery document names no
+  `response_modes_supported`**, so form_post is not offered (the default is
+  `query` and `fragment`, OpenID Connect Discovery 1.0 section 3). The job
+  sets `fedResponseMode=fragment`; a `1-advanced` relationship left empty
+  still asks for form_post, the operator's choice for a partner that
+  supports it.
+
 #### 1-ADVANCED OVER MUTUAL TLS (#931, rcbj's decision of 2026-11-13)
 
 **The root `CLAUDE.md`'s row "authenticate to a partner with a client
