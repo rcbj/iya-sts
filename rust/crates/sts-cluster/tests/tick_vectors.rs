@@ -126,7 +126,13 @@ impl Claims for World {
 
 impl RunRows for World {
     fn get(&self, realm: &str, key: &str) -> Option<Json> {
-        self.inner.lock().unwrap().rows.get(realm)?.get(key).cloned()
+        self.inner
+            .lock()
+            .unwrap()
+            .rows
+            .get(realm)?
+            .get(key)
+            .cloned()
     }
     fn set(&self, realm: &str, key: &str, row: Json) {
         self.inner
@@ -228,7 +234,9 @@ impl RunHistory for World {
                         r["realm"] == realm
                             && ids.iter().any(|id| r["runId"] == *id)
                     })
-                    .map(|r| (r["runId"].as_str().unwrap().to_string(), r.clone()))
+                    .map(|r| {
+                        (r["runId"].as_str().unwrap().to_string(), r.clone())
+                    })
                     .collect(),
             ))
         };
@@ -393,7 +401,11 @@ async fn run_scenario(
         }
     }
     rows.sort_by_key(|r| {
-        format!("{}{}", r["realm"].as_str().unwrap(), r["runId"].as_str().unwrap())
+        format!(
+            "{}{}",
+            r["realm"].as_str().unwrap(),
+            r["runId"].as_str().unwrap()
+        )
     });
     (out, rows)
 }
@@ -444,7 +456,11 @@ async fn the_tick_is_nodes() {
         // which no byte order reproduces, and the order is not behaviour.
         let mut want_rows = one["rows"].as_array().unwrap().clone();
         want_rows.sort_by_key(|r| {
-            format!("{}{}", r["realm"].as_str().unwrap(), r["runId"].as_str().unwrap())
+            format!(
+                "{}{}",
+                r["realm"].as_str().unwrap(),
+                r["runId"].as_str().unwrap()
+            )
         });
         if norm(json!(rows)) != norm(json!(want_rows)) {
             failures.push(format!(
