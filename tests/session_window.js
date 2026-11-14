@@ -38,7 +38,7 @@ const log = require('bunyan').createLogger({ name: 'session_window',
 const REALM = 'session-window';
 const TOMBSTONE = '$tombstone$1';
 
-const answer = { read: null, load: [], filter: null };
+const answer = { read: null, load: [], filter: null, mergedNext: null };
 const captured = { upserts: [], deletes: [] };
 let queryFn = function () {
   log.debug("Entering queryFn().");
@@ -331,7 +331,8 @@ function stubDriver() {
         });
       });
       log.debug("Leaving saveMinted().");
-      return Promise.resolve({ refused: [], merged: [] });
+      return Promise.resolve({ refused: [],
+                               merged: answer.mergedNext || [] });
     }
   };
 }
@@ -836,10 +837,11 @@ async function tombstoneCase(t) {
 
 async function dirtyCase(t) {
   log.debug("Entering dirtyCase().");
-  t.log.info('on: a dirty pin keeps this process\'s object');
+  t.log.info('on: a dirty pin keeps this process\'s object, merged');
   freshWindow();
   const local = sessionBody('dirty-window', { lastSeenAt: 111 });
   authn.sessions.set(local.id, local);
+  const held0 = sessionWindow.get(REALM, 'dirty-window').session;
   const remote = sessionBody('dirty-window', { lastSeenAt: 999 });
   const sealed = sealSession(remote);
   const opened = keystore.open(sealed, 'minted-rows');
@@ -850,12 +852,94 @@ async function dirtyCase(t) {
     key: changeKey(local.id), realm: REALM
   });
   t.equal(applied, true, 'the live change is applied');
-  t.equal((authn.sessions.get('dirty-window') || {}).lastSeenAt, 111,
-          'the map keeps this process\'s lastSeenAt');
   const held = sessionWindow.get(REALM, 'dirty-window');
-  t.equal(held.ok && held.session.lastSeenAt, 111,
-          'the window keeps this process\'s object');
+  t.check(!!(held.ok && held0 && held.session === held0),
+          'the window keeps this process\'s object (the one a request ' +
+          'may hold)');
+  t.equal(held.ok && held.session.lastSeenAt, 999,
+          'and it holds what mergeSessionRows() makes of the two: the ' +
+          'later lastSeenAt');
+  t.equal((authn.sessions.get('dirty-window') || {}).lastSeenAt, 999,
+          'the map reads the same merged object');
+  t.check(sessionWindow.slotState(REALM, 'dirty-window').pinned,
+          'and the local write is still pinned for its flush');
   log.debug("Leaving dirtyCase().");
+}
+
+// THE CLUSTER MODE'S sts_siop_did_web (2026-11-14). Node B held a browser's
+// ARRIVAL session with a write of its own not yet committed; node A
+// upgraded the same sid to a sign-in and committed it. B applied A's row and
+// KEPT its arrival, so the account selection ticket A handed out named a
+// session B read as not live (STS-AUTHN-0346) and the flow was sent to sign
+// in again. The same row came back as B's flush's merged answer
+// (`settleDecided()`, which runs before `onCommitted()` unpins) and was
+// dropped again, so the stale copy outlived the commit.
+function arrivalAndSignIn(id) {
+  log.debug("Entering arrivalAndSignIn().");
+  const arrival = sessionBody(id, {
+    chosen: false, authenticated: false,
+    user: { username: 'anonymous', sub: '' }, subjectId: '', authTime: 0,
+    lastSeenAt: 500, startedAt: 400
+  });
+  const signedIn = sessionBody(id, {
+    chosen: true, authenticated: true,
+    user: { username: 'up-elsewhere', sub: 'urn:uuid:up-elsewhere' },
+    subjectId: 'urn:uuid:up-elsewhere', authTime: Date.now(),
+    lastSeenAt: 400, startedAt: 400, amr: ['swk'], via: 'SIOPv2'
+  });
+  log.debug("Leaving arrivalAndSignIn().");
+  return { arrival: arrival, signedIn: signedIn };
+}
+
+function liveSignOn(session) {
+  log.debug("Entering liveSignOn().");
+  log.debug("Leaving liveSignOn().");
+  return !!(session && session.user && session.chosen !== false &&
+            session.authenticated !== false &&
+            authn.sessionEnded(session) === '' &&
+            session.user.username === 'up-elsewhere');
+}
+
+async function upgradedElsewhereCase(t) {
+  log.debug("Entering upgradedElsewhereCase().");
+  t.log.info('on: an arrival upgraded on another node is a sign-in here ' +
+             'at once, though this process holds a write of its own');
+  freshWindow();
+  const rows = arrivalAndSignIn('upgraded-elsewhere');
+  // Node B's touch of the arrival, journalled and not yet flushed.
+  authn.sessions.set(rows.arrival.id, rows.arrival);
+  t.check(sessionWindow.slotState(REALM, rows.arrival.id).pinned,
+          'node B holds the arrival with an uncommitted write');
+  answer.read = { body: sealSession(rows.signedIn) };
+  await minted.applyChange({ key: changeKey(rows.arrival.id), realm: REALM });
+  const read = sessionWindow.get(REALM, rows.arrival.id);
+  t.check(read.ok && liveSignOn(read.session),
+          'NODE A\'S SIGN-IN IS WHAT NODE B READS NEXT: a live sign-on ' +
+          'session, so the ticket A minted for it counts on B',
+          JSON.stringify(read.session || read));
+  t.equal(read.ok && read.session.lastSeenAt, 500,
+          'and B\'s own touch is kept in the merge (the later lastSeenAt)');
+
+  // The flush's merged answer, applied before the slot is unpinned.
+  freshWindow();
+  const again = arrivalAndSignIn('upgraded-at-flush');
+  authn.sessions.set(again.arrival.id, again.arrival);
+  answer.mergedNext = [{ handle: 'authn.sessions', realm: REALM,
+                         journalKey: again.arrival.id,
+                         body: sealSession(again.signedIn) }];
+  try {
+    await minted.flush();
+  } finally {
+    answer.mergedNext = null;
+  }
+  const after = sessionWindow.get(REALM, again.arrival.id);
+  t.check(after.ok && liveSignOn(after.session),
+          'AND THE FLUSH\'S MERGED ROW IS NOT DROPPED: once B\'s write ' +
+          'commits over A\'s stored sign-in, B holds the sign-in',
+          JSON.stringify(after.session || after));
+  t.equal(sessionWindow.slotState(REALM, again.arrival.id).pinned, false,
+          'and the slot is unpinned once its write committed');
+  log.debug("Leaving upgradedElsewhereCase().");
 }
 
 async function restoreCase(t) {
@@ -1352,6 +1436,7 @@ async function onHalf(t) {
   cascadeCase(t);
   await tombstoneCase(t);
   await dirtyCase(t);
+  await upgradedElsewhereCase(t);
   await restoreCase(t);
   upgradeCase(t);
   partialWalkCase(t);
