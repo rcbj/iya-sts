@@ -22,8 +22,13 @@
 // application registry holds, with its name), so a cell that asked
 // `applications.get()` asks the answer.
 //
-// **THE DRAWINGS ARE LAID OUT ON THE SERVER**, as they always were: dagre
-// runs there, the answer carries `svg`, and these draw the links under it.
+// **THE DRAWINGS ARE LAID OUT HERE, IN THE BROWSER (#444 phase 2b,
+// 2026-11-14).** They were laid out on the server, with dagre, and arrived
+// as the answer's `svg`. Now the answer's graph (`graph`, or `nodes` and
+// `edges` on the map) and `looks` are handed to `web_delegation_map.ts` —
+// the very code the server runs to draw `svg`, which it still answers — so
+// the picture is the one the server drew, and a runtime that answers the
+// data need not port a layout engine.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
@@ -33,6 +38,7 @@ import kit = require('./web_kit');
 import GroupsPage = require('./web_groups');
 import TokensPage = require('./web_tokens');
 import SettingsForms = require('./web_settings');
+import DelegationMap = require('./web_delegation_map');
 
 type Json = any;
 
@@ -51,23 +57,23 @@ class DelegationPage {
   // The drawing and the two links under it. `path` and `params` are the
   // route's own, because the document-on-its-own link has to come back to the
   // page it was offered on carrying whatever selected these acts — a `chain=`
-  // or an `application=`, not the map's filters. The drawing is the answer's
-  // `svg`, laid out on the server with its links in it; the document on its
-  // own is the page's `?format=svg`, which draws it again with none (see
-  // `AdminConsole.sendDelegationSvg()`).
+  // or an `application=`, not the map's filters. The drawing is laid out
+  // here from the answer's graph and `looks`, with its links in it; the
+  // document on its own is the page's `?format=svg`, which the runtime draws
+  // from the same answer with none (`document()`, below).
   /**
    * Draws a delegation picture from its answer, with a note under it
    * linking the standalone SVG and the graph as JSON.
    *
-   * @param json - the answer: `svg` and `drawing` (`width`, `height`,
-   *   `failed`)
+   * @param json - the answer: the graph (`graph`, or `nodes` and `edges`),
+   *   `looks`, `label` and `drawing` (`verifiesCredentials`)
    * @param path - the page's own path, for the two links
    * @param params - the page's query, carried into the two links
    * @returns the drawing and its note as HTML
    */
   static drawing(t, json: Json, path: string, params: Json): string {
-    const drawn = json.drawing || {};
-    return '<div class="diagram">' + json.svg + '</div>' +
+    const drawn = DelegationPage.laidOut(json, true);
+    return '<div class="diagram">' + drawn.svg + '</div>' +
       kit.note(drawn.width + '&times;' + drawn.height + ' — ' +
       '<a href="' + kit.esc(path + kit.queryWith(params, { format: 'svg' })) +
       '">' + t.html('consoleDelegation.drawingSvg') + '</a>' +
@@ -76,6 +82,49 @@ class DelegationPage {
       '">' + t.html('consoleDelegation.drawingJson') + '</a>.' +
       (drawn.failed ? ' <span class="state-revoked">The layout failed: ' +
         kit.esc(drawn.failed) + '</span>' : ''));
+  }
+
+  // WHAT THE SERVER'S `delegationMap.render()` IS HANDED, worked out of the
+  // answer: the graph — `graph` on six pictures, the map's own `nodes` and
+  // `edges` (it answers the graph's members at its top level) — what each
+  // box is (`looks`, and a name for a party no box shows), the label, and
+  // the realm's mode. `id` is `delmap` on every picture, as the server's.
+  /**
+   * Lays a delegation picture out from its answer.
+   *
+   * @param json - the answer
+   * @param links - whether each box links to its console page
+   * @returns `web_delegation_map.ts`'s drawing: `svg`, `width`, `height`,
+   *   and `failed` when the layout threw
+   */
+  static laidOut(json: Json, links: boolean): Json {
+    const graph = json.graph ||
+      { nodes: json.nodes || [], edges: json.edges || [] };
+    const looks = json.looks || {};
+    return DelegationMap.render(graph, {
+      resolve: function (node: Json): Json {
+        return looks[node.id];
+      },
+      labelOf: function (id: string): string {
+        return looks[id] ? looks[id].label : id;
+      },
+      links: links, id: 'delmap', label: json.label,
+      verifiesCredentials: !!(json.drawing &&
+                              json.drawing.verifiesCredentials)
+    });
+  }
+
+  // `?format=svg`: the drawing as a document on its own, with no links in
+  // it, which the server answered and the runtime now draws from the answer
+  // in hand (`WebPages.documentOf()`).
+  /**
+   * Draws a delegation picture as a standalone SVG document.
+   *
+   * @param json - the answer
+   * @returns the SVG document
+   */
+  static document(json: Json): string {
+    return DelegationPage.laidOut(json, false).svg;
   }
 
   // One party of a chain — up to two links, because a party can be a person AND

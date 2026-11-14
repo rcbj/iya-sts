@@ -165,6 +165,15 @@ interface WebPage {
     render: (view: Json, ctx?: Json) => string;
   };
   render: (view: Json, ctx?: Json) => string;
+  // A PICTURE'S `?format=svg` (#444 phase 2b): the drawing as a document on
+  // its own, with no links, drawn from the page's answer in the browser as
+  // the page's own picture is. A page without it asks its operation for
+  // `format=svg`, as every page did.
+  document?: (view: Json) => string;  // STATIC FILES THE PAGE IS DRAWN OVER, by the member of the view each goes
+  // in (#444 phase 2b): Geolocation's country outlines. The runtime fetches
+  // each once per load and keeps it; a fetch that fails leaves the member
+  // out, and the page says what it could not draw.
+  assets?: Record<string, string>;
 }
 
 // PROTOCOLS → CERT ISSUANCE, ONE PAGE OF TABS (rcbj, 2026-10-12). ACME, EST,
@@ -563,6 +572,9 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/console/delegation/allowed',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.allowed(ctx || WebKit.context(), view);
+    },
+    document: function (view: Json): string {
+      return DelegationPage.document(view);
     } },
   { path: '/admin/delegation/application',
     title: 'Delegation — one application',
@@ -579,6 +591,9 @@ const PAGES: WebPage[] = [
     },
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.application(ctx || WebKit.context(), view);
+    },
+    document: function (view: Json): string {
+      return DelegationPage.document(view);
     } },
   { path: '/admin/delegation-settings', title: 'Delegation',
     operation: '/admin-api/console/delegation-settings',
@@ -599,21 +614,33 @@ const PAGES: WebPage[] = [
     },
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.user(ctx || WebKit.context(), view);
+    },
+    document: function (view: Json): string {
+      return DelegationPage.document(view);
     } },
   { path: '/admin/delegation/cluster', title: 'Delegation — one group',
     operation: '/admin-api/console/delegation/cluster',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.cluster(ctx || WebKit.context(), view);
+    },
+    document: function (view: Json): string {
+      return DelegationPage.document(view);
     } },
   { path: '/admin/delegation/chain', title: 'Delegation — one relationship',
     operation: '/admin-api/console/delegation/chain',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.chain(ctx || WebKit.context(), view);
+    },
+    document: function (view: Json): string {
+      return DelegationPage.document(view);
     } },
   { path: '/admin/delegation/map', title: 'Delegation — the picture',
     operation: '/admin-api/console/delegation/map',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.map(ctx || WebKit.context(), view);
+    },
+    document: function (view: Json): string {
+      return DelegationPage.document(view);
     } },
   { path: '/admin/database', title: 'Database',
     operation: '/admin-api/database', render: DatabasePage.render },
@@ -657,6 +684,9 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/console/federation/map',
     render: function (view: Json, ctx?: Json): string {
       return FederationPage.map(ctx || WebKit.context(), view);
+    },
+    document: function (view: Json): string {
+      return FederationPage.mapDocument(view);
     } },
   { path: '/admin/federation', title: 'Federation',
     operation: '/admin-api/federation',
@@ -674,7 +704,8 @@ const PAGES: WebPage[] = [
       return FederationPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/geolocation', title: 'Geolocation',
-    operation: '/admin-api/geolocation', render: GeolocationPage.render },
+    operation: '/admin-api/geolocation', render: GeolocationPage.render,
+    assets: { countryOutlines: '/admin/geo-outlines.json' } },
   { path: '/admin/gnap', title: 'GNAP', operation: '/admin-api/gnap',
     render: GnapPage.render },
   { path: '/admin/gnap/monitor', title: 'GNAP grants',
@@ -1006,6 +1037,9 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/tokens/credential',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.credential(ctx || WebKit.context(), view);
+    },
+    document: function (view: Json): string {
+      return DelegationPage.document(view);
     } },
   { path: '/admin/tokens', title: 'Tokens',
     operation: '/admin-api/tokens',
@@ -1209,6 +1243,22 @@ class WebPages {
     }
     return Object.prototype.hasOwnProperty.call(MOVED, wanted)
       ? MOVED[wanted] : null;
+  }
+
+  /**
+   * Draws a page's picture as a standalone SVG document from its answer,
+   * for the page's `?format=svg` link.
+   *
+   * @param path - the realm-relative console path
+   * @param view - the page's answer
+   * @returns the document, or null when the page draws none here
+   */
+  static documentOf(path: string, view: Json): string | null {
+    const page = WebPages.pageFor(path);
+    if (!page || typeof page.document !== 'function' || !view) {
+      return null;
+    }
+    return page.document(view);
   }
 
   /**

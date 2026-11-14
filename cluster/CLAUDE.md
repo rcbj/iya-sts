@@ -909,7 +909,15 @@ minted persistence is on — in development the map is the only copy).
 count and hour trim does not reach interval history left in the table; that
 history lives until `expires_at`, which the minted expiry purge deletes. The
 page asks the sort index for a bounded newest window (twenty rows a realm,
-two hundred on the page) and does not cache those rows into the map;
+two hundred on the page) and does not cache those rows into the map.
+**A job filter also reads that job's own last twenty slots by id**
+(2026-11-14, `jobSlotRuns()`): the window is twenty rows a realm across every
+job, which the one-second service jobs fill within seconds, and the filter was
+applied after it, so `?job=authn.session-expiry` on a leader that had just
+taken over answered no run at all (run 28's crash takeover, step 3; from #883
+on that step had passed on two lucky slots). A run's id is its slot's, so one
+batch read per realm answers it; `tests/scheduler.js` section R, whose mutant
+(the read removed) fails R1 to R3;
 `lastRun` is the resident rows plus one remembered row per job and realm, and
 a job that has been off for many slots may show none until it runs again,
 because that one row is not restored. A tick learns the current interval slot

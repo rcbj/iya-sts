@@ -1409,8 +1409,13 @@ class RequestWorker {
     log.debug('Entering RequestWorker.handleSync(). id=' + message.id);
     const persistence = require('../persistence/persistence');
     persistence.syncNow().then(function (state: any) {
+      // `caughtUp` and `coordinating` are what the front reads (2026-11-14):
+      // a round that gave up at syncNow()'s deadline is `ok` and still
+      // behind, and the front asks again rather than stamping this worker
+      // current (request_pool.js, A BARRIER THAT RUNS OUT IS A REFUSAL).
       WorkerChannel.send({ sync: true, id: message.id, ok: true,
-                     applied: state.applied, caughtUp: state.caughtUp });
+                     applied: state.applied, caughtUp: state.caughtUp,
+                     coordinating: state.coordinating });
       log.debug('Leaving RequestWorker.handleSync(). applied=' +
                 state.applied);
     }, function (err: any) {

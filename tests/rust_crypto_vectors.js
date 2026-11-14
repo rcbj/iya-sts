@@ -45,10 +45,31 @@ function read(name) {
 }
 
 /**
+ * The Kerberos codec's checks first (they need no other Rust vector), then
+ * the signing and encryption ones.
+ *
  * @param {any} t - the runner's check collector
+ * @returns {Promise<void>|undefined} when the asynchronous checks are done
  */
 function run(t) {
   log.debug("Entering run().");
+  if (!fs.existsSync(path.join(VECTORS, 'krb5-codec-rust.json'))) {
+    log.debug("Leaving run(). No Kerberos vectors.");
+    return runSigned(t);
+  }
+  log.debug("Leaving run(). The Kerberos checks are asynchronous.");
+  return krb5CodecFromRust(t, read('krb5-codec-rust.json'))
+    .then(function () {
+      return runSigned(t);
+    });
+}
+
+/**
+ * @param {any} t - the runner's check collector
+ * @returns {Promise<void>|undefined} when the asynchronous checks are done
+ */
+function runSigned(t) {
+  log.debug("Entering runSigned().");
   // The XACML engine's (#444), which needs no key and so no other set:
   // `tests/tools/xacml-vectors.js` holds what the sts-xacml crate wrote to
   // Node's engine.
@@ -64,7 +85,7 @@ function run(t) {
     log.info('rust_crypto_vectors: no Rust vectors in ' + VECTORS + ', so ' +
              'nothing is checked (tests/tools/crypto-vectors.js says how ' +
              'to make them).');
-    log.debug("Leaving run(). No vectors.");
+    log.debug("Leaving runSigned(). No vectors.");
     return;
   }
   const rows = read('jws-rust.json');
@@ -82,7 +103,7 @@ function run(t) {
       verified = crypto.verifyCompactJws(row.token, key,
                                          { algorithms: [row.alg] });
     } catch (e) {
-      log.debug("Caught in run(): " + ((e && e.message) || e));
+      log.debug("Caught in runSigned(): " + ((e && e.message) || e));
       why = (e && e.message) || String(e);
     }
     t.check(!!verified && verified.claims.sub === 'alice' &&
@@ -90,7 +111,7 @@ function run(t) {
             row.alg + ': a token Rust signed with a key Rust generated ' +
             'verifies in Node', why);
   });
-  log.debug("Leaving run(). The JWE checks are asynchronous.");
+  log.debug("Leaving runSigned(). The JWE checks are asynchronous.");
   return jwesFromRust(t, read('jwe-rust.json')).then(function () {
     return afterJwes(t);
   });
@@ -538,11 +559,208 @@ function xmlSignatures(t, vectors) {
   log.debug("Leaving xmlSignatures().");
 }
 
+// THE KERBEROS CODEC (#444, phase 2b): what `sts-kerberos` made — keys from
+// passwords, ciphertexts under its own random confounders, checksums,
+// messages of every kind it encodes, MIC and Wrap tokens, SPNEGO tokens,
+// a 0x8003 checksum, a keytab and the MS-KKDCP envelope — read by kerberos/'s codec
+// here: the same key, the plaintext back, the checksum verified, and each
+// message decoded to the JSON Rust decoded it to and re-encoded to Rust's
+// bytes.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} v - krb5-codec-rust.json
+ * @returns {Promise<void>} when every check has run
+ */
+async function krb5CodecFromRust(t, v) {
+  log.debug("Entering krb5CodecFromRust().");
+  const K = path.join(__dirname, '..', 'kerberos');
+  const asn1 = require(path.join(K, 'krb5_asn1.js'));
+  const kc = require(path.join(K, 'krb5_crypto.js'));
+  const m = require(path.join(K, 'krb5_messages.js'));
+  const gss = require(path.join(K, 'krb5_gss.js'));
+  const sp = require(path.join(K, 'krb5_spnego.js'));
+  const fc = require(path.join(K, 'krb5_fast_codec'));
+  const pc = require(path.join(K, 'krb5_pkinit_codec'));
+  const hex = function (/** @type {any} */ b) {
+    return Buffer.from(b).toString('hex');
+  };
+  const unhex = function (/** @type {string} */ s) {
+    return new Uint8Array(Buffer.from(s, 'hex'));
+  };
+  // Node's answer as the JSON Rust serializes to, keys sorted so that two
+  // answers compare as text.
+  /** @type {(v: any) => any} */
+  const canon = function (v) {
+    if (v === null || v === undefined) {
+      return v === null ? null : undefined;
+    }
+    if (v instanceof Uint8Array) {
+      return hex(v);
+    }
+    if (v instanceof Date) {
+      return v.toISOString();
+    }
+    if (Array.isArray(v)) {
+      return v.map(canon);
+    }
+    if (typeof v === 'object') {
+      /** @type {any} */
+      const out = {};
+      Object.keys(v).sort().forEach(function (k) {
+        const n = canon(v[k]);
+        if (n !== undefined) {
+          out[k] = n;
+        }
+      });
+      return out;
+    }
+    return v;
+  };
+  const same = function (/** @type {any} */ a, /** @type {any} */ b) {
+    return JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+  };
+  const tlvOf = function (/** @type {Uint8Array} */ b) {
+    return asn1.readTlv(b, 0);
+  };
+  /** @type {Object<string, Array<Function>>} */
+  const KINDS = {
+    Ticket: [m.readTicket, m.encTicket],
+    EncTicketPart: [m.readEncTicketPart, m.encEncTicketPart],
+    KdcReq: [m.readKdcReq, m.encKdcReq],
+    KdcRep: [m.readKdcRep, m.encKdcRep],
+    EncKdcRepPart: [m.readEncKdcRepPart, function (/** @type {any} */ p) {
+      return m.encEncKdcRepPart(p, p.taggedAs === 'EncTGSRepPart' ? 26 : 25);
+    }],
+    Authenticator: [m.readAuthenticator, m.encAuthenticator],
+    ApReq: [m.readApReq, m.encApReq],
+    ApRep: [m.readApRep, m.encApRep],
+    EncApRepPart: [m.readEncApRepPart, m.encEncApRepPart],
+    KrbError: [m.readKrbError, m.encKrbError],
+    PaEncTsEnc: [m.readPaEncTsEnc, function (/** @type {any} */ p) {
+      return m.encPaEncTsEnc(p.patimestamp, p.pausec);
+    }],
+    PaForUser: [m.readPaForUser, m.encPaForUser],
+    PaPacOptions: [m.readPaPacOptions, function (/** @type {any} */ p) {
+      return m.encPaPacOptions(p.flags);
+    }],
+    EncKrbCredPart: [m.readEncKrbCredPart, m.encEncKrbCredPart],
+    KrbCred: [m.readKrbCred, m.encKrbCred],
+    'fast.FastReq': [fc.readFastReq, fc.encFastReq],
+    'fast.FastRequest': [fc.readFastRequest, fc.encFastRequest],
+    'fast.FastReply': [fc.readFastReply, fc.encFastReply],
+    'fast.FastResponse': [fc.readFastResponse, fc.encFastResponse],
+    'fast.OtpChallenge': [fc.readOtpChallenge, fc.encOtpChallenge],
+    'fast.OtpRequest': [fc.readOtpRequest, fc.encOtpRequest],
+    'fast.Cammac': [fc.readCammac, fc.encCammac],
+    'fast.Indicators': [fc.readIndicators, fc.encIndicators],
+    'pkinit.Krb5PrincipalName': [pc.readKrb5PrincipalName,
+      function (/** @type {any} */ p) {
+        return pc.encKrb5PrincipalName(p.realm, p.name);
+      }],
+    'pkinit.PaPkAsReq': [pc.readPaPkAsReq, pc.encPaPkAsReq],
+    'pkinit.AuthPack': [pc.readAuthPack, pc.encAuthPack],
+    'pkinit.PaPkAsRep': [pc.readPaPkAsRep, pc.encPaPkAsRep],
+    'pkinit.KdcDhKeyInfo': [pc.readKdcDhKeyInfo, pc.encKdcDhKeyInfo]
+  };
+  for (const row of v.stringToKey) {
+    const key = await kc.ETYPES[row.etype].stringToKey(row.password,
+      unhex(row.salt), row.params ? unhex(row.params) : null);
+    t.check(hex(key) === row.key, 'etype ' + row.etype + ': Node derives ' +
+            'from the password the key Rust derived');
+  }
+  let opened = 0;
+  for (const row of v.encryptions) {
+    let plain = null;
+    try {
+      plain = await kc.ETYPES[row.etype].decrypt(unhex(row.key), row.usage,
+                                                 unhex(row.cipher));
+    } catch (e) {
+      log.debug("Caught in krb5CodecFromRust(): " + ((e && e.message) || e));
+    }
+    if (plain && hex(plain) === row.plain) {
+      opened++;
+    }
+  }
+  t.check(opened === v.encryptions.length, 'every ciphertext Rust made ' +
+          'under each enctype and usage decrypts in Node',
+          opened + ' / ' + v.encryptions.length);
+  let verified = 0;
+  for (const row of v.checksums) {
+    if (await kc.ETYPES[row.etype].verifyChecksum(unhex(row.key), row.usage,
+        unhex(row.message), unhex(row.checksum))) {
+      verified++;
+    }
+  }
+  t.check(verified === v.checksums.length, 'every checksum Rust made ' +
+          'verifies in Node', verified + ' / ' + v.checksums.length);
+  v.messages.forEach(function (/** @type {any} */ row) {
+    const pair = KINDS[row.kind];
+    let decoded = null;
+    let again = '';
+    let why = '';
+    try {
+      decoded = pair[0](unhex(row.bytes));
+      again = hex(pair[1](decoded));
+    } catch (e) {
+      log.debug("Caught in krb5CodecFromRust(): " + ((e && e.message) || e));
+      why = (e && e.message) || String(e);
+    }
+    t.check(!!decoded && same(decoded, row.decoded), row.kind + ': a ' +
+            'message Rust encoded decodes in Node to what Rust read', why);
+    t.check(again === row.bytes, row.kind + ': Node re-encodes it to ' +
+            'Rust\'s bytes', why);
+  });
+  for (const row of v.tokens) {
+    const key = unhex(row.key);
+    const message = unhex(row.message);
+    const verdict = await gss.verifyMic({ key: key, etype: row.etype,
+      token: unhex(row.mic), message: message });
+    t.check(verdict.ok, 'etype ' + row.etype + ': a MIC token Rust made ' +
+            'verifies in Node');
+    const unwrapped = await gss.unwrap({ key: key, etype: row.etype,
+                                        token: unhex(row.wrap) });
+    t.check(hex(unwrapped.message) === row.message, 'etype ' + row.etype +
+            ': a Wrap token Rust sealed unwraps in Node');
+  }
+  v.spnego.forEach(function (/** @type {any} */ row) {
+    const decoded = sp.decodeNegotiationToken(unhex(row.bytes));
+    t.check(same(decoded, row.decoded), decoded.kind + ': a SPNEGO token ' +
+            'Rust encoded decodes in Node to what Rust read');
+  });
+  t.check(same(gss.parseGssChecksum(unhex(v.gssChecksum.bytes)),
+               v.gssChecksum.parsed), 'a 0x8003 checksum Rust built ' +
+          'parses in Node as Rust parses it');
+  const kt = require(path.join(K, 'krb5_keytab'));
+  t.check(same(kt.readKeytab(unhex(v.keytab.bytes)), v.keytab.entries),
+          'a keytab Rust wrote reads in Node as Rust reads it');
+  // The /KdcProxy reading (krb5_kdc.js) of both envelopes Rust built, and
+  // the reply envelope Node itself would build.
+  [v.kkdcp.envelope, v.kkdcp.client].forEach(function (/** @type {any} */ e) {
+    const outer = asn1.readTlv(unhex(e), 0);
+    const framed = asn1.decOctetString(asn1.readTaggedSequence(
+      outer.value)[0]);
+    const declared = (framed[0] << 24 | framed[1] << 16 | framed[2] << 8 |
+                      framed[3]) >>> 0;
+    t.check(hex(framed.subarray(4, 4 + declared)) === v.kkdcp.message,
+            'a KDC-PROXY-MESSAGE Rust built carries its message to Node');
+  });
+  const reply = unhex(v.kkdcp.message);
+  const framedReply = new Uint8Array(4 + reply.length);
+  new DataView(framedReply.buffer).setUint32(0, reply.length);
+  framedReply.set(reply, 4);
+  t.check(hex(asn1.encSequence([asn1.encContext(0,
+    asn1.encOctetString(framedReply))])) === v.kkdcp.envelope,
+          'Rust\'s /KdcProxy reply envelope is the one Node builds');
+  log.debug("Leaving krb5CodecFromRust().");
+}
+
 module.exports = {
   name: 'rust_crypto_vectors',
   describe: 'what the Rust sts-crypto crate signed verifies, and what it ' +
             'encrypted decrypts, in the Node service — every JWS and JWE ' +
             'algorithm, every XML signature method this service signs ' +
-            'with, and every XML Encryption cipher, transport and agreement',
+            'with, and every XML Encryption cipher, transport and ' +
+            'agreement — and what sts-kerberos made is read by the ' +
+            'Kerberos codec',
   run: run
 };
