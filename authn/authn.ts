@@ -1689,13 +1689,34 @@ class Authn {
       Object.keys(other.oidcClients).forEach(function (clientId) {
         const there = other.oidcClients[clientId] || {};
         const here = clients[clientId];
-        clients[clientId] = !here ? there : {
+        if (!here) {
+          clients[clientId] = there;
+          return;
+        }
+        // `iss` AND `sub` ARE KEPT (run 27, 2026-11-14). They are what
+        // `noteClient()` records for the two logouts — the issuer the
+        // client's ID Token named and its subject — and this merge built
+        // the entry from the three counters alone, so a client both copies
+        // held lost them. Since #1753 a held copy with a write pending is
+        // merged in place with every row another worker commits, so it
+        // happened on an ordinary sign-in in the single-node mode: the
+        // front-channel iframe carried the sign-out's issuer instead of
+        // the named server's (`sts_frontchannel_logout`) and the Logout
+        // Token was dead-lettered STS-OAUTH-0542 (`sts_backchannel_logout`).
+        // The later answer (`last`) wins, `noteClient()`'s own rule, and an
+        // empty value never wipes a recorded one; a tie keeps the base's.
+        const later = (Number(there.last) || 0) > (Number(here.last) || 0)
+          ? there : here;
+        const earlier = later === here ? there : here;
+        clients[clientId] = Object.assign({}, earlier, later, {
           first: Math.min.apply(null, [Number(here.first) || 0,
                                        Number(there.first) || 0]
             .filter(Boolean).concat([Date.now()])),
           last: Math.max(Number(here.last) || 0, Number(there.last) || 0),
-          count: Math.max(Number(here.count) || 0, Number(there.count) || 0)
-        };
+          count: Math.max(Number(here.count) || 0, Number(there.count) || 0),
+          iss: String(later.iss || earlier.iss || ''),
+          sub: String(later.sub || earlier.sub || '')
+        });
       });
       out.oidcClients = clients;
     }

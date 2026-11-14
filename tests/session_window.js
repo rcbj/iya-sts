@@ -900,6 +900,42 @@ function liveSignOn(session) {
             session.user.username === 'up-elsewhere');
 }
 
+// RUN 27'S SINGLE-NODE MODE (2026-11-14). Since #1753 a held copy with a
+// write pending takes `mergeSessionRows()` of another worker's row in place,
+// and that merge rebuilt a client both copies held from first/last/count:
+// the `iss` and `sub` `noteClient()` recorded were dropped, so the
+// front-channel iframe carried the sign-out's issuer
+// (`sts_frontchannel_logout`) and the Logout Token was dead-lettered
+// STS-OAUTH-0542 (`sts_backchannel_logout`).
+async function dirtyClientCase(t) {
+  log.debug("Entering dirtyClientCase().");
+  t.log.info('on: a dirty pin merged with a row naming the same client ' +
+             'keeps the client\'s iss and sub');
+  freshWindow();
+  const named = 'https://sts.example/realm/r/fcx';
+  const local = sessionBody('dirty-client', { lastSeenAt: 111,
+    oidcClients: { c1: { first: 10, last: 20, count: 1, iss: named,
+                         sub: 'urn:uuid:dirty-client' } } });
+  authn.sessions.set(local.id, local);
+  const remote = sessionBody('dirty-client', { lastSeenAt: 999,
+    oidcClients: { c1: { first: 10, last: 20, count: 1, iss: named,
+                         sub: 'urn:uuid:dirty-client' } } });
+  answer.read = { body: sealSession(remote) };
+  const applied = await minted.applyChange({
+    key: changeKey(local.id), realm: REALM
+  });
+  t.equal(applied, true, 'the live change is applied');
+  const held = sessionWindow.get(REALM, 'dirty-client');
+  const row = (held.ok && held.session.oidcClients &&
+               held.session.oidcClients.c1) || {};
+  t.equal(held.ok && held.session.lastSeenAt, 999,
+          'the held copy took the merge (the later lastSeenAt)');
+  t.equal(row.iss + ' ' + row.sub, named + ' urn:uuid:dirty-client',
+          'and the client it signed into keeps the iss and sub its ID ' +
+          'Token named, which both logouts are built from');
+  log.debug("Leaving dirtyClientCase().");
+}
+
 async function upgradedElsewhereCase(t) {
   log.debug("Entering upgradedElsewhereCase().");
   t.log.info('on: an arrival upgraded on another node is a sign-in here ' +
@@ -1436,6 +1472,7 @@ async function onHalf(t) {
   cascadeCase(t);
   await tombstoneCase(t);
   await dirtyCase(t);
+  await dirtyClientCase(t);
   await upgradedElsewhereCase(t);
   await restoreCase(t);
   upgradeCase(t);
