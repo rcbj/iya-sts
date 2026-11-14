@@ -1413,10 +1413,10 @@ async function sigstore() {
 // verifyChain(), so Rust can issue the same spec and match the bytes where
 // the signer is deterministic and the TBSCertificate everywhere.
 async function x509Vectors() {
-  const x509 = require(path.join(ROOT, 'common', 'vendored', 'x509.js'));
-  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+  const x509 = require(path.join(ROOT, 'common', 'crypto_impl', 'x509.js'));
+  const pqcX509 = require(path.join(ROOT, 'common', 'crypto_impl',
                                     'pqc_x509.js'));
-  const bytes = require(path.join(ROOT, 'common', 'vendored',
+  const bytes = require(path.join(ROOT, 'common', 'crypto_impl',
                                   'crypto_bytes.js'));
   const pair = function (type, options) {
     const k = nodeCrypto.generateKeyPairSync(type, options);
@@ -1443,6 +1443,12 @@ async function x509Vectors() {
     ed25519: pair('ed25519'),
     mldsa65: await pqPair('ML-DSA-65'),
     slh: await pqPair('SLH-DSA-SHA2-128f'),
+    // The composite whose ECDSA half is P-521, the one whose DER
+    // `pqc_x509.js` now writes itself (#445).
+    composite521: await pqPair('mldsa87-ecdsa-p521-sha512'),
+    // Too short for section 18's key-strength check (#1360).
+    rsa1024: pair('rsa', { modulusLength: 1024 }),
+    k256: pair('ec', { namedCurve: 'secp256k1' }),
     composite: await pqPair('mldsa65-ecdsa-p256-sha512'),
     mlkem: await pqPair('ML-KEM-768')
   };
@@ -1453,7 +1459,8 @@ async function x509Vectors() {
                    'sha384-ecdsa': 'p384', 'sha512-ecdsa': 'p521',
                    'sha1-ecdsa': 'p256', ed25519: 'ed25519',
                    'ml-dsa-65': 'mldsa65', 'slh-dsa-sha2-128f': 'slh',
-                   'mldsa65-ecdsa-p256-sha512': 'composite' };
+                   'mldsa65-ecdsa-p256-sha512': 'composite',
+                   'mldsa87-ecdsa-p521-sha512': 'composite521' };
   const window = { notBefore: '2026-01-02T03:04:05.000Z',
                    notAfter: '2036-01-02T03:04:05.000Z' };
   const everything = x509.defaultExtensions('tls-server');
@@ -1584,6 +1591,33 @@ async function x509Vectors() {
     profile: 'ocsp-responder' }));
   await issue('extensions all absent', selfSigned('sha256-rsa', {
     extensions: { basicConstraints: { present: false } } }));
+  // DER's shortest form (X.690 8.3.2, 2026-11-05): a caller's leading zero
+  // bytes are dropped while the value stays positive.
+  await issue('a serial with leading zeros', selfSigned('sha256-rsa', {
+    serial: '00:3f:01' }));
+  await issue('a serial of zeros before a high bit', selfSigned('sha256-rsa', {
+    serial: '00:00:80:01' }));
+  await issue('a serial of one zero byte', selfSigned('sha256-rsa', {
+    serial: '00' }));
+  const underRsa = function (name, pub) {
+    return issue(name, Object.assign({
+      subject: 'CN=' + name, subjectPublicKey: pub,
+      issuer: { certificatePem: roots['sha256-rsa'].pem,
+                privateKeyPem: keys.rsa.priv },
+      signatureAlg: 'sha256-rsa', serial: '43', profile: 'tls-client'
+    }, window), [roots['sha256-rsa'].pem]);
+  };
+  await underRsa('a 1024-bit RSA key', keys.rsa1024.pub);
+  await underRsa('a secp256k1 key', keys.k256.pub);
+  const wild = x509.defaultExtensions('tls-server');
+  Object.assign(wild.subjectAltName, { present: true, names: [
+    { kind: 'dns', value: '*.wild.example' },
+    { kind: 'dns', value: 'f*.part.example' },
+    { kind: 'dns', value: 'Mixed.Example' },
+    { kind: 'email', value: 'Bob@Example.COM' },
+    { kind: 'ip', value: '10.1.2.3' }] });
+  await issue('wildcard names', selfSigned('sha256-rsa', {
+    profile: 'tls-server', extensions: wild }));
   await issue('a serial with its top bit set', selfSigned('sha256-rsa', {
     serial: '80:00:01' }));
 
@@ -1703,7 +1737,11 @@ async function x509Vectors() {
                  back: Buffer.from(x509.ecdsaDerToRaw(der, 66))
                    .toString('base64') });
   }
+  const sections = await x509Section18(x509, keys, keyFor, roots,
+                                         certs, window);
   return { keys: keys, certificates: certs, requests: csrs, ecdsa: ecdsa,
+           fields: sections.fields, paths: sections.paths,
+           anchors: sections.anchors, registry: sections.registry,
            defaults: x509.profileIds().map(function (id) {
              return { id: id, extensions: x509.defaultExtensions(id),
                       cn: x509.defaultSubjectCN(id),
@@ -1718,6 +1756,212 @@ async function x509Vectors() {
            }) };
 }
 
+// THE PURE HALF OF THE ONE VALIDATION DOOR (#1360, #1368): `crypto.js`
+// section 18 (a certificate's facts, its field problems under a role and a
+// use case, its names), the two rules `pathRuleProblem()` gained (the X.509
+// accept list and the leaf's own fields), and a truststore's admission rule
+// (`anchorProblem()`, `anchorProblemSync()`), each with Node's answer for
+// `sts-pki` to give. The door's purposes, settings and stores are not here:
+// they are the phases that port the door itself.
+async function x509Section18(x509, keys, keyFor, roots, certs, window) {
+  const pki = require(path.join(ROOT, 'common', 'pki.js'));
+  const config = require(path.join(ROOT, 'common', 'config.js'));
+  const registry = require(path.join(ROOT, 'common', 'crypto_impl',
+                                     'algorithm_registry.js'));
+  const EKU = crypto.EKU;
+  const now = Date.parse('2027-01-01T00:00:00.000Z');
+  const b64 = function (der) {
+    return Buffer.from(der).toString('base64');
+  };
+  const fieldOptions = [
+    {},
+    { role: 'intermediate' },
+    { role: 'anchor', keyUsage: ['keyCertSign'] },
+    { keyUsage: ['digitalSignature'],
+      eku: { oids: [EKU.serverAuth], required: true } },
+    { keyUsage: ['keyEncipherment', 'keyAgreement'],
+      eku: { oids: [EKU.clientAuth], required: false } },
+    { eku: { oids: [EKU.codeSigning], required: true }, mayBeCa: true },
+    { eku: { oids: [EKU.ocspSigning, EKU.tcgAik] } },
+    { allowSha1: true, mayBeCa: true, allowCritical: ['1.2.3.77'] },
+    { now: Date.parse('2040-01-01T00:00:00.000Z'), skewMs: 1000 },
+    { now: Date.parse('2020-01-01T00:00:00.000Z') },
+    { now: Date.parse('2036-01-02T03:04:05.999Z') },
+    { now: Date.parse('2026-01-02T03:04:04.000Z'), skewMs: 1000 },
+    { now: Date.parse('2040-01-01T00:00:00.000Z'),
+      validityAt: Date.parse('2030-01-01T00:00:00.000Z') }
+  ];
+  const nameSets = [
+    {}, { dns: 'host.example' }, { dns: 'HOST.EXAMPLE' },
+    { dns: 'other.example' }, { ip: '192.0.2.7' }, { ip: '2001:db8::1' },
+    { ip: '192.0.2.8' }, { email: 'a@example.com' },
+    { email: 'A@EXAMPLE.COM' }, { email: 'a@EXAMPLE.com' },
+    { uri: 'spiffe://example.org/w' }, { uri: 'spiffe://example.org/W' },
+    { dns: 'host.example', ip: '192.0.2.8' },
+    { dns: 'a.wild.example' }, { dns: 'a.b.wild.example' },
+    { dns: 'wild.example' }, { dns: 'foo.part.example' },
+    { dns: 'oof.part.example' }, { dns: 'mixed.example' },
+    { dns: '.mixed.example' }, { dns: 'mixed.example.' },
+    { email: 'Bob@example.com' }, { email: 'bob@Example.COM' },
+    { ip: '10.1.2.3' }, { ip: '::ffff:10.1.2.3' }, { ip: 'not an ip' },
+    { dns: 'kem' }, { dns: 'localhost' }
+  ];
+  const attempt = function (f) {
+    try {
+      return f();
+    } catch (e) {
+      return { error: e.message };
+    }
+  };
+  const fields = [];
+  for (const row of certs) {
+    if (!row.der) {
+      continue;
+    }
+    const der = Buffer.from(row.der, 'base64');
+    fields.push({
+      name: row.name,
+      facts: attempt(function () {
+        return crypto.certificateFacts(der);
+      }),
+      problems: fieldOptions.map(function (o) {
+        return attempt(function () {
+          return crypto.certificateFieldProblems(der,
+            Object.assign({ now: now }, o));
+        });
+      }),
+      names: nameSets.map(function (n) {
+        return attempt(function () {
+          return crypto.certificateNameMatches(der, n);
+        });
+      })
+    });
+  }
+
+  // Paths: a leaf under every root, a two-hop path, and a CA as the leaf.
+  const issued = async function (spec) {
+    return x509.issueCertificate(Object.assign({}, window, spec));
+  };
+  const chains = [];
+  for (const alg of Object.keys(roots)) {
+    const root = roots[alg];
+    if (!root.pem) {
+      continue;
+    }
+    // An ECDSA issuer certifies a key on its own curve: Node cannot issue
+    // across curves (the defect `x509_vectors.rs` pins).
+    const subjectKey = /-ecdsa$/.test(alg) ? keys[keyFor[alg]] : keys.p256;
+    const leaf = await issued({
+      subject: 'CN=path leaf ' + alg, subjectPublicKey: subjectKey.pub,
+      issuer: { certificatePem: root.pem,
+                privateKeyPem: keys[keyFor[alg]].priv },
+      signatureAlg: alg, serial: '0c',
+      extensions: x509.defaultExtensions('tls-server') });
+    chains.push({ name: 'under ' + alg, leaf: leaf.der, intermediates: [],
+                  anchors: [Buffer.from(root.der, 'base64')] });
+  }
+  const rsaRoot = roots['sha256-rsa'];
+  const inter = await issued({
+    subject: 'CN=path intermediate, O=Example', subjectPublicKey: keys.p384.pub,
+    issuer: { certificatePem: rsaRoot.pem, privateKeyPem: keys.rsa.priv },
+    signatureAlg: 'sha256-rsa', serial: '0d', profile: 'intermediate-ca' });
+  const deep = await issued({
+    subject: 'CN=path leaf two hops', subjectPublicKey: keys.ed25519.pub,
+    issuer: { certificatePem: inter.pem, privateKeyPem: keys.p384.priv,
+              keyAlg: 'ec-p384' },
+    signatureAlg: 'sha384-ecdsa', serial: '0e',
+    extensions: x509.defaultExtensions('tls-client') });
+  const rsaRootDer = Buffer.from(rsaRoot.der, 'base64');
+  chains.push({ name: 'two hops', leaf: deep.der, intermediates: [inter.der],
+                anchors: [rsaRootDer] });
+  const caLeaf = await issued({
+    subject: 'CN=path CA leaf', subjectPublicKey: keys.p256.pub,
+    issuer: { certificatePem: rsaRoot.pem, privateKeyPem: keys.rsa.priv },
+    signatureAlg: 'sha256-rsa', serial: '0f', profile: 'issuing-ca' });
+  chains.push({ name: 'a CA as the leaf', leaf: caLeaf.der,
+                intermediates: [], anchors: [rsaRootDer] });
+  const accepts = ['', 'RS256', 'ES256,ES384', 'PS384', 'PS256,PS512',
+                   'ML-DSA-65', 'RS1,ECDSA-SHA1', 'Ed25519',
+                   'ML-DSA-65-ES256,ML-DSA-87-ECDSA-P521-SHA512',
+                   'SLH-DSA-SHA2-128f,RS512'];
+  const leafRules = [
+    null,
+    { keyUsage: ['digitalSignature'],
+      eku: { oids: [EKU.serverAuth], required: true } },
+    { keyUsage: ['digitalSignature'],
+      eku: { oids: [EKU.clientAuth], required: true } },
+    { keyUsage: ['keyCertSign'], eku: null, mayBeCa: true },
+    { keyUsage: ['cRLSign'], eku: null }
+  ];
+  const paths = [];
+  for (const accept of accepts) {
+    const set = config.setOverride('pki.acceptedSignatureAlgorithms', accept);
+    if (accept && !(set && set.ok !== false)) {
+      throw new Error('pki.acceptedSignatureAlgorithms=' + accept + ': ' +
+                      JSON.stringify(set));
+    }
+    for (const c of chains) {
+      for (let r = 0; r < leafRules.length; r++) {
+        for (const allowSha1 of r === 0 ? [false, true] : [false]) {
+          const options = { now: now, allowCritical: [] };
+          if (leafRules[r]) {
+            options.leaf = leafRules[r];
+          }
+          if (allowSha1) {
+            options.allowSha1 = true;
+          }
+          const v = await pki.verifyPathToAnchors(Buffer.from(c.leaf),
+            c.intermediates.map(function (d) {
+              return Buffer.from(d);
+            }), c.anchors.map(function (d) {
+              return pki.certificateFromDer(Buffer.from(d));
+            }).filter(Boolean), options);
+          paths.push({ name: c.name, accept: accept, leafRule: r,
+                       allowSha1: allowSha1, now: now,
+                       leaf: b64(c.leaf), intermediates: c.intermediates
+                         .map(b64), anchors: c.anchors.map(b64),
+                       verdict: { ok: v.ok, check: v.check || '',
+                                  reason: v.reason || '',
+                                  chain: (v.chain || []).length } });
+        }
+      }
+    }
+  }
+  config.clearOverride('pki.acceptedSignatureAlgorithms');
+
+  // A truststore's admission rule, both doors.
+  const candidates = Object.keys(roots).filter(function (alg) {
+    return roots[alg].pem;
+  }).map(function (alg) {
+    return { name: 'root ' + alg, pem: roots[alg].pem };
+  }).concat([{ name: 'intermediate', pem: inter.pem },
+             { name: 'CA leaf', pem: caLeaf.pem },
+             { name: 'leaf', pem: deep.pem },
+             { name: 'not a certificate', pem: 'nope' }]);
+  const anchors = [];
+  for (const one of candidates) {
+    for (const role of [undefined, 'anchor', 'intermediate']) {
+      for (const at of [now, Date.parse('2040-01-01T00:00:00.000Z')]) {
+        const opts = { role: role, heldAnchors: [rsaRoot.pem], now: at };
+        anchors.push({ name: one.name, pem: one.pem, role: role || '',
+                       now: at,
+                       held: [rsaRoot.pem],
+                       async: await pki.anchorProblem(one.pem, opts),
+                       sync: pki.anchorProblemSync(one.pem, opts) });
+      }
+    }
+  }
+  return {
+    fields: { now: now, options: fieldOptions, names: nameSets,
+              certificates: fields },
+    paths: paths,
+    anchors: anchors,
+    registry: registry.on('x509').map(function (row) {
+      return { id: row.id, oid: row.oid, hash: row.hash, x509: row.x509 };
+    })
+  };
+}
+
 // PATH VALIDATION (`pki.js`'s RFC 5280 rules, #201): Node's verdict on every
 // C2SP x509-limbo case through `verifyPathToAnchors()` and
 // `verifyIssuedDirectly()`, at the case's validation time (or the instant
@@ -1730,7 +1974,7 @@ async function limbo() {
     return null;
   }
   const pki = require(path.join(ROOT, 'common', 'pki.js'));
-  const bytes = require(path.join(ROOT, 'common', 'vendored',
+  const bytes = require(path.join(ROOT, 'common', 'crypto_impl',
                                   'crypto_bytes.js'));
   const corpus = JSON.parse(fs.readFileSync(path.join(dir, 'limbo.json'),
                                             'utf8'));
@@ -1767,10 +2011,10 @@ async function limbo() {
 // SCTs from a generated CT log — each with Node's answer.
 async function foreign() {
   const pki = require(path.join(ROOT, 'common', 'pki.js'));
-  const x509 = require(path.join(ROOT, 'common', 'vendored', 'x509.js'));
-  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+  const x509 = require(path.join(ROOT, 'common', 'crypto_impl', 'x509.js'));
+  const pqcX509 = require(path.join(ROOT, 'common', 'crypto_impl',
                                     'pqc_x509.js'));
-  const bytes = require(path.join(ROOT, 'common', 'vendored',
+  const bytes = require(path.join(ROOT, 'common', 'crypto_impl',
                                   'crypto_bytes.js'));
   const pair = function (type, options) {
     const k = nodeCrypto.generateKeyPairSync(type, options);

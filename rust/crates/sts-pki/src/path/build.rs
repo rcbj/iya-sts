@@ -56,7 +56,7 @@ impl PathVerdict {
 
 /// `pathSigned()`: the names match as section 7.1 compares them, and the
 /// issuer's key verifies the signature.
-fn path_signed(cert: &Entry, issuer: &Entry) -> bool {
+pub(crate) fn path_signed(cert: &Entry, issuer: &Entry) -> bool {
     let (a, b) = (cert.facts(), issuer.facts());
     if !a.problem.is_empty()
         || !b.problem.is_empty()

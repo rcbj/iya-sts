@@ -14,10 +14,14 @@
 
 use chrono::{TimeZone, Utc};
 
+use sts_core::errors::ErrorCode;
+
+use super::accept::accept_x509_cause;
 use super::entry::Entry;
 use super::facts::{
     Form, GeneralName, NameValue, Subtree, PATH_EXTENSION_OIDS,
 };
+use crate::fields::{certificate_field_problem, FieldOptions};
 
 pub const ANY_POLICY: &str = "2.5.29.32.0";
 /// The most nodes one path's valid_policy_tree may hold (CVE-2023-0464).
@@ -36,12 +40,14 @@ const ML_DSA_USAGES: &[&str] = &[
     "cRLSign",
 ];
 
-/// A refusal: `{ check, index, why }`, and for some checks a detail.
+/// A refusal: `{ check, index, why }`, and the code of a leaf field check
+/// (`opts.leaf`), the one rule that answers its own.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Problem {
     pub check: &'static str,
     pub index: usize,
     pub why: String,
+    pub code: Option<ErrorCode>,
 }
 
 /// The four inputs of section 6.1 a caller may set.
@@ -60,6 +66,15 @@ pub struct RuleOptions {
     pub allow_critical: Vec<String>,
     pub allow_sha1: bool,
     pub policy: PolicyInputs,
+    /// The ambient realm's `pki.acceptedSignatureAlgorithms`, parsed
+    /// ([`super::accept::parse_list`]): registry row ids, empty accepting
+    /// everything (#1368). Node reads the setting inside the rule; here the
+    /// caller hands it over, which is the door's phase to wire.
+    pub accepted_signature_algorithms: Vec<String>,
+    /// What the leaf's use case asks of its own fields (#1360): asked LAST,
+    /// so a path that breaks a section 6.1 rule is refused for that first.
+    /// `role`, `allow_sha1` and `allow_critical` are the rule's own.
+    pub leaf: Option<FieldOptions>,
 }
 
 /// `hostNameValid()`: RFC 1034 as RFC 1123 relaxed it; `wildcard` allows a
@@ -687,6 +702,7 @@ pub fn path_rule_problem(
             check,
             index,
             why: format!("\"{}\" {}", path[index].subject_text(), why),
+            code: None,
         })
     };
     for (i, entry) in path.iter().enumerate() {
@@ -710,6 +726,18 @@ pub fn path_rule_problem(
                     unknown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
                 ),
             );
+        }
+        // THE X.509 ACCEPT CHOKEPOINT (#1368). Above the weak-hash rule's
+        // reach: a list is the realm's own statement, at every certificate
+        // but the anchor.
+        if i < path.len() - 1 && !facts.signature_oid.is_empty() {
+            if let Some(why) = accept_x509_cause(
+                &facts.signature_oid,
+                facts.signature_hash,
+                &options.accepted_signature_algorithms,
+            ) {
+                return refuse("unaccepted-signature", i, why);
+            }
         }
         if i < path.len() - 1
             && !facts.weak_signature.is_empty()
@@ -838,7 +866,38 @@ pub fn path_rule_problem(
             check: "policy",
             index: 0,
             why: policy.why,
+            code: None,
         });
+    }
+    // THE LEAF'S OWN FIELDS, LAST (#1360): what its use case asks of its
+    // keyUsage and extendedKeyUsage, so they are part of path validation
+    // rather than something a caller remembers to add.
+    //
+    // Node passes no `now` here, so the leaf's window is asked at the WALL
+    // CLOCK whatever `opts.now` says (`pathValidityProblem()` has already
+    // asked it at `opts.now`): ported as it is, and reported as a defect.
+    if let Some(leaf) = &options.leaf {
+        // `Object.assign({ role: 'leaf', allowSha1, allowCritical }, leaf)`:
+        // the leaf's own members win where it states them.
+        let mut asked = leaf.clone();
+        if asked.role.is_none() {
+            asked.role = Some("leaf".to_string());
+        }
+        asked.allow_sha1 = asked.allow_sha1 || options.allow_sha1;
+        if asked.allow_critical.is_empty() {
+            asked.allow_critical.clone_from(&allowed);
+        }
+        // The leaf was read by the path facts above, so the field reader
+        // cannot fail on it; were it to, the rules have answered.
+        if let Ok(Some(field)) = certificate_field_problem(&path[0].der, &asked)
+        {
+            return Some(Problem {
+                check: field.check,
+                index: 0,
+                why: field.why,
+                code: Some(field.code),
+            });
+        }
     }
     None
 }
@@ -872,8 +931,38 @@ pub fn path_validity_problem(
                     iso(f.not_before_ms),
                     iso(f.not_after_ms)
                 ),
+                code: None,
             });
         }
     }
     None
+}
+
+/// `pki.authorityCode()`'s table, which the door reads as `RULE_CODES`: the
+/// code a rule's refusal is recorded under at a door that holds a path to
+/// the rules. The rules about who may issue keep the door's own code, so
+/// they answer `None`.
+pub fn rule_code(check: &str) -> Option<ErrorCode> {
+    use sts_core::errors::codes;
+    Some(match check {
+        "name-constraints" => codes::STS_PKI_0194,
+        "critical" => codes::STS_PKI_0195,
+        "malformed" | "unusable" => codes::STS_PKI_0196,
+        "weak-signature" => codes::STS_PKI_0197,
+        "unaccepted-signature" => super::accept::ACCEPT_CODE,
+        "policy" => codes::STS_PKI_0199,
+        _ => return None,
+    })
+}
+
+/// The door's `RULE_CHECKS`: the verdict check a broken path rule fails,
+/// or `None` for a rule it has no check of its own for (the door then names
+/// `path`, or the rule itself, by site).
+pub fn rule_check(check: &str) -> Option<&'static str> {
+    Some(match check {
+        "critical" => "critical-extensions",
+        "weak-signature" | "unaccepted-signature" => "signature-strength",
+        "name-constraints" => "name-constraints",
+        _ => return None,
+    })
 }

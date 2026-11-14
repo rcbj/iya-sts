@@ -1737,8 +1737,10 @@ dependencies = [
  "openssl",
  "serde",
  "serde_json",
+ "sts-core",
  "sts-crypto",
  "thiserror",
+ "tracing",
  "url",
 ]
 

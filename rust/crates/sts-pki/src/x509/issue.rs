@@ -71,6 +71,12 @@ pub fn random_serial_hex(bytes: usize) -> PkiResult<String> {
 
 /// `serialFromHex()`: the bytes of the hex given (non-hex dropped, an odd
 /// digit padded), a zero octet in front of one that would read negative.
+///
+/// **DER WANTS THE SHORTEST FORM (X.690 8.3.2)**, so leading zero octets a
+/// caller's serial carries are dropped while the next octet keeps the value
+/// positive: Node's fix of 2026-11-05, after a random serial beginning
+/// `00 3f…` was written as `02 08 00 3f…` and OpenSSL refused it as
+/// "illegal padding".
 fn serial_from_hex(hex: &str) -> Vec<u8> {
     let mut clean: String =
         hex.chars().filter(char::is_ascii_hexdigit).collect();
@@ -81,6 +87,14 @@ fn serial_from_hex(hex: &str) -> Vec<u8> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&clean[i..i + 2], 16).unwrap_or(0))
         .collect();
+    let mut first = 0;
+    while first + 1 < bytes.len()
+        && bytes[first] == 0
+        && bytes[first + 1] < 0x80
+    {
+        first += 1;
+    }
+    bytes.drain(..first);
     if bytes.first().is_some_and(|b| *b >= 0x80) {
         bytes.insert(0, 0);
     }
